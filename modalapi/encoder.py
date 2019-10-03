@@ -15,7 +15,7 @@ class Encoder:
         GPIO.add_event_detect(fs_pin, GPIO.FALLING, callback=self.change, bouncetime=250)
 
     def change(self, foo):
-        self.enabled = not self.enabled 
+        self.enabled = not self.enabled
 
         self.lcd_refresh_required = True
 

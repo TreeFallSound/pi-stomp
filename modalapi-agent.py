@@ -12,6 +12,7 @@ from rtmidi.midiutil import open_midiinput
 from rtmidi.midiutil import open_midioutput
 from rtmidi.midiconstants import (CONTROLLER_CHANGE, PROGRAM_CHANGE)
 
+import modalapi.analogcontrol as AnalogControl
 import modalapi.footswitch as Footswitch
 import modalapi.gfx as Gfx
 import modalapi.lilv as lilv
@@ -108,9 +109,13 @@ def main():
     relay_right = Relay.Relay(RELAY_RIGHT_PIN)
     footsw_list[FOOTSW_BYPASS_INDEX].add_relay(relay_right)
 
+    # Initialize Analog inputs
+    analog = AnalogControl.AnalogControl(66, midiout)
+
     print("Entering main loop. Press Control-C to exit.")
     try:
         while True:
+            analog.refresh()
             time.sleep(0.40)
     except KeyboardInterrupt:
         print('')
