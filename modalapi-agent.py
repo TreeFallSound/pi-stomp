@@ -5,6 +5,7 @@ import json
 import os
 import requests as req
 import RPi.GPIO as GPIO
+import spidev
 import sys
 import time
 
@@ -27,9 +28,10 @@ RELAY_LEFT_PIN = 16
 RELAY_RIGHT_PIN = 12
 
 # Each footswitch defined by a triple touple:
-# the GPIO pin it's attached to, the associated LED output pin and
-# the MIDI Control (CC) message that will be send when the switch is toggled
-# Pin changes should only be made if the hardware is changed accordingly
+# 1: the GPIO pin it's attached to
+# 2: the associated LED output pin and
+# 3: the MIDI Control (CC) message that will be send when the switch is toggled
+# Pin modifications should only be made if the hardware is changed accordingly
 FOOTSW = ((23, 24, 61), (25, 0, 62), (33, 26, 63))
 FOOTSW_BYPASS_INDEX = 0
 
@@ -110,7 +112,11 @@ def main():
     footsw_list[FOOTSW_BYPASS_INDEX].add_relay(relay_right)
 
     # Initialize Analog inputs
-    analog = AnalogControl.AnalogControl(66, midiout)
+    spi = spidev.SpiDev()
+    spi.open(0, 1)  # Bus 0, CE1
+    spi.max_speed_hz = 1000000  # TODO
+
+    analog = AnalogControl.AnalogControl(spi, 0, 66, midiout)  # TODO channel and CC
 
     print("Entering main loop. Press Control-C to exit.")
     try:
@@ -124,8 +130,9 @@ def main():
         midiout.close_port()
         #midiin.close_port()
         # del midiin
-        lcd.clear()
+        lcd.cleanup()
         GPIO.cleanup()
+        print("Completed cleanup")
 
 
 if __name__ == '__main__':

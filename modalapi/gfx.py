@@ -20,15 +20,8 @@ class Gfx:
         self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)
         self.small_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 9)
 
-
-        # Init SPI # TODO move out of GFX
-        spi = spidev.SpiDev()
-        spi.open(0, 1)
-        spi.max_speed_hz = 1000000
-
         self.refresh_needed = True
         self.enable_backlight()
-
 
     def refresh(self):
         flipped = self.image.transpose(Image.ROTATE_180)   # use 'flipped' instead of 'image' below

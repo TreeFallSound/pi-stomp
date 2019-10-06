@@ -12,26 +12,14 @@ from rtmidi.midiconstants import CONTROL_CHANGE
 
 class AnalogControl:
 
-    def __init__(self, midi_CC, midiout):
+    def __init__(self, spi, adc_channel, midi_CC, midiout):
 
+        self.spi = spi
+        self.adc_channel = adc_channel
         self.midi_CC = midi_CC
         self.midiout = midiout
-
-        # create the spi bus
-        spi = busio.SPI(clock=board.SCK, MISO=board.MISO, MOSI=board.MOSI)
-
-        # create the cs (chip select)
-        cs = digitalio.DigitalInOut(board.D7)
-
-        # create the mcp object
-        self.mcp = MCP.MCP3008(spi, cs)
-
-        # create an analog input channel on pin 0  TODO this should be a dynamic list
-        self.chan0 = AnalogIn(self.mcp, MCP.P0)
-        self.chan1 = AnalogIn(self.mcp, MCP.P1)
-
         self.last_read = 0       # this keeps track of the last potentiometer value
-        self.tolerance = 250     # to keep from being jittery we'll only change
+        self.tolerance = 5     # to keep from being jittery we'll only change
                     # volume when the pot has moved a significant amount
                     # on a 16-bit ADC
 
@@ -47,30 +35,31 @@ class AnalogControl:
         # Convert the 0-1 range into a value in the right range.
         return int(right_min + (valueScaled * right_span))
 
+    def readChannel(self):
+        adc = self.spi.xfer2([1, (8 + self.adc_channel) << 4, 0])
+        data = ((adc[1] & 3) << 8) + adc[2]
+        return data
+
     def refresh(self):
-        trim_pot_changed = False
+        value_changed = False
 
         # read the analog pin
-        trim_pot = self.chan0.value
-
-        # read the pb switch (pullup with 10k)
-        pb = self.chan1.value
-        if pb < 22000:
-            print(pb)
+        value = self.readChannel()
+        #print(value)
 
         # how much has it changed since the last read?
-        pot_adjust = abs(trim_pot - self.last_read)
+        pot_adjust = abs(value - self.last_read)
 
         if pot_adjust > self.tolerance:
-            trim_pot_changed = True
+            value_changed = True
 
-        if trim_pot_changed:
+        if value_changed:
             # convert 16bit adc0 (0-65535) trim pot read into 0-100 volume level
-            set_volume = self.remap_range(trim_pot, 0, 65535, 0, 127)
+            set_volume = self.remap_range(value, 0, 1023, 0, 127)
 
             cc = [CONTROL_CHANGE, self.midi_CC, set_volume]
-            print("Sending CC event %d" % set_volume)
+            print("AnalogControl Sending CC event %d" % set_volume)
             self.midiout.send_message(cc)
 
             # save the potentiometer reading for the next loop
-            self.last_read = trim_pot
+            self.last_read = value
