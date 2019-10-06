@@ -30,10 +30,16 @@ RELAY_RIGHT_PIN = 12
 # Each footswitch defined by a triple touple:
 # 1: the GPIO pin it's attached to
 # 2: the associated LED output pin and
-# 3: the MIDI Control (CC) message that will be send when the switch is toggled
+# 3: the MIDI Control (CC) message that will be sent when the switch is toggled
 # Pin modifications should only be made if the hardware is changed accordingly
 FOOTSW = ((23, 24, 61), (25, 0, 62), (33, 26, 63))
 FOOTSW_BYPASS_INDEX = 0
+
+# Analog Controls defined by a double touple:
+# 1: the ADC channel
+# 2: the MIDI Control (CC) message that will be sent
+# Tweak, Expression Pedal, Preset Encoder Switch, Nav Encoder Switch
+ANALOG_CONTROL = ((0, 64), (1, 65), (6, 66), (7, 67))
 
 
 def preset_change(channel):
@@ -114,15 +120,18 @@ def main():
     # Initialize Analog inputs
     spi = spidev.SpiDev()
     spi.open(0, 1)  # Bus 0, CE1
-    spi.max_speed_hz = 1000000  # TODO
-
-    analog = AnalogControl.AnalogControl(spi, 0, 66, midiout)  # TODO channel and CC
+    spi.max_speed_hz = 1000000  # TODO match with LCD or don't specify
+    control_list = []
+    for c in ANALOG_CONTROL:
+        control = AnalogControl.AnalogControl(spi, c[0], c[1], midiout)
+        control_list.append(control)
 
     print("Entering main loop. Press Control-C to exit.")
     try:
         while True:
-            analog.refresh()
-            time.sleep(0.40)
+            for c in control_list:
+                c.refresh()
+            time.sleep(0.40)  # TODO less to increase responsiveness
     except KeyboardInterrupt:
         print('')
     finally:

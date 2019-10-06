@@ -58,7 +58,7 @@ class AnalogControl:
             set_volume = self.remap_range(value, 0, 1023, 0, 127)
 
             cc = [CONTROL_CHANGE, self.midi_CC, set_volume]
-            print("AnalogControl Sending CC event %d" % set_volume)
+            print("AnalogControl Sending CC event %s" % cc)
             self.midiout.send_message(cc)
 
             # save the potentiometer reading for the next loop
