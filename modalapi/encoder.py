@@ -5,17 +5,15 @@ import RPi.GPIO as GPIO
 
 class Encoder:
 
-    def __init__(self, d_pin, clk_pin):
+    def __init__(self, d_pin, clk_pin, callback):
 
-        self.fs_pin = d_pin
-        self.led_pin = clk_pin
+        self.d_pin = d_pin
+        self.clk_pin = clk_pin
+        self.callback = callback
         self.lcd_refresh_required = False
 
-        GPIO.setup(d_pin, GPIO.IN)
-        GPIO.add_event_detect(fs_pin, GPIO.FALLING, callback=self.change, bouncetime=250)
+        GPIO.setup(self.d_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        GPIO.setup(self.clk_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        GPIO.add_event_detect(self.clk_pin, GPIO.FALLING, callback=self.callback, bouncetime=250)
 
-    def change(self, foo):
-        self.enabled = not self.enabled
-
-        self.lcd_refresh_required = True
 

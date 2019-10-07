@@ -14,6 +14,7 @@ from rtmidi.midiutil import open_midioutput
 from rtmidi.midiconstants import (CONTROLLER_CHANGE, PROGRAM_CHANGE)
 
 import modalapi.analogcontrol as AnalogControl
+import modalapi.encoder as Encoder
 import modalapi.footswitch as Footswitch
 import modalapi.gfx as Gfx
 import modalapi.lilv as lilv
@@ -96,13 +97,8 @@ def main():
 
     GPIO.setmode(GPIO.BCM)  # TODO should this go earlier?
 
-    # FORCE RELAY ON
-    #GPIO.setup(16, GPIO.OUT)
-    #GPIO.output(16, GPIO.LOW)
-
-    GPIO.setup(PRESET_PIN_CLK, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    GPIO.setup(PRESET_PIN_D, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    GPIO.add_event_detect(PRESET_PIN_CLK, GPIO.FALLING, callback=preset_change, bouncetime=300)
+    # Initialize Encoders
+    enc = Encoder.Encoder(PRESET_PIN_D, PRESET_PIN_CLK, callback=preset_change)
 
     # Initialize Footswitches
     footsw_list = []
