@@ -35,11 +35,12 @@ RELAY_RIGHT_PIN = 12
 FOOTSW = ((23, 24, 61), (25, 0, 62), (33, 26, 63))
 FOOTSW_BYPASS_INDEX = 0
 
-# Analog Controls defined by a double touple:
+# Analog Controls defined by a triple touple:
 # 1: the ADC channel
 # 2: the MIDI Control (CC) message that will be sent
+# 3: the minimum threshold for considering the value to be changed
 # Tweak, Expression Pedal, Preset Encoder Switch, Nav Encoder Switch
-ANALOG_CONTROL = ((0, 64), (1, 65), (6, 66), (7, 67))
+ANALOG_CONTROL = ((0, 64, 16), (1, 65, 16), (6, 66, 512), (7, 67, 512))
 
 
 def preset_change(channel):
@@ -123,7 +124,7 @@ def main():
     spi.max_speed_hz = 1000000  # TODO match with LCD or don't specify
     control_list = []
     for c in ANALOG_CONTROL:
-        control = AnalogControl.AnalogControl(spi, c[0], c[1], midiout)
+        control = AnalogControl.AnalogControl(spi, c[0], c[1], c[2], midiout)
         control_list.append(control)
 
     print("Entering main loop. Press Control-C to exit.")
@@ -131,7 +132,7 @@ def main():
         while True:
             for c in control_list:
                 c.refresh()
-            time.sleep(0.40)  # TODO less to increase responsiveness
+            time.sleep(0.01)  # TODO less to increase responsiveness
     except KeyboardInterrupt:
         print('')
     finally:

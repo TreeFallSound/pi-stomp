@@ -12,16 +12,15 @@ from rtmidi.midiconstants import CONTROL_CHANGE
 
 class AnalogControl:
 
-    def __init__(self, spi, adc_channel, midi_CC, midiout):
+    def __init__(self, spi, adc_channel, midi_CC, tolerence, midiout):
 
         self.spi = spi
         self.adc_channel = adc_channel
         self.midi_CC = midi_CC
         self.midiout = midiout
-        self.last_read = 0       # this keeps track of the last potentiometer value
-        self.tolerance = 5     # to keep from being jittery we'll only change
-                    # volume when the pot has moved a significant amount
-                    # on a 16-bit ADC
+        self.last_read = 0          # this keeps track of the last potentiometer value
+        self.tolerance = tolerence  # to keep from being jittery we'll only change the
+                                    # value when the control has moved a significant amount
 
     def remap_range(self, value, left_min, left_max, right_min, right_max):
         # this remaps a value from original (left) range to new (right) range
