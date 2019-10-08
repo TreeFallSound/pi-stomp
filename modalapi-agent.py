@@ -13,6 +13,7 @@ from rtmidi.midiutil import open_midiinput
 from rtmidi.midiutil import open_midioutput
 from rtmidi.midiconstants import (CONTROLLER_CHANGE, PROGRAM_CHANGE)
 
+
 import modalapi.analogcontrol as AnalogControl
 import modalapi.encoder as Encoder
 import modalapi.footswitch as Footswitch
@@ -44,6 +45,10 @@ FOOTSW_BYPASS_INDEX = 0
 ANALOG_CONTROL = ((0, 64, 16), (1, 65, 16), (6, 66, 512), (7, 67, 512))
 
 
+# GLOBALS  TODO move to a "session" object?
+current_preset_index = 0  # TODO would be nice to load last used instead of default at startup
+
+
 def preset_change(channel):
     global current_preset_index
 
@@ -60,6 +65,7 @@ def preset_change(channel):
 
 
 def main():
+    print(sys.path)
     # MIDI initialization
     # Prompts user for MIDI input port, unless a valid port number or name
     # is given as the first argument on the command line.
@@ -74,7 +80,7 @@ def main():
         sys.exit()
 
     mod = Mod.Mod()
-    mod.load_pedalboards()
+    pedalboards = mod.load_pedalboards()
     mod.pedalboard_init()
     pb_name = mod.get_current_pedalboard_name()
     print("pb: %s" % pb_name)
@@ -98,7 +104,7 @@ def main():
     GPIO.setmode(GPIO.BCM)  # TODO should this go earlier?
 
     # Initialize Encoders
-    enc = Encoder.Encoder(PRESET_PIN_D, PRESET_PIN_CLK, callback=preset_change)
+    enc = Encoder.Encoder(PRESET_PIN_D, PRESET_PIN_CLK, callback=mod.preset_change)
 
     # Initialize Footswitches
     footsw_list = []

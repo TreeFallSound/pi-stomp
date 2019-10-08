@@ -6,6 +6,9 @@ import os
 import requests as req
 import sys
 
+sys.path.append('/usr/lib/python3.5/site-packages')  # TODO possibly /usr/local/modep/mod-ui
+from mod.development import FakeHost as Host
+
 
 class Mod:
     __single = None
@@ -24,6 +27,7 @@ class Mod:
         self.pedalboard_list = []
         self.current_pedalboard_index = 0
         self.current_preset_index = 0
+        self.current_num_presets = 0
 
         # TODO should this be here?
         self.load_pedalboards()
@@ -43,6 +47,7 @@ class Mod:
 
         self.pedalboard_list = json.loads(resp.text)
         print(self.pedalboard_list)
+        return self.pedalboard_list
 
     # TODO change these functions ripped from modep
     def get_current_pedalboard(self):
@@ -66,12 +71,15 @@ class Mod:
             return None
 
     def get_bundlepath(self, index):
-        pedalboard = pedalboard_list[index]
+        pedalboard = self.pedalboard_list[index]
         if pedalboard == None:
             print("Pedalboard with index %d not found" % index)
             # TODO error handling
             return None
-        return pedalboard_list[index]['bundle']
+        return self.pedalboard_list[index]['bundle']
+
+    def msg_callback(self, msg):
+        print(msg)
 
     def pedalboard_init(self):
         # Get current pedalboard - TODO refresh when PB changes
@@ -84,6 +92,18 @@ class Mod:
         self.current_pedalboard_index = self.pedalboard_list.index(pedalboard)
         print("  Index: %d" % self.current_pedalboard_index)
 
+
+        # Preset info
+        # TODO should this be here?
+        plugins = []  # TODO
+        bundlepath = self.get_bundlepath(self.current_pedalboard_index)
+        print("bundle: %s" % bundlepath)
+
+        host = Host(None, None, self.msg_callback)
+        var = host.load_pb_presets(plugins, bundlepath)
+        self.current_num_presets = len(host.pedalboard_presets)
+        print("len: %d" % len(host.pedalboard_presets))
+
         # Pedalboard info
         # info = pb.get_pedalboard_info(resp.text)
         # param_list = list()
@@ -95,3 +115,15 @@ class Mod:
         # print(len(param_list))
 
         # lcd_draw_text_rows(pedalboard_name, param_list)
+
+    def preset_change(self, encoder, clk_pin):
+        enc = encoder.get_data()
+        index = ((self.current_preset_index - 1) if (enc == 1) else (self.current_preset_index + 1)) % (self.current_num_presets)
+        print("preset change: %d" % index)
+        url = "http://localhost/pedalpreset/load?id=%d" % index
+        print(url)
+        # req.get("http://localhost/reset")
+        resp = req.get(url)
+        if resp.status_code != 200:
+            print("Bad Rest request: %s status: %d" % (url, resp.status_code))
+        self.current_preset_index = index

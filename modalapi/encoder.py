@@ -2,6 +2,8 @@
 
 import RPi.GPIO as GPIO
 
+from functools import partial
+
 
 class Encoder:
 
@@ -14,6 +16,9 @@ class Encoder:
 
         GPIO.setup(self.d_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         GPIO.setup(self.clk_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.add_event_detect(self.clk_pin, GPIO.FALLING, callback=self.callback, bouncetime=250)
+        GPIO.add_event_detect(self.clk_pin, GPIO.FALLING, callback=partial(self.callback, self), bouncetime=250)
+
+    def get_data(self):
+        return GPIO.input(self.d_pin)
 
 
