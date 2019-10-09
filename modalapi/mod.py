@@ -13,12 +13,13 @@ from mod.development import FakeHost as Host
 class Mod:
     __single = None
 
-    def __init__(self):
+    def __init__(self, lcd):
         print("Init mod")
         if Mod.__single:
             raise Mod.__single
         Mod.__single = self
 
+        self.lcd = lcd
         self.root_uri = "http://localhost:80/"
         # TODO construct pblist, current at each call in case changes made via UI
         # unless performance sucks that way
@@ -31,6 +32,9 @@ class Mod:
 
         # TODO should this be here?
         self.load_pedalboards()
+
+        # Create dummy host for obtaining pedalboard info
+        self.host = Host(None, None, self.msg_callback)
 
     def load_pedalboards(self):
         url = self.root_uri + "pedalboard/list"
@@ -99,10 +103,10 @@ class Mod:
         bundlepath = self.get_bundlepath(self.current_pedalboard_index)
         print("bundle: %s" % bundlepath)
 
-        host = Host(None, None, self.msg_callback)
-        var = host.load_pb_presets(plugins, bundlepath)
-        self.current_num_presets = len(host.pedalboard_presets)
-        print("len: %d" % len(host.pedalboard_presets))
+
+        var = self.host.load_pb_presets(plugins, bundlepath)
+        self.current_num_presets = len(self.host.pedalboard_presets)
+        print("len: %d" % len(self.host.pedalboard_presets))
 
         # Pedalboard info
         # info = pb.get_pedalboard_info(resp.text)
@@ -116,9 +120,13 @@ class Mod:
 
         # lcd_draw_text_rows(pedalboard_name, param_list)
 
+    def get_current_preset_name(self):
+        return self.host.pedalpreset_name(self.current_preset_index)
+
     def preset_change(self, encoder, clk_pin):
         enc = encoder.get_data()
-        index = ((self.current_preset_index - 1) if (enc == 1) else (self.current_preset_index + 1)) % (self.current_num_presets)
+        index = ((self.current_preset_index - 1) if (enc == 1)
+                 else (self.current_preset_index + 1)) % self.current_num_presets
         print("preset change: %d" % index)
         url = "http://localhost/pedalpreset/load?id=%d" % index
         print(url)
@@ -127,3 +135,8 @@ class Mod:
         if resp.status_code != 200:
             print("Bad Rest request: %s status: %d" % (url, resp.status_code))
         self.current_preset_index = index
+
+        # TODO move formatting to common place
+        # TODO name varaibles so they don't have to be calculated
+        text = "%s-%s" % (self.get_current_pedalboard_name(), self.get_current_preset_name())
+        self.lcd.draw_text_rows(text)

@@ -53,8 +53,8 @@ class Gfx:
 
     def draw_text_rows(self, text):
         self.image.paste(0, (0, 0, self.width, self.height))
-        #self.draw.text((0, 0), text, 1, self.font)
-        self.draw.text((0, 0), 'PoorSugar - Verse', 1, self.font)
+        self.draw.text((0, 0), text, 1, self.font)
+        #self.draw.text((0, 0), 'PoorSugar - Verse', 1, self.font)
 
         # line_y = 15
         # for p in pl:
@@ -105,26 +105,3 @@ class Gfx:
         self.draw_footswitch(0, "Dist", 1)
         self.draw_footswitch(1, "Chorus", 0)
         self.draw_footswitch(2, "Delay", 0)
-
-
-
-
-
-# def readChannel(channel):
-#     adc = spi.xfer2([1, (8+channel) << 4, 0])
-#     data = ((adc[1]&3) << 8) + adc[2]
-#     return data
-#
-# try:
-#     #signal.pause()
-#     gfx = Gfx()
-#     while True:
-#         #print("data %d" % readChannel(0))
-#         #data = readChannel(0)
-#         #print("data %d" % data)
-#         gfx.text("blah")
-#         time.sleep(0.1)
-#
-# except KeyboardInterrupt:
-#     gfx.clear()
-

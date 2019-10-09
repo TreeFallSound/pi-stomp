@@ -45,27 +45,7 @@ FOOTSW_BYPASS_INDEX = 0
 ANALOG_CONTROL = ((0, 64, 16), (1, 65, 16), (6, 66, 512), (7, 67, 512))
 
 
-# GLOBALS  TODO move to a "session" object?
-current_preset_index = 0  # TODO would be nice to load last used instead of default at startup
-
-
-def preset_change(channel):
-    global current_preset_index
-
-    enc = GPIO.input(PRESET_PIN_D)
-    index = (current_preset_index + 1) if (enc == 1) else (current_preset_index - 1)
-    print("preset change: %d" % index)
-    url = "http://localhost/pedalpreset/load?id=%d" % index
-    print(url)
-    # req.get("http://localhost/reset")
-    resp = req.get(url)
-    if resp.status_code != 200:
-        print("Bad Rest request: %s status: %d" % (url, resp.status_code))
-    current_preset_index = index
-
-
 def main():
-    print(sys.path)
     # MIDI initialization
     # Prompts user for MIDI input port, unless a valid port number or name
     # is given as the first argument on the command line.
@@ -79,7 +59,9 @@ def main():
     except (EOFError, KeyboardInterrupt):
         sys.exit()
 
-    mod = Mod.Mod()
+    lcd = Gfx.Gfx()
+
+    mod = Mod.Mod(lcd)
     pedalboards = mod.load_pedalboards()
     mod.pedalboard_init()
     pb_name = mod.get_current_pedalboard_name()
@@ -96,8 +78,9 @@ def main():
             param_list.append(p)
     print(len(param_list))
 
-    lcd = Gfx.Gfx()
-    lcd.draw_text_rows(pb_name)
+    # Load LCD
+    text = "%s-%s" % (pb_name, mod.get_current_preset_name())
+    lcd.draw_text_rows(text)
     lcd.draw_bargraph(97)
 
 
