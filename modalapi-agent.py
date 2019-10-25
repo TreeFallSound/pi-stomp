@@ -34,7 +34,7 @@ RELAY_RIGHT_PIN = 12
 # 2: the associated LED output pin and
 # 3: the MIDI Control (CC) message that will be sent when the switch is toggled
 # Pin modifications should only be made if the hardware is changed accordingly
-FOOTSW = ((23, 24, 61), (25, 0, 62), (33, 26, 63))
+FOOTSW = ((23, 24, 61), (25, 0, 62), (13, 26, 63))
 FOOTSW_BYPASS_INDEX = 0
 
 # Analog Controls defined by a triple touple:
@@ -44,6 +44,14 @@ FOOTSW_BYPASS_INDEX = 0
 # Tweak, Expression Pedal, Preset Encoder Switch, Nav Encoder Switch
 ANALOG_CONTROL = ((0, 64, 16), (1, 65, 16), (6, 66, 512), (7, 67, 512))
 
+
+# TODO move to mod lib
+def find_input(inputs, symbol):
+    for i in inputs:
+        sym = i['symbol']
+        if sym == symbol:
+            return i
+    return None
 
 def main():
     # MIDI initialization
@@ -65,18 +73,8 @@ def main():
     pedalboards = mod.load_pedalboards()
     mod.pedalboard_init()
     pb_name = mod.get_current_pedalboard_name()
-    print("pb: %s" % pb_name)
+    print("\npb: %s" % pb_name)
 
-    # Pedalboard info
-    pb_info = lilv.get_pedalboard_info(mod.get_current_pedalboard())
-    print(pb_info)
-    param_list = list()
-    for key, param in pb_info.items():
-       if param != {}:
-            p = param['instance'].capitalize() + ":" + param['parameter'].upper()
-            print(p)
-            param_list.append(p)
-    print(len(param_list))
 
     # Load LCD
     text = "%s-%s" % (pb_name, mod.get_current_preset_name())
