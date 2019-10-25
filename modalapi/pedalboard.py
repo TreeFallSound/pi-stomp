@@ -1,16 +1,15 @@
 #!/usr/bin/env python
 
+import json
 import lilv
 import os
 import requests as req
 import sys
 import urllib.parse
 
-def LILV_FOREACH(collection, func):
-    itr = collection.begin()
-    while itr:
-        yield func(collection.get(itr))
-        itr = collection.next(itr)
+import modalapi.parameter as Parameter
+import modalapi.plugin as Plugin
+import modalapi.util as util
 
 
 class NS(object):
@@ -33,6 +32,7 @@ class Pedalboard:
         self.root_uri = "http://localhost:80/"  # TODO try to define this globally
         self.title = title
         self.bundle = bundle
+        self.plugins = []
 
     def get_pedalboard_plugin(self, world, bundlepath):
         # lilv wants the last character as the separator
@@ -69,7 +69,6 @@ class Pedalboard:
 
     def get_plugin_data(self, uri):
         url = self.root_uri + "effect/get?uri=" + urllib.parse.quote(uri)
-        print(url)
         try:
             resp = req.get(url)
         except:  # TODO
@@ -80,11 +79,11 @@ class Pedalboard:
             print("Cannot connect to mod-host.  Status: %s" % resp.status_code)
             sys.exit()
 
-        return resp.text
+        return json.loads(resp.text)
 
     # Get info from an lv2 bundle
     # @a bundle is a string, consisting of a directory in the filesystem (absolute pathname).
-    def get_pedalboard_info(self, bundlepath, plugin_dict):
+    def load_bundle(self, bundlepath, plugin_dict):
         # Create our own unique lilv world
         # We'll load a single bundle and get all plugins from it
         world = lilv.World()
@@ -107,7 +106,7 @@ class Pedalboard:
         def fill_in_type(node):
             return node.as_string()
 
-        plugin_types = [i for i in LILV_FOREACH(plugin.get_value(ns_rdf.type_), fill_in_type)]
+        plugin_types = [i for i in util.LILV_FOREACH(plugin.get_value(ns_rdf.type_), fill_in_type)]
 
         if "http://moddevices.com/ns/modpedal#Pedalboard" not in plugin_types:
             raise Exception('get_pedalboard_info(%s) - plugin has no mod:Pedalboard type'.format(bundle))
@@ -138,20 +137,24 @@ class Pedalboard:
             else:
                 continue
 
+            # Add plugin data (from plugin registry) to global plugin dictionary
             plugin_uri = lilv.lilv_node_as_uri(protouri1)
-            #print("  Plugin: %s" % plugin_uri)
+            plugin_info = {}
             if plugin_uri not in plugin_dict:
-                data = self.get_plugin_data(plugin_uri)
-                if data:
-                    # print(data)
+                plugin_info = self.get_plugin_data(plugin_uri)
+                if plugin_info:
                     print("  added %s" % plugin_uri)
-                    plugin_dict[plugin_uri] = data
+                    plugin_dict[plugin_uri] = plugin_info
+            else:
+                plugin_info = plugin_dict[plugin_uri]
+            category = util.DICT_GET(plugin_info, 'category')
 
-            # XXX TODO Use this eventually for detailed pedalboard port info (return a dict instead of a simple list)
-            instance = lilv.lilv_uri_to_path(lilv.lilv_node_as_string(block.me)).replace(bundlepath, "", 1)
+            # Extract Parameter data
+            instance_id = lilv.lilv_uri_to_path(lilv.lilv_node_as_string(block.me)).replace(bundlepath, "", 1)
             uri = lilv.lilv_node_as_uri(proto)
             enabled = lilv.lilv_world_get(world.me, block.me, ns_ingen.enabled.me, None)
             nodes = lilv.lilv_world_find_nodes(world.me, block.me, ns_lv2core.port.me, None)  # nodes > ports
+            parameters = []
             if nodes is not None:
                 # These are the port nodes used to define parameter controls
                 nodes_it = lilv.lilv_nodes_begin(nodes)
@@ -163,16 +166,25 @@ class Pedalboard:
                     # if binding is not None:
                     # Only interested in ports which have controller bindings
                     controller_num = lilv.lilv_world_get(world.me, binding, ns_midi.controllerNumber.me, None)
-                    if controller_num is not None:
-                        cnum = lilv.lilv_node_as_int(controller_num)
-                        # if cnum in info:
-                        # This binding is to one of our controls, store its details in controller dict
-                        path = lilv.lilv_node_as_string(port)
-                        info[uri] = {
-                            "instance": instance,
-                            'uri': uri,
-                            "parameter": os.path.basename(path),
-                            "value": lilv.lilv_node_as_float(param_value)
-                        }
-        # print("info: %s" % info)
-        return info
+                    #if controller_num is not None:
+                    cnum = lilv.lilv_node_as_int(controller_num)
+                    # if cnum in info:
+                    # This binding is to one of our controls, store its details in controller dict
+                    path = lilv.lilv_node_as_string(port)
+                    symbol = os.path.basename(path)
+                    value = lilv.lilv_node_as_float(param_value)
+                    plugin_params = plugin_info['ports']['control']['input']
+                    for pp in plugin_params:
+                        sym = util.DICT_GET(pp, 'symbol')
+                        # if the symbol read from the pedalboard has a match in the plugin_dict
+                        if sym == symbol:
+                            #print("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
+                            param = Parameter.Parameter(pp, value)
+                            #print("Param: %s %s %s" % (param.name, param.symbol, param.minimum))
+                            parameters.append(param)
+
+                    #print("  Label: %s" % label)
+            inst = Plugin.Plugin(instance_id, parameters, plugin_info)
+            self.plugins.append(inst)
+            print("dump: %s" % inst.to_json())
+        return

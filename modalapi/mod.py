@@ -53,14 +53,12 @@ class Mod:
             sys.exit()
 
         self.pedalboards = json.loads(resp.text)
-        #print(self.pedalboard_list)
-        #self.load_pedalboard_plugins()
         for pb in self.pedalboards:
             print("Loading pedalboard info: %s" % pb['title'])
             bundle = pb['bundle']
             title = pb['title']
             pedalboard = Pedalboard.Pedalboard(bundle, title)
-            pedalboard.get_pedalboard_info(bundle, self.plugin_dict)
+            pedalboard.load_bundle(bundle, self.plugin_dict)
         return self.pedalboards
 
 
