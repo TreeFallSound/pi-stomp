@@ -186,5 +186,8 @@ class Pedalboard:
                     #print("  Label: %s" % label)
             inst = Plugin.Plugin(instance_id, parameters, plugin_info)
             self.plugins.append(inst)
-            print("dump: %s" % inst.to_json())
+            #print("dump: %s" % inst.to_json())
         return
+
+    def to_json(self):
+        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)

@@ -5,6 +5,7 @@ import os
 import requests as req
 import sys
 
+import modalapi.controller as Controller
 import modalapi.pedalboard as Pedalboard
 
 sys.path.append('/usr/lib/python3.5/site-packages')  # TODO possibly /usr/local/modep/mod-ui
@@ -24,8 +25,9 @@ class Mod:
         self.root_uri = "http://localhost:80/"
         # TODO construct pblist, current at each call in case changes made via UI
         # unless performance sucks that way
-        self.param_list = []
+        self.param_list = []  # TODO remove
         self.pedalboards = []
+        self.controllers = {}  # Keyed by midi_channel:midi_CC
         self.current_pedalboard_index = 0
         self.current_preset_index = 0
         self.current_num_presets = 0
@@ -59,6 +61,7 @@ class Mod:
             title = pb['title']
             pedalboard = Pedalboard.Pedalboard(bundle, title)
             pedalboard.load_bundle(bundle, self.plugin_dict)
+            #print("dump: %s" % pedalboard.to_json())
         return self.pedalboards
 
 
