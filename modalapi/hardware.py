@@ -15,8 +15,10 @@ import modalapi.util as util
 MIDI_CHANNEL = 3
 
 # Pins
-PRESET_PIN_D = 22
-PRESET_PIN_CLK = 27
+TOP_ENC_PIN_D = 17
+TOP_ENC_PIN_CLK = 4
+BOT_ENC_PIN_D = 22
+BOT_ENC_PIN_CLK = 27
 
 RELAY_LEFT_PIN = 16
 RELAY_RIGHT_PIN = 12
@@ -53,7 +55,8 @@ class Hardware:
         GPIO.setmode(GPIO.BCM)  # TODO should this go earlier?
 
         # Initialize Encoders
-        enc = Encoder.Encoder(PRESET_PIN_D, PRESET_PIN_CLK, callback=mod.preset_change)
+        top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=mod.preset_change)
+        bot_enc = Encoder.Encoder(BOT_ENC_PIN_D, BOT_ENC_PIN_CLK, callback=mod.preset_change)
 
         # Initialize Footswitches
         for f in FOOTSW:

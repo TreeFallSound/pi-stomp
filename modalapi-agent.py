@@ -44,16 +44,17 @@ def main():
     lcd = Gfx.Gfx()
 
     mod = Mod.Mod(lcd)
-    pedalboards = mod.load_pedalboards()
-    mod.pedalboard_init()
+    mod.load_pedalboards()
+    #mod.pedalboard_init()  # TODO remove this mod-ui version that does the same as load_pedalboards()
     pb_name = mod.get_current_pedalboard_name()
     print("\npb: %s" % pb_name)
-
 
     # Load LCD
     text = "%s-%s" % (pb_name, mod.get_current_preset_name())
     lcd.draw_text_rows(text)
-    lcd.draw_bargraph(97)
+    #lcd.draw_bargraph(97)
+    lcd.draw_plugins(mod.pedalboards[mod.get_current_pedalboard()].plugins)
+
 
     # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
     hw = Hardware.Hardware(mod, midiout)

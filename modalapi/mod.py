@@ -26,7 +26,7 @@ class Mod:
         # TODO construct pblist, current at each call in case changes made via UI
         # unless performance sucks that way
         self.param_list = []  # TODO remove
-        self.pedalboards = []
+        self.pedalboards = {}
         self.controllers = {}  # Keyed by midi_channel:midi_CC
         self.current_pedalboard_index = 0
         self.current_preset_index = 0
@@ -40,6 +40,8 @@ class Mod:
         # Create dummy host for obtaining pedalboard info
         self.host = Host(None, None, self.msg_callback)
 
+    def msg_callback(self, msg):
+        print(msg)
 
     def load_pedalboards(self):
         url = self.root_uri + "pedalboard/list"
@@ -54,15 +56,25 @@ class Mod:
             print("Cannot connect to mod-host.  Status: %s" % resp.status_code)
             sys.exit()
 
-        self.pedalboards = json.loads(resp.text)
-        for pb in self.pedalboards:
+        self.pbs = json.loads(resp.text)
+        for pb in self.pbs:
             print("Loading pedalboard info: %s" % pb['title'])
             bundle = pb['bundle']
             title = pb['title']
             pedalboard = Pedalboard.Pedalboard(bundle, title)
             pedalboard.load_bundle(bundle, self.plugin_dict)
+            self.pedalboards[bundle] = pedalboard
             #print("dump: %s" % pedalboard.to_json())
-        return self.pedalboards
+
+        # TODO - example of querying host
+        #bund = self.get_current_pedalboard()
+        #self.host.load(bund, False)
+        #print("Preset: %s %d" % (bund, self.host.pedalboard_preset))  # this value not initialized
+        #print("Preset: %s" % self.get_current_preset_name())
+
+    def set_current_pedalboard(self, index):
+        # load preset list and set current
+        print("set_current_pb")
 
 
     # TODO change these functions ripped from modep
@@ -80,63 +92,15 @@ class Mod:
         pb = self.get_current_pedalboard()
         return os.path.splitext(os.path.basename(pb))[0]
 
+    # TODO remove
     def get_current_pedalboard_index(self, pedalboards, current):
         try:
             return pedalboards.index(current)
         except:
             return None
 
-    def get_bundlepath(self, index):
-        pedalboard = self.pedalboards[index]
-        if pedalboard == None:
-            print("Pedalboard with index %d not found" % index)
-            # TODO error handling
-            return None
-        return self.pedalboards[index]['bundle']
 
-    def msg_callback(self, msg):
-        print(msg)
-
-    def pedalboard_init(self):
-        # Get current pedalboard - TODO refresh when PB changes
-        url = self.root_uri + "pedalboard/current"
-        resp = req.get(url)
-        pedalboard_name = os.path.splitext(os.path.basename(resp.text))[0]
-        print("Getting Pedalboard: %s" % pedalboard_name)
-        bundle = "/usr/local/modep/.pedalboards/%s.pedalboard" % pedalboard_name
-        pedalboard = (next(item for item in self.pedalboards if item['bundle'] == bundle))
-        self.current_pedalboard_index = self.pedalboards.index(pedalboard)
-        print("  Index: %d" % self.current_pedalboard_index)
-
-
-        # Preset info
-        # TODO should this be here?
-        plugins = []  # TODO
-        bundlepath = self.get_bundlepath(self.current_pedalboard_index)
-        print("bundle: %s" % bundlepath)
-
-        self.host.load(bundlepath, False)
-        #var = self.host.load_pb_presets(plugins, bundlepath)
-        self.current_num_presets = len(self.host.pedalboard_presets)
-        print("len: %d" % len(self.host.pedalboard_presets))
-        print(self.host.plugins)
-
-        # Plugin info
-
-
-
-        # Pedalboard info
-        # info = pb.get_pedalboard_info(resp.text)
-        # param_list = list()
-        # for key, param in info.items():
-        #     if param != {}:
-        #          p = param['instance'].capitalize() + ":" + param['parameter'].upper()
-        #          print(p)
-        #          param_list.append(p)
-        # print(len(param_list))
-
-        # lcd_draw_text_rows(pedalboard_name, param_list)
-
+    # TODO doesn't seem to work without host being properly initialized
     def get_current_preset_name(self):
         return self.host.pedalpreset_name(self.current_preset_index)
 

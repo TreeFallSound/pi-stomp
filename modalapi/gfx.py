@@ -18,7 +18,11 @@ class Gfx:
         # Load fonts
         self.font = ImageFont.truetype("DejaVuSans-Bold.ttf", 12)
         self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)
-        self.small_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 9)
+        self.small_font = ImageFont.truetype("DejaVuSans.ttf", 8)
+
+        #
+        self.plugin_height = 12
+        self.plugin_width = 23
 
         self.refresh_needed = True
         self.enable_backlight()
@@ -90,6 +94,51 @@ class Gfx:
 
         self.refresh_needed = True
         self.draw_footswitches()  # TODO not here
+        self.refresh()
+
+    def shorten_name(self, name):
+        #vowels = ('/', 'a', 'e', 'i', 'o', 'u')
+        eliminate = ('/');
+        text = ""
+        text_size = 0
+        for x in name.lower():
+            if x not in eliminate:
+                test = text + x
+                test_size = self.small_font.getsize(test)[0]
+                if test_size >= self.plugin_width:
+                    break
+                text = test
+        return text
+
+    def draw_plugin(self, x, y, text, expand_rect, enabled):
+        if expand_rect:
+            text_size = self.small_font.getsize(text)[0]
+            x2 = x + text_size + 2
+        else:
+            text = self.shorten_name(text)
+            x2 = x + self.plugin_width
+
+        self.draw.rectangle(((x, y), (x2, y + self.plugin_height)), enabled, 1)
+        self.draw.text((x + 1, y + 2), text, not enabled, self.small_font)
+        return x2
+
+    def draw_plugins(self, plugins):
+        # TODO don't hardcode numbers by assuming 128x64, use width and height
+        y = 18
+        x = 0
+        xmax = 110  # scroll if exceeds this width
+        ymax = 50
+        expand_rect = len(plugins) <= 4
+        rect_x_pad = 2
+        rect_y_pitch = 16
+        for p in reversed(plugins):
+            x = self.draw_plugin(x, y, p.instance_id.replace('/',""), expand_rect, False)
+            x = x + rect_x_pad
+            if x > xmax:
+                x = 0
+                y = y + rect_y_pitch
+                if y >= ymax:
+                    break  # Only display 2 rows, huge pedalboards won't fully render
         self.refresh()
 
     def draw_footswitch(self, index, text, enabled):
