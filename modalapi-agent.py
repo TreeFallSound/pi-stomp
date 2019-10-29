@@ -15,7 +15,6 @@ from rtmidi.midiconstants import (CONTROLLER_CHANGE, PROGRAM_CHANGE)
 
 import modalapi.gfx as Gfx
 import modalapi.hardware as Hardware
-import modalapi.lilv as lilv
 import modalapi.mod as Mod
 
 

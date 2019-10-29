@@ -16,7 +16,7 @@ class Gfx:
         self.draw = ImageDraw.Draw(self.image)
 
         # Load fonts
-        self.font = ImageFont.truetype("DejaVuSans-Bold.ttf", 12)
+        self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 11)
         self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)
         self.small_font = ImageFont.truetype("DejaVuSans.ttf", 8)
 
@@ -57,7 +57,7 @@ class Gfx:
 
     def draw_text_rows(self, text):
         self.image.paste(0, (0, 0, self.width, self.height))
-        self.draw.text((0, 0), text, 1, self.font)
+        self.draw.text((0, 0), text, 1, self.title_font)
         #self.draw.text((0, 0), 'PoorSugar - Verse', 1, self.font)
 
         # line_y = 15
@@ -97,20 +97,17 @@ class Gfx:
         self.refresh()
 
     def shorten_name(self, name):
-        #vowels = ('/', 'a', 'e', 'i', 'o', 'u')
-        eliminate = ('/');
+        #eliminate = ('/');
         text = ""
-        text_size = 0
         for x in name.lower():
-            if x not in eliminate:
-                test = text + x
-                test_size = self.small_font.getsize(test)[0]
-                if test_size >= self.plugin_width:
-                    break
-                text = test
+            test = text + x
+            test_size = self.small_font.getsize(test)[0]
+            if test_size >= self.plugin_width:
+                break
+            text = test
         return text
 
-    def draw_plugin(self, x, y, text, expand_rect, enabled):
+    def draw_plugin(self, x, y, text, expand_rect, bypassed):
         if expand_rect:
             text_size = self.small_font.getsize(text)[0]
             x2 = x + text_size + 2
@@ -118,23 +115,28 @@ class Gfx:
             text = self.shorten_name(text)
             x2 = x + self.plugin_width
 
-        self.draw.rectangle(((x, y), (x2, y + self.plugin_height)), enabled, 1)
-        self.draw.text((x + 1, y + 2), text, not enabled, self.small_font)
+        fill = False
+        self.draw.rectangle(((x, y), (x2, y + self.plugin_height)), fill, 1)
+        self.draw.text((x + 1, y + 1), text, not fill, self.small_font)
+        self.draw.line(((x+2, y+9), (x2-2, y+9)), not bypassed, 2)
         return x2
 
     def draw_plugins(self, plugins):
         # TODO don't hardcode numbers by assuming 128x64, use width and height
-        y = 18
+        # TODO Improve expansion/wrapping algorithm (calculate values)
+        y = 16
         x = 0
-        xmax = 110  # scroll if exceeds this width
-        ymax = 50
-        expand_rect = len(plugins) <= 4
+        xwrap = 100  # scroll if exceeds this width
+        ymax = 48  # Maximum y for plugin LCD zone
+        expand_rect = len(plugins) <= 5
         rect_x_pad = 2
         rect_y_pitch = 16
+        max_label_length = 7
         for p in reversed(plugins):
-            x = self.draw_plugin(x, y, p.instance_id.replace('/',""), expand_rect, False)
+            label = p.instance_id.replace('/', "")[:max_label_length]
+            x = self.draw_plugin(x, y, label, expand_rect, p.bypassed)
             x = x + rect_x_pad
-            if x > xmax:
+            if x > xwrap:
                 x = 0
                 y = y + rect_y_pitch
                 if y >= ymax:

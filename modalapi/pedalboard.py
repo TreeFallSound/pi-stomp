@@ -155,6 +155,7 @@ class Pedalboard:
             enabled = lilv.lilv_world_get(world.me, block.me, ns_ingen.enabled.me, None)
             nodes = lilv.lilv_world_find_nodes(world.me, block.me, ns_lv2core.port.me, None)  # nodes > ports
             parameters = []
+            bypassed = True
             if nodes is not None:
                 # These are the port nodes used to define parameter controls
                 nodes_it = lilv.lilv_nodes_begin(nodes)
@@ -174,9 +175,12 @@ class Pedalboard:
                     symbol = os.path.basename(path)
                     value = lilv.lilv_node_as_float(param_value)
                     plugin_params = plugin_info['ports']['control']['input']
+                    if symbol == ":bypass" and value == 0:
+                        bypassed = False
+                        continue
+                    # Try to find a matching symbol in plugin_dict to obtain the remaining param details
                     for pp in plugin_params:
                         sym = util.DICT_GET(pp, 'symbol')
-                        # if the symbol read from the pedalboard has a match in the plugin_dict
                         if sym == symbol:
                             #print("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
                             param = Parameter.Parameter(pp, value)
@@ -184,9 +188,9 @@ class Pedalboard:
                             parameters.append(param)
 
                     #print("  Label: %s" % label)
-            inst = Plugin.Plugin(instance_id, parameters, plugin_info)
+            inst = Plugin.Plugin(instance_id, parameters, bypassed, plugin_info)
             self.plugins.append(inst)
-            #print("dump: %s" % inst.to_json())
+            print("dump: %s" % inst.to_json())
         return
 
     def to_json(self):
