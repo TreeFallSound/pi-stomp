@@ -23,12 +23,9 @@ class Mod:
 
         self.lcd = lcd
         self.root_uri = "http://localhost:80/"
-        # TODO construct pblist, current at each call in case changes made via UI
-        # unless performance sucks that way
-        self.param_list = []  # TODO remove
-        self.pedalboards = {}
+        self.pedalboards = {}  # TODO make the ordering of entries deterministic
         self.controllers = {}  # Keyed by midi_channel:midi_CC
-        self.current_pedalboard_index = 0
+        self.current_pedalboard = None
         self.current_preset_index = 0
         self.current_num_presets = 0
 
@@ -39,6 +36,11 @@ class Mod:
 
         # Create dummy host for obtaining pedalboard info
         self.host = Host(None, None, self.msg_callback)
+
+        self.hardware = None
+
+    def add_hardware(self, hardware):
+        self.hardware = hardware
 
     def msg_callback(self, msg):
         print(msg)
@@ -56,8 +58,8 @@ class Mod:
             print("Cannot connect to mod-host.  Status: %s" % resp.status_code)
             sys.exit()
 
-        self.pbs = json.loads(resp.text)
-        for pb in self.pbs:
+        pbs = json.loads(resp.text)
+        for pb in pbs:
             print("Loading pedalboard info: %s" % pb['title'])
             bundle = pb['bundle']
             title = pb['title']
@@ -72,9 +74,21 @@ class Mod:
         #print("Preset: %s %d" % (bund, self.host.pedalboard_preset))  # this value not initialized
         #print("Preset: %s" % self.get_current_preset_name())
 
-    def set_current_pedalboard(self, index):
-        # load preset list and set current
-        print("set_current_pb")
+    def bind_current_pedalboard(self):
+        # "current" being the pedalboard mod-host says is current
+        # The pedalboard data has already been loaded, but this will overlay
+        # any real time settings
+        pb = self.get_current_pedalboard()
+        print(self.pedalboards.keys())
+        if pb in self.pedalboards:
+            self.current_pedalboard = self.pedalboards[pb]
+            print("set current PB as: %s" % self.current_pedalboard)
+            print(self.current_pedalboard.to_json())
+            for plugin in self.current_pedalboard.plugins:
+                for param in plugin.parameters:
+                    if param.binding is not None:
+                        print("Map: %s %s" % (param.name, param.binding))
+
 
 
     # TODO change these functions ripped from modep

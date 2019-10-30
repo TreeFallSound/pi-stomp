@@ -164,33 +164,35 @@ class Pedalboard:
                     nodes_it = lilv.lilv_nodes_next(nodes, nodes_it)
                     param_value = lilv.lilv_world_get(world.me, port, ns_ingen.value.me, None)
                     binding = lilv.lilv_world_get(world.me, port, ns_midi.binding.me, None)
-                    # if binding is not None:
-                    # Only interested in ports which have controller bindings
-                    controller_num = lilv.lilv_world_get(world.me, binding, ns_midi.controllerNumber.me, None)
-                    #if controller_num is not None:
-                    cnum = lilv.lilv_node_as_int(controller_num)
-                    # if cnum in info:
-                    # This binding is to one of our controls, store its details in controller dict
+                    if binding is not None:
+                        controller_num = lilv.lilv_world_get(world.me, binding, ns_midi.controllerNumber.me, None)
+                        channel = lilv.lilv_world_get(world.me, binding, ns_midi.channel.me, None)
+                        if (controller_num is not None) and (channel is not None):
+                            binding = "%d:%d" %(lilv.lilv_node_as_int(channel), lilv.lilv_node_as_int(controller_num))
                     path = lilv.lilv_node_as_string(port)
                     symbol = os.path.basename(path)
                     value = lilv.lilv_node_as_float(param_value)
-                    plugin_params = plugin_info['ports']['control']['input']
-                    if symbol == ":bypass" and value == 0:
-                        bypassed = False
-                        continue
+                    # Bypass "parameter" is a special case without an entry in the plugin definition
+                    if symbol == ":bypass":
+                        bypassed = (value == 0)
+                        info = {"shortName": "bypass", "symbol": symbol, "ranges": {"minimum": 0, "maximum": 1}}
+                        param = Parameter.Parameter(info, value, binding)
+                        parameters.append(param)
+                        continue  # don't try to find matching symbol in plugin_dict
                     # Try to find a matching symbol in plugin_dict to obtain the remaining param details
+                    plugin_params = plugin_info['ports']['control']['input']
                     for pp in plugin_params:
                         sym = util.DICT_GET(pp, 'symbol')
                         if sym == symbol:
                             #print("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
-                            param = Parameter.Parameter(pp, value)
+                            param = Parameter.Parameter(pp, value, binding)
                             #print("Param: %s %s %s" % (param.name, param.symbol, param.minimum))
                             parameters.append(param)
 
                     #print("  Label: %s" % label)
             inst = Plugin.Plugin(instance_id, parameters, bypassed, plugin_info)
             self.plugins.append(inst)
-            print("dump: %s" % inst.to_json())
+            #print("dump: %s" % inst.to_json())
         return
 
     def to_json(self):

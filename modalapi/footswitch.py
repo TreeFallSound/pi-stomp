@@ -3,16 +3,16 @@
 import RPi.GPIO as GPIO
 from rtmidi.midiconstants import CONTROL_CHANGE
 
+import modalapi.controller as controller
 
-class Footswitch:
+
+class Footswitch(controller.Controller):
 
     def __init__(self, fs_pin, led_pin, midi_CC, midi_channel, midiout):
-
+        super(Footswitch, self).__init__(midi_channel, midi_CC, None)
         self.enabled = False
         self.fs_pin = fs_pin
         self.led_pin = led_pin
-        self.midi_CC = midi_CC
-        self.midi_channel = midi_channel
         self.midiout = midiout
         self.lcd_refresh_required = False
         self.relay_list = []

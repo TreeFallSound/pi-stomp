@@ -18,15 +18,6 @@ import modalapi.hardware as Hardware
 import modalapi.mod as Mod
 
 
-# TODO move to mod lib
-def find_input(inputs, symbol):
-    for i in inputs:
-        sym = i['symbol']
-        if sym == symbol:
-            return i
-    return None
-
-
 def main():
     # MIDI initialization
     # Prompts user for MIDI input port, unless a valid port number or name
@@ -48,12 +39,12 @@ def main():
 
     # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
     hw = Hardware.Hardware(mod, midiout)
+    mod.add_hardware(hw)
 
     # Load all pedalboard info from the lilv ttl file
     mod.load_pedalboards()
     #mod.pedalboard_init()  # TODO remove this mod-ui version that does the same as load_pedalboards()
-    pb_name = mod.get_current_pedalboard_name()
-    print("\npb: %s" % pb_name)
+    mod.bind_current_pedalboard()
 
     # Load LCD
     #text = "%s-%s" % (pb_name, mod.get_current_preset_name())

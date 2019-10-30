@@ -13,9 +13,9 @@ class Type(Enum):
 
 class Controller:
 
-    def __init__(self, channel, controllerNumber, type):
-        self.channel = channel
-        self.controllerNumber = controllerNumber
+    def __init__(self, midi_channel, midi_CC, type):
+        self.midi_channel = midi_channel
+        self.midi_CC = midi_CC
         self.type = type
         self.minimum = None
         self.maximum = None

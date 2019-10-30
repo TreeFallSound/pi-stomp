@@ -61,11 +61,14 @@ class Hardware:
         # Initialize Footswitches
         for f in FOOTSW:
             fs = Footswitch.Footswitch(f[0], f[1], f[2], MIDI_CHANNEL, midiout)
+            print("type: %s" % type(fs))
+            print(fs.minimum)
             self.footswitches.append(fs)
             key = format("%d:%d" % (MIDI_CHANNEL, f[1]))
-            self.controller[key] = Controller.Controller(MIDI_CHANNEL, f[1], Controller.Type.FOOTSWITCH)
+            #self.controller[key] = Controller.Controller(MIDI_CHANNEL, f[1], Controller.Type.FOOTSWITCH)
+            self.controller[key] = fs
 
-        # Initialize Relays
+            # Initialize Relays
         # By default, associate with the footswitch identified by FOOT_BYPASS_INDEX
         # This can be user modified later
         relay_left = Relay.Relay(RELAY_LEFT_PIN)
