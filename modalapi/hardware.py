@@ -12,7 +12,7 @@ import modalapi.relay as Relay
 import modalapi.util as util
 
 # Midi
-MIDI_CHANNEL = 3
+MIDI_CHANNEL = 13  # Note that a learned MIDI msg will report as the channel +1 (MOD bug?)
 
 # Pins
 TOP_ENC_PIN_D = 17
@@ -60,7 +60,7 @@ class Hardware:
 
         # Initialize Footswitches
         for f in FOOTSW:
-            fs = Footswitch.Footswitch(f[0], f[1], f[2], midiout)
+            fs = Footswitch.Footswitch(f[0], f[1], f[2], MIDI_CHANNEL, midiout)
             self.footswitches.append(fs)
             key = format("%d:%d" % (MIDI_CHANNEL, f[1]))
             self.controller[key] = Controller.Controller(MIDI_CHANNEL, f[1], Controller.Type.FOOTSWITCH)
@@ -78,7 +78,7 @@ class Hardware:
         spi.open(0, 1)  # Bus 0, CE1
         spi.max_speed_hz = 1000000  # TODO match with LCD or don't specify.  Move to top of file
         for c in ANALOG_CONTROL:
-            control = AnalogControl.AnalogControl(spi, c[0], c[1], c[2], midiout)
+            control = AnalogControl.AnalogControl(spi, c[0], c[1], c[2], MIDI_CHANNEL, midiout)
             self.analog_controls.append(control)
             key = format("%d:%d" % (MIDI_CHANNEL, c[1]))
             self.controller[key] = Controller.Controller(MIDI_CHANNEL, c[1], Controller.Type.ANALOG)

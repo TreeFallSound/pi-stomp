@@ -6,12 +6,13 @@ from rtmidi.midiconstants import CONTROL_CHANGE
 
 class Footswitch:
 
-    def __init__(self, fs_pin, led_pin, midi_CC, midiout):
+    def __init__(self, fs_pin, led_pin, midi_CC, midi_channel, midiout):
 
         self.enabled = False
         self.fs_pin = fs_pin
         self.led_pin = led_pin
         self.midi_CC = midi_CC
+        self.midi_channel = midi_channel
         self.midiout = midiout
         self.lcd_refresh_required = False
         self.relay_list = []
@@ -26,7 +27,7 @@ class Footswitch:
         self.enabled = not self.enabled
 
         # Send midi
-        cc = [CONTROL_CHANGE, self.midi_CC, 127 if self.enabled else 0]
+        cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.enabled else 0]
         print("Sending CC event: %d %s" % (self.midi_CC, foo))
         self.midiout.send_message(cc)
 

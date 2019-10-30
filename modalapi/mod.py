@@ -120,4 +120,10 @@ class Mod:
         # TODO move formatting to common place
         # TODO name varaibles so they don't have to be calculated
         text = "%s-%s" % (self.get_current_pedalboard_name(), self.get_current_preset_name())
-        self.lcd.draw_text_rows(text)
+        self.lcd.draw_title(text)
+
+    def update_lcd(self):
+        title = "%s-%s" % (self.get_current_pedalboard_name(), self.get_current_preset_name())
+        self.lcd.draw_title(title)
+        self.lcd.draw_plugins(self.pedalboards[self.get_current_pedalboard()].plugins)
+        self.lcd.refresh()

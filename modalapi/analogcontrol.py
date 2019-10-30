@@ -12,12 +12,13 @@ from rtmidi.midiconstants import CONTROL_CHANGE
 
 class AnalogControl:
 
-    def __init__(self, spi, adc_channel, midi_CC, tolerence, midiout):
+    def __init__(self, spi, adc_channel, midi_CC, tolerence, midi_channel, midiout):
 
         self.spi = spi
         self.adc_channel = adc_channel
         self.midi_CC = midi_CC
         self.midiout = midiout
+        self.midi_channel = midi_channel
         self.last_read = 0          # this keeps track of the last potentiometer value
         self.tolerance = tolerence  # to keep from being jittery we'll only change the
                                     # value when the control has moved a significant amount
@@ -56,7 +57,7 @@ class AnalogControl:
             # convert 16bit adc0 (0-65535) trim pot read into 0-100 volume level
             set_volume = self.remap_range(value, 0, 1023, 0, 127)
 
-            cc = [CONTROL_CHANGE, self.midi_CC, set_volume]
+            cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, set_volume]
             print("AnalogControl Sending CC event %s" % cc)
             self.midiout.send_message(cc)
 

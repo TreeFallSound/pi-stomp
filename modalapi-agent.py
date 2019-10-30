@@ -26,6 +26,7 @@ def find_input(inputs, symbol):
             return i
     return None
 
+
 def main():
     # MIDI initialization
     # Prompts user for MIDI input port, unless a valid port number or name
@@ -33,7 +34,7 @@ def main():
     # API backend defaults to ALSA on Linux.
     # TODO discover and use the thru port (seems to be 14:0 on my system)
     # shouldn't need to aconnect, just send msgs directly to the thru port
-    port = 0  # TODO
+    port = 0 # TODO get this (the Midi Through port) programmatically
     #port = sys.argv[1] if len(sys.argv) > 1 else None
     try:
         midiout, port_name = open_midioutput(port)
@@ -42,21 +43,30 @@ def main():
 
     lcd = Gfx.Gfx()
 
+    # Create singleton data model object
     mod = Mod.Mod(lcd)
+
+    # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
+    hw = Hardware.Hardware(mod, midiout)
+
+    # Load all pedalboard info from the lilv ttl file
     mod.load_pedalboards()
     #mod.pedalboard_init()  # TODO remove this mod-ui version that does the same as load_pedalboards()
     pb_name = mod.get_current_pedalboard_name()
     print("\npb: %s" % pb_name)
 
     # Load LCD
-    text = "%s-%s" % (pb_name, mod.get_current_preset_name())
-    lcd.draw_text_rows(text)
-    #lcd.draw_bargraph(97)
-    lcd.draw_plugins(mod.pedalboards[mod.get_current_pedalboard()].plugins)
+    #text = "%s-%s" % (pb_name, mod.get_current_preset_name())
+    #lcd.draw_title(text)
+    #lcd.draw_plugins(mod.pedalboards[mod.get_current_pedalboard()].plugins)
+    #lcd.refresh()
+    mod.update_lcd()
+    #touch.set_led(0, 1)
+    #touch.set_led(2, 1)
 
 
     # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
-    hw = Hardware.Hardware(mod, midiout)
+    #hw = Hardware.Hardware(mod, midiout)
 
     print("Entering main loop. Press Control-C to exit.")
     try:
