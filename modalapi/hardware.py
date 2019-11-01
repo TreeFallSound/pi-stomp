@@ -41,15 +41,16 @@ ANALOG_CONTROL = ((0, 64, 16), (1, 65, 16), (6, 66, 512), (7, 67, 512))
 class Hardware:
     __single = None
 
-    def __init__(self, mod, midiout):
+    def __init__(self, mod, midiout, refresh_callback):
         print("Init hardware")
         if Hardware.__single:
             raise Hardware.__single
         Hardware.__single = self
 
         self.analog_controls = []
-        self.controller = {}
+        self.controllers = {}
         self.footswitches = []
+        self.refresh_callback = refresh_callback
 
 
         GPIO.setmode(GPIO.BCM)  # TODO should this go earlier?
@@ -60,13 +61,11 @@ class Hardware:
 
         # Initialize Footswitches
         for f in FOOTSW:
-            fs = Footswitch.Footswitch(f[0], f[1], f[2], MIDI_CHANNEL, midiout)
-            print("type: %s" % type(fs))
-            print(fs.minimum)
+            fs = Footswitch.Footswitch(f[0], f[1], f[2], MIDI_CHANNEL, midiout, refresh_callback=self.refresh_callback)
             self.footswitches.append(fs)
-            key = format("%d:%d" % (MIDI_CHANNEL, f[1]))
+            key = format("%d:%d" % (MIDI_CHANNEL, f[2]))
             #self.controller[key] = Controller.Controller(MIDI_CHANNEL, f[1], Controller.Type.FOOTSWITCH)
-            self.controller[key] = fs
+            self.controllers[key] = fs
 
             # Initialize Relays
         # By default, associate with the footswitch identified by FOOT_BYPASS_INDEX
@@ -84,5 +83,4 @@ class Hardware:
             control = AnalogControl.AnalogControl(spi, c[0], c[1], c[2], MIDI_CHANNEL, midiout)
             self.analog_controls.append(control)
             key = format("%d:%d" % (MIDI_CHANNEL, c[1]))
-            self.controller[key] = Controller.Controller(MIDI_CHANNEL, c[1], Controller.Type.ANALOG)
-
+            self.controllers[key] = Controller.Controller(MIDI_CHANNEL, c[1], Controller.Type.ANALOG)

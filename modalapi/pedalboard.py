@@ -154,8 +154,7 @@ class Pedalboard:
             uri = lilv.lilv_node_as_uri(proto)
             enabled = lilv.lilv_world_get(world.me, block.me, ns_ingen.enabled.me, None)
             nodes = lilv.lilv_world_find_nodes(world.me, block.me, ns_lv2core.port.me, None)  # nodes > ports
-            parameters = []
-            bypassed = True
+            parameters = {}
             if nodes is not None:
                 # These are the port nodes used to define parameter controls
                 nodes_it = lilv.lilv_nodes_begin(nodes)
@@ -174,10 +173,9 @@ class Pedalboard:
                     value = lilv.lilv_node_as_float(param_value)
                     # Bypass "parameter" is a special case without an entry in the plugin definition
                     if symbol == ":bypass":
-                        bypassed = (value == 0)
                         info = {"shortName": "bypass", "symbol": symbol, "ranges": {"minimum": 0, "maximum": 1}}
                         param = Parameter.Parameter(info, value, binding)
-                        parameters.append(param)
+                        parameters[symbol] = param
                         continue  # don't try to find matching symbol in plugin_dict
                     # Try to find a matching symbol in plugin_dict to obtain the remaining param details
                     plugin_params = plugin_info['ports']['control']['input']
@@ -187,10 +185,10 @@ class Pedalboard:
                             #print("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
                             param = Parameter.Parameter(pp, value, binding)
                             #print("Param: %s %s %s" % (param.name, param.symbol, param.minimum))
-                            parameters.append(param)
+                            parameters[symbol] = param
 
                     #print("  Label: %s" % label)
-            inst = Plugin.Plugin(instance_id, parameters, bypassed, plugin_info)
+            inst = Plugin.Plugin(instance_id, parameters, plugin_info)
             self.plugins.append(inst)
             #print("dump: %s" % inst.to_json())
         return

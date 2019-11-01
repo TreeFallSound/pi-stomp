@@ -22,8 +22,10 @@ class Controller:
         self.parameter = None
         self.hardware_name = None
 
-
     def to_json(self):
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
+
+    def set_value(self, value):
+        print("Controller subclass hasn't overriden the set_value method")
 
 

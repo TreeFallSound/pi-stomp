@@ -8,20 +8,23 @@ import modalapi.controller as controller
 
 class Footswitch(controller.Controller):
 
-    def __init__(self, fs_pin, led_pin, midi_CC, midi_channel, midiout):
+    def __init__(self, fs_pin, led_pin, midi_CC, midi_channel, midiout, refresh_callback):
         super(Footswitch, self).__init__(midi_channel, midi_CC, None)
         self.enabled = False
         self.fs_pin = fs_pin
         self.led_pin = led_pin
         self.midiout = midiout
-        self.lcd_refresh_required = False
+        self.refresh_callback = refresh_callback
         self.relay_list = []
-
         GPIO.setup(fs_pin, GPIO.IN)
         GPIO.add_event_detect(fs_pin, GPIO.FALLING, callback=self.toggle, bouncetime=250)
 
         GPIO.setup(led_pin, GPIO.OUT)
         GPIO.output(led_pin, GPIO.LOW)
+
+    def set_value(self, value):
+        self.enabled = (value < 1)
+        GPIO.output(self.led_pin, self.enabled)
 
     def toggle(self, foo):
         self.enabled = not self.enabled
@@ -42,7 +45,10 @@ class Footswitch(controller.Controller):
         GPIO.output(self.led_pin, self.enabled)   # TODO assure that GPIO.HIGH is same as True
 
         # TODO schedule LCD update - some global refresh state or check object state during main poll loop
-        self.lcd_refresh_required = True
+        if self.parameter is not None:
+            self.parameter.value = not self.enabled  # TODO assumes mapped parameter is :bypass
+            self.refresh_callback()
+            #self.lcd_refresh_required = True
 
     def add_relay(self, relay):
         self.relay_list.append(relay)

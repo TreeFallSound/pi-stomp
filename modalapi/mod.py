@@ -27,7 +27,7 @@ class Mod:
         self.controllers = {}  # Keyed by midi_channel:midi_CC
         self.current_pedalboard = None
         self.current_preset_index = 0
-        self.current_num_presets = 0
+        self.current_num_presets = 1
 
         self.plugin_dict = {}
 
@@ -79,17 +79,20 @@ class Mod:
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
         pb = self.get_current_pedalboard()
-        print(self.pedalboards.keys())
         if pb in self.pedalboards:
             self.current_pedalboard = self.pedalboards[pb]
             print("set current PB as: %s" % self.current_pedalboard)
-            print(self.current_pedalboard.to_json())
+            #print(self.current_pedalboard.to_json())
             for plugin in self.current_pedalboard.plugins:
-                for param in plugin.parameters:
+                for sym, param in plugin.parameters.items():
                     if param.binding is not None:
-                        print("Map: %s %s" % (param.name, param.binding))
-
-
+                        controller = self.hardware.controllers.get(param.binding)
+                        if controller is not None:
+                            #print("Map: %s %s %s" % (plugin.instance_id, param.name, param.binding))
+                            # TODO possibly use a setter instead of accessing var directly
+                            # What if multiple params could map to the same controller?
+                            controller.parameter = param
+                            controller.set_value(param.value)
 
     # TODO change these functions ripped from modep
     def get_current_pedalboard(self):
@@ -137,6 +140,7 @@ class Mod:
         self.lcd.draw_title(text)
 
     def update_lcd(self):
+        print("updating LCD")
         title = "%s-%s" % (self.get_current_pedalboard_name(), self.get_current_preset_name())
         self.lcd.draw_title(title)
         self.lcd.draw_plugins(self.pedalboards[self.get_current_pedalboard()].plugins)

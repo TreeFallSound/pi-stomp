@@ -5,12 +5,18 @@ import json
 
 class Plugin:
 
-    def __init__(self, instance_id, parameters, bypassed, info):
+    def __init__(self, instance_id, parameters, info):
 
         self.instance_id = instance_id
         self.parameters = parameters
-        self.bypassed = bypassed
+        self.bypass_indicator_xy = ((0,0), (0,0))
         #self.info_dict = info   # TODO could store this but not sure we need to
+
+    def is_bypassed(self):
+        param = self.parameters.get(":bypass")
+        if param is not None:
+            return param.value
+        return True
 
     def to_json(self):
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)

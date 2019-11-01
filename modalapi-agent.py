@@ -38,7 +38,7 @@ def main():
     mod = Mod.Mod(lcd)
 
     # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
-    hw = Hardware.Hardware(mod, midiout)
+    hw = Hardware.Hardware(mod, midiout, refresh_callback=mod.update_lcd)
     mod.add_hardware(hw)
 
     # Load all pedalboard info from the lilv ttl file
@@ -47,24 +47,24 @@ def main():
     mod.bind_current_pedalboard()
 
     # Load LCD
-    #text = "%s-%s" % (pb_name, mod.get_current_preset_name())
-    #lcd.draw_title(text)
-    #lcd.draw_plugins(mod.pedalboards[mod.get_current_pedalboard()].plugins)
-    #lcd.refresh()
     mod.update_lcd()
     #touch.set_led(0, 1)
     #touch.set_led(2, 1)
 
-
-    # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
-    #hw = Hardware.Hardware(mod, midiout)
-
     print("Entering main loop. Press Control-C to exit.")
+    #period = 0
     try:
         while True:
             for c in hw.analog_controls:
                 c.refresh()
             time.sleep(0.01)  # TODO less to increase responsiveness
+
+            # For less frequent events
+            # period += 1
+            # if period > 100:
+            #     period = 0
+
+
     except KeyboardInterrupt:
         print('')
     finally:

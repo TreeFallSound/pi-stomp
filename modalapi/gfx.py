@@ -21,7 +21,7 @@ class Gfx:
 
         # Element dimensions
         self.plugin_height = 11
-        self.plugin_width = 23
+        self.plugin_width = 24
         self.plugin_bypass_thickness = 2
 
         self.image = Image.new('P', (self.width, self.height))
@@ -147,9 +147,12 @@ class Gfx:
         self.refresh_area(xy, bypassed)
 
     def draw_plugin(self, x, y, text, expand_rect, plugin):
-        if expand_rect:
+        if expand_rect >= 1:
             text_size = self.small_font.getsize(text)[0]
             x2 = x + text_size + 2
+        elif expand_rect <= -1:
+            text = self.shorten_name(text)
+            x2 = x + self.plugin_width - 1
         else:
             text = self.shorten_name(text)
             x2 = x + self.plugin_width
@@ -157,9 +160,9 @@ class Gfx:
         fill = False
         self.draw.rectangle(((x, y), (x2, y + self.plugin_height)), fill, 1)
         self.draw.text((x + 1, y + 1), text, not fill, self.small_font)
-        bypass_indicator_xy = ((x+2, y+9), (x2-2, y+9))
+        bypass_indicator_xy = ((x+3, y+9), (x2-3, y+9))
         plugin.bypass_indicator_xy = bypass_indicator_xy
-        self.draw.line(bypass_indicator_xy, not plugin.bypassed, self.plugin_bypass_thickness)
+        self.draw.line(bypass_indicator_xy, not plugin.is_bypassed(), self.plugin_bypass_thickness)
         return x2
 
     def draw_plugins(self, plugins):
@@ -167,14 +170,19 @@ class Gfx:
         # TODO Improve expansion/wrapping algorithm (calculate values)
         y = 16
         x = 0
-        xwrap = 100  # scroll if exceeds this width
+        xwrap = 110  # scroll if exceeds this width
         ymax = 48  # Maximum y for plugin LCD zone
         expand_rect = len(plugins) <= 5
         rect_x_pad = 2
         rect_y_pitch = 15
         max_label_length = 7
+        count = 0
         for p in reversed(plugins):
             label = p.instance_id.replace('/', "")[:max_label_length]
+            count += 1
+            if count > 4:  # LAME
+                expand_rect = -1
+                count = 0
             x = self.draw_plugin(x, y, label, expand_rect, p)
             x = x + rect_x_pad
             if x > xwrap:
