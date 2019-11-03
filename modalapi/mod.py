@@ -27,7 +27,7 @@ class Mod:
         self.controllers = {}  # Keyed by midi_channel:midi_CC
         self.current_pedalboard = None
         self.current_preset_index = 0
-        self.current_num_presets = 1
+        self.current_num_presets = 4
 
         self.plugin_dict = {}
 
@@ -138,10 +138,27 @@ class Mod:
         # TODO name varaibles so they don't have to be calculated
         text = "%s-%s" % (self.get_current_pedalboard_name(), self.get_current_preset_name())
         self.lcd.draw_title(text)
+        self.update_lcd()  # TODO just update zone0
 
     def update_lcd(self):
-        print("updating LCD")
+        print("draw LCD")
+        pb_name = self.get_current_pedalboard_name()
+        if pb_name is None:
+            return
         title = "%s-%s" % (self.get_current_pedalboard_name(), self.get_current_preset_name())
         self.lcd.draw_title(title)
+        self.lcd.refresh_zone(0)
+        pb = self.get_current_pedalboard()
+        if self.pedalboards[pb] is None:
+            return
+        self.lcd.draw_plugins(self.pedalboards[pb].plugins)
+        self.lcd.refresh_zone(1)
+        self.lcd.refresh_zone(2)
+        self.lcd.refresh_zone(3)
+
+    def update_lcd1(self):
+        print("updating LCD")
+        #title = "%s-%s" % (self.get_current_pedalboard_name(), self.get_current_preset_name())
+        #self.lcd.draw_title(title)
         self.lcd.draw_plugins(self.pedalboards[self.get_current_pedalboard()].plugins)
         self.lcd.refresh()
