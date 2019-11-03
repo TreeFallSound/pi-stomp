@@ -16,7 +16,7 @@ class Gfx:
         # Zone dimensions (flipped 180 degrees)
         #               ((x0, y0), (x1, y1))
         self.zone = {0: ((0, 0), (128, 14)),  # Top
-                     1: ((0, 0), (128, 42)),  # Mid
+                     1: ((0, 0), (128, 30)),  # Mid
                      2: ((0, 0), (128, 12)),
                      3: ((0, 0), (128, 12))}  # Bot
 
@@ -27,7 +27,7 @@ class Gfx:
         self.plugin_bypass_thickness = 2
 
         self.zone0_height = 14
-        self.zone1_height = 42
+        self.zone1_height = 30
         self.zone2_height = 12
         self.zone3_height = 12
 
@@ -150,7 +150,6 @@ class Gfx:
                 x = x + 1
 
         self.refresh_needed = True
-        self.draw_footswitches()  # TODO not here
         self.refresh()
 
     def shorten_name(self, name):
@@ -182,6 +181,9 @@ class Gfx:
 
         fill = False
         self.draw[zone].rectangle(((x, y), (x2, y + self.plugin_height)), fill, 1)
+        self.draw[zone].point((x,y))  # Round the top corners
+        self.draw[zone].point((x2,y))
+
         self.draw[zone].text((x + 1, y + 1), text, not fill, self.small_font)
         bypass_indicator_xy = ((x+3, y+9), (x2-3, y+9))
         #plugin.bypass_indicator_xy = bypass_indicator_xy
@@ -237,18 +239,3 @@ class Gfx:
         #     self.redraw_bypass(p, p.bypassed)
         #     #if not p.bypassed:
         #     #    self.redraw_bypass(p, not p.bypassed)
-
-
-    def draw_footswitch(self, index, text, enabled):
-        y0 = 38
-        y1 = 63
-        x0 = 42 * index
-        x1 = x0 + 40
-        self.draw.ellipse(((x0, y0), (x1, y1)), enabled, 1)
-        self.draw.text((x0 + 2, y0 + 8), text, not enabled, self.small_font)
-
-
-    def draw_footswitches(self):
-        self.draw_footswitch(0, "Dist", 1)
-        self.draw_footswitch(1, "Chorus", 0)
-        self.draw_footswitch(2, "Delay", 0)

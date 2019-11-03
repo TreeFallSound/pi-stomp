@@ -38,7 +38,7 @@ def main():
     mod = Mod.Mod(lcd)
 
     # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
-    hw = Hardware.Hardware(mod, midiout, refresh_callback=mod.update_lcd)
+    hw = Hardware.Hardware(mod, midiout, refresh_callback=mod.update_lcd_fs)
     mod.add_hardware(hw)
 
     # Load all pedalboard info from the lilv ttl file

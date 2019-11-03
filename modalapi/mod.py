@@ -152,9 +152,16 @@ class Mod:
         if self.pedalboards[pb] is None:
             return
         self.lcd.draw_plugins(self.pedalboards[pb].plugins)
-        self.lcd.refresh_zone(1)
+        self.lcd.refresh_zone(1)  # TODO mod module probably shouldn't know about specific zones
         self.lcd.refresh_zone(2)
         self.lcd.refresh_zone(3)
+
+    def update_lcd_fs(self):
+        pb = self.get_current_pedalboard()
+        if self.pedalboards[pb] is None:
+            return
+        self.lcd.draw_plugins(self.pedalboards[pb].plugins)
+        self.lcd.refresh_zone(1)
 
     def update_lcd1(self):
         print("updating LCD")
