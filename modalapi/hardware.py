@@ -58,7 +58,7 @@ class Hardware:
 
         # Initialize Encoders
         top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=mod.preset_change)
-        bot_enc = Encoder.Encoder(BOT_ENC_PIN_D, BOT_ENC_PIN_CLK, callback=mod.preset_change)
+        bot_enc = Encoder.Encoder(BOT_ENC_PIN_D, BOT_ENC_PIN_CLK, callback=mod.plugin_select)
 
         # Initialize Footswitches
         for f in FOOTSW:

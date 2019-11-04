@@ -16,10 +16,10 @@ class Gfx:
         self.width, self.height = lcd.dimensions()
 
         # Zone dimensions
-        self.zone_height = {0: 12, 1: 10, 2: 29, 3: 12}
+        self.zone_height = {0: 13, 1: 8, 2: 2, 3: 30, 4: 12}
 
-        self.footswitch_xy = {0: (0,0),
-                              1: (52, 0),
+        self.footswitch_xy = {0: (0,   0),
+                              1: (52,  0),
                               2: (103, 0)}
 
         # Element dimensions
@@ -28,13 +28,15 @@ class Gfx:
         self.plugin_bypass_thickness = 2
         self.plugin_label_length = 7
 
-        self.images = [Image.new('L', (self.width, self.zone_height[0])),
-                       Image.new('L', (self.width, self.zone_height[1])),
-                       Image.new('L', (self.width, self.zone_height[2])),
-                       Image.new('L', (self.width, self.zone_height[3]))]
+        self.images = [Image.new('L', (self.width, self.zone_height[0])),  # Pedalboard / Preset Title bar
+                       Image.new('L', (self.width, self.zone_height[1])),  # Analog Controllers
+                       Image.new('L', (self.width, self.zone_height[2])),  # Plugin selection
+                       Image.new('L', (self.width, self.zone_height[3])),  # Main Plugins
+                       Image.new('L', (self.width, self.zone_height[4]))]  # Footswitch Plugins
 
         self.draw = [ImageDraw.Draw(self.images[0]), ImageDraw.Draw(self.images[1]),
-                     ImageDraw.Draw(self.images[2]), ImageDraw.Draw(self.images[3])]
+                     ImageDraw.Draw(self.images[2]), ImageDraw.Draw(self.images[3]),
+                     ImageDraw.Draw(self.images[4])]
 
 
         self.enable_backlight()
@@ -65,13 +67,14 @@ class Gfx:
     def refresh_zone(self, zone_idx):
         #flipped = self.images[zone_idx].transpose(Image.ROTATE_180)
         flipped = self.images[zone_idx]
-        y_offset = 1
+        y_offset = 1 if (zone_idx == 0) else 0
         for i in range(zone_idx):
             y_offset += self.zone_height[i]
         for x in range(0, self.width):
             for y in range(0, self.zone_height[zone_idx]):
                 pixel = flipped.getpixel((x, y))
                 lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
+                #print("%d %d" % (self.width - x - 1, self.height - y - y_offset))
         lcd.show()
         self.refresh_needed = False
 
@@ -159,6 +162,21 @@ class Gfx:
         #self.draw.line(xy, not bypassed, self.plugin_bypass_thickness)
         self.refresh_area(xy, bypassed)
 
+    def draw_plugin_select(self, plugin):
+        x = plugin.lcd_xy[0]
+        y = plugin.lcd_xy[1]
+        zone = plugin.lcd_xy[2]
+        print("draw: %d" % zone)
+        self.images[zone].paste(0, (0, 0, self.width, self.zone_height[zone]))
+        self.draw[zone].point((x+11, 0), True)
+        self.draw[zone].point((x+12, 0), True)
+        self.draw[zone].point((x+13, 0), True)
+        self.draw[zone].point((x+14, 0), True)
+        self.draw[zone].point((x+12, 1), True)
+        self.draw[zone].point((x+13, 1), True)
+        print(plugin.instance_id)
+        self.refresh_zone(zone)
+
     def draw_plugin(self, zone, x, y, text, expand_rect, plugin):
         if expand_rect >= 1:
             text_size = self.small_font.getsize(text)[0]
@@ -171,14 +189,18 @@ class Gfx:
             x2 = x + self.plugin_width
 
         fill = False
+        plugin.lcd_xy = (x, y, zone-1)
+        print("%s %d  %d" % (plugin.instance_id, zone-1, y))
         self.draw[zone].rectangle(((x, y), (x2, y + self.plugin_height)), fill, 1)
         self.draw[zone].point((x,y))  # Round the top corners
         self.draw[zone].point((x2,y))
 
         self.draw[zone].text((x + 1, y + 1), text, not fill, self.small_font)
+
         bypass_indicator_xy = ((x+3, y+9), (x2-3, y+9))
         plugin.bypass_indicator_xy = bypass_indicator_xy
         self.draw[zone].line(bypass_indicator_xy, not plugin.is_bypassed(), self.plugin_bypass_thickness)
+
         return x2
 
     def draw_bound_plugins(self, plugins):
@@ -187,7 +209,7 @@ class Gfx:
             for c in p.controllers:
                 if isinstance(c, Footswitch):
                     fs_id = c.id
-                    self.draw_plugin(3, self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1], label, False, p)
+                    self.draw_plugin(4, self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1], label, False, p)
             #print("FS: %s" % type(p.controller))
 
     def draw_plugins(self, plugins):
@@ -201,7 +223,7 @@ class Gfx:
         rect_x_pad = 2
         rect_y_pitch = 15
         count = 0
-        zone = 2
+        zone = 3
         self.images[zone].paste(0, (0, 0, self.width, self.zone_height[zone]))
         for p in reversed(plugins):
             label = p.instance_id.replace('/', "")[:self.plugin_label_length]
@@ -225,13 +247,13 @@ class Gfx:
                     break  # Only display 2 rows, huge pedalboards won't fully render
 
         zone = 1
-        self.draw[zone].line(((0, 6), (8, 2)), True, 1)
-        self.draw[zone].line(((0, 6), (8, 6)), True, 2)
+        self.draw[zone].line(((0, 5), (8, 1)), True, 1)
+        self.draw[zone].line(((0, 5), (8, 5)), True, 2)
         self.draw[zone].text((10, 0), "delay:time", True, self.small_font)
 
 
-        self.draw[zone].ellipse(((66,1), (72,7)), True, 1)
-        self.draw[zone].line(((69, 1), (69, 3)), False, 1)
+        self.draw[zone].ellipse(((66,0), (72,6)), True, 1)
+        self.draw[zone].line(((69, 0), (69, 2)), False, 1)
         self.draw[zone].text((75, 0), "ts9:drive", True, self.small_font)
 
 

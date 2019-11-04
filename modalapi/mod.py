@@ -27,7 +27,10 @@ class Mod:
         #self.controllers = {}  # Keyed by midi_channel:midi_CC
         self.current_pedalboard = None
         self.current_preset_index = 0
-        self.current_num_presets = 4
+        self.current_num_presets = 4  # TODO XXX
+
+        self.selected_plugin_index = 0
+        self.current_num_plugins = 9  # TODO XXX
 
         self.plugin_dict = {}
 
@@ -94,7 +97,6 @@ class Mod:
                             controller.parameter = param
                             controller.set_value(param.value)
                             plugin.controllers.append(controller)
-                            print("%s type: %s" % (plugin.instance_id, type(controller)))
 
     # TODO change these functions ripped from modep
     def get_current_pedalboard(self):
@@ -118,6 +120,29 @@ class Mod:
         except:
             return None
 
+    def next_plugin(self, plugins, enc):
+        test = self.selected_plugin_index
+        found = 0
+        for found in range(self.selected_plugin_index, self.current_num_plugins):
+            test = ((test - 1) if (enc == 1)
+                    else (test + 1)) % self.current_num_plugins
+            plugin = plugins[test]  # TODO check index
+            if len(plugin.controllers) == 0:
+                found = test
+                break
+            print("%d %d" % (test, len(plugin.controllers)))
+
+        print(found)
+        return found
+
+    def plugin_select(self, encoder, clk_pin):
+        enc = encoder.get_data()
+        if self.current_pedalboard is not None:
+            pb = self.current_pedalboard
+            index = self.next_plugin(pb.plugins, enc)
+            plugin = pb.plugins[index]  # TODO check index
+            self.selected_plugin_index = index
+            self.lcd.draw_plugin_select(plugin)
 
     # TODO doesn't seem to work without host being properly initialized
     def get_current_preset_name(self):
@@ -155,14 +180,14 @@ class Mod:
             return
         self.lcd.draw_plugins(self.pedalboards[pb].plugins)
         self.lcd.refresh_zone(1)  # TODO mod module probably shouldn't know about specific zones
-        self.lcd.refresh_zone(2)
+        self.lcd.refresh_zone(3)
 
         self.lcd.draw_bound_plugins(self.pedalboards[pb].plugins)
-        self.lcd.refresh_zone(3)
+        self.lcd.refresh_zone(4)
 
     def update_lcd_fs(self):
         pb = self.get_current_pedalboard()
         if self.pedalboards[pb] is None:
             return
         self.lcd.draw_bound_plugins(self.pedalboards[pb].plugins)
-        self.lcd.refresh_zone(3)
+        self.lcd.refresh_zone(4)
