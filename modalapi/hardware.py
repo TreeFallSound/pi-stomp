@@ -23,12 +23,13 @@ BOT_ENC_PIN_CLK = 27
 RELAY_LEFT_PIN = 16
 RELAY_RIGHT_PIN = 12
 
-# Each footswitch defined by a triple touple:
-# 1: the GPIO pin it's attached to
-# 2: the associated LED output pin and
-# 3: the MIDI Control (CC) message that will be sent when the switch is toggled
+# Each footswitch defined by a quad touple:
+# 1: id (left = 0, mid = 1, right = 2)
+# 2: the GPIO pin it's attached to
+# 3: the associated LED output pin and
+# 4: the MIDI Control (CC) message that will be sent when the switch is toggled
 # Pin modifications should only be made if the hardware is changed accordingly
-FOOTSW = ((23, 24, 61), (25, 0, 62), (13, 26, 63))
+FOOTSW = ((0, 23, 24, 61), (1, 25, 0, 62), (2, 13, 26, 63))
 FOOTSW_BYPASS_INDEX = 0
 
 # Analog Controls defined by a triple touple:
@@ -61,9 +62,9 @@ class Hardware:
 
         # Initialize Footswitches
         for f in FOOTSW:
-            fs = Footswitch.Footswitch(f[0], f[1], f[2], MIDI_CHANNEL, midiout, refresh_callback=self.refresh_callback)
+            fs = Footswitch.Footswitch(f[0], f[1], f[2], f[3], MIDI_CHANNEL, midiout, refresh_callback=self.refresh_callback)
             self.footswitches.append(fs)
-            key = format("%d:%d" % (MIDI_CHANNEL, f[2]))
+            key = format("%d:%d" % (MIDI_CHANNEL, f[3]))
             #self.controller[key] = Controller.Controller(MIDI_CHANNEL, f[1], Controller.Type.FOOTSWITCH)
             self.controllers[key] = fs
 

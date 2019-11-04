@@ -6,9 +6,9 @@ import modalapi.util as util
 
 
 class Type(Enum):
-    ANALOG = 1
-    FOOTSWITCH = 2
-    MIDI = 3
+    ANALOG = 0
+    FOOTSWITCH = 1
+    MIDI = 2
 
 
 class Controller:

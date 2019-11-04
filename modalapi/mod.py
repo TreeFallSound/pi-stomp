@@ -24,7 +24,7 @@ class Mod:
         self.lcd = lcd
         self.root_uri = "http://localhost:80/"
         self.pedalboards = {}  # TODO make the ordering of entries deterministic
-        self.controllers = {}  # Keyed by midi_channel:midi_CC
+        #self.controllers = {}  # Keyed by midi_channel:midi_CC
         self.current_pedalboard = None
         self.current_preset_index = 0
         self.current_num_presets = 4
@@ -93,6 +93,8 @@ class Mod:
                             # What if multiple params could map to the same controller?
                             controller.parameter = param
                             controller.set_value(param.value)
+                            plugin.controllers.append(controller)
+                            print("%s type: %s" % (plugin.instance_id, type(controller)))
 
     # TODO change these functions ripped from modep
     def get_current_pedalboard(self):
@@ -154,18 +156,13 @@ class Mod:
         self.lcd.draw_plugins(self.pedalboards[pb].plugins)
         self.lcd.refresh_zone(1)  # TODO mod module probably shouldn't know about specific zones
         self.lcd.refresh_zone(2)
+
+        self.lcd.draw_bound_plugins(self.pedalboards[pb].plugins)
         self.lcd.refresh_zone(3)
 
     def update_lcd_fs(self):
         pb = self.get_current_pedalboard()
         if self.pedalboards[pb] is None:
             return
-        self.lcd.draw_plugins(self.pedalboards[pb].plugins)
-        self.lcd.refresh_zone(1)
-
-    def update_lcd1(self):
-        print("updating LCD")
-        #title = "%s-%s" % (self.get_current_pedalboard_name(), self.get_current_preset_name())
-        #self.lcd.draw_title(title)
-        self.lcd.draw_plugins(self.pedalboards[self.get_current_pedalboard()].plugins)
-        self.lcd.refresh()
+        self.lcd.draw_bound_plugins(self.pedalboards[pb].plugins)
+        self.lcd.refresh_zone(3)

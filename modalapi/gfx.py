@@ -3,6 +3,8 @@
 import signal
 import spidev
 
+from modalapi.footswitch import Footswitch
+
 from gfxhat import touch, lcd, backlight, fonts
 from PIL import Image, ImageFont, ImageDraw
 
@@ -13,35 +15,29 @@ class Gfx:
 
         self.width, self.height = lcd.dimensions()
 
-        # Zone dimensions (flipped 180 degrees)
-        #               ((x0, y0), (x1, y1))
-        self.zone = {0: ((0, 0), (128, 14)),  # Top
-                     1: ((0, 0), (128, 30)),  # Mid
-                     2: ((0, 0), (128, 12)),
-                     3: ((0, 0), (128, 12))}  # Bot
+        # Zone dimensions
+        self.zone_height = {0: 12, 1: 10, 2: 29, 3: 12}
 
+        self.footswitch_xy = {0: (0,0),
+                              1: (52, 0),
+                              2: (103, 0)}
 
         # Element dimensions
         self.plugin_height = 11
         self.plugin_width = 24
         self.plugin_bypass_thickness = 2
+        self.plugin_label_length = 7
 
-        self.zone0_height = 14
-        self.zone1_height = 30
-        self.zone2_height = 12
-        self.zone3_height = 12
-
-        self.images = [Image.new('L', (self.width, self.zone0_height)),
-                       Image.new('L', (self.width, self.zone1_height)),
-                       Image.new('L', (self.width, self.zone2_height)),
-                       Image.new('L', (self.width, self.zone3_height))]
+        self.images = [Image.new('L', (self.width, self.zone_height[0])),
+                       Image.new('L', (self.width, self.zone_height[1])),
+                       Image.new('L', (self.width, self.zone_height[2])),
+                       Image.new('L', (self.width, self.zone_height[3]))]
 
         self.draw = [ImageDraw.Draw(self.images[0]), ImageDraw.Draw(self.images[1]),
                      ImageDraw.Draw(self.images[2]), ImageDraw.Draw(self.images[3])]
 
 
         self.enable_backlight()
-
 
         # Load fonts
         self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 11)
@@ -70,15 +66,10 @@ class Gfx:
         #flipped = self.images[zone_idx].transpose(Image.ROTATE_180)
         flipped = self.images[zone_idx]
         y_offset = 1
-        if zone_idx == 1:
-            y_offset = 13  # TODO data drive
-        if zone_idx == 2:
-            y_offset = 42
-        if zone_idx == 3:
-            y_offset = 53
-        for x in range(self.zone[zone_idx][0][0], self.zone[zone_idx][1][0]):
-            for y in range(self.zone[zone_idx][0][1], self.zone[zone_idx][1][1]):
-                #print("x %d  y %d" % (self.width - x - 1, self.height - y - 1))
+        for i in range(zone_idx):
+            y_offset += self.zone_height[i]
+        for x in range(0, self.width):
+            for y in range(0, self.zone_height[zone_idx]):
                 pixel = flipped.getpixel((x, y))
                 lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
         lcd.show()
@@ -120,7 +111,7 @@ class Gfx:
         lcd.show()
 
     def draw_title(self, text):
-        self.images[0].paste(0, (0, 0, self.width, self.zone0_height))  # TODO
+        self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
         self.draw[0].text((0, -1), text, 1, self.title_font)  # -1 pushes text to very top of LCD
         self.refresh_needed = True
         #self.refresh()
@@ -186,9 +177,18 @@ class Gfx:
 
         self.draw[zone].text((x + 1, y + 1), text, not fill, self.small_font)
         bypass_indicator_xy = ((x+3, y+9), (x2-3, y+9))
-        #plugin.bypass_indicator_xy = bypass_indicator_xy
+        plugin.bypass_indicator_xy = bypass_indicator_xy
         self.draw[zone].line(bypass_indicator_xy, not plugin.is_bypassed(), self.plugin_bypass_thickness)
         return x2
+
+    def draw_bound_plugins(self, plugins):
+        for p in plugins:
+            label = p.instance_id.replace('/', "")[:self.plugin_label_length]
+            for c in p.controllers:
+                if isinstance(c, Footswitch):
+                    fs_id = c.id
+                    self.draw_plugin(3, self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1], label, False, p)
+            #print("FS: %s" % type(p.controller))
 
     def draw_plugins(self, plugins):
         # TODO don't hardcode numbers by assuming 128x64, use width and height
@@ -200,16 +200,23 @@ class Gfx:
         expand_rect = len(plugins) <= 5
         rect_x_pad = 2
         rect_y_pitch = 15
-        max_label_length = 7
         count = 0
-        self.images[1].paste(0, (0, 0, self.width, self.zone1_height))  # TODO
+        zone = 2
+        self.images[zone].paste(0, (0, 0, self.width, self.zone_height[zone]))
         for p in reversed(plugins):
-            label = p.instance_id.replace('/', "")[:max_label_length]
+            label = p.instance_id.replace('/', "")[:self.plugin_label_length]
+            #if len(p.controllers) is not None:
+            has_footswitch = False
+            for c in p.controllers:
+                if isinstance(c, Footswitch):
+                    has_footswitch = True
+            if (has_footswitch):
+                continue
             count += 1
             if count > 4:  # LAME
                 expand_rect = -1
                 count = 0
-            x = self.draw_plugin(1, x, y, label, expand_rect, p)
+            x = self.draw_plugin(zone, x, y, label, expand_rect, p)
             x = x + rect_x_pad
             if x > xwrap:
                 x = 0
@@ -217,19 +224,20 @@ class Gfx:
                 if y >= ymax:
                     break  # Only display 2 rows, huge pedalboards won't fully render
 
-        self.draw[2].line(((0, 6), (8, 2)), True, 1)
-        self.draw[2].line(((0, 6), (8, 6)), True, 2)
-        self.draw[2].text((10, 0), "delay:time", True, self.small_font)
+        zone = 1
+        self.draw[zone].line(((0, 6), (8, 2)), True, 1)
+        self.draw[zone].line(((0, 6), (8, 6)), True, 2)
+        self.draw[zone].text((10, 0), "delay:time", True, self.small_font)
 
 
-        self.draw[2].ellipse(((66,1), (72,7)), True, 1)
-        self.draw[2].line(((69, 1), (69, 3)), False, 1)
-        self.draw[2].text((75, 0), "ts9:drive", True, self.small_font)
+        self.draw[zone].ellipse(((66,1), (72,7)), True, 1)
+        self.draw[zone].line(((69, 1), (69, 3)), False, 1)
+        self.draw[zone].text((75, 0), "ts9:drive", True, self.small_font)
 
 
-        self.draw_plugin(3, 0, 0, "foo1", True, plugins[0])
-        self.draw_plugin(3, 52, 0, "foo2", True, plugins[0])
-        self.draw_plugin(3, 105, 0, "foo3", True, plugins[0])
+        #self.draw_plugin(3, 0, 0, "foo1", True, plugins[0])
+        #self.draw_plugin(3, 52, 0, "foo2", True, plugins[0])
+       # self.draw_plugin(3, 105, 0, "foo3", True, plugins[0])
         #self.refresh()
 
         # Draw bypass (enable) indicator

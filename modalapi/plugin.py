@@ -10,6 +10,7 @@ class Plugin:
         self.instance_id = instance_id
         self.parameters = parameters
         self.bypass_indicator_xy = ((0,0), (0,0))
+        self.controllers = []
         #self.info_dict = info   # TODO could store this but not sure we need to
 
     def is_bypassed(self):
