@@ -8,6 +8,8 @@ import sys
 import modalapi.controller as Controller
 import modalapi.pedalboard as Pedalboard
 
+from modalapi.footswitch import Footswitch
+
 sys.path.append('/usr/lib/python3.5/site-packages')  # TODO possibly /usr/local/modep/mod-ui
 from mod.development import FakeHost as Host
 
@@ -81,6 +83,7 @@ class Mod:
         # "current" being the pedalboard mod-host says is current
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
+        footswitch_plugins = []
         pb = self.get_current_pedalboard()
         if pb in self.pedalboards:
             self.current_pedalboard = self.pedalboards[pb]
@@ -97,6 +100,16 @@ class Mod:
                             controller.parameter = param
                             controller.set_value(param.value)
                             plugin.controllers.append(controller)
+                            if isinstance(controller, Footswitch):
+                                # TODO sort this list so selection orders correctly (sort on midi_CC?)
+                                plugin.has_footswitch = True
+                                footswitch_plugins.append(plugin)
+
+            # Move Footswitch controlled plugins to the end of the list
+            self.current_pedalboard.plugins = [elem for elem in self.current_pedalboard.plugins
+                                               if elem.has_footswitch is False]
+            self.current_pedalboard.plugins += footswitch_plugins
+
 
     # TODO change these functions ripped from modep
     def get_current_pedalboard(self):
@@ -123,26 +136,56 @@ class Mod:
     def next_plugin(self, plugins, enc):
         test = self.selected_plugin_index
         found = 0
-        for found in range(self.selected_plugin_index, self.current_num_plugins):
-            test = ((test - 1) if (enc == 1)
+        for found in range(self.selected_plugin_index, len(plugins)):
+            test = ((test - 1) if (enc is not 1)
                     else (test + 1)) % self.current_num_plugins
             plugin = plugins[test]  # TODO check index
             if len(plugin.controllers) == 0:
                 found = test
                 break
-            print("%d %d" % (test, len(plugin.controllers)))
-
-        print(found)
+        print (found)
         return found
+
+    def get_selected_instance(self):
+        if self.current_pedalboard is not None:
+            pb = self.current_pedalboard
+            inst = pb.plugins[self.selected_plugin_index]
+            if inst is not None:
+                return inst
+        return None
 
     def plugin_select(self, encoder, clk_pin):
         enc = encoder.get_data()
         if self.current_pedalboard is not None:
             pb = self.current_pedalboard
-            index = self.next_plugin(pb.plugins, enc)
+            index = ((self.selected_plugin_index - 1) if (enc is not 1)
+                    else (self.selected_plugin_index + 1)) % len(pb.plugins)
+            #index = self.next_plugin(pb.plugins, enc)
             plugin = pb.plugins[index]  # TODO check index
             self.selected_plugin_index = index
             self.lcd.draw_plugin_select(plugin)
+
+    def bottom_encoder_sw(self, value):
+        # TODO check mode here
+        if value > 512:  # button up
+            self.toggle_plugin_bypass()
+
+
+    def toggle_plugin_bypass(self):
+        inst = self.get_selected_instance()
+        if inst is not None:
+            url = self.root_uri + "effect/parameter/set//graph%s/:bypass" % inst.instance_id
+            value = inst.toggle_bypass()
+            if value:
+                resp = req.post(url, json={"value":"1"})
+            else:
+                resp = req.post(url, json={"value":"0"})
+            if resp.status_code != 200:
+                print("Bad Rest request: %s status: %d" % (url, resp.status_code))
+                inst.toggle_bypass()  # toggle back to original value since request wasn't successful
+            self.update_lcd_plugins()
+
+
 
     # TODO doesn't seem to work without host being properly initialized
     def get_current_preset_name(self):
@@ -181,13 +224,21 @@ class Mod:
         self.lcd.draw_plugins(self.pedalboards[pb].plugins)
         self.lcd.refresh_zone(1)  # TODO mod module probably shouldn't know about specific zones
         self.lcd.refresh_zone(3)
+        self.lcd.refresh_zone(5)
 
         self.lcd.draw_bound_plugins(self.pedalboards[pb].plugins)
-        self.lcd.refresh_zone(4)
+        self.lcd.refresh_zone(7)
+
+    def update_lcd_plugins(self):
+        pb = self.get_current_pedalboard()
+        if self.pedalboards[pb] is None:
+            return
+        self.lcd.draw_plugins(self.pedalboards[pb].plugins)
+        self.lcd.refresh_zone(3)
 
     def update_lcd_fs(self):
         pb = self.get_current_pedalboard()
         if self.pedalboards[pb] is None:
             return
         self.lcd.draw_bound_plugins(self.pedalboards[pb].plugins)
-        self.lcd.refresh_zone(4)
+        self.lcd.refresh_zone(7)

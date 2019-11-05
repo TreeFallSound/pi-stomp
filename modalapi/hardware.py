@@ -4,7 +4,8 @@ import RPi.GPIO as GPIO
 import json
 import spidev
 
-import modalapi.analogcontrol as AnalogControl
+import modalapi.analogmidicontrol as AnalogMidiControl
+import modalapi.analogswitch as AnalogSwitch
 import modalapi.controller as Controller
 import modalapi.encoder as Encoder
 import modalapi.footswitch as Footswitch
@@ -34,10 +35,16 @@ FOOTSW_BYPASS_INDEX = 0
 
 # Analog Controls defined by a triple touple:
 # 1: the ADC channel
-# 2: the MIDI Control (CC) message that will be sent
-# 3: the minimum threshold for considering the value to be changed
-# Tweak, Expression Pedal, Preset Encoder Switch, Nav Encoder Switch
-ANALOG_CONTROL = ((0, 64, 16), (1, 65, 16), (6, 66, 512), (7, 67, 512))
+# 2: the minimum threshold for considering the value to be changed
+# 3: the MIDI Control (CC) message that will be sent
+# Tweak, Expression Pedal
+ANALOG_CONTROL = ((0, 16, 64), (1, 16, 65))
+
+# 1: the ADC channel
+# 2: the minimum threshold for considering the value to be changed
+# 3: the callback to call if value has changed
+# Bottom Encoder Switch, Top Encoder Switch
+ANALOG_SWITCH = ((6, 512, None), (7, 512, None))
 
 class Hardware:
     __single = None
@@ -68,7 +75,7 @@ class Hardware:
             #self.controller[key] = Controller.Controller(MIDI_CHANNEL, f[1], Controller.Type.FOOTSWITCH)
             self.controllers[key] = fs
 
-            # Initialize Relays
+        # Initialize Relays
         # By default, associate with the footswitch identified by FOOT_BYPASS_INDEX
         # This can be user modified later
         relay_left = Relay.Relay(RELAY_LEFT_PIN)
@@ -81,7 +88,11 @@ class Hardware:
         spi.open(0, 1)  # Bus 0, CE1
         spi.max_speed_hz = 1000000  # TODO match with LCD or don't specify.  Move to top of file
         for c in ANALOG_CONTROL:
-            control = AnalogControl.AnalogControl(spi, c[0], c[1], c[2], MIDI_CHANNEL, midiout)
+            control = AnalogMidiControl.AnalogMidiControl(spi, c[0], c[1], c[2], MIDI_CHANNEL, midiout)
             self.analog_controls.append(control)
             key = format("%d:%d" % (MIDI_CHANNEL, c[1]))
             self.controllers[key] = Controller.Controller(MIDI_CHANNEL, c[1], Controller.Type.ANALOG)
+
+        for c in ANALOG_SWITCH:
+            control = AnalogSwitch.AnalogSwitch(spi, c[0], c[1], callback=mod.bottom_encoder_sw)
+            self.analog_controls.append(control)
