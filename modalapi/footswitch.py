@@ -27,12 +27,12 @@ class Footswitch(controller.Controller):
         self.enabled = (value < 1)
         GPIO.output(self.led_pin, self.enabled)
 
-    def toggle(self, foo):
+    def toggle(self, gpio):
         self.enabled = not self.enabled
 
         # Send midi
         cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.enabled else 0]
-        print("Sending CC event: %d %s" % (self.midi_CC, foo))
+        print("Sending CC event: %d %s" % (self.midi_CC, gpio))
         self.midiout.send_message(cc)
 
         # Update Relay (if relay is associated with this footswitch)
@@ -49,7 +49,6 @@ class Footswitch(controller.Controller):
         if self.parameter is not None:
             self.parameter.value = not self.enabled  # TODO assumes mapped parameter is :bypass
             self.refresh_callback()
-            #self.lcd_refresh_required = True
 
     def add_relay(self, relay):
         self.relay_list.append(relay)

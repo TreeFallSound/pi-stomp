@@ -174,6 +174,12 @@ class Mod:
     def toggle_plugin_bypass(self):
         inst = self.get_selected_instance()
         if inst is not None:
+            if inst.has_footswitch:
+                for c in inst.controllers:
+                    if isinstance(c, Footswitch):
+                        c.toggle(0)
+                        return
+            # Regular (non footswitch plugin)
             url = self.root_uri + "effect/parameter/set//graph%s/:bypass" % inst.instance_id
             value = inst.toggle_bypass()
             if value:
@@ -184,7 +190,6 @@ class Mod:
                 print("Bad Rest request: %s status: %d" % (url, resp.status_code))
                 inst.toggle_bypass()  # toggle back to original value since request wasn't successful
             self.update_lcd_plugins()
-
 
 
     # TODO doesn't seem to work without host being properly initialized
@@ -235,6 +240,7 @@ class Mod:
             return
         self.lcd.draw_plugins(self.pedalboards[pb].plugins)
         self.lcd.refresh_zone(3)
+        self.lcd.refresh_zone(5)
 
     def update_lcd_fs(self):
         pb = self.get_current_pedalboard()
