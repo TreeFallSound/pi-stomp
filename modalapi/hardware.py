@@ -64,7 +64,7 @@ class Hardware:
         GPIO.setmode(GPIO.BCM)  # TODO should this go earlier?
 
         # Initialize Encoders
-        top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=mod.preset_change)
+        top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=mod.preset_select)
         bot_enc = Encoder.Encoder(BOT_ENC_PIN_D, BOT_ENC_PIN_CLK, callback=mod.plugin_select)
 
         # Initialize Footswitches
@@ -95,4 +95,6 @@ class Hardware:
 
         for c in ANALOG_SWITCH:
             control = AnalogSwitch.AnalogSwitch(spi, c[0], c[1], callback=mod.bottom_encoder_sw)
+            self.analog_controls.append(control)
+            control = AnalogSwitch.AnalogSwitch(spi, c[0], c[1], callback=mod.top_encoder_sw)
             self.analog_controls.append(control)

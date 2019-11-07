@@ -16,7 +16,9 @@ class Encoder:
 
         GPIO.setup(self.d_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         GPIO.setup(self.clk_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.add_event_detect(self.clk_pin, GPIO.FALLING, callback=partial(self.callback, self), bouncetime=250)
+
+        # bouncetime less than 400 causes a double trigger of the callback if the callback is slow (eg. preset change)
+        GPIO.add_event_detect(self.clk_pin, GPIO.FALLING, callback=partial(self.callback, self), bouncetime=400)
 
     def get_data(self):
         return GPIO.input(self.d_pin)

@@ -4,6 +4,7 @@ import json
 import os
 import requests as req
 import sys
+import time
 
 import modalapi.controller as Controller
 import modalapi.pedalboard as Pedalboard
@@ -27,9 +28,10 @@ class Mod:
         self.root_uri = "http://localhost:80/"
         self.pedalboards = {}  # TODO make the ordering of entries deterministic
         #self.controllers = {}  # Keyed by midi_channel:midi_CC
+        self.current_presets = {}   # Keyed by index
         self.current_pedalboard = None
         self.current_preset_index = 0
-        self.current_num_presets = 4  # TODO XXX
+        self.selected_preset_index = 0
 
         self.selected_plugin_index = 0
         self.current_num_plugins = 9  # TODO XXX
@@ -110,6 +112,16 @@ class Mod:
                                                if elem.has_footswitch is False]
             self.current_pedalboard.plugins += footswitch_plugins
 
+    def load_current_presets(self):
+        url = self.root_uri + "pedalpreset/list"
+        try:
+            resp = req.get(url)
+            if resp.status_code == 200:
+                print(resp.text)
+                self.current_presets = json.loads(resp.text)
+                return resp.text
+        except:
+            return None
 
     # TODO change these functions ripped from modep
     def get_current_pedalboard(self):
@@ -170,6 +182,10 @@ class Mod:
         if value > 512:  # button up
             self.toggle_plugin_bypass()
 
+    def top_encoder_sw(self, value):
+        # TODO check mode here
+        if value > 512:  # button up
+            self.preset_change()
 
     def toggle_plugin_bypass(self):
         inst = self.get_selected_instance()
@@ -182,27 +198,47 @@ class Mod:
             # Regular (non footswitch plugin)
             url = self.root_uri + "effect/parameter/set//graph%s/:bypass" % inst.instance_id
             value = inst.toggle_bypass()
-            if value:
-                resp = req.post(url, json={"value":"1"})
-            else:
-                resp = req.post(url, json={"value":"0"})
-            if resp.status_code != 200:
-                print("Bad Rest request: %s status: %d" % (url, resp.status_code))
-                inst.toggle_bypass()  # toggle back to original value since request wasn't successful
+            try:
+                if value:
+                    resp = req.post(url, json={"value":"1"})
+                else:
+                    resp = req.post(url, json={"value":"0"})
+                if resp.status_code != 200:
+                    print("Bad Rest request: %s status: %d" % (url, resp.status_code))
+                    inst.toggle_bypass()  # toggle back to original value since request wasn't successful
+            except:
+                return
             self.update_lcd_plugins()
 
 
-    # TODO doesn't seem to work without host being properly initialized
     def get_current_preset_name(self):
-        return self.host.pedalpreset_name(self.current_preset_index)
+        # TODO doesn't seem to work without host being properly initialized
+        #return self.host.pedalpreset_name(self.current_preset_index)
+        index = str(self.current_preset_index)
+        if index in self.current_presets:
+            return self.current_presets[index]
+        return None
 
-    def preset_change(self, encoder, clk_pin):
-        enc = encoder.get_data()
-        index = ((self.current_preset_index - 1) if (enc == 1)
-                 else (self.current_preset_index + 1)) % self.current_num_presets
+    def preset_change_plugin_update(self):
+        for p in self.current_pedalboard.plugins:
+            uri = self.root_uri + "effect/parameter/get//graph" + p.instance_id + "/:bypass"
+            try:
+                resp = req.get(uri)
+                if resp.status_code == 200:
+                    p.set_bypass(resp.text == "true")
+            except:
+                print("failed to get bypass value for: %s" % p.instance_id)
+                continue
+        self.lcd.draw_plugins(self.current_pedalboard.plugins)
+        self.lcd.refresh_zone(3)
+
+    def preset_change(self):
+        #enc = encoder.get_data()
+        index = self.selected_preset_index
+        #index = ((self.current_preset_index - 1) if (enc == 1)
+        #         else (self.current_preset_index + 1)) % len(self.current_presets)
         print("preset change: %d" % index)
         url = "http://localhost/pedalpreset/load?id=%d" % index
-        print(url)
         # req.get("http://localhost/reset")
         resp = req.get(url)
         if resp.status_code != 200:
@@ -213,11 +249,27 @@ class Mod:
         # TODO name varaibles so they don't have to be calculated
         text = "%s-%s" % (self.get_current_pedalboard_name(), self.get_current_preset_name())
         self.lcd.draw_title(text)
-        self.update_lcd()  # TODO just update zone0
+        self.lcd.refresh_zone(0)
+
+        #load of the preset might have changed plugin bypass status
+        self.preset_change_plugin_update()
+
+    def preset_select(self, encoder, clk_pin):
+        enc = encoder.get_data()
+        index = ((self.selected_preset_index - 1) if (enc == 1)
+                 else (self.selected_preset_index + 1)) % len(self.current_presets)
+        str_index = str(index)  # TODO LAME
+        name = None
+        if str_index in self.current_presets:
+            name = self.current_presets[str_index]
+        self.selected_preset_index = index
+        text = "%s-%s" % (self.get_current_pedalboard_name(), name)
+        self.lcd.draw_title(text)
+        self.lcd.refresh_zone(0)
+
 
     def update_lcd(self):
-        print("draw LCD")
-        pb_name = self.get_current_pedalboard_name()
+        pb_name = self.get_current_pedalboard_name()  # TODO use self.current_pedalboard
         if pb_name is None:
             return
         title = "%s-%s" % (self.get_current_pedalboard_name(), self.get_current_preset_name())

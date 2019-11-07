@@ -45,6 +45,7 @@ def main():
     mod.load_pedalboards()
     #mod.pedalboard_init()  # TODO remove this mod-ui version that does the same as load_pedalboards()
     mod.bind_current_pedalboard()
+    mod.load_current_presets()
 
     # Load LCD
     mod.update_lcd()

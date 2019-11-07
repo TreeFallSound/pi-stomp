@@ -27,6 +27,10 @@ class Plugin:
             param.value = not param.value
         return param.value  # return the new value
 
+    def set_bypass(self, bypass):
+        param = self.parameters.get(":bypass")
+        param.value = 1.0 if bypass else 0.0
+
     def to_json(self):
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
 
