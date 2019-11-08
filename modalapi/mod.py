@@ -8,12 +8,18 @@ import time
 
 import modalapi.controller as Controller
 import modalapi.pedalboard as Pedalboard
+import modalapi.util as util
 
 from modalapi.footswitch import Footswitch
+from enum import Enum
 
 sys.path.append('/usr/lib/python3.5/site-packages')  # TODO possibly /usr/local/modep/mod-ui
 from mod.development import FakeHost as Host
 
+class EncoderMode(Enum):
+    DEFAULT = 0
+    PRESET_SELECT = 1
+    PEDALBOARD_SELECT = 2
 
 class Mod:
     __single = None
@@ -26,17 +32,16 @@ class Mod:
 
         self.lcd = lcd
         self.root_uri = "http://localhost:80/"
+
         self.pedalboards = {}  # TODO make the ordering of entries deterministic
-        #self.controllers = {}  # Keyed by midi_channel:midi_CC
-        self.current_presets = {}   # Keyed by index
         self.current_pedalboard = None
+
+        self.current_presets = {}   # Keyed by index
         self.current_preset_index = 0
         self.selected_preset_index = 0
 
-        self.selected_plugin_index = 0
-        self.current_num_plugins = 9  # TODO XXX
-
         self.plugin_dict = {}
+        self.selected_plugin_index = 0
 
         # TODO should this be here?
         #self.load_pedalboards()
@@ -117,11 +122,15 @@ class Mod:
         try:
             resp = req.get(url)
             if resp.status_code == 200:
-                print(resp.text)
-                self.current_presets = json.loads(resp.text)
-                return resp.text
+                pass
         except:
             return None
+        dict = json.loads(resp.text)
+        for key, name in dict.items():
+            if key.isdigit():
+                index = int(key)
+                self.current_presets[index] = name
+        return resp.text
 
     # TODO change these functions ripped from modep
     def get_current_pedalboard(self):
@@ -144,19 +153,6 @@ class Mod:
             return pedalboards.index(current)
         except:
             return None
-
-    def next_plugin(self, plugins, enc):
-        test = self.selected_plugin_index
-        found = 0
-        for found in range(self.selected_plugin_index, len(plugins)):
-            test = ((test - 1) if (enc is not 1)
-                    else (test + 1)) % self.current_num_plugins
-            plugin = plugins[test]  # TODO check index
-            if len(plugin.controllers) == 0:
-                found = test
-                break
-        print (found)
-        return found
 
     def get_selected_instance(self):
         if self.current_pedalboard is not None:
@@ -188,6 +184,7 @@ class Mod:
             self.preset_change()
 
     def toggle_plugin_bypass(self):
+        print("toggle_plugin_bypass")
         inst = self.get_selected_instance()
         if inst is not None:
             if inst.has_footswitch:
@@ -209,15 +206,6 @@ class Mod:
             except:
                 return
             self.update_lcd_plugins()
-
-
-    def get_current_preset_name(self):
-        # TODO doesn't seem to work without host being properly initialized
-        #return self.host.pedalpreset_name(self.current_preset_index)
-        index = str(self.current_preset_index)
-        if index in self.current_presets:
-            return self.current_presets[index]
-        return None
 
     def preset_change_plugin_update(self):
         for p in self.current_pedalboard.plugins:
@@ -247,23 +235,38 @@ class Mod:
 
         # TODO move formatting to common place
         # TODO name varaibles so they don't have to be calculated
-        text = "%s-%s" % (self.get_current_pedalboard_name(), self.get_current_preset_name())
+        text = "%s-%s" % (self.get_current_pedalboard_name(),
+                          util.DICT_GET(self.current_presets, self.current_preset_index))
         self.lcd.draw_title(text)
         self.lcd.refresh_zone(0)
 
         #load of the preset might have changed plugin bypass status
         self.preset_change_plugin_update()
 
+    def next_preset_index(self, dict, current, incr):
+        # This essentially applies modulo to a set of potentially discontinuous keys
+        # a missing key occurs when a preset is deleted
+        indices = list(dict.keys())
+        if current not in indices:
+            return -1
+        cur = indices.index(current)
+        if incr:
+            if cur < len(indices) - 1:
+                return indices[cur + 1]
+            return min(indices)
+        else:
+            if cur > 0:
+                return indices[cur - 1]
+            return max(indices)
+
+
     def preset_select(self, encoder, clk_pin):
         enc = encoder.get_data()
-        index = ((self.selected_preset_index - 1) if (enc == 1)
-                 else (self.selected_preset_index + 1)) % len(self.current_presets)
-        str_index = str(index)  # TODO LAME
-        name = None
-        if str_index in self.current_presets:
-            name = self.current_presets[str_index]
+        index = self.next_preset_index(self.current_presets, self.selected_preset_index, enc is not 1)
+        if index < 0:
+            return
         self.selected_preset_index = index
-        text = "%s-%s" % (self.get_current_pedalboard_name(), name)
+        text = "%s-%s" % (self.get_current_pedalboard_name(), self.current_presets[index])
         self.lcd.draw_title(text)
         self.lcd.refresh_zone(0)
 
@@ -272,7 +275,8 @@ class Mod:
         pb_name = self.get_current_pedalboard_name()  # TODO use self.current_pedalboard
         if pb_name is None:
             return
-        title = "%s-%s" % (self.get_current_pedalboard_name(), self.get_current_preset_name())
+        title = "%s-%s" % (self.get_current_pedalboard_name(),
+                           util.DICT_GET(self.current_presets, self.current_preset_index))
         self.lcd.draw_title(title)
         self.lcd.refresh_zone(0)
         pb = self.get_current_pedalboard()

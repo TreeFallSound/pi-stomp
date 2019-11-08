@@ -76,7 +76,7 @@ class Pedalboard:
             sys.exit()
 
         if resp.status_code != 200:
-            print("Cannot connect to mod-host.  Status: %s" % resp.status_code)
+            print("Cannot connect to mod-host for plugin data: %s\nStatus: %s" % (url, resp.status_code))
             sys.exit()
 
         return json.loads(resp.text)

@@ -18,19 +18,14 @@ class AnalogSwitch(analogcontrol.AnalogControl):
 
     # Override of base class method
     def refresh(self):
-        value_changed = False
-
         # read the analog pin
         value = self.readChannel()
 
         # how much has it changed since the last read?
         pot_adjust = abs(value - self.last_read)
-
-        if pot_adjust > self.tolerance:
-            value_changed = True
+        value_changed = (pot_adjust > self.tolerance)
 
         if value_changed:
             # save the potentiometer reading for the next loop
             self.last_read = value
-
             self.callback(value)

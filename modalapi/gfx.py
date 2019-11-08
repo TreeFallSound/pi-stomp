@@ -159,7 +159,7 @@ class Gfx:
 
     def shorten_name(self, name):
         text = ""
-        for x in name.lower():
+        for x in name.lower().replace('_', ''):
             test = text + x
             test_size = self.small_font.getsize(test)[0]
             if test_size >= self.plugin_width:

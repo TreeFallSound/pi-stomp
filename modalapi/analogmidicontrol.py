@@ -35,17 +35,12 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
 
     # Override of base class method
     def refresh(self):
-        value_changed = False
-
         # read the analog pin
         value = self.readChannel()
-        #print(value)
 
         # how much has it changed since the last read?
         pot_adjust = abs(value - self.last_read)
-
-        if pot_adjust > self.tolerance:
-            value_changed = True
+        value_changed = (pot_adjust > self.tolerance)
 
         if value_changed:
             # convert 16bit adc0 (0-65535) trim pot read into 0-100 volume level

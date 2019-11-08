@@ -18,8 +18,10 @@ MIDI_CHANNEL = 13  # Note that a learned MIDI msg will report as the channel +1 
 # Pins
 TOP_ENC_PIN_D = 17
 TOP_ENC_PIN_CLK = 4
+TOP_ENC_SWITCH_CHANNEL = 7
 BOT_ENC_PIN_D = 22
 BOT_ENC_PIN_CLK = 27
+BOT_ENC_SWITCH_CHANNEL = 6
 
 RELAY_LEFT_PIN = 16
 RELAY_RIGHT_PIN = 12
@@ -40,12 +42,6 @@ FOOTSW_BYPASS_INDEX = 0
 # Tweak, Expression Pedal
 ANALOG_CONTROL = ((0, 16, 64), (1, 16, 65))
 
-# 1: the ADC channel
-# 2: the minimum threshold for considering the value to be changed
-# 3: the callback to call if value has changed
-# Bottom Encoder Switch, Top Encoder Switch
-ANALOG_SWITCH = ((6, 512, None), (7, 512, None))
-
 class Hardware:
     __single = None
 
@@ -63,9 +59,6 @@ class Hardware:
 
         GPIO.setmode(GPIO.BCM)  # TODO should this go earlier?
 
-        # Initialize Encoders
-        top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=mod.preset_select)
-        bot_enc = Encoder.Encoder(BOT_ENC_PIN_D, BOT_ENC_PIN_CLK, callback=mod.plugin_select)
 
         # Initialize Footswitches
         for f in FOOTSW:
@@ -93,8 +86,10 @@ class Hardware:
             key = format("%d:%d" % (MIDI_CHANNEL, c[1]))
             self.controllers[key] = Controller.Controller(MIDI_CHANNEL, c[1], Controller.Type.ANALOG)
 
-        for c in ANALOG_SWITCH:
-            control = AnalogSwitch.AnalogSwitch(spi, c[0], c[1], callback=mod.bottom_encoder_sw)
-            self.analog_controls.append(control)
-            control = AnalogSwitch.AnalogSwitch(spi, c[0], c[1], callback=mod.top_encoder_sw)
-            self.analog_controls.append(control)
+        # Initialize Encoders
+        top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=mod.preset_select)
+        bot_enc = Encoder.Encoder(BOT_ENC_PIN_D, BOT_ENC_PIN_CLK, callback=mod.plugin_select)
+        control = AnalogSwitch.AnalogSwitch(spi, TOP_ENC_SWITCH_CHANNEL, 512, callback=mod.top_encoder_sw)
+        self.analog_controls.append(control)
+        control = AnalogSwitch.AnalogSwitch(spi, BOT_ENC_SWITCH_CHANNEL, 512, callback=mod.bottom_encoder_sw)
+        self.analog_controls.append(control)
