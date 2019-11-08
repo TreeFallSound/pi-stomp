@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+from modalapi.footswitch import Footswitch
 
 
 class Plugin:
@@ -30,6 +31,10 @@ class Plugin:
     def set_bypass(self, bypass):
         param = self.parameters.get(":bypass")
         param.value = 1.0 if bypass else 0.0
+        if self.has_footswitch:
+            for c in self.controllers:
+                if isinstance(c, Footswitch):
+                    c.set_value(param.value)
 
     def to_json(self):
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)

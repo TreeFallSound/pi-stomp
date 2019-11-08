@@ -103,6 +103,11 @@ class Gfx:
         lcd.show()
         self.refresh_needed = False
 
+    def refresh_plugins(self):
+        self.refresh_zone(7)
+        self.refresh_zone(5)
+        self.refresh_zone(3)
+
     def enable_backlight(self):
         for x in range(6):
             backlight.set_pixel(x, 50, 100, 100)

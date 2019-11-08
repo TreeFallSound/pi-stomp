@@ -217,8 +217,9 @@ class Mod:
             except:
                 print("failed to get bypass value for: %s" % p.instance_id)
                 continue
+        self.lcd.draw_bound_plugins(self.current_pedalboard.plugins)
         self.lcd.draw_plugins(self.current_pedalboard.plugins)
-        self.lcd.refresh_zone(3)
+        self.lcd.refresh_plugins()
 
     def preset_change(self):
         #enc = encoder.get_data()
@@ -295,8 +296,7 @@ class Mod:
         if self.pedalboards[pb] is None:
             return
         self.lcd.draw_plugins(self.pedalboards[pb].plugins)
-        self.lcd.refresh_zone(3)
-        self.lcd.refresh_zone(5)
+        self.lcd.refresh_plugins()
 
     def update_lcd_fs(self):
         pb = self.get_current_pedalboard()
