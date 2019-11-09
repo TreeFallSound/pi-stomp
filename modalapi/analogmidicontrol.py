@@ -20,6 +20,10 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
         self.midiout = midiout
         self.midi_channel = midi_channel
         self.last_read = 0          # this keeps track of the last potentiometer value
+        self.value = None
+
+    def set_value(self, value):
+        self.value = value
 
     def remap_range(self, value, left_min, left_max, right_min, right_max):
         # this remaps a value from original (left) range to new (right) range

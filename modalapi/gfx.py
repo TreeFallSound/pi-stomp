@@ -13,7 +13,10 @@ class Gfx:
 
     def __init__(self):   # TODO make a singleton
 
+        # GFX properties
         self.width, self.height = lcd.dimensions()
+        self.height -= 1
+        self.num_leds = 6
 
         # Zone dimensions
         self.zone_height = {0: 12,
@@ -49,36 +52,18 @@ class Gfx:
                      ImageDraw.Draw(self.images[4]), ImageDraw.Draw(self.images[5]),
                      ImageDraw.Draw(self.images[6]), ImageDraw.Draw(self.images[7])]
 
-
-        self.enable_backlight()
-
         # Load fonts
         self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 11)
         self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)
         self.small_font = ImageFont.truetype("DejaVuSans.ttf", 8)
 
-        self.refresh_needed = True
-        self.num_leds = 6
-
-    def refresh(self):
-        flipped = self.image.transpose(Image.ROTATE_180)
-        for x in range(self.width):
-            for y in range(self.height):
-                pixel = flipped.getpixel((x, y))
-                lcd.set_pixel(x, y, pixel)
-        lcd.show()
-        self.refresh_needed = False
-
-    def flip_coordinates(self, coords):
-        xy0 = (self.width - coords[1][0], self.height - 1 - coords[1][1])
-        xy1 = (self.width - coords[0][0], self.height - 1 - coords[0][1])
-        ret = (xy0, xy1)
-        return ret
+        # Turn on Backlight
+        self.enable_backlight()
 
     def refresh_zone(self, zone_idx):
         #flipped = self.images[zone_idx].transpose(Image.ROTATE_180)
         flipped = self.images[zone_idx]
-        y_offset = 1 if (zone_idx == 0) else 0
+        y_offset = 0
         for i in range(zone_idx):
             y_offset += self.zone_height[i]
         for x in range(0, self.width):
@@ -87,21 +72,6 @@ class Gfx:
                 lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
                 #print("%d %d" % (self.width - x - 1, self.height - y - y_offset))
         lcd.show()
-        self.refresh_needed = False
-
-    def refresh_area(self, xy, bypassed):
-        #flipped = self.image.transpose(Image.ROTATE_180)
-        flipped = self.image
-        print(xy)
-        coords = self.flip_coordinates(xy)
-        print(coords)
-        for x in range(coords[0][0], coords[1][0]):
-            for y in range(coords[0][1], coords[1][1]):
-                print("x %d  y %d" % (x, y))
-                #pixel = flipped.getpixel((x, y))
-                lcd.set_pixel(x, y, not bypassed)
-        lcd.show()
-        self.refresh_needed = False
 
     def refresh_plugins(self):
         self.refresh_zone(7)
@@ -129,55 +99,27 @@ class Gfx:
         lcd.clear()
         lcd.show()
 
+    # Zone 0 - Pedalboard and Preset
     def draw_title(self, text):
         self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
         self.draw[0].text((0, -1), text, 1, self.title_font)  # -1 pushes text to very top of LCD
-        self.refresh_needed = True
-        #self.refresh()
+        self.refresh_zone(0)
 
-    def draw_bargraph(self, val):
-        # TODO don't hardcode numbers by assuming 128x64, use width and height
-        # Don't hardcode 127
-        #self.image.paste(0, (0, 0, self.width, self.height))
-        y0 = 32
-        y1 = y0 - 2
-        yt = 16
-        x = 40  # TODO ofset messes scale
-        val = min(val, 127)  # Scale to 127  TODO define max midi
-        # TODO scale to 100 (as in, percent)
+    # Zone 1 - Analog Assignments (Tweak, Expression Pedal, etc.)
+    def draw_analog_assignments(self, controller_list):
+        zone = 1
 
-        self.draw.text((0, yt), "Gain", 1, self.label_font)
-        self.draw.text((40, yt), str(val), 1, self.label_font)
+        if len(controller_list) > 0:
+            self.draw[zone].line(((0, 5), (8, 1)), True, 1)
+            self.draw[zone].line(((0, 5), (8, 5)), True, 2)
+            self.draw[zone].text((10, 0), "delay:time", True, self.small_font)
 
-        while x < val:
-            self.draw.rectangle(((x, y0), (x + 1, y1)), 1)
-            if x >= 127:
-                break
-            if (x % 9) == 0:
-                y1 = y1 - 1
-                x = x + 3
-            else:
-                x = x + 1
+            self.draw[zone].ellipse(((66, 0), (72, 6)), True, 1)
+            self.draw[zone].line(((69, 0), (69, 2)), False, 1)
+            self.draw[zone].text((75, 0), "ts9:drive", True, self.small_font)
+            self.refresh_zone(1)
 
-        self.refresh_needed = True
-        self.refresh()
-
-    def shorten_name(self, name):
-        text = ""
-        for x in name.lower().replace('_', ''):
-            test = text + x
-            test_size = self.small_font.getsize(test)[0]
-            if test_size >= self.plugin_width:
-                break
-            text = test
-        return text
-
-    def redraw_bypass(self, plugin, bypassed):
-        xy = plugin.bypass_indicator_xy
-        print(xy)
-        #self.draw.line(xy, not bypassed, self.plugin_bypass_thickness)
-        self.refresh_area(xy, bypassed)
-
+    # Zones 2, 4, 6 - Plugin Selection
     def draw_plugin_select(self, plugin):
         x = plugin.lcd_xyz[0]
         y = plugin.lcd_xyz[1]
@@ -201,7 +143,7 @@ class Gfx:
         self.refresh_zone(4)
         self.refresh_zone(6)
 
-
+    # Zones 3, 5, 7 - Plugin Display
     def draw_plugin(self, zone, x, y, text, expand_rect, plugin):
         if expand_rect >= 1:
             text_size = self.small_font.getsize(text)[0]
@@ -236,6 +178,7 @@ class Gfx:
                 if isinstance(c, Footswitch):
                     fs_id = c.id
                     self.draw_plugin(7, self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1], label, False, p)
+        self.refresh_zone(7)
 
     def draw_plugins(self, plugins):
         # TODO don't hardcode numbers by assuming 128x64, use width and height
@@ -246,7 +189,6 @@ class Gfx:
         ymax = 64  # Maximum y for plugin LCD zone
         expand_rect = len(plugins) <= 5
         rect_x_pad = 2
-        rect_y_pitch = 15
         count = 0
         zone = 3
         self.images[zone].paste(0, (0, 0, self.width, self.zone_height[zone]))
@@ -263,30 +205,15 @@ class Gfx:
             if x > xwrap:
                 zone += 2
                 x = 0
-                #y = y + rect_y_pitch
                 if y >= ymax:
                     break  # Only display 2 rows, huge pedalboards won't fully render
 
-        zone = 1
-        self.draw[zone].line(((0, 5), (8, 1)), True, 1)
-        self.draw[zone].line(((0, 5), (8, 5)), True, 2)
-        self.draw[zone].text((10, 0), "delay:time", True, self.small_font)
-
-
-        self.draw[zone].ellipse(((66,0), (72,6)), True, 1)
-        self.draw[zone].line(((69, 0), (69, 2)), False, 1)
-        self.draw[zone].text((75, 0), "ts9:drive", True, self.small_font)
-
-
-        #self.draw_plugin(3, 0, 0, "foo1", True, plugins[0])
-        #self.draw_plugin(3, 52, 0, "foo2", True, plugins[0])
-       # self.draw_plugin(3, 105, 0, "foo3", True, plugins[0])
-        #self.refresh()
-
-        # Draw bypass (enable) indicator
-        # Set pixels directly instead of drawing on an image
-        # for p in plugins:
-        #     print("pl: %s" % p.instance_id)
-        #     self.redraw_bypass(p, p.bypassed)
-        #     #if not p.bypassed:
-        #     #    self.redraw_bypass(p, not p.bypassed)
+    def shorten_name(self, name):
+        text = ""
+        for x in name.lower().replace('_', ''):
+            test = text + x
+            test_size = self.small_font.getsize(test)[0]
+            if test_size >= self.plugin_width:
+                break
+            text = test
+        return text

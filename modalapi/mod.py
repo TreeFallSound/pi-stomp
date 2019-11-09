@@ -40,6 +40,8 @@ class Mod:
         self.current_preset_index = 0
         self.selected_preset_index = 0
 
+        self.current_analog_controllers = []
+
         self.plugin_dict = {}
         self.selected_plugin_index = 0
 
@@ -93,7 +95,7 @@ class Mod:
         footswitch_plugins = []
         pb = self.get_current_pedalboard()
         if pb in self.pedalboards:
-            self.current_pedalboard = self.pedalboards[pb]
+            self.current_pedalboard = self.pedalboards[pb]  # TODO right place to do this?
             print("set current PB as: %s" % self.current_pedalboard)
             #print(self.current_pedalboard.to_json())
             for plugin in self.current_pedalboard.plugins:
@@ -111,6 +113,9 @@ class Mod:
                                 # TODO sort this list so selection orders correctly (sort on midi_CC?)
                                 plugin.has_footswitch = True
                                 footswitch_plugins.append(plugin)
+                            else:
+                                self.current_analog_controllers.append(controller)
+                                print("Controller %s %s", controller, param)
 
             # Move Footswitch controlled plugins to the end of the list
             self.current_pedalboard.plugins = [elem for elem in self.current_pedalboard.plugins
@@ -224,8 +229,6 @@ class Mod:
     def preset_change(self):
         #enc = encoder.get_data()
         index = self.selected_preset_index
-        #index = ((self.current_preset_index - 1) if (enc == 1)
-        #         else (self.current_preset_index + 1)) % len(self.current_presets)
         print("preset change: %d" % index)
         url = "http://localhost/pedalpreset/load?id=%d" % index
         # req.get("http://localhost/reset")
@@ -239,7 +242,6 @@ class Mod:
         text = "%s-%s" % (self.get_current_pedalboard_name(),
                           util.DICT_GET(self.current_presets, self.current_preset_index))
         self.lcd.draw_title(text)
-        self.lcd.refresh_zone(0)
 
         #load of the preset might have changed plugin bypass status
         self.preset_change_plugin_update()
@@ -260,7 +262,6 @@ class Mod:
                 return indices[cur - 1]
             return max(indices)
 
-
     def preset_select(self, encoder, clk_pin):
         enc = encoder.get_data()
         index = self.next_preset_index(self.current_presets, self.selected_preset_index, enc is not 1)
@@ -269,8 +270,6 @@ class Mod:
         self.selected_preset_index = index
         text = "%s-%s" % (self.get_current_pedalboard_name(), self.current_presets[index])
         self.lcd.draw_title(text)
-        self.lcd.refresh_zone(0)
-
 
     def update_lcd(self):
         pb_name = self.get_current_pedalboard_name()  # TODO use self.current_pedalboard
@@ -279,17 +278,14 @@ class Mod:
         title = "%s-%s" % (self.get_current_pedalboard_name(),
                            util.DICT_GET(self.current_presets, self.current_preset_index))
         self.lcd.draw_title(title)
-        self.lcd.refresh_zone(0)
         pb = self.get_current_pedalboard()
         if self.pedalboards[pb] is None:
             return
-        self.lcd.draw_plugins(self.pedalboards[pb].plugins)
-        self.lcd.refresh_zone(1)  # TODO mod module probably shouldn't know about specific zones
-        self.lcd.refresh_zone(3)
-        self.lcd.refresh_zone(5)
 
+        self.lcd.draw_analog_assignments(self.current_analog_controllers)
+        self.lcd.draw_plugins(self.pedalboards[pb].plugins)
         self.lcd.draw_bound_plugins(self.pedalboards[pb].plugins)
-        self.lcd.refresh_zone(7)
+        self.lcd.refresh_plugins()
 
     def update_lcd_plugins(self):
         pb = self.get_current_pedalboard()
@@ -303,4 +299,3 @@ class Mod:
         if self.pedalboards[pb] is None:
             return
         self.lcd.draw_bound_plugins(self.pedalboards[pb].plugins)
-        self.lcd.refresh_zone(7)
