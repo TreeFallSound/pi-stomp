@@ -22,6 +22,7 @@ TOP_ENC_SWITCH_CHANNEL = 7
 BOT_ENC_PIN_D = 22
 BOT_ENC_PIN_CLK = 27
 BOT_ENC_SWITCH_CHANNEL = 6
+ENC_SW_THRESHOLD = 512
 
 RELAY_LEFT_PIN = 16
 RELAY_RIGHT_PIN = 12
@@ -65,7 +66,6 @@ class Hardware:
             fs = Footswitch.Footswitch(f[0], f[1], f[2], f[3], MIDI_CHANNEL, midiout, refresh_callback=self.refresh_callback)
             self.footswitches.append(fs)
             key = format("%d:%d" % (MIDI_CHANNEL, f[3]))
-            #self.controller[key] = Controller.Controller(MIDI_CHANNEL, f[1], Controller.Type.FOOTSWITCH)
             self.controllers[key] = fs
 
         # Initialize Relays
@@ -89,7 +89,7 @@ class Hardware:
         # Initialize Encoders
         top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=mod.preset_select)
         bot_enc = Encoder.Encoder(BOT_ENC_PIN_D, BOT_ENC_PIN_CLK, callback=mod.plugin_select)
-        control = AnalogSwitch.AnalogSwitch(spi, TOP_ENC_SWITCH_CHANNEL, 512, callback=mod.top_encoder_sw)
+        control = AnalogSwitch.AnalogSwitch(spi, TOP_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD, callback=mod.top_encoder_sw)
         self.analog_controls.append(control)
-        control = AnalogSwitch.AnalogSwitch(spi, BOT_ENC_SWITCH_CHANNEL, 512, callback=mod.bottom_encoder_sw)
+        control = AnalogSwitch.AnalogSwitch(spi, BOT_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD, callback=mod.bottom_encoder_sw)
         self.analog_controls.append(control)

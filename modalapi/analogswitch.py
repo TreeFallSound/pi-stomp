@@ -13,13 +13,18 @@ class AnalogSwitch(analogcontrol.AnalogControl):
 
     def __init__(self, spi, adc_channel, tolerance, callback):
         super(AnalogSwitch, self).__init__(spi, adc_channel, tolerance)
-        self.last_read = 0          # this keeps track of the last value
+        self.last_read = None          # this keeps track of the last value
         self.callback = callback
 
     # Override of base class method
     def refresh(self):
         # read the analog pin
         value = self.readChannel()
+
+        # if last read is None, this is the first refresh so don't do anything yet
+        if self.last_read == None:
+            self.last_read = value
+            return
 
         # how much has it changed since the last read?
         pot_adjust = abs(value - self.last_read)

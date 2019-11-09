@@ -16,10 +16,10 @@ class Gfx:
         self.width, self.height = lcd.dimensions()
 
         # Zone dimensions
-        self.zone_height = {0: 13,
+        self.zone_height = {0: 12,
                             1: 8,
                             2: 2,
-                            3: 12,
+                            3: 13,
                             4: 2,
                             5: 13,
                             6: 2,
@@ -188,10 +188,12 @@ class Gfx:
         self.images[4].paste(0, (0, 0, self.width, self.zone_height[4]))
         self.images[6].paste(0, (0, 0, self.width, self.zone_height[6]))
 
+        self.draw[zone].point((x+10, 0), True)
         self.draw[zone].point((x+11, 0), True)
         self.draw[zone].point((x+12, 0), True)
         self.draw[zone].point((x+13, 0), True)
         self.draw[zone].point((x+14, 0), True)
+        self.draw[zone].point((x+11, 1), True)
         self.draw[zone].point((x+12, 1), True)
         self.draw[zone].point((x+13, 1), True)
 
