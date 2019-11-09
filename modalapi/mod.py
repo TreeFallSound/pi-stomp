@@ -6,6 +6,7 @@ import requests as req
 import sys
 import time
 
+import modalapi.analogswitch as AnalogSwitch
 import modalapi.controller as Controller
 import modalapi.pedalboard as Pedalboard
 import modalapi.util as util
@@ -16,10 +17,12 @@ from enum import Enum
 sys.path.append('/usr/lib/python3.5/site-packages')  # TODO possibly /usr/local/modep/mod-ui
 from mod.development import FakeHost as Host
 
-class EncoderMode(Enum):
+class TopEncoderMode(Enum):
     DEFAULT = 0
     PRESET_SELECT = 1
-    PEDALBOARD_SELECT = 2
+    PRESET_SELECTED = 2
+    PEDALBOARD_SELECT = 3
+    PEDALBOARD_SELECTED = 4
 
 class Mod:
     __single = None
@@ -52,6 +55,8 @@ class Mod:
         self.host = Host(None, None, self.msg_callback)
 
         self.hardware = None
+
+        self.top_encoder_mode = TopEncoderMode.DEFAULT
 
     def add_hardware(self, hardware):
         self.hardware = hardware
@@ -123,6 +128,12 @@ class Mod:
             self.current_pedalboard.plugins += footswitch_plugins
 
     def load_current_presets(self):
+
+        # Clear existing
+        self.current_presets = {}   # Keyed by index
+        self.current_preset_index = 0
+        self.selected_preset_index = 0
+
         url = self.root_uri + "pedalpreset/list"
         try:
             resp = req.get(url)
@@ -184,9 +195,47 @@ class Mod:
             self.toggle_plugin_bypass()
 
     def top_encoder_sw(self, value):
-        # TODO check mode here
-        if value > 512:  # button up
-            self.preset_change()
+        # State machine for top rotary encoder
+        mode = self.top_encoder_mode
+        if value == AnalogSwitch.Value.RELEASED:
+            if mode == TopEncoderMode.PRESET_SELECT:
+                self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
+            elif mode == TopEncoderMode.PEDALBOARD_SELECT:
+                self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
+            elif mode == TopEncoderMode.PRESET_SELECTED:
+                self.preset_change()
+                self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
+            elif mode == TopEncoderMode.PEDALBOARD_SELECTED:
+                self.pedalboard_change()
+                self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
+            else:
+                self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
+            self.update_lcd_title()
+        elif value == AnalogSwitch.Value.LONGPRESSED:
+            self.top_encoder_mode = TopEncoderMode.DEFAULT
+            self.update_lcd_title()
+
+    def top_encoder_select(self, encoder, clk_pin):
+        # State machine for top encoder switch
+        mode = self.top_encoder_mode
+        if mode == TopEncoderMode.PEDALBOARD_SELECT or mode == TopEncoderMode.PEDALBOARD_SELECTED:
+            self.pedalboard_select(encoder, clk_pin)
+            self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECTED
+        elif mode == TopEncoderMode.PRESET_SELECT or mode == TopEncoderMode.PRESET_SELECTED:
+            self.preset_select(encoder, clk_pin)
+            self.top_encoder_mode = TopEncoderMode.PRESET_SELECTED
+
+    def pedalboard_select(self, encoder, clk_pin):
+        print("PB select")
+        #enc = encoder.get_data()
+        #index = self.next_preset_index(self.current_presets, self.selected_preset_index, enc is not 1)
+        #if index < 0:
+        #    return
+        #self.selected_preset_index = index
+        #self.lcd.draw_title(self.get_current_pedalboard_name(),index, False, invert_pre)
+
+    def pedalboard_change(self):
+        print("Pedalboard change")
 
     def toggle_plugin_bypass(self):
         print("toggle_plugin_bypass")
@@ -236,12 +285,7 @@ class Mod:
         if resp.status_code != 200:
             print("Bad Rest request: %s status: %d" % (url, resp.status_code))
         self.current_preset_index = index
-
-        # TODO move formatting to common place
-        # TODO name varaibles so they don't have to be calculated
-        text = "%s-%s" % (self.get_current_pedalboard_name(),
-                          util.DICT_GET(self.current_presets, self.current_preset_index))
-        self.lcd.draw_title(text)
+        #self.update_lcd_title()
 
         #load of the preset might have changed plugin bypass status
         self.preset_change_plugin_update()
@@ -268,16 +312,15 @@ class Mod:
         if index < 0:
             return
         self.selected_preset_index = index
-        text = "%s-%s" % (self.get_current_pedalboard_name(), self.current_presets[index])
-        self.lcd.draw_title(text)
+        self.lcd.draw_title(self.get_current_pedalboard_name(), self.current_presets[index], False, True)
 
     def update_lcd(self):
         pb_name = self.get_current_pedalboard_name()  # TODO use self.current_pedalboard
         if pb_name is None:
             return
-        title = "%s-%s" % (self.get_current_pedalboard_name(),
-                           util.DICT_GET(self.current_presets, self.current_preset_index))
-        self.lcd.draw_title(title)
+
+        self.update_lcd_title()
+
         pb = self.get_current_pedalboard()
         if self.pedalboards[pb] is None:
             return
@@ -286,6 +329,16 @@ class Mod:
         self.lcd.draw_plugins(self.pedalboards[pb].plugins)
         self.lcd.draw_bound_plugins(self.pedalboards[pb].plugins)
         self.lcd.refresh_plugins()
+
+    def update_lcd_title(self):
+        invert_pb = False
+        invert_pre = False
+        if self.top_encoder_mode == TopEncoderMode.PEDALBOARD_SELECT:
+            invert_pb = True
+        if self.top_encoder_mode == TopEncoderMode.PRESET_SELECT:
+            invert_pre = True
+        self.lcd.draw_title(self.get_current_pedalboard_name(),
+                            util.DICT_GET(self.current_presets, self.current_preset_index), invert_pb, invert_pre)
 
     def update_lcd_plugins(self):
         pb = self.get_current_pedalboard()

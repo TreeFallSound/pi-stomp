@@ -100,9 +100,32 @@ class Gfx:
         lcd.show()
 
     # Zone 0 - Pedalboard and Preset
-    def draw_title(self, text):
+    def draw_title(self, pedalboard, preset, invert_pb, invert_pre):
         self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
-        self.draw[0].text((0, -1), text, 1, self.title_font)  # -1 pushes text to very top of LCD
+
+        pb_size  = self.title_font.getsize(pedalboard)[0]
+        pre_size = self.title_font.getsize(preset)[0]
+        font_height = self.title_font.getsize(preset)[1]
+        y = -1  # -1 pushes text to very top of LCD
+
+        # Pedalboard Name
+        if invert_pb:
+            self.draw[0].rectangle(((0, y), (pb_size, font_height)), True, 1)
+        self.draw[0].text((0, y), pedalboard, not invert_pb, self.title_font)
+
+        # delimiter
+        delimiter = "-"
+        x = pb_size + 1
+        self.draw[0].text((x, y), delimiter, 1, self.title_font)
+
+        # Preset Name
+        x = x + self.title_font.getsize(delimiter)[0]
+        x2 = x + pre_size
+        y2 = font_height
+        if invert_pre:
+            self.draw[0].rectangle(((x, y), (x2, y2)), True, 1)
+        self.draw[0].text((x, y), preset, not invert_pre, self.title_font)
+
         self.refresh_zone(0)
 
     # Zone 1 - Analog Assignments (Tweak, Expression Pedal, etc.)
