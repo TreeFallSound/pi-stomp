@@ -43,9 +43,9 @@ def main():
 
     # Load all pedalboard info from the lilv ttl file
     mod.load_pedalboards()
-    #mod.pedalboard_init()  # TODO remove this mod-ui version that does the same as load_pedalboards()
-    mod.bind_current_pedalboard()
-    mod.load_current_presets()
+
+    # Load the current pedalboard as "current"
+    mod.set_current_pedalboard(mod.pedalboards[mod.get_current_pedalboard_bundle_path()])
 
     # Load LCD
     mod.update_lcd()

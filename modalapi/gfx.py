@@ -235,6 +235,7 @@ class Gfx:
                 x = 0
                 if y >= ymax:
                     break  # Only display 2 rows, huge pedalboards won't fully render  # TODO make sure this works
+        self.refresh_plugins()
 
     def shorten_name(self, name):
         text = ""

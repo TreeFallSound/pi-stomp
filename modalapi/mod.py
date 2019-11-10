@@ -38,27 +38,35 @@ class Mod:
 
         self.pedalboards = {}  # TODO make the ordering of entries deterministic
         self.pedalboard_list = []  # TODO LAME to have two lists
-        self.current_pedalboard = None
         self.selected_pedalboard_index = 0
-
-        self.current_presets = {}   # Keyed by index
-        self.current_preset_index = 0
         self.selected_preset_index = 0
-
-        self.current_analog_controllers = []
+        self.selected_plugin_index = 0
 
         self.plugin_dict = {}
-        self.selected_plugin_index = 0
 
         # TODO should this be here?
         #self.load_pedalboards()
 
         # Create dummy host for obtaining pedalboard info
-        self.host = Host(None, None, self.msg_callback)
+        #self.host = Host(None, None, self.msg_callback)
 
         self.hardware = None
 
         self.top_encoder_mode = TopEncoderMode.DEFAULT
+
+        self.current = None  # pointer to Current class
+
+    # Container for dynamic data which is unique to the "current" pedalboard
+    # The self.current pointed above will point to this object which gets
+    # replaced when a different pedalboard is made current (old Current object
+    # gets deleted and a new one added via self.set_current_pedalboard()
+    class Current:
+        def __init__(self, pedalboard):
+            self.pedalboard = pedalboard
+            self.presets = {}
+            self.preset_index = 0
+            self.analog_controllers = []
+
 
     def add_hardware(self, hardware):
         self.hardware = hardware
@@ -96,22 +104,30 @@ class Mod:
         #print("Preset: %s %d" % (bund, self.host.pedalboard_preset))  # this value not initialized
         #print("Preset: %s" % self.get_current_preset_name())
 
+    def set_current_pedalboard(self, pedalboard):
+        # Delete previous "current"
+        del self.current
+
+        # Create a new "current"
+        self.current = self.Current(pedalboard)
+
+        # Initialize the data
+        self.bind_current_pedalboard()
+        self.load_current_presets()
+        self.update_lcd()
+
     def bind_current_pedalboard(self):
         # "current" being the pedalboard mod-host says is current
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
         footswitch_plugins = []
-        pb = self.get_current_pedalboard()
-        if pb in self.pedalboards:
-            self.current_pedalboard = self.pedalboards[pb]  # TODO right place to do this?
-            print("set current PB as: %s" % self.current_pedalboard)
-            #print(self.current_pedalboard.to_json())
-            for plugin in self.current_pedalboard.plugins:
+        if self.current.pedalboard:
+            #print(self.current.pedalboard.to_json())
+            for plugin in self.current.pedalboard.plugins:
                 for sym, param in plugin.parameters.items():
                     if param.binding is not None:
                         controller = self.hardware.controllers.get(param.binding)
                         if controller is not None:
-                            #print("Map: %s %s %s" % (plugin.instance_id, param.name, param.binding))
                             # TODO possibly use a setter instead of accessing var directly
                             # What if multiple params could map to the same controller?
                             controller.parameter = param
@@ -122,21 +138,15 @@ class Mod:
                                 plugin.has_footswitch = True
                                 footswitch_plugins.append(plugin)
                             else:
-                                self.current_analog_controllers.append(controller)
+                                self.current.analog_controllers.append(controller)
                                 print("Controller %s %s", controller, param)
 
             # Move Footswitch controlled plugins to the end of the list
-            self.current_pedalboard.plugins = [elem for elem in self.current_pedalboard.plugins
+            self.current.pedalboard.plugins = [elem for elem in self.current.pedalboard.plugins
                                                if elem.has_footswitch is False]
-            self.current_pedalboard.plugins += footswitch_plugins
+            self.current.pedalboard.plugins += footswitch_plugins
 
     def load_current_presets(self):
-
-        # Clear existing
-        self.current_presets = {}   # Keyed by index
-        self.current_preset_index = 0
-        self.selected_preset_index = 0
-
         url = self.root_uri + "pedalpreset/list"
         try:
             resp = req.get(url)
@@ -148,11 +158,10 @@ class Mod:
         for key, name in dict.items():
             if key.isdigit():
                 index = int(key)
-                self.current_presets[index] = name
+                self.current.presets[index] = name
         return resp.text
 
-    # TODO change these functions ripped from modep
-    def get_current_pedalboard(self):
+    def get_current_pedalboard_bundle_path(self):
         url = self.root_uri + "pedalboard/current"
         try:
             resp = req.get(url)
@@ -162,20 +171,9 @@ class Mod:
         except:
             return None
 
-    def get_current_pedalboard_name(self):
-        pb = self.get_current_pedalboard()
-        return os.path.splitext(os.path.basename(pb))[0]
-
-    # TODO remove
-    def get_current_pedalboard_index(self, pedalboards, current):
-        try:
-            return pedalboards.index(current)
-        except:
-            return None
-
     def get_selected_instance(self):
-        if self.current_pedalboard is not None:
-            pb = self.current_pedalboard
+        if self.current.pedalboard is not None:
+            pb = self.current.pedalboard
             inst = pb.plugins[self.selected_plugin_index]
             if inst is not None:
                 return inst
@@ -183,8 +181,8 @@ class Mod:
 
     def plugin_select(self, encoder, clk_pin):
         enc = encoder.get_data()
-        if self.current_pedalboard is not None:
-            pb = self.current_pedalboard
+        if self.current.pedalboard is not None:
+            pb = self.current.pedalboard
             index = ((self.selected_plugin_index - 1) if (enc is not 1)
                     else (self.selected_plugin_index + 1)) % len(pb.plugins)
             #index = self.next_plugin(pb.plugins, enc)
@@ -211,7 +209,7 @@ class Mod:
                 self.pedalboard_change()
                 self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
             else:
-                if len(self.current_presets) > 0:
+                if len(self.current.presets) > 0:
                     self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
                 else:
                     self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
@@ -222,7 +220,6 @@ class Mod:
 
     def top_encoder_select(self, encoder, clk_pin):
         # State machine for top encoder switch
-        mode = self.top_encoder_mode
         mode = self.top_encoder_mode
         if mode == TopEncoderMode.PEDALBOARD_SELECT or mode == TopEncoderMode.PEDALBOARD_SELECTED:
             self.pedalboard_select(encoder, clk_pin)
@@ -249,16 +246,9 @@ class Mod:
             resp2 = req.post(uri, data)
             if resp2.status_code != 200:
                 print("Bad Rest request: %s %s  status: %d" % (uri, data, resp2.status_code))
-            self.current_pedalboard = self.pedalboard_list[self.selected_pedalboard_index]
 
-            # Reset "current" data TODO need a better way to do that
-            self.current_presets = {}  # Keyed by index
-            self.current_preset_index = 0
-            self.selected_preset_index = 0
-
-            self.bind_current_pedalboard()
-            self.load_current_presets()
-            self.update_lcd()
+            # Now that it's presumably changed, load the dynamic "current" data
+            self.set_current_pedalboard(self.pedalboard_list[self.selected_pedalboard_index])
 
     def toggle_plugin_bypass(self):
         print("toggle_plugin_bypass")
@@ -285,7 +275,7 @@ class Mod:
             self.update_lcd_plugins()
 
     def preset_change_plugin_update(self):
-        for p in self.current_pedalboard.plugins:
+        for p in self.current.pedalboard.plugins:
             uri = self.root_uri + "effect/parameter/get//graph" + p.instance_id + "/:bypass"
             try:
                 resp = req.get(uri)
@@ -294,9 +284,8 @@ class Mod:
             except:
                 print("failed to get bypass value for: %s" % p.instance_id)
                 continue
-        self.lcd.draw_bound_plugins(self.current_pedalboard.plugins)
-        self.lcd.draw_plugins(self.current_pedalboard.plugins)
-        self.lcd.refresh_plugins()
+        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins)
+        self.lcd.draw_plugins(self.current.pedalboard.plugins)
 
     def preset_change(self):
         index = self.selected_preset_index
@@ -306,7 +295,7 @@ class Mod:
         resp = req.get(url)
         if resp.status_code != 200:
             print("Bad Rest request: %s status: %d" % (url, resp.status_code))
-        self.current_preset_index = index
+        self.current.preset_index = index
 
         #load of the preset might have changed plugin bypass status
         self.preset_change_plugin_update()
@@ -329,27 +318,17 @@ class Mod:
 
     def preset_select(self, encoder, clk_pin):
         enc = encoder.get_data()
-        index = self.next_preset_index(self.current_presets, self.selected_preset_index, enc is not 1)
+        index = self.next_preset_index(self.current.presets, self.selected_preset_index, enc is not 1)
         if index < 0:
             return
         self.selected_preset_index = index
-        self.lcd.draw_title(self.get_current_pedalboard_name(), self.current_presets[index], False, True)
+        self.lcd.draw_title(self.current.pedalboard.title, self.current.presets[index], False, True)
 
     def update_lcd(self):
-        pb_name = self.get_current_pedalboard_name()  # TODO use self.current_pedalboard
-        if pb_name is None:
-            return
-
         self.update_lcd_title()
-
-        pb = self.get_current_pedalboard()
-        if not pb or self.pedalboards[pb] is None:
-            return
-
-        self.lcd.draw_analog_assignments(self.current_analog_controllers)
-        self.lcd.draw_plugins(self.pedalboards[pb].plugins)
-        self.lcd.draw_bound_plugins(self.pedalboards[pb].plugins)
-        self.lcd.refresh_plugins()
+        self.lcd.draw_analog_assignments(self.current.analog_controllers)
+        self.lcd.draw_plugins(self.current.pedalboard.plugins)
+        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins)
 
     def update_lcd_title(self):
         invert_pb = False
@@ -358,18 +337,11 @@ class Mod:
             invert_pb = True
         if self.top_encoder_mode == TopEncoderMode.PRESET_SELECT:
             invert_pre = True
-        self.lcd.draw_title(self.get_current_pedalboard_name(),
-                            util.DICT_GET(self.current_presets, self.current_preset_index), invert_pb, invert_pre)
+        self.lcd.draw_title(self.current.pedalboard.title,
+                            util.DICT_GET(self.current.presets, self.current.preset_index), invert_pb, invert_pre)
 
     def update_lcd_plugins(self):
-        pb = self.get_current_pedalboard()
-        if self.pedalboards[pb] is None:
-            return
-        self.lcd.draw_plugins(self.pedalboards[pb].plugins)
-        self.lcd.refresh_plugins()
+        self.lcd.draw_plugins(self.current.pedalboard.plugins)
 
     def update_lcd_fs(self):
-        pb = self.get_current_pedalboard()
-        if self.pedalboards[pb] is None:
-            return
-        self.lcd.draw_bound_plugins(self.pedalboards[pb].plugins)
+        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins)
