@@ -50,6 +50,8 @@ class Mod:
 
         # Create dummy host for obtaining pedalboard info
         #self.host = Host(None, None, self.msg_callback)
+        #def msg_callback(self, msg):
+        #    print(msg)
 
         self.hardware = None
 
@@ -69,11 +71,54 @@ class Mod:
             self.analog_controllers = {}  # { type: (plugin_name, param_name) }
 
 
+    #
+    # Hardware
+    #
+
     def add_hardware(self, hardware):
         self.hardware = hardware
 
-    def msg_callback(self, msg):
-        print(msg)
+    def bottom_encoder_sw(self, value):
+        if value == AnalogSwitch.Value.RELEASED:
+            self.toggle_plugin_bypass()
+
+    def top_encoder_sw(self, value):
+        # State machine for top rotary encoder
+        mode = self.top_encoder_mode
+        if value == AnalogSwitch.Value.RELEASED:
+            if mode == TopEncoderMode.PRESET_SELECT:
+                self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
+            elif mode == TopEncoderMode.PEDALBOARD_SELECT:
+                self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
+            elif mode == TopEncoderMode.PRESET_SELECTED:
+                self.preset_change()
+                self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
+            elif mode == TopEncoderMode.PEDALBOARD_SELECTED:
+                self.pedalboard_change()
+                self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
+            else:
+                if len(self.current.presets) > 0:
+                    self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
+                else:
+                    self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
+            self.update_lcd_title()
+        elif value == AnalogSwitch.Value.LONGPRESSED:
+            self.top_encoder_mode = TopEncoderMode.DEFAULT
+            self.update_lcd_title()
+
+    def top_encoder_select(self, encoder, clk_pin):
+        # State machine for top encoder switch
+        mode = self.top_encoder_mode
+        if mode == TopEncoderMode.PEDALBOARD_SELECT or mode == TopEncoderMode.PEDALBOARD_SELECTED:
+            self.pedalboard_select(encoder, clk_pin)
+            self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECTED
+        elif mode == TopEncoderMode.PRESET_SELECT or mode == TopEncoderMode.PRESET_SELECTED:
+            self.preset_select(encoder, clk_pin)
+            self.top_encoder_mode = TopEncoderMode.PRESET_SELECTED
+
+    #
+    # Pedalboard Stuff
+    #
 
     def load_pedalboards(self):
         url = self.root_uri + "pedalboard/list"
@@ -104,6 +149,16 @@ class Mod:
         #self.host.load(bund, False)
         #print("Preset: %s %d" % (bund, self.host.pedalboard_preset))  # this value not initialized
         #print("Preset: %s" % self.get_current_preset_name())
+
+    def get_current_pedalboard_bundle_path(self):
+        url = self.root_uri + "pedalboard/current"
+        try:
+            resp = req.get(url)
+            # TODO pass code define
+            if resp.status_code == 200:
+                return resp.text
+        except:
+            return None
 
     def set_current_pedalboard(self, pedalboard):
         # Delete previous "current"
@@ -146,88 +201,6 @@ class Mod:
                                                if elem.has_footswitch is False]
             self.current.pedalboard.plugins += footswitch_plugins
 
-    def load_current_presets(self):
-        url = self.root_uri + "pedalpreset/list"
-        try:
-            resp = req.get(url)
-            if resp.status_code == 200:
-                pass
-        except:
-            return None
-        dict = json.loads(resp.text)
-        for key, name in dict.items():
-            if key.isdigit():
-                index = int(key)
-                self.current.presets[index] = name
-        return resp.text
-
-    def get_current_pedalboard_bundle_path(self):
-        url = self.root_uri + "pedalboard/current"
-        try:
-            resp = req.get(url)
-            # TODO pass code define
-            if resp.status_code == 200:
-                return resp.text
-        except:
-            return None
-
-    def get_selected_instance(self):
-        if self.current.pedalboard is not None:
-            pb = self.current.pedalboard
-            inst = pb.plugins[self.selected_plugin_index]
-            if inst is not None:
-                return inst
-        return None
-
-    def plugin_select(self, encoder, clk_pin):
-        enc = encoder.get_data()
-        if self.current.pedalboard is not None:
-            pb = self.current.pedalboard
-            index = ((self.selected_plugin_index - 1) if (enc is not 1)
-                    else (self.selected_plugin_index + 1)) % len(pb.plugins)
-            #index = self.next_plugin(pb.plugins, enc)
-            plugin = pb.plugins[index]  # TODO check index
-            self.selected_plugin_index = index
-            self.lcd.draw_plugin_select(plugin)
-
-    def bottom_encoder_sw(self, value):
-        if value == AnalogSwitch.Value.RELEASED:
-            self.toggle_plugin_bypass()
-
-    def top_encoder_sw(self, value):
-        # State machine for top rotary encoder
-        mode = self.top_encoder_mode
-        if value == AnalogSwitch.Value.RELEASED:
-            if mode == TopEncoderMode.PRESET_SELECT:
-                self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
-            elif mode == TopEncoderMode.PEDALBOARD_SELECT:
-                self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
-            elif mode == TopEncoderMode.PRESET_SELECTED:
-                self.preset_change()
-                self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
-            elif mode == TopEncoderMode.PEDALBOARD_SELECTED:
-                self.pedalboard_change()
-                self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
-            else:
-                if len(self.current.presets) > 0:
-                    self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
-                else:
-                    self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
-            self.update_lcd_title()
-        elif value == AnalogSwitch.Value.LONGPRESSED:
-            self.top_encoder_mode = TopEncoderMode.DEFAULT
-            self.update_lcd_title()
-
-    def top_encoder_select(self, encoder, clk_pin):
-        # State machine for top encoder switch
-        mode = self.top_encoder_mode
-        if mode == TopEncoderMode.PEDALBOARD_SELECT or mode == TopEncoderMode.PEDALBOARD_SELECTED:
-            self.pedalboard_select(encoder, clk_pin)
-            self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECTED
-        elif mode == TopEncoderMode.PRESET_SELECT or mode == TopEncoderMode.PRESET_SELECTED:
-            self.preset_select(encoder, clk_pin)
-            self.top_encoder_mode = TopEncoderMode.PRESET_SELECTED
-
     def pedalboard_select(self, encoder, clk_pin):
         enc = encoder.get_data()
         cur_idx = self.selected_pedalboard_index
@@ -249,6 +222,98 @@ class Mod:
 
             # Now that it's presumably changed, load the dynamic "current" data
             self.set_current_pedalboard(self.pedalboard_list[self.selected_pedalboard_index])
+
+    #
+    # Preset Stuff
+    #
+
+    def load_current_presets(self):
+        url = self.root_uri + "pedalpreset/list"
+        try:
+            resp = req.get(url)
+            if resp.status_code == 200:
+                pass
+        except:
+            return None
+        dict = json.loads(resp.text)
+        for key, name in dict.items():
+            if key.isdigit():
+                index = int(key)
+                self.current.presets[index] = name
+        return resp.text
+
+    def next_preset_index(self, dict, current, incr):
+        # This essentially applies modulo to a set of potentially discontinuous keys
+        # a missing key occurs when a preset is deleted
+        indices = list(dict.keys())
+        if current not in indices:
+            return -1
+        cur = indices.index(current)
+        if incr:
+            if cur < len(indices) - 1:
+                return indices[cur + 1]
+            return min(indices)
+        else:
+            if cur > 0:
+                return indices[cur - 1]
+            return max(indices)
+
+    def preset_select(self, encoder, clk_pin):
+        enc = encoder.get_data()
+        index = self.next_preset_index(self.current.presets, self.selected_preset_index, enc is not 1)
+        if index < 0:
+            return
+        self.selected_preset_index = index
+        self.lcd.draw_title(self.current.pedalboard.title, self.current.presets[index], False, True)
+
+    def preset_change(self):
+        index = self.selected_preset_index
+        print("preset change: %d" % index)
+        url = "http://localhost/pedalpreset/load?id=%d" % index  # TODO use root and uri (Everywhere)
+        # req.get("http://localhost/reset")
+        resp = req.get(url)
+        if resp.status_code != 200:
+            print("Bad Rest request: %s status: %d" % (url, resp.status_code))
+        self.current.preset_index = index
+
+        #load of the preset might have changed plugin bypass status
+        self.preset_change_plugin_update()
+
+    def preset_change_plugin_update(self):
+        for p in self.current.pedalboard.plugins:
+            uri = self.root_uri + "effect/parameter/get//graph" + p.instance_id + "/:bypass"
+            try:
+                resp = req.get(uri)
+                if resp.status_code == 200:
+                    p.set_bypass(resp.text == "true")
+            except:
+                print("failed to get bypass value for: %s" % p.instance_id)
+                continue
+        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins)
+        self.lcd.draw_plugins(self.current.pedalboard.plugins)
+
+    #
+    # Plugin Stuff
+    #
+
+    def get_selected_instance(self):
+        if self.current.pedalboard is not None:
+            pb = self.current.pedalboard
+            inst = pb.plugins[self.selected_plugin_index]
+            if inst is not None:
+                return inst
+        return None
+
+    def plugin_select(self, encoder, clk_pin):
+        enc = encoder.get_data()
+        if self.current.pedalboard is not None:
+            pb = self.current.pedalboard
+            index = ((self.selected_plugin_index - 1) if (enc is not 1)
+                    else (self.selected_plugin_index + 1)) % len(pb.plugins)
+            #index = self.next_plugin(pb.plugins, enc)
+            plugin = pb.plugins[index]  # TODO check index
+            self.selected_plugin_index = index
+            self.lcd.draw_plugin_select(plugin)
 
     def toggle_plugin_bypass(self):
         print("toggle_plugin_bypass")
@@ -274,55 +339,9 @@ class Mod:
                 return
             self.update_lcd_plugins()
 
-    def preset_change_plugin_update(self):
-        for p in self.current.pedalboard.plugins:
-            uri = self.root_uri + "effect/parameter/get//graph" + p.instance_id + "/:bypass"
-            try:
-                resp = req.get(uri)
-                if resp.status_code == 200:
-                    p.set_bypass(resp.text == "true")
-            except:
-                print("failed to get bypass value for: %s" % p.instance_id)
-                continue
-        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins)
-        self.lcd.draw_plugins(self.current.pedalboard.plugins)
-
-    def preset_change(self):
-        index = self.selected_preset_index
-        print("preset change: %d" % index)
-        url = "http://localhost/pedalpreset/load?id=%d" % index  # TODO use root and uri (Everywhere)
-        # req.get("http://localhost/reset")
-        resp = req.get(url)
-        if resp.status_code != 200:
-            print("Bad Rest request: %s status: %d" % (url, resp.status_code))
-        self.current.preset_index = index
-
-        #load of the preset might have changed plugin bypass status
-        self.preset_change_plugin_update()
-
-    def next_preset_index(self, dict, current, incr):
-        # This essentially applies modulo to a set of potentially discontinuous keys
-        # a missing key occurs when a preset is deleted
-        indices = list(dict.keys())
-        if current not in indices:
-            return -1
-        cur = indices.index(current)
-        if incr:
-            if cur < len(indices) - 1:
-                return indices[cur + 1]
-            return min(indices)
-        else:
-            if cur > 0:
-                return indices[cur - 1]
-            return max(indices)
-
-    def preset_select(self, encoder, clk_pin):
-        enc = encoder.get_data()
-        index = self.next_preset_index(self.current.presets, self.selected_preset_index, enc is not 1)
-        if index < 0:
-            return
-        self.selected_preset_index = index
-        self.lcd.draw_title(self.current.pedalboard.title, self.current.presets[index], False, True)
+    #
+    # LCD Stuff
+    #
 
     def update_lcd(self):
         self.update_lcd_title()

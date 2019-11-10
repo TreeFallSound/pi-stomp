@@ -85,7 +85,6 @@ class Hardware:
             control = AnalogMidiControl.AnalogMidiControl(spi, c[0], c[1], c[2], MIDI_CHANNEL, midiout, c[3])
             self.analog_controls.append(control)
             key = format("%d:%d" % (MIDI_CHANNEL, c[2]))
-            print(key)
             self.controllers[key] = control  # Controller.Controller(MIDI_CHANNEL, c[1], Controller.Type.ANALOG)
 
         # Initialize Encoders
