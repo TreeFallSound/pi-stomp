@@ -37,7 +37,9 @@ class Mod:
         self.root_uri = "http://localhost:80/"
 
         self.pedalboards = {}  # TODO make the ordering of entries deterministic
+        self.pedalboard_list = []  # TODO LAME to have two lists
         self.current_pedalboard = None
+        self.selected_pedalboard_index = 0
 
         self.current_presets = {}   # Keyed by index
         self.current_preset_index = 0
@@ -82,9 +84,10 @@ class Mod:
             print("Loading pedalboard info: %s" % pb['title'])
             bundle = pb['bundle']
             title = pb['title']
-            pedalboard = Pedalboard.Pedalboard(bundle, title)
+            pedalboard = Pedalboard.Pedalboard(title, bundle)
             pedalboard.load_bundle(bundle, self.plugin_dict)
             self.pedalboards[bundle] = pedalboard
+            self.pedalboard_list.append(pedalboard)
             #print("dump: %s" % pedalboard.to_json())
 
         # TODO - example of querying host
@@ -190,8 +193,7 @@ class Mod:
             self.lcd.draw_plugin_select(plugin)
 
     def bottom_encoder_sw(self, value):
-        # TODO check mode here
-        if value > 512:  # button up
+        if value == AnalogSwitch.Value.RELEASED:
             self.toggle_plugin_bypass()
 
     def top_encoder_sw(self, value):
@@ -209,7 +211,10 @@ class Mod:
                 self.pedalboard_change()
                 self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
             else:
-                self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
+                if len(self.current_presets) > 0:
+                    self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
+                else:
+                    self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
             self.update_lcd_title()
         elif value == AnalogSwitch.Value.LONGPRESSED:
             self.top_encoder_mode = TopEncoderMode.DEFAULT
@@ -217,6 +222,7 @@ class Mod:
 
     def top_encoder_select(self, encoder, clk_pin):
         # State machine for top encoder switch
+        mode = self.top_encoder_mode
         mode = self.top_encoder_mode
         if mode == TopEncoderMode.PEDALBOARD_SELECT or mode == TopEncoderMode.PEDALBOARD_SELECTED:
             self.pedalboard_select(encoder, clk_pin)
@@ -226,16 +232,33 @@ class Mod:
             self.top_encoder_mode = TopEncoderMode.PRESET_SELECTED
 
     def pedalboard_select(self, encoder, clk_pin):
-        print("PB select")
-        #enc = encoder.get_data()
-        #index = self.next_preset_index(self.current_presets, self.selected_preset_index, enc is not 1)
-        #if index < 0:
-        #    return
-        #self.selected_preset_index = index
-        #self.lcd.draw_title(self.get_current_pedalboard_name(),index, False, invert_pre)
+        enc = encoder.get_data()
+        cur_idx = self.selected_pedalboard_index
+        next_idx = ((cur_idx - 1) if (enc is not 1) else (cur_idx + 1)) % len(self.pedalboard_list)
+        if self.pedalboard_list[next_idx].bundle in self.pedalboards:
+            self.lcd.draw_title(self.pedalboard_list[next_idx].title, None, True, False)
+            self.selected_pedalboard_index = next_idx
 
     def pedalboard_change(self):
         print("Pedalboard change")
+        if self.selected_pedalboard_index < len(self.pedalboard_list):
+            uri = self.root_uri + "pedalboard/load_bundle/"
+            bundlepath = self.pedalboard_list[self.selected_pedalboard_index].bundle
+            data = {"bundlepath": bundlepath}
+            req.get("http://localhost/reset")
+            resp2 = req.post(uri, data)
+            if resp2.status_code != 200:
+                print("Bad Rest request: %s %s  status: %d" % (uri, data, resp2.status_code))
+            self.current_pedalboard = self.pedalboard_list[self.selected_pedalboard_index]
+
+            # Reset "current" data TODO need a better way to do that
+            self.current_presets = {}  # Keyed by index
+            self.current_preset_index = 0
+            self.selected_preset_index = 0
+
+            self.bind_current_pedalboard()
+            self.load_current_presets()
+            self.update_lcd()
 
     def toggle_plugin_bypass(self):
         print("toggle_plugin_bypass")
@@ -276,16 +299,14 @@ class Mod:
         self.lcd.refresh_plugins()
 
     def preset_change(self):
-        #enc = encoder.get_data()
         index = self.selected_preset_index
         print("preset change: %d" % index)
-        url = "http://localhost/pedalpreset/load?id=%d" % index
+        url = "http://localhost/pedalpreset/load?id=%d" % index  # TODO use root and uri (Everywhere)
         # req.get("http://localhost/reset")
         resp = req.get(url)
         if resp.status_code != 200:
             print("Bad Rest request: %s status: %d" % (url, resp.status_code))
         self.current_preset_index = index
-        #self.update_lcd_title()
 
         #load of the preset might have changed plugin bypass status
         self.preset_change_plugin_update()
@@ -322,7 +343,7 @@ class Mod:
         self.update_lcd_title()
 
         pb = self.get_current_pedalboard()
-        if self.pedalboards[pb] is None:
+        if not pb or self.pedalboards[pb] is None:
             return
 
         self.lcd.draw_analog_assignments(self.current_analog_controllers)

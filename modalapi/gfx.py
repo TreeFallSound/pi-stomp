@@ -103,9 +103,9 @@ class Gfx:
     def draw_title(self, pedalboard, preset, invert_pb, invert_pre):
         self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
 
+        pedalboard = pedalboard.lower().capitalize()
         pb_size  = self.title_font.getsize(pedalboard)[0]
-        pre_size = self.title_font.getsize(preset)[0]
-        font_height = self.title_font.getsize(preset)[1]
+        font_height = self.title_font.getsize(pedalboard)[1]
         y = -1  # -1 pushes text to very top of LCD
 
         # Pedalboard Name
@@ -113,18 +113,22 @@ class Gfx:
             self.draw[0].rectangle(((0, y), (pb_size, font_height)), True, 1)
         self.draw[0].text((0, y), pedalboard, not invert_pb, self.title_font)
 
-        # delimiter
-        delimiter = "-"
-        x = pb_size + 1
-        self.draw[0].text((x, y), delimiter, 1, self.title_font)
+        if preset != None:
 
-        # Preset Name
-        x = x + self.title_font.getsize(delimiter)[0]
-        x2 = x + pre_size
-        y2 = font_height
-        if invert_pre:
-            self.draw[0].rectangle(((x, y), (x2, y2)), True, 1)
-        self.draw[0].text((x, y), preset, not invert_pre, self.title_font)
+            # delimiter
+            delimiter = "-"
+            x = pb_size + 1
+            self.draw[0].text((x, y), delimiter, 1, self.title_font)
+
+            # Preset Name
+            preset = preset.lower().capitalize()
+            pre_size = self.title_font.getsize(preset)[0]
+            x = x + self.title_font.getsize(delimiter)[0]
+            x2 = x + pre_size
+            y2 = font_height
+            if invert_pre:
+                self.draw[0].rectangle(((x, y), (x2, y2)), True, 1)
+            self.draw[0].text((x, y), preset, not invert_pre, self.title_font)
 
         self.refresh_zone(0)
 
@@ -193,6 +197,7 @@ class Gfx:
         return x2
 
     def draw_bound_plugins(self, plugins):
+        self.images[7].paste(0, (0, 0, self.width, self.zone_height[7]))
         for p in plugins:
             if p.has_footswitch is False:
                 continue
@@ -204,7 +209,6 @@ class Gfx:
         self.refresh_zone(7)
 
     def draw_plugins(self, plugins):
-        # TODO don't hardcode numbers by assuming 128x64, use width and height
         # TODO Improve expansion/wrapping algorithm (calculate values)
         y = 0
         x = 0
@@ -214,7 +218,8 @@ class Gfx:
         rect_x_pad = 2
         count = 0
         zone = 3
-        self.images[zone].paste(0, (0, 0, self.width, self.zone_height[zone]))
+        self.images[3].paste(0, (0, 0, self.width, self.zone_height[3]))
+        self.images[5].paste(0, (0, 0, self.width, self.zone_height[5]))
         for p in reversed(plugins):
             if p.has_footswitch:
                 continue
@@ -229,7 +234,7 @@ class Gfx:
                 zone += 2
                 x = 0
                 if y >= ymax:
-                    break  # Only display 2 rows, huge pedalboards won't fully render
+                    break  # Only display 2 rows, huge pedalboards won't fully render  # TODO make sure this works
 
     def shorten_name(self, name):
         text = ""
