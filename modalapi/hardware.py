@@ -40,8 +40,9 @@ FOOTSW_BYPASS_INDEX = 0
 # 1: the ADC channel
 # 2: the minimum threshold for considering the value to be changed
 # 3: the MIDI Control (CC) message that will be sent
+# 4: control type (KNOB, EXPRESSION, etc.
 # Tweak, Expression Pedal
-ANALOG_CONTROL = ((0, 16, 64), (1, 16, 65))
+ANALOG_CONTROL = ((0, 16, 64, 'KNOB'), (1, 16, 65, 'EXPRESSION'))
 
 class Hardware:
     __single = None
@@ -81,7 +82,7 @@ class Hardware:
         spi.open(0, 1)  # Bus 0, CE1
         spi.max_speed_hz = 1000000  # TODO match with LCD or don't specify.  Move to top of file
         for c in ANALOG_CONTROL:
-            control = AnalogMidiControl.AnalogMidiControl(spi, c[0], c[1], c[2], MIDI_CHANNEL, midiout)
+            control = AnalogMidiControl.AnalogMidiControl(spi, c[0], c[1], c[2], MIDI_CHANNEL, midiout, c[3])
             self.analog_controls.append(control)
             key = format("%d:%d" % (MIDI_CHANNEL, c[2]))
             print(key)

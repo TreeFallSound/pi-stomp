@@ -9,7 +9,7 @@ import modalapi.controller as controller
 class Footswitch(controller.Controller):
 
     def __init__(self, id, fs_pin, led_pin, midi_CC, midi_channel, midiout, refresh_callback):
-        super(Footswitch, self).__init__(midi_channel, midi_CC, None)
+        super(Footswitch, self).__init__(midi_channel, midi_CC)
         self.id = id
         self.enabled = False
         self.fs_pin = fs_pin

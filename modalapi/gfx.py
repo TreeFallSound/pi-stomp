@@ -3,11 +3,10 @@
 import signal
 import spidev
 
-from modalapi.footswitch import Footswitch
-
 from gfxhat import touch, lcd, backlight, fonts
 from PIL import Image, ImageFont, ImageDraw
 
+from modalapi.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
 
 class Gfx:
 
@@ -133,18 +132,25 @@ class Gfx:
         self.refresh_zone(0)
 
     # Zone 1 - Analog Assignments (Tweak, Expression Pedal, etc.)
-    def draw_analog_assignments(self, controller_list):
+    def draw_analog_assignments(self, controllers):
         zone = 1
+        self.images[zone].paste(0, (0, 0, self.width, self.zone_height[zone]))
 
-        if len(controller_list) > 0:
+        type = 'EXPRESSION'
+        if type in controllers:  # TODO Slightly lame string linkage to controller class
+            text = "%s:%s" % (self.shorten_name(controllers[type][0]), controllers[type][1])
             self.draw[zone].line(((0, 5), (8, 1)), True, 1)
             self.draw[zone].line(((0, 5), (8, 5)), True, 2)
-            self.draw[zone].text((10, 0), "delay:time", True, self.small_font)
+            self.draw[zone].text((10, 0), text, True, self.small_font)
 
+        type = 'KNOB'
+        if type in controllers:
+            text = "%s:%s" % (self.shorten_name(controllers[type][0]), controllers[type][1])
             self.draw[zone].ellipse(((66, 0), (72, 6)), True, 1)
             self.draw[zone].line(((69, 0), (69, 2)), False, 1)
-            self.draw[zone].text((75, 0), "ts9:drive", True, self.small_font)
-            self.refresh_zone(1)
+            self.draw[zone].text((75, 0), text, True, self.small_font)
+
+        self.refresh_zone(zone)
 
     # Zones 2, 4, 6 - Plugin Selection
     def draw_plugin_select(self, plugin):
@@ -239,7 +245,7 @@ class Gfx:
 
     def shorten_name(self, name):
         text = ""
-        for x in name.lower().replace('_', ''):
+        for x in name.lower().replace('_', '').replace('/', ''):
             test = text + x
             test_size = self.small_font.getsize(test)[0]
             if test_size >= self.plugin_width:

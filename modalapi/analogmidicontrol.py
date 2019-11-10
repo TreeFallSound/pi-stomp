@@ -14,11 +14,14 @@ import modalapi.analogcontrol as analogcontrol
 
 class AnalogMidiControl(analogcontrol.AnalogControl):
 
-    def __init__(self, spi, adc_channel, tolerance, midi_CC, midi_channel, midiout):
+    def __init__(self, spi, adc_channel, tolerance, midi_CC, midi_channel, midiout, type):
         super(AnalogMidiControl, self).__init__(spi, adc_channel, tolerance)
         self.midi_CC = midi_CC
         self.midiout = midiout
         self.midi_channel = midi_channel
+
+        # Parent member overrides
+        self.type = type
         self.last_read = 0          # this keeps track of the last potentiometer value
         self.value = None
 

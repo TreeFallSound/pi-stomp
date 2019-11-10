@@ -11,6 +11,7 @@ import modalapi.controller as Controller
 import modalapi.pedalboard as Pedalboard
 import modalapi.util as util
 
+from modalapi.analogmidicontrol import AnalogMidiControl
 from modalapi.footswitch import Footswitch
 from enum import Enum
 
@@ -65,7 +66,7 @@ class Mod:
             self.pedalboard = pedalboard
             self.presets = {}
             self.preset_index = 0
-            self.analog_controllers = []
+            self.analog_controllers = {}  # { type: (plugin_name, param_name) }
 
 
     def add_hardware(self, hardware):
@@ -137,9 +138,8 @@ class Mod:
                                 # TODO sort this list so selection orders correctly (sort on midi_CC?)
                                 plugin.has_footswitch = True
                                 footswitch_plugins.append(plugin)
-                            else:
-                                self.current.analog_controllers.append(controller)
-                                print("Controller %s %s", controller, param)
+                            elif isinstance(controller, AnalogMidiControl):
+                                self.current.analog_controllers[controller.type] = (plugin.instance_id, param.name)
 
             # Move Footswitch controlled plugins to the end of the list
             self.current.pedalboard.plugins = [elem for elem in self.current.pedalboard.plugins
