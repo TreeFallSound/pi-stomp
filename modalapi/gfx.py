@@ -62,9 +62,13 @@ class Gfx:
     def refresh_zone(self, zone_idx):
         #flipped = self.images[zone_idx].transpose(Image.ROTATE_180)
         flipped = self.images[zone_idx]
+
+        # Determine the start y position by adding the height of all previous zones
         y_offset = 0
         for i in range(zone_idx):
             y_offset += self.zone_height[i]
+
+        # Set Pixels
         for x in range(0, self.width):
             for y in range(0, self.zone_height[zone_idx]):
                 pixel = flipped.getpixel((x, y))
@@ -136,20 +140,29 @@ class Gfx:
         zone = 1
         self.images[zone].paste(0, (0, 0, self.width, self.zone_height[zone]))
 
+        text = "None"
+        self.draw[zone].line(((0, 5), (8, 1)), True, 1)
+        self.draw[zone].line(((0, 5), (8, 5)), True, 2)
         type = 'EXPRESSION'
         if type in controllers:  # TODO Slightly lame string linkage to controller class
             text = "%s:%s" % (self.shorten_name(controllers[type][0]), controllers[type][1])
-            self.draw[zone].line(((0, 5), (8, 1)), True, 1)
-            self.draw[zone].line(((0, 5), (8, 5)), True, 2)
-            self.draw[zone].text((10, 0), text, True, self.small_font)
+        self.draw[zone].text((10, 0), text, True, self.small_font)
 
+        text = "None"
+        x = 66
+        self.draw[zone].ellipse(((x, 0), (x + 6, 6)), True, 1)
+        self.draw[zone].line(((x + 3, 0), (x + 3, 2)), False, 1)
         type = 'KNOB'
         if type in controllers:
             text = "%s:%s" % (self.shorten_name(controllers[type][0]), controllers[type][1])
-            self.draw[zone].ellipse(((66, 0), (72, 6)), True, 1)
-            self.draw[zone].line(((69, 0), (69, 2)), False, 1)
-            self.draw[zone].text((75, 0), text, True, self.small_font)
+        self.draw[zone].text((x+9, 0), text, True, self.small_font)
 
+        self.refresh_zone(zone)
+
+    def draw_info_message(self, text):
+        zone = 1
+        self.images[zone].paste(0, (0, 0, self.width, self.zone_height[zone]))
+        self.draw[zone].text((0, 0), text, True, self.small_font)
         self.refresh_zone(zone)
 
     # Zones 2, 4, 6 - Plugin Selection

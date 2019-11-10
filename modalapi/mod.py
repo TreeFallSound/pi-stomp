@@ -95,7 +95,7 @@ class Mod:
                 self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
             elif mode == TopEncoderMode.PEDALBOARD_SELECTED:
                 self.pedalboard_change()
-                self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
+                self.top_encoder_mode = TopEncoderMode.DEFAULT
             else:
                 if len(self.current.presets) > 0:
                     self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
@@ -212,6 +212,7 @@ class Mod:
     def pedalboard_change(self):
         print("Pedalboard change")
         if self.selected_pedalboard_index < len(self.pedalboard_list):
+            self.lcd.draw_info_message("Loading...")
             uri = self.root_uri + "pedalboard/load_bundle/"
             bundlepath = self.pedalboard_list[self.selected_pedalboard_index].bundle
             data = {"bundlepath": bundlepath}
@@ -269,6 +270,7 @@ class Mod:
     def preset_change(self):
         index = self.selected_preset_index
         print("preset change: %d" % index)
+        self.lcd.draw_info_message("Loading...")
         url = "http://localhost/pedalpreset/load?id=%d" % index  # TODO use root and uri (Everywhere)
         # req.get("http://localhost/reset")
         resp = req.get(url)
@@ -280,6 +282,7 @@ class Mod:
         self.preset_change_plugin_update()
 
     def preset_change_plugin_update(self):
+        # Now that the preset has changed on the host, update plugin bypass indicators
         for p in self.current.pedalboard.plugins:
             uri = self.root_uri + "effect/parameter/get//graph" + p.instance_id + "/:bypass"
             try:
@@ -291,6 +294,7 @@ class Mod:
                 continue
         self.lcd.draw_bound_plugins(self.current.pedalboard.plugins)
         self.lcd.draw_plugins(self.current.pedalboard.plugins)
+        self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
     #
     # Plugin Stuff
