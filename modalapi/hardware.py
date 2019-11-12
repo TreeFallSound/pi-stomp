@@ -89,7 +89,7 @@ class Hardware:
 
         # Initialize Encoders
         top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=mod.top_encoder_select)
-        bot_enc = Encoder.Encoder(BOT_ENC_PIN_D, BOT_ENC_PIN_CLK, callback=mod.plugin_select)
+        bot_enc = Encoder.Encoder(BOT_ENC_PIN_D, BOT_ENC_PIN_CLK, callback=mod.bot_encoder_select)
         control = AnalogSwitch.AnalogSwitch(spi, TOP_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD, callback=mod.top_encoder_sw)
         self.analog_controls.append(control)
         control = AnalogSwitch.AnalogSwitch(spi, BOT_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD, callback=mod.bottom_encoder_sw)

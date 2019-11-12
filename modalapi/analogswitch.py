@@ -38,13 +38,13 @@ class AnalogSwitch(analogcontrol.AnalogControl):
             self.last_read = value
             return
 
-        # Count the number of simultaneous refresh cycles had the switch Low (triggered)
-        if value < self.tolerance and self.last_read < self.tolerance:
-            self.trigger_count += 1
-
         # how much has it changed since the last read?
         pot_adjust = abs(value - self.last_read)
         value_changed = (pot_adjust > self.tolerance)
+
+        # Count the number of simultaneous refresh cycles had the switch Low (triggered)
+        if value < self.tolerance and self.last_read < self.tolerance:
+            self.trigger_count += 1
 
         if value_changed:
 

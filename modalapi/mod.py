@@ -25,6 +25,10 @@ class TopEncoderMode(Enum):
     PEDALBOARD_SELECT = 3
     PEDALBOARD_SELECTED = 4
 
+class BotEncoderMode(Enum):
+    DEFAULT = 0
+    DEEP_EDIT = 1
+
 class Mod:
     __single = None
 
@@ -42,6 +46,7 @@ class Mod:
         self.selected_pedalboard_index = 0
         self.selected_preset_index = 0
         self.selected_plugin_index = 0
+        self.selected_parameter_index = 0
 
         self.plugin_dict = {}
 
@@ -56,6 +61,7 @@ class Mod:
         self.hardware = None
 
         self.top_encoder_mode = TopEncoderMode.DEFAULT
+        self.bot_encoder_mode = BotEncoderMode.DEFAULT
 
         self.current = None  # pointer to Current class
 
@@ -77,10 +83,6 @@ class Mod:
 
     def add_hardware(self, hardware):
         self.hardware = hardware
-
-    def bottom_encoder_sw(self, value):
-        if value == AnalogSwitch.Value.RELEASED:
-            self.toggle_plugin_bypass()
 
     def top_encoder_sw(self, value):
         # State machine for top rotary encoder
@@ -115,6 +117,26 @@ class Mod:
         elif mode == TopEncoderMode.PRESET_SELECT or mode == TopEncoderMode.PRESET_SELECTED:
             self.preset_select(encoder, clk_pin)
             self.top_encoder_mode = TopEncoderMode.PRESET_SELECTED
+
+    def bottom_encoder_sw(self, value):
+        # State machine for bottom rotary encoder switch
+        mode = self.bot_encoder_mode
+        if value == AnalogSwitch.Value.RELEASED:
+            self.toggle_plugin_bypass()
+        elif value == AnalogSwitch.Value.LONGPRESSED:
+            if mode == BotEncoderMode.DEFAULT:
+                self.bot_encoder_mode = BotEncoderMode.DEEP_EDIT
+                self.show_deep_edit()
+            else:
+                self.bot_encoder_mode = BotEncoderMode.DEFAULT
+                self.update_lcd()
+
+    def bot_encoder_select(self, encoder, clk_pin):
+        mode = self.bot_encoder_mode
+        if mode == BotEncoderMode.DEFAULT:
+            self.plugin_select(encoder, clk_pin)
+        elif mode == BotEncoderMode.DEEP_EDIT:
+            self.parameter_select(encoder, clk_pin)
 
     #
     # Pedalboard Stuff
@@ -344,6 +366,25 @@ class Mod:
             self.update_lcd_plugins()
 
     #
+    # Deep Edit (Parameter stuff)
+    #
+
+    def show_deep_edit(self):
+        plugin = self.get_selected_instance()
+        print(plugin.parameters)
+        self.selected_parameter_index = 0
+        self.lcd.draw_deep_edit(plugin.instance_id, plugin.parameters)
+        self.lcd.draw_deep_edit_hightlight(self.selected_parameter_index, 0)
+
+    def parameter_select(self, encoder, clk_pin):
+        enc = encoder.get_data()
+        plugin = self.get_selected_instance()
+        index = ((self.selected_parameter_index - 1) if (enc is not 1)
+                else (self.selected_parameter_index + 1)) % len(plugin.parameters)
+        self.lcd.draw_deep_edit_hightlight(index, 0)
+        self.selected_parameter_index = index
+
+    #
     # LCD Stuff
     #
 
@@ -352,6 +393,7 @@ class Mod:
         self.lcd.draw_analog_assignments(self.current.analog_controllers)
         self.lcd.draw_plugins(self.current.pedalboard.plugins)
         self.lcd.draw_bound_plugins(self.current.pedalboard.plugins)
+        self.lcd.draw_plugin_select()
 
     def update_lcd_title(self):
         invert_pb = False

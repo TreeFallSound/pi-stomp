@@ -14,7 +14,7 @@ class Gfx:
 
         # GFX properties
         self.width, self.height = lcd.dimensions()
-        self.height -= 1
+        self.height -= 1  # TODO figure out why this is needed
         self.num_leds = 6
 
         # Zone dimensions
@@ -30,6 +30,12 @@ class Gfx:
         self.footswitch_xy = {0: (0,   0),
                               1: (52,  0),
                               2: (103, 0)}
+
+
+        self.deep_edit_height = self.height - self.zone_height[0] - self.zone_height[1] + 1  # TODO figure out why +1
+        self.deep_edit_image_height = self.deep_edit_height * 2
+        self.deep_edit_image = Image.new('L', (self.width, self.deep_edit_image_height))  # TODO enough height?
+        self.deep_edit_draw = ImageDraw.Draw(self.deep_edit_image)
 
         # Element dimensions
         self.plugin_height = 11
@@ -69,11 +75,28 @@ class Gfx:
             y_offset += self.zone_height[i]
 
         # Set Pixels
+        # TODO make common method
         for x in range(0, self.width):
             for y in range(0, self.zone_height[zone_idx]):
                 pixel = flipped.getpixel((x, y))
                 lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
                 #print("%d %d" % (self.width - x - 1, self.height - y - y_offset))
+        lcd.show()
+
+    def refresh_deep_edit(self, highlight_range=None, scroll_offset=0):
+        # Set Pixels
+        y_offset = self.zone_height[0] + self.zone_height[1]
+        for x in range(0, self.width):
+            for y in range(0, self.deep_edit_height):
+                y_draw = y + scroll_offset
+                #if y_draw <= self.deep_edit_height:
+                pixel = self.deep_edit_image.getpixel((x, y_draw))
+                if highlight_range and (y_draw >= highlight_range[0]) and (y_draw <= highlight_range[1]):  # TODO LAME
+                    #print("invert %d" % y_draw)
+                    pixel = not pixel
+                #else:
+                #pixel = 0
+                lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
         lcd.show()
 
     def refresh_plugins(self):
@@ -101,6 +124,34 @@ class Gfx:
         backlight.show()
         lcd.clear()
         lcd.show()
+
+    # Deep Edit Screen
+    def draw_deep_edit(self, plugin_name, parameters):
+        self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
+        self.draw[0].text((0, 0), plugin_name, True, self.title_font)
+        self.images[1].paste(0, (0, 0, self.width, self.zone_height[1]))
+        x = 8
+        self.draw[1].text((x, 0), "< Back to main screen", True, self.small_font)
+        self.refresh_zone(0)
+        self.refresh_zone(1)
+
+        self.deep_edit_image.paste(0, (0, 0, self.width, self.deep_edit_height))
+        y = 0
+        count = 0
+        for name, p in parameters.items():
+            self.deep_edit_draw.text((x, y), "%d %s" % (count, name), True, self.small_font)
+            y += 10
+            count += 1
+        #highlight = ((highlight_idx * 10, highlight_idx * 10 + 8))  # TODO replace 10
+        self.refresh_deep_edit()
+
+    def draw_deep_edit_hightlight(self, highlight_idx, scroll_idx):
+        highlight = ((highlight_idx * 10, highlight_idx * 10 + 8))  # TODO replace 10
+        num_visible = 3  # TODO
+        if highlight_idx > num_visible:
+            scroll_idx = highlight_idx - num_visible
+        self.refresh_deep_edit(highlight, scroll_idx * 10)
+
 
     # Zone 0 - Pedalboard and Preset
     def draw_title(self, pedalboard, preset, invert_pb, invert_pre):
@@ -166,24 +217,26 @@ class Gfx:
         self.refresh_zone(zone)
 
     # Zones 2, 4, 6 - Plugin Selection
-    def draw_plugin_select(self, plugin):
-        x = plugin.lcd_xyz[0]
-        y = plugin.lcd_xyz[1]
-        zone = plugin.lcd_xyz[2] - 1
-
+    def draw_plugin_select(self, plugin=None):
         # Clear all selection zones
+        # TODO could be smarter about which zones to clear and refresh, but...
         self.images[2].paste(0, (0, 0, self.width, self.zone_height[2]))
         self.images[4].paste(0, (0, 0, self.width, self.zone_height[4]))
         self.images[6].paste(0, (0, 0, self.width, self.zone_height[6]))
 
-        self.draw[zone].point((x+10, 0), True)
-        self.draw[zone].point((x+11, 0), True)
-        self.draw[zone].point((x+12, 0), True)
-        self.draw[zone].point((x+13, 0), True)
-        self.draw[zone].point((x+14, 0), True)
-        self.draw[zone].point((x+11, 1), True)
-        self.draw[zone].point((x+12, 1), True)
-        self.draw[zone].point((x+13, 1), True)
+        if plugin is not None:
+            x = plugin.lcd_xyz[0]
+            y = plugin.lcd_xyz[1]
+            zone = plugin.lcd_xyz[2] - 1
+
+            self.draw[zone].point((x+10, 0), True)
+            self.draw[zone].point((x+11, 0), True)
+            self.draw[zone].point((x+12, 0), True)
+            self.draw[zone].point((x+13, 0), True)
+            self.draw[zone].point((x+14, 0), True)
+            self.draw[zone].point((x+11, 1), True)
+            self.draw[zone].point((x+12, 1), True)
+            self.draw[zone].point((x+13, 1), True)
 
         self.refresh_zone(2)
         self.refresh_zone(4)

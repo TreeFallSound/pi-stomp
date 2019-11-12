@@ -48,7 +48,7 @@ def main():
     mod.set_current_pedalboard(mod.pedalboards[mod.get_current_pedalboard_bundle_path()])
 
     # Load LCD
-    mod.update_lcd()
+    #mod.update_lcd()
     #touch.set_led(0, 1)
     #touch.set_led(2, 1)
 
