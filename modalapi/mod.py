@@ -28,6 +28,8 @@ class TopEncoderMode(Enum):
 class BotEncoderMode(Enum):
     DEFAULT = 0
     DEEP_EDIT = 1
+    VALUE_EDIT = 2
+
 
 class Mod:
     __single = None
@@ -122,7 +124,12 @@ class Mod:
         # State machine for bottom rotary encoder switch
         mode = self.bot_encoder_mode
         if value == AnalogSwitch.Value.RELEASED:
-            self.toggle_plugin_bypass()
+            if mode == BotEncoderMode.DEFAULT:
+                self.toggle_plugin_bypass()
+            elif mode == BotEncoderMode.DEEP_EDIT:
+                self.bot_encoder_mode = BotEncoderMode.VALUE_EDIT
+                self.show_value_edit()
+
         elif value == AnalogSwitch.Value.LONGPRESSED:
             if mode == BotEncoderMode.DEFAULT:
                 self.bot_encoder_mode = BotEncoderMode.DEEP_EDIT
@@ -374,21 +381,29 @@ class Mod:
         print(plugin.parameters)
         self.selected_parameter_index = 0
         self.lcd.draw_deep_edit(plugin.instance_id, plugin.parameters)
-        self.lcd.draw_deep_edit_hightlight(self.selected_parameter_index, 0)
+        self.lcd.draw_deep_edit_hightlight(self.selected_parameter_index)
+
+    def show_value_edit(self):
+        print("show_value_edit: %d" % self.selected_parameter_index)
+        if self.selected_parameter_index == 0:
+            self.bot_encoder_mode = BotEncoderMode.DEFAULT
+            self.update_lcd()
+        else:
+            pass
 
     def parameter_select(self, encoder, clk_pin):
         enc = encoder.get_data()
         plugin = self.get_selected_instance()
         index = ((self.selected_parameter_index - 1) if (enc is not 1)
-                else (self.selected_parameter_index + 1)) % len(plugin.parameters)
-        self.lcd.draw_deep_edit_hightlight(index, 0)
+                else (self.selected_parameter_index + 1)) % (len(plugin.parameters) + 1)  # +1 is for the back button
+        self.lcd.draw_deep_edit_hightlight(index)
         self.selected_parameter_index = index
 
     #
     # LCD Stuff
     #
 
-    def update_lcd(self):
+    def update_lcd(self):  # TODO rename to imply the home screen
         self.update_lcd_title()
         self.lcd.draw_analog_assignments(self.current.analog_controllers)
         self.lcd.draw_plugins(self.current.pedalboard.plugins)

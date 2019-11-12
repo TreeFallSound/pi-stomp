@@ -32,7 +32,7 @@ class Gfx:
                               2: (103, 0)}
 
 
-        self.deep_edit_height = self.height - self.zone_height[0] - self.zone_height[1] + 1  # TODO figure out why +1
+        self.deep_edit_height = self.height - self.zone_height[0] + 1  # TODO figure out why +1
         self.deep_edit_image_height = self.deep_edit_height * 2
         self.deep_edit_image = Image.new('L', (self.width, self.deep_edit_image_height))  # TODO enough height?
         self.deep_edit_draw = ImageDraw.Draw(self.deep_edit_image)
@@ -59,7 +59,8 @@ class Gfx:
 
         # Load fonts
         self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 11)
-        self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)
+        self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)  # TODO get rid
+        self.small_bold_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 8)
         self.small_font = ImageFont.truetype("DejaVuSans.ttf", 8)
 
         # Turn on Backlight
@@ -85,17 +86,13 @@ class Gfx:
 
     def refresh_deep_edit(self, highlight_range=None, scroll_offset=0):
         # Set Pixels
-        y_offset = self.zone_height[0] + self.zone_height[1]
+        y_offset = self.zone_height[0]
         for x in range(0, self.width):
             for y in range(0, self.deep_edit_height):
                 y_draw = y + scroll_offset
-                #if y_draw <= self.deep_edit_height:
                 pixel = self.deep_edit_image.getpixel((x, y_draw))
                 if highlight_range and (y_draw >= highlight_range[0]) and (y_draw <= highlight_range[1]):  # TODO LAME
-                    #print("invert %d" % y_draw)
                     pixel = not pixel
-                #else:
-                #pixel = 0
                 lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
         lcd.show()
 
@@ -127,31 +124,32 @@ class Gfx:
 
     # Deep Edit Screen
     def draw_deep_edit(self, plugin_name, parameters):
+        # Title (plugin name)
         self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
         self.draw[0].text((0, 0), plugin_name, True, self.title_font)
-        self.images[1].paste(0, (0, 0, self.width, self.zone_height[1]))
-        x = 8
-        self.draw[1].text((x, 0), "< Back to main screen", True, self.small_font)
         self.refresh_zone(0)
-        self.refresh_zone(1)
 
+        # Back button (index 0)
         self.deep_edit_image.paste(0, (0, 0, self.width, self.deep_edit_height))
-        y = 0
-        count = 0
+        self.deep_edit_draw.text((0, 0), "< Back to main screen", True, self.small_bold_font)
+
+        # Plugin Parameters
+        idx = 1
+        x = 8
+        y = 10  # TODO Define this somewhere
         for name, p in parameters.items():
-            self.deep_edit_draw.text((x, y), "%d %s" % (count, name), True, self.small_font)
+            self.deep_edit_draw.text((x, y), "%d %s" % (idx, name), True, self.small_font)
             y += 10
-            count += 1
-        #highlight = ((highlight_idx * 10, highlight_idx * 10 + 8))  # TODO replace 10
+            idx += 1
         self.refresh_deep_edit()
 
-    def draw_deep_edit_hightlight(self, highlight_idx, scroll_idx):
+    def draw_deep_edit_hightlight(self, highlight_idx):
+        scroll_idx = 0
         highlight = ((highlight_idx * 10, highlight_idx * 10 + 8))  # TODO replace 10
         num_visible = 3  # TODO
         if highlight_idx > num_visible:
             scroll_idx = highlight_idx - num_visible
         self.refresh_deep_edit(highlight, scroll_idx * 10)
-
 
     # Zone 0 - Pedalboard and Preset
     def draw_title(self, pedalboard, preset, invert_pb, invert_pre):
