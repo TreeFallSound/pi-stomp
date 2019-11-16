@@ -66,6 +66,7 @@ class Mod:
         self.bot_encoder_mode = BotEncoderMode.DEFAULT
 
         self.current = None  # pointer to Current class
+        self.deep = None     # pointer to current Deep class
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -78,6 +79,12 @@ class Mod:
             self.preset_index = 0
             self.analog_controllers = {}  # { type: (plugin_name, param_name) }
 
+    class Deep:
+        def __init__(self, plugin):
+            self.plugin = plugin
+            self.parameters = list(plugin.parameters.values())
+            self.selected_parameter_index = 0
+            self.value = 0
 
     #
     # Hardware
@@ -129,21 +136,35 @@ class Mod:
             elif mode == BotEncoderMode.DEEP_EDIT:
                 self.bot_encoder_mode = BotEncoderMode.VALUE_EDIT
                 self.show_value_edit()
+            #elif mode == BotEncoderMode.VALUE_EDIT:
+            #    self.parameter_value_change()
+
 
         elif value == AnalogSwitch.Value.LONGPRESSED:
-            if mode == BotEncoderMode.DEFAULT:
+            if mode == BotEncoderMode.DEFAULT or BotEncoderMode.VALUE_EDIT:
                 self.bot_encoder_mode = BotEncoderMode.DEEP_EDIT
                 self.show_deep_edit()
             else:
                 self.bot_encoder_mode = BotEncoderMode.DEFAULT
                 self.update_lcd()
 
-    def bot_encoder_select(self, encoder, clk_pin):
+    def bot_encoder_select0(self, encoder, clk_pin):
         mode = self.bot_encoder_mode
         if mode == BotEncoderMode.DEFAULT:
             self.plugin_select(encoder, clk_pin)
         elif mode == BotEncoderMode.DEEP_EDIT:
             self.parameter_select(encoder, clk_pin)
+        elif mode == BotEncoderMode.VALUE_EDIT:
+            self.parameter_value_change(encoder, clk_pin)
+
+    def bot_encoder_select(self, event):
+        mode = self.bot_encoder_mode
+        if mode == BotEncoderMode.DEFAULT:
+            self.plugin_select(event)
+        elif mode == BotEncoderMode.DEEP_EDIT:
+            self.parameter_select(event)
+        elif mode == BotEncoderMode.VALUE_EDIT:
+            self.parameter_value_change(event)
 
     #
     # Pedalboard Stuff
@@ -337,11 +358,11 @@ class Mod:
                 return inst
         return None
 
-    def plugin_select(self, encoder, clk_pin):
-        enc = encoder.get_data()
+    def plugin_select(self, direction):
+        #enc = encoder.get_data()
         if self.current.pedalboard is not None:
             pb = self.current.pedalboard
-            index = ((self.selected_plugin_index - 1) if (enc is not 1)
+            index = ((self.selected_plugin_index - 1) if (direction is not 1)
                     else (self.selected_plugin_index + 1)) % len(pb.plugins)
             #index = self.next_plugin(pb.plugins, enc)
             plugin = pb.plugins[index]  # TODO check index
@@ -378,26 +399,50 @@ class Mod:
 
     def show_deep_edit(self):
         plugin = self.get_selected_instance()
-        print(plugin.parameters)
-        self.selected_parameter_index = 0
-        self.lcd.draw_deep_edit(plugin.instance_id, plugin.parameters)
-        self.lcd.draw_deep_edit_hightlight(self.selected_parameter_index)
+        self.deep = self.Deep(plugin)
+        self.deep.selected_parameter_index = 0
+        self.lcd.draw_deep_edit(plugin.instance_id, self.deep.parameters)
+        self.lcd.draw_deep_edit_hightlight(self.deep.selected_parameter_index)
 
     def show_value_edit(self):
-        print("show_value_edit: %d" % self.selected_parameter_index)
-        if self.selected_parameter_index == 0:
+        if self.deep.selected_parameter_index == 0:
             self.bot_encoder_mode = BotEncoderMode.DEFAULT
+            del self.deep
             self.update_lcd()
         else:
-            pass
+            param = self.deep.parameters[self.deep.selected_parameter_index - 1]
+            self.deep.value = param.value
+            self.lcd.draw_value_edit(self.deep.plugin.instance_id, param, self.deep.value)
 
-    def parameter_select(self, encoder, clk_pin):
-        enc = encoder.get_data()
-        plugin = self.get_selected_instance()
-        index = ((self.selected_parameter_index - 1) if (enc is not 1)
-                else (self.selected_parameter_index + 1)) % (len(plugin.parameters) + 1)  # +1 is for the back button
+    def parameter_select(self, direction):
+        index = ((self.deep.selected_parameter_index - 1) if (direction is not 1)
+                else (self.deep.selected_parameter_index + 1)) % (len(self.deep.parameters) + 1)  # +1 is for the back button
         self.lcd.draw_deep_edit_hightlight(index)
-        self.selected_parameter_index = index
+        self.deep.selected_parameter_index = index
+
+    def parameter_value_change(self, direction):
+        new_value = ((self.deep.value - 8) if (direction is not 1) else (self.deep.value + 8))
+        self.deep.value = new_value
+        param = self.deep.parameters[self.deep.selected_parameter_index - 1]
+        self.parameter_value_commit()
+        self.lcd.draw_value_edit_graph(param, new_value)
+
+    def parameter_value_commit(self):
+        param = self.deep.parameters[self.deep.selected_parameter_index - 1]
+
+        # TODO share this with the similar toggle_bypass code
+        url = self.root_uri + "effect/parameter/set//graph%s/%s" % (self.deep.plugin.instance_id, param.symbol)
+        try:
+            resp = None
+            if self.deep.value is not None:
+                resp = req.post(url, json={"value": self.deep.value})
+            if resp.status_code != 200:
+                print("Bad Rest request: %s status: %d" % (url, resp.status_code))
+            else:
+                print("Parameter %s changed to: %d" % (param.name, new_value))
+        except:
+            print("status %s" % resp.status_code)
+            return
 
     #
     # LCD Stuff

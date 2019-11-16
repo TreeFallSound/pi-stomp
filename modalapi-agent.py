@@ -45,7 +45,12 @@ def main():
     mod.load_pedalboards()
 
     # Load the current pedalboard as "current"
-    mod.set_current_pedalboard(mod.pedalboards[mod.get_current_pedalboard_bundle_path()])
+    current_pedal_board_bundle = mod.get_current_pedalboard_bundle_path()
+    if not current_pedal_board_bundle:
+        # Apparently, no pedalboard is currently loaded so just load the first one
+        current_pedal_board_bundle = list(mod.pedalboards.keys())[0]
+    mod.set_current_pedalboard(mod.pedalboards[current_pedal_board_bundle])
+
 
     # Load LCD
     #mod.update_lcd()

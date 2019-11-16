@@ -122,7 +122,7 @@ class Gfx:
         lcd.clear()
         lcd.show()
 
-    # Deep Edit Screen
+    # Deep Edit Screens
     def draw_deep_edit(self, plugin_name, parameters):
         # Title (plugin name)
         self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
@@ -137,8 +137,8 @@ class Gfx:
         idx = 1
         x = 8
         y = 10  # TODO Define this somewhere
-        for name, p in parameters.items():
-            self.deep_edit_draw.text((x, y), "%d %s" % (idx, name), True, self.small_font)
+        for p in parameters:
+            self.deep_edit_draw.text((x, y), "%d %s" % (idx, p.name), True, self.small_font)
             y += 10
             idx += 1
         self.refresh_deep_edit()
@@ -150,6 +150,84 @@ class Gfx:
         if highlight_idx > num_visible:
             scroll_idx = highlight_idx - num_visible
         self.refresh_deep_edit(highlight, scroll_idx * 10)
+
+    def remap_range(self, value, left_min, left_max, right_min, right_max):
+        # this remaps a value from original (left) range to new (right) range
+        # Figure out how 'wide' each range is
+        left_span = left_max - left_min
+        right_span = right_max - right_min
+
+        # Convert the left range into a 0-1 range (int)
+        valueScaled = int(value - left_min) / int(left_span)
+
+        # Convert the 0-1 range into a value in the right range.
+        return int(right_min + (valueScaled * right_span))
+
+    def draw_value_edit(self, plugin_name, parameter, value):
+        # Title (parameter name)
+        self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
+        title = "%s-%s" % (plugin_name, parameter.name)
+        self.draw[0].text((0, 0), title, True, self.label_font)
+        self.refresh_zone(0)
+
+        # Back button (index 0)
+        self.deep_edit_image.paste(0, (0, 0, self.width, self.deep_edit_height))
+        self.deep_edit_draw.text((0, 0), "Press and hold to go back", True, self.small_bold_font)
+
+        # Parameter details
+        #self.image.paste(0, (0, 0, self.width, self.height))
+        y0 = 40
+        y1 = y0 - 2
+        yt = 16
+        x = 0  # TODO ofset messes scale
+        #val = min(parameter.value, 127)  # Scale to 127  TODO define max midi
+        # TODO scale to 100 (as in, percent)
+
+        #self.deep_edit_draw.text((0, yt), "Gain", 1, self.label_font)
+        #self.deep_edit_draw.text((40, yt), str(val), 1, self.label_font)
+
+        val = self.remap_range(value, parameter.minimum, parameter.maximum, 0, 127)
+        self.deep_edit_draw.text((0, yt), str(val), 1, self.label_font)
+
+        while x < val:
+            self.deep_edit_draw.rectangle(((x, y0), (x + 1, y1)), 1)
+            if x >= 127:
+                break
+            if (x % 9) == 0:
+                y1 = y1 - 1
+                x = x + 3
+            else:
+                x = x + 1
+
+        self.refresh_deep_edit()
+
+    def draw_value_edit_graph(self, parameter, value):  # TODO XXX share this graph drawing stuff
+        self.deep_edit_image.paste(0, (0, 0, self.width, self.deep_edit_height))
+        y0 = 40
+        y1 = y0 - 2
+        yt = 16
+        x = 0  # TODO ofset messes scale
+        # val = min(parameter.value, 127)  # Scale to 127  TODO define max midi
+        # TODO scale to 100 (as in, percent)
+
+        # self.deep_edit_draw.text((0, yt), "Gain", 1, self.label_font)
+        # self.deep_edit_draw.text((40, yt), str(val), 1, self.label_font)
+        #print("min %d   max %d" % (parameter.minimum, parameter.maximum))
+        val = self.remap_range(value, parameter.minimum, parameter.maximum, 0, 127)
+        self.deep_edit_draw.text((0, yt), str(val), 1, self.label_font)
+
+        while x < val:
+            self.deep_edit_draw.rectangle(((x, y0), (x + 1, y1)), 1)
+            if x >= 127:
+                break
+            if (x % 9) == 0:
+                y1 = y1 - 1
+                x = x + 3
+            else:
+                x = x + 1
+
+        self.refresh_deep_edit()
+
 
     # Zone 0 - Pedalboard and Preset
     def draw_title(self, pedalboard, preset, invert_pb, invert_pre):

@@ -27,6 +27,7 @@ class AnalogSwitch(analogcontrol.AnalogControl):
         self.last_read = None          # this keeps track of the last value
         self.trigger_count = 0
         self.callback = callback
+        self.longpress_state = False
 
     # Override of base class method
     def refresh(self):
@@ -43,8 +44,11 @@ class AnalogSwitch(analogcontrol.AnalogControl):
         value_changed = (pot_adjust > self.tolerance)
 
         # Count the number of simultaneous refresh cycles had the switch Low (triggered)
-        if value < self.tolerance and self.last_read < self.tolerance:
+        if not self.longpress_state and value < self.tolerance and self.last_read < self.tolerance:
             self.trigger_count += 1
+            if self.trigger_count > LONGPRESS_THRESHOLD:
+                value_changed = True
+                self.longpress_state = True
 
         if value_changed:
 
@@ -56,7 +60,12 @@ class AnalogSwitch(analogcontrol.AnalogControl):
             elif value < self.tolerance:
                 value = Value.PRESSED
             elif value >= self.tolerance:
-                value = Value.RELEASED
+                if (self.longpress_state):
+                    self.longpress_state = False
+                    self.trigger_count = 0
+                    return
+                else:
+                    value = Value.RELEASED
             self.trigger_count = 0
 
             self.callback(value)
