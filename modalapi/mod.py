@@ -5,6 +5,7 @@ import os
 import requests as req
 import sys
 import time
+import yaml
 
 import modalapi.analogswitch as AnalogSwitch
 import modalapi.controller as Controller
@@ -14,6 +15,7 @@ import modalapi.util as util
 from modalapi.analogmidicontrol import AnalogMidiControl
 from modalapi.footswitch import Footswitch
 from enum import Enum
+from pathlib import Path
 
 sys.path.append('/usr/lib/python3.5/site-packages')  # TODO possibly /usr/local/modep/mod-ui
 from mod.development import FakeHost as Host
@@ -117,14 +119,14 @@ class Mod:
             self.top_encoder_mode = TopEncoderMode.DEFAULT
             self.update_lcd_title()
 
-    def top_encoder_select(self, encoder, clk_pin):
+    def top_encoder_select(self, direction):
         # State machine for top encoder switch
         mode = self.top_encoder_mode
         if mode == TopEncoderMode.PEDALBOARD_SELECT or mode == TopEncoderMode.PEDALBOARD_SELECTED:
-            self.pedalboard_select(encoder, clk_pin)
+            self.pedalboard_select(direction)
             self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECTED
         elif mode == TopEncoderMode.PRESET_SELECT or mode == TopEncoderMode.PRESET_SELECTED:
-            self.preset_select(encoder, clk_pin)
+            self.preset_select(direction)
             self.top_encoder_mode = TopEncoderMode.PRESET_SELECTED
 
     def bottom_encoder_sw(self, value):
@@ -157,14 +159,14 @@ class Mod:
         elif mode == BotEncoderMode.VALUE_EDIT:
             self.parameter_value_change(encoder, clk_pin)
 
-    def bot_encoder_select(self, event):
+    def bot_encoder_select(self, direction):
         mode = self.bot_encoder_mode
         if mode == BotEncoderMode.DEFAULT:
-            self.plugin_select(event)
+            self.plugin_select(direction)
         elif mode == BotEncoderMode.DEEP_EDIT:
-            self.parameter_select(event)
+            self.parameter_select(direction)
         elif mode == BotEncoderMode.VALUE_EDIT:
-            self.parameter_value_change(event)
+            self.parameter_value_change(direction)
 
     #
     # Pedalboard Stuff
@@ -217,6 +219,14 @@ class Mod:
         # Create a new "current"
         self.current = self.Current(pedalboard)
 
+        # Load Pedalboard specific config (overrides default set during initial hardware init)
+        config_file = Path(pedalboard.bundle) / "config.yml"
+        cfg = None
+        if config_file.exists():
+            with open(config_file.as_posix(), 'r') as ymlfile:
+                cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
+        self.hardware.reinit_footswitches(cfg)
+
         # Initialize the data
         self.bind_current_pedalboard()
         self.load_current_presets()
@@ -251,10 +261,9 @@ class Mod:
                                                if elem.has_footswitch is False]
             self.current.pedalboard.plugins += footswitch_plugins
 
-    def pedalboard_select(self, encoder, clk_pin):
-        enc = encoder.get_data()
+    def pedalboard_select(self, direction):
         cur_idx = self.selected_pedalboard_index
-        next_idx = ((cur_idx - 1) if (enc is not 1) else (cur_idx + 1)) % len(self.pedalboard_list)
+        next_idx = ((cur_idx - 1) if (direction is not 1) else (cur_idx + 1)) % len(self.pedalboard_list)
         if self.pedalboard_list[next_idx].bundle in self.pedalboards:
             self.lcd.draw_title(self.pedalboard_list[next_idx].title, None, True, False)
             self.selected_pedalboard_index = next_idx

@@ -23,6 +23,12 @@ class Footswitch(controller.Controller):
         GPIO.setup(led_pin, GPIO.OUT)
         GPIO.output(led_pin, GPIO.LOW)
 
+    def set_midi_CC(self, midi_CC):
+        self.midi_CC = midi_CC
+
+    def set_midi_channel(self, midi_channel):
+        self.midi_channel = midi_channel
+
     def set_value(self, value):
         self.enabled = (value < 1)
         GPIO.output(self.led_pin, self.enabled)
@@ -31,9 +37,10 @@ class Footswitch(controller.Controller):
         self.enabled = not self.enabled
 
         # Send midi
-        cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.enabled else 0]
-        print("Sending CC event: %d %s" % (self.midi_CC, gpio))
-        self.midiout.send_message(cc)
+        if self.midi_CC is not None:
+            cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.enabled else 0]
+            print("Sending CC event: %d %s" % (self.midi_CC, gpio))
+            self.midiout.send_message(cc)
 
         # Update Relay (if relay is associated with this footswitch)
         for r in self.relay_list:
@@ -53,6 +60,6 @@ class Footswitch(controller.Controller):
     def add_relay(self, relay):
         self.relay_list.append(relay)
 
-    def remove_relay(self, relay):
-        self.relay_list.remove(relay)
+    def clear_relays(self):
+        self.relay_list.clear()
 

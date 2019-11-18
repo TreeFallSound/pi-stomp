@@ -3,6 +3,7 @@
 import RPi.GPIO as GPIO
 import json
 import spidev
+import yaml
 
 import modalapi.analogmidicontrol as AnalogMidiControl
 import modalapi.analogswitch as AnalogSwitch
@@ -13,6 +14,7 @@ import modalapi.relay as Relay
 import modalapi.util as util
 
 # Midi
+# TODO move to default_config.yml
 MIDI_CHANNEL = 13  # Note that a learned MIDI msg will report as the channel +1 (MOD bug?)
 
 # Pins
@@ -34,15 +36,16 @@ RELAY_RIGHT_PIN = 12
 # 4: the MIDI Control (CC) message that will be sent when the switch is toggled
 # Pin modifications should only be made if the hardware is changed accordingly
 FOOTSW = ((0, 23, 24, 61), (1, 25, 0, 62), (2, 13, 26, 63))
-FOOTSW_BYPASS_INDEX = 0
 
+# TODO replace in default_config.yml
 # Analog Controls defined by a triple touple:
 # 1: the ADC channel
 # 2: the minimum threshold for considering the value to be changed
 # 3: the MIDI Control (CC) message that will be sent
-# 4: control type (KNOB, EXPRESSION, etc.
+# 4: control type (KNOB, EXPRESSION, etc.)
 # Tweak, Expression Pedal
 ANALOG_CONTROL = ((0, 16, 64, 'KNOB'), (1, 16, 65, 'EXPRESSION'))
+
 
 class Hardware:
     __single = None
@@ -56,26 +59,28 @@ class Hardware:
         self.analog_controls = []
         self.controllers = {}
         self.footswitches = []
+        self.midiout = midiout
         self.refresh_callback = refresh_callback
+        self.cfg = None
+
+        # Create Relay objects
+        self.relay_left = Relay.Relay(RELAY_LEFT_PIN)
+        self.relay_right = Relay.Relay(RELAY_RIGHT_PIN)
 
 
         GPIO.setmode(GPIO.BCM)  # TODO should this go earlier?
 
-
-        # Initialize Footswitches
+        # Create Footswitches
         for f in FOOTSW:
-            fs = Footswitch.Footswitch(f[0], f[1], f[2], f[3], MIDI_CHANNEL, midiout, refresh_callback=self.refresh_callback)
+            fs = Footswitch.Footswitch(f[0], f[1], f[2], f[3], MIDI_CHANNEL, midiout,
+                                       refresh_callback=self.refresh_callback)
             self.footswitches.append(fs)
-            key = format("%d:%d" % (MIDI_CHANNEL, f[3]))
-            self.controllers[key] = fs
 
-        # Initialize Relays
-        # By default, associate with the footswitch identified by FOOT_BYPASS_INDEX
-        # This can be user modified later
-        relay_left = Relay.Relay(RELAY_LEFT_PIN)
-        self.footswitches[FOOTSW_BYPASS_INDEX].add_relay(relay_left)
-        relay_right = Relay.Relay(RELAY_RIGHT_PIN)
-        self.footswitches[FOOTSW_BYPASS_INDEX].add_relay(relay_right)
+        # Read the default config file and initialize footswitches
+        default_config_file = "/home/modep/modalapi/.default_config.yml"
+        with open(default_config_file, 'r') as ymlfile:
+            self.cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
+        self.__init_footswitches_default()
 
         # Initialize Analog inputs
         spi = spidev.SpiDev()
@@ -94,3 +99,49 @@ class Hardware:
         self.analog_controls.append(control)
         control = AnalogSwitch.AnalogSwitch(spi, BOT_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD, callback=mod.bottom_encoder_sw)
         self.analog_controls.append(control)
+
+    def reinit_footswitches(self, cfg):
+        self.__init_footswitches_default()
+        self.__init_footswitches(cfg)
+
+    def __init_footswitches_default(self):
+        for fs in self.footswitches:
+            fs.clear_relays()
+        self.__init_footswitches(self.cfg)
+
+    def __init_footswitches(self, cfg):
+        if cfg is None or ('hardware' not in cfg) or ('footswitches' not in cfg['hardware']):
+            return
+        cfg_fs = cfg['hardware']['footswitches']
+        idx = 0
+        for fs in self.footswitches:
+            # See if a corresponding cfg entry exists.  if so, override
+            f = None
+            for f in cfg_fs:
+                if f['id'] == idx:
+                    break
+                else:
+                    f = None
+            if f is not None:
+                # Bypass
+                fs.clear_relays()
+                if 'bypass' in f:
+                    if f['bypass'] == 'LEFT_RIGHT' or f['bypass'] == 'LEFT':
+                        fs.add_relay(self.relay_left)
+                    if f['bypass'] == 'LEFT_RIGHT' or f['bypass'] == 'RIGHT':
+                        fs.add_relay(self.relay_right)
+                # Midi
+                if 'midi_CC' in f:
+                    cc = f['midi_CC']
+                    if cc == "None":
+                        fs.set_midi_CC(None)
+                        for k, v in self.controllers.items():
+                            if v == fs:
+                                self.controllers.pop(k)
+                                break
+                    else:
+                        fs.set_midi_CC(cc)
+                        key = format("%d:%d" % (MIDI_CHANNEL, fs.midi_CC))
+                        self.controllers[key] = fs   # TODO problem if this creates a new element?
+            idx += 1
+

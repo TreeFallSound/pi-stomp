@@ -199,6 +199,9 @@ class Gfx:
             else:
                 x = x + 1
 
+        self.deep_edit_draw.text((0, y0), str(parameter.minimum), 1, self.small_font)
+        self.deep_edit_draw.text((110, y0), str(parameter.maximum), 1, self.small_font)
+
         self.refresh_deep_edit()
 
     def draw_value_edit_graph(self, parameter, value):  # TODO XXX share this graph drawing stuff
@@ -225,6 +228,8 @@ class Gfx:
                 x = x + 3
             else:
                 x = x + 1
+
+        self.deep_edit_draw.text((0, y0), str(parameter.minimum), 1, self.small_font)
 
         self.refresh_deep_edit()
 

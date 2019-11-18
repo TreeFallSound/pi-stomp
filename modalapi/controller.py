@@ -4,6 +4,7 @@ from enum import Enum
 import json
 import modalapi.util as util
 
+
 class Controller:
 
     def __init__(self, midi_channel, midi_CC):
