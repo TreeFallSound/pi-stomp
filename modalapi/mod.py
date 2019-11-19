@@ -318,9 +318,8 @@ class Mod:
                 return indices[cur - 1]
             return max(indices)
 
-    def preset_select(self, encoder, clk_pin):
-        enc = encoder.get_data()
-        index = self.next_preset_index(self.current.presets, self.selected_preset_index, enc is not 1)
+    def preset_select(self, direction):
+        index = self.next_preset_index(self.current.presets, self.selected_preset_index, direction is not 1)
         if index < 0:
             return
         self.selected_preset_index = index
@@ -339,6 +338,10 @@ class Mod:
 
         #load of the preset might have changed plugin bypass status
         self.preset_change_plugin_update()
+
+    def preset_incr_and_change(self):
+        self.preset_select(1)
+        self.preset_change()
 
     def preset_change_plugin_update(self):
         # Now that the preset has changed on the host, update plugin bypass indicators

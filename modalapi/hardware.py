@@ -56,6 +56,7 @@ class Hardware:
             raise Hardware.__single
         Hardware.__single = self
 
+        self.mod = mod
         self.analog_controls = []
         self.controllers = {}
         self.footswitches = []
@@ -130,6 +131,7 @@ class Hardware:
                         fs.add_relay(self.relay_left)
                     if f['bypass'] == 'LEFT_RIGHT' or f['bypass'] == 'RIGHT':
                         fs.add_relay(self.relay_right)
+
                 # Midi
                 if 'midi_CC' in f:
                     cc = f['midi_CC']
@@ -143,5 +145,11 @@ class Hardware:
                         fs.set_midi_CC(cc)
                         key = format("%d:%d" % (MIDI_CHANNEL, fs.midi_CC))
                         self.controllers[key] = fs   # TODO problem if this creates a new element?
+
+                # Preset Control
+                fs.clear_preset()
+                if 'preset' in f:
+                    if f['preset'] == 'UP':
+                        fs.add_preset(callback=self.mod.preset_incr_and_change)
             idx += 1
 

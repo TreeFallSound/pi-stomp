@@ -17,6 +17,7 @@ class Footswitch(controller.Controller):
         self.midiout = midiout
         self.refresh_callback = refresh_callback
         self.relay_list = []
+        self.preset_callback = None
         GPIO.setup(fs_pin, GPIO.IN)
         GPIO.add_event_detect(fs_pin, GPIO.FALLING, callback=self.toggle, bouncetime=250)
 
@@ -35,6 +36,9 @@ class Footswitch(controller.Controller):
 
     def toggle(self, gpio):
         self.enabled = not self.enabled
+
+        if self.preset_callback is not None:
+            self.preset_callback()
 
         # Send midi
         if self.midi_CC is not None:
@@ -63,3 +67,8 @@ class Footswitch(controller.Controller):
     def clear_relays(self):
         self.relay_list.clear()
 
+    def add_preset(self, callback):
+        self.preset_callback = callback
+
+    def clear_preset(self):
+        self.preset_callback = None
