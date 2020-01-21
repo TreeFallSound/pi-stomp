@@ -16,11 +16,11 @@ class Encoder:
         GPIO.setup(self.d_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         GPIO.setup(self.clk_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-        GPIO.add_event_detect(self.d_pin, GPIO.FALLING, callback=self.read_rotary)  # Can optionally add bouncetime=120
-        GPIO.add_event_detect(self.clk_pin, GPIO.FALLING, callback=self.read_rotary)
-
         self.prevNextCode = 0
         self.store = 0
+
+        # 16 possible grey codes.  1=Valid, 0=Invalid (bounce)
+        self.rot_enc_table = [0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0]
 
     def get_data(self):
         return GPIO.input(self.d_pin)
@@ -28,28 +28,28 @@ class Encoder:
     def get_clk(self):
         return GPIO.input(self.clk_pin)
 
-    def read_rotary(self, channel):
-        # This alg adapted from
+    def read_rotary(self):
+        # This decode/debouce algorithm adapted from
         # https://www.best-microcontroller-projects.com/rotary-encoder.html
-        rot_enc_table = [0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0]
 
         self.prevNextCode <<= 2
-        if GPIO.input(self.d_pin):
-            self.prevNextCode |= 0x02
         if GPIO.input(self.clk_pin):
+            self.prevNextCode |= 0x02
+        if GPIO.input(self.d_pin):
             self.prevNextCode |= 0x01
         self.prevNextCode &= 0x0f
 
         direction = 0
-        if rot_enc_table[self.prevNextCode]:
-            #print("%d" % self.prevNextCode)
+        # Check for valid code
+        if self.rot_enc_table[self.prevNextCode]:
             self.store <<= 4
             self.store |= self.prevNextCode
-            if (self.store & 0xff) == 0x2b:
+            # Check last two codes (end of detent transition)
+            if (self.store & 0xff) == 0x2b:  # code 2 followed by code 11 (full sequence is 13,4,2,11)
                 direction = -1  # Counter Clockwise
-            if (self.store & 0xff) == 0x17:
+            if (self.store & 0xff) == 0x17:  # code 1 followed by code 7 (full sequence is 14,8,1,7)
                 direction = 1  # Clockwise
 
         if direction is not 0:
-            #self.store = 0
+            self.store = self.prevNextCode
             self.callback(direction)

@@ -61,8 +61,7 @@ def main():
     #period = 0
     try:
         while True:
-            for c in hw.analog_controls:
-                c.refresh()
+            hw.poll_controls()
             time.sleep(0.01)  # TODO less to increase responsiveness
 
             # For less frequent events

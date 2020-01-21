@@ -58,6 +58,7 @@ class Hardware:
 
         self.mod = mod
         self.analog_controls = []
+        self.encoders = []
         self.controllers = {}
         self.footswitches = []
         self.midiout = midiout
@@ -95,11 +96,20 @@ class Hardware:
 
         # Initialize Encoders
         top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=mod.top_encoder_select)
+        self.encoders.append(top_enc)
         bot_enc = Encoder.Encoder(BOT_ENC_PIN_D, BOT_ENC_PIN_CLK, callback=mod.bot_encoder_select)
+        self.encoders.append(bot_enc)
         control = AnalogSwitch.AnalogSwitch(spi, TOP_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD, callback=mod.top_encoder_sw)
         self.analog_controls.append(control)
         control = AnalogSwitch.AnalogSwitch(spi, BOT_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD, callback=mod.bottom_encoder_sw)
         self.analog_controls.append(control)
+
+    def poll_controls(self):
+        # This is intended to be called periodically from main working loop to poll the instantiated controls
+        for c in self.analog_controls:
+            c.refresh()
+        for e in self.encoders:
+            e.read_rotary()
 
     def reinit_footswitches(self, cfg):
         self.__init_footswitches_default()
