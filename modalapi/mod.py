@@ -3,6 +3,7 @@
 import json
 import os
 import requests as req
+import subprocess
 import sys
 import time
 import yaml
@@ -10,6 +11,7 @@ import yaml
 import modalapi.analogswitch as AnalogSwitch
 import modalapi.controller as Controller
 import modalapi.pedalboard as Pedalboard
+import modalapi.token as Token
 import modalapi.util as util
 
 from modalapi.analogmidicontrol import AnalogMidiControl
@@ -116,6 +118,10 @@ class Mod:
                     self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
             self.update_lcd_title()
         elif value == AnalogSwitch.Value.LONGPRESSED:
+            #if self.top_encoder_mode == TopEncoderMode.DEFAULT:
+            #    print("double long")
+            #    subprocess.call("/usr/local/modep/modep-btn-scripts/my_toggle_wifi_hotspot.sh")
+            #else:
             self.top_encoder_mode = TopEncoderMode.DEFAULT
             self.update_lcd_title()
 
@@ -187,9 +193,9 @@ class Mod:
 
         pbs = json.loads(resp.text)
         for pb in pbs:
-            print("Loading pedalboard info: %s" % pb['title'])
-            bundle = pb['bundle']
-            title = pb['title']
+            print("Loading pedalboard info: %s" % pb[Token.TITLE])
+            bundle = pb[Token.BUNDLE]
+            title = pb[Token.TITLE]
             pedalboard = Pedalboard.Pedalboard(title, bundle)
             pedalboard.load_bundle(bundle, self.plugin_dict)
             self.pedalboards[bundle] = pedalboard
@@ -354,7 +360,7 @@ class Mod:
             except:
                 print("failed to get bypass value for: %s" % p.instance_id)
                 continue
-        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins)
+        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
         self.lcd.draw_plugins(self.current.pedalboard.plugins)
         self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
@@ -464,7 +470,7 @@ class Mod:
         self.update_lcd_title()
         self.lcd.draw_analog_assignments(self.current.analog_controllers)
         self.lcd.draw_plugins(self.current.pedalboard.plugins)
-        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins)
+        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
         self.lcd.draw_plugin_select()
 
     def update_lcd_title(self):
@@ -481,4 +487,4 @@ class Mod:
         self.lcd.draw_plugins(self.current.pedalboard.plugins)
 
     def update_lcd_fs(self):
-        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins)
+        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)

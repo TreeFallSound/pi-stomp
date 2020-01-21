@@ -54,9 +54,9 @@ class Footswitch(controller.Controller):
                 r.disable()
 
         # Update LED
-        GPIO.output(self.led_pin, self.enabled)   # TODO assure that GPIO.HIGH is same as True
+        GPIO.output(self.led_pin, self.enabled)
 
-        # TODO schedule LCD update - some global refresh state or check object state during main poll loop
+        # Update LCD
         if self.parameter is not None:
             self.parameter.value = not self.enabled  # TODO assumes mapped parameter is :bypass
             self.refresh_callback()

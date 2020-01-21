@@ -11,6 +11,7 @@ import modalapi.controller as Controller
 import modalapi.encoder as Encoder
 import modalapi.footswitch as Footswitch
 import modalapi.relay as Relay
+import modalapi.token as Token
 import modalapi.util as util
 
 # Midi
@@ -45,7 +46,6 @@ FOOTSW = ((0, 23, 24, 61), (1, 25, 0, 62), (2, 13, 26, 63))
 # 4: control type (KNOB, EXPRESSION, etc.)
 # Tweak, Expression Pedal
 ANALOG_CONTROL = ((0, 16, 64, 'KNOB'), (1, 16, 65, 'EXPRESSION'))
-
 
 class Hardware:
     __single = None
@@ -111,31 +111,31 @@ class Hardware:
         self.__init_footswitches(self.cfg)
 
     def __init_footswitches(self, cfg):
-        if cfg is None or ('hardware' not in cfg) or ('footswitches' not in cfg['hardware']):
+        if cfg is None or (Token.HARDWARE not in cfg) or (Token.FOOTSWITCHES not in cfg[Token.HARDWARE]):
             return
-        cfg_fs = cfg['hardware']['footswitches']
+        cfg_fs = cfg[Token.HARDWARE][Token.FOOTSWITCHES]
         idx = 0
         for fs in self.footswitches:
             # See if a corresponding cfg entry exists.  if so, override
             f = None
             for f in cfg_fs:
-                if f['id'] == idx:
+                if f[Token.ID] == idx:
                     break
                 else:
                     f = None
             if f is not None:
                 # Bypass
                 fs.clear_relays()
-                if 'bypass' in f:
-                    if f['bypass'] == 'LEFT_RIGHT' or f['bypass'] == 'LEFT':
+                if Token.BYPASS in f:
+                    if f[Token.BYPASS] == Token.LEFT_RIGHT or f[Token.BYPASS] == Token.LEFT:
                         fs.add_relay(self.relay_left)
-                    if f['bypass'] == 'LEFT_RIGHT' or f['bypass'] == 'RIGHT':
+                    if f[Token.BYPASS] == Token.LEFT_RIGHT or f[Token.BYPASS] == Token.RIGHT:
                         fs.add_relay(self.relay_right)
 
                 # Midi
-                if 'midi_CC' in f:
-                    cc = f['midi_CC']
-                    if cc == "None":
+                if Token.MIDI_CC in f:
+                    cc = f[Token.MIDI_CC]
+                    if cc == Token.NONE:
                         fs.set_midi_CC(None)
                         for k, v in self.controllers.items():
                             if v == fs:
@@ -148,8 +148,8 @@ class Hardware:
 
                 # Preset Control
                 fs.clear_preset()
-                if 'preset' in f:
-                    if f['preset'] == 'UP':
+                if Token.PRESET in f:
+                    if f[Token.PRESET] == Token.UP:
                         fs.add_preset(callback=self.mod.preset_incr_and_change)
             idx += 1
 

@@ -34,15 +34,15 @@ class Encoder:
         rot_enc_table = [0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0]
 
         self.prevNextCode <<= 2
-        if GPIO.input(self.clk_pin):
-            self.prevNextCode |= 0x02
         if GPIO.input(self.d_pin):
+            self.prevNextCode |= 0x02
+        if GPIO.input(self.clk_pin):
             self.prevNextCode |= 0x01
         self.prevNextCode &= 0x0f
 
-        #print("%d %d" % (a, b))
         direction = 0
         if rot_enc_table[self.prevNextCode]:
+            #print("%d" % self.prevNextCode)
             self.store <<= 4
             self.store |= self.prevNextCode
             if (self.store & 0xff) == 0x2b:
@@ -51,4 +51,5 @@ class Encoder:
                 direction = 1  # Clockwise
 
         if direction is not 0:
+            #self.store = 0
             self.callback(direction)

@@ -116,14 +116,8 @@ def get_pedalboard_info(bundlepath):
     if "http://moddevices.com/ns/modpedal#Pedalboard" not in plugin_types:
         raise Exception('get_pedalboard_info(%s) - plugin has no mod:Pedalboard type'.format(bundle))
 
-    # let's get all the info now
-    # Mod ala pi controllers.  Add one entry for each control, keyed by the associated CC
-    # Example using 4 knobs and 3 switches  90:{},
-    # TODO Should likely include midi channel in the key
-    info = {1: {}, 7: {}, 16: {}, 109: {}}
-    plugin_list = []
-
     # plugins
+    plugin_list = []
     blocks = plugin.get_value(ns_ingen.block)
     it = blocks.begin()
     while not blocks.is_end(it):
@@ -147,6 +141,7 @@ def get_pedalboard_info(bundlepath):
         plugin_list.append(lilv.lilv_node_as_uri(protouri1))
 
         # XXX TODO Use this eventually for detailed pedalboard port info (return a dict instead of a simple list)
+        # TODO get rid of fields not used
         instance = lilv.lilv_uri_to_path(lilv.lilv_node_as_string(block.me)).replace(bundlepath,"",1)
         uri      = lilv.lilv_node_as_uri(proto)
         enabled  = lilv.lilv_world_get(world.me, block.me, ns_ingen.enabled.me, None)
@@ -164,14 +159,5 @@ def get_pedalboard_info(bundlepath):
                 controller_num = lilv.lilv_world_get(world.me, binding, ns_midi.controllerNumber.me, None)
                 if controller_num is not None:
                     cnum = lilv.lilv_node_as_int(controller_num)
-                    #if cnum in info:
-                    # This binding is to one of our controls, store its details in controller dict
                     path = lilv.lilv_node_as_string(port)
-                    info[uri] = {
-                        "instance"   : instance,
-                        'uri': uri,
-                        "parameter"  : os.path.basename(path),
-                        "value"      : lilv.lilv_node_as_float(param_value)
-                    }
-    #print("info: %s" % info)
     return plugin_list

@@ -2,15 +2,21 @@
 
 import signal
 import spidev
+import modalapi.util as util
 
 from gfxhat import touch, lcd, backlight, fonts
 from PIL import Image, ImageFont, ImageDraw
 
 from modalapi.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
 
-class Gfx:
 
-    def __init__(self):   # TODO make a singleton
+class Gfx:
+    __single = None
+
+    def __init__(self):
+        if Gfx.__single:
+            raise Gfx.__single
+        Gfx.__single = self
 
         # GFX properties
         self.width, self.height = lcd.dimensions()
@@ -30,7 +36,6 @@ class Gfx:
         self.footswitch_xy = {0: (0,   0),
                               1: (52,  0),
                               2: (103, 0)}
-
 
         self.deep_edit_height = self.height - self.zone_height[0] + 1  # TODO figure out why +1
         self.deep_edit_image_height = self.deep_edit_height * 2
@@ -60,8 +65,8 @@ class Gfx:
         # Load fonts
         self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 11)
         self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)  # TODO get rid
-        self.small_bold_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 8)
-        self.small_font = ImageFont.truetype("DejaVuSans.ttf", 8)
+        self.small_bold_font = ImageFont.truetype("DejaVuSansMono-Bold.ttf", 8)
+        self.small_font = ImageFont.truetype("DejaVuSansMono.ttf", 8)
 
         # Turn on Backlight
         self.enable_backlight()
@@ -151,18 +156,6 @@ class Gfx:
             scroll_idx = highlight_idx - num_visible
         self.refresh_deep_edit(highlight, scroll_idx * 10)
 
-    def remap_range(self, value, left_min, left_max, right_min, right_max):
-        # this remaps a value from original (left) range to new (right) range
-        # Figure out how 'wide' each range is
-        left_span = left_max - left_min
-        right_span = right_max - right_min
-
-        # Convert the left range into a 0-1 range (int)
-        valueScaled = int(value - left_min) / int(left_span)
-
-        # Convert the 0-1 range into a value in the right range.
-        return int(right_min + (valueScaled * right_span))
-
     def draw_value_edit(self, plugin_name, parameter, value):
         # Title (parameter name)
         self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
@@ -186,7 +179,7 @@ class Gfx:
         #self.deep_edit_draw.text((0, yt), "Gain", 1, self.label_font)
         #self.deep_edit_draw.text((40, yt), str(val), 1, self.label_font)
 
-        val = self.remap_range(value, parameter.minimum, parameter.maximum, 0, 127)
+        val = util.remap_range(value, parameter.minimum, parameter.maximum, 0, 127)
         self.deep_edit_draw.text((0, yt), str(val), 1, self.label_font)
 
         while x < val:
@@ -216,7 +209,7 @@ class Gfx:
         # self.deep_edit_draw.text((0, yt), "Gain", 1, self.label_font)
         # self.deep_edit_draw.text((40, yt), str(val), 1, self.label_font)
         #print("min %d   max %d" % (parameter.minimum, parameter.maximum))
-        val = self.remap_range(value, parameter.minimum, parameter.maximum, 0, 127)
+        val = util.remap_range(value, parameter.minimum, parameter.maximum, 0, 127)
         self.deep_edit_draw.text((0, yt), str(val), 1, self.label_font)
 
         while x < val:
@@ -232,7 +225,6 @@ class Gfx:
         self.deep_edit_draw.text((0, y0), str(parameter.minimum), 1, self.small_font)
 
         self.refresh_deep_edit()
-
 
     # Zone 0 - Pedalboard and Preset
     def draw_title(self, pedalboard, preset, invert_pb, invert_pre):
@@ -324,6 +316,12 @@ class Gfx:
         self.refresh_zone(6)
 
     # Zones 3, 5, 7 - Plugin Display
+    def draw_box(self, xy, xy2, zone, text):
+        self.draw[zone].rectangle((xy, xy2), False, 1)
+        self.draw[zone].point(xy)  # Round the top corners
+        self.draw[zone].point((xy2[0],xy[1]))
+        self.draw[zone].text((xy[0] + 1, xy[1] + 1), text, True, self.small_font)
+
     def draw_plugin(self, zone, x, y, text, expand_rect, plugin):
         if expand_rect >= 1:
             text_size = self.small_font.getsize(text)[0]
@@ -337,11 +335,12 @@ class Gfx:
 
         fill = False
         plugin.lcd_xyz = (x, y, zone)
-        self.draw[zone].rectangle(((x, y), (x2, y + self.plugin_height)), fill, 1)
-        self.draw[zone].point((x,y))  # Round the top corners
-        self.draw[zone].point((x2,y))
+        self.draw_box((x, y), (x2, y + self.plugin_height), zone, text)
+        #self.draw[zone].rectangle(((x, y), (x2, y + self.plugin_height)), fill, 1)
+        #self.draw[zone].point((x,y))  # Round the top corners
+        #self.draw[zone].point((x2,y))
 
-        self.draw[zone].text((x + 1, y + 1), text, not fill, self.small_font)
+        #self.draw[zone].text((x + 1, y + 1), text, not fill, self.small_font)
 
         bypass_indicator_xy = ((x+3, y+9), (x2-3, y+9))
         plugin.bypass_indicator_xy = bypass_indicator_xy
@@ -349,16 +348,30 @@ class Gfx:
 
         return x2
 
-    def draw_bound_plugins(self, plugins):
-        self.images[7].paste(0, (0, 0, self.width, self.zone_height[7]))
+    def draw_bound_plugins(self, plugins, footswitches):
+        fss = footswitches.copy()
         for p in plugins:
             if p.has_footswitch is False:
                 continue
-            label = p.instance_id.replace('/', "")[:self.plugin_label_length]
             for c in p.controllers:
                 if isinstance(c, Footswitch):
                     fs_id = c.id
+                    fss[fs_id] = None
+                    if c.parameter.symbol != ":bypass":
+                        label = c.parameter.name
+                    else:
+                        label = p.instance_id.replace('/', "")[:self.plugin_label_length]  # TODO this replacement should be done in one place higher level
+                        label = label.replace("_", "")
                     self.draw_plugin(7, self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1], label, False, p)
+
+        # Draw any footswitches which weren't found to be bound to a plugin
+        for fs_id in range(len(fss)):
+            if fss[fs_id] is None:
+                continue
+            label = "None" if len(fss[fs_id].relay_list) < 1 else "bypass"
+            xy2 = (self.footswitch_xy[fs_id][0] + self.plugin_width, self.footswitch_xy[fs_id][1] + self.plugin_height)
+            self.draw_box((self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1]), xy2, 7, label)
+
         self.refresh_zone(7)
 
     def draw_plugins(self, plugins):
@@ -377,6 +390,7 @@ class Gfx:
             if p.has_footswitch:
                 continue
             label = p.instance_id.replace('/', "")[:self.plugin_label_length]
+            label = label.replace("_", "")
             count += 1
             if count > 4:  # LAME
                 expand_rect = -1

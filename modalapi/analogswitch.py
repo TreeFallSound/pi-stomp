@@ -60,7 +60,7 @@ class AnalogSwitch(analogcontrol.AnalogControl):
             elif value < self.tolerance:
                 value = Value.PRESSED
             elif value >= self.tolerance:
-                if (self.longpress_state):
+                if self.longpress_state:
                     self.longpress_state = False
                     self.trigger_count = 0
                     return

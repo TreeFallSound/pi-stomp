@@ -10,6 +10,7 @@ from rtmidi.midiutil import open_midioutput
 from rtmidi.midiconstants import CONTROL_CHANGE
 
 import modalapi.analogcontrol as analogcontrol
+import modalapi.util as util
 
 
 class AnalogMidiControl(analogcontrol.AnalogControl):
@@ -28,18 +29,6 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
     def set_value(self, value):
         self.value = value
 
-    def remap_range(self, value, left_min, left_max, right_min, right_max):
-        # this remaps a value from original (left) range to new (right) range
-        # Figure out how 'wide' each range is
-        left_span = left_max - left_min
-        right_span = right_max - right_min
-
-        # Convert the left range into a 0-1 range (int)
-        valueScaled = int(value - left_min) / int(left_span)
-
-        # Convert the 0-1 range into a value in the right range.
-        return int(right_min + (valueScaled * right_span))
-
     # Override of base class method
     def refresh(self):
         # read the analog pin
@@ -51,7 +40,7 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
 
         if value_changed:
             # convert 16bit adc0 (0-65535) trim pot read into 0-100 volume level
-            set_volume = self.remap_range(value, 0, 1023, 0, 127)
+            set_volume = util.remap_range(value, 0, 1023, 0, 127)
 
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, set_volume]
             print("AnalogControl Sending CC event %s" % cc)

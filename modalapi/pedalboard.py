@@ -9,6 +9,7 @@ import urllib.parse
 
 import modalapi.parameter as Parameter
 import modalapi.plugin as Plugin
+import modalapi.token as Token
 import modalapi.util as util
 
 
@@ -29,7 +30,7 @@ class NS(object):
 class Pedalboard:
 
     def __init__(self, title, bundle):
-        self.root_uri = "http://localhost:80/"  # TODO try to define this globally
+        self.root_uri = "http://localhost:80/"
         self.title = title
         self.bundle = bundle
         self.plugins = []
@@ -111,12 +112,6 @@ class Pedalboard:
         if "http://moddevices.com/ns/modpedal#Pedalboard" not in plugin_types:
             raise Exception('get_pedalboard_info(%s) - plugin has no mod:Pedalboard type'.format(bundle))
 
-        # let's get all the info now
-        # Mod ala pi controllers.  Add one entry for each control, keyed by the associated CC
-        # Example using 4 knobs and 3 switches  90:{},
-        # TODO Should likely include midi channel in the key
-        info = {1: {}, 7: {}, 16: {}, 109: {}}
-
         # plugins
         blocks = plugin.get_value(ns_ingen.block)
         it = blocks.begin()
@@ -137,6 +132,7 @@ class Pedalboard:
             else:
                 continue
 
+            # TODO remove unused vars and queries of unused fields
             # Add plugin data (from plugin registry) to global plugin dictionary
             plugin_uri = lilv.lilv_node_as_uri(protouri1)
             plugin_info = {}
@@ -147,7 +143,7 @@ class Pedalboard:
                     plugin_dict[plugin_uri] = plugin_info
             else:
                 plugin_info = plugin_dict[plugin_uri]
-            category = util.DICT_GET(plugin_info, 'category')
+            category = util.DICT_GET(plugin_info, Token.CATEGORY)
 
             # Extract Parameter data
             instance_id = lilv.lilv_uri_to_path(lilv.lilv_node_as_string(block.me)).replace(bundlepath, "", 1)
@@ -172,15 +168,15 @@ class Pedalboard:
                     symbol = os.path.basename(path)
                     value = lilv.lilv_node_as_float(param_value)
                     # Bypass "parameter" is a special case without an entry in the plugin definition
-                    if symbol == ":bypass":
-                        info = {"shortName": "bypass", "symbol": symbol, "ranges": {"minimum": 0, "maximum": 1}}
+                    if symbol == Token.COLON_BYPASS:
+                        info = {"shortName": "bypass", "symbol": symbol, "ranges": {"minimum": 0, "maximum": 1}}  # TODO tokenize
                         param = Parameter.Parameter(info, value, binding)
                         parameters[symbol] = param
                         continue  # don't try to find matching symbol in plugin_dict
                     # Try to find a matching symbol in plugin_dict to obtain the remaining param details
-                    plugin_params = plugin_info['ports']['control']['input']
+                    plugin_params = plugin_info[Token.PORTS][Token.CONTROL][Token.INPUT]
                     for pp in plugin_params:
-                        sym = util.DICT_GET(pp, 'symbol')
+                        sym = util.DICT_GET(pp, Token.SYMBOL)
                         if sym == symbol:
                             #print("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
                             param = Parameter.Parameter(pp, value, binding)
