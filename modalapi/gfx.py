@@ -237,7 +237,7 @@ class Gfx:
 
         # Pedalboard Name
         if invert_pb:
-            self.draw[0].rectangle(((0, y), (pb_size, font_height)), True, 1)
+            self.draw[0].rectangle(((0, y), (pb_size, font_height - 2)), True, 1)
         self.draw[0].text((0, y), pedalboard, not invert_pb, self.title_font)
 
         if preset != None:
@@ -254,7 +254,7 @@ class Gfx:
             x2 = x + pre_size
             y2 = font_height
             if invert_pre:
-                self.draw[0].rectangle(((x, y), (x2, y2)), True, 1)
+                self.draw[0].rectangle(((x, y), (x2, y2 - 2)), True, 1)
             self.draw[0].text((x, y), preset, not invert_pre, self.title_font)
 
         self.refresh_zone(0)
@@ -264,19 +264,21 @@ class Gfx:
         zone = 1
         self.images[zone].paste(0, (0, 0, self.width, self.zone_height[zone]))
 
+        # Expression Pedal assignment
+        type = 'EXPRESSION'  # TODO should this be an enum
         text = "None"
         self.draw[zone].line(((0, 5), (8, 1)), True, 1)
         self.draw[zone].line(((0, 5), (8, 5)), True, 2)
-        type = 'EXPRESSION'
         if type in controllers:  # TODO Slightly lame string linkage to controller class
             text = "%s:%s" % (self.shorten_name(controllers[type][0]), controllers[type][1])
         self.draw[zone].text((10, 0), text, True, self.small_font)
 
+        # Tweak knob assignment
+        type = 'KNOB'
         text = "None"
         x = 66
         self.draw[zone].ellipse(((x, 0), (x + 6, 6)), True, 1)
         self.draw[zone].line(((x + 3, 0), (x + 3, 2)), False, 1)
-        type = 'KNOB'
         if type in controllers:
             text = "%s:%s" % (self.shorten_name(controllers[type][0]), controllers[type][1])
         self.draw[zone].text((x+9, 0), text, True, self.small_font)

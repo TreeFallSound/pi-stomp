@@ -269,7 +269,7 @@ class Mod:
 
     def pedalboard_select(self, direction):
         cur_idx = self.selected_pedalboard_index
-        next_idx = ((cur_idx - 1) if (direction is not 1) else (cur_idx + 1)) % len(self.pedalboard_list)
+        next_idx = ((cur_idx - 1) if (direction is 1) else (cur_idx + 1)) % len(self.pedalboard_list)
         if self.pedalboard_list[next_idx].bundle in self.pedalboards:
             self.lcd.draw_title(self.pedalboard_list[next_idx].title, None, True, False)
             self.selected_pedalboard_index = next_idx
@@ -325,7 +325,7 @@ class Mod:
             return max(indices)
 
     def preset_select(self, direction):
-        index = self.next_preset_index(self.current.presets, self.selected_preset_index, direction is not 1)
+        index = self.next_preset_index(self.current.presets, self.selected_preset_index, direction is 1)
         if index < 0:
             return
         self.selected_preset_index = index
@@ -380,7 +380,7 @@ class Mod:
         #enc = encoder.get_data()
         if self.current.pedalboard is not None:
             pb = self.current.pedalboard
-            index = ((self.selected_plugin_index - 1) if (direction is not 1)
+            index = ((self.selected_plugin_index - 1) if (direction is 1)
                     else (self.selected_plugin_index + 1)) % len(pb.plugins)
             #index = self.next_plugin(pb.plugins, enc)
             plugin = pb.plugins[index]  # TODO check index
