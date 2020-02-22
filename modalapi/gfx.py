@@ -38,8 +38,8 @@ class Gfx:
                               2: (103, 0)}
 
         self.deep_edit_height = self.height - self.zone_height[0] + 1  # TODO figure out why +1
-        self.deep_edit_image_height = self.deep_edit_height * 2
-        self.deep_edit_image = Image.new('L', (self.width, self.deep_edit_image_height))  # TODO enough height?
+        self.deep_edit_image_height = self.deep_edit_height * 10  # 10 pages (~40 parameters) enough?
+        self.deep_edit_image = Image.new('L', (self.width, self.deep_edit_image_height))
         self.deep_edit_draw = ImageDraw.Draw(self.deep_edit_image)
 
         # Element dimensions
@@ -95,10 +95,11 @@ class Gfx:
         for x in range(0, self.width):
             for y in range(0, self.deep_edit_height):
                 y_draw = y + scroll_offset
-                pixel = self.deep_edit_image.getpixel((x, y_draw))
-                if highlight_range and (y_draw >= highlight_range[0]) and (y_draw <= highlight_range[1]):  # TODO LAME
-                    pixel = not pixel
-                lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
+                if y_draw < self.deep_edit_image_height:
+                    pixel = self.deep_edit_image.getpixel((x, y_draw))
+                    if highlight_range and (y_draw >= highlight_range[0]) and (y_draw <= highlight_range[1]):  # TODO LAME
+                         pixel = not pixel
+                    lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
         lcd.show()
 
     def refresh_plugins(self):
@@ -304,14 +305,23 @@ class Gfx:
             y = plugin.lcd_xyz[1]
             zone = plugin.lcd_xyz[2] - 1
 
+            self.draw[zone].point((x+ 8, 0), True)
+            self.draw[zone].point((x+ 9, 0), True)
             self.draw[zone].point((x+10, 0), True)
             self.draw[zone].point((x+11, 0), True)
             self.draw[zone].point((x+12, 0), True)
             self.draw[zone].point((x+13, 0), True)
             self.draw[zone].point((x+14, 0), True)
+            self.draw[zone].point((x+15, 0), True)
+            self.draw[zone].point((x+16, 0), True)
+
+            self.draw[zone].point((x+ 9, 1), True)
+            self.draw[zone].point((x+10, 1), True)
             self.draw[zone].point((x+11, 1), True)
             self.draw[zone].point((x+12, 1), True)
             self.draw[zone].point((x+13, 1), True)
+            self.draw[zone].point((x+14, 1), True)
+            self.draw[zone].point((x+15, 1), True)
 
         self.refresh_zone(2)
         self.refresh_zone(4)
@@ -351,6 +361,7 @@ class Gfx:
         return x2
 
     def draw_bound_plugins(self, plugins, footswitches):
+        bypass_label = "byps"
         fss = footswitches.copy()
         for p in plugins:
             if p.has_footswitch is False:
@@ -359,7 +370,7 @@ class Gfx:
                 if isinstance(c, Footswitch):
                     fs_id = c.id
                     fss[fs_id] = None
-                    if c.parameter.symbol != ":bypass":
+                    if c.parameter.symbol != ":bypass":  # TODO token
                         label = c.parameter.name
                     else:
                         label = p.instance_id.replace('/', "")[:self.plugin_label_length]  # TODO this replacement should be done in one place higher level
@@ -370,7 +381,7 @@ class Gfx:
         for fs_id in range(len(fss)):
             if fss[fs_id] is None:
                 continue
-            label = "None" if len(fss[fs_id].relay_list) < 1 else "bypass"
+            label = "None" if len(fss[fs_id].relay_list) < 1 else bypass_label
             xy2 = (self.footswitch_xy[fs_id][0] + self.plugin_width, self.footswitch_xy[fs_id][1] + self.plugin_height)
             self.draw_box((self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1]), xy2, 7, label)
 
