@@ -28,6 +28,7 @@ class TopEncoderMode(Enum):
     PRESET_SELECTED = 2
     PEDALBOARD_SELECT = 3
     PEDALBOARD_SELECTED = 4
+    SYSTEM_MENU = 5
 
 class BotEncoderMode(Enum):
     DEFAULT = 0
@@ -72,6 +73,9 @@ class Mod:
         self.current = None  # pointer to Current class
         self.deep = None     # pointer to current Deep class
 
+        self.selected_menu_index = 0
+        self.menu_items = None
+
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
     # replaced when a different pedalboard is made current (old Current object
@@ -87,6 +91,7 @@ class Mod:
         def __init__(self, plugin):
             self.plugin = plugin
             self.parameters = list(plugin.parameters.values())
+            print("%s" % self.parameters)
             self.selected_parameter_index = 0
             self.value = 0
 
@@ -111,6 +116,8 @@ class Mod:
             elif mode == TopEncoderMode.PEDALBOARD_SELECTED:
                 self.pedalboard_change()
                 self.top_encoder_mode = TopEncoderMode.DEFAULT
+            elif mode == TopEncoderMode.SYSTEM_MENU:
+                self.system_menu_action()
             else:
                 if len(self.current.presets) > 0:
                     self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
@@ -122,8 +129,12 @@ class Mod:
             #    print("double long")
             #    subprocess.call("/usr/local/modep/modep-btn-scripts/my_toggle_wifi_hotspot.sh")
             #else:
-            self.top_encoder_mode = TopEncoderMode.DEFAULT
-            self.update_lcd_title()
+            if mode == TopEncoderMode.DEFAULT:
+                self.top_encoder_mode = TopEncoderMode.SYSTEM_MENU
+                self.system_menu_show()
+            else:
+                self.top_encoder_mode = TopEncoderMode.DEFAULT
+                self.update_lcd()
 
     def top_encoder_select(self, direction):
         # State machine for top encoder switch
@@ -134,6 +145,8 @@ class Mod:
         elif mode == TopEncoderMode.PRESET_SELECT or mode == TopEncoderMode.PRESET_SELECTED:
             self.preset_select(direction)
             self.top_encoder_mode = TopEncoderMode.PRESET_SELECTED
+        elif mode == TopEncoderMode.SYSTEM_MENU:
+            self.system_menu_select(direction)
 
     def bottom_encoder_sw(self, value):
         # State machine for bottom rotary encoder switch
@@ -146,8 +159,6 @@ class Mod:
                 self.show_value_edit()
             #elif mode == BotEncoderMode.VALUE_EDIT:
             #    self.parameter_value_change()
-
-
         elif value == AnalogSwitch.Value.LONGPRESSED:
             if mode == BotEncoderMode.DEFAULT or BotEncoderMode.VALUE_EDIT:
                 self.bot_encoder_mode = BotEncoderMode.DEEP_EDIT
@@ -155,15 +166,6 @@ class Mod:
             else:
                 self.bot_encoder_mode = BotEncoderMode.DEFAULT
                 self.update_lcd()
-
-    def bot_encoder_select0(self, encoder, clk_pin):
-        mode = self.bot_encoder_mode
-        if mode == BotEncoderMode.DEFAULT:
-            self.plugin_select(encoder, clk_pin)
-        elif mode == BotEncoderMode.DEEP_EDIT:
-            self.parameter_select(encoder, clk_pin)
-        elif mode == BotEncoderMode.VALUE_EDIT:
-            self.parameter_value_change(encoder, clk_pin)
 
     def bot_encoder_select(self, direction):
         mode = self.bot_encoder_mode
@@ -412,12 +414,44 @@ class Mod:
             self.update_lcd_plugins()
 
     #
+    # System Menu Stuff
+    #
+
+    def system_menu_show(self):
+        self.menu_items = {"0": {"name": "< Back to main screen", "action": self.system_menu_back},
+                           "1": {"name": "Save Current Pedalboard", "action": self.system_menu_save_current_pb},
+                           "2": {"name": "Reload Pedalboards", "action": self.system_menu_reload}}
+        self.lcd.menu_draw("System menu", self.menu_items)
+        self.selected_menu_index = 0
+
+    def system_menu_select(self, direction):
+        index = ((self.selected_menu_index - 1) if (direction is not 1)
+                 else (self.selected_menu_index + 1)) % (len(self.menu_items))
+        self.lcd.menu_highlight(index)
+        self.selected_menu_index = index
+
+    def system_menu_action(self):
+        item = list(sorted(self.menu_items))[self.selected_menu_index]
+        self.menu_items[item]['action']()
+
+    def system_menu_back(self):
+        self.top_encoder_mode = TopEncoderMode.DEFAULT
+        self.bot_encoder_mode = BotEncoderMode.DEFAULT
+        self.update_lcd()
+
+    def system_menu_save_current_pb(self):
+        print ("save current")
+
+    def system_menu_reload(self):
+        print ("reload")
+
+    #
     # Deep Edit (Parameter stuff)
     #
 
     def show_deep_edit(self):
         plugin = self.get_selected_instance()
-        self.deep = self.Deep(plugin)
+        self.deep = self.Deep(plugin)  # TODO this creates a new obj every time menu is shown, singleton?
         self.deep.selected_parameter_index = 0
         self.lcd.draw_deep_edit(plugin.instance_id, self.deep.parameters)
         self.lcd.draw_deep_edit_hightlight(self.deep.selected_parameter_index)

@@ -41,6 +41,7 @@ class Gfx:
         self.deep_edit_image_height = self.deep_edit_height * 10  # 10 pages (~40 parameters) enough?
         self.deep_edit_image = Image.new('L', (self.width, self.deep_edit_image_height))
         self.deep_edit_draw = ImageDraw.Draw(self.deep_edit_image)
+        self.deep_edit_y0 = 40
 
         # Element dimensions
         self.plugin_height = 11
@@ -128,8 +129,38 @@ class Gfx:
         lcd.clear()
         lcd.show()
 
+    # System Menu Screens (uses deep_edit image and draw objects)
+    def menu_draw(self, page_title, menu_items):
+        # Title (plugin name)
+        self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
+        self.draw[0].text((0, 0), page_title, True, self.title_font)
+        self.refresh_zone(0)
+
+        # Menu Items
+        idx = 0
+        x = 0
+        y = 0
+        menu_list = list(sorted(menu_items))
+        for i in menu_list:
+            if idx is 0:
+                self.deep_edit_draw.text((x, y), "%s" % menu_items[i]['name'], True, self.small_font)
+                x = 8   # indent after first element (back button)
+            else:
+                self.deep_edit_draw.text((x, y), "%d %s" % (idx, menu_items[i]['name']), True, self.small_font)
+            y += 10
+            idx += 1
+        self.refresh_deep_edit()
+
+    def menu_highlight(self, index):
+        scroll_idx = 0
+        highlight = ((index * 10, index * 10 + 8))  # TODO replace 10
+        num_visible = 3  # TODO
+        if index > num_visible:
+            scroll_idx = index - num_visible
+        self.refresh_deep_edit(highlight, scroll_idx * 10)
+
     # Deep Edit Screens
-    def draw_deep_edit(self, plugin_name, parameters):
+    def draw_deep_edit(self, plugin_name, parameters):  # TODO use menu code above
         # Title (plugin name)
         self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
         self.draw[0].text((0, 0), plugin_name, True, self.title_font)
@@ -168,62 +199,33 @@ class Gfx:
         self.deep_edit_image.paste(0, (0, 0, self.width, self.deep_edit_height))
         self.deep_edit_draw.text((0, 0), "Press and hold to go back", True, self.small_bold_font)
 
-        # Parameter details
-        #self.image.paste(0, (0, 0, self.width, self.height))
-        y0 = 40
-        y1 = y0 - 2
-        yt = 16
-        x = 0  # TODO ofset messes scale
-        #val = min(parameter.value, 127)  # Scale to 127  TODO define max midi
-        # TODO scale to 100 (as in, percent)
+        # Graph
+        self.draw_value_edit_graph(parameter, value)
 
-        #self.deep_edit_draw.text((0, yt), "Gain", 1, self.label_font)
-        #self.deep_edit_draw.text((40, yt), str(val), 1, self.label_font)
-
-        val = util.remap_range(value, parameter.minimum, parameter.maximum, 0, 127)
-        self.deep_edit_draw.text((0, yt), str(val), 1, self.label_font)
-
-        while x < val:
-            self.deep_edit_draw.rectangle(((x, y0), (x + 1, y1)), 1)
-            if x >= 127:
-                break
-            if (x % 9) == 0:
-                y1 = y1 - 1
-                x = x + 3
-            else:
-                x = x + 1
-
-        self.deep_edit_draw.text((0, y0), str(parameter.minimum), 1, self.small_font)
-        self.deep_edit_draw.text((110, y0), str(parameter.maximum), 1, self.small_font)
-
-        self.refresh_deep_edit()
-
-    def draw_value_edit_graph(self, parameter, value):  # TODO XXX share this graph drawing stuff
+    def draw_value_edit_graph(self, parameter, value):
         self.deep_edit_image.paste(0, (0, 0, self.width, self.deep_edit_height))
-        y0 = 40
+        y0 = self.deep_edit_y0
         y1 = y0 - 2
         yt = 16
-        x = 0  # TODO ofset messes scale
-        # val = min(parameter.value, 127)  # Scale to 127  TODO define max midi
-        # TODO scale to 100 (as in, percent)
+        x = 0  # TODO offset messes scale
+        xpitch = 4
 
-        # self.deep_edit_draw.text((0, yt), "Gain", 1, self.label_font)
-        # self.deep_edit_draw.text((40, yt), str(val), 1, self.label_font)
-        #print("min %d   max %d" % (parameter.minimum, parameter.maximum))
         val = util.remap_range(value, parameter.minimum, parameter.maximum, 0, 127)
-        self.deep_edit_draw.text((0, yt), str(val), 1, self.label_font)
+        self.deep_edit_draw.text((0, yt), "%d" % value, 1, self.label_font)
 
-        while x < val:
-            self.deep_edit_draw.rectangle(((x, y0), (x + 1, y1)), 1)
-            if x >= 127:
-                break
-            if (x % 9) == 0:
+        yref = y1
+        while x < 127:  # TODO 127 minus x pitch
+            self.deep_edit_draw.line(((x+2, y0), (x+2, yref)), 1, 1)
+
+            if (x < val) and (x % xpitch) == 0:
+                self.deep_edit_draw.rectangle(((x, y0), (x+1, y1)), 1)
                 y1 = y1 - 1
-                x = x + 3
-            else:
-                x = x + 1
 
-        self.deep_edit_draw.text((0, y0), str(parameter.minimum), 1, self.small_font)
+            x = x + xpitch
+            yref = yref - 1
+
+        self.deep_edit_draw.text((0, self.deep_edit_y0 + 2), "%d" % parameter.minimum, 1, self.small_font)
+        self.deep_edit_draw.text((110, self.deep_edit_y0 + 2), "%d" % parameter.maximum, 1, self.small_font)
 
         self.refresh_deep_edit()
 
@@ -231,7 +233,7 @@ class Gfx:
     def draw_title(self, pedalboard, preset, invert_pb, invert_pre):
         self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
 
-        pedalboard = pedalboard.lower().capitalize()
+        #pedalboard = pedalboard.lower().capitalize()
         pb_size  = self.title_font.getsize(pedalboard)[0]
         font_height = self.title_font.getsize(pedalboard)[1]
         y = -1  # -1 pushes text to very top of LCD
@@ -249,7 +251,7 @@ class Gfx:
             self.draw[0].text((x, y), delimiter, 1, self.title_font)
 
             # Preset Name
-            preset = preset.lower().capitalize()
+            #preset = preset.lower().capitalize()
             pre_size = self.title_font.getsize(preset)[0]
             x = x + self.title_font.getsize(delimiter)[0]
             x2 = x + pre_size
