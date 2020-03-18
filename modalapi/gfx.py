@@ -2,6 +2,7 @@
 
 import signal
 import spidev
+import modalapi.token as Token
 import modalapi.util as util
 
 from gfxhat import touch, lcd, backlight, fonts
@@ -37,11 +38,12 @@ class Gfx:
                               1: (52,  0),
                               2: (103, 0)}
 
-        self.deep_edit_height = self.height - self.zone_height[0] + 1  # TODO figure out why +1
-        self.deep_edit_image_height = self.deep_edit_height * 10  # 10 pages (~40 parameters) enough?
-        self.deep_edit_image = Image.new('L', (self.width, self.deep_edit_image_height))
-        self.deep_edit_draw = ImageDraw.Draw(self.deep_edit_image)
-        self.deep_edit_y0 = 40
+        # Menu (System menu, Parameter edit, etc.)
+        self.menu_height = self.height - self.zone_height[0] + 1  # TODO figure out why +1
+        self.menu_image_height = self.menu_height * 10  # 10 pages (~40 parameters) enough?
+        self.menu_image = Image.new('L', (self.width, self.menu_image_height))
+        self.menu_draw = ImageDraw.Draw(self.menu_image)
+        self.menu_y0 = 40
 
         # Element dimensions
         self.plugin_height = 11
@@ -64,13 +66,29 @@ class Gfx:
                      ImageDraw.Draw(self.images[6]), ImageDraw.Draw(self.images[7])]
 
         # Load fonts
+        self.splash_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 18)
         self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 11)
         self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)  # TODO get rid
         self.small_bold_font = ImageFont.truetype("DejaVuSansMono-Bold.ttf", 8)
         self.small_font = ImageFont.truetype("DejaVuSansMono.ttf", 8)
 
+        # Splash
+        text_im = Image.new('L', (103, 63))
+        draw = ImageDraw.Draw(text_im)
+        draw.text((7, 20), "pi Stomp!", True, self.splash_font)
+        self.splash = Image.new('L', (self.width, self.height))
+        self.splash.paste(text_im.rotate(24), (0, 0, 103, 63))
+        self.splash_show()
+
         # Turn on Backlight
         self.enable_backlight()
+
+    def splash_show(self):
+        for x in range(0, self.width):
+            for y in range(0, self.height):
+                pixel = self.splash.getpixel((x, y))
+                lcd.set_pixel(self.width - x - 1, self.height - y, pixel)
+        lcd.show()
 
     def refresh_zone(self, zone_idx):
         #flipped = self.images[zone_idx].transpose(Image.ROTATE_180)
@@ -90,14 +108,14 @@ class Gfx:
                 #print("%d %d" % (self.width - x - 1, self.height - y - y_offset))
         lcd.show()
 
-    def refresh_deep_edit(self, highlight_range=None, scroll_offset=0):
+    def refresh_menu(self, highlight_range=None, scroll_offset=0):
         # Set Pixels
         y_offset = self.zone_height[0]
         for x in range(0, self.width):
-            for y in range(0, self.deep_edit_height):
+            for y in range(0, self.menu_height):
                 y_draw = y + scroll_offset
-                if y_draw < self.deep_edit_image_height:
-                    pixel = self.deep_edit_image.getpixel((x, y_draw))
+                if y_draw < self.menu_image_height:
+                    pixel = self.menu_image.getpixel((x, y_draw))
                     if highlight_range and (y_draw >= highlight_range[0]) and (y_draw <= highlight_range[1]):  # TODO LAME
                          pixel = not pixel
                     lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
@@ -129,12 +147,14 @@ class Gfx:
         lcd.clear()
         lcd.show()
 
-    # System Menu Screens (uses deep_edit image and draw objects)
-    def menu_draw(self, page_title, menu_items):
+    # Menu Screens (uses deep_edit image and draw objects)
+    def menu_show(self, page_title, menu_items):
         # Title (plugin name)
         self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
         self.draw[0].text((0, 0), page_title, True, self.title_font)
         self.refresh_zone(0)
+
+        self.menu_image.paste(0, (0, 0, self.width, self.menu_height))
 
         # Menu Items
         idx = 0
@@ -143,13 +163,13 @@ class Gfx:
         menu_list = list(sorted(menu_items))
         for i in menu_list:
             if idx is 0:
-                self.deep_edit_draw.text((x, y), "%s" % menu_items[i]['name'], True, self.small_font)
+                self.menu_draw.text((x, y), "%s" % menu_items[i][Token.NAME], True, self.small_font)
                 x = 8   # indent after first element (back button)
             else:
-                self.deep_edit_draw.text((x, y), "%d %s" % (idx, menu_items[i]['name']), True, self.small_font)
+                self.menu_draw.text((x, y), "%d %s" % (idx, menu_items[i][Token.NAME]), True, self.small_font)
             y += 10
             idx += 1
-        self.refresh_deep_edit()
+        self.refresh_menu()  # TODO Change name
 
     def menu_highlight(self, index):
         scroll_idx = 0
@@ -157,37 +177,9 @@ class Gfx:
         num_visible = 3  # TODO
         if index > num_visible:
             scroll_idx = index - num_visible
-        self.refresh_deep_edit(highlight, scroll_idx * 10)
+        self.refresh_menu(highlight, scroll_idx * 10)
 
-    # Deep Edit Screens
-    def draw_deep_edit(self, plugin_name, parameters):  # TODO use menu code above
-        # Title (plugin name)
-        self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
-        self.draw[0].text((0, 0), plugin_name, True, self.title_font)
-        self.refresh_zone(0)
-
-        # Back button (index 0)
-        self.deep_edit_image.paste(0, (0, 0, self.width, self.deep_edit_height))
-        self.deep_edit_draw.text((0, 0), "< Back to main screen", True, self.small_bold_font)
-
-        # Plugin Parameters
-        idx = 1
-        x = 8
-        y = 10  # TODO Define this somewhere
-        for p in parameters:
-            self.deep_edit_draw.text((x, y), "%d %s" % (idx, p.name), True, self.small_font)
-            y += 10
-            idx += 1
-        self.refresh_deep_edit()
-
-    def draw_deep_edit_hightlight(self, highlight_idx):
-        scroll_idx = 0
-        highlight = ((highlight_idx * 10, highlight_idx * 10 + 8))  # TODO replace 10
-        num_visible = 3  # TODO
-        if highlight_idx > num_visible:
-            scroll_idx = highlight_idx - num_visible
-        self.refresh_deep_edit(highlight, scroll_idx * 10)
-
+    # Parameter Value Edit
     def draw_value_edit(self, plugin_name, parameter, value):
         # Title (parameter name)
         self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
@@ -195,39 +187,40 @@ class Gfx:
         self.draw[0].text((0, 0), title, True, self.label_font)
         self.refresh_zone(0)
 
-        # Back button (index 0)
-        self.deep_edit_image.paste(0, (0, 0, self.width, self.deep_edit_height))
-        self.deep_edit_draw.text((0, 0), "Press and hold to go back", True, self.small_bold_font)
+        # Back message (zone 1)
+        #self.images[1].paste(0, (0, 0, self.width, self.zone_height[1]))
+        #self.draw[1].text((0, 0), "Press and hold to go back", True, self.small_bold_font)  # TODO this gets erased by graph function
+        #self.refresh_zone(1)
 
         # Graph
         self.draw_value_edit_graph(parameter, value)
 
     def draw_value_edit_graph(self, parameter, value):
-        self.deep_edit_image.paste(0, (0, 0, self.width, self.deep_edit_height))
-        y0 = self.deep_edit_y0
+        self.menu_image.paste(0, (0, 0, self.width, self.menu_height))
+        y0 = self.menu_y0
         y1 = y0 - 2
         yt = 16
         x = 0  # TODO offset messes scale
         xpitch = 4
 
         val = util.remap_range(value, parameter.minimum, parameter.maximum, 0, 127)
-        self.deep_edit_draw.text((0, yt), "%d" % value, 1, self.label_font)
+        self.menu_draw.text((0, yt), "%d" % value, 1, self.label_font)
 
         yref = y1
         while x < 127:  # TODO 127 minus x pitch
-            self.deep_edit_draw.line(((x+2, y0), (x+2, yref)), 1, 1)
+            self.menu_draw.line(((x + 2, y0), (x + 2, yref)), 1, 1)
 
             if (x < val) and (x % xpitch) == 0:
-                self.deep_edit_draw.rectangle(((x, y0), (x+1, y1)), 1)
+                self.menu_draw.rectangle(((x, y0), (x + 1, y1)), 1)
                 y1 = y1 - 1
 
             x = x + xpitch
             yref = yref - 1
 
-        self.deep_edit_draw.text((0, self.deep_edit_y0 + 2), "%d" % parameter.minimum, 1, self.small_font)
-        self.deep_edit_draw.text((110, self.deep_edit_y0 + 2), "%d" % parameter.maximum, 1, self.small_font)
+        self.menu_draw.text((0, self.menu_y0 + 2), "%d" % parameter.minimum, 1, self.small_font)
+        self.menu_draw.text((110, self.menu_y0 + 2), "%d" % parameter.maximum, 1, self.small_font)
 
-        self.refresh_deep_edit()
+        self.refresh_menu()
 
     # Zone 0 - Pedalboard and Preset
     def draw_title(self, pedalboard, preset, invert_pb, invert_pre):
@@ -246,7 +239,7 @@ class Gfx:
         if preset != None:
 
             # delimiter
-            delimiter = "-"
+            delimiter = "/"
             x = pb_size + 1
             self.draw[0].text((x, y), delimiter, 1, self.title_font)
 

@@ -91,7 +91,6 @@ class Mod:
         def __init__(self, plugin):
             self.plugin = plugin
             self.parameters = list(plugin.parameters.values())
-            print("%s" % self.parameters)
             self.selected_parameter_index = 0
             self.value = 0
 
@@ -117,7 +116,7 @@ class Mod:
                 self.pedalboard_change()
                 self.top_encoder_mode = TopEncoderMode.DEFAULT
             elif mode == TopEncoderMode.SYSTEM_MENU:
-                self.system_menu_action()
+                self.menu_action()
             else:
                 if len(self.current.presets) > 0:
                     self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
@@ -146,23 +145,24 @@ class Mod:
             self.preset_select(direction)
             self.top_encoder_mode = TopEncoderMode.PRESET_SELECTED
         elif mode == TopEncoderMode.SYSTEM_MENU:
-            self.system_menu_select(direction)
+            self.menu_select(direction)
 
     def bottom_encoder_sw(self, value):
         # State machine for bottom rotary encoder switch
+        if self.top_encoder_mode == TopEncoderMode.SYSTEM_MENU:
+            return  # Ignore bottom encoder if top encoder has navigated to the system menu
         mode = self.bot_encoder_mode
         if value == AnalogSwitch.Value.RELEASED:
             if mode == BotEncoderMode.DEFAULT:
                 self.toggle_plugin_bypass()
             elif mode == BotEncoderMode.DEEP_EDIT:
-                self.bot_encoder_mode = BotEncoderMode.VALUE_EDIT
-                self.show_value_edit()
+                self.menu_action()
             #elif mode == BotEncoderMode.VALUE_EDIT:
             #    self.parameter_value_change()
         elif value == AnalogSwitch.Value.LONGPRESSED:
             if mode == BotEncoderMode.DEFAULT or BotEncoderMode.VALUE_EDIT:
                 self.bot_encoder_mode = BotEncoderMode.DEEP_EDIT
-                self.show_deep_edit()
+                self.parameter_edit_show()
             else:
                 self.bot_encoder_mode = BotEncoderMode.DEFAULT
                 self.update_lcd()
@@ -172,7 +172,8 @@ class Mod:
         if mode == BotEncoderMode.DEFAULT:
             self.plugin_select(direction)
         elif mode == BotEncoderMode.DEEP_EDIT:
-            self.parameter_select(direction)
+            #self.parameter_select(direction)
+            self.menu_select(direction)
         elif mode == BotEncoderMode.VALUE_EDIT:
             self.parameter_value_change(direction)
 
@@ -414,73 +415,107 @@ class Mod:
             self.update_lcd_plugins()
 
     #
-    # System Menu Stuff
+    # Generic Menu functions
     #
 
-    def system_menu_show(self):
-        self.menu_items = {"0": {"name": "< Back to main screen", "action": self.system_menu_back},
-                           "1": {"name": "Save Current Pedalboard", "action": self.system_menu_save_current_pb},
-                           "2": {"name": "Reload Pedalboards", "action": self.system_menu_reload}}
-        self.lcd.menu_draw("System menu", self.menu_items)
-        self.selected_menu_index = 0
-
-    def system_menu_select(self, direction):
+    def menu_select(self, direction):
         index = ((self.selected_menu_index - 1) if (direction is not 1)
                  else (self.selected_menu_index + 1)) % (len(self.menu_items))
         self.lcd.menu_highlight(index)
         self.selected_menu_index = index
 
-    def system_menu_action(self):
+    def menu_action(self):
         item = list(sorted(self.menu_items))[self.selected_menu_index]
-        self.menu_items[item]['action']()
+        self.menu_items[item][Token.ACTION]()
 
-    def system_menu_back(self):
+    def menu_back(self):
         self.top_encoder_mode = TopEncoderMode.DEFAULT
         self.bot_encoder_mode = BotEncoderMode.DEFAULT
         self.update_lcd()
 
+    #
+    # System Menu
+    #
+
+    def system_menu_show(self):
+        self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back},
+                           "1": {Token.NAME: "Save current pedalboard", Token.ACTION: self.system_menu_save_current_pb},
+                           "2": {Token.NAME: "Soft restart & reload", Token.ACTION: self.system_menu_reload},
+                           "3": {Token.NAME: "Restart sound engine", Token.ACTION: self.system_menu_restart_sound},
+                           "4": {Token.NAME: "Hardware reboot", Token.ACTION: self.system_menu_reboot}}
+        self.lcd.menu_show("System menu", self.menu_items)
+        self.selected_menu_index = 0
+        self.lcd.menu_highlight(0)
+
     def system_menu_save_current_pb(self):
         print ("save current")
+        # TODO this works to save the pedalboard values, but just default, not Preset values
+        # Figure out how to save preset (host.py:preset_save_replace)
+        # TODO this also causes a problem if self.current.pedalboard.title != mod-host title
+        # which can happen if the pedalboard is changed via MOD UI, not via hardware
+        url = self.root_uri + "pedalboard/save"
+        try:
+            resp = req.post(url, data={"asNew": "0", "title": self.current.pedalboard.title})
+            if resp.status_code != 200:
+                print("Bad Rest request: %s status: %d" % (url, resp.status_code))
+            else:
+                print("saved")
+        except:
+            print("status %s" % resp.status_code)
+            return
 
     def system_menu_reload(self):
-        print ("reload")
+        print ("Exiting main process, systemctl should restart if enabled")
+        sys.exit(0)
+
+    def system_menu_restart_sound(self):
+        self.lcd.splash_show()
+        print ("Restart sound engine (jack)")
+        os.system('systemctl restart jack')
+
+    def system_menu_reboot(self):
+        self.lcd.splash_show()
+        print ("Hardware Reboot")
+        os.system('systemctl reboot')
 
     #
-    # Deep Edit (Parameter stuff)
+    # Parameter Edit
     #
 
-    def show_deep_edit(self):
+    def parameter_edit_show(self):
         plugin = self.get_selected_instance()
         self.deep = self.Deep(plugin)  # TODO this creates a new obj every time menu is shown, singleton?
         self.deep.selected_parameter_index = 0
-        self.lcd.draw_deep_edit(plugin.instance_id, self.deep.parameters)
-        self.lcd.draw_deep_edit_hightlight(self.deep.selected_parameter_index)
+        self.menu_items = {"0": {"name": "< Back to main screen", "action": self.menu_back}}
+        i = 1
+        for p in self.deep.parameters:
+            self.menu_items[str(i)] = {Token.NAME: p.name,
+                                       Token.ACTION: self.parameter_value_show,
+                                       Token.PARAMETER: p}
+            i = i + 1
+        self.lcd.menu_show(plugin.instance_id, self.menu_items)
+        self.selected_menu_index = 0
+        self.lcd.menu_highlight(0)
 
-    def show_value_edit(self):
-        if self.deep.selected_parameter_index == 0:
-            self.bot_encoder_mode = BotEncoderMode.DEFAULT
-            del self.deep
-            self.update_lcd()
-        else:
-            param = self.deep.parameters[self.deep.selected_parameter_index - 1]
-            self.deep.value = param.value
-            self.lcd.draw_value_edit(self.deep.plugin.instance_id, param, self.deep.value)
-
-    def parameter_select(self, direction):
-        index = ((self.deep.selected_parameter_index - 1) if (direction is not 1)
-                else (self.deep.selected_parameter_index + 1)) % (len(self.deep.parameters) + 1)  # +1 is for the back button
-        self.lcd.draw_deep_edit_hightlight(index)
-        self.deep.selected_parameter_index = index
+    def parameter_value_show(self):
+        self.bot_encoder_mode = BotEncoderMode.VALUE_EDIT
+        item = list(sorted(self.menu_items))[self.selected_menu_index]
+        if not item:
+            return
+        param = self.menu_items[item][Token.PARAMETER]
+        print ("%d %s" % (self.selected_menu_index, param.name))
+        self.deep.value = param.value
+        self.lcd.draw_value_edit(self.deep.plugin.instance_id, param, self.deep.value)
 
     def parameter_value_change(self, direction):
         new_value = ((self.deep.value - 8) if (direction is not 1) else (self.deep.value + 8))
         self.deep.value = new_value
-        param = self.deep.parameters[self.deep.selected_parameter_index - 1]
+        param = self.deep.parameters[self.deep.selected_parameter_index - 1]  # TODO XXX (selected_menu_index?)
         self.parameter_value_commit()
         self.lcd.draw_value_edit_graph(param, new_value)
 
     def parameter_value_commit(self):
-        param = self.deep.parameters[self.deep.selected_parameter_index - 1]
+        param = self.deep.parameters[self.deep.selected_parameter_index - 1]  # TODO XXX (selected_menu_index?)
 
         # TODO share this with the similar toggle_bypass code
         url = self.root_uri + "effect/parameter/set//graph%s/%s" % (self.deep.plugin.instance_id, param.symbol)

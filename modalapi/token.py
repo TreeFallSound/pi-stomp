@@ -2,6 +2,7 @@
 
 #class Token:
 # TODO make all right side lowercase if possible
+ACTION = 'action'
 BUNDLE = 'bundle'
 BYPASS = 'bypass'
 CATEGORY = 'category'
@@ -18,6 +19,7 @@ MIDI_CC = 'midi_CC'
 MINIMUM = 'minimum'
 NAME = 'name'
 NONE = 'None'
+PARAMETER = 'parameter'
 PORTS = 'ports'
 PRESET = 'preset'
 RANGES = 'ranges'
