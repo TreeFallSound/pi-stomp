@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import logging
 import RPi.GPIO as GPIO
 from rtmidi.midiconstants import CONTROL_CHANGE
 
@@ -43,7 +44,7 @@ class Footswitch(controller.Controller):
         # Send midi
         if self.midi_CC is not None:
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.enabled else 0]
-            print("Sending CC event: %d %s" % (self.midi_CC, gpio))
+            logging.debug("Sending CC event: %d %s" % (self.midi_CC, gpio))
             self.midiout.send_message(cc)
 
         # Update Relay (if relay is associated with this footswitch)

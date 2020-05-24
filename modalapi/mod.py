@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import json
+import logging
 import os
 import requests as req
 import subprocess
@@ -40,13 +41,13 @@ class Mod:
     __single = None
 
     def __init__(self, lcd):
-        print("Init mod")
+        logging.info("Init mod")
         if Mod.__single:
             raise Mod.__single
         Mod.__single = self
 
         self.lcd = lcd
-        self.root_uri = "http://localhost:80/"
+        self.root_uri = "http://localhost:8888/"
 
         self.pedalboards = {}  # TODO make the ordering of entries deterministic
         self.pedalboard_list = []  # TODO LAME to have two lists
@@ -54,6 +55,7 @@ class Mod:
         self.selected_preset_index = 0
         self.selected_plugin_index = 0
         self.selected_parameter_index = 0
+        self.parameter_tweak_amount = 8
 
         self.plugin_dict = {}
 
@@ -63,7 +65,7 @@ class Mod:
         # Create dummy host for obtaining pedalboard info
         #self.host = Host(None, None, self.msg_callback)
         #def msg_callback(self, msg):
-        #    print(msg)
+        #    logging.debug(msg)
 
         self.hardware = None
 
@@ -92,7 +94,8 @@ class Mod:
             self.plugin = plugin
             self.parameters = list(plugin.parameters.values())
             self.selected_parameter_index = 0
-            self.value = 0
+            self.selected_parameter = None
+            self.value = 0  # TODO shouldn't need this
 
     #
     # Hardware
@@ -125,7 +128,7 @@ class Mod:
             self.update_lcd_title()
         elif value == AnalogSwitch.Value.LONGPRESSED:
             #if self.top_encoder_mode == TopEncoderMode.DEFAULT:
-            #    print("double long")
+            #    logging.debug("double long")
             #    subprocess.call("/usr/local/modep/modep-btn-scripts/my_toggle_wifi_hotspot.sh")
             #else:
             if mode == TopEncoderMode.DEFAULT:
@@ -187,29 +190,29 @@ class Mod:
         try:
             resp = req.get(url)
         except:  # TODO
-            print("Cannot connect to mod-host.")
+            logging.error("Cannot connect to mod-host")
             sys.exit()
 
         if resp.status_code != 200:
-            print("Cannot connect to mod-host.  Status: %s" % resp.status_code)
+            logging.error("Cannot connect to mod-host.  Status: %s" % resp.status_code)
             sys.exit()
 
         pbs = json.loads(resp.text)
         for pb in pbs:
-            print("Loading pedalboard info: %s" % pb[Token.TITLE])
+            logging.info("Loading pedalboard info: %s" % pb[Token.TITLE])
             bundle = pb[Token.BUNDLE]
             title = pb[Token.TITLE]
             pedalboard = Pedalboard.Pedalboard(title, bundle)
             pedalboard.load_bundle(bundle, self.plugin_dict)
             self.pedalboards[bundle] = pedalboard
             self.pedalboard_list.append(pedalboard)
-            #print("dump: %s" % pedalboard.to_json())
+            #logging.debug("dump: %s" % pedalboard.to_json())
 
         # TODO - example of querying host
         #bund = self.get_current_pedalboard()
         #self.host.load(bund, False)
-        #print("Preset: %s %d" % (bund, self.host.pedalboard_preset))  # this value not initialized
-        #print("Preset: %s" % self.get_current_preset_name())
+        #logging.debug("Preset: %s %d" % (bund, self.host.pedalboard_preset))  # this value not initialized
+        #logging.debug("Preset: %s" % self.get_current_preset_name())
 
     def get_current_pedalboard_bundle_path(self):
         url = self.root_uri + "pedalboard/current"
@@ -247,7 +250,7 @@ class Mod:
         # any real time settings
         footswitch_plugins = []
         if self.current.pedalboard:
-            #print(self.current.pedalboard.to_json())
+            #logging.debug(self.current.pedalboard.to_json())
             for plugin in self.current.pedalboard.plugins:
                 for sym, param in plugin.parameters.items():
                     if param.binding is not None:
@@ -278,16 +281,16 @@ class Mod:
             self.selected_pedalboard_index = next_idx
 
     def pedalboard_change(self):
-        print("Pedalboard change")
+        logging.info("Pedalboard change")
         if self.selected_pedalboard_index < len(self.pedalboard_list):
             self.lcd.draw_info_message("Loading...")
             uri = self.root_uri + "pedalboard/load_bundle/"
             bundlepath = self.pedalboard_list[self.selected_pedalboard_index].bundle
             data = {"bundlepath": bundlepath}
-            req.get("http://localhost/reset")
+            req.get(self.root_uri + "reset")
             resp2 = req.post(uri, data)
             if resp2.status_code != 200:
-                print("Bad Rest request: %s %s  status: %d" % (uri, data, resp2.status_code))
+                logging.error("Bad Rest request: %s %s  status: %d" % (uri, data, resp2.status_code))
 
             # Now that it's presumably changed, load the dynamic "current" data
             self.set_current_pedalboard(self.pedalboard_list[self.selected_pedalboard_index])
@@ -297,7 +300,7 @@ class Mod:
     #
 
     def load_current_presets(self):
-        url = self.root_uri + "pedalpreset/list"
+        url = self.root_uri + "snapshot/list"
         try:
             resp = req.get(url)
             if resp.status_code == 200:
@@ -336,13 +339,13 @@ class Mod:
 
     def preset_change(self):
         index = self.selected_preset_index
-        print("preset change: %d" % index)
+        logging.info("preset change: %d" % index)
         self.lcd.draw_info_message("Loading...")
-        url = "http://localhost/pedalpreset/load?id=%d" % index  # TODO use root and uri (Everywhere)
-        # req.get("http://localhost/reset")
+        url = (self.root_uri + "snapshot/load?id=%d" % index)
+        # req.get(self.root_uri + "reset")
         resp = req.get(url)
         if resp.status_code != 200:
-            print("Bad Rest request: %s status: %d" % (url, resp.status_code))
+            logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
         self.current.preset_index = index
 
         #load of the preset might have changed plugin bypass status
@@ -361,7 +364,7 @@ class Mod:
                 if resp.status_code == 200:
                     p.set_bypass(resp.text == "true")
             except:
-                print("failed to get bypass value for: %s" % p.instance_id)
+                logging.error("failed to get bypass value for: %s" % p.instance_id)
                 continue
         self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
         self.lcd.draw_plugins(self.current.pedalboard.plugins)
@@ -391,7 +394,7 @@ class Mod:
             self.lcd.draw_plugin_select(plugin)
 
     def toggle_plugin_bypass(self):
-        print("toggle_plugin_bypass")
+        logging.debug("toggle_plugin_bypass")
         inst = self.get_selected_instance()
         if inst is not None:
             if inst.has_footswitch:
@@ -402,16 +405,9 @@ class Mod:
             # Regular (non footswitch plugin)
             url = self.root_uri + "effect/parameter/set//graph%s/:bypass" % inst.instance_id
             value = inst.toggle_bypass()
-            try:
-                if value:
-                    resp = req.post(url, json={"value":"1"})
-                else:
-                    resp = req.post(url, json={"value":"0"})
-                if resp.status_code != 200:
-                    print("Bad Rest request: %s status: %d" % (url, resp.status_code))
-                    inst.toggle_bypass()  # toggle back to original value since request wasn't successful
-            except:
-                return
+            code = self.parameter_set_send(url, "1" if value else "0", 200)
+            if (code != 200):
+                inst.toggle_bypass()  # toggle back to original value since request wasn't successful
             self.update_lcd_plugins()
 
     #
@@ -448,7 +444,7 @@ class Mod:
         self.lcd.menu_highlight(0)
 
     def system_menu_save_current_pb(self):
-        print ("save current")
+        logging.debug("save current")
         # TODO this works to save the pedalboard values, but just default, not Preset values
         # Figure out how to save preset (host.py:preset_save_replace)
         # TODO this also causes a problem if self.current.pedalboard.title != mod-host title
@@ -457,25 +453,25 @@ class Mod:
         try:
             resp = req.post(url, data={"asNew": "0", "title": self.current.pedalboard.title})
             if resp.status_code != 200:
-                print("Bad Rest request: %s status: %d" % (url, resp.status_code))
+                logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
             else:
-                print("saved")
+                logging.debug("saved")
         except:
-            print("status %s" % resp.status_code)
+            logging.error("status %s" % resp.status_code)
             return
 
     def system_menu_reload(self):
-        print ("Exiting main process, systemctl should restart if enabled")
+        logging.info("Exiting main process, systemctl should restart if enabled")
         sys.exit(0)
 
     def system_menu_restart_sound(self):
         self.lcd.splash_show()
-        print ("Restart sound engine (jack)")
+        logging.info("Restart sound engine (jack)")
         os.system('systemctl restart jack')
 
     def system_menu_reboot(self):
         self.lcd.splash_show()
-        print ("Hardware Reboot")
+        logging.info("Hardware Reboot")
         os.system('systemctl reboot')
 
     #
@@ -503,33 +499,44 @@ class Mod:
         if not item:
             return
         param = self.menu_items[item][Token.PARAMETER]
-        print ("%d %s" % (self.selected_menu_index, param.name))
-        self.deep.value = param.value
+        self.deep.selected_parameter = param
         self.lcd.draw_value_edit(self.deep.plugin.instance_id, param, self.deep.value)
 
     def parameter_value_change(self, direction):
-        new_value = ((self.deep.value - 8) if (direction is not 1) else (self.deep.value + 8))
-        self.deep.value = new_value
-        param = self.deep.parameters[self.deep.selected_parameter_index - 1]  # TODO XXX (selected_menu_index?)
+        param = self.deep.selected_parameter
+        value = float(param.value)
+        tweak = util.remap_range_float(self.parameter_tweak_amount, 0, 127, param.minimum, param.maximum)
+        new_value = round(((value - tweak) if (direction is not 1) else (value + tweak)), 2)
+        if new_value > param.maximum:
+            new_value = param.maximum
+        if new_value < param.minimum:
+            new_value = param.minimum
+        if new_value is value:
+            return
+        self.deep.selected_parameter.value = new_value  # TODO somewhat risky to change value before committed
         self.parameter_value_commit()
         self.lcd.draw_value_edit_graph(param, new_value)
 
     def parameter_value_commit(self):
-        param = self.deep.parameters[self.deep.selected_parameter_index - 1]  # TODO XXX (selected_menu_index?)
-
-        # TODO share this with the similar toggle_bypass code
+        param = self.deep.selected_parameter
         url = self.root_uri + "effect/parameter/set//graph%s/%s" % (self.deep.plugin.instance_id, param.symbol)
+        formatted_value = ("%.1f" % param.value)
+        self.parameter_set_send(url, formatted_value, 200)
+
+    def parameter_set_send(self, url, value, expect_code):
+        logging.debug("request: %s" % url)
         try:
             resp = None
-            if self.deep.value is not None:
-                resp = req.post(url, json={"value": self.deep.value})
-            if resp.status_code != 200:
-                print("Bad Rest request: %s status: %d" % (url, resp.status_code))
+            if value is not None:
+                logging.debug("value: %s" % value)
+                resp = req.post(url, json={"value": value})
+            if resp.status_code != expect_code:
+                logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
             else:
-                print("Parameter %s changed to: %d" % (param.name, new_value))
+                logging.debug("Parameter %s changed to: %d" % (param.name, new_value))
         except:
-            print("status %s" % resp.status_code)
-            return
+            logging.debug("status: %s" % resp.status_code)
+            return resp.status_code
 
     #
     # LCD Stuff

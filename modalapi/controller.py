@@ -2,6 +2,7 @@
 
 from enum import Enum
 import json
+import logging
 import modalapi.util as util
 
 
@@ -20,6 +21,6 @@ class Controller:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
 
     def set_value(self, value):
-        print("Controller subclass hasn't overriden the set_value method")
+        logging.error("Controller subclass hasn't overriden the set_value method")
 
 

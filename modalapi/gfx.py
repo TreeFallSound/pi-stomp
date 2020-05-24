@@ -105,7 +105,6 @@ class Gfx:
             for y in range(0, self.zone_height[zone_idx]):
                 pixel = flipped.getpixel((x, y))
                 lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
-                #print("%d %d" % (self.width - x - 1, self.height - y - y_offset))
         lcd.show()
 
     def refresh_menu(self, highlight_range=None, scroll_offset=0):
@@ -202,9 +201,8 @@ class Gfx:
         yt = 16
         x = 0  # TODO offset messes scale
         xpitch = 4
-
         val = util.remap_range(value, parameter.minimum, parameter.maximum, 0, 127)
-        self.menu_draw.text((0, yt), "%d" % value, 1, self.label_font)
+        self.menu_draw.text((0, yt), "%s" % util.format_float(value), 1, self.label_font)
 
         yref = y1
         while x < 127:  # TODO 127 minus x pitch
@@ -218,7 +216,7 @@ class Gfx:
             yref = yref - 1
 
         self.menu_draw.text((0, self.menu_y0 + 2), "%d" % parameter.minimum, 1, self.small_font)
-        self.menu_draw.text((110, self.menu_y0 + 2), "%d" % parameter.maximum, 1, self.small_font)
+        self.menu_draw.text((127 - (len(str(parameter.maximum)) * 4), self.menu_y0 + 2), "%d" % parameter.maximum, 1, self.small_font)
 
         self.refresh_menu()
 

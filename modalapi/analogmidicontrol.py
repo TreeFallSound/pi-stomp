@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-import busio
-import digitalio
-import board
+#import busio
+#import digitalio
+#import board
 import adafruit_mcp3xxx.mcp3008 as MCP
 from adafruit_mcp3xxx.analog_in import AnalogIn
 
@@ -11,6 +11,8 @@ from rtmidi.midiconstants import CONTROL_CHANGE
 
 import modalapi.analogcontrol as analogcontrol
 import modalapi.util as util
+
+import logging
 
 
 class AnalogMidiControl(analogcontrol.AnalogControl):
@@ -43,7 +45,7 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
             set_volume = util.remap_range(value, 0, 1023, 0, 127)
 
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, set_volume]
-            print("AnalogControl Sending CC event %s" % cc)
+            logging.debug("AnalogControl Sending CC event %s" % cc)
             self.midiout.send_message(cc)
 
             # save the potentiometer reading for the next loop

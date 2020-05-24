@@ -4,6 +4,7 @@ import busio
 import digitalio
 import board
 import adafruit_mcp3xxx.mcp3008 as MCP
+import logging
 from adafruit_mcp3xxx.analog_in import AnalogIn
 
 
@@ -23,4 +24,4 @@ class AnalogControl:
         return data
 
     def refresh(self):
-        print("AnalogControl subclass hasn't overriden the refresh method")
+        logging.error("AnalogControl subclass hasn't overriden the refresh method")

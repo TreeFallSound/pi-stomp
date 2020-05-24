@@ -92,7 +92,7 @@ def get_pedalboard_info(bundlepath):
     #         p = lilv.lilv_plugins_get(plugins, plugins_it)
     #         plugins_it = lilv.lilv_nodes_next(plugins, plugins_it)
     #         uri = lilv.lilv_plugin_get_uri(p)
-    #         #print(lilv.lilv_node_as_uri(uri))
+    #         #logging.debug(lilv.lilv_node_as_uri(uri))
 
     # this is needed when loading specific bundles instead of load_all
     # (these functions are not exposed via World yet)
@@ -137,7 +137,7 @@ def get_pedalboard_info(bundlepath):
         else:
             continue
 
-        print(" Instance: %s" % lilv.lilv_node_as_uri(protouri1))
+        #logging.debug(" Instance: %s" % lilv.lilv_node_as_uri(protouri1))
         plugin_list.append(lilv.lilv_node_as_uri(protouri1))
 
         # XXX TODO Use this eventually for detailed pedalboard port info (return a dict instead of a simple list)

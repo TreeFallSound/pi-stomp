@@ -2,6 +2,7 @@
 
 import json
 import lilv
+import logging
 import os
 import requests as req
 import sys
@@ -30,7 +31,7 @@ class NS(object):
 class Pedalboard:
 
     def __init__(self, title, bundle):
-        self.root_uri = "http://localhost:80/"
+        self.root_uri = "http://localhost:8888/"
         self.title = title
         self.bundle = bundle
         self.plugins = []
@@ -73,11 +74,11 @@ class Pedalboard:
         try:
             resp = req.get(url)
         except:  # TODO
-            print("Cannot connect to mod-host.")
+            logging.error("Cannot connect to mod-host.")
             sys.exit()
 
         if resp.status_code != 200:
-            print("Cannot connect to mod-host for plugin data: %s\nStatus: %s" % (url, resp.status_code))
+            logging.error("Cannot connect to mod-host for plugin data: %s\nStatus: %s" % (url, resp.status_code))
             sys.exit()
 
         return json.loads(resp.text)
@@ -139,7 +140,7 @@ class Pedalboard:
             if plugin_uri not in plugin_dict:
                 plugin_info = self.get_plugin_data(plugin_uri)
                 if plugin_info:
-                    print("  added %s" % plugin_uri)
+                    logging.debug("added %s" % plugin_uri)
                     plugin_dict[plugin_uri] = plugin_info
             else:
                 plugin_info = plugin_dict[plugin_uri]
@@ -178,15 +179,15 @@ class Pedalboard:
                     for pp in plugin_params:
                         sym = util.DICT_GET(pp, Token.SYMBOL)
                         if sym == symbol:
-                            #print("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
+                            #logging.debug("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
                             param = Parameter.Parameter(pp, value, binding)
-                            #print("Param: %s %s %s" % (param.name, param.symbol, param.minimum))
+                            logging.debug("Param: %s %s %4.2f %4.2f" % (param.name, param.symbol, param.minimum, value))
                             parameters[symbol] = param
 
-                    #print("  Label: %s" % label)
+                    #logging.debug("  Label: %s" % label)
             inst = Plugin.Plugin(instance_id, parameters, plugin_info)
             self.plugins.append(inst)
-            #print("dump: %s" % inst.to_json())
+            #logging.debug("dump: %s" % inst.to_json())
         return
 
     def to_json(self):

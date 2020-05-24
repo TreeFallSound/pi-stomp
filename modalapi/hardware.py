@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import RPi.GPIO as GPIO
+import logging
 import json
 import spidev
 import yaml
@@ -51,7 +52,7 @@ class Hardware:
     __single = None
 
     def __init__(self, mod, midiout, refresh_callback):
-        print("Init hardware")
+        logging.debug("Init hardware")
         if Hardware.__single:
             raise Hardware.__single
         Hardware.__single = self
@@ -79,7 +80,7 @@ class Hardware:
             self.footswitches.append(fs)
 
         # Read the default config file and initialize footswitches
-        default_config_file = "/home/modep/modalapi/.default_config.yml"
+        default_config_file = ".default_config.yml"
         with open(default_config_file, 'r') as ymlfile:
             self.cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
         self.__init_footswitches_default()

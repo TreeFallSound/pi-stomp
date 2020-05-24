@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import argparse
 import atexit
 import json
+import logging
 import os
 import requests as req
 import RPi.GPIO as GPIO
@@ -19,6 +21,21 @@ import modalapi.mod as Mod
 
 
 def main():
+    # Command line parsing
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-l", "--log", nargs='+', help="Provide logging level. Example --log debug'", default="info",
+                        choices=['debug', 'info', 'warning', 'error', 'critical'])
+
+    # Handle Log Level
+    level_config = {'debug': logging.DEBUG, 'info': logging.INFO, 'warning': logging.WARNING, 'error': logging.ERROR,
+                    'critical': logging.CRITICAL}
+    log = parser.parse_args().log[0]
+    log_level = level_config[log]
+    if log_level:
+        logging.basicConfig(level=logging.INFO)
+        logging.info("Log level now set to: %s" % log)
+        logging.basicConfig(level=log_level)
+
     # MIDI initialization
     # Prompts user for MIDI input port, unless a valid port number or name
     # is given as the first argument on the command line.
@@ -57,7 +74,7 @@ def main():
     #touch.set_led(0, 1)
     #touch.set_led(2, 1)
 
-    print("Entering main loop. Press Control-C to exit.")
+    logging.info("Entering main loop. Press Control-C to exit.")
     #period = 0
     try:
         while True:
@@ -69,17 +86,14 @@ def main():
             # if period > 100:
             #     period = 0
 
-
     except KeyboardInterrupt:
-        print('')
+        logging.info('keyboard interrupt')
     finally:
-        print("Exit.")
+        logging.info("Exit.")
         midiout.close_port()
-        #midiin.close_port()
-        # del midiin
         lcd.cleanup()
         GPIO.cleanup()
-        print("Completed cleanup")
+        logging.info("Completed cleanup")
 
 
 if __name__ == '__main__':
