@@ -28,6 +28,9 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
         self.last_read = 0          # this keeps track of the last potentiometer value
         self.value = None
 
+    def set_midi_channel(self, midi_channel):
+        self.midi_channel = midi_channel
+
     def set_value(self, value):
         self.value = value
 

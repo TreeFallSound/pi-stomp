@@ -16,7 +16,7 @@ from rtmidi.midiutil import open_midioutput
 from rtmidi.midiconstants import (CONTROLLER_CHANGE, PROGRAM_CHANGE)
 
 import modalapi.gfx as Gfx
-import modalapi.hardware as Hardware
+import modalapi.pistomp as Pistomp
 import modalapi.mod as Mod
 
 
@@ -30,10 +30,9 @@ def main():
     level_config = {'debug': logging.DEBUG, 'info': logging.INFO, 'warning': logging.WARNING, 'error': logging.ERROR,
                     'critical': logging.CRITICAL}
     log = parser.parse_args().log[0]
-    log_level = level_config[log]
+    log_level = level_config[log] if log in level_config else None
     if log_level:
-        logging.basicConfig(level=logging.INFO)
-        logging.info("Log level now set to: %s" % log)
+        print("Log level now set to: %s" % logging.getLevelName(log_level))
         logging.basicConfig(level=log_level)
 
     # MIDI initialization
@@ -55,7 +54,7 @@ def main():
     mod = Mod.Mod(lcd)
 
     # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
-    hw = Hardware.Hardware(mod, midiout, refresh_callback=mod.update_lcd_fs)
+    hw = Pistomp.Pistomp(mod, midiout, refresh_callback=mod.update_lcd_fs)
     mod.add_hardware(hw)
 
     # Load all pedalboard info from the lilv ttl file

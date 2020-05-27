@@ -237,7 +237,7 @@ class Mod:
         if config_file.exists():
             with open(config_file.as_posix(), 'r') as ymlfile:
                 cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
-        self.hardware.reinit_footswitches(cfg)
+        self.hardware.reinit(cfg)
 
         # Initialize the data
         self.bind_current_pedalboard()

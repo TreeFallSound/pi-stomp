@@ -1,109 +1,37 @@
 #!/usr/bin/env python3
 
-import RPi.GPIO as GPIO
 import logging
-import json
-import spidev
+import os
 import yaml
 
-import modalapi.analogmidicontrol as AnalogMidiControl
-import modalapi.analogswitch as AnalogSwitch
-import modalapi.controller as Controller
-import modalapi.encoder as Encoder
-import modalapi.footswitch as Footswitch
-import modalapi.relay as Relay
+import modalapi.analogmidicontrol
 import modalapi.token as Token
-import modalapi.util as util
 
-# Midi
-# TODO move to default_config.yml
-MIDI_CHANNEL = 13  # Note that a learned MIDI msg will report as the channel +1 (MOD bug?)
+DEFAULT_CONFIG_FILE = "default_config.yml"
 
-# Pins
-TOP_ENC_PIN_D = 17
-TOP_ENC_PIN_CLK = 4
-TOP_ENC_SWITCH_CHANNEL = 7
-BOT_ENC_PIN_D = 22
-BOT_ENC_PIN_CLK = 27
-BOT_ENC_SWITCH_CHANNEL = 6
-ENC_SW_THRESHOLD = 512
-
-RELAY_LEFT_PIN = 16
-RELAY_RIGHT_PIN = 12
-
-# Each footswitch defined by a quad touple:
-# 1: id (left = 0, mid = 1, right = 2)
-# 2: the GPIO pin it's attached to
-# 3: the associated LED output pin and
-# 4: the MIDI Control (CC) message that will be sent when the switch is toggled
-# Pin modifications should only be made if the hardware is changed accordingly
-FOOTSW = ((0, 23, 24, 61), (1, 25, 0, 62), (2, 13, 26, 63))
-
-# TODO replace in default_config.yml
-# Analog Controls defined by a triple touple:
-# 1: the ADC channel
-# 2: the minimum threshold for considering the value to be changed
-# 3: the MIDI Control (CC) message that will be sent
-# 4: control type (KNOB, EXPRESSION, etc.)
-# Tweak, Expression Pedal
-ANALOG_CONTROL = ((0, 16, 64, 'KNOB'), (1, 16, 65, 'EXPRESSION'))
 
 class Hardware:
-    __single = None
 
     def __init__(self, mod, midiout, refresh_callback):
         logging.debug("Init hardware")
-        if Hardware.__single:
-            raise Hardware.__single
-        Hardware.__single = self
 
         self.mod = mod
+        self.midiout = midiout
+        self.refresh_callback = refresh_callback
+
+        # From config file(s)
+        self.default_cfg = None  # default
+        self.cfg = None          # compound cfg (default with user/pedalboard specific cfg overlaid)
+        self.midi_channel = 0
+
+        # Standard hardware objects (not required to exist)
         self.analog_controls = []
         self.encoders = []
         self.controllers = {}
         self.footswitches = []
-        self.midiout = midiout
-        self.refresh_callback = refresh_callback
-        self.cfg = None
 
-        # Create Relay objects
-        self.relay_left = Relay.Relay(RELAY_LEFT_PIN)
-        self.relay_right = Relay.Relay(RELAY_RIGHT_PIN)
-
-
-        GPIO.setmode(GPIO.BCM)  # TODO should this go earlier?
-
-        # Create Footswitches
-        for f in FOOTSW:
-            fs = Footswitch.Footswitch(f[0], f[1], f[2], f[3], MIDI_CHANNEL, midiout,
-                                       refresh_callback=self.refresh_callback)
-            self.footswitches.append(fs)
-
-        # Read the default config file and initialize footswitches
-        default_config_file = ".default_config.yml"
-        with open(default_config_file, 'r') as ymlfile:
-            self.cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
-        self.__init_footswitches_default()
-
-        # Initialize Analog inputs
-        spi = spidev.SpiDev()
-        spi.open(0, 1)  # Bus 0, CE1
-        spi.max_speed_hz = 1000000  # TODO match with LCD or don't specify.  Move to top of file
-        for c in ANALOG_CONTROL:
-            control = AnalogMidiControl.AnalogMidiControl(spi, c[0], c[1], c[2], MIDI_CHANNEL, midiout, c[3])
-            self.analog_controls.append(control)
-            key = format("%d:%d" % (MIDI_CHANNEL, c[2]))
-            self.controllers[key] = control  # Controller.Controller(MIDI_CHANNEL, c[1], Controller.Type.ANALOG)
-
-        # Initialize Encoders
-        top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=mod.top_encoder_select)
-        self.encoders.append(top_enc)
-        bot_enc = Encoder.Encoder(BOT_ENC_PIN_D, BOT_ENC_PIN_CLK, callback=mod.bot_encoder_select)
-        self.encoders.append(bot_enc)
-        control = AnalogSwitch.AnalogSwitch(spi, TOP_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD, callback=mod.top_encoder_sw)
-        self.analog_controls.append(control)
-        control = AnalogSwitch.AnalogSwitch(spi, BOT_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD, callback=mod.bottom_encoder_sw)
-        self.analog_controls.append(control)
+        # Read the default cfg
+        self.__load_default_cfg()
 
     def poll_controls(self):
         # This is intended to be called periodically from main working loop to poll the instantiated controls
@@ -112,9 +40,37 @@ class Hardware:
         for e in self.encoders:
             e.read_rotary()
 
-    def reinit_footswitches(self, cfg):
+    def reinit(self, cfg):
+        # reinit hardware as specified by the new cfg context (after pedalboard change, etc.)
+        self.cfg = self.default_cfg.copy()
+
+        self.__init_midi_default()
         self.__init_footswitches_default()
-        self.__init_footswitches(cfg)
+        if cfg is not None:
+            self.__init_midi(cfg)
+            self.__init_footswitches(cfg)
+
+    def __load_default_cfg(self):
+        # Read the default config file - should only need to read once per session
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        default_config_file = os.path.join(script_dir, DEFAULT_CONFIG_FILE)
+        with open(default_config_file, 'r') as ymlfile:
+            self.default_cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
+
+    def __init_midi_default(self):
+        self.__init_midi(self.cfg)
+
+    def __init_midi(self, cfg):
+        try:
+            val = cfg[Token.HARDWARE][Token.MIDI][Token.CHANNEL]
+            # LAME bug in Mod detects MIDI channel as one higher than sent (7 sent, seen by mod as 8) so compensate here
+            self.midi_channel = val - 1 if val > 0 else 0
+        except KeyError:
+            pass
+        # TODO could iterate thru all objects here instead of handling in __init_footswitches
+        for ac in self.analog_controls:
+            if isinstance(ac, modalapi.analogmidicontrol.AnalogMidiControl):
+                ac.set_midi_channel(self.midi_channel)
 
     def __init_footswitches_default(self):
         for fs in self.footswitches:
@@ -153,8 +109,9 @@ class Hardware:
                                 self.controllers.pop(k)
                                 break
                     else:
+                        fs.set_midi_channel(self.midi_channel)
                         fs.set_midi_CC(cc)
-                        key = format("%d:%d" % (MIDI_CHANNEL, fs.midi_CC))
+                        key = format("%d:%d" % (self.midi_channel, fs.midi_CC))
                         self.controllers[key] = fs   # TODO problem if this creates a new element?
 
                 # Preset Control
@@ -163,4 +120,5 @@ class Hardware:
                     if f[Token.PRESET] == Token.UP:
                         fs.add_preset(callback=self.mod.preset_incr_and_change)
             idx += 1
+
 
