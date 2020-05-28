@@ -355,6 +355,11 @@ class Mod:
         self.preset_select(1)
         self.preset_change()
 
+    def preset_decr_and_change(self):
+        print('decr')
+        self.preset_select(-1)
+        self.preset_change()
+
     def preset_change_plugin_update(self):
         # Now that the preset has changed on the host, update plugin bypass indicators
         for p in self.current.pedalboard.plugins:
@@ -500,12 +505,13 @@ class Mod:
             return
         param = self.menu_items[item][Token.PARAMETER]
         self.deep.selected_parameter = param
-        self.lcd.draw_value_edit(self.deep.plugin.instance_id, param, self.deep.value)
+        self.lcd.draw_value_edit(self.deep.plugin.instance_id, param, param.value)
 
     def parameter_value_change(self, direction):
         param = self.deep.selected_parameter
         value = float(param.value)
-        tweak = util.remap_range_float(self.parameter_tweak_amount, 0, 127, param.minimum, param.maximum)
+        # TODO tweak value won't change from call to call, cache it
+        tweak = util.renormalize_float(self.parameter_tweak_amount, 0, 127, param.minimum, param.maximum)
         new_value = round(((value - tweak) if (direction is not 1) else (value + tweak)), 2)
         if new_value > param.maximum:
             new_value = param.maximum

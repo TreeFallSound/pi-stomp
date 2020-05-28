@@ -12,6 +12,7 @@ class Footswitch(controller.Controller):
     def __init__(self, id, fs_pin, led_pin, midi_CC, midi_channel, midiout, refresh_callback):
         super(Footswitch, self).__init__(midi_channel, midi_CC)
         self.id = id
+        self.display_label = None
         self.enabled = False
         self.fs_pin = fs_pin
         self.led_pin = led_pin
@@ -30,6 +31,9 @@ class Footswitch(controller.Controller):
 
     def set_midi_channel(self, midi_channel):
         self.midi_channel = midi_channel
+
+    def set_display_label(self, label):
+        self.display_label = label
 
     def set_value(self, value):
         self.enabled = (value < 1)

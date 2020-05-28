@@ -45,7 +45,7 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
 
         if value_changed:
             # convert 16bit adc0 (0-65535) trim pot read into 0-100 volume level
-            set_volume = util.remap_range(value, 0, 1023, 0, 127)
+            set_volume = util.renormalize(value, 0, 1023, 0, 127)
 
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, set_volume]
             logging.debug("AnalogControl Sending CC event %s" % cc)

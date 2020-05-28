@@ -7,7 +7,7 @@
 ---
 hardware:
   midi:
-    channel: 16
+    channel: 3
   footswitches:
   - id: 0
     bypass: LEFT_RIGHT

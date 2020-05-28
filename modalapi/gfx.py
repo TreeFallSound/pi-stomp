@@ -201,9 +201,9 @@ class Gfx:
         yt = 16
         x = 0  # TODO offset messes scale
         xpitch = 4
-        val = util.remap_range(value, parameter.minimum, parameter.maximum, 0, 127)
         self.menu_draw.text((0, yt), "%s" % util.format_float(value), 1, self.label_font)
 
+        val = util.renormalize(value, parameter.minimum, parameter.maximum, 0, 127)
         yref = y1
         while x < 127:  # TODO 127 minus x pitch
             self.menu_draw.line(((x + 2, y0), (x + 2, yref)), 1, 1)
@@ -374,7 +374,7 @@ class Gfx:
         for fs_id in range(len(fss)):
             if fss[fs_id] is None:
                 continue
-            label = "None" if len(fss[fs_id].relay_list) < 1 else bypass_label
+            label = "" if fss[fs_id].display_label is None else fss[fs_id].display_label
             xy2 = (self.footswitch_xy[fs_id][0] + self.plugin_width, self.footswitch_xy[fs_id][1] + self.plugin_height)
             self.draw_box((self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1]), xy2, 7, label)
 

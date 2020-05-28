@@ -96,8 +96,10 @@ class Hardware:
                 if Token.BYPASS in f:
                     if f[Token.BYPASS] == Token.LEFT_RIGHT or f[Token.BYPASS] == Token.LEFT:
                         fs.add_relay(self.relay_left)
+                        fs.set_display_label("byps")
                     if f[Token.BYPASS] == Token.LEFT_RIGHT or f[Token.BYPASS] == Token.RIGHT:
                         fs.add_relay(self.relay_right)
+                        fs.set_display_label("byps")
 
                 # Midi
                 if Token.MIDI_CC in f:
@@ -117,8 +119,13 @@ class Hardware:
                 # Preset Control
                 fs.clear_preset()
                 if Token.PRESET in f:
-                    if f[Token.PRESET] == Token.UP:
+                    preset_value = f[Token.PRESET]
+                    if preset_value == Token.UP:
                         fs.add_preset(callback=self.mod.preset_incr_and_change)
+                        fs.set_display_label("Up")
+                    if preset_value == Token.DOWN:
+                        fs.add_preset(callback=self.mod.preset_decr_and_change)
+                        fs.set_display_label("Down")
             idx += 1
 
 
