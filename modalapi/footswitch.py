@@ -41,6 +41,9 @@ class Footswitch(controller.Controller):
 
         if self.preset_callback is not None:
             self.preset_callback()
+        else:
+            # Update LED
+            GPIO.output(self.led_pin, self.enabled)
 
         # Send midi
         if self.midi_CC is not None:
@@ -54,9 +57,6 @@ class Footswitch(controller.Controller):
                 r.enable()
             else:
                 r.disable()
-
-        # Update LED
-        GPIO.output(self.led_pin, self.enabled)
 
         # Update LCD
         if self.parameter is not None:
