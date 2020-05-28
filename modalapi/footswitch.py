@@ -32,9 +32,6 @@ class Footswitch(controller.Controller):
     def set_midi_channel(self, midi_channel):
         self.midi_channel = midi_channel
 
-    def set_display_label(self, label):
-        self.display_label = label
-
     def set_value(self, value):
         self.enabled = (value < 1)
         GPIO.output(self.led_pin, self.enabled)
@@ -65,6 +62,12 @@ class Footswitch(controller.Controller):
         if self.parameter is not None:
             self.parameter.value = not self.enabled  # TODO assumes mapped parameter is :bypass
             self.refresh_callback()
+
+    def set_display_label(self, label):
+        self.display_label = label
+
+    def clear_display_label(self):
+        self.display_label = None
 
     def add_relay(self, relay):
         self.relay_list.append(relay)

@@ -90,7 +90,10 @@ class Hardware:
                     break
                 else:
                     f = None
+
             if f is not None:
+                fs.clear_display_label()
+
                 # Bypass
                 fs.clear_relays()
                 if Token.BYPASS in f:
