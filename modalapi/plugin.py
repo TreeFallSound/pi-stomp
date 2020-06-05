@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import json
-from modalapi.footswitch import Footswitch
+from pistomp.footswitch import Footswitch
 
 
 class Plugin:
@@ -17,7 +17,7 @@ class Plugin:
         #self.info_dict = info   # TODO could store this but not sure we need to
 
     def is_bypassed(self):
-        param = self.parameters.get(":bypass")
+        param = self.parameters.get(":bypass")  # TODO tokenize
         if param is not None:
             return param.value
         return True

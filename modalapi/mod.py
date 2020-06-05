@@ -9,14 +9,14 @@ import sys
 import time
 import yaml
 
-import modalapi.analogswitch as AnalogSwitch
-import modalapi.controller as Controller
+import pistomp.analogswitch as AnalogSwitch
+import pistomp.controller as Controller
 import modalapi.pedalboard as Pedalboard
 import modalapi.token as Token
 import modalapi.util as util
 
-from modalapi.analogmidicontrol import AnalogMidiControl
-from modalapi.footswitch import Footswitch
+from pistomp.analogmidicontrol import AnalogMidiControl
+from pistomp.footswitch import Footswitch
 from enum import Enum
 from pathlib import Path
 

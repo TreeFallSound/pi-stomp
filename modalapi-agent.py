@@ -15,9 +15,10 @@ from rtmidi.midiutil import open_midiinput
 from rtmidi.midiutil import open_midioutput
 from rtmidi.midiconstants import (CONTROLLER_CHANGE, PROGRAM_CHANGE)
 
-import modalapi.gfx as Gfx
-import modalapi.pistomp as Pistomp
 import modalapi.mod as Mod
+import pistomp.lcdgfx as Lcd
+#import pistomp.lcd128x32 as Lcd
+import pistomp.pistomp as Pistomp
 
 
 def main():
@@ -48,7 +49,8 @@ def main():
     except (EOFError, KeyboardInterrupt):
         sys.exit()
 
-    lcd = Gfx.Gfx()
+    # LCD
+    lcd = Lcd.Lcd()
 
     # Create singleton data model object
     mod = Mod.Mod(lcd)
