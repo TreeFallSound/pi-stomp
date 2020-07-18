@@ -97,11 +97,9 @@ class Hardware:
                 # Bypass
                 fs.clear_relays()
                 if Token.BYPASS in f:
+                    # TODO no more right or left
                     if f[Token.BYPASS] == Token.LEFT_RIGHT or f[Token.BYPASS] == Token.LEFT:
-                        fs.add_relay(self.relay_left)
-                        fs.set_display_label("byps")
-                    if f[Token.BYPASS] == Token.LEFT_RIGHT or f[Token.BYPASS] == Token.RIGHT:
-                        fs.add_relay(self.relay_right)
+                        fs.add_relay(self.relay)
                         fs.set_display_label("byps")
 
                 # Midi

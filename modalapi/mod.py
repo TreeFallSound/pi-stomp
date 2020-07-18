@@ -47,7 +47,7 @@ class Mod:
         Mod.__single = self
 
         self.lcd = lcd
-        self.root_uri = "http://localhost:8888/"
+        self.root_uri = "http://localhost:80/"
 
         self.pedalboards = {}  # TODO make the ordering of entries deterministic
         self.pedalboard_list = []  # TODO LAME to have two lists
@@ -300,7 +300,7 @@ class Mod:
     #
 
     def load_current_presets(self):
-        url = self.root_uri + "snapshot/list"
+        url = self.root_uri + "pedalpreset/list"
         try:
             resp = req.get(url)
             if resp.status_code == 200:
@@ -341,7 +341,7 @@ class Mod:
         index = self.selected_preset_index
         logging.info("preset change: %d" % index)
         self.lcd.draw_info_message("Loading...")
-        url = (self.root_uri + "snapshot/load?id=%d" % index)
+        url = (self.root_uri + "pedalpreset/load?id=%d" % index)
         # req.get(self.root_uri + "reset")
         resp = req.get(url)
         if resp.status_code != 200:

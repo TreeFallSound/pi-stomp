@@ -31,7 +31,7 @@ class NS(object):
 class Pedalboard:
 
     def __init__(self, title, bundle):
-        self.root_uri = "http://localhost:8888/"
+        self.root_uri = "http://localhost:80/"
         self.title = title
         self.bundle = bundle
         self.plugins = []

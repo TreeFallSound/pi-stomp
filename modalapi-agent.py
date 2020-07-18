@@ -2,6 +2,7 @@
 
 import argparse
 import atexit
+import RPi.GPIO as GPIO
 import json
 import logging
 import os
@@ -18,6 +19,9 @@ from rtmidi.midiconstants import (CONTROLLER_CHANGE, PROGRAM_CHANGE)
 import modalapi.mod as Mod
 import pistomp.lcdgfx as Lcd
 #import pistomp.lcd128x32 as Lcd
+#import pistomp.lcd135x240 as Lcd
+#import pistomp.lcdsy7789 as Lcd
+#import pistomp.lcdili9341 as Lcd # Color
 import pistomp.pistomp as Pistomp
 
 
@@ -48,6 +52,11 @@ def main():
         midiout, port_name = open_midioutput(port)
     except (EOFError, KeyboardInterrupt):
         sys.exit()
+
+    #GPIO.setmode(GPIO.BCM)
+    #spi = spidev.SpiDev()
+    #spi.open(0, 1)  # Bus 0, CE1
+    #spi.max_speed_hz = 1000000  # TODO match with LCD or don't specify.  Move to top of file
 
     # LCD
     lcd = Lcd.Lcd()

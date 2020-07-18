@@ -31,8 +31,8 @@ BOT_ENC_PIN_CLK = 27
 BOT_ENC_SWITCH_CHANNEL = 6
 ENC_SW_THRESHOLD = 512
 
-RELAY_LEFT_PIN = 16
-RELAY_RIGHT_PIN = 12
+RELAY_RESET_PIN = 16
+RELAY_SET_PIN = 12
 
 # Each footswitch defined by a quad touple:
 # 1: id (left = 0, mid = 1, right = 2)
@@ -62,9 +62,9 @@ class Pistomp(hardware.Hardware):
 
         GPIO.setmode(GPIO.BCM)
 
-        # Create Relay objects
-        self.relay_left = Relay.Relay(RELAY_LEFT_PIN)
-        self.relay_right = Relay.Relay(RELAY_RIGHT_PIN)
+        # Create Relay object(s)
+        #self.relay = Relay.Relay(RELAY_RESET_PIN, RELAY_SET_PIN)
+        self.relay = Relay.Relay(RELAY_SET_PIN, RELAY_RESET_PIN)
 
         # Create Footswitches
         for f in FOOTSW:
