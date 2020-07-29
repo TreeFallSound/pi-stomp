@@ -53,11 +53,6 @@ def main():
     except (EOFError, KeyboardInterrupt):
         sys.exit()
 
-    #GPIO.setmode(GPIO.BCM)
-    #spi = spidev.SpiDev()
-    #spi.open(0, 1)  # Bus 0, CE1
-    #spi.max_speed_hz = 1000000  # TODO match with LCD or don't specify.  Move to top of file
-
     # LCD
     lcd = Lcd.Lcd()
 

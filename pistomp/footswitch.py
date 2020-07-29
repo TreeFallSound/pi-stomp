@@ -71,6 +71,7 @@ class Footswitch(controller.Controller):
 
     def add_relay(self, relay):
         self.relay_list.append(relay)
+        self.set_value(not relay.init_state())
 
     def clear_relays(self):
         self.relay_list.clear()
