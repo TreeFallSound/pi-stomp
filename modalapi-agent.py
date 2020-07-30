@@ -9,6 +9,7 @@ import os
 import requests as req
 import RPi.GPIO as GPIO
 import spidev
+import subprocess
 import sys
 import time
 
@@ -39,6 +40,13 @@ def main():
     if log_level:
         print("Log level now set to: %s" % logging.getLevelName(log_level))
         logging.basicConfig(level=log_level)
+
+    # Reset Audio Card
+    try:
+        subprocess.run(['alsactl', '-f', '/usr/share/doc/audioInjector/asound.state.RCA.thru.test', 'restore'],
+                       check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error("Failed trying to reset the audio card")
 
     # MIDI initialization
     # Prompts user for MIDI input port, unless a valid port number or name
