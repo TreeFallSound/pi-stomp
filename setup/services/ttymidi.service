@@ -1,0 +1,14 @@
+[Unit]
+Description=TTYMIDI
+After=mod-host.service
+Requires=mod-host.service
+
+[Service]
+Environment=HOME=/home/modep
+WorkingDirectory=/home/modep
+ExecStart=/usr/local/bin/ttymidi -s /dev/ttyAMA0 -b 38400
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+--- session.py0	2020-06-11 20:03:19.296719714 +0000
++++ session.py	2020-06-11 22:20:07.087468576 +0000
+@@ -145,6 +145,16 @@
+         instance, portsymbol = port.rsplit("/",1)
+         self.host.address(instance, portsymbol, actuator_uri, label, minimum, maximum, value, steps, callback)
+ 
++    # Set a plugin parameter
++    # We use ":bypass" symbol for on/off state
++    def web_parameter_set(self, port, value, callback):
++        instance, portsymbol = port.rsplit("/",1)
++        if portsymbol == ":bypass":
++            bvalue = value >= 0.5
++            self.host.bypass(instance, bvalue, callback)
++        else:
++            self.host.param_set(port, value, callback)
++
+     # Connect 2 ports
+     def web_connect(self, port_from, port_to, callback):
+         self.host.connect(port_from, port_to, callback)

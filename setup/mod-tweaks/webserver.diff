@@ -1,0 +1,38 @@
+--- webserver.py	2018-09-11 15:39:28.874253398 +0000
++++ /home/modep/webserver.new	2020-06-11 22:29:26.963635352 +0000
+@@ -854,6 +854,26 @@
+         ok = yield gen.Task(SESSION.web_parameter_address, port, uri, label, minimum, maximum, value, steps)
+         self.write(ok)
+ 
++class EffectParameterMySet(JsonRequestHandler):
++    @web.asynchronous
++    @gen.engine
++
++    def post(self, port):
++        data = json.loads(self.request.body.decode("utf-8", errors="ignore"))
++        value   = float(data['value'])
++
++        ok = yield gen.Task(SESSION.web_parameter_set, port, value)
++        self.write(ok)
++
++class EffectParameterMyGet(JsonRequestHandler):
++    @web.asynchronous
++    @gen.engine
++
++    def get(self, port):
++        #value = yield gen.Task(SESSION.host.param_get, port)
++        value = SESSION.host.param_get(port)
++        self.write(value)
++
+ class EffectPresetLoad(JsonRequestHandler):
+     @web.asynchronous
+     @gen.engine
+@@ -1735,6 +1755,8 @@
+ 
+             # plugin parameters
+             (r"/effect/parameter/address/*(/[A-Za-z0-9_:/]+[^/])/?", EffectParameterAddress),
++            (r"/effect/parameter/set/*(/[A-Za-z0-9_:/]+[^/])/?", EffectParameterMySet),
++            (r"/effect/parameter/get/*(/[A-Za-z0-9_:/]+[^/])/?", EffectParameterMyGet),
+ 
+             # plugin presets
+             (r"/effect/preset/load/*(/[A-Za-z0-9_/]+[^/])/?", EffectPresetLoad),

@@ -1,0 +1,14 @@
+[Unit]
+Description=MOD-ALA-PI-STOMP
+After=mod-host.service
+Requires=mod-host.service
+
+[Service]
+Environment=HOME=/home/modep
+WorkingDirectory=/home/modep
+ExecStart=/usr/bin/python3 /home/modep/pi-stomp/modalapistomp.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

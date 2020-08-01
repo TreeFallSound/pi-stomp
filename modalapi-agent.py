@@ -45,8 +45,8 @@ def main():
     try:
         subprocess.run(['alsactl', '-f', '/usr/share/doc/audioInjector/asound.state.RCA.thru.test', 'restore'],
                        check=True)
-    except subprocess.CalledProcessError as e:
-        logging.error("Failed trying to reset the audio card")
+    except subprocess.CalledProcessError:
+        logging.error("Failed trying to reset Audio Card")
 
     # MIDI initialization
     # Prompts user for MIDI input port, unless a valid port number or name
