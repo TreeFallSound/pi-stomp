@@ -1,12 +1,12 @@
---- /boot/config.txt	2020-08-01 20:14:30.000000000 +0000
-+++ ./config.txt	2020-07-30 22:09:37.000000000 +0000
-@@ -57,3 +57,9 @@
- # enable the AudioInjector.net sound card
+--- /boot/config.txt	2020-08-01 21:23:23.000000000 +0000
++++ config.txt	2020-08-01 21:24:20.414136834 +0000
+@@ -61,3 +61,9 @@
+ dtoverlay=pi3-miniuart-bt
+ dtoverlay=midi-uart0
  	dtoverlay=audioinjector-wm8731-audio
- 
++
 +# pi-stomp additions to allow DIN Midi, disables bluetooth however
 +enable_uart=1
 +dtoverlay=pi3-disable-bt
 +dtoverlay=pi3-miniuart-bt
 +dtoverlay=midi-uart0
-+

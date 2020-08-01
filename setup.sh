@@ -15,9 +15,6 @@ setup/services/tweak_services.sh
 # Stop services
 setup/services/stop_services.sh
 
-# System configuration tweaks
-setup/sys/config_tweaks.sh
-
 # Mod software tweaks
 setup/mod-tweaks/mod-tweaks.sh
 
@@ -29,3 +26,6 @@ setup/pedalboards/get_pedalboards.sh
 
 # Configure audio card
 setup/audio/audioinjector-setup.sh
+
+# System configuration tweaks
+setup/sys/config_tweaks.sh
