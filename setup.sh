@@ -16,10 +16,13 @@ setup/services/tweak_services.sh
 setup/services/stop_services.sh
 
 # System configuration tweaks
-
+setup/sys/config_tweaks.sh
 
 # Mod software tweaks
 setup/mod-tweaks/mod-tweaks.sh
+
+# Get extra plugins
+setup/plugins/build_extra_plugins.sh
 
 # Get example pedalboards
 setup/pedalboards/get_pedalboards.sh
