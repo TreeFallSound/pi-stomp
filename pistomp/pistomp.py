@@ -1,4 +1,17 @@
-#!/usr/bin/env python3
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 # This subclass defines hardware specific to pi-stomp! v1
 # 3 Footswitches
@@ -13,6 +26,7 @@ import logging
 import json
 import spidev
 
+import common.util as util
 import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.analogswitch as AnalogSwitch
 import pistomp.controller as Controller
@@ -20,7 +34,6 @@ import pistomp.encoder as Encoder
 import pistomp.footswitch as Footswitch
 import pistomp.hardware as hardware
 import pistomp.relay as Relay
-import modalapi.util as util
 
 # Pins
 TOP_ENC_PIN_D = 17

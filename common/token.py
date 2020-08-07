@@ -1,5 +1,3 @@
-#!/bin/bash -e
-
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
@@ -15,21 +13,36 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-deb_file=audio.injector.scripts_0.1-1_all.deb
-wget https://github.com/Audio-Injector/stereo-and-zero/raw/master/${deb_file}
+# TODO make all right side lowercase if possible
+ACTION = 'action'
+BUNDLE = 'bundle'
+BYPASS = 'bypass'
+CATEGORY = 'category'
+CHANNEL = 'channel'
+COLON_BYPASS = ':bypass'
+CONTROL = 'control'
+DOWN = 'DOWN'
+FOOTSWITCHES = 'footswitches'
+HARDWARE = 'hardware'
+ID = 'id'
+INPUT = 'input'
+LEFT = 'LEFT'
+LEFT_RIGHT = 'LEFT_RIGHT'
+MAXIMUM = 'maximum'
+MIDI = 'midi'
+MIDI_CC = 'midi_CC'
+MINIMUM = 'minimum'
+NAME = 'name'
+NONE = 'None'
+PARAMETER = 'parameter'
+PORTS = 'ports'
+PRESET = 'preset'
+RANGES = 'ranges'
+RIGHT = 'RIGHT'
+SHORTNAME = 'shortname'
+SYMBOL = 'symbol'
+TITLE = 'title'
+UP = 'UP'
 
-sudo dpkg -i ${deb_file} 
-
-rm -f ${deb_file}
-
-# Modify audioInjector-setup.sh to not run rpi-update
-sudo sed -i 's/sudo rpi-update/#sudo rpi-update/' /usr/bin/audioInjector-setup.sh
-
-# Execute setup
-/usr/bin/audioInjector-setup.sh
-
-# Change jack.service to use the audioinjector card
-sudo sed -i -e 's/hw:pisound/hw:audioinjectorpi/' -e 's/-n 2/-n 3/' /usr/lib/systemd/system/jack.service
-
-# Change amixer settings
-sudo cp setup/audio/asound.state.RCA.thru.test /usr/share/doc/audioInjector/asound.state.RCA.thru.test
+#    def __init__(self):
+#        Pass
