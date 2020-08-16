@@ -1,0 +1,11 @@
+--- /usr/share/mod/html/index.html	2020-06-15 11:31:53.000000000 +0100
++++ /home/patch/index.html	2020-08-16 01:31:07.871271781 +0100
+@@ -614,7 +614,7 @@
+         </div>
+         <div id="mod-cpu-stats" class="icon mod-hidden">0 GHz / 0 &deg;C</div>
+         <div id="mod-xruns" class="icon mod-hidden">0 Xruns</div>
+-        <div id="mod-buffersize" class="icon mod-hidden">{{bufferSize}} frames</div>
++        <div id="mod-buffersize" class="icon">{{bufferSize}} frames</div>
+         <div id="mod-bypassRight" class="icon mod-bypass">Bypass 2</div>
+         <div id="mod-bypassLeft" class="icon mod-bypass">Bypass 1</div>
+         <div id="mod-show-midi-port" class="icon">MIDI Ports</div>

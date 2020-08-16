@@ -15,8 +15,8 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-orig="LV2_PATH=/usr/local/modep/.lv2$"
-new="LV2_PATH=/usr/local/modep/.lv2:/home/modep/.lv2"
-sudo sed -i "s|$orig|$new|" /usr/lib/systemd/system/mod-host.service
-sudo sed -i "s|$orig|$new|" /usr/lib/systemd/system/mod-ui.service
+orig="LV2_PATH=/usr/modep/lv2$"
+new="LV2_PATH=/usr/modep/lv2:/home/patch/.lv2"
+sudo sed -i "s|$orig|$new|" /usr/lib/systemd/system/modep-mod-host.service
+sudo sed -i "s|$orig|$new|" /usr/lib/systemd/system/modep-mod-ui.service
 

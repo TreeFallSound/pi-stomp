@@ -17,12 +17,15 @@
 
 set +e
 
-sudo sed -i 's/#js-preset-enabler /js-preset-enabler /' /usr/local/modep/mod-ui/html/index.html
+MODUI_ROOT=/usr/lib/python3/dist-packages/mod
+MODUI_HTML=/usr/share/mod/html
 
-sudo patch -b -N -u /usr/local/modep/mod-ui/mod/host.py -i setup/mod-tweaks/host.diff
+sudo patch -b -N -u $MODUI_ROOT/host.py -i setup/mod-tweaks/host.diff
 
-sudo patch -b -N -u /usr/local/modep/mod-ui/mod/session.py -i setup/mod-tweaks/session.diff
+sudo patch -b -N -u $MODUI_ROOT/session.py -i setup/mod-tweaks/session.diff
 
-sudo patch -b -N -u /usr/local/modep/mod-ui/mod/webserver.py -i setup/mod-tweaks/webserver.diff
+sudo patch -b -N -u $MODUI_ROOT/webserver.py -i setup/mod-tweaks/webserver.diff
+
+sudo patch -b -N -u $MODUI_HTML/index.html -i setup/mod-tweaks/index.diff
 
 exit 0

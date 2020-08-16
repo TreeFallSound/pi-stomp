@@ -14,10 +14,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
-
 import argparse
 import atexit
-import RPi.GPIO as GPIO
 import json
 import logging
 import os
@@ -42,6 +40,8 @@ import pistomp.pistomp as Pistomp
 
 
 def main():
+    sys.settrace
+
     # Command line parsing
     parser = argparse.ArgumentParser()
     parser.add_argument("-l", "--log", nargs='+', help="Provide logging level. Example --log debug'", default="info",
@@ -120,7 +120,7 @@ def main():
         logging.info("Exit.")
         midiout.close_port()
         lcd.cleanup()
-        GPIO.cleanup()
+        GPIO.cleanup()  # TODO Should do this.  Possibly mod resets becuase of bus changes?
         logging.info("Completed cleanup")
 
 

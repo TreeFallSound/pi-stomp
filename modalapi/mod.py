@@ -33,8 +33,8 @@ from pistomp.footswitch import Footswitch
 from enum import Enum
 from pathlib import Path
 
-sys.path.append('/usr/lib/python3.5/site-packages')  # TODO possibly /usr/local/modep/mod-ui
-from mod.development import FakeHost as Host
+#sys.path.append('/usr/lib/python3.5/site-packages')  # TODO possibly /usr/local/modep/mod-ui
+#from mod.development import FakeHost as Host
 
 class TopEncoderMode(Enum):
     DEFAULT = 0
@@ -289,10 +289,14 @@ class Mod:
         logging.info("Pedalboard change")
         if self.selected_pedalboard_index < len(self.pedalboard_list):
             self.lcd.draw_info_message("Loading...")
+
+            resp1 = req.get(self.root_uri + "reset")
+            if resp1.status_code != 200:
+                logging.error("Bad Reset request")
+
             uri = self.root_uri + "pedalboard/load_bundle/"
             bundlepath = self.pedalboard_list[self.selected_pedalboard_index].bundle
             data = {"bundlepath": bundlepath}
-            req.get(self.root_uri + "reset")
             resp2 = req.post(uri, data)
             if resp2.status_code != 200:
                 logging.error("Bad Rest request: %s %s  status: %d" % (uri, data, resp2.status_code))
@@ -305,7 +309,7 @@ class Mod:
     #
 
     def load_current_presets(self):
-        url = self.root_uri + "pedalpreset/list"
+        url = self.root_uri + "snapshot/list"
         try:
             resp = req.get(url)
             if resp.status_code == 200:
@@ -346,7 +350,7 @@ class Mod:
         index = self.selected_preset_index
         logging.info("preset change: %d" % index)
         self.lcd.draw_info_message("Loading...")
-        url = (self.root_uri + "pedalpreset/load?id=%d" % index)
+        url = (self.root_uri + "snapshot/load?id=%d" % index)
         # req.get(self.root_uri + "reset")
         resp = req.get(url)
         if resp.status_code != 200:
@@ -361,14 +365,13 @@ class Mod:
         self.preset_change()
 
     def preset_decr_and_change(self):
-        print('decr')
         self.preset_select(-1)
         self.preset_change()
 
     def preset_change_plugin_update(self):
         # Now that the preset has changed on the host, update plugin bypass indicators
         for p in self.current.pedalboard.plugins:
-            uri = self.root_uri + "effect/parameter/get//graph" + p.instance_id + "/:bypass"
+            uri = self.root_uri + "effect/parameter/pi_stomp_get//graph" + p.instance_id + "/:bypass"
             try:
                 resp = req.get(uri)
                 if resp.status_code == 200:
@@ -413,7 +416,7 @@ class Mod:
                         c.toggle(0)
                         return
             # Regular (non footswitch plugin)
-            url = self.root_uri + "effect/parameter/set//graph%s/:bypass" % inst.instance_id
+            url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/:bypass" % inst.instance_id
             value = inst.toggle_bypass()
             code = self.parameter_set_send(url, "1" if value else "0", 200)
             if (code != 200):
@@ -530,7 +533,7 @@ class Mod:
 
     def parameter_value_commit(self):
         param = self.deep.selected_parameter
-        url = self.root_uri + "effect/parameter/set//graph%s/%s" % (self.deep.plugin.instance_id, param.symbol)
+        url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/%s" % (self.deep.plugin.instance_id, param.symbol)
         formatted_value = ("%.1f" % param.value)
         self.parameter_set_send(url, formatted_value, 200)
 

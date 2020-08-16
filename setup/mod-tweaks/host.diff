@@ -4,7 +4,7 @@
          pluginData['ports'][symbol] = value
          self.send_modified("param_set %d %s %f" % (instance_id, symbol, value), callback, datatype='boolean')
  
-+    def param_get(self, port):
++    def pi_stomp_param_get(self, port):
 +        instance, symbol = port.rsplit("/", 1)
 +        instance_id = self.mapper.get_id_without_creating(instance)
 +        pluginData  = self.plugins[instance_id]

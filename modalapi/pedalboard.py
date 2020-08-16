@@ -27,168 +27,163 @@ import modalapi.parameter as Parameter
 import modalapi.plugin as Plugin
 
 
-class NS(object):
-    def __init__(self, world, base):
-        self.world = world
-        self.base = base
-        self._cache = {}
-
-    def __getattr__(self, attr):
-        if attr.endswith("_"):
-            attr = attr[:-1]
-        if attr not in self._cache:
-            self._cache[attr] = lilv.Node(self.world.new_uri(self.base+attr))
-        return self._cache[attr]
-
-
 class Pedalboard:
 
     def __init__(self, title, bundle):
         self.root_uri = "http://localhost:80/"
         self.title = title
-        self.bundle = bundle
+        self.bundle = bundle  # TODO used?
         self.plugins = []
+
+        self.world = lilv.World()
+
+        # this is needed when loading specific bundles instead of load_all
+        # (these functions are not exposed via World yet)
+        self.world.load_specifications()
+        self.world.load_plugin_classes()
 
     def get_pedalboard_plugin(self, world, bundlepath):
         # lilv wants the last character as the separator
         bundle = os.path.abspath(bundlepath)
         if not bundle.endswith(os.sep):
             bundle += os.sep
-
         # convert bundle string into a lilv node
-        bundlenode = lilv.lilv_new_file_uri(world.me, None, bundle)
+        bundlenode = self.world.new_file_uri(None, bundle)
 
         # load the bundle
-        world.load_bundle(bundlenode)
+        self.world.load_bundle(bundlenode)
 
         # free bundlenode, no longer needed
-        lilv.lilv_node_free(bundlenode)
+        #self.world.node_free(bundlenode)  # TODO find out why this is no longer necessary (why did API method go away)
 
         # get all plugins in the bundle
-        plugins = world.get_all_plugins()
+        ps = self.world.get_all_plugins()
 
         # make sure the bundle includes 1 and only 1 plugin (the pedalboard)
-        if plugins.size() != 1:
+        if len(ps) != 1:
             raise Exception('get_pedalboard_info(%s) - bundle has 0 or > 1 plugin'.format(bundle))
 
         # no indexing in python-lilv yet, just get the first item
         plugin = None
-        for p in plugins:
+        for p in ps:
             plugin = p
             break
 
         if plugin is None:
-            raise Exception('get_pedalboard_info(%s) - failed to get plugin, you are using an old lilv!'.format(bundle))
+            raise Exception('get_pedalboard_plugin(%s)'.format(bundle))
 
         return plugin
 
     def get_plugin_data(self, uri):
         url = self.root_uri + "effect/get?uri=" + urllib.parse.quote(uri)
         try:
-            resp = req.get(url)
+            resp = req.get(url, headers={'Cache-Control': 'no-cache', 'Pragma': 'no-cache'})
         except:  # TODO
             logging.error("Cannot connect to mod-host.")
             sys.exit()
 
         if resp.status_code != 200:
-            logging.error("Cannot connect to mod-host for plugin data: %s\nStatus: %s" % (url, resp.status_code))
-            sys.exit()
+            logging.error("mod-host not able to get plugin data: %s\nStatus: %s" % (url, resp.status_code))
+            return {}
+            #sys.exit()
 
         return json.loads(resp.text)
 
     # Get info from an lv2 bundle
     # @a bundle is a string, consisting of a directory in the filesystem (absolute pathname).
     def load_bundle(self, bundlepath, plugin_dict):
-        # Create our own unique lilv world
-        # We'll load a single bundle and get all plugins from it
-        world = lilv.World()
-
-        # this is needed when loading specific bundles instead of load_all
-        # (these functions are not exposed via World yet)
-        lilv.lilv_world_load_specifications(world.me)
-        lilv.lilv_world_load_plugin_classes(world.me)
-
         # Load the bundle, return the single plugin for the pedalboard
-        plugin = self.get_pedalboard_plugin(world, bundlepath)
-
-        # define the needed stuff
-        ns_rdf = NS(world, lilv.LILV_NS_RDF)
-        ns_lv2core = NS(world, lilv.LILV_NS_LV2)
-        ns_ingen = NS(world, "http://drobilla.net/ns/ingen#")
-        ns_midi = NS(world, "http://lv2plug.in/ns/ext/midi#")
+        plugin = self.get_pedalboard_plugin(self.world, bundlepath)
 
         # check if the plugin is a pedalboard
-        def fill_in_type(node):
-            return node.as_string()
+        #def fill_in_type(node):
+        #   print("%s" % node)
+        #    return ("%s" % node)
 
-        plugin_types = [i for i in util.LILV_FOREACH(plugin.get_value(ns_rdf.type_), fill_in_type)]
+        # TODO XXX deterimine if OK to avoid this check
+        #plugin_types = [i for i in util.LILV_FOREACH(plugin.get_value(ns_rdf.type_), fill_in_type)]
 
-        if "http://moddevices.com/ns/modpedal#Pedalboard" not in plugin_types:
-            raise Exception('get_pedalboard_info(%s) - plugin has no mod:Pedalboard type'.format(bundle))
+        #if "http://moddevices.com/ns/modpedal#Pedalboard" not in plugin_types:
+        #    raise Exception('get_pedalboard_info(%s) - plugin has no mod:Pedalboard type'.format(bundle))
 
         # plugins
-        blocks = plugin.get_value(ns_ingen.block)
-        it = blocks.begin()
-        while not blocks.is_end(it):
-            block = blocks.get(it)
-            it = blocks.next(it)
-
-            if block.me is None:
+        u = self.world.new_uri("http://drobilla.net/ns/ingen#block")
+        blocks = plugin.get_value(u)
+        for block in blocks:
+            if block is None or block.is_blank():
                 continue
 
-            protouri1 = lilv.lilv_world_get(world.me, block.me, ns_lv2core.prototype.me, None)
-            protouri2 = lilv.lilv_world_get(world.me, block.me, ns_ingen.prototype.me, None)
+            # TODO XXX add this back
+            # protouri1 = world.find_nodes(block, ns_prototype, None)
+            # protouri2 = world.find_nodes(block, ns_ingen, None)
+            # #print("%s %s" % (protouri1, protouri2))
+            # if len(protouri1) > 0:
+            #     proto = protouri1[0]
+            # elif len(protouri2) > 0:
+            #     proto = protouri2[0]
+            # else:
+            #     continue
+            #
+            # continue
+            #
+            # print("&&&&&&&&&&&&&&&&&& %s" % proto)
+            # # TODO remove unused vars and queries of unused fields
 
-            if protouri1 is not None:
-                proto = protouri1
-            elif protouri2 is not None:
-                proto = protouri2
-            else:
-                continue
-
-            # TODO remove unused vars and queries of unused fields
             # Add plugin data (from plugin registry) to global plugin dictionary
-            plugin_uri = lilv.lilv_node_as_uri(protouri1)
             plugin_info = {}
-            if plugin_uri not in plugin_dict:
-                plugin_info = self.get_plugin_data(plugin_uri)
-                if plugin_info:
-                    logging.debug("added %s" % plugin_uri)
-                    plugin_dict[plugin_uri] = plugin_info
-            else:
-                plugin_info = plugin_dict[plugin_uri]
-            category = util.DICT_GET(plugin_info, Token.CATEGORY)
+            prototype = self.world.find_nodes(block, self.world.ns.lv2.prototype, None)
+            if len(prototype) > 0:
+                logging.debug("prototype %s" % prototype[0])
+                plugin_uri = str(prototype[0])  # plugin.get_uri()
+                if plugin_uri not in plugin_dict:
+                    plugin_info = self.get_plugin_data(plugin_uri)
+                    if plugin_info:
+                        logging.debug("added %s" % plugin_uri)
+                        plugin_dict[plugin_uri] = plugin_info
+                else:
+                    plugin_info = plugin_dict[plugin_uri]
+                #category = util.DICT_GET(plugin_info, Token.CATEGORY)
 
             # Extract Parameter data
-            instance_id = lilv.lilv_uri_to_path(lilv.lilv_node_as_string(block.me)).replace(bundlepath, "", 1)
-            uri = lilv.lilv_node_as_uri(proto)
-            enabled = lilv.lilv_world_get(world.me, block.me, ns_ingen.enabled.me, None)
-            nodes = lilv.lilv_world_find_nodes(world.me, block.me, ns_lv2core.port.me, None)  # nodes > ports
+            instance_id = str(block.get_path()).replace(bundlepath, "", 1)
+            nodes = self.world.find_nodes(block, self.world.ns.lv2.port, None)
             parameters = {}
-            if nodes is not None:
+            if len(nodes) > 0:
                 # These are the port nodes used to define parameter controls
-                nodes_it = lilv.lilv_nodes_begin(nodes)
-                while not lilv.lilv_nodes_is_end(nodes, nodes_it):
-                    port = lilv.lilv_nodes_get(nodes, nodes_it)
-                    nodes_it = lilv.lilv_nodes_next(nodes, nodes_it)
-                    param_value = lilv.lilv_world_get(world.me, port, ns_ingen.value.me, None)
-                    binding = lilv.lilv_world_get(world.me, port, ns_midi.binding.me, None)
+                for port in nodes:
+                    u = self.world.new_uri("http://drobilla.net/ns/ingen#value")
+                    param_value = self.world.get(port, u, None)
+                    #logging.debug("port: %s  value: %s" % (port, param_value))
+                    binding = self.world.get(port, self.world.ns.midi.binding, None)
                     if binding is not None:
-                        controller_num = lilv.lilv_world_get(world.me, binding, ns_midi.controllerNumber.me, None)
-                        channel = lilv.lilv_world_get(world.me, binding, ns_midi.channel.me, None)
+                        controller_num = self.world.get(binding, self.world.ns.midi.controllerNumber, None)
+                        channel = self.world.get(binding, self.world.ns.midi.channel, None)
                         if (controller_num is not None) and (channel is not None):
-                            binding = "%d:%d" %(lilv.lilv_node_as_int(channel), lilv.lilv_node_as_int(controller_num))
-                    path = lilv.lilv_node_as_string(port)
+                            binding = "%d:%d" % (self.world.new_int(channel), self.world.new_int(controller_num))
+                            logging.debug("  binding %s" % binding)
+                    path = str(port)
                     symbol = os.path.basename(path)
-                    value = lilv.lilv_node_as_float(param_value)
+                    value = None
+                    if param_value is not None:
+                        if param_value.is_float():
+                            value = float(self.world.new_float(param_value))
+                        elif param_value.is_int():
+                            value = int(self.world.new_int(param_value))
+                        else:
+                            value = str(value)
                     # Bypass "parameter" is a special case without an entry in the plugin definition
                     if symbol == Token.COLON_BYPASS:
                         info = {"shortName": "bypass", "symbol": symbol, "ranges": {"minimum": 0, "maximum": 1}}  # TODO tokenize
-                        param = Parameter.Parameter(info, value, binding)
+                        v = False if value is 0 else True
+                        param = Parameter.Parameter(info, v, binding)
                         parameters[symbol] = param
                         continue  # don't try to find matching symbol in plugin_dict
                     # Try to find a matching symbol in plugin_dict to obtain the remaining param details
-                    plugin_params = plugin_info[Token.PORTS][Token.CONTROL][Token.INPUT]
+                    try:
+                        plugin_params = plugin_info[Token.PORTS][Token.CONTROL][Token.INPUT]
+                    except KeyError:
+                        logging.warning("plugin port info not found, could me missing LV2 for: %s", instance_id)
+                        continue
                     for pp in plugin_params:
                         sym = util.DICT_GET(pp, Token.SYMBOL)
                         if sym == symbol:

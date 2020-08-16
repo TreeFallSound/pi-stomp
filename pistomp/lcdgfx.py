@@ -18,7 +18,7 @@ import spidev
 import common.token as Token
 import common.util as util
 import pistomp.lcd as abstract_lcd
-import modalapi.util as util
+import common.util as util
 
 from gfxhat import touch, lcd, backlight, fonts
 from PIL import Image, ImageFont, ImageDraw
@@ -82,10 +82,16 @@ class Lcd(abstract_lcd.Lcd):
 
         # Load fonts
         self.splash_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 18)
-        self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 11)
+
+        #self.title_font = ImageFont.truetype("/home/patch/JetbrainsMonoExtrabold-ywLd5.ttf", 12)
+        #self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 11)
+        self.title_font = ImageFont.truetype("/home/patch/FallingSkyBoldplus-6GZ1.otf", 12)
+
         self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)  # TODO get rid
         self.small_bold_font = ImageFont.truetype("DejaVuSansMono-Bold.ttf", 8)
-        self.small_font = ImageFont.truetype("DejaVuSansMono.ttf", 8)
+        #self.small_font = ImageFont.truetype("DejaVuSansMono.ttf", 8)
+
+        self.small_font = ImageFont.truetype("/home/patch/EtBt6001-JO47.ttf", 6)
 
         # Splash
         text_im = Image.new('L', (103, 63))
@@ -165,7 +171,7 @@ class Lcd(abstract_lcd.Lcd):
     def menu_show(self, page_title, menu_items):
         # Title (plugin name)
         self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
-        self.draw[0].text((0, 0), page_title, True, self.title_font)
+        self.draw[0].text((0, -4), page_title, True, self.title_font)
         self.refresh_zone(0)
 
         self.menu_image.paste(0, (0, 0, self.width, self.menu_height))
@@ -173,7 +179,7 @@ class Lcd(abstract_lcd.Lcd):
         # Menu Items
         idx = 0
         x = 0
-        y = 0
+        y = 2
         menu_list = list(sorted(menu_items))
         for i in menu_list:
             if idx is 0:
@@ -230,8 +236,8 @@ class Lcd(abstract_lcd.Lcd):
             x = x + xpitch
             yref = yref - 1
 
-        self.menu_draw.text((0, self.menu_y0 + 2), "%d" % parameter.minimum, 1, self.small_font)
-        self.menu_draw.text((127 - (len(str(parameter.maximum)) * 4), self.menu_y0 + 2), "%d" % parameter.maximum, 1, self.small_font)
+        self.menu_draw.text((0, self.menu_y0 + 4), "%d" % parameter.minimum, 1, self.small_font)
+        self.menu_draw.text((127 - (len(str(parameter.maximum)) * 4), self.menu_y0 + 4), "%d" % parameter.maximum, 1, self.small_font)
 
         self.refresh_menu()
 
@@ -242,7 +248,7 @@ class Lcd(abstract_lcd.Lcd):
         #pedalboard = pedalboard.lower().capitalize()
         pb_size  = self.title_font.getsize(pedalboard)[0]
         font_height = self.title_font.getsize(pedalboard)[1]
-        y = -1  # -1 pushes text to very top of LCD
+        y = -3  # negative pushes text to top of LCD
 
         # Pedalboard Name
         if invert_pb:
@@ -280,7 +286,7 @@ class Lcd(abstract_lcd.Lcd):
         self.draw[zone].line(((0, 5), (8, 5)), True, 2)
         if type in controllers:  # TODO Slightly lame string linkage to controller class
             text = "%s:%s" % (self.shorten_name(controllers[type][0]), controllers[type][1])
-        self.draw[zone].text((10, 0), text, True, self.small_font)
+        self.draw[zone].text((10, 2), text, True, self.small_font)
 
         # Tweak knob assignment
         type = 'KNOB'
@@ -290,14 +296,14 @@ class Lcd(abstract_lcd.Lcd):
         self.draw[zone].line(((x + 3, 0), (x + 3, 2)), False, 1)
         if type in controllers:
             text = "%s:%s" % (self.shorten_name(controllers[type][0]), controllers[type][1])
-        self.draw[zone].text((x+9, 0), text, True, self.small_font)
+        self.draw[zone].text((x+9, 2), text, True, self.small_font)
 
         self.refresh_zone(zone)
 
     def draw_info_message(self, text):
         zone = 1
         self.images[zone].paste(0, (0, 0, self.width, self.zone_height[zone]))
-        self.draw[zone].text((0, 0), text, True, self.small_font)
+        self.draw[zone].text((0, 2), text, True, self.small_font)
         self.refresh_zone(zone)
 
     # Zones 2, 4, 6 - Plugin Selection
@@ -340,7 +346,7 @@ class Lcd(abstract_lcd.Lcd):
         self.draw[zone].rectangle((xy, xy2), False, 1)
         self.draw[zone].point(xy)  # Round the top corners
         self.draw[zone].point((xy2[0],xy[1]))
-        self.draw[zone].text((xy[0] + 1, xy[1] + 1), text, True, self.small_font)
+        self.draw[zone].text((xy[0] + 1, xy[1] + 2), text, True, self.small_font)
 
     def draw_plugin(self, zone, x, y, text, expand_rect, plugin):
         if expand_rect >= 1:

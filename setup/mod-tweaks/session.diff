@@ -4,9 +4,9 @@
          instance, portsymbol = port.rsplit("/",1)
          self.host.address(instance, portsymbol, actuator_uri, label, minimum, maximum, value, steps, callback)
  
-+    # Set a plugin parameter
++    # Set a plugin parameter via pi-stomp
 +    # We use ":bypass" symbol for on/off state
-+    def web_parameter_set(self, port, value, callback):
++    def pi_stomp_parameter_set(self, port, value, callback):
 +        instance, portsymbol = port.rsplit("/",1)
 +        if portsymbol == ":bypass":
 +            bvalue = value >= 0.5
