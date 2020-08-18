@@ -21,17 +21,11 @@ setup/audio/audioinjector-setup.sh
 # Install package dependencies
 setup/pkgs/simple_install.sh
 setup/pkgs/gfxhat_install.sh
-setup/pkgs/lilv_install.sh 
+setup/pkgs/lilv_install.sh
 setup/pkgs/mod-ttymidi_install.sh
 
-# Create services
-setup/services/create_services.sh
-
-# Tweak services
-setup/services/tweak_services.sh
-
-# Stop services
-setup/services/stop_services.sh
+# Modep software module install
+patchbox module activate modep
 
 # Mod software tweaks
 setup/mod-tweaks/mod-tweaks.sh
@@ -44,3 +38,15 @@ setup/pedalboards/get_pedalboards.sh
 
 # System configuration tweaks
 setup/sys/config_tweaks.sh
+
+# Create services
+setup/services/create_services.sh
+
+# Tweak services
+setup/services/tweak_services.sh
+
+# Stop services
+setup/services/stop_services.sh
+
+# Msg
+echo "Setup Complete"
