@@ -36,8 +36,9 @@ setup/plugins/build_extra_plugins.sh
 printf "\n===== Get example pedalboards =====\n"
 setup/pedalboards/get_pedalboards.sh
 
-printf "\n===== System configuration tweaks =====\n"
+printf "\n===== System tweaks =====\n"
 setup/sys/config_tweaks.sh
+cp setup/sys/bash_aliases ~/.bash_aliases
 
 printf "\n===== Manage services =====\n"
 setup/services/create_services.sh

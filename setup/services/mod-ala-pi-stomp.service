@@ -1,7 +1,7 @@
 [Unit]
 Description=MOD-ALA-PI-STOMP
-After=modep-mod-host.service
-Requires=modep-mod-host.service
+After=modep-mod-ui.service
+Requires=modep-mod-ui.service
 
 [Service]
 Environment=HOME=/home/patch

@@ -1,0 +1,3 @@
+# aliass for common pi-stomp operations (only intended to aid the memory of humans)
+alias ps-restart='sudo systemctl restart mod-ala-pi-stomp'
+alias ps-journal='sudo journalctl -f -u mod-ala-pi-stomp'

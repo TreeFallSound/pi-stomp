@@ -19,4 +19,5 @@ orig="LV2_PATH=/usr/modep/lv2$"
 new="LV2_PATH=/usr/modep/lv2:/home/patch/.lv2"
 sudo sed -i "s|$orig|$new|" /usr/lib/systemd/system/modep-mod-host.service
 sudo sed -i "s|$orig|$new|" /usr/lib/systemd/system/modep-mod-ui.service
+sudo sed -i "s|pisound-btn.service||" /usr/lib/systemd/system/modep-mod-ui.service
 
