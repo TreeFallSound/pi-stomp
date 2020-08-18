@@ -15,38 +15,34 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-# Configure audio card
+printf "\n===== Audio card setup =====\n"
 setup/audio/audioinjector-setup.sh
 
-# Install package dependencies
+printf "\n===== Modep software module install =====\n"
+patchbox module activate modep
+
+printf "\n===== Mod software tweaks =====\n"
+setup/mod-tweaks/mod-tweaks.sh
+
+printf "\n===== Install pi-stomp package dependencies =====\n"
 setup/pkgs/simple_install.sh
 setup/pkgs/gfxhat_install.sh
 setup/pkgs/lilv_install.sh
 setup/pkgs/mod-ttymidi_install.sh
 
-# Modep software module install
-patchbox module activate modep
-
-# Mod software tweaks
-setup/mod-tweaks/mod-tweaks.sh
-
-# Get extra plugins
+printf "\n===== Get extra plugins =====\n"
 setup/plugins/build_extra_plugins.sh
 
-# Get example pedalboards
+printf "\n===== Get example pedalboards =====\n"
 setup/pedalboards/get_pedalboards.sh
 
-# System configuration tweaks
+printf "\n===== System configuration tweaks =====\n"
 setup/sys/config_tweaks.sh
 
-# Create services
+printf "\n===== Manage services =====\n"
 setup/services/create_services.sh
-
-# Tweak services
 setup/services/tweak_services.sh
-
-# Stop services
 setup/services/stop_services.sh
 
-# Msg
-echo "Setup Complete"
+printf "\n===== pi-stomp setup complete =====\n"
+

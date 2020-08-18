@@ -17,7 +17,8 @@
 
 # pip3
 if (which pip3 > /dev/null); then true; else
-  sudo apt-get install -y python3-pip
+  printf "=== install pip3 ===\n"
+  sudo apt-get install --fix-broken-install --fix-missing -y python3-pip
 fi
 
 # Pyyml
