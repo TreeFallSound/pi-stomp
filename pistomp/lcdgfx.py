@@ -82,15 +82,10 @@ class Lcd(abstract_lcd.Lcd):
 
         # Load fonts
         self.splash_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 18)
-
-        #self.title_font = ImageFont.truetype("/home/patch/JetbrainsMonoExtrabold-ywLd5.ttf", 12)
-        #self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 11)
-        self.title_font = ImageFont.truetype("/home/patch/pi-stomp/fonts/FallingSkyBoldplus-6GZ1.otf", 12)
-
-        self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)  # TODO get rid
+        self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 11)
+        self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)
         self.small_bold_font = ImageFont.truetype("DejaVuSansMono-Bold.ttf", 8)
         #self.small_font = ImageFont.truetype("DejaVuSansMono.ttf", 8)
-
         self.small_font = ImageFont.truetype("/home/patch/pi-stomp/fonts/EtBt6001-JO47.ttf", 6)
 
         # Splash
@@ -171,7 +166,7 @@ class Lcd(abstract_lcd.Lcd):
     def menu_show(self, page_title, menu_items):
         # Title (plugin name)
         self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
-        self.draw[0].text((0, -4), page_title, True, self.title_font)
+        self.draw[0].text((0, -2), page_title, True, self.title_font)
         self.refresh_zone(0)
 
         self.menu_image.paste(0, (0, 0, self.width, self.menu_height))
@@ -204,7 +199,7 @@ class Lcd(abstract_lcd.Lcd):
         # Title (parameter name)
         self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
         title = "%s-%s" % (plugin_name, parameter.name)
-        self.draw[0].text((0, 0), title, True, self.label_font)
+        self.draw[0].text((0, -2), title, True, self.title_font)
         self.refresh_zone(0)
 
         # Back message (zone 1)
@@ -248,7 +243,7 @@ class Lcd(abstract_lcd.Lcd):
         #pedalboard = pedalboard.lower().capitalize()
         pb_size  = self.title_font.getsize(pedalboard)[0]
         font_height = self.title_font.getsize(pedalboard)[1]
-        y = -3  # negative pushes text to top of LCD
+        y = -2  # negative pushes text to top of LCD
 
         # Pedalboard Name
         if invert_pb:
