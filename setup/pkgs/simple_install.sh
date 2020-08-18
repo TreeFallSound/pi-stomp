@@ -15,6 +15,11 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+# pip3
+if (which pip3 > /dev/null); then true; else
+  sudo apt-get install -y python3-pip
+fi
+
 # Pyyml
 sudo /usr/bin/pip3 install pyyaml
 

@@ -16,5 +16,9 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 sudo systemctl disable hciuart.service
-sudo systemctl disable pisound-btn.service
+sudo systemctl stop hciuart.service
+sudo systemctl mask --now hciuart.service
 
+sudo systemctl disable pisound-btn.service
+sudo systemctl stop pisound-btn.service
+sudo systemctl mask --now pisound-btn.service

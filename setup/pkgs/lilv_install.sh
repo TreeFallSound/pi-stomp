@@ -15,11 +15,28 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-# LILV
+# Dependencies
+if (which python3 > /dev/null); then true; else
+  echo "python3 not found, please install it"
+  exit
+fi
+
+if (which pip3 > /dev/null); then true; else
+  echo "pip3 not found, please install it"
+  exit
+fi
+
+sudo pip3 install python-config
+
+sudo apt-get -y install liblilv-dev lv2-dev libserd-dev libsord-dev libsratom-dev
+
+# Get it
 pushd $(mktemp -d)
-git clone https://github.com/moddevices/lilvlib.git
-pushd lilvlib
-sudo apt-get update
-sed 's/generic/cortex-a53/; s/# sudo apt-get install/sudo apt-get install --yes --force-yes/; s/^debuild/#debuild/; s/# fakeroot/fakeroot/ ' build-python3-lilv.sh > my-build-python3-lilv.sh
-chmod +x my-build-python3-lilv.sh
-sudo ./my-build-python3-lilv.sh && sudo dpkg -i python3-lilv*_armhf.deb
+wget http://download.drobilla.net/lilv-0.24.4.tar.bz2
+tar xvf lilv-0.24.4.tar.bz2
+pushd lilv-0.24.4
+
+# configure, build, install
+python3 ./waf configure --prefix=/usr/local  --static --static-progs --no-shared --no-utils --no-bash-completion --bindings --pythondir=/usr/local/lib/python3.7/dist-packages
+python3 ./waf build
+sudo python3 ./waf install

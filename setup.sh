@@ -15,6 +15,9 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+# Configure audio card
+setup/audio/audioinjector-setup.sh
+
 # Install package dependencies
 setup/pkgs/simple_install.sh
 setup/pkgs/gfxhat_install.sh
@@ -38,9 +41,6 @@ setup/plugins/build_extra_plugins.sh
 
 # Get example pedalboards
 setup/pedalboards/get_pedalboards.sh
-
-# Configure audio card
-setup/audio/audioinjector-setup.sh
 
 # System configuration tweaks
 setup/sys/config_tweaks.sh

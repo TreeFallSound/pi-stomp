@@ -85,13 +85,13 @@ class Lcd(abstract_lcd.Lcd):
 
         #self.title_font = ImageFont.truetype("/home/patch/JetbrainsMonoExtrabold-ywLd5.ttf", 12)
         #self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 11)
-        self.title_font = ImageFont.truetype("/home/patch/FallingSkyBoldplus-6GZ1.otf", 12)
+        self.title_font = ImageFont.truetype("/home/patch/pi-stomp/fonts/FallingSkyBoldplus-6GZ1.otf", 12)
 
         self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)  # TODO get rid
         self.small_bold_font = ImageFont.truetype("DejaVuSansMono-Bold.ttf", 8)
         #self.small_font = ImageFont.truetype("DejaVuSansMono.ttf", 8)
 
-        self.small_font = ImageFont.truetype("/home/patch/EtBt6001-JO47.ttf", 6)
+        self.small_font = ImageFont.truetype("/home/patch/pi-stomp/fonts/EtBt6001-JO47.ttf", 6)
 
         # Splash
         text_im = Image.new('L', (103, 63))

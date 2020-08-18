@@ -1,11 +1,11 @@
 [Unit]
 Description=TTYMIDI
-After=mod-host.service
-Requires=mod-host.service
+After=modep-mod-host.service
+Requires=modep-mod-host.service
 
 [Service]
-Environment=HOME=/home/modep
-WorkingDirectory=/home/modep
+Environment=HOME=/home/patch
+WorkingDirectory=/home/patch
 ExecStart=/usr/local/bin/ttymidi -s /dev/ttyAMA0 -b 38400
 Restart=always
 RestartSec=2
