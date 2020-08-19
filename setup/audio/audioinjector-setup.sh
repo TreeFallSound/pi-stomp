@@ -28,8 +28,8 @@ sudo sed -i 's/sudo rpi-update/#sudo rpi-update/' /usr/bin/audioInjector-setup.s
 # Execute setup
 /usr/bin/audioInjector-setup.sh
 
-# Change jack.service to use the audioinjector card (this is only for non-patchbox based modep installs)
-#sudo sed -i -e 's/hw:pisound/hw:audioinjectorpi/' -e 's/-n 2/-n 3/' /usr/lib/systemd/system/jack.service
+# Change jack config to use the audioinjector card 
+sudo sed -i -e 's/hw:pisound/hw:audioinjectorpi/' /etc/jackdrc
 
 # Change amixer settings
 sudo cp setup/audio/asound.state.RCA.thru.test /usr/share/doc/audioInjector/asound.state.RCA.thru.test
