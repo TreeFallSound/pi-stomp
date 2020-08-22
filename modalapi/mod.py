@@ -257,6 +257,8 @@ class Mod:
         if self.current.pedalboard:
             #logging.debug(self.current.pedalboard.to_json())
             for plugin in self.current.pedalboard.plugins:
+                if plugin is None or plugin.parameters is None:
+                    continue
                 for sym, param in plugin.parameters.items():
                     if param.binding is not None:
                         controller = self.hardware.controllers.get(param.binding)

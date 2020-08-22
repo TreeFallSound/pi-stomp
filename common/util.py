@@ -18,7 +18,9 @@ def LILV_FOREACH(collection, func):
     itr = collection.begin()
     while itr:
         yield func(collection.get(itr))
-        itr = collection.next(itr)
+        itr.next()
+        if itr.is_end():
+            break
 
 
 def DICT_GET(dict, key):

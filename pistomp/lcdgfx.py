@@ -408,7 +408,7 @@ class Lcd(abstract_lcd.Lcd):
         zone = 3
         self.images[3].paste(0, (0, 0, self.width, self.zone_height[3]))
         self.images[5].paste(0, (0, 0, self.width, self.zone_height[5]))
-        for p in reversed(plugins):
+        for p in plugins:
             if p.has_footswitch:
                 continue
             label = p.instance_id.replace('/', "")[:self.plugin_label_length]
