@@ -401,8 +401,8 @@ class Mod:
         #enc = encoder.get_data()
         if self.current.pedalboard is not None:
             pb = self.current.pedalboard
-            index = ((self.selected_plugin_index - 1) if (direction is 1)
-                    else (self.selected_plugin_index + 1)) % len(pb.plugins)
+            index = ((self.selected_plugin_index + 1) if (direction is 1)
+                    else (self.selected_plugin_index - 1)) % len(pb.plugins)
             #index = self.next_plugin(pb.plugins, enc)
             plugin = pb.plugins[index]  # TODO check index
             self.selected_plugin_index = index
