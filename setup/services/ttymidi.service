@@ -6,6 +6,7 @@ Requires=modep-mod-host.service
 [Service]
 Environment=HOME=/home/patch
 WorkingDirectory=/home/patch
+Environment=JACK_PROMISCUOUS_SERVER=jack
 ExecStart=/usr/local/bin/ttymidi -s /dev/ttyAMA0 -b 38400
 Restart=always
 RestartSec=2
