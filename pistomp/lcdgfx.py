@@ -341,7 +341,7 @@ class Lcd(abstract_lcd.Lcd):
         self.draw[zone].rectangle((xy, xy2), False, 1)
         self.draw[zone].point(xy)  # Round the top corners
         self.draw[zone].point((xy2[0],xy[1]))
-        self.draw[zone].text((xy[0] + 1, xy[1] + 2), text, True, self.small_font)
+        self.draw[zone].text((xy[0] + 2, xy[1] + 2), text, True, self.small_font)
 
     def draw_plugin(self, zone, x, y, text, expand_rect, plugin):
         if expand_rect >= 1:
