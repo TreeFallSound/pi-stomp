@@ -50,8 +50,8 @@ class Lcd(abstract_lcd.Lcd):
                             7: 12}
 
         self.footswitch_xy = {0: (0,   0),
-                              1: (52,  0),
-                              2: (103, 0)}
+                              1: (51,  0),
+                              2: (101, 0)}
 
         # Menu (System menu, Parameter edit, etc.)
         self.menu_height = self.height - self.zone_height[0] + 1  # TODO figure out why +1
@@ -63,8 +63,10 @@ class Lcd(abstract_lcd.Lcd):
         # Element dimensions
         self.plugin_height = 11
         self.plugin_width = 24
+        self.plugin_width_medium = 30
         self.plugin_bypass_thickness = 2
         self.plugin_label_length = 7
+        self.footswitch_width = 26
 
         self.images = [Image.new('L', (self.width, self.zone_height[0])),  # Pedalboard / Preset Title bar
                        Image.new('L', (self.width, self.zone_height[1])),  # Analog Controllers
@@ -280,7 +282,7 @@ class Lcd(abstract_lcd.Lcd):
         self.draw[zone].line(((0, 5), (8, 1)), True, 1)
         self.draw[zone].line(((0, 5), (8, 5)), True, 2)
         if type in controllers:  # TODO Slightly lame string linkage to controller class
-            text = "%s:%s" % (self.shorten_name(controllers[type][0]), controllers[type][1])
+            text = "%s:%s" % (self.shorten_name(controllers[type][0], self.plugin_width), controllers[type][1])
         self.draw[zone].text((10, 2), text, True, self.small_font)
 
         # Tweak knob assignment
@@ -290,7 +292,7 @@ class Lcd(abstract_lcd.Lcd):
         self.draw[zone].ellipse(((x, 0), (x + 6, 6)), True, 1)
         self.draw[zone].line(((x + 3, 0), (x + 3, 2)), False, 1)
         if type in controllers:
-            text = "%s:%s" % (self.shorten_name(controllers[type][0]), controllers[type][1])
+            text = "%s:%s" % (self.shorten_name(controllers[type][0], self.plugin_width), controllers[type][1])
         self.draw[zone].text((x+9, 2), text, True, self.small_font)
 
         self.refresh_zone(zone)
@@ -337,31 +339,23 @@ class Lcd(abstract_lcd.Lcd):
         self.refresh_zone(6)
 
     # Zones 3, 5, 7 - Plugin Display
-    def draw_box(self, xy, xy2, zone, text):
+    def draw_box(self, xy, xy2, zone, text, round_bottom_corners=False):
         self.draw[zone].rectangle((xy, xy2), False, 1)
         self.draw[zone].point(xy)  # Round the top corners
         self.draw[zone].point((xy2[0],xy[1]))
+        if round_bottom_corners:
+            self.draw[zone].point((xy[0],xy2[1]))
+            self.draw[zone].point((xy2[0],xy2[1]))
         self.draw[zone].text((xy[0] + 2, xy[1] + 2), text, True, self.small_font)
 
-    def draw_plugin(self, zone, x, y, text, expand_rect, plugin):
-        if expand_rect >= 1:
-            text_size = self.small_font.getsize(text)[0]
-            x2 = x + text_size + 2
-        elif expand_rect <= -1:
-            text = self.shorten_name(text)
-            x2 = x + self.plugin_width - 1
-        else:
-            text = self.shorten_name(text)
-            x2 = x + self.plugin_width
+    def draw_plugin(self, zone, x, y, text, width, eol, plugin, round_bottom_corners=False):
+        text = self.shorten_name(text, width)
+        x2 = x + width
+        if (eol):
+            x2 = x2 - 1
 
-        fill = False
         plugin.lcd_xyz = (x, y, zone)
-        self.draw_box((x, y), (x2, y + self.plugin_height), zone, text)
-        #self.draw[zone].rectangle(((x, y), (x2, y + self.plugin_height)), fill, 1)
-        #self.draw[zone].point((x,y))  # Round the top corners
-        #self.draw[zone].point((x2,y))
-
-        #self.draw[zone].text((x + 1, y + 1), text, not fill, self.small_font)
+        self.draw_box((x, y), (x2, y + self.plugin_height), zone, text, round_bottom_corners)
 
         bypass_indicator_xy = ((x+3, y+9), (x2-3, y+9))
         plugin.bypass_indicator_xy = bypass_indicator_xy
@@ -384,40 +378,48 @@ class Lcd(abstract_lcd.Lcd):
                     else:
                         label = p.instance_id.replace('/', "")[:self.plugin_label_length]  # TODO this replacement should be done in one place higher level
                         label = label.replace("_", "")
-                    self.draw_plugin(7, self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1], label, False, p)
+                    self.draw_plugin(7, self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1], label,
+                                     self.footswitch_width, False, p, True)
 
         # Draw any footswitches which weren't found to be bound to a plugin
         for fs_id in range(len(fss)):
             if fss[fs_id] is None:
                 continue
             label = "" if fss[fs_id].display_label is None else fss[fs_id].display_label
-            xy2 = (self.footswitch_xy[fs_id][0] + self.plugin_width, self.footswitch_xy[fs_id][1] + self.plugin_height)
-            self.draw_box((self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1]), xy2, 7, label)
+            xy2 = (self.footswitch_xy[fs_id][0] + self.footswitch_width, self.footswitch_xy[fs_id][1] + self.plugin_height)
+            self.draw_box((self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1]), xy2, 7, label, True)
 
         self.refresh_zone(7)
 
     def draw_plugins(self, plugins):
-        # TODO Improve expansion/wrapping algorithm (calculate values)
         y = 0
         x = 0
         xwrap = 110  # scroll if exceeds this width
         ymax = 64  # Maximum y for plugin LCD zone
-        expand_rect = len(plugins) <= 5
         rect_x_pad = 2
-        count = 0
         zone = 3
         self.images[3].paste(0, (0, 0, self.width, self.zone_height[3]))
         self.images[5].paste(0, (0, 0, self.width, self.zone_height[5]))
+
+        count = 0
+        for p in plugins:
+            if not p.has_footswitch:
+                count = count + 1
+        width = self.plugin_width_medium if count <= 8 else self.plugin_width
+
+        count = 0
+        eol = False
         for p in plugins:
             if p.has_footswitch:
                 continue
             label = p.instance_id.replace('/', "")[:self.plugin_label_length]
             label = label.replace("_", "")
             count += 1
-            if count > 4:  # LAME
-                expand_rect = -1
+            if count > 4:
+                eol = True
                 count = 0
-            x = self.draw_plugin(zone, x, y, label, expand_rect, p)
+            x = self.draw_plugin(zone, x, y, label, width, eol, p)
+            eol = False
             x = x + rect_x_pad
             if x > xwrap:
                 zone += 2
@@ -426,12 +428,12 @@ class Lcd(abstract_lcd.Lcd):
                     break  # Only display 2 rows, huge pedalboards won't fully render  # TODO make sure this works
         self.refresh_plugins()
 
-    def shorten_name(self, name):
+    def shorten_name(self, name, width):
         text = ""
         for x in name.lower().replace('_', '').replace('/', ''):
             test = text + x
             test_size = self.small_font.getsize(test)[0]
-            if test_size >= self.plugin_width:
+            if test_size >= width:
                 break
             text = test
         return text

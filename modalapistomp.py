@@ -96,11 +96,9 @@ def main():
         current_pedal_board_bundle = list(mod.pedalboards.keys())[0]
     mod.set_current_pedalboard(mod.pedalboards[current_pedal_board_bundle])
 
+    # Load system info
 
-    # Load LCD
-    #mod.update_lcd()
-    #touch.set_led(0, 1)
-    #touch.set_led(2, 1)
+
 
     logging.info("Entering main loop. Press Control-C to exit.")
     #period = 0

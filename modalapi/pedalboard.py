@@ -214,7 +214,7 @@ class Pedalboard:
                         if sym == symbol:
                             #logging.debug("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
                             param = Parameter.Parameter(pp, value, binding)
-                            logging.debug("Param: %s %s %4.2f %4.2f" % (param.name, param.symbol, param.minimum, value))
+                            logging.debug("Param: %s %s %4.2f %4.2f %s" % (param.name, param.symbol, param.minimum, value, binding))
                             parameters[symbol] = param
 
                     #logging.debug("  Label: %s" % label)
