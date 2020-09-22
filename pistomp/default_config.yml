@@ -2,7 +2,7 @@
 # Unless you have altered the hardware or really know what you're doing, changing this file is not recommended
 # and can result in a malfunctioning system.
 # Most of this configuration can be overriden by pedalboard specific configuration.  To accomplish that, add
-# a file, named config.yml to the pedalboard directory (ie. /usr/local/modep/.pedalboards/<pedalboard-name>)
+# a file, named config.yml to the pedalboard directory (ie. /var/modep/pedalboards/<pedalboard-name>)
 
 ---
 hardware:
@@ -11,7 +11,8 @@ hardware:
   footswitches:
   - id: 0
     bypass: LEFT_RIGHT
-    midi_CC: 67
+    preset: UP
+    midi_CC: None
   - id: 1
     midi_CC: 62
   - id: 2

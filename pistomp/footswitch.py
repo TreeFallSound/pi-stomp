@@ -18,6 +18,7 @@ import RPi.GPIO as GPIO
 from rtmidi.midiconstants import CONTROL_CHANGE
 
 import pistomp.controller as controller
+import time
 
 
 class Footswitch(controller.Controller):
@@ -33,7 +34,12 @@ class Footswitch(controller.Controller):
         self.refresh_callback = refresh_callback
         self.relay_list = []
         self.preset_callback = None
-        GPIO.setup(fs_pin, GPIO.IN)
+
+        # this value (in seconds) chosen to be just greater than the event_detect bouncetime (in milliseconds)
+        self.relay_poll_interval = 0.26
+        self.relay_poll_intervals = 2
+
+        GPIO.setup(fs_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         GPIO.add_event_detect(fs_pin, GPIO.FALLING, callback=self.toggle, bouncetime=250)
 
         GPIO.setup(led_pin, GPIO.OUT)
@@ -50,26 +56,45 @@ class Footswitch(controller.Controller):
         GPIO.output(self.led_pin, self.enabled)
 
     def toggle(self, gpio):
+        # If a footswitch can be mapped to control a relay, preset, MIDI or all 3
+
         self.enabled = not self.enabled
 
+        # Update Relay (if relay is associated with this footswitch)
+        if len(self.relay_list) > 0:
+            # this value chosen to be just greater than the event_detect bouncetime
+            short = False
+            for i in range(self.relay_poll_intervals):
+                time.sleep(self.relay_poll_interval)
+                if GPIO.input(gpio):
+                    # Pin went high before timed polling was complete (short press)
+                    short = True
+                    break
+            if short is False:
+                # Pin kept low (long press)
+                # toggle the relay and LED, exit this method
+                for r in self.relay_list:
+                    if self.enabled:
+                        r.enable()
+                    else:
+                        r.disable()
+                GPIO.output(self.led_pin, self.enabled)
+                return
+
+        # If mapped to preset change
         if self.preset_callback is not None:
+            # Change the preset and exit this method
             self.preset_callback()
-        else:
-            # Update LED
-            GPIO.output(self.led_pin, self.enabled)
+            return
+
+        # Update LED
+        GPIO.output(self.led_pin, self.enabled)
 
         # Send midi
         if self.midi_CC is not None:
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.enabled else 0]
             logging.debug("Sending CC event: %d %s" % (self.midi_CC, gpio))
             self.midiout.send_message(cc)
-
-        # Update Relay (if relay is associated with this footswitch)
-        for r in self.relay_list:
-            if self.enabled:
-                r.enable()
-            else:
-                r.disable()
 
         # Update LCD
         if self.parameter is not None:

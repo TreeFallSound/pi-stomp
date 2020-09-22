@@ -136,7 +136,7 @@ class Hardware:
                     preset_value = f[Token.PRESET]
                     if preset_value == Token.UP:
                         fs.add_preset(callback=self.mod.preset_incr_and_change)
-                        fs.set_display_label("Up")
+                        fs.set_display_label("Pre++")
                     if preset_value == Token.DOWN:
                         fs.add_preset(callback=self.mod.preset_decr_and_change)
                         fs.set_display_label("Down")
