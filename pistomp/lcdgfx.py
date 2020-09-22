@@ -282,7 +282,8 @@ class Lcd(abstract_lcd.Lcd):
         self.draw[zone].line(((0, 5), (8, 1)), True, 1)
         self.draw[zone].line(((0, 5), (8, 5)), True, 2)
         if type in controllers:  # TODO Slightly lame string linkage to controller class
-            text = "%s:%s" % (self.shorten_name(controllers[type][0], self.plugin_width), controllers[type][1])
+            text = "%s:%s" % (self.shorten_name(controllers[type][0], self.plugin_width),
+                              self.shorten_name(controllers[type][1], self.plugin_width_medium))
         self.draw[zone].text((10, 2), text, True, self.small_font)
 
         # Tweak knob assignment
@@ -292,7 +293,8 @@ class Lcd(abstract_lcd.Lcd):
         self.draw[zone].ellipse(((x, 0), (x + 6, 6)), True, 1)
         self.draw[zone].line(((x + 3, 0), (x + 3, 2)), False, 1)
         if type in controllers:
-            text = "%s:%s" % (self.shorten_name(controllers[type][0], self.plugin_width), controllers[type][1])
+            text = "%s:%s" % (self.shorten_name(controllers[type][0], self.plugin_width),
+                              self.shorten_name(controllers[type][1], self.plugin_width_medium))
         self.draw[zone].text((x+9, 2), text, True, self.small_font)
 
         self.refresh_zone(zone)
@@ -430,7 +432,7 @@ class Lcd(abstract_lcd.Lcd):
 
     def shorten_name(self, name, width):
         text = ""
-        for x in name.lower().replace('_', '').replace('/', ''):
+        for x in name.lower().replace('_', '').replace('/', '').replace(' ', ''):
             test = text + x
             test_size = self.small_font.getsize(test)[0]
             if test_size >= width:
