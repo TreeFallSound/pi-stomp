@@ -25,7 +25,6 @@ import yaml
 import common.token as Token
 import common.util as util
 import pistomp.analogswitch as AnalogSwitch
-import pistomp.controller as Controller
 import modalapi.pedalboard as Pedalboard
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -62,7 +61,7 @@ class Mod:
         self.lcd = lcd
         self.root_uri = "http://localhost:80/"
 
-        self.pedalboards = {}  # TODO make the ordering of entries deterministic
+        self.pedalboards = {}
         self.pedalboard_list = []  # TODO LAME to have two lists
         self.selected_pedalboard_index = 0
         self.selected_preset_index = 0
@@ -76,6 +75,8 @@ class Mod:
 
         self.top_encoder_mode = TopEncoderMode.DEFAULT
         self.bot_encoder_mode = BotEncoderMode.DEFAULT
+
+        self.wifi_status = {}
 
         self.current = None  # pointer to Current class
         self.deep = None     # pointer to current Deep class
@@ -125,6 +126,7 @@ class Mod:
                 self.top_encoder_mode = TopEncoderMode.DEFAULT
             elif mode == TopEncoderMode.SYSTEM_MENU:
                 self.menu_action()
+                return
             else:
                 if len(self.current.presets) > 0:
                     self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
@@ -437,7 +439,9 @@ class Mod:
 
     def menu_action(self):
         item = list(sorted(self.menu_items))[self.selected_menu_index]
-        self.menu_items[item][Token.ACTION]()
+        action = self.menu_items[item][Token.ACTION]
+        if action is not None:
+            action()
 
     def menu_back(self):
         self.top_encoder_mode = TopEncoderMode.DEFAULT
@@ -448,15 +452,60 @@ class Mod:
     # System Menu
     #
 
+    def system_info_load(self):
+        cmd = "/usr/bin/patchbox wifi status"
+        output = subprocess.check_output(cmd, shell=True)
+        for i in output.decode().split('\n'):
+            if len(i) is 0:
+                continue
+            (key, value) = i.split('=')
+            if key and value:
+                self.wifi_status[key] = value
+
     def system_menu_show(self):
         self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back},
-                           "1": {Token.NAME: "Save current pedalboard", Token.ACTION: self.system_menu_save_current_pb},
-                           "2": {Token.NAME: "Soft restart & reload", Token.ACTION: self.system_menu_reload},
-                           "3": {Token.NAME: "Restart sound engine", Token.ACTION: self.system_menu_restart_sound},
-                           "4": {Token.NAME: "Hardware reboot", Token.ACTION: self.system_menu_reboot}}
+                           "1": {Token.NAME: "System info", Token.ACTION: self.system_info_show},
+                           "2": {Token.NAME: "Save current pedalboard", Token.ACTION: self.system_menu_save_current_pb},
+                           "3": {Token.NAME: "Soft restart & reload", Token.ACTION: self.system_menu_reload},
+                           "4": {Token.NAME: "Restart sound engine", Token.ACTION: self.system_menu_restart_sound},
+                           "5": {Token.NAME: "Hardware reboot", Token.ACTION: self.system_menu_reboot}}
         self.lcd.menu_show("System menu", self.menu_items)
         self.selected_menu_index = 0
         self.lcd.menu_highlight(0)
+
+    def system_info_show(self):
+        self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back}}
+        hotspot_active = False
+        key = 'hotspot_active'
+        if key in self.wifi_status:
+            self.menu_items[key] = {Token.NAME: self.wifi_status[key], Token.ACTION: None}
+            if self.wifi_status[key] is "1":
+                hotspot_active = True
+        key = 'ip_address'
+        if key in self.wifi_status:
+            self.menu_items["ip_addr"] = {Token.NAME: self.wifi_status[key], Token.ACTION: None}
+
+        if hotspot_active:
+            self.menu_items["Disable Hotspot"] = {Token.NAME: "", Token.ACTION: self.system_disable_hotspot}
+        else:
+            self.menu_items["Enable Hotspot"] = {Token.NAME: "", Token.ACTION: self.system_enable_hotspot}
+
+        self.lcd.menu_show("System Info", self.menu_items)
+        self.selected_menu_index = 0
+        self.lcd.menu_highlight(0)
+
+    def system_disable_hotspot(self):
+        self.system_toggle_hotspot("Disabling, please wait...", "/usr/bin/patchbox wifi hotspot down")
+
+    def system_enable_hotspot(self):
+        self.system_toggle_hotspot("Enabling, please wait...", "/usr/bin/patchbox wifi hotspot up")
+
+    def system_toggle_hotspot(self, msg, cmd):
+        self.lcd.draw_info_message(msg)
+        subprocess.check_output(cmd, shell=True)
+        time.sleep(2)  # Give networking time to settle before refreshing info
+        self.system_info_load()
+        self.system_info_show()
 
     def system_menu_save_current_pb(self):
         logging.debug("save current")
@@ -489,6 +538,10 @@ class Mod:
         logging.info("Hardware Reboot")
         os.system('systemctl reboot')
 
+    def system_menu_hotspot(self):
+        #patchbox wifi hotspot down
+        pass
+
     #
     # Parameter Edit
     #
@@ -497,7 +550,7 @@ class Mod:
         plugin = self.get_selected_instance()
         self.deep = self.Deep(plugin)  # TODO this creates a new obj every time menu is shown, singleton?
         self.deep.selected_parameter_index = 0
-        self.menu_items = {"0": {"name": "< Back to main screen", "action": self.menu_back}}
+        self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back}}
         i = 1
         for p in self.deep.parameters:
             self.menu_items[str(i)] = {Token.NAME: p.name,

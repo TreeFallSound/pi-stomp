@@ -183,7 +183,7 @@ class Lcd(abstract_lcd.Lcd):
                 self.menu_draw.text((x, y), "%s" % menu_items[i][Token.NAME], True, self.small_font)
                 x = 8   # indent after first element (back button)
             else:
-                self.menu_draw.text((x, y), "%d %s" % (idx, menu_items[i][Token.NAME]), True, self.small_font)
+                self.menu_draw.text((x, y), "%s %s" % (i, menu_items[i][Token.NAME]), True, self.small_font)
             y += 10
             idx += 1
         self.refresh_menu()  # TODO Change name

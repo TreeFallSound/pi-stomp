@@ -96,9 +96,8 @@ def main():
         current_pedal_board_bundle = list(mod.pedalboards.keys())[0]
     mod.set_current_pedalboard(mod.pedalboards[current_pedal_board_bundle])
 
-    # Load system info
-
-
+    # Load system info.  This can take a few seconds
+    mod.system_info_load()
 
     logging.info("Entering main loop. Press Control-C to exit.")
     #period = 0
