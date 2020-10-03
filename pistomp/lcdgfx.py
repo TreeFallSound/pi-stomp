@@ -108,6 +108,9 @@ class Lcd(abstract_lcd.Lcd):
                 lcd.set_pixel(self.width - x - 1, self.height - y, pixel)
         lcd.show()
 
+    def erase_zone(self, zone_idx):
+        self.images[zone_idx].paste(0, (0, 0, self.width, self.zone_height[zone_idx]))
+
     def refresh_zone(self, zone_idx):
         #flipped = self.images[zone_idx].transpose(Image.ROTATE_180)
         flipped = self.images[zone_idx]
@@ -139,6 +142,9 @@ class Lcd(abstract_lcd.Lcd):
         lcd.show()
 
     def refresh_plugins(self):
+        self.refresh_zone(2)
+        self.refresh_zone(4)
+        self.refresh_zone(6)
         self.refresh_zone(7)
         self.refresh_zone(5)
         self.refresh_zone(3)
@@ -167,7 +173,7 @@ class Lcd(abstract_lcd.Lcd):
     # Menu Screens (uses deep_edit image and draw objects)
     def menu_show(self, page_title, menu_items):
         # Title (plugin name)
-        self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
+        self.erase_zone(0)
         self.draw[0].text((0, -2), page_title, True, self.title_font)
         self.refresh_zone(0)
 
@@ -199,7 +205,7 @@ class Lcd(abstract_lcd.Lcd):
     # Parameter Value Edit
     def draw_value_edit(self, plugin_name, parameter, value):
         # Title (parameter name)
-        self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
+        self.erase_zone(0)
         title = "%s-%s" % (plugin_name, parameter.name)
         self.draw[0].text((0, -2), title, True, self.title_font)
         self.refresh_zone(0)
@@ -240,7 +246,7 @@ class Lcd(abstract_lcd.Lcd):
 
     # Zone 0 - Pedalboard and Preset
     def draw_title(self, pedalboard, preset, invert_pb, invert_pre):
-        self.images[0].paste(0, (0, 0, self.width, self.zone_height[0]))
+        self.erase_zone(0)
 
         #pedalboard = pedalboard.lower().capitalize()
         pb_size  = self.title_font.getsize(pedalboard)[0]
@@ -274,7 +280,7 @@ class Lcd(abstract_lcd.Lcd):
     # Zone 1 - Analog Assignments (Tweak, Expression Pedal, etc.)
     def draw_analog_assignments(self, controllers):
         zone = 1
-        self.images[zone].paste(0, (0, 0, self.width, self.zone_height[zone]))
+        self.erase_zone(zone)
 
         # Expression Pedal assignment
         type = 'EXPRESSION'  # TODO should this be an enum
@@ -301,7 +307,7 @@ class Lcd(abstract_lcd.Lcd):
 
     def draw_info_message(self, text):
         zone = 1
-        self.images[zone].paste(0, (0, 0, self.width, self.zone_height[zone]))
+        self.erase_zone(zone)
         self.draw[zone].text((0, 2), text, True, self.small_font)
         self.refresh_zone(zone)
 
@@ -309,9 +315,9 @@ class Lcd(abstract_lcd.Lcd):
     def draw_plugin_select(self, plugin=None):
         # Clear all selection zones
         # TODO could be smarter about which zones to clear and refresh, but...
-        self.images[2].paste(0, (0, 0, self.width, self.zone_height[2]))
-        self.images[4].paste(0, (0, 0, self.width, self.zone_height[4]))
-        self.images[6].paste(0, (0, 0, self.width, self.zone_height[6]))
+        self.erase_zone(2)
+        self.erase_zone(4)
+        self.erase_zone(6)
 
         if plugin is not None:
             x = plugin.lcd_xyz[0]
@@ -400,8 +406,8 @@ class Lcd(abstract_lcd.Lcd):
         ymax = 64  # Maximum y for plugin LCD zone
         rect_x_pad = 2
         zone = 3
-        self.images[3].paste(0, (0, 0, self.width, self.zone_height[3]))
-        self.images[5].paste(0, (0, 0, self.width, self.zone_height[5]))
+        self.erase_zone(3)
+        self.erase_zone(5)
 
         count = 0
         for p in plugins:

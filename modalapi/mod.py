@@ -113,6 +113,9 @@ class Mod:
     def add_hardware(self, hardware):
         self.hardware = hardware
 
+    # Assumption that the top encoder actions can be executed regardless of bottom encoder mode
+    # Bottom encoder actions should be ignored while the system menu is active to avoid corrupting the LCD
+
     def top_encoder_sw(self, value):
         # State machine for top rotary encoder
         mode = self.top_encoder_mode
@@ -181,6 +184,8 @@ class Mod:
                 self.update_lcd()
 
     def bot_encoder_select(self, direction):
+        if self.top_encoder_mode == TopEncoderMode.SYSTEM_MENU:
+            return
         mode = self.bot_encoder_mode
         if mode == BotEncoderMode.DEFAULT:
             self.plugin_select(direction)
@@ -310,6 +315,7 @@ class Mod:
 
             # Now that it's presumably changed, load the dynamic "current" data
             self.set_current_pedalboard(self.pedalboard_list[self.selected_pedalboard_index])
+            self.bot_encoder_mode = BotEncoderMode.DEFAULT
 
     #
     # Preset Stuff
@@ -366,6 +372,7 @@ class Mod:
 
         #load of the preset might have changed plugin bypass status
         self.preset_change_plugin_update()
+        self.bot_encoder_mode = BotEncoderMode.DEFAULT
 
     def preset_incr_and_change(self):
         self.preset_select(1)
@@ -389,6 +396,7 @@ class Mod:
         self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
         self.lcd.draw_plugins(self.current.pedalboard.plugins)
         self.lcd.draw_analog_assignments(self.current.analog_controllers)
+        self.lcd.draw_plugin_select()
 
     #
     # Plugin Stuff
