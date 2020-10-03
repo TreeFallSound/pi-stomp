@@ -171,7 +171,7 @@ class Lcd(abstract_lcd.Lcd):
         self.draw[0].text((0, -2), page_title, True, self.title_font)
         self.refresh_zone(0)
 
-        self.menu_image.paste(0, (0, 0, self.width, self.menu_height))
+        self.menu_image.paste(0, (0, 0, self.width, self.menu_image_height))
 
         # Menu Items
         idx = 0

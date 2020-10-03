@@ -15,20 +15,15 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 import argparse
-import atexit
-import json
 import logging
 import os
-import requests as req
 import RPi.GPIO as GPIO
-import spidev
 import subprocess
 import sys
 import time
 
 from rtmidi.midiutil import open_midiinput
 from rtmidi.midiutil import open_midioutput
-from rtmidi.midiconstants import (CONTROLLER_CHANGE, PROGRAM_CHANGE)
 
 import modalapi.mod as Mod
 import pistomp.lcdgfx as Lcd
@@ -80,7 +75,7 @@ def main():
     lcd = Lcd.Lcd()
 
     # Create singleton data model object
-    mod = Mod.Mod(lcd)
+    mod = Mod.Mod(lcd, os.path.dirname(os.path.realpath(__file__)))
 
     # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
     hw = Pistomp.Pistomp(mod, midiout, refresh_callback=mod.update_lcd_fs)

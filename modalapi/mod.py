@@ -52,13 +52,14 @@ class BotEncoderMode(Enum):
 class Mod:
     __single = None
 
-    def __init__(self, lcd):
+    def __init__(self, lcd, homedir):
         logging.info("Init mod")
         if Mod.__single:
             raise Mod.__single
         Mod.__single = self
 
         self.lcd = lcd
+        self.homedir = homedir
         self.root_uri = "http://localhost:80/"
 
         self.pedalboards = {}
@@ -77,6 +78,8 @@ class Mod:
         self.bot_encoder_mode = BotEncoderMode.DEFAULT
 
         self.wifi_status = {}
+        self.software_version = None
+        self.git_describe = None
 
         self.current = None  # pointer to Current class
         self.deep = None     # pointer to current Deep class
@@ -461,6 +464,14 @@ class Mod:
             (key, value) = i.split('=')
             if key and value:
                 self.wifi_status[key] = value
+        try:
+            output = subprocess.check_output(['git', '--git-dir', self.homedir + '/.git',
+                                              '--work-tree', self.homedir, 'describe'])
+            if output:
+                self.git_describe = output.decode()
+                self.software_version = self.git_describe.split('-')[0]
+        except subprocess.CalledProcessError:
+            logging.error("Cannot obtain git software tag info")
 
     def system_menu_show(self):
         self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back},
@@ -475,6 +486,7 @@ class Mod:
 
     def system_info_show(self):
         self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back}}
+        self.menu_items["SW:"] = {Token.NAME: self.git_describe, Token.ACTION: None}
         hotspot_active = False
         key = 'hotspot_active'
         if key in self.wifi_status:
@@ -489,7 +501,6 @@ class Mod:
             self.menu_items["Disable Hotspot"] = {Token.NAME: "", Token.ACTION: self.system_disable_hotspot}
         else:
             self.menu_items["Enable Hotspot"] = {Token.NAME: "", Token.ACTION: self.system_enable_hotspot}
-
         self.lcd.menu_show("System Info", self.menu_items)
         self.selected_menu_index = 0
         self.lcd.menu_highlight(0)
