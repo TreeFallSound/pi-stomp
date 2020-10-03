@@ -435,8 +435,20 @@ class Mod:
     #
 
     def menu_select(self, direction):
-        index = ((self.selected_menu_index - 1) if (direction is not 1)
-                 else (self.selected_menu_index + 1)) % (len(self.menu_items))
+        tried = 0
+        num = len(self.menu_items)
+        index = self.selected_menu_index
+        sort_list = list(sorted(self.menu_items))
+
+        # incr/decr to next item having a non-None action
+        while tried < num:
+            index = ((index - 1) if (direction is not 1) else (index + 1)) % num
+            item = sort_list[index]
+            action = self.menu_items[item][Token.ACTION]
+            if action is not None:
+                break
+            tried = tried + 1
+
         self.lcd.menu_highlight(index)
         self.selected_menu_index = index
 
