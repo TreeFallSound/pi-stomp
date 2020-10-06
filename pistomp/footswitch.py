@@ -45,6 +45,9 @@ class Footswitch(controller.Controller):
         GPIO.setup(led_pin, GPIO.OUT)
         GPIO.output(led_pin, GPIO.LOW)
 
+    def __del__(self):
+        GPIO.remove_event_detect(self.fs_pin)
+
     def set_midi_CC(self, midi_CC):
         self.midi_CC = midi_CC
 

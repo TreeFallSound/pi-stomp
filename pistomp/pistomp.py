@@ -22,18 +22,19 @@
 # A new version with different controls should have a new separate subclass
 
 import RPi.GPIO as GPIO
-import logging
-import json
 import spidev
+import traceback
 
-import common.util as util
+import os
+from pathlib import Path
 import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.analogswitch as AnalogSwitch
-import pistomp.controller as Controller
 import pistomp.encoder as Encoder
 import pistomp.footswitch as Footswitch
 import pistomp.hardware as hardware
 import pistomp.relay as Relay
+import sys
+import time
 
 # Pins
 TOP_ENC_PIN_D = 17
@@ -75,23 +76,35 @@ class Pistomp(hardware.Hardware):
 
         GPIO.setmode(GPIO.BCM)
 
+        self.spi = spidev.SpiDev()
+        self.spi.open(0, 1)  # Bus 0, CE1
+        self.spi.max_speed_hz = 1000000  # TODO match with LCD or don't specify
+
+        self.mod = mod
+        self.midiout = midiout
+
+        # if test sentinel file exists execute hardware test
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        self.test_sentinel = os.path.join(script_dir, ".hardware_tests_passed")
+        if not os.path.isfile(self.test_sentinel):
+            self.test_pass = False
+            self.test()
+
         # Create Relay object(s)
         #self.relay = Relay.Relay(RELAY_RESET_PIN, RELAY_SET_PIN)
         self.relay = Relay.Relay(RELAY_SET_PIN, RELAY_RESET_PIN)
 
         # Create Footswitches
         for f in FOOTSW:
-            fs = Footswitch.Footswitch(f[0], f[1], f[2], f[3], self.midi_channel, midiout,
+            fs = Footswitch.Footswitch(f[0], f[1], f[2], f[3], self.midi_channel, self.midiout,
                                        refresh_callback=self.refresh_callback)
             self.footswitches.append(fs)
         self.reinit(None)
 
         # Initialize Analog inputs
-        spi = spidev.SpiDev()
-        spi.open(0, 1)  # Bus 0, CE1
-        spi.max_speed_hz = 1000000  # TODO match with LCD or don't specify.  Move to top of file
         for c in ANALOG_CONTROL:
-            control = AnalogMidiControl.AnalogMidiControl(spi, c[0], c[1], c[2], self.midi_channel, midiout, c[3])
+            control = AnalogMidiControl.AnalogMidiControl(self.spi, c[0], c[1], c[2], self.midi_channel,
+                                                          self.midiout, c[3])
             self.analog_controls.append(control)
             key = format("%d:%d" % (self.midi_channel, c[2]))
             self.controllers[key] = control  # Controller.Controller(self.midi_channel, c[1], Controller.Type.ANALOG)
@@ -101,7 +114,126 @@ class Pistomp(hardware.Hardware):
         self.encoders.append(top_enc)
         bot_enc = Encoder.Encoder(BOT_ENC_PIN_D, BOT_ENC_PIN_CLK, callback=mod.bot_encoder_select)
         self.encoders.append(bot_enc)
-        control = AnalogSwitch.AnalogSwitch(spi, TOP_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD, callback=mod.top_encoder_sw)
+        control = AnalogSwitch.AnalogSwitch(self.spi, TOP_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD,
+                                            callback=mod.top_encoder_sw)
         self.analog_controls.append(control)
-        control = AnalogSwitch.AnalogSwitch(spi, BOT_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD, callback=mod.bottom_encoder_sw)
+        control = AnalogSwitch.AnalogSwitch(self.spi, BOT_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD,
+                                            callback=mod.bottom_encoder_sw)
         self.analog_controls.append(control)
+
+    # Test procedure for verifying hardware controls
+    def test(self):
+        self.mod.lcd.erase_all()
+        self.mod.lcd.draw_title("Hardware test...", None, False, False)
+        failed = 0
+
+        try:
+            GPIO.setmode(GPIO.BCM)
+
+            # TODO kinda lame that the instantiations of hardware objects here must match those in __init__
+            # except with different callbacks
+
+            # Footswitches
+            for f in FOOTSW:
+                self.mod.lcd.draw_info_message("Press Footswitch %d" % int(f[0] + 1))
+                fs = Footswitch.Footswitch(f[0], f[1], f[2], f[3], self.midi_channel, self.midiout,
+                                           refresh_callback=self.test_passed)
+                self.test_pass = False
+                timeout = 1000  # 10 seconds
+                initial_value = GPIO.input(f[2])
+                while self.test_pass is False and timeout > 0:
+                    new_value = GPIO.input(f[2])  # Verify that LED pin toggles
+                    if new_value is not initial_value:
+                        break
+                    time.sleep(0.01)
+                    timeout = timeout - 1
+                del fs
+                if timeout > 0:
+                    self.mod.lcd.draw_info_message("Passed")
+                else:
+                    self.mod.lcd.draw_info_message("Failed")
+                    failed = failed + 1
+                time.sleep(1.2)
+
+            # Encoder rotary
+            encoders = [["Turn the PBoard Knob", TOP_ENC_PIN_D, TOP_ENC_PIN_CLK],
+                        ["Turn the Effect Knob", BOT_ENC_PIN_D, BOT_ENC_PIN_CLK]]
+            for e in encoders:
+                enc = Encoder.Encoder(e[1], e[2], callback=self.test_passed)
+                self.mod.lcd.draw_info_message(e[0])
+                self.test_pass = False
+                timeout = 1000
+                while self.test_pass is False and timeout > 0:
+                    enc.read_rotary()
+                    time.sleep(0.01)
+                    timeout = timeout - 1
+                del enc
+                if timeout > 0:
+                    self.mod.lcd.draw_info_message("Passed")
+                else:
+                    self.mod.lcd.draw_info_message("Failed")
+                    failed = failed + 1
+                time.sleep(1.2)
+
+            # Encoder switches
+            encoders = [["Press the PBoard Knob", TOP_ENC_SWITCH_CHANNEL],
+                        ["Press the Effect Knob", BOT_ENC_SWITCH_CHANNEL]]
+            for e in encoders:
+                enc = AnalogSwitch.AnalogSwitch(self.spi, e[1], ENC_SW_THRESHOLD, callback=self.test_passed)
+                self.mod.lcd.draw_info_message(e[0])
+                self.test_pass = False
+                timeout = 1000
+                while self.test_pass is False and timeout > 0:
+                    enc.refresh()
+                    time.sleep(0.01)
+                    timeout = timeout - 1
+                del enc
+                if timeout > 0:
+                    self.mod.lcd.draw_info_message("Passed")
+                else:
+                    self.mod.lcd.draw_info_message("Failed")
+                    failed = failed + 1
+                time.sleep(1.2)
+
+            # Analog Knobs
+            self.mod.lcd.draw_info_message("Turn the Tweak knob")
+            c = ANALOG_CONTROL[0]
+            control = AnalogMidiControl.AnalogMidiControl(self.spi, c[0], c[1], c[2], self.midi_channel,
+                                                          self.midiout, c[3])
+            self.test_pass = False
+            timeout = 1000
+            initial_value = control.readChannel()
+            while self.test_pass is False and timeout > 0:
+                time.sleep(0.01)
+                pot_adjust = abs(control.readChannel() - initial_value)
+                if pot_adjust > c[1]:
+                    break
+                timeout = timeout - 1
+            del control
+            if timeout > 0:
+                self.mod.lcd.draw_info_message("Passed")
+            else:
+                self.mod.lcd.draw_info_message("Failed")
+                failed = failed + 1
+            time.sleep(1.2)
+
+            if failed > 0:
+                self.mod.lcd.draw_info_message("%d control(s) failed" % failed)
+                time.sleep(3)
+            else:
+                # create sentinel file so test procedure is skipped next boot
+                f = Path(self.test_sentinel)
+                f.touch()
+            self.mod.lcd.draw_info_message("Restarting...")
+            time.sleep(1.2)
+
+        except KeyboardInterrupt:
+            return
+
+        finally:
+            self.mod.lcd.cleanup()
+            GPIO.cleanup()
+            sys.exit()
+
+    def test_passed(self, data):
+        self.test_pass = True

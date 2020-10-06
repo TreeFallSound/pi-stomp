@@ -20,6 +20,8 @@ import yaml
 import common.token as Token
 import pistomp.analogmidicontrol
 
+from abc import abstractmethod
+
 DEFAULT_CONFIG_FILE = "default_config.yml"
 
 
@@ -62,6 +64,10 @@ class Hardware:
         if cfg is not None:
             self.__init_midi(cfg)
             self.__init_footswitches(cfg)
+
+    @abstractmethod
+    def test(self):
+        pass
 
     def __load_default_cfg(self):
         # Read the default config file - should only need to read once per session

@@ -32,6 +32,10 @@ class Lcd(ABC):
     def clear(self):
         pass
 
+    @abstractmethod
+    def erase_all(self):
+        pass
+
     # Menu Screens (uses deep_edit image and draw objects)
     @abstractmethod
     def menu_show(self, page_title, menu_items):

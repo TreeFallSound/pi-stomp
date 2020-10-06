@@ -13,12 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import signal
-import spidev
 import common.token as Token
 import common.util as util
 import pistomp.lcd as abstract_lcd
-import common.util as util
 
 from gfxhat import touch, lcd, backlight, fonts
 from PIL import Image, ImageFont, ImageDraw
@@ -68,6 +65,7 @@ class Lcd(abstract_lcd.Lcd):
         self.plugin_label_length = 7
         self.footswitch_width = 26
 
+        self.zones = 8
         self.images = [Image.new('L', (self.width, self.zone_height[0])),  # Pedalboard / Preset Title bar
                        Image.new('L', (self.width, self.zone_height[1])),  # Analog Controllers
                        Image.new('L', (self.width, self.zone_height[2])),  # Plugin selection
@@ -169,6 +167,11 @@ class Lcd(abstract_lcd.Lcd):
         backlight.show()
         lcd.clear()
         lcd.show()
+
+    def erase_all(self):
+        for z in range(self.zones):
+            self.erase_zone(z)
+            self.refresh_zone(z)
 
     # Menu Screens (uses deep_edit image and draw objects)
     def menu_show(self, page_title, menu_items):
