@@ -26,6 +26,7 @@ import common.token as Token
 import common.util as util
 import pistomp.analogswitch as AnalogSwitch
 import modalapi.pedalboard as Pedalboard
+import modalapi.parameter as Parameter
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.footswitch import Footswitch
@@ -42,6 +43,8 @@ class TopEncoderMode(Enum):
     PEDALBOARD_SELECT = 3
     PEDALBOARD_SELECTED = 4
     SYSTEM_MENU = 5
+    HEADPHONE_VOLUME = 6
+    INPUT_GAIN = 7
 
 class BotEncoderMode(Enum):
     DEFAULT = 0
@@ -101,7 +104,7 @@ class Mod:
     class Deep:
         def __init__(self, plugin):
             self.plugin = plugin
-            self.parameters = list(plugin.parameters.values())
+            self.parameters = list(plugin.parameters.values()) if plugin is not None else None
             self.selected_parameter_index = 0
             self.selected_parameter = None
             self.value = 0  # TODO shouldn't need this
@@ -133,6 +136,10 @@ class Mod:
             elif mode == TopEncoderMode.SYSTEM_MENU:
                 self.menu_action()
                 return
+            elif mode == TopEncoderMode.HEADPHONE_VOLUME:
+                self.top_encoder_mode = TopEncoderMode.SYSTEM_MENU
+            elif mode == TopEncoderMode.INPUT_GAIN:
+                self.top_encoder_mode = TopEncoderMode.SYSTEM_MENU
             else:
                 if len(self.current.presets) > 0:
                     self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
@@ -140,10 +147,6 @@ class Mod:
                     self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
             self.update_lcd_title()
         elif value == AnalogSwitch.Value.LONGPRESSED:
-            #if self.top_encoder_mode == TopEncoderMode.DEFAULT:
-            #    logging.debug("double long")
-            #    subprocess.call("/usr/local/modep/modep-btn-scripts/my_toggle_wifi_hotspot.sh")
-            #else:
             if mode == TopEncoderMode.DEFAULT:
                 self.top_encoder_mode = TopEncoderMode.SYSTEM_MENU
                 self.system_menu_show()
@@ -162,10 +165,16 @@ class Mod:
             self.top_encoder_mode = TopEncoderMode.PRESET_SELECTED
         elif mode == TopEncoderMode.SYSTEM_MENU:
             self.menu_select(direction)
+        elif mode == TopEncoderMode.HEADPHONE_VOLUME:
+            self.parameter_value_change(direction, self.headphone_volume_commit)
+        elif mode == TopEncoderMode.INPUT_GAIN:
+            self.parameter_value_change(direction, self.input_gain_commit)
 
     def bottom_encoder_sw(self, value):
         # State machine for bottom rotary encoder switch
-        if self.top_encoder_mode == TopEncoderMode.SYSTEM_MENU:
+        if (self.top_encoder_mode == TopEncoderMode.SYSTEM_MENU or
+                self.top_encoder_mode == TopEncoderMode.HEADPHONE_VOLUME or
+                self.top_encoder_mode == TopEncoderMode.INPUT_GAIN):
             return  # Ignore bottom encoder if top encoder has navigated to the system menu
         mode = self.bot_encoder_mode
         if value == AnalogSwitch.Value.RELEASED:
@@ -184,16 +193,17 @@ class Mod:
                 self.update_lcd()
 
     def bot_encoder_select(self, direction):
-        if self.top_encoder_mode == TopEncoderMode.SYSTEM_MENU:
+        if (self.top_encoder_mode == TopEncoderMode.SYSTEM_MENU or
+                self.top_encoder_mode == TopEncoderMode.HEADPHONE_VOLUME or
+                self.top_encoder_mode == TopEncoderMode.INPUT_GAIN):
             return
         mode = self.bot_encoder_mode
         if mode == BotEncoderMode.DEFAULT:
             self.plugin_select(direction)
         elif mode == BotEncoderMode.DEEP_EDIT:
-            #self.parameter_select(direction)
             self.menu_select(direction)
         elif mode == BotEncoderMode.VALUE_EDIT:
-            self.parameter_value_change(direction)
+            self.parameter_value_change(direction, self.parameter_value_commit)
 
     #
     # Pedalboard Stuff
@@ -499,7 +509,9 @@ class Mod:
                            "2": {Token.NAME: "Save current pedalboard", Token.ACTION: self.system_menu_save_current_pb},
                            "3": {Token.NAME: "Soft restart & reload", Token.ACTION: self.system_menu_reload},
                            "4": {Token.NAME: "Restart sound engine", Token.ACTION: self.system_menu_restart_sound},
-                           "5": {Token.NAME: "Hardware reboot", Token.ACTION: self.system_menu_reboot}}
+                           "5": {Token.NAME: "Hardware reboot", Token.ACTION: self.system_menu_reboot},
+                           "6": {Token.NAME: "Input Gain", Token.ACTION: self.system_menu_input_gain},
+                           "7": {Token.NAME: "Headphone Volume", Token.ACTION: self.system_menu_headphone_volume}}
         self.lcd.menu_show("System menu", self.menu_items)
         self.selected_menu_index = 0
         self.lcd.menu_highlight(0)
@@ -569,9 +581,42 @@ class Mod:
         logging.info("Hardware Reboot")
         os.system('systemctl reboot')
 
-    def system_menu_hotspot(self):
-        #patchbox wifi hotspot down
-        pass
+    def system_menu_input_gain(self):
+        title = "Input Gain"
+        self.top_encoder_mode = TopEncoderMode.INPUT_GAIN
+        info = {"shortName": title, "symbol": "igain", "ranges": {"minimum": -19.75, "maximum": 12}}
+        self.system_menu_parameter(title, "Capture Volume", info)
+
+    def system_menu_headphone_volume(self):
+        title = "Headphone Volume"
+        self.top_encoder_mode = TopEncoderMode.HEADPHONE_VOLUME
+        info = {"shortName": title, "symbol": "hvol", "ranges": {"minimum": -25.75, "maximum": 6}}
+        self.system_menu_parameter(title, "Master", info)
+
+    def system_menu_parameter(self, title, param_name, info):
+        val_str = 0
+        cmd = "amixer -c 0 -- sget %s" % param_name
+        output = subprocess.check_output(cmd, shell=True)
+        s = output.decode()
+        # TODO kinda lame screenscrape here for the last value eg. [0.58db] then strip off the []'s and db
+        res = s.rfind('[')
+        if res > 0:
+            val_str = s[res+1:-4]
+        value = float(val_str)
+        self.deep = self.Deep(None)
+        param = Parameter.Parameter(info, value, None)
+        self.deep.selected_parameter = param
+        self.lcd.draw_value_edit_graph(param, value)
+        self.lcd.draw_info_message(title)
+
+    def input_gain_commit(self):
+        cmd = "amixer -c 0 -q -- sset Capture Volume %ddb" % self.deep.selected_parameter.value
+        subprocess.check_output(cmd, shell=True)
+
+    def headphone_volume_commit(self):
+        cmd = "amixer -c 0 -q -- sset Master %ddb" % self.deep.selected_parameter.value
+        subprocess.check_output(cmd, shell=True)
+
 
     #
     # Parameter Edit
@@ -601,7 +646,7 @@ class Mod:
         self.deep.selected_parameter = param
         self.lcd.draw_value_edit(self.deep.plugin.instance_id, param, param.value)
 
-    def parameter_value_change(self, direction):
+    def parameter_value_change(self, direction, commit_callback):
         param = self.deep.selected_parameter
         value = float(param.value)
         # TODO tweak value won't change from call to call, cache it
@@ -614,7 +659,7 @@ class Mod:
         if new_value is value:
             return
         self.deep.selected_parameter.value = new_value  # TODO somewhat risky to change value before committed
-        self.parameter_value_commit()
+        commit_callback()
         self.lcd.draw_value_edit_graph(param, new_value)
 
     def parameter_value_commit(self):
