@@ -16,7 +16,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 # Install libraries required for build
-sudo apt install -y libcairo2-dev libx11-dev
+sudo apt install -y libcairo2-dev libx11-dev lv2-dev
 
 # Build and install into ~/.lv2
 pushd $(mktemp -d) && git clone https://github.com/brummer10/GxPlugins.lv2.git
