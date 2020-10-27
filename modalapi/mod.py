@@ -55,12 +55,13 @@ class BotEncoderMode(Enum):
 class Mod:
     __single = None
 
-    def __init__(self, lcd, homedir):
+    def __init__(self, audiocard, lcd, homedir):
         logging.info("Init mod")
         if Mod.__single:
             raise Mod.__single
         Mod.__single = self
 
+        self.audiocard = audiocard
         self.lcd = lcd
         self.homedir = homedir
         self.root_uri = "http://localhost:80/"
@@ -585,24 +586,16 @@ class Mod:
         title = "Input Gain"
         self.top_encoder_mode = TopEncoderMode.INPUT_GAIN
         info = {"shortName": title, "symbol": "igain", "ranges": {"minimum": -19.75, "maximum": 12}}
-        self.system_menu_parameter(title, "Capture Volume", info)
+        self.system_menu_parameter(title, self.audiocard.CAPTURE_VOLUME, info)
 
     def system_menu_headphone_volume(self):
         title = "Headphone Volume"
         self.top_encoder_mode = TopEncoderMode.HEADPHONE_VOLUME
         info = {"shortName": title, "symbol": "hvol", "ranges": {"minimum": -25.75, "maximum": 6}}
-        self.system_menu_parameter(title, "Master", info)
+        self.system_menu_parameter(title, self.audiocard.MASTER, info)
 
     def system_menu_parameter(self, title, param_name, info):
-        val_str = 0
-        cmd = "amixer -c 0 -- sget %s" % param_name
-        output = subprocess.check_output(cmd, shell=True)
-        s = output.decode()
-        # TODO kinda lame screenscrape here for the last value eg. [0.58db] then strip off the []'s and db
-        res = s.rfind('[')
-        if res > 0:
-            val_str = s[res+1:-4]
-        value = float(val_str)
+        value = self.audiocard.get_parameter(param_name)
         self.deep = self.Deep(None)
         param = Parameter.Parameter(info, value, None)
         self.deep.selected_parameter = param
@@ -610,12 +603,10 @@ class Mod:
         self.lcd.draw_info_message(title)
 
     def input_gain_commit(self):
-        cmd = "amixer -c 0 -q -- sset Capture Volume %ddb" % self.deep.selected_parameter.value
-        subprocess.check_output(cmd, shell=True)
+        self.audiocard.set_parameter(self.audiocard.CAPTURE_VOLUME, self.deep.selected_parameter.value)
 
     def headphone_volume_commit(self):
-        cmd = "amixer -c 0 -q -- sset Master %ddb" % self.deep.selected_parameter.value
-        subprocess.check_output(cmd, shell=True)
+        self.audiocard.set_parameter(self.audiocard.MASTER, self.deep.selected_parameter.value)
 
 
     #

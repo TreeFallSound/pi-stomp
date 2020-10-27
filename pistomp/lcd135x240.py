@@ -24,7 +24,7 @@ import adafruit_rgb_display.st7789 as st7789
 
 class Lcd(ABC):
 
-    def __init__(self):
+    def __init__(self, cwd):
         # Configuration for CS and DC pins (these are FeatherWing defaults on M0/M4):
         cs_pin = digitalio.DigitalInOut(board.CE0)
         dc_pin = digitalio.DigitalInOut(board.D1)

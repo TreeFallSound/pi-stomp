@@ -22,7 +22,7 @@ import adafruit_ssd1306
 
 class Lcd(ABC):
 
-    def __init__(self):
+    def __init__(self, cwd):
         # Create the I2C interface.
         i2c = busio.I2C(SCL, SDA)
 

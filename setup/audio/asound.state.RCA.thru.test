@@ -29,8 +29,8 @@ state.audioinjectorpi {
 	control.3 {
 		iface MIXER
 		name 'Capture Volume'
-		value.0 4666
-		value.1 4666
+		value.0 23
+		value.1 23
 		comment {
 			access 'read write'
 			type INTEGER

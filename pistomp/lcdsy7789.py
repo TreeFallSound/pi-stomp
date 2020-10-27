@@ -26,7 +26,7 @@ import ST7789
 
 class Lcd(ABC):
 
-    def __init__(self):
+    def __init__(self, cwd):
 
         # Create ST7789 LCD display class.
         self.disp = ST7789.ST7789(

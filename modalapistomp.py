@@ -26,6 +26,7 @@ from rtmidi.midiutil import open_midiinput
 from rtmidi.midiutil import open_midioutput
 
 import modalapi.mod as Mod
+import pistomp.audioinjector as Audiocard
 import pistomp.lcdgfx as Lcd
 #import pistomp.lcd128x32 as Lcd
 #import pistomp.lcd135x240 as Lcd
@@ -51,12 +52,12 @@ def main():
         print("Log level now set to: %s" % logging.getLevelName(log_level))
         logging.basicConfig(level=log_level)
 
-    # Reset Audio Card
-    try:
-        subprocess.run(['alsactl', '-f', '/usr/share/doc/audioInjector/asound.state.RCA.thru.test', 'restore'],
-                       check=True)
-    except subprocess.CalledProcessError:
-        logging.error("Failed trying to reset Audio Card")
+    # Current Working Dir
+    cwd = os.path.dirname(os.path.realpath(__file__))
+
+    # Audio Card Config - doing this early so audio passes ASAP
+    audiocard = Audiocard.Audiocard()
+    audiocard.restore()
 
     # MIDI initialization
     # Prompts user for MIDI input port, unless a valid port number or name
@@ -72,10 +73,10 @@ def main():
         sys.exit()
 
     # LCD
-    lcd = Lcd.Lcd()
+    lcd = Lcd.Lcd(cwd)
 
     # Create singleton data model object
-    mod = Mod.Mod(lcd, os.path.dirname(os.path.realpath(__file__)))
+    mod = Mod.Mod(audiocard, lcd, cwd)
 
     # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
     hw = Pistomp.Pistomp(mod, midiout, refresh_callback=mod.update_lcd_fs)

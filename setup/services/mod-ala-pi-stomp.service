@@ -4,8 +4,6 @@ After=modep-mod-ui.service
 Requires=modep-mod-ui.service
 
 [Service]
-Environment=HOME=/home/patch
-WorkingDirectory=/home/patch
 ExecStart=/usr/bin/python3 /home/patch/pi-stomp/modalapistomp.py
 Restart=always
 RestartSec=2

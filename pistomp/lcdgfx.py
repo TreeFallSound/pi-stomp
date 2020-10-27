@@ -15,6 +15,7 @@
 
 import common.token as Token
 import common.util as util
+import os
 import pistomp.lcd as abstract_lcd
 
 from gfxhat import touch, lcd, backlight, fonts
@@ -26,7 +27,7 @@ from pistomp.footswitch import Footswitch  # TODO would like to avoid this modul
 class Lcd(abstract_lcd.Lcd):
     __single = None
 
-    def __init__(self):
+    def __init__(self, cwd):
         if Lcd.__single:
             raise Lcd.__single
         Lcd.__single = self
@@ -86,7 +87,7 @@ class Lcd(abstract_lcd.Lcd):
         self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)
         self.small_bold_font = ImageFont.truetype("DejaVuSansMono-Bold.ttf", 8)
         #self.small_font = ImageFont.truetype("DejaVuSansMono.ttf", 8)
-        self.small_font = ImageFont.truetype("/home/patch/pi-stomp/fonts/EtBt6001-JO47.ttf", 6)
+        self.small_font = ImageFont.truetype(os.path.join(cwd, "fonts", "EtBt6001-JO47.ttf"), 6)
 
         # Splash
         text_im = Image.new('L', (103, 63))
