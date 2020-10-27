@@ -14,6 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
+import mmap
 import os
 import subprocess
 
@@ -22,22 +23,31 @@ class Audiocard:
 
     def __init__(self):
         self.card_index = 0
-        self.config_file = '/var/lib/alsa/asound.state'
+        self.config_file = '/var/lib/alsa/asound.state'  # global config used by alsamixer, etc.
         self.initial_config_file = None  # use this if common config_file loading fails
+        self.initial_config_name = None
         self.CAPTURE_VOLUME = 'Capture Volume'
         self.MASTER = 'Master'
 
     def restore(self):
-        # If the global config_file either doesn't exist or fails restore, read the initial_config_file
-        # This will be the case on first boot after install
+        # If the global config_file either doesn't exist, doesn't contain the name of our audiocard, or fails restore,
+        # read initial_config_file (our backup).  This will be the case on first boot after install.
+        # Subsequent boots will likely use the global config_file since initial_config_file settings will get
+        # appended if a 'alsactl store' operation occurs or the system has a clean shutdown
         conf_files = [self.config_file, self.initial_config_file]
-        for f in conf_files:
-            if os.access(f, os.R_OK) is True:
+        for fname in conf_files:
+            if os.access(fname, os.R_OK) is True:
                 try:
-                    subprocess.run(['/usr/sbin/alsactl', '-f', f, '--no-lock', 'restore'])
-                    break
-                except:  #subprocess.CalledProcessError:
-                    logging.error("Failed trying to restore audio card settings from: %s" % f)
+                    looking_for = bytes(("state.%s" % self.initial_config_name), 'utf-8')
+                    f = open(fname)
+                    with f as text:
+                        s = mmap.mmap(text.fileno(), 0, access=mmap.ACCESS_READ)
+                        if s.find(looking_for) != -1:
+                            subprocess.run(['/usr/sbin/alsactl', '-f', fname, '--no-lock', 'restore'])
+                            break
+                    f.close()
+                except:
+                    logging.error("Failed trying to restore audio card settings from: %s" % fname)
 
     def store(self):
         # This will fail when the top level program is not run as root

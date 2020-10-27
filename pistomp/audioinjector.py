@@ -21,4 +21,5 @@ class Audiocard(audiocard.Audiocard):
     def __init__(self):
         super(Audiocard, self).__init__()
         self.initial_config_file = '/usr/share/doc/audioInjector/asound.state.RCA.thru.test'
+        self.initial_config_name = 'audioinjectorpi'
         self.card_index = 0
