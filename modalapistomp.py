@@ -27,8 +27,8 @@ from rtmidi.midiutil import open_midioutput
 
 import modalapi.mod as Mod
 import pistomp.audioinjector as Audiocard
-import pistomp.lcdgfx as Lcd
-#import pistomp.lcd128x32 as Lcd
+#import pistomp.lcdgfx as Lcd
+import pistomp.lcd128x64 as Lcd
 #import pistomp.lcd135x240 as Lcd
 #import pistomp.lcdsy7789 as Lcd
 #import pistomp.lcdili9341 as Lcd # Color
