@@ -24,6 +24,7 @@ import adafruit_ssd1306
 
 i2c = busio.I2C(SCL, SDA)
 lcd = adafruit_ssd1306.SSD1306_I2C(128, 64, i2c)
+lcd.rotation = 2
 
 from pistomp.footswitch import Footswitch
 
