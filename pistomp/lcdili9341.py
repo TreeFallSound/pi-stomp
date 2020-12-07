@@ -13,18 +13,22 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from abc import ABC, abstractmethod
-
 import board
-import busio
 import digitalio
 from PIL import Image, ImageDraw, ImageFont
 import adafruit_rgb_display.ili9341 as ili9341
+import pistomp.lcdcolor as lcdcolor
+
+# The code in this file should generally be specific to initializing a specific display and rendering (and refreshing)
+# Most draw methods should be implemented in the parent class unless that needs to be overriden for this display
+# All __init__ parameters from the lcdbase.py should be specified in this __init__
 
 
-class Lcd(ABC):
+class Lcd(lcdcolor.Lcdcolor):
 
     def __init__(self, cwd):
+        super(Lcd, self).__init__(cwd)
+
         # Configuration for CS and DC pins (these are FeatherWing defaults on M0/M4):
         cs_pin = digitalio.DigitalInOut(board.CE0)
         dc_pin = digitalio.DigitalInOut(board.D6)
@@ -47,35 +51,88 @@ class Lcd(ABC):
             height=320
         )
 
-        # Create blank image for drawing.
-        # Make sure to create image with mode '1' for 1-bit color.
-        self.width = self.disp.width - 1
-        self.height = self.disp.height - 1
+        # Fonts
+        self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 26)
+        self.splash_font = ImageFont.truetype('DejaVuSans.ttf', 40)
+        self.small_font = ImageFont.truetype("DejaVuSans.ttf", 18)
+        #self.small_font = ImageFont.truetype(os.path.join(cwd, "fonts", "EtBt6001-JO47.ttf"), 11)
 
-        padding = 0
-        self.top = padding
-        self.bottom = self.height - padding
-        self.image = Image.new("RGB", (self.height, self.width))
+        # Colors
+        self.background = (0, 0, 0)
+        self.foreground = (255, 255, 255)
+        self.highlight = (255, 0, 0)
+        self.color_plugin = (100, 100, 240)
+        self.color_plugin_bypassed = (80, 80, 80)
 
-        # Get drawing object to draw on image.
-        self.draw = ImageDraw.Draw(self.image)
+        # Width and height exchanged for 90 degree rotation during render/refresh
+        self.width = self.disp.height
+        self.height = self.disp.width
+        self.top = 0
+        self.left = 2
 
-        # Draw a black filled box to clear the image.
-        #self.draw.rectangle((0, 0, self.height, self.width), outline=0, fill=0)
+        # Zone dimensions
+        self.zones = 8
+        self.zone_height = {0: 38,
+                            1: 30,
+                            2: 2,
+                            3: 30,
+                            4: 2,
+                            5: 30,
+                            6: 48,
+                            7: 60}
 
-        # Font
-        self.font_size = 30
-        self.font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', self.font_size)
-        self.splash_font_size = 40
-        self.splash_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', self.splash_font_size)
+        self.footswitch_xy = {0: (0, 0, (255, 255, 255)),
+                              1: (120, 0, (0, 255, 0)),
+                              2: (240, 0, (0, 0, 255))}
 
-        # Splash
-        self.splash_show()
+        # Element dimensions
+        self.plugin_height = 22
+        self.plugin_width = 56
+        self.plugin_width_medium = 70
+        self.plugin_rect_x_pad = 5
+        self.plugin_bypass_thickness = 2
+        self.plugin_label_length = 7
+        self.footswitch_width = 70
+        self.footswitch_ring_width = 5
 
-    def refresh(self):
-        self.disp.image(self.image, 90)
+        self.images = [Image.new('RGB', (self.width, self.zone_height[0])),  # Pedalboard / Preset Title bar
+                       Image.new('RGB', (self.width, self.zone_height[1])),  # Analog Controllers
+                       Image.new('RGB', (self.width, self.zone_height[2])),  # Plugin selection
+                       Image.new('RGB', (self.width, self.zone_height[3])),  # Plugins Row 1
+                       Image.new('RGB', (self.width, self.zone_height[4])),  # Plugin selection
+                       Image.new('RGB', (self.width, self.zone_height[5])),  # Plugins Row 2
+                       Image.new('RGB', (self.width, self.zone_height[6])),  # Plugin selection
+                       Image.new('RGB', (self.width, self.zone_height[7]))]  # Footswitch Plugins
+
+        self.draw = [ImageDraw.Draw(self.images[0]), ImageDraw.Draw(self.images[1]),
+                     ImageDraw.Draw(self.images[2]), ImageDraw.Draw(self.images[3]),
+                     ImageDraw.Draw(self.images[4]), ImageDraw.Draw(self.images[5]),
+                     ImageDraw.Draw(self.images[6]), ImageDraw.Draw(self.images[7])]
+
+        self.check_vars_set()
+
+    def refresh_plugins(self):
+        # TODO could be smarter here and only refresh the affected zone
+        self.refresh_zone(2)
+        self.refresh_zone(4)
+        self.refresh_zone(6)
+        self.refresh_zone(7)
+        self.refresh_zone(5)
+        self.refresh_zone(3)
+
+    def refresh_zone(self, zone_idx):
+        # Determine the start y position by adding the height of all previous zones
+        # TODO this shouldn't be calculated each time
+        y_offset = 0
+        for i in range(zone_idx):
+            y_offset += self.zone_height[i]
+        self.disp.image(self.images[zone_idx], 90, x=y_offset, y=0)
+
+    def set_pixel(self, x, y, value):
+        pass
 
     def splash_show(self):
+        return
         self.clear()
         self.draw.text((0, self.top + 30), "pi Stomp!", font=self.splash_font, fill=(255, 255, 255))
         self.refresh()
@@ -84,56 +141,4 @@ class Lcd(ABC):
         self.clear()
 
     def clear(self):
-        self.draw.rectangle((0, 0, self.height, self.width), outline=0, fill=(255, 255, 255))
-        self.disp.image(self.image, 90)
-
-    # Menu Screens (uses deep_edit image and draw objects)
-    def menu_show(self, page_title, menu_items):
-        pass
-
-    def menu_highlight(self, index):
-        pass
-
-    # Parameter Value Edit
-    def draw_value_edit(self, plugin_name, parameter, value):
-        pass
-
-    def draw_value_edit_graph(self, parameter, value):
-        pass
-
-    def draw_title(self, pedalboard, preset, invert_pb, invert_pre):
-        x = 0
-        self.clear()
-        self.draw.text((x, self.top), pedalboard, font=self.font, fill=255)
-        if preset != None:
-            self.draw.text((x, self.top + self.font_size), preset, font=self.font, fill=255)
-
-        x = 5
-        y = 70
-        square = 30
-        pitch = 10
-        self.draw.rectangle((x, y, x + square, y + square), outline=0, fill=(200, 0, 0))
-        x = x + square + pitch
-        self.draw.rectangle((x, y, x + square, y + square), outline=(0, 200, 0), fill=(255, 255, 255))
-        x = x + square + pitch
-        self.draw.rectangle((x, y, x + square, y + square), outline=1, fill=(0, 0, 200))
-
-
-        self.refresh()
-
-    # Analog Assignments (Tweak, Expression Pedal, etc.)
-    def draw_analog_assignments(self, controllers):
-        pass
-
-    def draw_info_message(self, text):
-        pass
-
-    # Plugins
-    def draw_plugin_select(self, plugin=None):
-        pass
-
-    def draw_bound_plugins(self, plugins, footswitches):
-        pass
-
-    def draw_plugins(self, plugins):
-        pass
+        self.disp.fill(0)
