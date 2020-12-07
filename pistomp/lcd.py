@@ -27,10 +27,6 @@ class Lcd(ABC):
         pass
 
     @abstractmethod
-    def set_pixel(self, x, y, value):
-        pass
-
-    @abstractmethod
     def clear(self):
         pass
 

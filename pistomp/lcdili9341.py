@@ -128,9 +128,6 @@ class Lcd(lcdcolor.Lcdcolor):
             y_offset += self.zone_height[i]
         self.disp.image(self.images[zone_idx], 90, x=y_offset, y=0)
 
-    def set_pixel(self, x, y, value):
-        pass
-
     def splash_show(self):
         return
         self.clear()
