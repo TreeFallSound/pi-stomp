@@ -54,7 +54,7 @@ RELAY_SET_PIN = 12
 # 3: the associated LED output pin and
 # 4: the MIDI Control (CC) message that will be sent when the switch is toggled
 # Pin modifications should only be made if the hardware is changed accordingly
-FOOTSW = ((0, 23, 24, 61), (1, 25, 0, 62), (2, 13, 26, 63))
+FOOTSW = [(0, 23, 24, 61), (1, 25, 0, 62), (2, 13, 26, 63)]
 
 # TODO replace in default_config.yml
 # Analog Controls defined by a triple touple:
@@ -63,7 +63,7 @@ FOOTSW = ((0, 23, 24, 61), (1, 25, 0, 62), (2, 13, 26, 63))
 # 3: the MIDI Control (CC) message that will be sent
 # 4: control type (KNOB, EXPRESSION, etc.)
 # Tweak, Expression Pedal
-ANALOG_CONTROL = ((0, 16, 64, 'KNOB'), (1, 16, 65, 'EXPRESSION'))
+ANALOG_CONTROL = [(0, 16, 64, 'KNOB'), (1, 16, 65, 'EXPRESSION')]
 
 class Pistomp(hardware.Hardware):
     __single = None
