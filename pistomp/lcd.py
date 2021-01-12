@@ -27,10 +27,6 @@ class Lcd(ABC):
         pass
 
     @abstractmethod
-    def cleanup(self):
-        pass
-
-    @abstractmethod
     def clear(self):
         pass
 
@@ -80,4 +76,16 @@ class Lcd(ABC):
 
     @abstractmethod
     def draw_plugins(self, plugins):
+        pass
+
+    @abstractmethod
+    def refresh_plugins(self):
+        pass
+
+    @abstractmethod
+    def refresh_zone(self, zone_idx):
+        pass
+
+    @abstractmethod
+    def shorten_name(self):
         pass
