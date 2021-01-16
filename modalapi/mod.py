@@ -30,6 +30,7 @@ import modalapi.parameter as Parameter
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.footswitch import Footswitch
+from pistomp.handler import Handler
 from enum import Enum
 from pathlib import Path
 
@@ -52,7 +53,7 @@ class BotEncoderMode(Enum):
     VALUE_EDIT = 2
 
 
-class Mod:
+class Mod(Handler):
     __single = None
 
     def __init__(self, audiocard, lcd, homedir):

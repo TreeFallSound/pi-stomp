@@ -27,6 +27,7 @@ from rtmidi.midiutil import open_midioutput
 
 import modalapi.mod as Mod
 import pistomp.audioinjector as Audiocard
+import pistomp.handler as Handler
 import pistomp.lcdgfx as Lcd
 #import pistomp.lcd128x64 as Lcd
 #import pistomp.lcd135x240 as Lcd
@@ -38,15 +39,21 @@ import pistomp.pistomp as Pistomp
 def main():
     sys.settrace
 
+    lcd = None
+
     # Command line parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("-l", "--log", nargs='+', help="Provide logging level. Example --log debug'", default="info",
+    parser.add_argument("--log", "-l", nargs='+', help="Provide logging level. Example --log debug'", default="info",
                         choices=['debug', 'info', 'warning', 'error', 'critical'])
+    parser.add_argument("--host", nargs='+', help="Plugin host to use. Example --host mod'", default=['mod'],
+                        choices=['mod', 'generic'])
+
+    args = parser.parse_args()
 
     # Handle Log Level
     level_config = {'debug': logging.DEBUG, 'info': logging.INFO, 'warning': logging.WARNING, 'error': logging.ERROR,
                     'critical': logging.CRITICAL}
-    log = parser.parse_args().log[0]
+    log = args.log[0]
     log_level = level_config[log] if log in level_config else None
     if log_level:
         print("Log level now set to: %s" % logging.getLevelName(log_level))
@@ -72,28 +79,37 @@ def main():
     except (EOFError, KeyboardInterrupt):
         sys.exit()
 
-    # LCD
-    lcd = Lcd.Lcd(cwd)
+    if args.host[0] == 'mod':
 
-    # Create singleton data model object
-    mod = Mod.Mod(audiocard, lcd, cwd)
+        # LCD
+        lcd = Lcd.Lcd(cwd)
 
-    # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
-    hw = Pistomp.Pistomp(mod, midiout, refresh_callback=mod.update_lcd_fs)
-    mod.add_hardware(hw)
+        # Create a mod handler for interacting with the MOD host/ui
+        mod = Mod.Mod(audiocard, lcd, cwd)
 
-    # Load all pedalboard info from the lilv ttl file
-    mod.load_pedalboards()
+        # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
+        hw = Pistomp.Pistomp(mod, midiout, refresh_callback=mod.update_lcd_fs)
+        mod.add_hardware(hw)
 
-    # Load the current pedalboard as "current"
-    current_pedal_board_bundle = mod.get_current_pedalboard_bundle_path()
-    if not current_pedal_board_bundle:
-        # Apparently, no pedalboard is currently loaded so just load the first one
-        current_pedal_board_bundle = list(mod.pedalboards.keys())[0]
-    mod.set_current_pedalboard(mod.pedalboards[current_pedal_board_bundle])
+        # Load all pedalboard info from the lilv ttl file
+        mod.load_pedalboards()
 
-    # Load system info.  This can take a few seconds
-    mod.system_info_load()
+        # Load the current pedalboard as "current"
+        current_pedal_board_bundle = mod.get_current_pedalboard_bundle_path()
+        if not current_pedal_board_bundle:
+            # Apparently, no pedalboard is currently loaded so just load the first one
+            current_pedal_board_bundle = list(mod.pedalboards.keys())[0]
+        mod.set_current_pedalboard(mod.pedalboards[current_pedal_board_bundle])
+
+        # Load system info.  This can take a few seconds
+        mod.system_info_load()
+
+    if args.host[0] == 'generic':
+        # No specific plugin host specified, so use a generic handler
+        # Encoders and LCD not mapped without specific purpose
+        # Just initialize the control hardware (footswitches, analog controls, etc.) for use as MIDI controls
+        handler = Handler.Handler()
+        hw = Pistomp.Pistomp(handler, midiout, refresh_callback=handler.noop)
 
     logging.info("Entering main loop. Press Control-C to exit.")
     #period = 0
@@ -112,7 +128,8 @@ def main():
     finally:
         logging.info("Exit.")
         midiout.close_port()
-        lcd.cleanup()
+        if lcd is not None:
+            lcd.cleanup()
         GPIO.cleanup()  # TODO Should do this.  Possibly mod resets becuase of bus changes?
         logging.info("Completed cleanup")
 
