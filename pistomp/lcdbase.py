@@ -43,6 +43,8 @@ class Lcdbase(abstract_lcd.Lcd):
         self.top = None
         self.left = None
         self.zone_height = None
+        self.zone_y = None
+        self.flip = False
         self.footswitch_xy = None
         self.footswitch_width = None
         self.plugin_height = None
@@ -73,6 +75,21 @@ class Lcdbase(abstract_lcd.Lcd):
             if getattr(self, v) is None:
                 if v not in known_exceptions:
                     logging.error("%s class doesn't set variable: %s" % (self, v))
+
+    # Convert zone height values to absolute y values considering the flip setting
+    def calc_zone_y(self):
+        y_offset = 0 if not self.flip else self.height
+        for i in range(self.zones):
+            if self.flip:
+                y_offset -= (self.zone_height[i])
+                if y_offset < 0:
+                    break
+            else:
+                if i != 0:
+                    y_offset += (self.zone_height[i-1])
+                    if y_offset > self.height:
+                        break
+            self.zone_y[i] = y_offset
 
     def splash_show(self):
         pass

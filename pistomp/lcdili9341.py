@@ -18,6 +18,7 @@ import digitalio
 from PIL import Image, ImageDraw, ImageFont
 import adafruit_rgb_display.ili9341 as ili9341
 import pistomp.lcdcolor as lcdcolor
+import time
 
 # The code in this file should generally be specific to initializing a specific display and rendering (and refreshing)
 # Most draw methods should be implemented in the parent class unless that needs to be overriden for this display
@@ -29,27 +30,19 @@ class Lcd(lcdcolor.Lcdcolor):
     def __init__(self, cwd):
         super(Lcd, self).__init__(cwd)
 
-        # Configuration for CS and DC pins (these are FeatherWing defaults on M0/M4):
-        cs_pin = digitalio.DigitalInOut(board.CE0)
-        dc_pin = digitalio.DigitalInOut(board.D6)
-        reset_pin = digitalio.DigitalInOut(board.D5)
+        # Pin Configuration
+        self.cs_pin = digitalio.DigitalInOut(board.CE0)
+        self.dc_pin = digitalio.DigitalInOut(board.D6)
+        self.reset_pin = digitalio.DigitalInOut(board.D5)
 
-        # Config for display baudrate (default max is 24mhz):
-        BAUDRATE = 64000000
+        # Config for display baudrate (default max is 24mhz)
+        # Should agree with the SPI rate used in hardware.py for the ADC
+        self.baudrate = 24000000
 
-        # Setup SPI bus using hardware SPI:
-        spi = board.SPI()
-
-        # Create the ST7789 display:
-        self.disp = ili9341.ILI9341(
-            spi,
-            cs=cs_pin,
-            dc=dc_pin,
-            rst=reset_pin,
-            baudrate=BAUDRATE,
-            width=240,
-            height=320
-        )
+        # Init SPI and display
+        self.spi = None
+        self.disp = None
+        self.init_spi_display()
 
         # Fonts
         self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 26)
@@ -60,7 +53,7 @@ class Lcd(lcdcolor.Lcdcolor):
         # Colors
         self.background = (0, 0, 0)
         self.foreground = (255, 255, 255)
-        self.highlight = (255, 0, 0)
+        self.highlight = (255, 255, 0)
         self.color_plugin = (100, 100, 240)
         self.color_plugin_bypassed = (80, 80, 80)
 
@@ -73,13 +66,16 @@ class Lcd(lcdcolor.Lcdcolor):
         # Zone dimensions
         self.zones = 8
         self.zone_height = {0: 38,
-                            1: 30,
-                            2: 2,
-                            3: 30,
-                            4: 2,
+                            1: 32,
+                            2: 0,
+                            3: 32,
+                            4: 0,
                             5: 30,
-                            6: 48,
-                            7: 60}
+                            6: 50,
+                            7: 58}
+        self.zone_y = {}
+        self.flip = True  # Flip the LCD vertically
+        self.calc_zone_y()
 
         self.footswitch_xy = {0: (0, 0, (255, 255, 255)),
                               1: (120, 0, (0, 255, 0)),
@@ -110,23 +106,49 @@ class Lcd(lcdcolor.Lcdcolor):
                      ImageDraw.Draw(self.images[6]), ImageDraw.Draw(self.images[7])]
 
         self.check_vars_set()
+        self.lock = False
+
+    def init_spi_display(self):
+        self.spi = board.SPI()
+        spi = self.spi
+        cs = self.cs_pin
+        dc = self.dc_pin
+        rst = self.reset_pin
+        baud = self.baudrate
+
+        self.disp = ili9341.ILI9341(
+            spi,
+            cs=cs,
+            dc=dc,
+            rst=rst,
+            baudrate=baud
+        )
 
     def refresh_plugins(self):
         # TODO could be smarter here and only refresh the affected zone
-        self.refresh_zone(2)
-        self.refresh_zone(4)
-        self.refresh_zone(6)
-        self.refresh_zone(7)
-        self.refresh_zone(5)
         self.refresh_zone(3)
+        self.refresh_zone(5)
+        #self.refresh_zone(7)
+
+    def wait_lock(self, period, max):
+        # wait for max number of periods (in seconds)
+        count = 0
+        while self.lock and count < max:
+            time.sleep(period)
 
     def refresh_zone(self, zone_idx):
+        # ONLY THIS METHOD SHOULD BE USED TO PRINT AN IMAGE TO THE DISPLAY
+
+        # Wait if a lock is present (to avoid multiple async refreshes accessing the SPI simultaneously
+        # If the LCD clears out during certain events, might need to increase the max wait
+        self.wait_lock(0.005, 10)
+        self.lock = True
+
         # Determine the start y position by adding the height of all previous zones
-        # TODO this shouldn't be calculated each time
-        y_offset = 0
-        for i in range(zone_idx):
-            y_offset += self.zone_height[i]
-        self.disp.image(self.images[zone_idx], 90, x=y_offset, y=0)
+        self.disp.image(self.images[zone_idx], 270 if self.flip else 90, x=self.zone_y[zone_idx], y=0)
+
+        # unlock so the next refresh can happen
+        self.lock = False
 
     def splash_show(self):
         return
