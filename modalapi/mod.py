@@ -66,6 +66,7 @@ class SelectedType(Enum):
     PEDALBOARD = 0
     PRESET = 1
     PLUGIN = 2
+    CONTROLLER = 3
 
 class Mod:
     __single = None
@@ -83,6 +84,8 @@ class Mod:
 
         self.pedalboards = {}
         self.pedalboard_list = []  # TODO LAME to have two lists
+        self.selectable_items = []  # List of 2 item tuple (SelectedType, type_specific_index)
+        self.selectable_index = 0
         self.selected_pedalboard_index = 0
         self.selected_preset_index = 0
         self.selected_plugin_index = 0
@@ -136,6 +139,10 @@ class Mod:
     def add_lcd(self, lcd):
         self.lcd = lcd
 
+
+    #
+    # Dual Encoder State Machine (used for pi-Stomp v1)
+    #
     # Assumption that the top encoder actions can be executed regardless of bottom encoder mode
     # Bottom encoder actions should be ignored while the system menu is active to avoid corrupting the LCD
 
@@ -226,7 +233,7 @@ class Mod:
             self.parameter_value_change(direction, self.parameter_value_commit)
 
     #
-    # Universal (single encoder navigation for pi-Stomp Core)
+    # Universal Encoder State Machine (single encoder navigation for pi-Stomp Core)
     #
 
     def universal_encoder_sw(self, value):
@@ -269,34 +276,25 @@ class Mod:
 
     def universal_select(self, direction):
         if self.current.pedalboard is not None:
-            pb = self.current.pedalboard
-            num = len(pb.plugins)
-            index = ((self.selected_plugin_index + 1) if (direction is 1)
-                    else (self.selected_plugin_index - 1)) % (num + 2)  # TODO LAME can't assume 2 for PB w/ no Pre's
-            self.selected_plugin_index = index
-
-            if index == num:   # TODO Use selected_type() here
-                self.lcd.draw_plugin_select(None)
+            index = ((self.selectable_index + 1) if (direction is 1)
+                     else (self.selectable_index - 1)) % len(self.selectable_items)
+            self.selectable_index = index
+            item_type = self.selectable_items[index][0]
+            if item_type == SelectedType.PEDALBOARD:
+                self.lcd.draw_plugin_select(None)  # clear previous selection
                 self.pedalboard_select(0)
-            elif index == (num + 1):
-                self.lcd.draw_plugin_select(None)
+            elif item_type == SelectedType.PRESET:
+                self.lcd.draw_plugin_select(None)  # clear previous selection
                 self.preset_select(0)
-            else:
-                if index == 0 or index == (num - 1):
-                    preset_name = None if len(self.current.presets) == 0 else \
-                        self.current.presets[self.selected_preset_index]
-                    self.lcd.draw_title(pb.title, preset_name, False, False)
-                if index < len(pb.plugins):
-                    plugin = pb.plugins[index]
-                    self.lcd.draw_plugin_select(plugin)
+            elif item_type == SelectedType.PLUGIN:
+                self.update_lcd_title()  # clear previous selection
+                plugin_index = self.selectable_items[index][1]
+                self.selected_plugin_index = plugin_index
+                plugin = self.current.pedalboard.plugins[plugin_index]
+                self.lcd.draw_plugin_select(plugin)
 
     def selected_type(self):
-        plugin_count = len(self.current.pedalboard.plugins)
-        if self.selected_plugin_index == plugin_count:
-            return SelectedType.PEDALBOARD
-        if self.selected_plugin_index == (plugin_count + 1):
-            return SelectedType.PRESET
-        return SelectedType.PLUGIN
+        return self.selectable_items[self.selectable_index][0]
 
     #
     # Pedalboard Stuff
@@ -361,6 +359,16 @@ class Mod:
         self.bind_current_pedalboard()
         self.load_current_presets()
         self.update_lcd()
+
+        # Selection info
+        self.selectable_items.clear()
+        self.selectable_items.append((SelectedType.PEDALBOARD, None))
+        if len(self.current.presets) > 0:
+            self.selectable_items.append((SelectedType.PRESET, None))
+        for i in range(len(self.current.pedalboard.plugins)):
+            self.selectable_items.append((SelectedType.PLUGIN, i))
+        self.selectable_index = 0
+        self.selected_preset_index = 0
 
     def bind_current_pedalboard(self):
         # "current" being the pedalboard mod-host says is current
