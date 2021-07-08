@@ -15,6 +15,38 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+
+#
+# Usage and options
+#
+usage() { echo "Usage: $(basename $0) [-v <hardware_version>]" 1>&2; exit 1; }
+
+while getopts ':v:' o; do
+    case "${o}" in
+        v)
+            hardware_version=${OPTARG}
+            ;;
+        *)
+            usage
+            ;;
+    esac
+done
+
+#
+# Hardware specific
+#
+if [ -z ${hardware_version+x} ]; then
+    printf "\nUsing default hardware configuration\n";
+else
+    printf "\n===== pi-Stomp mods for hardware version specified =====\n"
+    ${HOME}/pi-stomp/setup/pi-stomp-tweaks/modify_version.sh ${hardware_version}
+
+    if awk "BEGIN {exit !($hardware_version < 2.0)}"; then
+        printf "\n===== GFX HAT LCD support install =====\n"
+        setup/pkgs/gfxhat_install.sh
+    fi
+fi
+
 printf "\n===== Audio card setup =====\n"
 setup/audio/audioinjector-setup.sh
 
@@ -26,7 +58,6 @@ setup/mod-tweaks/mod-tweaks.sh
 
 printf "\n===== Install pi-stomp package dependencies =====\n"
 setup/pkgs/simple_install.sh
-setup/pkgs/gfxhat_install.sh
 setup/pkgs/lilv_install.sh
 setup/pkgs/mod-ttymidi_install.sh
 
