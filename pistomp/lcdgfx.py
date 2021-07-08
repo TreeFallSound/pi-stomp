@@ -249,7 +249,7 @@ class Lcd(abstract_lcd.Lcd):
         self.refresh_menu()
 
     # Zone 0 - Pedalboard and Preset
-    def draw_title(self, pedalboard, preset, invert_pb, invert_pre):
+    def draw_title(self, pedalboard, preset, invert_pb, invert_pre, highlight_only=False):
         self.erase_zone(0)
 
         #pedalboard = pedalboard.lower().capitalize()

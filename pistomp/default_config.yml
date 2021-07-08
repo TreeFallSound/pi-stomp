@@ -6,6 +6,7 @@
 
 ---
 hardware:
+  version: 2.0
   midi:
     channel: 14
   footswitches:

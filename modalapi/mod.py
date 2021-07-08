@@ -25,6 +25,7 @@ import yaml
 import common.token as Token
 import common.util as util
 import pistomp.analogswitch as AnalogSwitch
+import pistomp.encoderswitch as EncoderSwitch
 import modalapi.pedalboard as Pedalboard
 import modalapi.parameter as Parameter
 
@@ -51,18 +52,32 @@ class BotEncoderMode(Enum):
     DEEP_EDIT = 1
     VALUE_EDIT = 2
 
+class UniversalEncoderMode(Enum):
+    DEFAULT = 0
+    SCROLL = 1
+    PRESET_SELECT = 2
+    PEDALBOARD_SELECT = 4
+    PLUGIN_SELECT = 6
+    SYSTEM_MENU = 7
+    HEADPHONE_VOLUME = 8
+    INPUT_GAIN = 9
+
+class SelectedType(Enum):
+    PEDALBOARD = 0
+    PRESET = 1
+    PLUGIN = 2
 
 class Mod:
     __single = None
 
-    def __init__(self, audiocard, lcd, homedir):
+    def __init__(self, audiocard, homedir):
         logging.info("Init mod")
         if Mod.__single:
             raise Mod.__single
         Mod.__single = self
 
         self.audiocard = audiocard
-        self.lcd = lcd
+        self.lcd = None
         self.homedir = homedir
         self.root_uri = "http://localhost:80/"
 
@@ -80,6 +95,7 @@ class Mod:
 
         self.top_encoder_mode = TopEncoderMode.DEFAULT
         self.bot_encoder_mode = BotEncoderMode.DEFAULT
+        self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
 
         self.wifi_status = {}
         self.software_version = None
@@ -116,6 +132,9 @@ class Mod:
 
     def add_hardware(self, hardware):
         self.hardware = hardware
+
+    def add_lcd(self, lcd):
+        self.lcd = lcd
 
     # Assumption that the top encoder actions can be executed regardless of bottom encoder mode
     # Bottom encoder actions should be ignored while the system menu is active to avoid corrupting the LCD
@@ -205,6 +224,79 @@ class Mod:
             self.menu_select(direction)
         elif mode == BotEncoderMode.VALUE_EDIT:
             self.parameter_value_change(direction, self.parameter_value_commit)
+
+    #
+    # Universal (single encoder navigation for pi-Stomp Core)
+    #
+
+    def universal_encoder_sw(self, value):
+        # State machine for universal rotary encoder
+        mode = self.universal_encoder_mode
+        if value == EncoderSwitch.Value.RELEASED:
+            if mode == UniversalEncoderMode.DEFAULT:
+                self.universal_encoder_mode = UniversalEncoderMode.SCROLL
+            elif mode == UniversalEncoderMode.SCROLL:
+                if self.selected_type() == SelectedType.PLUGIN:
+                    self.toggle_plugin_bypass()
+                if self.selected_type() == SelectedType.PEDALBOARD:
+                    self.universal_encoder_mode = UniversalEncoderMode.PEDALBOARD_SELECT
+                    self.update_lcd_title()
+                if self.selected_type() == SelectedType.PRESET:
+                    self.universal_encoder_mode = UniversalEncoderMode.PRESET_SELECT
+                    self.update_lcd_title()
+            elif mode == UniversalEncoderMode.PEDALBOARD_SELECT:
+                self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
+                self.pedalboard_change()
+            elif mode == UniversalEncoderMode.PRESET_SELECT:
+                self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
+                self.preset_change()
+                self.update_lcd_title()
+
+        elif value == EncoderSwitch.Value.LONGPRESSED:
+            self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
+            self.update_lcd_title()
+
+    def universal_encoder_select(self, direction):
+        # State machine for universal encoder switch
+        mode = self.universal_encoder_mode
+        if mode == UniversalEncoderMode.DEFAULT or mode == UniversalEncoderMode.SCROLL:
+            self.universal_encoder_mode = UniversalEncoderMode.SCROLL
+            self.universal_select(direction)
+        elif mode == UniversalEncoderMode.PEDALBOARD_SELECT:
+            self.pedalboard_select(direction)
+        elif mode == UniversalEncoderMode.PRESET_SELECT:
+            self.preset_select(direction)
+
+    def universal_select(self, direction):
+        if self.current.pedalboard is not None:
+            pb = self.current.pedalboard
+            num = len(pb.plugins)
+            index = ((self.selected_plugin_index + 1) if (direction is 1)
+                    else (self.selected_plugin_index - 1)) % (num + 2)  # TODO LAME can't assume 2 for PB w/ no Pre's
+            self.selected_plugin_index = index
+
+            if index == num:   # TODO Use selected_type() here
+                self.lcd.draw_plugin_select(None)
+                self.pedalboard_select(0)
+            elif index == (num + 1):
+                self.lcd.draw_plugin_select(None)
+                self.preset_select(0)
+            else:
+                if index == 0 or index == (num - 1):
+                    preset_name = None if len(self.current.presets) == 0 else \
+                        self.current.presets[self.selected_preset_index]
+                    self.lcd.draw_title(pb.title, preset_name, False, False)
+                if index < len(pb.plugins):
+                    plugin = pb.plugins[index]
+                    self.lcd.draw_plugin_select(plugin)
+
+    def selected_type(self):
+        plugin_count = len(self.current.pedalboard.plugins)
+        if self.selected_plugin_index == plugin_count:
+            return SelectedType.PEDALBOARD
+        if self.selected_plugin_index == (plugin_count + 1):
+            return SelectedType.PRESET
+        return SelectedType.PLUGIN
 
     #
     # Pedalboard Stuff
@@ -302,10 +394,15 @@ class Mod:
             self.current.pedalboard.plugins += footswitch_plugins
 
     def pedalboard_select(self, direction):
+        # 0 means the pedalboard field is selected but a new pedalboard hasn't been scrolled to yet
+        if direction == 0:
+            self.lcd.draw_title(self.current.pedalboard.title, None, True, False)
+            return
         cur_idx = self.selected_pedalboard_index
         next_idx = ((cur_idx - 1) if (direction is 1) else (cur_idx + 1)) % len(self.pedalboard_list)
         if self.pedalboard_list[next_idx].bundle in self.pedalboards:
-            self.lcd.draw_title(self.pedalboard_list[next_idx].title, None, True, False)
+            highlight_only = self.universal_encoder_mode == UniversalEncoderMode.PEDALBOARD_SELECT
+            self.lcd.draw_title(self.pedalboard_list[next_idx].title, None, True, False, highlight_only)
             self.selected_pedalboard_index = next_idx
 
     def pedalboard_change(self):
@@ -364,11 +461,16 @@ class Mod:
             return max(indices)
 
     def preset_select(self, direction):
-        index = self.next_preset_index(self.current.presets, self.selected_preset_index, direction is 1)
+        index = self.selected_preset_index
+        # 0 means the preset field is selected but a new preset hasn't been scrolled to yet
+        if direction != 0:
+            index = self.next_preset_index(self.current.presets, self.selected_preset_index, direction is 1)
         if index < 0:
             return
         self.selected_preset_index = index
-        self.lcd.draw_title(self.current.pedalboard.title, self.current.presets[index], False, True)
+        preset_name = None if len(self.current.presets) == 0 else self.current.presets[index]
+        highlight_only = self.universal_encoder_mode == UniversalEncoderMode.PRESET_SELECT
+        self.lcd.draw_title(self.current.pedalboard.title, preset_name, False, True, highlight_only)
 
     def preset_change(self):
         index = self.selected_preset_index
@@ -404,9 +506,9 @@ class Mod:
             except:
                 logging.error("failed to get bypass value for: %s" % p.instance_id)
                 continue
-        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
-        self.lcd.draw_plugins(self.current.pedalboard.plugins)
         self.lcd.draw_analog_assignments(self.current.analog_controllers)
+        self.lcd.draw_plugins(self.current.pedalboard.plugins)
+        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
         self.lcd.draw_plugin_select()
 
     #
@@ -416,13 +518,13 @@ class Mod:
     def get_selected_instance(self):
         if self.current.pedalboard is not None:
             pb = self.current.pedalboard
-            inst = pb.plugins[self.selected_plugin_index]
-            if inst is not None:
-                return inst
+            if self.selected_plugin_index < len(pb.plugins):
+                inst = pb.plugins[self.selected_plugin_index]
+                if inst is not None:
+                    return inst
         return None
 
     def plugin_select(self, direction):
-        #enc = encoder.get_data()
         if self.current.pedalboard is not None:
             pb = self.current.pedalboard
             index = ((self.selected_plugin_index + 1) if (direction is 1)
@@ -480,6 +582,7 @@ class Mod:
     def menu_back(self):
         self.top_encoder_mode = TopEncoderMode.DEFAULT
         self.bot_encoder_mode = BotEncoderMode.DEFAULT
+        self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
         self.update_lcd()
 
     #
@@ -585,12 +688,14 @@ class Mod:
     def system_menu_input_gain(self):
         title = "Input Gain"
         self.top_encoder_mode = TopEncoderMode.INPUT_GAIN
+        self.universal_encoder_mode = UniversalEncoderMode.INPUT_GAIN
         info = {"shortName": title, "symbol": "igain", "ranges": {"minimum": -19.75, "maximum": 12}}
         self.system_menu_parameter(title, self.audiocard.CAPTURE_VOLUME, info)
 
     def system_menu_headphone_volume(self):
         title = "Headphone Volume"
         self.top_encoder_mode = TopEncoderMode.HEADPHONE_VOLUME
+        self.universal_encoder_mode = UniversalEncoderMode.HEADPHONE_VOLUME
         info = {"shortName": title, "symbol": "hvol", "ranges": {"minimum": -25.75, "maximum": 6}}
         self.system_menu_parameter(title, self.audiocard.MASTER, info)
 
@@ -669,7 +774,7 @@ class Mod:
             if resp.status_code != expect_code:
                 logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
             else:
-                logging.debug("Parameter %s changed to: %d" % (param.name, new_value))
+                logging.debug("Parameter changed to: %d" % value)
         except:
             logging.debug("status: %s" % resp.status_code)
             return resp.status_code
@@ -688,12 +793,18 @@ class Mod:
     def update_lcd_title(self):
         invert_pb = False
         invert_pre = False
-        if self.top_encoder_mode == TopEncoderMode.PEDALBOARD_SELECT:
+        highlight_only = False
+        if self.top_encoder_mode == TopEncoderMode.PEDALBOARD_SELECT or \
+                self.universal_encoder_mode == UniversalEncoderMode.PEDALBOARD_SELECT:
             invert_pb = True
-        if self.top_encoder_mode == TopEncoderMode.PRESET_SELECT:
+        if self.top_encoder_mode == TopEncoderMode.PRESET_SELECT or \
+                self.universal_encoder_mode == UniversalEncoderMode.PRESET_SELECT:
             invert_pre = True
+        if self.universal_encoder_mode == UniversalEncoderMode.PEDALBOARD_SELECT or \
+                self.universal_encoder_mode == UniversalEncoderMode.PRESET_SELECT:
+            highlight_only = True
         self.lcd.draw_title(self.current.pedalboard.title,
-                            util.DICT_GET(self.current.presets, self.current.preset_index), invert_pb, invert_pre)
+            util.DICT_GET(self.current.presets, self.current.preset_index), invert_pb, invert_pre, highlight_only)
 
     def update_lcd_plugins(self):
         self.lcd.draw_plugins(self.current.pedalboard.plugins)

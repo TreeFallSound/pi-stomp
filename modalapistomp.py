@@ -18,21 +18,14 @@ import argparse
 import logging
 import os
 import RPi.GPIO as GPIO
-import subprocess
 import sys
 import time
 
-from rtmidi.midiutil import open_midiinput
 from rtmidi.midiutil import open_midioutput
 
 import modalapi.mod as Mod
 import pistomp.audioinjector as Audiocard
-import pistomp.lcdgfx as Lcd
-#import pistomp.lcd128x64 as Lcd
-#import pistomp.lcd135x240 as Lcd
-#import pistomp.lcdsy7789 as Lcd
-#import pistomp.lcdili9341 as Lcd # Color
-import pistomp.pistomp as Pistomp
+import pistomp.hardwarefactory as Hardwarefactory
 
 
 def main():
@@ -72,14 +65,12 @@ def main():
     except (EOFError, KeyboardInterrupt):
         sys.exit()
 
-    # LCD
-    lcd = Lcd.Lcd(cwd)
-
     # Create singleton data model object
-    mod = Mod.Mod(audiocard, lcd, cwd)
+    mod = Mod.Mod(audiocard, cwd)
 
     # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
-    hw = Pistomp.Pistomp(mod, midiout, refresh_callback=mod.update_lcd_fs)
+    factory = Hardwarefactory.Hardwarefactory()
+    hw = factory.create(mod, midiout)
     mod.add_hardware(hw)
 
     # Load all pedalboard info from the lilv ttl file
@@ -112,7 +103,8 @@ def main():
     finally:
         logging.info("Exit.")
         midiout.close_port()
-        lcd.cleanup()
+        if mod.lcd is not None:
+            mod.lcd.cleanup()
         GPIO.cleanup()  # TODO Should do this.  Possibly mod resets becuase of bus changes?
         logging.info("Completed cleanup")
 

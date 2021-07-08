@@ -13,37 +13,16 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-# TODO make all right side lowercase if possible
-ACTION = 'action'
-BUNDLE = 'bundle'
-BYPASS = 'bypass'
-CATEGORY = 'category'
-CHANNEL = 'channel'
-COLON_BYPASS = ':bypass'
-CONTROL = 'control'
-DOWN = 'DOWN'
-FOOTSWITCHES = 'footswitches'
-HARDWARE = 'hardware'
-ID = 'id'
-INPUT = 'input'
-LEFT = 'LEFT'
-LEFT_RIGHT = 'LEFT_RIGHT'
-MAXIMUM = 'maximum'
-MIDI = 'midi'
-MIDI_CC = 'midi_CC'
-MINIMUM = 'minimum'
-NAME = 'name'
-NONE = 'None'
-PARAMETER = 'parameter'
-PORTS = 'ports'
-PRESET = 'preset'
-RANGES = 'ranges'
-RIGHT = 'RIGHT'
-SHORTNAME = 'shortname'
-SYMBOL = 'symbol'
-TITLE = 'title'
-UP = 'UP'
-VERSION = 'version'
+import os
+import yaml
 
-#    def __init__(self):
-#        Pass
+DEFAULT_CONFIG_FILE = "default_config.yml"
+
+
+def load_default_cfg():
+    # Read the default config file - should only need to read once per session
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    default_config_file = os.path.join(script_dir, DEFAULT_CONFIG_FILE)
+    with open(default_config_file, 'r') as ymlfile:
+        cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
+        return cfg

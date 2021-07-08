@@ -15,38 +15,43 @@
 
 import logging
 import os
-import yaml
+import spidev
 
 import common.token as Token
 import pistomp.analogmidicontrol
 
 from abc import abstractmethod
 
-DEFAULT_CONFIG_FILE = "default_config.yml"
-
 
 class Hardware:
 
-    def __init__(self, mod, midiout, refresh_callback):
-        logging.debug("Init hardware")
-
+    def __init__(self, default_config, mod, midiout, refresh_callback):
+        logging.info("Init hardware: " + type(self).__name__)
         self.mod = mod
         self.midiout = midiout
         self.refresh_callback = refresh_callback
+        self.spi = None
+        self.test_pass = False
+        self.test_sentinel = None
 
         # From config file(s)
-        self.default_cfg = None  # default
+        self.default_cfg = default_config
+        self.version = self.default_cfg[Token.HARDWARE][Token.VERSION]
         self.cfg = None          # compound cfg (default with user/pedalboard specific cfg overlaid)
         self.midi_channel = 0
 
         # Standard hardware objects (not required to exist)
+        self.relay = None
         self.analog_controls = []
         self.encoders = []
         self.controllers = {}
         self.footswitches = []
 
-        # Read the default cfg
-        self.__load_default_cfg()
+    def init_spi(self):
+        self.spi = spidev.SpiDev()
+        self.spi.open(0, 1)  # Bus 0, CE1
+        #self.spi.max_speed_hz = 24000000  # TODO match with LCD or don't specify
+        self.spi.max_speed_hz = 1000000
 
     def poll_controls(self):
         # This is intended to be called periodically from main working loop to poll the instantiated controls
@@ -66,15 +71,32 @@ class Hardware:
             self.__init_footswitches(cfg)
 
     @abstractmethod
+    def init_analog_controls(self):
+        pass
+
+    @abstractmethod
+    def init_encoders(self):
+        pass
+
+    @abstractmethod
+    def init_footswitches(self):
+        pass
+
+    @abstractmethod
+    def init_relays(self):
+        pass
+
+    @abstractmethod
     def test(self):
         pass
 
-    def __load_default_cfg(self):
-        # Read the default config file - should only need to read once per session
+    def run_test(self):
+        # if test sentinel file exists execute hardware test
         script_dir = os.path.dirname(os.path.realpath(__file__))
-        default_config_file = os.path.join(script_dir, DEFAULT_CONFIG_FILE)
-        with open(default_config_file, 'r') as ymlfile:
-            self.default_cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
+        self.test_sentinel = os.path.join(script_dir, ".hardware_tests_passed")
+        if not os.path.isfile(self.test_sentinel):
+            self.test_pass = False
+            self.test()
 
     def __init_midi_default(self):
         self.__init_midi(self.cfg)
@@ -147,5 +169,3 @@ class Hardware:
                         fs.add_preset(callback=self.mod.preset_decr_and_change)
                         fs.set_display_label("Down")
             idx += 1
-
-

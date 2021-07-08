@@ -70,8 +70,8 @@ class Lcd(lcdcolor.Lcdcolor):
                             2: 0,
                             3: 32,
                             4: 0,
-                            5: 30,
-                            6: 50,
+                            5: 80,
+                            6: 0,
                             7: 58}
         self.zone_y = {}
         self.flip = True  # Flip the LCD vertically
@@ -128,7 +128,7 @@ class Lcd(lcdcolor.Lcdcolor):
         # TODO could be smarter here and only refresh the affected zone
         self.refresh_zone(3)
         self.refresh_zone(5)
-        #self.refresh_zone(7)
+        self.refresh_zone(7)
 
     def wait_lock(self, period, max):
         # wait for max number of periods (in seconds)

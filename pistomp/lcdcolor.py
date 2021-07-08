@@ -41,10 +41,11 @@ class Lcdcolor(lcdbase.Lcdbase):
     def draw_value_edit_graph(self, parameter, value):
         pass
 
-    def draw_title(self, pedalboard, preset, invert_pb, invert_pre):
+    def draw_title(self, pedalboard, preset, invert_pb, invert_pre, highlight_only=False):
         zone = 0
         self.erase_zone(zone)  # TODO to avoid redraw of entire zone, could we just redraw what changed?
-        self.base_draw_title(self.draw[zone], self.title_font, pedalboard, preset, invert_pb, invert_pre)
+        self.base_draw_title(self.draw[zone], self.title_font, pedalboard, preset, invert_pb, invert_pre,
+                             highlight_only)
         self.refresh_zone(zone)
 
     # Zone 1 - Analog Assignments (Tweak, Expression Pedal, etc.)
@@ -84,14 +85,14 @@ class Lcdcolor(lcdbase.Lcdbase):
     # Plugins
     def draw_plugin_select(self, plugin=None):
         width = 1
-        if plugin is not None:
-            # First unselct currently selected
-            if self.selected_plugin:
-                c = self.background if self.selected_plugin.has_footswitch else self.color_plugin
-                self.draw_box_outline(self.selected_plugin.lcd_xyz[0], self.selected_plugin.lcd_xyz[1],
-                                      self.selected_plugin.lcd_xyz[2], color=c, width=width)
-                self.refresh_zone(self.selected_plugin.lcd_xyz[2])
+        # First unselect currently selected
+        if self.selected_plugin:
+            c = self.background if self.selected_plugin.has_footswitch else self.color_plugin
+            self.draw_box_outline(self.selected_plugin.lcd_xyz[0], self.selected_plugin.lcd_xyz[1],
+                                  self.selected_plugin.lcd_xyz[2], color=c, width=width)
+            self.refresh_zone(self.selected_plugin.lcd_xyz[2])
 
+        if plugin is not None:
             # Highlight new selection
             self.draw_box_outline(plugin.lcd_xyz[0], plugin.lcd_xyz[1], plugin.lcd_xyz[2], color=self.highlight,
                                   width=width)
@@ -100,6 +101,7 @@ class Lcdcolor(lcdbase.Lcdbase):
 
     def draw_bound_plugins(self, plugins, footswitches):
         zone = 7
+        self.erase_zone(zone)
         self.base_draw_bound_plugins(zone, plugins, footswitches)
         self.refresh_zone(zone)
 

@@ -53,7 +53,7 @@ class Lcd(ABC):
         pass
 
     @abstractmethod
-    def draw_title(self, pedalboard, preset, invert_pb, invert_pre):
+    def draw_title(self, pedalboard, preset, invert_pb, invert_pre, highlight_only):
         pass
 
     # Analog Assignments (Tweak, Expression Pedal, etc.)

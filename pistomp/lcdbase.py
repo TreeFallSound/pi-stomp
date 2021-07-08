@@ -94,17 +94,21 @@ class Lcdbase(abstract_lcd.Lcd):
     def splash_show(self):
         pass
 
-    def base_draw_title(self, draw, font, pedalboard, preset, invert_pb, invert_pre):
+    def base_draw_title(self, draw, font, pedalboard, preset, invert_pb, invert_pre, highlight_only=False):
         pb_size  = font.getsize(pedalboard)[0]
         font_height = font.getsize(pedalboard)[1]
         x0 = self.left
         y = self.top  # negative pushes text to top of LCD
         highlight_color = self.highlight
+        fill = highlight_color if highlight_only else self.background
+        text_color = self.foreground
 
         # Pedalboard Name
         if invert_pb:
-            draw.rectangle(((x0, y), (pb_size, font_height - 2)), True, highlight_color)
-        draw.text((x0, y), pedalboard, self.foreground, font)
+            draw.rectangle(((x0, y), (pb_size, font_height - 2)), fill, highlight_color)
+            if highlight_only:
+                text_color = self.background
+        draw.text((x0, y), pedalboard, text_color, font)
 
         if preset != None:
 
@@ -119,8 +123,10 @@ class Lcdbase(abstract_lcd.Lcd):
             x2 = x + pre_size
             y2 = font_height
             if invert_pre:
-                draw.rectangle(((x, y), (x2, y2 - 2)), True, highlight_color)
-            draw.text((x, y), preset, self.foreground, font)
+                draw.rectangle(((x, y), (x2, y2 - 2)), fill, highlight_color)
+                if highlight_only:
+                    text_color = self.background
+            draw.text((x, y), preset, text_color, font)
 
     def base_draw_bound_plugins(self, zone, plugins, footswitches):
         bypass_label = "byps"

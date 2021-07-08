@@ -22,10 +22,7 @@
 # A new version with different controls should have a new separate subclass
 
 import RPi.GPIO as GPIO
-import spidev
-import traceback
 
-import os
 from pathlib import Path
 import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.analogswitch as AnalogSwitch
@@ -33,10 +30,13 @@ import pistomp.encoder as Encoder
 import pistomp.footswitch as Footswitch
 import pistomp.hardware as hardware
 import pistomp.relay as Relay
+
+import pistomp.lcdgfx as Lcd
+
 import sys
 import time
 
-# Pins
+# Pins (Unless the hardware has been changed, these should not be altered)
 TOP_ENC_PIN_D = 17
 TOP_ENC_PIN_CLK = 4
 TOP_ENC_SWITCH_CHANNEL = 7
@@ -68,40 +68,35 @@ ANALOG_CONTROL = [(0, 16, 64, 'KNOB'), (1, 16, 65, 'EXPRESSION')]
 class Pistomp(hardware.Hardware):
     __single = None
 
-    def __init__(self, mod, midiout, refresh_callback):
-        super(Pistomp, self).__init__(mod, midiout, refresh_callback)
+    def __init__(self, cfg, mod, midiout, refresh_callback):
+        super(Pistomp, self).__init__(cfg, mod, midiout, refresh_callback)
         if Pistomp.__single:
             raise Pistomp.__single
         Pistomp.__single = self
 
-        GPIO.setmode(GPIO.BCM)
-
-        self.spi = spidev.SpiDev()
-        self.spi.open(0, 1)  # Bus 0, CE1
-        self.spi.max_speed_hz = 1000000  # TODO match with LCD or don't specify
-
         self.mod = mod
         self.midiout = midiout
 
-        # if test sentinel file exists execute hardware test
-        script_dir = os.path.dirname(os.path.realpath(__file__))
-        self.test_sentinel = os.path.join(script_dir, ".hardware_tests_passed")
-        if not os.path.isfile(self.test_sentinel):
-            self.test_pass = False
-            self.test()
+        GPIO.setmode(GPIO.BCM)
 
-        # Create Relay object(s)
-        #self.relay = Relay.Relay(RELAY_RESET_PIN, RELAY_SET_PIN)
-        self.relay = Relay.Relay(RELAY_SET_PIN, RELAY_RESET_PIN)
+        self.init_spi()
 
-        # Create Footswitches
-        for f in FOOTSW:
-            fs = Footswitch.Footswitch(f[0], f[1], f[2], f[3], self.midi_channel, self.midiout,
-                                       refresh_callback=self.refresh_callback)
-            self.footswitches.append(fs)
-        self.reinit(None)
+        self.init_lcd()
 
-        # Initialize Analog inputs
+        self.init_relays()
+
+        self.init_footswitches()
+
+        self.init_analog_controls()
+
+        self.init_encoders()
+
+        self.run_test()
+
+    def init_lcd(self):
+        self.mod.add_lcd(Lcd.Lcd(self.mod.homedir))
+
+    def init_analog_controls(self):
         for c in ANALOG_CONTROL:
             control = AnalogMidiControl.AnalogMidiControl(self.spi, c[0], c[1], c[2], self.midi_channel,
                                                           self.midiout, c[3])
@@ -109,17 +104,27 @@ class Pistomp(hardware.Hardware):
             key = format("%d:%d" % (self.midi_channel, c[2]))
             self.controllers[key] = control  # Controller.Controller(self.midi_channel, c[1], Controller.Type.ANALOG)
 
-        # Initialize Encoders
-        top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=mod.top_encoder_select)
+    def init_encoders(self):
+        top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=self.mod.top_encoder_select)
         self.encoders.append(top_enc)
-        bot_enc = Encoder.Encoder(BOT_ENC_PIN_D, BOT_ENC_PIN_CLK, callback=mod.bot_encoder_select)
+        bot_enc = Encoder.Encoder(BOT_ENC_PIN_D, BOT_ENC_PIN_CLK, callback=self.mod.bot_encoder_select)
         self.encoders.append(bot_enc)
         control = AnalogSwitch.AnalogSwitch(self.spi, TOP_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD,
-                                            callback=mod.top_encoder_sw)
+                                            callback=self.mod.top_encoder_sw)
         self.analog_controls.append(control)
         control = AnalogSwitch.AnalogSwitch(self.spi, BOT_ENC_SWITCH_CHANNEL, ENC_SW_THRESHOLD,
-                                            callback=mod.bottom_encoder_sw)
+                                            callback=self.mod.bottom_encoder_sw)
         self.analog_controls.append(control)
+
+    def init_footswitches(self):
+        for f in FOOTSW:
+            fs = Footswitch.Footswitch(f[0], f[1], f[2], f[3], self.midi_channel, self.midiout,
+                                       refresh_callback=self.refresh_callback)
+            self.footswitches.append(fs)
+        self.reinit(None)
+
+    def init_relays(self):
+        self.relay = Relay.Relay(RELAY_SET_PIN, RELAY_RESET_PIN)
 
     # Test procedure for verifying hardware controls
     def test(self):
