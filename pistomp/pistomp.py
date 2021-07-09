@@ -83,6 +83,8 @@ class Pistomp(hardware.Hardware):
 
         self.init_lcd()
 
+        self.run_test()
+
         self.init_relays()
 
         self.init_footswitches()
@@ -90,8 +92,6 @@ class Pistomp(hardware.Hardware):
         self.init_analog_controls()
 
         self.init_encoders()
-
-        self.run_test()
 
     def init_lcd(self):
         self.mod.add_lcd(Lcd.Lcd(self.mod.homedir))
