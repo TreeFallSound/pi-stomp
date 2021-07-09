@@ -29,9 +29,9 @@ class Hardwarefactory:
 
         self.cfg = config.load_default_cfg()
 
-    def create(self, mod, midiout):
+    def create(self, handler, midiout):
         version = self.cfg[Token.HARDWARE][Token.VERSION]
         if version is None or (version < 2.0):
-            return Pistomp.Pistomp(self.cfg, mod, midiout, refresh_callback=mod.update_lcd_fs)
+            return Pistomp.Pistomp(self.cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
         elif (version >= 2.0) and (version < 3.0):
-            return Pistompcore.Pistompcore(self.cfg, mod, midiout, refresh_callback=mod.update_lcd_fs)
+            return Pistompcore.Pistompcore(self.cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)

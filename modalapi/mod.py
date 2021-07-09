@@ -31,6 +31,7 @@ import modalapi.parameter as Parameter
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.footswitch import Footswitch
+from pistomp.handler import Handler
 from enum import Enum
 from pathlib import Path
 
@@ -56,11 +57,11 @@ class UniversalEncoderMode(Enum):
     DEFAULT = 0
     SCROLL = 1
     PRESET_SELECT = 2
-    PEDALBOARD_SELECT = 4
-    PLUGIN_SELECT = 6
-    SYSTEM_MENU = 7
-    HEADPHONE_VOLUME = 8
-    INPUT_GAIN = 9
+    PEDALBOARD_SELECT = 3
+    PLUGIN_SELECT = 4
+    SYSTEM_MENU = 5
+    HEADPHONE_VOLUME = 6
+    INPUT_GAIN = 7
 
 class SelectedType(Enum):
     PEDALBOARD = 0
@@ -68,7 +69,8 @@ class SelectedType(Enum):
     PLUGIN = 2
     CONTROLLER = 3
 
-class Mod:
+
+class Mod(Handler):
     __single = None
 
     def __init__(self, audiocard, homedir):

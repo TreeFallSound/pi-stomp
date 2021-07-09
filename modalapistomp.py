@@ -26,20 +26,24 @@ from rtmidi.midiutil import open_midioutput
 import modalapi.mod as Mod
 import pistomp.audioinjector as Audiocard
 import pistomp.hardwarefactory as Hardwarefactory
-
+import pistomp.handler as Handler
 
 def main():
     sys.settrace
 
     # Command line parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("-l", "--log", nargs='+', help="Provide logging level. Example --log debug'", default="info",
+    parser.add_argument("--log", "-l", nargs='+', help="Provide logging level. Example --log debug'", default="info",
                         choices=['debug', 'info', 'warning', 'error', 'critical'])
+    parser.add_argument("--host", nargs='+', help="Plugin host to use. Example --host mod'", default=['mod'],
+                        choices=['mod', 'generic'])
+
+    args = parser.parse_args()
 
     # Handle Log Level
     level_config = {'debug': logging.DEBUG, 'info': logging.INFO, 'warning': logging.WARNING, 'error': logging.ERROR,
                     'critical': logging.CRITICAL}
-    log = parser.parse_args().log[0]
+    log = args.log[0]
     log_level = level_config[log] if log in level_config else None
     if log_level:
         print("Log level now set to: %s" % logging.getLevelName(log_level))
@@ -65,26 +69,40 @@ def main():
     except (EOFError, KeyboardInterrupt):
         sys.exit()
 
-    # Create singleton data model object
-    mod = Mod.Mod(audiocard, cwd)
+    # Hardware and handler objects
+    hw = None
+    handler = None
 
-    # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
-    factory = Hardwarefactory.Hardwarefactory()
-    hw = factory.create(mod, midiout)
-    mod.add_hardware(hw)
+    if args.host[0] == 'mod':
 
-    # Load all pedalboard info from the lilv ttl file
-    mod.load_pedalboards()
+        # Create singleton Mod handler
+        handler = Mod.Mod(audiocard, cwd)
 
-    # Load the current pedalboard as "current"
-    current_pedal_board_bundle = mod.get_current_pedalboard_bundle_path()
-    if not current_pedal_board_bundle:
-        # Apparently, no pedalboard is currently loaded so just load the first one
-        current_pedal_board_bundle = list(mod.pedalboards.keys())[0]
-    mod.set_current_pedalboard(mod.pedalboards[current_pedal_board_bundle])
+        # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
+        factory = Hardwarefactory.Hardwarefactory()
+        hw = factory.create(handler, midiout)
+        handler.add_hardware(hw)
 
-    # Load system info.  This can take a few seconds
-    mod.system_info_load()
+        # Load all pedalboard info from the lilv ttl file
+        handler.load_pedalboards()
+
+        # Load the current pedalboard as "current"
+        current_pedal_board_bundle = handler.get_current_pedalboard_bundle_path()
+        if not current_pedal_board_bundle:
+            # Apparently, no pedalboard is currently loaded so just load the first one
+            current_pedal_board_bundle = list(handler.pedalboards.keys())[0]
+        handler.set_current_pedalboard(handler.pedalboards[current_pedal_board_bundle])
+
+        # Load system info.  This can take a few seconds
+        handler.system_info_load()
+
+    elif args.host[0] == 'generic':
+        # No specific plugin host specified, so use a generic handler
+        # Encoders and LCD not mapped without specific purpose
+        # Just initialize the control hardware (footswitches, analog controls, etc.) for use as MIDI controls
+        handler = Handler.Handler()
+        factory = Hardwarefactory.Hardwarefactory()
+        hw = factory.create(handler, midiout)
 
     logging.info("Entering main loop. Press Control-C to exit.")
     #period = 0
@@ -103,8 +121,8 @@ def main():
     finally:
         logging.info("Exit.")
         midiout.close_port()
-        if mod.lcd is not None:
-            mod.lcd.cleanup()
+        if handler.lcd is not None:
+            handler.lcd.cleanup()
         GPIO.cleanup()  # TODO Should do this.  Possibly mod resets becuase of bus changes?
         logging.info("Completed cleanup")
 
