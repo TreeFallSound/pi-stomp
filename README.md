@@ -30,15 +30,21 @@ Patch OS must first be installed.  See [this guide](https://blokas.io/patchbox-o
 After first boot, set up networking so that you can ssh
 
         ssh patch@patchbox.local
-Once connected, run the following commands to download, setup and install the software and audio plugins.
-It could take about a half hour.
+Once connected, download the software:
         
         git clone https://github.com/TreeFallSound/pi-stomp.git
         
         cd pi-stomp
         
+Now run the setup utility to install the software and audio plugins.  It could take about a half hour.
+For most hardware, including pi-Stomp Core, just run:
+        
         ./setup.sh
         
+For the original pi-Stomp hardware (pcb versions 1.x) pass the version to the setup script:
+        
+        ./sethup.sh -v 1.0
+
 If all went well, you can then reboot
 
         sudo reboot
