@@ -32,6 +32,21 @@ while getopts ':v:' o; do
     esac
 done
 
+printf "\n===== Audio card setup =====\n"
+setup/audio/audioinjector-setup.sh
+
+printf "\n===== Modep software module install =====\n"
+patchbox module activate modep
+
+printf "\n===== Mod software tweaks =====\n"
+setup/mod-tweaks/mod-tweaks.sh
+
+printf "\n===== Install pi-stomp package dependencies =====\n"
+setup/pkgs/simple_install.sh
+setup/pkgs/lilv_install.sh
+setup/pkgs/mod-ttymidi_install.sh
+
+
 #
 # Hardware specific
 #
@@ -47,19 +62,6 @@ else
     fi
 fi
 
-printf "\n===== Audio card setup =====\n"
-setup/audio/audioinjector-setup.sh
-
-printf "\n===== Modep software module install =====\n"
-patchbox module activate modep
-
-printf "\n===== Mod software tweaks =====\n"
-setup/mod-tweaks/mod-tweaks.sh
-
-printf "\n===== Install pi-stomp package dependencies =====\n"
-setup/pkgs/simple_install.sh
-setup/pkgs/lilv_install.sh
-setup/pkgs/mod-ttymidi_install.sh
 
 printf "\n===== Get extra plugins =====\n"
 setup/plugins/build_extra_plugins.sh
