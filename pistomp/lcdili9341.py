@@ -135,6 +135,7 @@ class Lcd(lcdcolor.Lcdcolor):
         count = 0
         while self.lock and count < max:
             time.sleep(period)
+            count += 1
 
     def refresh_zone(self, zone_idx):
         # ONLY THIS METHOD SHOULD BE USED TO PRINT AN IMAGE TO THE DISPLAY
@@ -161,3 +162,4 @@ class Lcd(lcdcolor.Lcdcolor):
 
     def clear(self):
         self.disp.fill(0)
+
