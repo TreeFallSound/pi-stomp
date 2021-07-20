@@ -227,3 +227,4 @@ class Lcd(lcdcolor.Lcdcolor):
 
     def clear(self):
         self.disp.fill(0)
+
