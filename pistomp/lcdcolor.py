@@ -14,6 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import pistomp.lcdbase as lcdbase
+import common.util as util
 
 
 class Lcdcolor(lcdbase.Lcdbase):
@@ -36,10 +37,38 @@ class Lcdcolor(lcdbase.Lcdbase):
 
     # Parameter Value Edit
     def draw_value_edit(self, plugin_name, parameter, value):
-        pass
+        self.draw_title(plugin_name, None, False, False, False)
+        self.draw_value_edit_graph(parameter, value)
 
     def draw_value_edit_graph(self, parameter, value):
-        pass
+        # TODO super inefficient here redrawing the whole image every time the value changes
+        self.draw_title(parameter.name, None, False, False, False)
+        self.menu_image.paste(0, (0, 0, self.width, self.menu_image_height))
+
+        y0 = self.menu_y0
+        y1 = y0 - 2
+        ytext = y0 // 2
+        x = 0
+        xpitch = 4
+
+        # The current value text
+        self.menu_draw.text((0, ytext), "%s" % util.format_float(value), self.foreground, self.title_font)
+
+        val = util.renormalize(value, parameter.minimum, parameter.maximum, 0, self.graph_width)
+        yref = y1
+        while x < self.graph_width:
+            self.menu_draw.line(((x + 2, y0), (x + 2, yref)), self.color_plugin, 1)
+            if (x < val) and (x % xpitch) == 0:
+                self.menu_draw.rectangle(((x, y0), (x + 2, y1)), self.highlight, 2)
+                y1 = y1 - 1
+            x = x + xpitch
+            yref = yref - 1
+
+        self.menu_draw.text((0, self.menu_y0 + 4), "%d" % parameter.minimum, self.foreground, self.small_font)
+        self.menu_draw.text((self.graph_width - (len(str(parameter.maximum)) * 4), self.menu_y0 + 4),
+                            "%d" % parameter.maximum, self.foreground, self.small_font)
+        self.refresh_menu()
+        self.draw_info_message("Click to exit")
 
     def draw_title(self, pedalboard, preset, invert_pb, invert_pre, highlight_only=False):
         zone = 0
@@ -84,7 +113,7 @@ class Lcdcolor(lcdbase.Lcdbase):
 
     # Plugins
     def draw_plugin_select(self, plugin=None):
-        width = 1
+        width = 2
         # First unselect currently selected
         if self.selected_plugin:
             c = self.background if self.selected_plugin.has_footswitch else self.color_plugin

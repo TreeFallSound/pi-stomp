@@ -62,6 +62,8 @@ class UniversalEncoderMode(Enum):
     SYSTEM_MENU = 5
     HEADPHONE_VOLUME = 6
     INPUT_GAIN = 7
+    DEEP_EDIT = 8
+    VALUE_EDIT = 9
 
 class SelectedType(Enum):
     PEDALBOARD = 0
@@ -247,10 +249,10 @@ class Mod(Handler):
             elif mode == UniversalEncoderMode.SCROLL:
                 if self.selected_type() == SelectedType.PLUGIN:
                     self.toggle_plugin_bypass()
-                if self.selected_type() == SelectedType.PEDALBOARD:
+                elif self.selected_type() == SelectedType.PEDALBOARD:
                     self.universal_encoder_mode = UniversalEncoderMode.PEDALBOARD_SELECT
                     self.update_lcd_title()
-                if self.selected_type() == SelectedType.PRESET:
+                elif self.selected_type() == SelectedType.PRESET:
                     self.universal_encoder_mode = UniversalEncoderMode.PRESET_SELECT
                     self.update_lcd_title()
             elif mode == UniversalEncoderMode.PEDALBOARD_SELECT:
@@ -260,10 +262,32 @@ class Mod(Handler):
                 self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
                 self.preset_change()
                 self.update_lcd_title()
+            elif mode == UniversalEncoderMode.SYSTEM_MENU:
+                self.menu_action()
+                return
+            elif mode == UniversalEncoderMode.HEADPHONE_VOLUME:
+                self.universal_encoder_mode = UniversalEncoderMode.SYSTEM_MENU
+                self.system_menu_show()
+            elif mode == UniversalEncoderMode.INPUT_GAIN:
+                self.universal_encoder_mode = UniversalEncoderMode.SYSTEM_MENU
+                self.system_menu_show()
+            elif mode == UniversalEncoderMode.DEEP_EDIT:
+                self.menu_action()
+            elif mode == UniversalEncoderMode.VALUE_EDIT:
+                self.universal_encoder_mode = UniversalEncoderMode.DEEP_EDIT
+                self.parameter_edit_show(self.selected_menu_index)
 
         elif value == EncoderSwitch.Value.LONGPRESSED:
-            self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
-            self.update_lcd_title()
+            if mode == UniversalEncoderMode.VALUE_EDIT or (mode == UniversalEncoderMode.SCROLL and
+                    self.selectable_items[self.selectable_index][0] == SelectedType.PLUGIN):
+                self.universal_encoder_mode = UniversalEncoderMode.DEEP_EDIT
+                self.parameter_edit_show()
+            elif mode == UniversalEncoderMode.DEFAULT:
+                self.universal_encoder_mode = UniversalEncoderMode.SYSTEM_MENU
+                self.system_menu_show()
+            else:
+                self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
+                self.update_lcd()
 
     def universal_encoder_select(self, direction):
         # State machine for universal encoder switch
@@ -275,21 +299,37 @@ class Mod(Handler):
             self.pedalboard_select(direction)
         elif mode == UniversalEncoderMode.PRESET_SELECT:
             self.preset_select(direction)
+        elif mode == UniversalEncoderMode.SYSTEM_MENU:
+            self.menu_select(direction)
+        elif mode == UniversalEncoderMode.HEADPHONE_VOLUME:
+            self.parameter_value_change(direction, self.headphone_volume_commit)
+        elif mode == UniversalEncoderMode.INPUT_GAIN:
+            self.parameter_value_change(direction, self.input_gain_commit)
+        elif mode == UniversalEncoderMode.DEEP_EDIT:
+            self.menu_select(direction)
+        elif mode == UniversalEncoderMode.VALUE_EDIT:
+            self.parameter_value_change(direction, self.parameter_value_commit)
 
     def universal_select(self, direction):
         if self.current.pedalboard is not None:
+            prev_type = None
+            if self.selectable_index:
+                prev_type = self.selectable_items[self.selectable_index][0]
             index = ((self.selectable_index + 1) if (direction is 1)
                      else (self.selectable_index - 1)) % len(self.selectable_items)
             self.selectable_index = index
             item_type = self.selectable_items[index][0]
             if item_type == SelectedType.PEDALBOARD:
-                self.lcd.draw_plugin_select(None)  # clear previous selection
+                if item_type != prev_type:
+                    self.lcd.draw_plugin_select(None)  # clear previous selection
                 self.pedalboard_select(0)
             elif item_type == SelectedType.PRESET:
-                self.lcd.draw_plugin_select(None)  # clear previous selection
+                if item_type != prev_type:
+                    self.lcd.draw_plugin_select(None)  # clear previous selection
                 self.preset_select(0)
             elif item_type == SelectedType.PLUGIN:
-                self.update_lcd_title()  # clear previous selection
+                if item_type != prev_type:
+                    self.update_lcd_title()  # clear previous selection
                 plugin_index = self.selectable_items[index][1]
                 self.selected_plugin_index = plugin_index
                 plugin = self.current.pedalboard.plugins[plugin_index]
@@ -728,7 +768,7 @@ class Mod(Handler):
     # Parameter Edit
     #
 
-    def parameter_edit_show(self):
+    def parameter_edit_show(self, selected=0):
         plugin = self.get_selected_instance()
         self.deep = self.Deep(plugin)  # TODO this creates a new obj every time menu is shown, singleton?
         self.deep.selected_parameter_index = 0
@@ -740,11 +780,12 @@ class Mod(Handler):
                                        Token.PARAMETER: p}
             i = i + 1
         self.lcd.menu_show(plugin.instance_id, self.menu_items)
-        self.selected_menu_index = 0
-        self.lcd.menu_highlight(0)
+        self.selected_menu_index = selected
+        self.lcd.menu_highlight(selected)
 
     def parameter_value_show(self):
         self.bot_encoder_mode = BotEncoderMode.VALUE_EDIT
+        self.universal_encoder_mode = UniversalEncoderMode.VALUE_EDIT
         item = list(sorted(self.menu_items))[self.selected_menu_index]
         if not item:
             return

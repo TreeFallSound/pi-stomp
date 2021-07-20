@@ -56,6 +56,7 @@ class Lcd(abstract_lcd.Lcd):
         self.menu_image_height = self.menu_height * 10  # 10 pages (~40 parameters) enough?
         self.menu_image = Image.new('L', (self.width, self.menu_image_height))
         self.menu_draw = ImageDraw.Draw(self.menu_image)
+        self.graph_width = 127
         self.menu_y0 = 40
 
         # Element dimensions
@@ -231,9 +232,9 @@ class Lcd(abstract_lcd.Lcd):
         xpitch = 4
         self.menu_draw.text((0, yt), "%s" % util.format_float(value), 1, self.label_font)
 
-        val = util.renormalize(value, parameter.minimum, parameter.maximum, 0, 127)
+        val = util.renormalize(value, parameter.minimum, parameter.maximum, 0, self.graph_width)
         yref = y1
-        while x < 127:  # TODO 127 minus x pitch
+        while x < self.graph_width:  # TODO 127 minus x pitch
             self.menu_draw.line(((x + 2, y0), (x + 2, yref)), 1, 1)
 
             if (x < val) and (x % xpitch) == 0:
@@ -244,7 +245,8 @@ class Lcd(abstract_lcd.Lcd):
             yref = yref - 1
 
         self.menu_draw.text((0, self.menu_y0 + 4), "%d" % parameter.minimum, 1, self.small_font)
-        self.menu_draw.text((127 - (len(str(parameter.maximum)) * 4), self.menu_y0 + 4), "%d" % parameter.maximum, 1, self.small_font)
+        self.menu_draw.text((self.graph_width - (len(str(parameter.maximum)) * 4), self.menu_y0 + 4),
+                            "%d" % parameter.maximum, 1, self.small_font)
 
         self.refresh_menu()
 

@@ -55,6 +55,8 @@ class Lcdbase(abstract_lcd.Lcd):
         self.plugin_label_length = None
         self.footswitch_width = None
         self.footswitch_ring_width = None
+        self.graph_width = None
+        self.menu_y0 = None
 
         # Content
         self.zones = None
@@ -155,11 +157,14 @@ class Lcdbase(abstract_lcd.Lcd):
                              self.footswitch_width, False, None, True, self.footswitch_xy[fs_id][2])
             #self.draw_box((self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1]), xy2, zone, label, True)
 
-    def draw_box(self, xy, xy2, zone, text=None, round_bottom_corners=False, fill=False, color=None, width=1):
+    def draw_just_a_box(self, draw, xy, xy2, fill=False, color=None, width=1):
         if color is None:
             color = self.foreground
-        f = color if fill else self.background
-        self.draw[zone].rectangle((xy, xy2), f, outline=color, width=width)
+        f = color if fill else None
+        draw.rectangle((xy, xy2), f, outline=color, width=width)
+
+    def draw_box(self, xy, xy2, zone, text=None, round_bottom_corners=False, fill=False, color=None, width=1):
+        self.draw_just_a_box(self.draw[zone], xy, xy2, fill, color, width)
         #self.draw[zone].point(xy, self.background)  # Round the top corners
         #self.draw[zone].point((xy2[0],xy[1]), self.background)
         #if round_bottom_corners:

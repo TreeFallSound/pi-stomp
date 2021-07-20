@@ -17,6 +17,7 @@ import board
 import digitalio
 from PIL import Image, ImageDraw, ImageFont
 import adafruit_rgb_display.ili9341 as ili9341
+import common.token as Token
 import pistomp.lcdcolor as lcdcolor
 import time
 
@@ -81,6 +82,17 @@ class Lcd(lcdcolor.Lcdcolor):
                               1: (120, 0, (0, 255, 0)),
                               2: (240, 0, (0, 0, 255))}
 
+        # Menu (System menu, Parameter edit, etc.)
+        self.menu_height = self.height - self.zone_height[0]
+        self.menu_image_height = self.menu_height * 10  # 10 pages (~40 parameters) enough?
+        #self.menu_image = Image.new('RGB', (self.width, self.menu_image_height))
+        self.menu_image = Image.new('RGB', (self.width, self.menu_height))
+        self.menu_draw = ImageDraw.Draw(self.menu_image)
+        self.menu_highlight_box_height = 20
+        self.menu_highlight_box = ()
+        self.menu_y0 = 150
+        self.graph_width = 300
+
         # Element dimensions
         self.plugin_height = 22
         self.plugin_width = 56
@@ -128,15 +140,16 @@ class Lcd(lcdcolor.Lcdcolor):
         # TODO could be smarter here and only refresh the affected zone
         self.refresh_zone(3)
         self.refresh_zone(5)
-        self.refresh_zone(7)
+        #self.refresh_zone(7)
 
     def wait_lock(self, period, max):
         # wait for max number of periods (in seconds)
         count = 0
         while self.lock and count < max:
             time.sleep(period)
+            count += 1
 
-    def refresh_zone(self, zone_idx):
+    def render_image(self, image, y0):
         # ONLY THIS METHOD SHOULD BE USED TO PRINT AN IMAGE TO THE DISPLAY
 
         # Wait if a lock is present (to avoid multiple async refreshes accessing the SPI simultaneously
@@ -144,11 +157,64 @@ class Lcd(lcdcolor.Lcdcolor):
         self.wait_lock(0.005, 10)
         self.lock = True
 
-        # Determine the start y position by adding the height of all previous zones
-        self.disp.image(self.images[zone_idx], 270 if self.flip else 90, x=self.zone_y[zone_idx], y=0)
+        # Since rotating 270 or 90, x becomes y, y becomes x
+        self.disp.image(image, 270 if self.flip else 90, x=y0, y=0)
 
         # unlock so the next refresh can happen
         self.lock = False
+
+    def refresh_zone(self, zone_idx):
+        self.render_image(self.images[zone_idx], self.zone_y[zone_idx])
+
+    def refresh_menu(self, highlight_range=None, scroll_offset=0):
+        if highlight_range:
+            highlight_width = 2
+            x = 0
+            y = 0
+            y_draw = y + scroll_offset
+            if y_draw < self.menu_image_height:
+                xy = (x, y_draw)
+                xy2 = (x + self.width, y_draw + self.menu_highlight_box_height)
+                if self.menu_highlight_box:
+                    self.draw_just_a_box(self.menu_draw, self.menu_highlight_box[0], self.menu_highlight_box[1],
+                                False, self.background, highlight_width)
+
+                self.draw_just_a_box(self.menu_draw, xy, xy2, False, self.highlight, highlight_width)
+                self.menu_highlight_box = (xy, xy2)
+
+        self.render_image(self.menu_image, 0)
+
+    # Menu Screens (uses deep_edit image and draw objects)
+    def menu_show(self, page_title, menu_items):
+        self.menu_image.paste(self.background, (0, 0, self.width, self.menu_image_height))
+
+        # Title (plugin name)
+        self.draw_title(page_title, "", False, False, False)
+
+        # Menu Items
+        idx = 0
+        x = 0
+        y = 0
+        menu_list = list(sorted(menu_items))
+        for i in menu_list:
+            if idx is 0:
+                self.menu_draw.text((x, y), "%s" % menu_items[i][Token.NAME], self.foreground, self.small_font)
+                x = 8   # indent after first element (back button)
+            else:
+                self.menu_draw.text((x, y), "%s %s" % (i, menu_items[i][Token.NAME]), self.foreground, self.small_font)
+            y += self.menu_highlight_box_height
+            idx += 1
+        self.refresh_menu()
+
+    def menu_highlight(self, index):
+        # TODO the highlight calculations here are pulled from lcdgfx.py but aren't currently used by refresh_menu()
+        # re-enable something similar when a endless list of items is needed
+        scroll_idx = 0
+        highlight = ((index * 10, index * 10 + 8))
+        num_visible = 0  # TODO was 3 for GFX
+        if index > num_visible:
+            scroll_idx = index - num_visible
+        self.refresh_menu(highlight, scroll_idx * self.menu_highlight_box_height)
 
     def splash_show(self):
         return

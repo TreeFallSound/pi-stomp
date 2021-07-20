@@ -60,7 +60,7 @@ FOOTSW = [(0, 22, 0, 61), (1, 24, 13, 62), (2, 25, 26, 63)]
 # 3: the MIDI Control (CC) message that will be sent
 # 4: control type (KNOB, EXPRESSION, etc.)
 # Tweak, Expression Pedal
-#ANALOG_CONTROL = [(0, 16, 60, 'KNOB1'), (6, 16, 66, 'KNOB2'), (5, 16, 65, 'KNOB3'), (4, 16, 64, 'KNOB4')]
+#ANALOG_CONTROL = [(0, 4, 60, 'KNOB1'), (6, 16, 66, 'KNOB2'), (5, 16, 65, 'KNOB3'), (4, 16, 64, 'KNOB4')]
 ANALOG_CONTROL = []
 
 class Pistompcore(hardware.Hardware):
