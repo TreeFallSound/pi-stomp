@@ -23,6 +23,9 @@
 
 import RPi.GPIO as GPIO
 
+import common.token as Token
+import common.util as Util
+
 import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.encoder as Encoder
 import pistomp.encoderswitch as EncoderSwitch
@@ -44,24 +47,9 @@ ENC_SW_THRESHOLD = 512
 RELAY_RESET_PIN = 16
 RELAY_SET_PIN = 12
 
-# Each footswitch defined by a quad touple:
-# 1: id (left = 0, mid = 1, right = 2)
-# 2: the GPIO pin it's attached to
-# 3: the associated LED output pin and
-# 4: the MIDI Control (CC) message that will be sent when the switch is toggled
-# Pin modifications should only be made if the hardware is changed accordingly
-# 0=27, 1=23, 2=22, 3=24, 4=25
-FOOTSW = [(0, 22, 0, 61), (1, 24, 13, 62), (2, 25, 26, 63)]
+# Map of Debounce chip pin (user friendly) to GPIO (code friendly)
+DEBOUNCE_MAP = {0: 27, 1: 23, 2: 22, 3: 24, 4: 25}
 
-# TODO replace in default_config.yml
-# Analog Controls defined by a triple touple:
-# 1: the ADC channel
-# 2: the minimum threshold for considering the value to be changed
-# 3: the MIDI Control (CC) message that will be sent
-# 4: control type (KNOB, EXPRESSION, etc.)
-# Tweak, Expression Pedal
-#ANALOG_CONTROL = [(0, 4, 60, 'KNOB1'), (6, 16, 66, 'KNOB2'), (5, 16, 65, 'KNOB3'), (4, 16, 64, 'KNOB4')]
-ANALOG_CONTROL = []
 
 class Pistompcore(hardware.Hardware):
     __single = None
@@ -74,6 +62,7 @@ class Pistompcore(hardware.Hardware):
 
         self.mod = mod
         self.midiout = midiout
+        self.debounce_map = DEBOUNCE_MAP
 
         GPIO.setmode(GPIO.BCM)
 
@@ -83,34 +72,31 @@ class Pistompcore(hardware.Hardware):
 
         self.init_relays()
 
+        self.init_encoders()
+
         self.init_footswitches()
 
         self.init_analog_controls()
 
-        self.init_encoders()
+        self.reinit(None)
 
     def init_lcd(self):
         self.mod.add_lcd(Lcd.Lcd(self.mod.homedir))
-
-    def init_analog_controls(self):
-        for c in ANALOG_CONTROL:
-            control = AnalogMidiControl.AnalogMidiControl(self.spi, c[0], c[1], c[2], self.midi_channel,
-                                                          self.midiout, c[3])
-            self.analog_controls.append(control)
-            key = format("%d:%d" % (self.midi_channel, c[2]))
-            self.controllers[key] = control  # Controller.Controller(self.midi_channel, c[1], Controller.Type.ANALOG)
 
     def init_encoders(self):
         top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=self.mod.universal_encoder_select)
         self.encoders.append(top_enc)
         EncoderSwitch.EncoderSwitch(1, callback=self.mod.universal_encoder_sw)
 
-    def init_footswitches(self):
-        for f in FOOTSW:
-            fs = Footswitch.Footswitch(f[0], f[1], f[2], f[3], self.midi_channel, self.midiout,
-                                       refresh_callback=self.refresh_callback)
-            self.footswitches.append(fs)
-        self.reinit(None)
-
     def init_relays(self):
         self.relay = Relay.Relay(RELAY_SET_PIN, RELAY_RESET_PIN)
+
+    def init_analog_controls(self):
+        cfg = self.default_cfg.copy()
+        if len(self.analog_controls) == 0:
+            self.create_analog_controls(cfg)
+
+    def init_footswitches(self):
+        cfg = self.default_cfg.copy()
+        if len(self.footswitches) == 0:
+            self.create_footswitches(cfg)

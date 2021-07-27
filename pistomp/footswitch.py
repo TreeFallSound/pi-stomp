@@ -42,8 +42,9 @@ class Footswitch(controller.Controller):
         GPIO.setup(fs_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         GPIO.add_event_detect(fs_pin, GPIO.FALLING, callback=self.toggle, bouncetime=250)
 
-        GPIO.setup(led_pin, GPIO.OUT)
-        GPIO.output(led_pin, GPIO.LOW)
+        if led_pin is not None:
+            GPIO.setup(led_pin, GPIO.OUT)
+            self.set_led(GPIO.LOW)
 
     def __del__(self):
         GPIO.remove_event_detect(self.fs_pin)
@@ -56,7 +57,11 @@ class Footswitch(controller.Controller):
 
     def set_value(self, value):
         self.enabled = (value < 1)
-        GPIO.output(self.led_pin, self.enabled)
+        self.set_led(self.enabled)
+
+    def set_led(self, enabled):
+        if self.led_pin is not None:
+            GPIO.output(self.led_pin, enabled)
 
     def toggle(self, gpio):
         # If a footswitch can be mapped to control a relay, preset, MIDI or all 3
@@ -81,7 +86,7 @@ class Footswitch(controller.Controller):
                         r.enable()
                     else:
                         r.disable()
-                GPIO.output(self.led_pin, self.enabled)
+                self.set_led(self.enabled)
                 return
 
         # If mapped to preset change
@@ -91,7 +96,7 @@ class Footswitch(controller.Controller):
             return
 
         # Update LED
-        GPIO.output(self.led_pin, self.enabled)
+        self.set_led(self.enabled)
 
         # Send midi
         if self.midi_CC is not None:

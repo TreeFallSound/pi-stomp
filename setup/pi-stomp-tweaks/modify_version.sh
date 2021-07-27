@@ -23,6 +23,15 @@ if [ -z "$1" ]
 fi
 
 config_file="$HOME/pi-stomp/pistomp/default_config.yml"
+pistomp_orig_config_file="$HOME/pi-stomp/pistomp/default_config_pistomp.yml"
+pistomp_core_config_file="$HOME/pi-stomp/pistomp/default_config_pistompcore.yml"
+
+
+if awk "BEGIN {exit !($1 < 2.0 )}"; then
+    cp $pistomp_orig_config_file $config_file
+else
+    cp $pistomp_core_config_file $config_file
+fi
 
 sed -i "s/version: [0-9]\.*[0-9]*\.*[0-9]*/version: $1/" $config_file
 

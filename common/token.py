@@ -13,16 +13,21 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-# TODO make all right side lowercase if possible
 ACTION = 'action'
+ADC_INPUT = 'adc_input'
+ANALOG_CONTROLLERS = 'analog_controllers'
 BUNDLE = 'bundle'
 BYPASS = 'bypass'
 CATEGORY = 'category'
 CHANNEL = 'channel'
 COLON_BYPASS = ':bypass'
 CONTROL = 'control'
+DEBOUNCE_INPUT = 'debounce_input'
+DISABLE = 'disable'
 DOWN = 'DOWN'
 FOOTSWITCHES = 'footswitches'
+GPIO_INPUT = 'gpio_input'
+GPIO_OUTPUT = 'gpio_output'
 HARDWARE = 'hardware'
 ID = 'id'
 INPUT = 'input'
@@ -41,9 +46,8 @@ RANGES = 'ranges'
 RIGHT = 'RIGHT'
 SHORTNAME = 'shortName'
 SYMBOL = 'symbol'
+THRESHOLD = 'threshold'
 TITLE = 'title'
+TYPE = 'type'
 UP = 'UP'
 VERSION = 'version'
-
-#    def __init__(self):
-#        Pass

@@ -18,7 +18,9 @@ import os
 import spidev
 
 import common.token as Token
-import pistomp.analogmidicontrol
+import common.util as Util
+import pistomp.analogmidicontrol as AnalogMidiControl
+import pistomp.footswitch as Footswitch
 
 from abc import abstractmethod
 
@@ -46,6 +48,7 @@ class Hardware:
         self.encoders = []
         self.controllers = {}
         self.footswitches = []
+        self.debounce_map = None
 
     def init_spi(self):
         self.spi = spidev.SpiDev()
@@ -65,7 +68,8 @@ class Hardware:
         self.cfg = self.default_cfg.copy()
 
         self.__init_midi_default()
-        self.__init_footswitches_default()
+        self.__init_footswitches(self.cfg)
+
         if cfg is not None:
             self.__init_midi(cfg)
             self.__init_footswitches(cfg)
@@ -98,6 +102,68 @@ class Hardware:
             self.test_pass = False
             self.test()
 
+    def create_footswitches(self, cfg):
+        if cfg is None or (Token.HARDWARE not in cfg) or (Token.FOOTSWITCHES not in cfg[Token.HARDWARE]):
+            return
+
+        cfg_fs = cfg[Token.HARDWARE][Token.FOOTSWITCHES]
+        if cfg_fs is None:
+            return
+        idx = 0
+        for f in cfg_fs:
+            if Util.DICT_GET(f, Token.DISABLE) is True:
+                continue
+
+            di = Util.DICT_GET(f, Token.DEBOUNCE_INPUT)
+            if self.debounce_map and di in self.debounce_map:
+                gpio_input = self.debounce_map[di]
+            else:
+                gpio_input = Util.DICT_GET(f, Token.GPIO_INPUT)
+
+            gpio_output = Util.DICT_GET(f, Token.GPIO_OUTPUT)
+            midi_cc = Util.DICT_GET(f, Token.MIDI_CC)
+            id = Util.DICT_GET(f, Token.ID)
+
+            if gpio_input is None:
+                logging.error("Switch specified without %s or %s" % (Token.DEBOUNCE_INPUT, Token.GPIO_INPUT))
+                continue
+
+            fs = Footswitch.Footswitch(id if id else idx, gpio_input, gpio_output, midi_cc, self.midi_channel,
+                                       self.midiout, refresh_callback=self.refresh_callback)
+            self.footswitches.append(fs)
+            idx += 1
+
+    def create_analog_controls(self, cfg):
+        if cfg is None or (Token.HARDWARE not in cfg) or (Token.ANALOG_CONTROLLERS not in cfg[Token.HARDWARE]):
+            return
+
+        cfg_c = cfg[Token.HARDWARE][Token.ANALOG_CONTROLLERS]
+        if cfg_c is None:
+            return
+        for c in cfg_c:
+            if Util.DICT_GET(c, Token.DISABLE) is True:
+                continue
+
+            adc_input = Util.DICT_GET(c, Token.ADC_INPUT)
+            midi_cc = Util.DICT_GET(c, Token.MIDI_CC)
+            threshold = Util.DICT_GET(c, Token.THRESHOLD)
+            control_type = Util.DICT_GET(c, Token.TYPE)
+
+            if adc_input is None:
+                logging.error("Analog control specified without %s" % Token.ADC_INPUT)
+                continue
+            if midi_cc is None:
+                logging.error("Analog control specified without %s" % Token.MIDI_CC)
+                continue
+            if threshold is None:
+                threshold = 16  # Default, 1024 is full scale
+
+            control = AnalogMidiControl.AnalogMidiControl(self.spi, adc_input, threshold, midi_cc, self.midi_channel,
+                                                          self.midiout, control_type)
+            self.analog_controls.append(control)
+            key = format("%d:%d" % (self.midi_channel, midi_cc))
+            self.controllers[key] = control
+
     def __init_midi_default(self):
         self.__init_midi(self.cfg)
 
@@ -110,7 +176,7 @@ class Hardware:
             pass
         # TODO could iterate thru all objects here instead of handling in __init_footswitches
         for ac in self.analog_controls:
-            if isinstance(ac, pistomp.analogmidicontrol.AnalogMidiControl):
+            if isinstance(ac, AnalogMidiControl.AnalogMidiControl):
                 ac.set_midi_channel(self.midi_channel)
 
     def __init_footswitches_default(self):
