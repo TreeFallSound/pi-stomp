@@ -101,7 +101,7 @@ class Lcd(abstract_lcd.Lcd):
         # Turn on Backlight
         self.enable_backlight()
 
-    def splash_show(self):
+    def splash_show(self, boot=True):
         for x in range(0, self.width):
             for y in range(0, self.height):
                 pixel = self.splash.getpixel((x, y))

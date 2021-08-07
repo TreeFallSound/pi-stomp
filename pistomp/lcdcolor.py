@@ -22,12 +22,6 @@ class Lcdcolor(lcdbase.Lcdbase):
     def __init__(self, cwd):
         super(Lcdcolor, self).__init__(cwd)
 
-    def splash_show(self):
-        return
-        self.clear()
-        self.draw.text((0, self.top + 30), "pi Stomp!", font=self.splash_font, fill=(255, 255, 255))
-        self.refresh()
-
     # Menu Screens (uses deep_edit image and draw objects)
     def menu_show(self, page_title, menu_items):
         pass

@@ -47,7 +47,7 @@ class Lcd(lcdcolor.Lcdcolor):
 
         # Fonts
         self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 26)
-        self.splash_font = ImageFont.truetype('DejaVuSans.ttf', 40)
+        self.splash_font = ImageFont.truetype('DejaVuSans.ttf', 48)
         self.small_font = ImageFont.truetype("DejaVuSans.ttf", 18)
         #self.small_font = ImageFont.truetype(os.path.join(cwd, "fonts", "EtBt6001-JO47.ttf"), 11)
 
@@ -57,6 +57,9 @@ class Lcd(lcdcolor.Lcdcolor):
         self.highlight = (255, 255, 0)
         self.color_plugin = (100, 100, 240)
         self.color_plugin_bypassed = (80, 80, 80)
+        #self.color_splash = (210, 70, 255)
+        self.color_splash_up = (70, 255, 70)
+        self.color_splash_down = (255, 20, 20)
 
         # Width and height exchanged for 90 degree rotation during render/refresh
         self.width = self.disp.height
@@ -119,6 +122,7 @@ class Lcd(lcdcolor.Lcdcolor):
 
         self.check_vars_set()
         self.lock = False
+        self.splash_show()
 
     def init_spi_display(self):
         self.spi = board.SPI()
@@ -216,11 +220,13 @@ class Lcd(lcdcolor.Lcdcolor):
             scroll_idx = index - num_visible
         self.refresh_menu(highlight, scroll_idx * self.menu_highlight_box_height)
 
-    def splash_show(self):
-        return
+    def splash_show(self, boot=True):
+        zone = 5
         self.clear()
-        self.draw.text((0, self.top + 30), "pi Stomp!", font=self.splash_font, fill=(255, 255, 255))
-        self.refresh()
+        self.erase_zone(zone)
+        color = self.color_splash_up if boot is True else self.color_splash_down
+        self.draw[zone].text((50, self.top), "pi Stomp!", font=self.splash_font, fill=color)
+        self.refresh_zone(zone)
 
     def cleanup(self):
         self.clear()

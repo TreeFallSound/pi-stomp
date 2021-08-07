@@ -72,7 +72,7 @@ class Lcd(ABC):
     def refresh(self):
         self.disp.display(self.image)
 
-    def splash_show(self):
+    def splash_show(self, boot=True):
         self.clear()
         self.draw.text((self.left + 10, self.top + 70), "pi Stomp!", font=self.splash_font, fill=255)
         self.refresh()

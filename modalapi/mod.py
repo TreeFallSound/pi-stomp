@@ -659,13 +659,14 @@ class Mod(Handler):
 
     def system_menu_show(self):
         self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back},
-                           "1": {Token.NAME: "System info", Token.ACTION: self.system_info_show},
-                           "2": {Token.NAME: "Save current pedalboard", Token.ACTION: self.system_menu_save_current_pb},
-                           "3": {Token.NAME: "Soft restart & reload", Token.ACTION: self.system_menu_reload},
-                           "4": {Token.NAME: "Restart sound engine", Token.ACTION: self.system_menu_restart_sound},
-                           "5": {Token.NAME: "Hardware reboot", Token.ACTION: self.system_menu_reboot},
-                           "6": {Token.NAME: "Input Gain", Token.ACTION: self.system_menu_input_gain},
-                           "7": {Token.NAME: "Headphone Volume", Token.ACTION: self.system_menu_headphone_volume}}
+                           "1": {Token.NAME: "System shutdown", Token.ACTION: self.system_menu_shutdown},
+                           "2": {Token.NAME: "System reboot", Token.ACTION: self.system_menu_reboot},
+                           "3": {Token.NAME: "System info", Token.ACTION: self.system_info_show},
+                           "4": {Token.NAME: "Save current pedalboard", Token.ACTION: self.system_menu_save_current_pb},
+                           "5": {Token.NAME: "Reload pedalboards", Token.ACTION: self.system_menu_reload},
+                           "6": {Token.NAME: "Restart sound engine", Token.ACTION: self.system_menu_restart_sound},
+                           "7": {Token.NAME: "Input Gain", Token.ACTION: self.system_menu_input_gain},
+                           "8": {Token.NAME: "Headphone Volume", Token.ACTION: self.system_menu_headphone_volume}}
         self.lcd.menu_show("System menu", self.menu_items)
         self.selected_menu_index = 0
         self.lcd.menu_highlight(0)
@@ -730,9 +731,14 @@ class Mod(Handler):
         logging.info("Restart sound engine (jack)")
         os.system('systemctl restart jack')
 
+    def system_menu_shutdown(self):
+        self.lcd.splash_show(False)
+        logging.info("System Shutdown")
+        os.system('sudo systemctl --no-wall poweroff')
+
     def system_menu_reboot(self):
-        self.lcd.splash_show()
-        logging.info("Hardware Reboot")
+        self.lcd.splash_show(False)
+        logging.info("System Reboot")
         os.system('systemctl reboot')
 
     def system_menu_input_gain(self):

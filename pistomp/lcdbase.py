@@ -93,9 +93,6 @@ class Lcdbase(abstract_lcd.Lcd):
                         break
             self.zone_y[i] = y_offset
 
-    def splash_show(self):
-        pass
-
     def base_draw_title(self, draw, font, pedalboard, preset, invert_pb, invert_pre, highlight_only=False):
         pb_size  = font.getsize(pedalboard)[0]
         font_height = font.getsize(pedalboard)[1]

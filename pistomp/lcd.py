@@ -23,7 +23,7 @@ class Lcd(ABC):
         pass
 
     @abstractmethod
-    def splash_show(self):
+    def splash_show(self, boot=True):
         pass
 
     @abstractmethod
