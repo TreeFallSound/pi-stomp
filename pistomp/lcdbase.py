@@ -15,6 +15,7 @@
 
 import logging
 import pistomp.lcd as abstract_lcd
+from PIL import ImageColor
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
 
@@ -45,8 +46,8 @@ class Lcdbase(abstract_lcd.Lcd):
         self.zone_height = None
         self.zone_y = None
         self.flip = False
-        self.footswitch_xy = None
         self.footswitch_width = None
+        self.footswitch_height = None
         self.plugin_height = None
         self.plugin_width = None
         self.plugin_width_medium = None
@@ -61,7 +62,6 @@ class Lcdbase(abstract_lcd.Lcd):
         # Content
         self.zones = None
         self.zone_height = None
-        self.footswitch_xy = None
         self.images = None
         self.draw = None
         self.selected_plugin = None
@@ -77,6 +77,16 @@ class Lcdbase(abstract_lcd.Lcd):
             if getattr(self, v) is None:
                 if v not in known_exceptions:
                     logging.error("%s class doesn't set variable: %s" % (self, v))
+
+    # Try to map color to a valid displayable color, if not use foreground
+    def valid_color(self, color):
+        if color is None:
+            return self.foreground
+        try:
+            return ImageColor.getrgb(color)
+        except ValueError:
+            logging.error("Cannot convert color name: %s" % color)
+            return self.foreground
 
     # Convert zone height values to absolute y values considering the flip setting
     def calc_zone_y(self):
@@ -141,18 +151,19 @@ class Lcdbase(abstract_lcd.Lcd):
                         label = c.parameter.name
                     else:
                         label = self.shorten_name(p.instance_id, self.footswitch_width)
-                    self.draw_plugin(zone, self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1], label,
-                                     self.footswitch_width, False, p, True, self.footswitch_xy[fs_id][2])
+                    color = self.valid_color(c.lcd_color)
+                    x = self.footswitch_pitch[len(fss)] * fs_id
+                    self.draw_plugin(zone, x, 0, label, self.footswitch_width, False, p, True, color)
 
         # Draw any footswitches which weren't found to be bound to a plugin
         for fs_id in range(len(fss)):
             if fss[fs_id] is None:
                 continue
-            label = "" if fss[fs_id].display_label is None else fss[fs_id].display_label
-            #xy2 = (self.footswitch_xy[fs_id][0] + self.footswitch_width, self.footswitch_xy[fs_id][1] + self.plugin_height)
-            self.draw_plugin(zone, self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1], label,
-                             self.footswitch_width, False, None, True, self.footswitch_xy[fs_id][2])
-            #self.draw_box((self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1]), xy2, zone, label, True)
+            f = fss[fs_id]
+            color = self.valid_color(f.lcd_color)
+            label = "" if f.display_label is None else f.display_label
+            x = self.footswitch_pitch[len(fss)] * fs_id
+            self.draw_plugin(zone, x, 0, label, self.footswitch_width, False, None, True, color)
 
     def draw_just_a_box(self, draw, xy, xy2, fill=False, color=None, width=1):
         if color is None:

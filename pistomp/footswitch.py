@@ -34,6 +34,7 @@ class Footswitch(controller.Controller):
         self.refresh_callback = refresh_callback
         self.relay_list = []
         self.preset_callback = None
+        self.lcd_color = None
 
         # this value (in seconds) chosen to be just greater than the event_detect bouncetime (in milliseconds)
         self.relay_poll_interval = 0.26
@@ -62,6 +63,9 @@ class Footswitch(controller.Controller):
     def set_led(self, enabled):
         if self.led_pin is not None:
             GPIO.output(self.led_pin, enabled)
+
+    def set_lcd_color(self, color):
+        self.lcd_color = color
 
     def toggle(self, gpio):
         # If a footswitch can be mapped to control a relay, preset, MIDI or all 3

@@ -74,16 +74,16 @@ class Lcd(lcdcolor.Lcdcolor):
                             2: 0,
                             3: 32,
                             4: 0,
-                            5: 80,
+                            5: 72,
                             6: 0,
-                            7: 58}
+                            7: 66}
         self.zone_y = {}
         self.flip = True  # Flip the LCD vertically
         self.calc_zone_y()
 
-        self.footswitch_xy = {0: (0, 0, (255, 255, 255)),
-                              1: (120, 0, (0, 255, 0)),
-                              2: (240, 0, (0, 0, 255))}
+        # space between footswitch icons where index is the footswitch count
+        #                        0    1    2    3    4    5
+        self.footswitch_pitch = [120, 120, 120, 128, 86,  65]
 
         # Menu (System menu, Parameter edit, etc.)
         self.menu_height = self.height - self.zone_height[0]
@@ -103,8 +103,9 @@ class Lcd(lcdcolor.Lcdcolor):
         self.plugin_rect_x_pad = 5
         self.plugin_bypass_thickness = 2
         self.plugin_label_length = 7
-        self.footswitch_width = 70
-        self.footswitch_ring_width = 5
+        self.footswitch_width = 56
+        self.footswitch_height = 44
+        self.footswitch_ring_width = 7
 
         self.images = [Image.new('RGB', (self.width, self.zone_height[0])),  # Pedalboard / Preset Title bar
                        Image.new('RGB', (self.width, self.zone_height[1])),  # Analog Controllers
@@ -219,6 +220,32 @@ class Lcd(lcdcolor.Lcdcolor):
         if index > num_visible:
             scroll_idx = index - num_visible
         self.refresh_menu(highlight, scroll_idx * self.menu_highlight_box_height)
+
+    def draw_footswitch(self, xy1, xy2, zone, text, color):
+        # Many fudge factors here to make the footswitch icon smaller than the highlight bounding box
+        # TODO These aren't scalable to other LCD's
+
+        # halo
+        hx1 = xy1[0] + 2
+        hy1 = xy1[1] + 10
+        hx2 = xy2[0] - 2
+        hy2 = xy2[1] - 2
+        self.draw[zone].ellipse(((hx1, hy1), (hx2, hy2)), fill=None, outline=color, width=self.footswitch_ring_width)
+
+        # cap bottom
+        fx1 = xy1[0] + 10
+        fy1 = xy2[1] - 34
+        fx2 = xy2[0] - 10
+        fy2 = fy1 + 16
+        self.draw[zone].ellipse(((fx1, fy1), (fx2, fy2)), fill=self.background, outline="gray", width=2)
+
+        # cap top
+        fy1 -= 6
+        fy2 -= 6
+        self.draw[zone].ellipse(((fx1, fy1), (fx2, fy2)), fill=self.background, outline="gray", width=2)
+
+        # label
+        self.draw[zone].text((xy1[0], xy2[1]), text, self.foreground, self.small_font)
 
     def splash_show(self, boot=True):
         zone = 5

@@ -129,8 +129,8 @@ class Lcdcolor(lcdbase.Lcdbase):
         self.refresh_zone(zone)
 
     def draw_footswitch(self, xy1, xy2, zone, text, color):
-        self.draw[zone].ellipse((xy1, xy2), fill=None, outline=color, width=self.footswitch_ring_width)
-        self.draw[zone].text((xy1[0], xy2[1]), text, self.foreground, self.small_font)
+        # implement in display class
+        pass
 
     def draw_plugins(self, plugins):
         y = self.top
@@ -170,7 +170,8 @@ class Lcdcolor(lcdbase.Lcdbase):
 
     def draw_plugin(self, zone, x, y, text, width, eol, plugin, is_footswitch=False, color=0):
         text = self.shorten_name(text, width)
-        y2 = y + self.plugin_height
+
+        y2 = y + (self.footswitch_height if is_footswitch else self.plugin_height)
         x2 = x + width
         if eol:
             x2 = x2 - 1

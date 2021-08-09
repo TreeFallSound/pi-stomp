@@ -234,4 +234,9 @@ class Hardware:
                     if preset_value == Token.DOWN:
                         fs.add_preset(callback=self.mod.preset_decr_and_change)
                         fs.set_display_label("Down")
+
+                # LCD attributes
+                if Token.COLOR in f:
+                    fs.set_lcd_color(f[Token.COLOR])
+
             idx += 1

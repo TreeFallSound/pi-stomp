@@ -14,6 +14,7 @@ hardware:
 
   # footswitches definition
   #   bypass: relay(s) to toggle (LEFT, RIGHT or LEFT_RIGHT)
+  #   color: color to use for enable status halo on LCD
   #   debounce_input: debounce chip pin to which switch is connected
   #   disable: disable the switch
   #   gpio_input: gpio pin if not using debounce
@@ -29,10 +30,14 @@ hardware:
     preset: UP
   - id: 1
     debounce_input: 3
+    #gpio_output: 13
     midi_CC: 62
+    color: lime
   - id: 2
     debounce_input: 4
+    #gpio_output: 26
     midi_CC: 63
+    color: blue
 
   # analog control definition
   #   adc_input: adc chip pin to which control is connected
