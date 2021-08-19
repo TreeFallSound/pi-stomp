@@ -599,7 +599,10 @@ class Mod(Handler):
             code = self.parameter_set_send(url, "1" if value else "0", 200)
             if (code != 200):
                 inst.toggle_bypass()  # toggle back to original value since request wasn't successful
+
+            #  Indicate change on LCD, and redraw selection(highlight)
             self.update_lcd_plugins()
+            self.lcd.draw_plugin_select(inst)  # Not strictly required for original pi-stomp
 
     #
     # Generic Menu functions
