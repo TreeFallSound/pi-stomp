@@ -53,8 +53,13 @@ class Hardware:
     def init_spi(self):
         self.spi = spidev.SpiDev()
         self.spi.open(0, 1)  # Bus 0, CE1
-        #self.spi.max_speed_hz = 24000000  # TODO match with LCD or don't specify
-        self.spi.max_speed_hz = 1000000
+        # TODO SPI bus is shared by ADC and LCD.  Ideally, they would use the same frequency.
+        # MCP3008 ADC has a max of 1MHz (higher makes it loose resolution)
+        # Color LCD needs to run at 24Mhz
+        # until we can get them on the same, we'll set ADC (the one set here) to be a slower multiple of the LCD
+        #self.spi.max_speed_hz = 24000000
+        #self.spi.max_speed_hz =  1000000
+        self.spi.max_speed_hz = 240000
 
     def poll_controls(self):
         # This is intended to be called periodically from main working loop to poll the instantiated controls
