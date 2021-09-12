@@ -157,9 +157,10 @@ class Pedalboard:
 
             # Add plugin data (from plugin registry) to global plugin dictionary
             plugin_info = {}
+            category = None
             prototype = self.world.find_nodes(block, self.world.ns.lv2.prototype, None)
             if len(prototype) > 0:
-                logging.debug("prototype %s" % prototype[0])
+                #logging.debug("prototype %s" % prototype[0])
                 plugin_uri = str(prototype[0])  # plugin.get_uri()
                 if plugin_uri not in plugin_dict:
                     plugin_info = self.get_plugin_data(plugin_uri)
@@ -168,7 +169,10 @@ class Pedalboard:
                         plugin_dict[plugin_uri] = plugin_info
                 else:
                     plugin_info = plugin_dict[plugin_uri]
-                #category = util.DICT_GET(plugin_info, Token.CATEGORY)
+                if plugin_info is not None:
+                    cat = util.DICT_GET(plugin_info, Token.CATEGORY)
+                    if cat is not None:
+                        category = cat[0]
 
             # Extract Parameter data
             instance_id = str(block.get_path()).replace(bundlepath, "", 1)
@@ -178,14 +182,14 @@ class Pedalboard:
                 # These are the port nodes used to define parameter controls
                 for port in nodes:
                     param_value = self.world.get(port, self.uri_value, None)
-                    logging.debug("port: %s  value: %s" % (port, param_value))
+                    #logging.debug("port: %s  value: %s" % (port, param_value))
                     binding = self.world.get(port, self.world.ns.midi.binding, None)
                     if binding is not None:
                         controller_num = self.world.get(binding, self.world.ns.midi.controllerNumber, None)
                         channel = self.world.get(binding, self.world.ns.midi.channel, None)
                         if (controller_num is not None) and (channel is not None):
                             binding = "%d:%d" % (self.world.new_int(channel), self.world.new_int(controller_num))
-                            logging.debug("  binding %s" % binding)
+                            logging.debug("  MIDI CC binding %s" % binding)
                     path = str(port)
                     symbol = os.path.basename(path)
                     value = None
@@ -214,11 +218,11 @@ class Pedalboard:
                         if sym == symbol:
                             #logging.debug("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
                             param = Parameter.Parameter(pp, value, binding)
-                            logging.debug("Param: %s %s %4.2f %4.2f %s" % (param.name, param.symbol, param.minimum, value, binding))
+                            #logging.debug("Param: %s %s %4.2f %4.2f %s" % (param.name, param.symbol, param.minimum, value, binding))
                             parameters[symbol] = param
 
                     #logging.debug("  Label: %s" % label)
-            inst = Plugin.Plugin(instance_id, parameters, plugin_info)
+            inst = Plugin.Plugin(instance_id, parameters, plugin_info, category)
 
             try:
                 index = plugin_order.index(block)

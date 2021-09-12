@@ -64,6 +64,7 @@ class UniversalEncoderMode(Enum):
     INPUT_GAIN = 7
     DEEP_EDIT = 8
     VALUE_EDIT = 9
+    LOADING = 10
 
 class SelectedType(Enum):
     PEDALBOARD = 0
@@ -241,7 +242,7 @@ class Mod(Handler):
     #
 
     def universal_encoder_sw(self, value):
-        # State machine for universal rotary encoder
+        # State machine for universal rotary encoder switch
         mode = self.universal_encoder_mode
         if value == EncoderSwitch.Value.RELEASED:
             if mode == UniversalEncoderMode.DEFAULT:
@@ -256,12 +257,14 @@ class Mod(Handler):
                     self.universal_encoder_mode = UniversalEncoderMode.PRESET_SELECT
                     self.update_lcd_title()
             elif mode == UniversalEncoderMode.PEDALBOARD_SELECT:
-                self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
+                self.universal_encoder_mode = UniversalEncoderMode.LOADING
                 self.pedalboard_change()
-            elif mode == UniversalEncoderMode.PRESET_SELECT:
                 self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
+            elif mode == UniversalEncoderMode.PRESET_SELECT:
+                self.universal_encoder_mode = UniversalEncoderMode.LOADING
                 self.preset_change()
                 self.update_lcd_title()
+                self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
             elif mode == UniversalEncoderMode.SYSTEM_MENU:
                 self.menu_action()
                 return
@@ -290,8 +293,11 @@ class Mod(Handler):
                 self.update_lcd()
 
     def universal_encoder_select(self, direction):
-        # State machine for universal encoder switch
+        # State machine for universal encoder
         mode = self.universal_encoder_mode
+        if mode == UniversalEncoderMode.LOADING:
+            # ignore rotations when loading
+            return
         if mode == UniversalEncoderMode.DEFAULT or mode == UniversalEncoderMode.SCROLL:
             self.universal_encoder_mode = UniversalEncoderMode.SCROLL
             self.universal_select(direction)
@@ -538,12 +544,20 @@ class Mod(Handler):
         self.bot_encoder_mode = BotEncoderMode.DEFAULT
 
     def preset_incr_and_change(self):
+        if self.universal_encoder_mode == UniversalEncoderMode.LOADING:
+            return
+        self.universal_encoder_mode = UniversalEncoderMode.LOADING
         self.preset_select(1)
         self.preset_change()
+        self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
 
     def preset_decr_and_change(self):
+        if self.universal_encoder_mode == UniversalEncoderMode.LOADING:
+            return
+        self.universal_encoder_mode = UniversalEncoderMode.LOADING
         self.preset_select(-1)
         self.preset_change()
+        self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
 
     def preset_change_plugin_update(self):
         # Now that the preset has changed on the host, update plugin bypass indicators
@@ -556,6 +570,7 @@ class Mod(Handler):
             except:
                 logging.error("failed to get bypass value for: %s" % p.instance_id)
                 continue
+        self.lcd.draw_tools()
         self.lcd.draw_analog_assignments(self.current.analog_controllers)
         self.lcd.draw_plugins(self.current.pedalboard.plugins)
         self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
@@ -845,6 +860,7 @@ class Mod(Handler):
 
     def update_lcd(self):  # TODO rename to imply the home screen
         self.update_lcd_title()
+        self.lcd.draw_tools()  # TODO add to lcd class
         self.lcd.draw_analog_assignments(self.current.analog_controllers)
         self.lcd.draw_plugins(self.current.pedalboard.plugins)
         self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)

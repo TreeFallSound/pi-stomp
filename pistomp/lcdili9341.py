@@ -18,6 +18,7 @@ import digitalio
 from PIL import Image, ImageDraw, ImageFont
 import adafruit_rgb_display.ili9341 as ili9341
 import common.token as Token
+import os
 import pistomp.lcdcolor as lcdcolor
 import time
 
@@ -48,8 +49,9 @@ class Lcd(lcdcolor.Lcdcolor):
         # Fonts
         self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 26)
         self.splash_font = ImageFont.truetype('DejaVuSans.ttf', 48)
-        self.small_font = ImageFont.truetype("DejaVuSans.ttf", 18)
-        #self.small_font = ImageFont.truetype(os.path.join(cwd, "fonts", "EtBt6001-JO47.ttf"), 11)
+        self.small_font = ImageFont.truetype("DejaVuSans.ttf", 20)
+        self.tiny_font = ImageFont.truetype("DejaVuSans.ttf", 16)
+        #self.tiny_font = ImageFont.truetype(os.path.join(cwd, "fonts", "EtBt6001-JO47.ttf"), 12)
 
         # Colors
         self.background = (0, 0, 0)
@@ -67,16 +69,23 @@ class Lcd(lcdcolor.Lcdcolor):
         self.top = 0
         self.left = 2
 
-        # Zone dimensions
-        self.zones = 8
-        self.zone_height = {0: 38,
-                            1: 32,
-                            2: 0,
-                            3: 32,
-                            4: 0,
-                            5: 72,
-                            6: 0,
-                            7: 66}
+        # Zones
+        self.ZONE_TOOLS = 0
+        self.ZONE_TITLE = 1
+        self.ZONE_ASSIGNMENTS = 2
+        self.ZONE_PLUGINS1 = 3
+        self.ZONE_PLUGINS2 = 4
+        self.ZONE_PLUGINS3 = 5
+        self.ZONE_FOOTSWITCHES = 6
+
+        self.zones = 7
+        self.zone_height = {0: 16,
+                            1: 38,
+                            2: 26,
+                            3: 30,
+                            4: 30,
+                            5: 34,
+                            6: 66}
         self.zone_y = {}
         self.flip = True  # Flip the LCD vertically
         self.calc_zone_y()
@@ -97,9 +106,9 @@ class Lcd(lcdcolor.Lcdcolor):
         self.graph_width = 300
 
         # Element dimensions
-        self.plugin_height = 22
-        self.plugin_width = 56
-        self.plugin_width_medium = 70
+        self.plugin_height = 24
+        self.plugin_width = 75
+        self.plugin_width_medium = 75
         self.plugin_rect_x_pad = 5
         self.plugin_bypass_thickness = 2
         self.plugin_label_length = 7
@@ -113,13 +122,16 @@ class Lcd(lcdcolor.Lcdcolor):
                        Image.new('RGB', (self.width, self.zone_height[3])),  # Plugins Row 1
                        Image.new('RGB', (self.width, self.zone_height[4])),  # Plugin selection
                        Image.new('RGB', (self.width, self.zone_height[5])),  # Plugins Row 2
-                       Image.new('RGB', (self.width, self.zone_height[6])),  # Plugin selection
-                       Image.new('RGB', (self.width, self.zone_height[7]))]  # Footswitch Plugins
+                       Image.new('RGB', (self.width, self.zone_height[6]))] # Plugin selection
+                       #Image.new('RGB', (self.width, self.zone_height[7]))]  # Footswitch Plugins
 
         self.draw = [ImageDraw.Draw(self.images[0]), ImageDraw.Draw(self.images[1]),
                      ImageDraw.Draw(self.images[2]), ImageDraw.Draw(self.images[3]),
                      ImageDraw.Draw(self.images[4]), ImageDraw.Draw(self.images[5]),
-                     ImageDraw.Draw(self.images[6]), ImageDraw.Draw(self.images[7])]
+                     ImageDraw.Draw(self.images[6])]
+
+        self.splash_image = Image.new('RGB', (self.width, 60))
+        self.splash_draw = ImageDraw.Draw(self.splash_image)
 
         self.check_vars_set()
         self.lock = False
@@ -143,8 +155,9 @@ class Lcd(lcdcolor.Lcdcolor):
 
     def refresh_plugins(self):
         # TODO could be smarter here and only refresh the affected zone
-        self.refresh_zone(3)
-        self.refresh_zone(5)
+        self.refresh_zone(self.ZONE_PLUGINS1)
+        self.refresh_zone(self.ZONE_PLUGINS2)
+        self.refresh_zone(self.ZONE_PLUGINS3)
         #self.refresh_zone(7)
 
     def wait_lock(self, period, max):
@@ -154,7 +167,7 @@ class Lcd(lcdcolor.Lcdcolor):
             time.sleep(period)
             count += 1
 
-    def render_image(self, image, y0):
+    def render_image(self, image, y0, x0=0):
         # ONLY THIS METHOD SHOULD BE USED TO PRINT AN IMAGE TO THE DISPLAY
 
         # Wait if a lock is present (to avoid multiple async refreshes accessing the SPI simultaneously
@@ -163,7 +176,7 @@ class Lcd(lcdcolor.Lcdcolor):
         self.lock = True
 
         # Since rotating 270 or 90, x becomes y, y becomes x
-        self.disp.image(image, 270 if self.flip else 90, x=y0, y=0)
+        self.disp.image(image, 270 if self.flip else 90, x=y0, y=x0)
 
         # unlock so the next refresh can happen
         self.lock = False
@@ -248,12 +261,10 @@ class Lcd(lcdcolor.Lcdcolor):
         self.draw[zone].text((xy1[0], xy2[1]), text, self.foreground, self.small_font)
 
     def splash_show(self, boot=True):
-        zone = 5
         self.clear()
-        self.erase_zone(zone)
         color = self.color_splash_up if boot is True else self.color_splash_down
-        self.draw[zone].text((50, self.top), "pi Stomp!", font=self.splash_font, fill=color)
-        self.refresh_zone(zone)
+        self.splash_draw.text((50, self.top), "pi Stomp!", font=self.splash_font, fill=color)
+        self.render_image(self.splash_image, 90, 0)
 
     def cleanup(self):
         self.clear()

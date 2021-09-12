@@ -19,7 +19,7 @@ from pistomp.footswitch import Footswitch
 
 class Plugin:
 
-    def __init__(self, instance_id, parameters, info):
+    def __init__(self, instance_id, parameters, info, category=None):
 
         self.instance_id = instance_id
         self.parameters = parameters
@@ -27,6 +27,7 @@ class Plugin:
         self.lcd_xyz = None
         self.controllers = []
         self.has_footswitch = False
+        self.category = category
         #self.info_dict = info   # TODO could store this but not sure we need to
 
     def is_bypassed(self):

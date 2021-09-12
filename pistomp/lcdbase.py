@@ -1,4 +1,5 @@
 # This file is part of pi-stomp.
+# This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -171,7 +172,7 @@ class Lcdbase(abstract_lcd.Lcd):
         f = color if fill else None
         draw.rectangle((xy, xy2), f, outline=color, width=width)
 
-    def draw_box(self, xy, xy2, zone, text=None, round_bottom_corners=False, fill=False, color=None, width=1):
+    def draw_box(self, xy, xy2, zone, text=None, round_bottom_corners=False, fill=False, color=None, width=2):
         self.draw_just_a_box(self.draw[zone], xy, xy2, fill, color, width)
         #self.draw[zone].point(xy, self.background)  # Round the top corners
         #self.draw[zone].point((xy2[0],xy[1]), self.background)

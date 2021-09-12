@@ -114,6 +114,8 @@ class Hardware:
         cfg_fs = cfg[Token.HARDWARE][Token.FOOTSWITCHES]
         if cfg_fs is None:
             return
+
+        midi_channel = self.__get_real_midi_channel(cfg)
         idx = 0
         for f in cfg_fs:
             if Util.DICT_GET(f, Token.DISABLE) is True:
@@ -133,7 +135,7 @@ class Hardware:
                 logging.error("Switch specified without %s or %s" % (Token.DEBOUNCE_INPUT, Token.GPIO_INPUT))
                 continue
 
-            fs = Footswitch.Footswitch(id if id else idx, gpio_input, gpio_output, midi_cc, self.midi_channel,
+            fs = Footswitch.Footswitch(id if id else idx, gpio_input, gpio_output, midi_cc, midi_channel,
                                        self.midiout, refresh_callback=self.refresh_callback)
             self.footswitches.append(fs)
             idx += 1
@@ -142,6 +144,7 @@ class Hardware:
         if cfg is None or (Token.HARDWARE not in cfg) or (Token.ANALOG_CONTROLLERS not in cfg[Token.HARDWARE]):
             return
 
+        midi_channel = self.__get_real_midi_channel(cfg)
         cfg_c = cfg[Token.HARDWARE][Token.ANALOG_CONTROLLERS]
         if cfg_c is None:
             return
@@ -163,22 +166,27 @@ class Hardware:
             if threshold is None:
                 threshold = 16  # Default, 1024 is full scale
 
-            control = AnalogMidiControl.AnalogMidiControl(self.spi, adc_input, threshold, midi_cc, self.midi_channel,
+            control = AnalogMidiControl.AnalogMidiControl(self.spi, adc_input, threshold, midi_cc, midi_channel,
                                                           self.midiout, control_type)
             self.analog_controls.append(control)
-            key = format("%d:%d" % (self.midi_channel, midi_cc))
+            key = format("%d:%d" % (midi_channel, midi_cc))
             self.controllers[key] = control
+
+    def __get_real_midi_channel(self, cfg):
+        chan = 0
+        try:
+            val = cfg[Token.HARDWARE][Token.MIDI][Token.CHANNEL]
+            # LAME bug in Mod detects MIDI channel as one higher than sent (7 sent, seen by mod as 8) so compensate here
+            chan = val - 1 if val > 0 else 0
+        except KeyError:
+            pass
+        return chan
 
     def __init_midi_default(self):
         self.__init_midi(self.cfg)
 
     def __init_midi(self, cfg):
-        try:
-            val = cfg[Token.HARDWARE][Token.MIDI][Token.CHANNEL]
-            # LAME bug in Mod detects MIDI channel as one higher than sent (7 sent, seen by mod as 8) so compensate here
-            self.midi_channel = val - 1 if val > 0 else 0
-        except KeyError:
-            pass
+        self.midi_channel = self.__get_real_midi_channel(cfg)
         # TODO could iterate thru all objects here instead of handling in __init_footswitches
         for ac in self.analog_controls:
             if isinstance(ac, AnalogMidiControl.AnalogMidiControl):
