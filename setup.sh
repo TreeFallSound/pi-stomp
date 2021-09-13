@@ -42,6 +42,9 @@ else
     ${HOME}/pi-stomp/setup/pi-stomp-tweaks/modify_version.sh ${hardware_version}
 fi
 
+printf "\n===== OS update =====\n"
+sudo apt update -y --fix-missing
+
 printf "\n===== Audio card setup =====\n"
 setup/audio/audioinjector-setup.sh
 
