@@ -101,6 +101,23 @@ class Lcd(abstract_lcd.Lcd):
         # Turn on Backlight
         self.enable_backlight()
 
+        self.supports_toolbar = False
+
+    def clear_select(self):
+        pass
+
+    def draw_tools(self, wifi_type, bypass_type, system_type):
+        pass
+
+    def update_wifi(self, wifi_status):
+        pass
+
+    def update_bypass(self, bypass):
+        pass
+
+    def draw_tool_select(self, tool_type):
+        pass
+
     def splash_show(self, boot=True):
         for x in range(0, self.width):
             for y in range(0, self.height):

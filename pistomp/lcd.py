@@ -34,6 +34,27 @@ class Lcd(ABC):
     def erase_all(self):
         pass
 
+    @abstractmethod
+    def clear_select(self):
+        pass
+
+    # Toolbar
+    @abstractmethod
+    def draw_tools(self, wifi_type, bypass_type, system_type):
+        pass
+
+    @abstractmethod
+    def update_wifi(self, wifi_status):
+        pass
+
+    @abstractmethod
+    def update_bypass(self, bypass):
+        pass
+
+    @abstractmethod
+    def draw_tool_select(self, tool_type):
+        pass
+
     # Menu Screens (uses deep_edit image and draw objects)
     @abstractmethod
     def menu_show(self, page_title, menu_items):

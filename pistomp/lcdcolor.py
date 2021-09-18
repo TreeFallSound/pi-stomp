@@ -16,6 +16,7 @@
 from PIL import Image
 import os
 import pistomp.lcdbase as lcdbase
+import pistomp.tool as Tool
 import common.util as util
 
 CATEGORY_COLOR_MAP = {
@@ -37,9 +38,6 @@ class Lcdcolor(lcdbase.Lcdbase):
 
     def __init__(self, cwd):
         super(Lcdcolor, self).__init__(cwd)
-        self.power_image  = Image.open(os.path.join(cwd, "images", "power_silver.png"))
-        self.wifi_image   = Image.open(os.path.join(cwd, "images", "wifi14.png"))
-        self.wrench_image = Image.open(os.path.join(cwd, "images", "wrench16.png"))
 
     def get_plugin_color(self, plugin):
         color = "Silver"
@@ -91,14 +89,38 @@ class Lcdcolor(lcdbase.Lcdbase):
         self.refresh_menu()
         self.draw_info_message("Click to exit")
 
-    def draw_tools(self):
-        zone = self.ZONE_TOOLS
-        self.erase_zone(zone)
+    def update_wifi(self, wifi_status):
+        if not self.supports_toolbar:
+            return
+        if util.DICT_GET(wifi_status, 'hotspot_active') == '1':
+            img = "wifi_orange.png"
+        elif util.DICT_GET(wifi_status, 'wifi_connected') == '1':
+            img = "wifi_silver.png"
+        else:
+            img = "wifi_gray.png"
+        path = os.path.join(self.imagedir, img)
+        self.change_tool_img(self.tool_wifi, path)
+
+    def update_bypass(self, bypass):
+        if not self.supports_toolbar:
+            return
+        img = "power_green.png" if bypass else "power_gray.png"
+        path = os.path.join(self.imagedir, img)
+        self.change_tool_img(self.tool_bypass, path)
+
+    def change_tool_img(self, tool, img_path):
+        if not self.supports_toolbar:
+            return
+        tool.update_img(img_path)
+        self.images[self.ZONE_TOOLS].paste(tool.image, (tool.x, tool.y))
         self.refresh_zone(self.ZONE_TOOLS)
 
-        self.render_image(self.power_image, self.zone_y[zone], 240)
-        self.render_image(self.wifi_image, self.zone_y[zone], 270)
-        self.render_image(self.wrench_image, self.zone_y[zone], 300)
+    def clear_select(self):
+        if self.selected_box:
+            self.draw_box_outline(self.selected_box[0], self.selected_box[1], self.ZONE_TOOLS,
+                                  color=self.background, width=self.selected_box[2])
+            self.refresh_zone(self.ZONE_TOOLS)
+            self.selected_box = None
 
     def draw_title(self, pedalboard, preset, invert_pb, invert_pre, highlight_only=False):
         zone = self.ZONE_TITLE
@@ -167,7 +189,7 @@ class Lcdcolor(lcdbase.Lcdbase):
 
     def draw_bound_plugins(self, plugins, footswitches):
         zone = self.ZONE_FOOTSWITCHES
-        self.erase_zone(zone)
+        self.erase_zone(zone)   # necessary when changing pedalboards with different switch assignments
         self.base_draw_bound_plugins(zone, plugins, footswitches)
         self.refresh_zone(zone)
 

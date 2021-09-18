@@ -20,6 +20,7 @@ import adafruit_rgb_display.ili9341 as ili9341
 import common.token as Token
 import os
 import pistomp.lcdcolor as lcdcolor
+import pistomp.tool as Tool
 import time
 
 # The code in this file should generally be specific to initializing a specific display and rendering (and refreshing)
@@ -79,8 +80,8 @@ class Lcd(lcdcolor.Lcdcolor):
         self.ZONE_FOOTSWITCHES = 6
 
         self.zones = 7
-        self.zone_height = {0: 16,
-                            1: 38,
+        self.zone_height = {0: 18,
+                            1: 36,
                             2: 26,
                             3: 30,
                             4: 30,
@@ -133,8 +134,9 @@ class Lcd(lcdcolor.Lcdcolor):
         self.splash_image = Image.new('RGB', (self.width, 60))
         self.splash_draw = ImageDraw.Draw(self.splash_image)
 
-        self.check_vars_set()
         self.lock = False
+        self.supports_toolbar = True
+        self.check_vars_set()
         self.splash_show()
 
     def init_spi_display(self):
@@ -259,6 +261,39 @@ class Lcd(lcdcolor.Lcdcolor):
 
         # label
         self.draw[zone].text((xy1[0], xy2[1]), text, self.foreground, self.small_font)
+
+    def draw_tools(self, wifi_type, bypass_type, system_type):
+        if not self.supports_toolbar:
+            return
+        self.erase_zone(self.ZONE_TOOLS)
+        tools = []
+        if self.tool_wifi is None:
+            self.tool_wifi = Tool.Tool(wifi_type, 240, 1, os.path.join(self.imagedir, "wifi_gray.png"))
+            tools.append(self.tool_wifi)
+        if self.tool_bypass is None:
+            self.tool_bypass = Tool.Tool(bypass_type, 270, 1, os.path.join(self.imagedir, "power_gray.png"))
+            tools.append(self.tool_bypass)
+        if self.tool_system is None:
+            self.tool_system = Tool.Tool(system_type, 296, 1, os.path.join(self.imagedir, "wrench_silver.png"))
+            tools.append(self.tool_system)
+        if len(tools) > 0:
+            self.tools = tools
+        for t in self.tools:
+            self.images[self.ZONE_TOOLS].paste(t.image, (t.x, t.y))
+        self.refresh_zone(self.ZONE_TOOLS)
+
+    def draw_tool_select(self, tool_type):
+        if not self.supports_toolbar:
+            return
+        for t in self.tools:
+            if t.tool_type == tool_type:
+                xy0 = (t.x - 4, t.y - 1)
+                xy1 = (t.x + 17, t.y + 16)
+                width = 1
+                self.draw_box_outline(xy0, xy1, self.ZONE_TOOLS, color=self.highlight, width=width)
+                self.refresh_zone(self.ZONE_TOOLS)
+                self.selected_box = (xy0, xy1, 1)
+                break
 
     def splash_show(self, boot=True):
         self.clear()

@@ -25,6 +25,7 @@ from rtmidi.midiutil import open_midioutput
 
 import modalapi.mod as Mod
 import pistomp.audioinjector as Audiocard
+import pistomp.generichost as Generichost
 import pistomp.hardwarefactory as Hardwarefactory
 import pistomp.handler as Handler
 
@@ -100,16 +101,17 @@ def main():
         # No specific plugin host specified, so use a generic handler
         # Encoders and LCD not mapped without specific purpose
         # Just initialize the control hardware (footswitches, analog controls, etc.) for use as MIDI controls
-        handler = Handler.Handler()
+        handler = Generichost.Generichost(homedir=cwd)
         factory = Hardwarefactory.Hardwarefactory()
         hw = factory.create(handler, midiout)
+        handler.add_hardware(hw)
 
     logging.info("Entering main loop. Press Control-C to exit.")
     #period = 0
     try:
         while True:
-            hw.poll_controls()
-            time.sleep(0.01)  # TODO less to increase responsiveness
+            handler.poll_controls()
+            time.sleep(0.01)  # lower to increase responsiveness, but can cause conflict with LCD if too low
 
             # For less frequent events
             # period += 1
@@ -123,7 +125,7 @@ def main():
         midiout.close_port()
         if handler.lcd is not None:
             handler.lcd.cleanup()
-        GPIO.cleanup()  # TODO Should do this.  Possibly mod resets becuase of bus changes?
+        GPIO.cleanup()
         logging.info("Completed cleanup")
 
 

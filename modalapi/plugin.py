@@ -38,6 +38,8 @@ class Plugin:
 
     def toggle_bypass(self):
         param = self.parameters.get(":bypass")
+        if param is None:
+            return 0
         if param is not None:
             param.value = not param.value
         return param.value  # return the new value

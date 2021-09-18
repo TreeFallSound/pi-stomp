@@ -13,49 +13,17 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from pistomp.handler import Handler
 
-class Handler:
+class Generichost(Handler):
 
-    def __init__(self):
-        self.homedir = None
-        self.lcd = None
-        pass
-
-    def noop(self):
-        pass
-
-    def update_lcd_fs(self):
-        pass
-
-    def add_lcd(self, lcd):
-        pass
+    def __init__(self, homedir=None):
+        self.homedir = homedir
+        self.hardware = None
 
     def add_hardware(self, hardware):
-        pass
+        self.hardware = hardware
 
     def poll_controls(self):
-        pass
-
-    def preset_incr_and_change(self):
-        pass
-
-    def preset_decr_and_change(self):
-        pass
-
-    def top_encoder_select(self, direction):
-        pass
-
-    def top_encoder_sw(self, value):
-        pass
-
-    def bot_encoder_select(self, direction):
-        pass
-
-    def bottom_encoder_sw(self, value):
-        pass
-
-    def universal_encoder_select(self, direction):
-        pass
-
-    def universal_encoder_sw(self, value):
-        pass
+        if self.hardware:
+            self.hardware.poll_controls()

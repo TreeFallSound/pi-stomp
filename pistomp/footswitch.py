@@ -91,6 +91,7 @@ class Footswitch(controller.Controller):
                     else:
                         r.disable()
                 self.set_led(self.enabled)
+                self.refresh_callback(True)  # True means this is a bypass change only
                 return
 
         # If mapped to preset change

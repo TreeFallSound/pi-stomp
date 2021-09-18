@@ -71,6 +71,9 @@ class SelectedType(Enum):
     PRESET = 1
     PLUGIN = 2
     CONTROLLER = 3
+    BYPASS = 4
+    WIFI = 5
+    SYSTEM = 6
 
 
 class Mod(Handler):
@@ -256,6 +259,12 @@ class Mod(Handler):
                 elif self.selected_type() == SelectedType.PRESET:
                     self.universal_encoder_mode = UniversalEncoderMode.PRESET_SELECT
                     self.update_lcd_title()
+                elif self.selected_type() == SelectedType.BYPASS:
+                    self.system_toggle_bypass()
+                elif self.selected_type() == SelectedType.SYSTEM:
+                    self.lcd.clear_select()
+                    self.universal_encoder_mode = UniversalEncoderMode.SYSTEM_MENU
+                    self.system_menu_show()
             elif mode == UniversalEncoderMode.PEDALBOARD_SELECT:
                 self.universal_encoder_mode = UniversalEncoderMode.LOADING
                 self.pedalboard_change()
@@ -318,31 +327,42 @@ class Mod(Handler):
 
     def universal_select(self, direction):
         if self.current.pedalboard is not None:
-            prev_type = None
-            if self.selectable_index:
-                prev_type = self.selectable_items[self.selectable_index][0]
+            prev_type = self.selectable_items[self.selectable_index][0]
             index = ((self.selectable_index + 1) if (direction is 1)
                      else (self.selectable_index - 1)) % len(self.selectable_items)
             self.selectable_index = index
             item_type = self.selectable_items[index][0]
+
+            # Clear previous selection
+            if item_type != prev_type:
+                if prev_type == SelectedType.PLUGIN:
+                    self.lcd.draw_plugin_select(None)
+                elif prev_type == SelectedType.PEDALBOARD or prev_type == SelectedType.PRESET:
+                    self.update_lcd_title()
+                elif prev_type == SelectedType.BYPASS or prev_type == SelectedType.SYSTEM:
+                    self.lcd.clear_select()
+
+            # Select new item
             if item_type == SelectedType.PEDALBOARD:
-                if item_type != prev_type:
-                    self.lcd.draw_plugin_select(None)  # clear previous selection
                 self.pedalboard_select(0)
             elif item_type == SelectedType.PRESET:
-                if item_type != prev_type:
-                    self.lcd.draw_plugin_select(None)  # clear previous selection
                 self.preset_select(0)
             elif item_type == SelectedType.PLUGIN:
-                if item_type != prev_type:
-                    self.update_lcd_title()  # clear previous selection
                 plugin_index = self.selectable_items[index][1]
                 self.selected_plugin_index = plugin_index
                 plugin = self.current.pedalboard.plugins[plugin_index]
                 self.lcd.draw_plugin_select(plugin)
+            elif item_type == SelectedType.BYPASS:
+                self.lcd.draw_tool_select(SelectedType.BYPASS)
+            elif item_type == SelectedType.SYSTEM:
+                self.lcd.draw_tool_select(SelectedType.SYSTEM)
 
     def selected_type(self):
         return self.selectable_items[self.selectable_index][0]
+
+    def poll_controls(self):
+        if self.universal_encoder_mode is not UniversalEncoderMode.LOADING:
+            self.hardware.poll_controls()
 
     #
     # Pedalboard Stuff
@@ -415,6 +435,9 @@ class Mod(Handler):
             self.selectable_items.append((SelectedType.PRESET, None))
         for i in range(len(self.current.pedalboard.plugins)):
             self.selectable_items.append((SelectedType.PLUGIN, i))
+        if self.lcd.supports_toolbar:
+            self.selectable_items.append((SelectedType.BYPASS, None))
+            self.selectable_items.append((SelectedType.SYSTEM, None))
         self.selectable_index = 0
         self.selected_preset_index = 0
 
@@ -570,7 +593,7 @@ class Mod(Handler):
             except:
                 logging.error("failed to get bypass value for: %s" % p.instance_id)
                 continue
-        self.lcd.draw_tools()
+        self.lcd.draw_tools(SelectedType.WIFI, SelectedType.BYPASS, SelectedType.SYSTEM)
         self.lcd.draw_analog_assignments(self.current.analog_controllers)
         self.lcd.draw_plugins(self.current.pedalboard.plugins)
         self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
@@ -666,6 +689,8 @@ class Mod(Handler):
             (key, value) = i.split('=')
             if key and value:
                 self.wifi_status[key] = value
+        self.lcd.update_wifi(self.wifi_status)
+
         try:
             output = subprocess.check_output(['git', '--git-dir', self.homedir + '/.git',
                                               '--work-tree', self.homedir, 'describe'])
@@ -787,6 +812,26 @@ class Mod(Handler):
     def headphone_volume_commit(self):
         self.audiocard.set_parameter(self.audiocard.MASTER, self.deep.selected_parameter.value)
 
+    def system_toggle_bypass(self):
+        relay = self.hardware.relay
+        footswitch = None
+        # if a footswitch is assigned to control a relay, use it
+        for fs in self.hardware.footswitches:
+            for r in fs.relay_list:
+                relay = r
+                footswitch = fs
+                break
+
+        if relay is not None:
+            if relay.enabled:
+                relay.disable()
+            else:
+                relay.enable()
+            self.lcd.update_bypass(relay.enabled)
+
+            if footswitch is not None:
+                # Update LED
+                footswitch.set_led(relay.enabled)
 
     #
     # Parameter Edit
@@ -859,8 +904,9 @@ class Mod(Handler):
     #
 
     def update_lcd(self):  # TODO rename to imply the home screen
+        self.lcd.draw_tools(SelectedType.WIFI, SelectedType.BYPASS, SelectedType.SYSTEM)
+        self.lcd.update_bypass(self.hardware.relay.enabled)
         self.update_lcd_title()
-        self.lcd.draw_tools()  # TODO add to lcd class
         self.lcd.draw_analog_assignments(self.current.analog_controllers)
         self.lcd.draw_plugins(self.current.pedalboard.plugins)
         self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
@@ -885,5 +931,8 @@ class Mod(Handler):
     def update_lcd_plugins(self):
         self.lcd.draw_plugins(self.current.pedalboard.plugins)
 
-    def update_lcd_fs(self):
-        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
+    def update_lcd_fs(self, bypass_change=False):
+        if bypass_change:
+            self.lcd.update_bypass(self.hardware.relay.enabled)
+        else:
+            self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)

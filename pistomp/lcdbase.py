@@ -15,6 +15,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
+import os
 import pistomp.lcd as abstract_lcd
 from PIL import ImageColor
 
@@ -60,12 +61,21 @@ class Lcdbase(abstract_lcd.Lcd):
         self.graph_width = None
         self.menu_y0 = None
 
+        # Toolbar
+        self.supports_toolbar = None
+        self.tools = []
+        self.imagedir = os.path.join(cwd, "images")
+        self.tool_wifi = None
+        self.tool_bypass = None
+        self.tool_system = None
+
         # Content
         self.zones = None
         self.zone_height = None
         self.images = None
         self.draw = None
         self.selected_plugin = None
+        self.selected_box = None  # ((x0, y0), (x1, y1), width)
 
 
     # This method verifies that each variable declared above in __init__ gets assigned a value by the object class
@@ -73,7 +83,7 @@ class Lcdbase(abstract_lcd.Lcd):
     # A better solution might be to create these as abstract properties, but then they are accessed as strings
     # which is likely worse
     def check_vars_set(self):
-        known_exceptions = ["selected_plugin"]
+        known_exceptions = ["selected_plugin", "selected_box", "tool_wifi", "tool_bypass", "tool_system"]
         for v in self.__dict__:
             if getattr(self, v) is None:
                 if v not in known_exceptions:
