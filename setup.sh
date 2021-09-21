@@ -43,7 +43,7 @@ else
 fi
 
 printf "\n===== OS update =====\n"
-sudo apt update -y --fix-missing
+sudo apt-get update --allow-releaseinfo-change --fix-missing
 
 printf "\n===== Audio card setup =====\n"
 setup/audio/audioinjector-setup.sh
