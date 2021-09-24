@@ -17,6 +17,7 @@ from PIL import Image
 import os
 import pistomp.lcdbase as lcdbase
 import pistomp.tool as Tool
+import common.token as Token
 import common.util as util
 
 CATEGORY_COLOR_MAP = {
@@ -39,13 +40,18 @@ class Lcdcolor(lcdbase.Lcdbase):
     def __init__(self, cwd):
         super(Lcdcolor, self).__init__(cwd)
 
-    def get_plugin_color(self, plugin):
+    def get_category_color(self, category):
         color = "Silver"
-        if plugin.category:
-            c = util.DICT_GET(CATEGORY_COLOR_MAP, plugin.category)
+        if category:
+            c = util.DICT_GET(CATEGORY_COLOR_MAP, category)
             if c:
                 color = c
         return color
+
+    def get_plugin_color(self, plugin):
+        if plugin.category:
+            return self.get_category_color(plugin.category)
+        return "Silver"
 
     # Menu Screens (uses deep_edit image and draw objects)
     def menu_show(self, page_title, menu_items):
@@ -130,31 +136,45 @@ class Lcdcolor(lcdbase.Lcdbase):
         self.refresh_zone(zone)
 
     # Zone 1 - Analog Assignments (Tweak, Expression Pedal, etc.)
-    def draw_knob(self, text, x):
+    def draw_knob(self, text, x, color="gray"):
         zone = self.ZONE_ASSIGNMENTS
-        color = "gray"
-        #x = 74  # TODO unique per display (half of width?)
-        self.draw[zone].ellipse(((x, 0), (x + 18, 18)), self.background, color, 2)
-        self.draw[zone].line(((x + 15, 2), (x + 9, 9)), color, 2)
-        self.draw[zone].text((x + 24, 2), text, color, self.tiny_font)
+        self.draw[zone].ellipse(((x, 3), (x + 14, 17)), self.background, color, 2)
+        self.draw[zone].line(((x + 12, 5), (x + 7, 10)), color, 2)
+        self.draw[zone].text((x + 19, 1), text, self.foreground, self.tiny_font)
 
-    def draw_pedal(self, text, x):
+    def draw_pedal(self, text, x, color="gray"):
         zone = self.ZONE_ASSIGNMENTS
-        color = "gray"
-        self.draw[zone].line(((0, 15), (15, 4)), color, 2)
-        self.draw[zone].line(((0, 15), (16, 15)), color, 4)
-        #    text = "%s:%s" % (self.shorten_name(controllers[type][0], self.plugin_width),
-        #                      self.shorten_name(controllers[type][1], self.plugin_width_medium))
-        self.draw[zone].text((24, 2), text, color, self.tiny_font)
+        self.draw[zone].line(((x, 14), (x + 13, 4)), color, 2)
+        self.draw[zone].line(((x, 14), (x + 14, 14)), color, 4)
+        self.draw[zone].text((x + 19, 1), text, self.foreground, self.tiny_font)
 
     def draw_analog_assignments(self, controllers):
         zone = self.ZONE_ASSIGNMENTS
         self.erase_zone(zone)
+
+        # spacing and scaling of text
+        width_per_control = self.width
+        text_per_control = self.width
+        num = len(controllers)
+        if num > 0:
+            width_per_control = int(round(self.width / num))
+            text_per_control = width_per_control - 16  # minus width of control icon
+
         x = 0
         for k, v in controllers.items():
-            if k == 'KNOB':
-                self.draw_knob(v[1], x)
-            x + 30
+            control_type = util.DICT_GET(v, Token.TYPE)
+            color = util.DICT_GET(v, Token.COLOR)
+            if color is None:
+                # color not specified for control in config file
+                category = util.DICT_GET(v, Token.CATEGORY)
+                color = self.get_category_color(category)
+            name = k.split(":")[1]
+            n = self.shorten_name(name, text_per_control)
+            if control_type == Token.KNOB:
+                self.draw_knob(n, x, color)
+            if control_type == Token.EXPRESSION:
+                self.draw_pedal(n, x, color)
+            x += width_per_control
 
         self.refresh_zone(zone)
 
@@ -252,9 +272,5 @@ class Lcdcolor(lcdbase.Lcdbase):
         elif plugin:
             plugin.lcd_xyz = (xy1, xy2, zone)
             self.draw_box(xy1, xy2, zone, text, is_footswitch, not plugin.is_bypassed(), self.get_plugin_color(plugin))
-
-        #bypass_indicator_xy = ((x+3, y+9), (x2-3, y+9))
-        #plugin.bypass_indicator_xy = bypass_indicator_xy
-        #self.draw[zone].line(bypass_indicator_xy, not plugin.is_bypassed(), self.plugin_bypass_thickness)
 
         return x2

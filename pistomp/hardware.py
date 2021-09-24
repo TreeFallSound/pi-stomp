@@ -167,7 +167,7 @@ class Hardware:
                 threshold = 16  # Default, 1024 is full scale
 
             control = AnalogMidiControl.AnalogMidiControl(self.spi, adc_input, threshold, midi_cc, midi_channel,
-                                                          self.midiout, control_type)
+                                                          self.midiout, control_type, c)
             self.analog_controls.append(control)
             key = format("%d:%d" % (midi_channel, midi_cc))
             self.controllers[key] = control

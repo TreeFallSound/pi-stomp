@@ -465,7 +465,10 @@ class Mod(Handler):
                                 plugin.has_footswitch = True
                                 footswitch_plugins.append(plugin)
                             elif isinstance(controller, AnalogMidiControl):
-                                self.current.analog_controllers[controller.type] = (plugin.instance_id, param.name)
+                                key = "%s:%s" % (plugin.instance_id, param.name)
+                                controller.cfg[Token.CATEGORY] = plugin.category  # somewhat LAME adding to cfg dict
+                                controller.cfg[Token.TYPE] = controller.type
+                                self.current.analog_controllers[key] = controller.cfg
 
             # Move Footswitch controlled plugins to the end of the list
             self.current.pedalboard.plugins = [elem for elem in self.current.pedalboard.plugins

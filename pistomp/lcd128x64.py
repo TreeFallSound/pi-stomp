@@ -281,7 +281,7 @@ class Lcd(ABC):
         self.erase_zone(zone)
 
         # Expression Pedal assignment
-        type = 'EXPRESSION'  # TODO should this be an enum
+        type = Token.EXPRESSION  # TODO should this be an enum
         text = "None"
         self.draw[zone].line(((0, 5), (8, 1)), True, 1)
         self.draw[zone].line(((0, 5), (8, 5)), True, 2)
@@ -291,7 +291,7 @@ class Lcd(ABC):
         self.draw[zone].text((10, 2), text, True, self.small_font)
 
         # Tweak knob assignment
-        type = 'KNOB'
+        type = Token.KNOB
         text = "None"
         x = 66
         self.draw[zone].ellipse(((x, 0), (x + 6, 6)), True, 1)

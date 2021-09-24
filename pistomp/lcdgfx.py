@@ -305,26 +305,28 @@ class Lcd(abstract_lcd.Lcd):
         zone = 1
         self.erase_zone(zone)
 
+        exp = Token.NONE
+        knob = Token.NONE
+        for k, v in controllers.items():
+            control_type = util.DICT_GET(v, Token.TYPE)
+            s = k.split(":")
+            text = "%s:%s" % (self.shorten_name(s[0], self.plugin_width),
+                              self.shorten_name(s[1], self.plugin_width_medium))
+            if control_type == Token.EXPRESSION:
+                exp = text
+            elif control_type == Token.KNOB:
+                knob = text
+
         # Expression Pedal assignment
-        type = 'EXPRESSION'  # TODO should this be an enum
-        text = "None"
         self.draw[zone].line(((0, 5), (8, 1)), True, 1)
         self.draw[zone].line(((0, 5), (8, 5)), True, 2)
-        if type in controllers:  # TODO Slightly lame string linkage to controller class
-            text = "%s:%s" % (self.shorten_name(controllers[type][0], self.plugin_width),
-                              self.shorten_name(controllers[type][1], self.plugin_width_medium))
-        self.draw[zone].text((10, 2), text, True, self.small_font)
+        self.draw[zone].text((10, 2), exp, True, self.small_font)
 
         # Tweak knob assignment
-        type = 'KNOB'
-        text = "None"
         x = 66
         self.draw[zone].ellipse(((x, 0), (x + 6, 6)), True, 1)
         self.draw[zone].line(((x + 3, 0), (x + 3, 2)), False, 1)
-        if type in controllers:
-            text = "%s:%s" % (self.shorten_name(controllers[type][0], self.plugin_width),
-                              self.shorten_name(controllers[type][1], self.plugin_width_medium))
-        self.draw[zone].text((x+9, 2), text, True, self.small_font)
+        self.draw[zone].text((x+9, 2), knob, True, self.small_font)
 
         self.refresh_zone(zone)
 
