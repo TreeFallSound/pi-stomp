@@ -16,6 +16,7 @@
 
 import logging
 import os
+import common.util as util
 import pistomp.lcd as abstract_lcd
 from PIL import ImageColor
 
@@ -39,6 +40,7 @@ class Lcdbase(abstract_lcd.Lcd):
         self.highlight = None
         self.color_plugin = None
         self.color_plugin_bypassed = None
+        self.category_color_map = {}
 
         # Dimensions
         self.width = None
@@ -98,6 +100,20 @@ class Lcdbase(abstract_lcd.Lcd):
         except ValueError:
             logging.error("Cannot convert color name: %s" % color)
             return self.foreground
+
+    # Get the color assigned to the plugin category
+    def get_category_color(self, category):
+        color = "Silver"
+        if category:
+            c = util.DICT_GET(self.category_color_map, category)
+            if c:
+                color = c if isinstance(c, tuple) else self.valid_color(c)
+        return color
+
+    def get_plugin_color(self, plugin):
+        if plugin.category:
+            return self.get_category_color(plugin.category)
+        return "Silver"
 
     # Convert zone height values to absolute y values considering the flip setting
     def calc_zone_y(self):
@@ -162,7 +178,7 @@ class Lcdbase(abstract_lcd.Lcd):
                         label = c.parameter.name
                     else:
                         label = self.shorten_name(p.instance_id, self.footswitch_width)
-                    color = self.valid_color(c.lcd_color)
+                    color = self.valid_color(c.lcd_color) if c.lcd_color else self.get_plugin_color(p)
                     x = self.footswitch_pitch[len(fss)] * fs_id
                     self.draw_plugin(zone, x, 0, label, self.footswitch_width, False, p, True, color)
 

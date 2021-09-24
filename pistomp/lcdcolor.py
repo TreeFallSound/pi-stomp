@@ -20,38 +20,25 @@ import pistomp.tool as Tool
 import common.token as Token
 import common.util as util
 
-CATEGORY_COLOR_MAP = {
-    'Delay' : "MediumVioletRed",
-    'Distortion': "Lime",
-    'Dynamics' : "OrangeRed",
-    'Filter' : (205, 133, 40),
-    'Generator' : "Indigo",
-    'Midiutility' : "Gray",
-    'Modulator' : (50, 50, 255),
-    'Reverb' : (20, 160, 255),
-    'Simulator' : "SaddleBrown",
-    'Spacial' : "Gray",
-    'Spectral' : "Red",
-    'Utility' :  "Gray"
-}
-
 class Lcdcolor(lcdbase.Lcdbase):
 
     def __init__(self, cwd):
         super(Lcdcolor, self).__init__(cwd)
 
-    def get_category_color(self, category):
-        color = "Silver"
-        if category:
-            c = util.DICT_GET(CATEGORY_COLOR_MAP, category)
-            if c:
-                color = c
-        return color
-
-    def get_plugin_color(self, plugin):
-        if plugin.category:
-            return self.get_category_color(plugin.category)
-        return "Silver"
+        self.category_color_map = {
+            'Delay': "MediumVioletRed",
+            'Distortion': "Lime",
+            'Dynamics': "OrangeRed",
+            'Filter': (205, 133, 40),
+            'Generator': "Indigo",
+            'Midiutility': "Gray",
+            'Modulator': (50, 50, 255),
+            'Reverb': (20, 160, 255),
+            'Simulator': "SaddleBrown",
+            'Spacial': "Gray",
+            'Spectral': "Red",
+            'Utility': "Gray"
+        }
 
     # Menu Screens (uses deep_edit image and draw objects)
     def menu_show(self, page_title, menu_items):
