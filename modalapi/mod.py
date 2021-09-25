@@ -844,10 +844,10 @@ class Mod(Handler):
         plugin = self.get_selected_instance()
         self.deep = self.Deep(plugin)  # TODO this creates a new obj every time menu is shown, singleton?
         self.deep.selected_parameter_index = 0
-        self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back}}
+        self.menu_items = {0: {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back}}
         i = 1
         for p in self.deep.parameters:
-            self.menu_items[str(i)] = {Token.NAME: p.name,
+            self.menu_items[i] = {Token.NAME: p.name,
                                        Token.ACTION: self.parameter_value_show,
                                        Token.PARAMETER: p}
             i = i + 1

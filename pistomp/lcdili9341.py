@@ -96,10 +96,9 @@ class Lcd(lcdcolor.Lcdcolor):
         self.footswitch_pitch = [120, 120, 120, 128, 86,  65]
 
         # Menu (System menu, Parameter edit, etc.)
-        self.menu_height = self.height - self.zone_height[0]
-        self.menu_image_height = self.menu_height * 10  # 10 pages (~40 parameters) enough?
-        #self.menu_image = Image.new('RGB', (self.width, self.menu_image_height))
-        self.menu_image = Image.new('RGB', (self.width, self.menu_height))
+        self.menu_height = self.height - self.zone_height[0] - self.zone_height[1]
+        self.menu_image_height = self.menu_height * 10  # 10 pages (~80 parameters) enough?
+        self.menu_image = Image.new('RGB', (self.width, self.menu_image_height))
         self.menu_draw = ImageDraw.Draw(self.menu_image)
         self.menu_highlight_box_height = 20
         self.menu_highlight_box = ()
@@ -171,6 +170,7 @@ class Lcd(lcdcolor.Lcdcolor):
 
     def render_image(self, image, y0, x0=0):
         # ONLY THIS METHOD SHOULD BE USED TO PRINT AN IMAGE TO THE DISPLAY
+        # TODO check and possibly transform image to assure that it will fit the display without an error
 
         # Wait if a lock is present (to avoid multiple async refreshes accessing the SPI simultaneously
         # If the LCD clears out during certain events, might need to increase the max wait
@@ -186,12 +186,12 @@ class Lcd(lcdcolor.Lcdcolor):
     def refresh_zone(self, zone_idx):
         self.render_image(self.images[zone_idx], self.zone_y[zone_idx])
 
-    def refresh_menu(self, highlight_range=None, scroll_offset=0):
+    def refresh_menu(self, highlight_range=None, highlight_offset=0, scroll_offset=0):
         if highlight_range:
             highlight_width = 2
             x = 0
             y = 0
-            y_draw = y + scroll_offset
+            y_draw = y + highlight_offset
             if y_draw < self.menu_image_height:
                 xy = (x, y_draw)
                 xy2 = (x + self.width, y_draw + self.menu_highlight_box_height)
@@ -202,7 +202,11 @@ class Lcd(lcdcolor.Lcdcolor):
                 self.draw_just_a_box(self.menu_draw, xy, xy2, False, self.highlight, highlight_width)
                 self.menu_highlight_box = (xy, xy2)
 
-        self.render_image(self.menu_image, 0)
+        # render_image is a windowed subset of menu_image which contains the full menu content which may be
+        # too long to be displayed.  Use transform to "scroll" that window of content.
+        render_image = self.menu_image.transform((self.width, self.menu_height), Image.EXTENT,
+                                                 (0, scroll_offset, self.width, self.menu_height + scroll_offset))
+        self.render_image(render_image, 0)
 
     # Menu Screens (uses deep_edit image and draw objects)
     def menu_show(self, page_title, menu_items):
@@ -210,6 +214,7 @@ class Lcd(lcdcolor.Lcdcolor):
 
         # Title (plugin name)
         self.draw_title(page_title, "", False, False, False)
+        self.draw_info_message("")
 
         # Menu Items
         idx = 0
@@ -221,20 +226,20 @@ class Lcd(lcdcolor.Lcdcolor):
                 self.menu_draw.text((x, y), "%s" % menu_items[i][Token.NAME], self.foreground, self.small_font)
                 x = 8   # indent after first element (back button)
             else:
-                self.menu_draw.text((x, y), "%s %s" % (i, menu_items[i][Token.NAME]), self.foreground, self.small_font)
+                self.menu_draw.text((x, y), "%s %s" % (i, menu_items[i][Token.NAME]), self.foreground,
+                                    self.small_font)
             y += self.menu_highlight_box_height
             idx += 1
         self.refresh_menu()
 
     def menu_highlight(self, index):
-        # TODO the highlight calculations here are pulled from lcdgfx.py but aren't currently used by refresh_menu()
-        # re-enable something similar when a endless list of items is needed
         scroll_idx = 0
         highlight = ((index * 10, index * 10 + 8))
-        num_visible = 0  # TODO was 3 for GFX
+        num_visible = int(round(self.menu_height / self.menu_highlight_box_height)) - 1
         if index > num_visible:
             scroll_idx = index - num_visible
-        self.refresh_menu(highlight, scroll_idx * self.menu_highlight_box_height)
+        self.refresh_menu(highlight, index * self.menu_highlight_box_height,
+                          scroll_idx * self.menu_highlight_box_height)
 
     def draw_footswitch(self, xy1, xy2, zone, text, color):
         # Many fudge factors here to make the footswitch icon smaller than the highlight bounding box
