@@ -847,6 +847,8 @@ class Mod(Handler):
         self.menu_items = {0: {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back}}
         i = 1
         for p in self.deep.parameters:
+            if p.symbol == ":bypass":
+                continue
             self.menu_items[i] = {Token.NAME: p.name,
                                        Token.ACTION: self.parameter_value_show,
                                        Token.PARAMETER: p}
