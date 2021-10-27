@@ -108,7 +108,7 @@ def main():
         handler.add_hardware(hw)
 
     elif args.host[0] == 'test':
-        handler = Testhost.Testhost(homedir=cwd)
+        handler = Testhost.Testhost(audiocard, homedir=cwd)
         try:
             factory = Hardwarefactory.Hardwarefactory()
             hw = factory.create(handler, midiout)
