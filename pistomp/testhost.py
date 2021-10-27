@@ -180,12 +180,13 @@ class Testhost(Handler):
             
     def _disp_capture_volume(self, line, data):
         vol = self.audiocard.get_parameter(self.audiocard.CAPTURE_VOLUME)
-        disp = 'Capture volume: ' + str(vol)
+        disp = 'Capture volume: ' + str(vol) + ' [+]/[-]'
         self._update_line(line, disp)
 
     def _disp_vu(self, line, data):
         label, channel = data
-        self._update_line(line, label + '  |')
+        self.win.hline(l, self.maxx - 2)
+        self.win.addstr(l, 1, label + '  |')
         if channel == 0:
             peak = self.lpeak
         else:
@@ -262,11 +263,30 @@ class Testhost(Handler):
     def add_lcd(self, lcd):
         self.lcd = lcd
 
+    def _key_quit(self, key):
+        raise KeyboardInterrupt
+
+    def _key_input_gain(self, key):
+        if key == '+':
+            chg = 0.25
+        else:
+            chg = -0.25
+        vol = self.audiocard.get_parameter(self.audiocard.CAPTURE_VOLUME)
+        self.audiocard.set_parameter(self.audiocard.CAPTURE_VOLUME, vol + chg)
+        self.dirty = True
+
+    def _handle_key(self, key):
+        key_map = { 'q' : self._key_quit,
+                    '+' : self._key_input_gain,
+                    '-' : self._key_input_gain,
+                    }
+        if key in key_map:
+            key_map[key](key)
+
     def poll_controls(self):
         k = self.win.getch()
         if k > 0:
-            # Do things...
-            pass
+            self._handle_key(k)
         if self.hardware is not None:
             self.hardware.poll_controls()
             if self.enclast > 0 and (time.monotonic_ns() - self.enclast) > 1000000000:
@@ -283,7 +303,11 @@ class Testhost(Handler):
                 # Ideally look for peak to peak but ...
                 self.lpeak = np.amax(d_left)
                 self.rpeak = np.amax(d_right)
-                self.dirty = True
+                if not self.dirty:
+                    func, data = self.lines[self.vu_left]
+                    func(self.vu_left, data)
+                    func, data = self.lines[self.vu_right]
+                    func(self.vu_right, data)
 
         if self.dirty:
             self.dirty = False
