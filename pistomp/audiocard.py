@@ -26,7 +26,7 @@ class Audiocard:
         self.config_file = '/var/lib/alsa/asound.state'  # global config used by alsamixer, etc.
         self.initial_config_file = None  # use this if common config_file loading fails
         self.initial_config_name = None
-        self.CAPTURE_VOLUME = 'Capture Volume'
+        self.CAPTURE_VOLUME = 'Capture'
         self.MASTER = 'Master'
 
     def restore(self):
