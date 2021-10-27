@@ -70,7 +70,7 @@ class Testhost(Handler):
         log_win.idlok(True)
         log_win.keypad(True)
         log_win.leaveok(True)
-        log_win.setscrreg(1, self.LOG_HEIGHT-1)
+        log_win.setscrreg(1, self.LOG_HEIGHT-2)
         log_win.move(1, 1)
         self.log_handler = CursesLogHandler(log_win)
         formatter = logging.Formatter(' %(asctime) -25s - %(name) -15s - %(levelname) -10s - %(message)s')
@@ -114,6 +114,8 @@ class Testhost(Handler):
         aout.setrate(44100)
         aout.setformat(alsa.PCM_FORMAT_S16_LE)
         aout.setperiodsize(1024)
+        self.input_gain = self.audiocard.get_parameter(self.audiocard.CAPTURE_VOLUME)
+        self.master_vol = self.audiocard.get_parameter(self.audiocard.MASTER)
 
     def __init__(self, audiocard = None, homedir = None):
         self.hardware = None
@@ -128,6 +130,8 @@ class Testhost(Handler):
         self.audio_out = None
         self.lpeak = 0
         self.rpeak = 0
+        self.input_gain = 0.0
+        self.master_vol = 0.0
         try:
             self._init_curses()
         except:
@@ -139,6 +143,7 @@ class Testhost(Handler):
                 self._init_audio()
             except Exception as e:
                 logging.error("Failed to init audio:" + str(e))
+                logging.error("Make sure jackd isn't running")
                 if self.audio_in is not None:
                     del self.audio_in
                 if self.audio_out is not None:
@@ -179,19 +184,22 @@ class Testhost(Handler):
         self._update_line(line, disp)
             
     def _disp_capture_volume(self, line, data):
-        vol = self.audiocard.get_parameter(self.audiocard.CAPTURE_VOLUME)
-        disp = 'Capture volume: ' + str(vol) + ' [+]/[-]'
+        disp = 'Capture volume: ' + str(self.input_gain) + 'dB [C]/[c]'
+        self._update_line(line, disp)
+
+    def _disp_master_volume(self, line, data):
+        disp = 'Headphone volume: ' + str(self.master_vol) + 'dB [M]/[m]/[b]eep'
         self._update_line(line, disp)
 
     def _disp_vu(self, line, data):
         label, channel = data
-        self.win.hline(l, self.maxx - 2)
-        self.win.addstr(l, 1, label + '  |')
+        self.win.hline(line, 1, ' ', self.maxx - 2)
+        self.win.addstr(line, 1, label + '  |')
         if channel == 0:
             peak = self.lpeak
         else:
             peak = self.rpeak
-        peak = int(peak * 20 / 32768)
+        peak = int(peak * 20 / 32767)
         # Random scale, FIX this if you understand audio :-)
         # probably need some log here..
         self.win.attrset(curses.color_pair(self.VU_GREEN))
@@ -229,6 +237,7 @@ class Testhost(Handler):
             self._add_line(self._disp_capture_volume)
             self.vu_left = self._add_line(self._disp_vu, ('L', 0))
             self.vu_right = self._add_line(self._disp_vu, ('R', 1))
+            self._add_line(self._disp_master_volume)
 
     def refresh(self):
         if self.hardware is None:
@@ -267,18 +276,49 @@ class Testhost(Handler):
         raise KeyboardInterrupt
 
     def _key_input_gain(self, key):
-        if key == '+':
+        if self.audiocard is None:
+            return
+        if key == ord('C'):
             chg = 0.25
         else:
             chg = -0.25
-        vol = self.audiocard.get_parameter(self.audiocard.CAPTURE_VOLUME)
-        self.audiocard.set_parameter(self.audiocard.CAPTURE_VOLUME, vol + chg)
+        self.input_gain += chg
+        self.audiocard.set_parameter(self.audiocard.CAPTURE_VOLUME, self.input_gain)
         self.dirty = True
 
+    def _key_master_vol(self, key):
+        if self.audiocard is None:
+            return
+        if key == ord('M'):
+            chg = 0.25
+        else:
+            chg = -0.25
+        self.master_vol += chg
+        self.audiocard.set_parameter(self.audiocard.MASTER, self.master_vol)
+        self.dirty = True
+
+    def _key_beep(self, key):
+        if self.audiocard is None:
+            return
+        fs = 44100   # sampling freq
+        f = 440.0    # sound freq (middle A)
+        t = 1.0      # duration (1s)
+        samples = np.arange(t * fs) / fs
+        signal = np.sin(2 * np.pi * f * samples)
+        signal *= 32767
+        signal = np.int16(signal)
+        data = signal.tobytes()
+        logging.info("Beeping...")
+        logging.info(str(data))
+        self.audio_out.write(data)
+
     def _handle_key(self, key):
-        key_map = { 'q' : self._key_quit,
-                    '+' : self._key_input_gain,
-                    '-' : self._key_input_gain,
+        key_map = { ord('q') : self._key_quit,
+                    ord('C') : self._key_input_gain,
+                    ord('c') : self._key_input_gain,
+                    ord('M') : self._key_master_vol,
+                    ord('m') : self._key_master_vol,
+                    ord('b') : self._key_beep,
                     }
         if key in key_map:
             key_map[key](key)
