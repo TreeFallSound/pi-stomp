@@ -54,7 +54,7 @@ class Audiocard:
         # Unfortunate that setting changes will not be persisted between boots, but not worth getting the mess of
         # dealing with file permissions or sync issues when settings are changed via another program (eg. aslamixer)
         try:
-            subprocess.run(['/usr/sbin/alsactl', '-f', self.config_file, 'store'])
+            subprocess.run(['/usr/sbin/alsactl', '-f', self.config_file, 'store'], stderr=subprocess.DEVNULL)
         except:
             logging.error("Failed trying to store audio card settings to: %s" % self.config_file)
 
