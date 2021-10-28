@@ -834,7 +834,7 @@ class Mod(Handler):
 
             if footswitch is not None:
                 # Update LED
-                footswitch.set_led(relay.enabled)
+                footswitch.set_value(int(not relay.enabled))
 
     #
     # Parameter Edit
@@ -939,5 +939,4 @@ class Mod(Handler):
     def update_lcd_fs(self, bypass_change=False):
         if bypass_change:
             self.lcd.update_bypass(self.hardware.relay.enabled)
-        else:
-            self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
+        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)

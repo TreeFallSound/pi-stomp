@@ -188,6 +188,8 @@ class Lcdbase(abstract_lcd.Lcd):
                 continue
             f = fss[fs_id]
             color = self.valid_color(f.lcd_color)
+            if self.color_plugin_bypassed is not None and not f.enabled:
+                color = self.color_plugin_bypassed
             label = "" if f.display_label is None else f.display_label
             x = self.footswitch_pitch[len(fss)] * fs_id
             self.draw_plugin(zone, x, 0, label, self.footswitch_width, False, None, True, color)

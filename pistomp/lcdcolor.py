@@ -254,7 +254,7 @@ class Lcdcolor(lcdbase.Lcdbase):
         if is_footswitch:
             if plugin:
                 plugin.lcd_xyz = (xy1, xy2, zone)
-            c = self.color_plugin_bypassed if plugin is None or plugin.is_bypassed() else color
+            c = self.color_plugin_bypassed if plugin is not None and plugin.is_bypassed() else color
             self.draw_footswitch(xy1, xy2, zone, text, c)
         elif plugin:
             plugin.lcd_xyz = (xy1, xy2, zone)

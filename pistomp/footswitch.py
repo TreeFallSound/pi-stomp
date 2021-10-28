@@ -45,7 +45,7 @@ class Footswitch(controller.Controller):
 
         if led_pin is not None:
             GPIO.setup(led_pin, GPIO.OUT)
-            self.set_led(GPIO.LOW)
+            self._set_led(GPIO.LOW)
 
     def __del__(self):
         GPIO.remove_event_detect(self.fs_pin)
@@ -58,9 +58,9 @@ class Footswitch(controller.Controller):
 
     def set_value(self, value):
         self.enabled = (value < 1)
-        self.set_led(self.enabled)
+        self._set_led(self.enabled)
 
-    def set_led(self, enabled):
+    def _set_led(self, enabled):
         if self.led_pin is not None:
             GPIO.output(self.led_pin, enabled)
 
@@ -69,8 +69,11 @@ class Footswitch(controller.Controller):
 
     def toggle(self, gpio):
         # If a footswitch can be mapped to control a relay, preset, MIDI or all 3
-
-        self.enabled = not self.enabled
+        #
+        # The footswitch will only "toggle" if it's associated with a relay
+        # (in which case it will toggle with the relay) or with a Midi message
+        #
+        new_enabled = not self.enabled
 
         # Update Relay (if relay is associated with this footswitch)
         if len(self.relay_list) > 0:
@@ -85,26 +88,28 @@ class Footswitch(controller.Controller):
             if short is False:
                 # Pin kept low (long press)
                 # toggle the relay and LED, exit this method
+                self.enabled = new_enabled
                 for r in self.relay_list:
                     if self.enabled:
                         r.enable()
                     else:
                         r.disable()
-                self.set_led(self.enabled)
+                self._set_led(self.enabled)
                 self.refresh_callback(True)  # True means this is a bypass change only
                 return
 
         # If mapped to preset change
         if self.preset_callback is not None:
-            # Change the preset and exit this method
+            # Change the preset and exit this method. Don't flip "enabled" since
+            # there is no "toggle" action associated with a preset
             self.preset_callback()
             return
 
-        # Update LED
-        self.set_led(self.enabled)
-
         # Send midi
         if self.midi_CC is not None:
+            self.enabled = new_enabled
+            # Update LED
+            self._set_led(self.enabled)
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.enabled else 0]
             logging.debug("Sending CC event: %d %s" % (self.midi_CC, gpio))
             self.midiout.send_message(cc)
