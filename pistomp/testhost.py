@@ -312,6 +312,21 @@ class Testhost(Handler):
         logging.info(str(data))
         self.audio_out.write(data)
 
+    def _resize(self, key):
+        curses.update_lines_cols()
+        self.maxy, self.maxx = self.stdscr.getmaxyx()
+        self.stdscr.clear()
+        self.stdscr.refresh()
+        self.win.resize(self.maxy - self.LOG_HEIGHT - 1, self.maxx)
+        self.win.clear()
+        self.log_win.mvwin(self.maxy - self.LOG_HEIGHT - 1, 0)
+        self.log_win.resize(self.LOG_HEIGHT, self.maxx)
+        self.log_win.setscrreg(1, self.LOG_HEIGHT-2)
+        self.log_win.clear()
+        self.log_win.refresh()
+        logging.info("Window resized")
+        self.dirty = True
+
     def _handle_key(self, key):
         key_map = { ord('q') : self._key_quit,
                     ord('C') : self._key_input_gain,
@@ -319,6 +334,7 @@ class Testhost(Handler):
                     ord('M') : self._key_master_vol,
                     ord('m') : self._key_master_vol,
                     ord('b') : self._key_beep,
+                    curses.KEY_RESIZE: self._resize,
                     }
         if key in key_map:
             key_map[key](key)
