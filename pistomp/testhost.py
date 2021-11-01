@@ -179,6 +179,15 @@ class Testhost(Handler):
                 disp += "OFF "
             self._update_line(line, disp)
 
+    def _disp_analogcontrols(self, line, data):
+        disp = ""
+        for ctrl in self.hardware.analog_controls:
+            if ctrl.value is None:
+                disp += "---- "
+            else:
+                disp += "%.4d " % (ctrl.value)
+            self._update_line(line, disp)
+
     def _disp_encoder(self, line, data):
         disp = str(self.encval) + ' ' + str(self.encsw)
         self._update_line(line, disp)
@@ -228,8 +237,11 @@ class Testhost(Handler):
 
         self.lines = [ (None, None) ]
         if len(self.hardware.footswitches) > 0:
-            self._add_title('Switches')
+            self._add_title('Foot switches')
             self._add_line(self._disp_footswitches)
+        if len(self.hardware.analog_controls) > 0:
+            self._add_title('Analog controls')
+            self._add_line(self._disp_analogcontrols)
         self._add_title('Encoder')
         self._add_line(self._disp_encoder)
         if self.audiocard is not None:
@@ -349,6 +361,10 @@ class Testhost(Handler):
                 self.encsw = '--'
                 self.dirty = True
                 self.enclast = 0
+            for ctrl in self.hardware.analog_controls:
+                if ctrl.value != ctrl.last_read:
+                    ctrl.value = ctrl.last_read
+                    self.dirty = True
 
         if self.audiocard is not None:
             l,data = self.audio_in.read()
