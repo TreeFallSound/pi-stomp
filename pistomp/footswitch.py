@@ -19,7 +19,7 @@ from rtmidi.midiconstants import CONTROL_CHANGE
 
 import pistomp.controller as controller
 import time
-
+import queue
 
 class Footswitch(controller.Controller):
 
@@ -35,13 +35,18 @@ class Footswitch(controller.Controller):
         self.relay_list = []
         self.preset_callback = None
         self.lcd_color = None
+        self.cur_tstamp = None
+        self.events = queue.Queue()
 
         # this value (in seconds) chosen to be just greater than the event_detect bouncetime (in milliseconds)
         self.relay_poll_interval = 0.26
         self.relay_poll_intervals = 2
 
+        # Long press threshold in seconds
+        self.long_press_threshold = 0.5
+
         GPIO.setup(fs_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.add_event_detect(fs_pin, GPIO.FALLING, callback=self.toggle, bouncetime=250)
+        GPIO.add_event_detect(fs_pin, GPIO.FALLING, callback=self._pressed, bouncetime=250)
 
         if led_pin is not None:
             GPIO.setup(led_pin, GPIO.OUT)
@@ -67,7 +72,49 @@ class Footswitch(controller.Controller):
     def set_lcd_color(self, color):
         self.lcd_color = color
 
-    def toggle(self, gpio):
+    def _pressed(self, gpio):
+        # This is run from a separate thread, timestamp pressed and queue an event
+        #
+        # I considered using a dual edge callback and handle the timestamp here
+        # to queue long/short press events, but in practice, I noticed dual edge
+        # is rather unreliable with such a long debounce, we often don't get the
+        # rising edge callback at all. So let's just timestamp and we'll handle
+        # everything from the poller thread
+        #
+        self.events.put(time.monotonic())
+
+
+    def poll(self):
+        # Grab press event if any
+        if not self.events.empty():
+            new_tstamp = self.events.get_nowait()
+        else:
+            new_tstamp = None
+
+        # If we were a already pressed and waiting for a release, drop it, it's easier
+        # that way and we should be polling fast enough for this not to matter.
+        # Otherwise record it
+        if self.cur_tstamp is None:
+            self.cur_tstamp = new_tstamp
+
+        # Are we waiting for release ?
+        if self.cur_tstamp is None:
+            return
+
+        time_pressed = time.monotonic() - self.cur_tstamp
+
+        # If it's a long press, process as soon as we reach the threshold, otherwise
+        # check the GPIO input
+        if time_pressed > self.long_press_threshold:
+            short = False
+        elif GPIO.input(self.fs_pin):
+            short = True
+        else:
+            return
+        self.cur_tstamp = None
+
+        logging.debug("Footswitch %d %s press" % (self.fs_pin, "short" if short else "long"))
+
         # If a footswitch can be mapped to control a relay, preset, MIDI or all 3
         #
         # The footswitch will only "toggle" if it's associated with a relay
@@ -77,14 +124,6 @@ class Footswitch(controller.Controller):
 
         # Update Relay (if relay is associated with this footswitch)
         if len(self.relay_list) > 0:
-            # this value chosen to be just greater than the event_detect bouncetime
-            short = False
-            for i in range(self.relay_poll_intervals):
-                time.sleep(self.relay_poll_interval)
-                if GPIO.input(gpio):
-                    # Pin went high before timed polling was complete (short press)
-                    short = True
-                    break
             if short is False:
                 # Pin kept low (long press)
                 # toggle the relay and LED, exit this method
@@ -111,7 +150,7 @@ class Footswitch(controller.Controller):
             # Update LED
             self._set_led(self.enabled)
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.enabled else 0]
-            logging.debug("Sending CC event: %d %s" % (self.midi_CC, gpio))
+            logging.debug("Sending CC event: %d %s" % (self.midi_CC, self.fs_pin))
             self.midiout.send_message(cc)
 
         # Update plugin parameter if any
