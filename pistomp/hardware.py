@@ -48,6 +48,7 @@ class Hardware:
         self.encoders = []
         self.controllers = {}
         self.footswitches = []
+        self.encoder_switches = []
         self.debounce_map = None
 
     def init_spi(self):
@@ -67,6 +68,8 @@ class Hardware:
             c.refresh()
         for e in self.encoders:
             e.read_rotary()
+        for s in self.encoder_switches:
+            s.poll()
         for s in self.footswitches:
             s.poll()
 

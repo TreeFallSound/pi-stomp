@@ -86,7 +86,8 @@ class Pistompcore(hardware.Hardware):
     def init_encoders(self):
         top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=self.mod.universal_encoder_select)
         self.encoders.append(top_enc)
-        EncoderSwitch.EncoderSwitch(1, callback=self.mod.universal_encoder_sw)
+        enc_sw = EncoderSwitch.EncoderSwitch(1, callback=self.mod.universal_encoder_sw)
+        self.encoder_switches.append(enc_sw)
 
     def init_relays(self):
         self.relay = Relay.Relay(RELAY_SET_PIN, RELAY_RESET_PIN)
