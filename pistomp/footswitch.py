@@ -109,10 +109,12 @@ class Footswitch(controller.Controller):
             logging.debug("Sending CC event: %d %s" % (self.midi_CC, gpio))
             self.midiout.send_message(cc)
 
-        # Update LCD
+        # Update plugin parameter if any
         if self.parameter is not None:
             self.parameter.value = not self.enabled  # TODO assumes mapped parameter is :bypass
-            self.refresh_callback()
+
+        # Update LCD
+        self.refresh_callback()
 
     def set_display_label(self, label):
         self.display_label = label
