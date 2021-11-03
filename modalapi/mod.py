@@ -118,6 +118,11 @@ class Mod(Handler):
         self.selected_menu_index = 0
         self.menu_items = None
 
+        # This file is modified when the pedalboard is changed via MOD UI
+        self.pedalboard_modification_file = "/var/modep/last.json"
+        self.pedalboard_change_timestamp = os.path.getmtime(self.pedalboard_modification_file)\
+            if Path(self.pedalboard_modification_file).exists() else 0
+
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
     # replaced when a different pedalboard is made current (old Current object
@@ -363,6 +368,32 @@ class Mod(Handler):
     def poll_controls(self):
         if self.universal_encoder_mode is not UniversalEncoderMode.LOADING:
             self.hardware.poll_controls()
+
+    def poll_modui_changes(self):
+        # This poll looks for changes made via the MOD UI and tries to sync the pi-Stomp hardware
+
+        # Look for a change of pedalboard
+        #
+        # If the pedalboard_modification_file timestamp has changed, extract the bundle path and set current pedalboard
+        #
+        # TODO this is an interim solution until better MOD-UI to pi-stomp event communication is added
+        #
+        if Path(self.pedalboard_modification_file).exists():
+            ts = os.path.getmtime(self.pedalboard_modification_file)
+            if ts == self.pedalboard_change_timestamp:
+                return
+
+            # Timestamp changed
+            self.pedalboard_change_timestamp = ts
+            self.lcd.draw_info_message("Loading...")
+            with open(self.pedalboard_modification_file, 'r') as file:
+                j = json.load(file)
+                mod_bundle = util.DICT_GET(j, 'pedalboard')
+                if mod_bundle:
+                    logging.info("Pedalboard changed via MOD from: %s to: %s" %
+                                 (self.current.pedalboard.bundle, mod_bundle))
+                    pb = self.pedalboards[mod_bundle]
+                    self.set_current_pedalboard(pb)
 
     #
     # Pedalboard Stuff
