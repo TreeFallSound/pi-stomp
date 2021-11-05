@@ -75,6 +75,9 @@ class Encoder:
         # 16 possible grey codes.  1=Valid, 0=Invalid (bounce)
         self.rot_enc_table = [0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0]
 
+    def __del__(self):
+        GPIO.remove_event_detect(self._gpio_callback)
+
     def get_data(self):
         return GPIO.input(self.d_pin)
 

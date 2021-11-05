@@ -17,14 +17,12 @@ import logging
 import RPi.GPIO as GPIO
 from rtmidi.midiconstants import CONTROL_CHANGE
 
-import pistomp.controller as controller
-import time
+import pistomp.gpioswitch as gpioswitch
 
-
-class Footswitch(controller.Controller):
+class Footswitch(gpioswitch.GpioSwitch):
 
     def __init__(self, id, fs_pin, led_pin, midi_CC, midi_channel, midiout, refresh_callback):
-        super(Footswitch, self).__init__(midi_channel, midi_CC)
+        super(Footswitch, self).__init__(fs_pin, midi_channel, midi_CC)
         self.id = id
         self.display_label = None
         self.enabled = False
@@ -36,23 +34,15 @@ class Footswitch(controller.Controller):
         self.preset_callback = None
         self.lcd_color = None
 
-        # this value (in seconds) chosen to be just greater than the event_detect bouncetime (in milliseconds)
-        self.relay_poll_interval = 0.26
-        self.relay_poll_intervals = 2
-
-        GPIO.setup(fs_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.add_event_detect(fs_pin, GPIO.FALLING, callback=self.toggle, bouncetime=250)
-
         if led_pin is not None:
             GPIO.setup(led_pin, GPIO.OUT)
             self._set_led(GPIO.LOW)
 
-    def __del__(self):
-        GPIO.remove_event_detect(self.fs_pin)
-
+    # Should this be in Controller ?
     def set_midi_CC(self, midi_CC):
         self.midi_CC = midi_CC
 
+    # Should this be in Controller ?
     def set_midi_channel(self, midi_channel):
         self.midi_channel = midi_channel
 
@@ -67,7 +57,7 @@ class Footswitch(controller.Controller):
     def set_lcd_color(self, color):
         self.lcd_color = color
 
-    def toggle(self, gpio):
+    def pressed(self, short):
         # If a footswitch can be mapped to control a relay, preset, MIDI or all 3
         #
         # The footswitch will only "toggle" if it's associated with a relay
@@ -77,14 +67,6 @@ class Footswitch(controller.Controller):
 
         # Update Relay (if relay is associated with this footswitch)
         if len(self.relay_list) > 0:
-            # this value chosen to be just greater than the event_detect bouncetime
-            short = False
-            for i in range(self.relay_poll_intervals):
-                time.sleep(self.relay_poll_interval)
-                if GPIO.input(gpio):
-                    # Pin went high before timed polling was complete (short press)
-                    short = True
-                    break
             if short is False:
                 # Pin kept low (long press)
                 # toggle the relay and LED, exit this method
@@ -111,7 +93,7 @@ class Footswitch(controller.Controller):
             # Update LED
             self._set_led(self.enabled)
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.enabled else 0]
-            logging.debug("Sending CC event: %d %s" % (self.midi_CC, gpio))
+            logging.debug("Sending CC event: %d %s" % (self.midi_CC, self.fs_pin))
             self.midiout.send_message(cc)
 
         # Update plugin parameter if any
