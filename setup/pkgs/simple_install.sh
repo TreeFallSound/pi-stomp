@@ -23,6 +23,9 @@ fi
 # Pyyml
 sudo /usr/bin/pip3 install pyyaml
 
+# For diagnostic test mode
+sudo /usr/bin/pip3 install pyalsaaudio
+
 # Midi
 sudo /usr/bin/pip3 install python-rtmidi
 
