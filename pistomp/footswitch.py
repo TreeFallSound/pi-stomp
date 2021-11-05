@@ -18,7 +18,6 @@ import RPi.GPIO as GPIO
 from rtmidi.midiconstants import CONTROL_CHANGE
 
 import pistomp.gpioswitch as gpioswitch
-import queue
 
 class Footswitch(gpioswitch.GpioSwitch):
 
