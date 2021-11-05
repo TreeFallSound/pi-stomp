@@ -19,18 +19,40 @@
 #
 # Usage and options
 #
-usage() { echo "Usage: $(basename $0) [-v <hardware_version>]" 1>&2; exit 1; }
+usage()
+{
+    echo "Usage: $(basename $0) [-v <hardware_version>] [-m]"
+    echo ""
+    echo "Options:"
+    echo " -v <version>          Specify hardware version"
+    echo "                         1.0 : original pi-Stomp hardware (PCB v1)"
+    echo "                         2.0 : most hardware (default)"
+    echo " -m                    Enable MIDI via UART"
+    echo " -h                    Display this message"    
+}
+
+has_ttymidi=false
 
 while getopts ':v:' o; do
     case "${o}" in
         v)
             hardware_version=${OPTARG}
             ;;
+	m)
+	    has_ttymidi=true
+	    ;;
+	h)
+	    usage
+	    exit 0
+	    ;;
         *)
-            usage
+            usage 1>&2
+	    exit 1
             ;;
     esac
 done
+
+export has_ttymidi
 
 #
 # Hardware specific
