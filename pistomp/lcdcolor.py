@@ -85,9 +85,9 @@ class Lcdcolor(lcdbase.Lcdbase):
     def update_wifi(self, wifi_status):
         if not self.supports_toolbar:
             return
-        if util.DICT_GET(wifi_status, 'hotspot_active') == '1':
+        if util.DICT_GET(wifi_status, 'hotspot_active'):
             img = "wifi_orange.png"
-        elif util.DICT_GET(wifi_status, 'wifi_connected') == '1':
+        elif util.DICT_GET(wifi_status, 'wifi_connected'):
             img = "wifi_silver.png"
         else:
             img = "wifi_gray.png"

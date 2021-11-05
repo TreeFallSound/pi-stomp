@@ -28,6 +28,7 @@ import pistomp.analogswitch as AnalogSwitch
 import pistomp.encoderswitch as EncoderSwitch
 import modalapi.pedalboard as Pedalboard
 import modalapi.parameter as Parameter
+import modalapi.wifi as Wifi
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.footswitch import Footswitch
@@ -75,11 +76,18 @@ class SelectedType(Enum):
     WIFI = 5
     SYSTEM = 6
 
+# Replace this with menu objects
+class MenuType(Enum):
+    MENU_NONE = 0
+    MENU_SYSTEM = 1
+    MENU_INFO = 2
 
 class Mod(Handler):
     __single = None
 
     def __init__(self, audiocard, homedir):
+        self.wifi_monitor = None
+
         logging.info("Init mod")
         if Mod.__single:
             raise Mod.__single
@@ -117,6 +125,14 @@ class Mod(Handler):
 
         self.selected_menu_index = 0
         self.menu_items = None
+        self.current_menu = MenuType.MENU_NONE
+
+        self.wifi_monitor = Wifi.WifiMonitor()
+
+    def __del__(self):
+        logging.info("Handler cleanup")
+        if self.wifi_monitor:
+            del self.wifi_monitor
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -363,6 +379,12 @@ class Mod(Handler):
     def poll_controls(self):
         if self.universal_encoder_mode is not UniversalEncoderMode.LOADING:
             self.hardware.poll_controls()
+        wifi_update = self.wifi_monitor.poll()
+        if wifi_update is not None:
+            self.wifi_status = wifi_update
+            self.lcd.update_wifi(self.wifi_status)
+            if self.current_menu == MenuType.MENU_INFO:
+                self.system_info_update_wifi()
 
     #
     # Pedalboard Stuff
@@ -674,6 +696,7 @@ class Mod(Handler):
             action()
 
     def menu_back(self):
+        self.current_menu = MenuType.MENU_NONE
         self.top_encoder_mode = TopEncoderMode.DEFAULT
         self.bot_encoder_mode = BotEncoderMode.DEFAULT
         self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
@@ -684,16 +707,6 @@ class Mod(Handler):
     #
 
     def system_info_load(self):
-        cmd = "/usr/bin/patchbox wifi status"
-        output = subprocess.check_output(cmd, shell=True)
-        for i in output.decode().split('\n'):
-            if len(i) is 0:
-                continue
-            (key, value) = i.split('=')
-            if key and value:
-                self.wifi_status[key] = value
-        self.lcd.update_wifi(self.wifi_status)
-
         try:
             output = subprocess.check_output(['git', '--git-dir', self.homedir + '/.git',
                                               '--work-tree', self.homedir, 'describe'])
@@ -704,6 +717,7 @@ class Mod(Handler):
             logging.error("Cannot obtain git software tag info")
 
     def system_menu_show(self):
+        self.current_menu = MenuType.MENU_SYSTEM
         self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back},
                            "1": {Token.NAME: "System shutdown", Token.ACTION: self.system_menu_shutdown},
                            "2": {Token.NAME: "System reboot", Token.ACTION: self.system_menu_reboot},
@@ -714,29 +728,53 @@ class Mod(Handler):
                            "7": {Token.NAME: "Input Gain", Token.ACTION: self.system_menu_input_gain},
                            "8": {Token.NAME: "Headphone Volume", Token.ACTION: self.system_menu_headphone_volume}}
         self.lcd.menu_show("System menu", self.menu_items)
+        # Trick: we display the wifi status in the menu, Ideally we need a better
+        # state handling to know what needs to be displayed or not based on whether
+        # we have a menu or not. For example a "Page" object that corresponds to
+        # the content of the LCD, one that has all the normal screen objects,
+        # one that has the menu(s) etc... and we have a "current page". That way
+        # we can do updates to state without clobbering the current page.
+        # Right now, wifi updates will clobber the menu so may as well always
+        # display the wifi state.
+        self.lcd.update_wifi(self.wifi_status)
         self.selected_menu_index = 0
         self.lcd.menu_highlight(0)
 
-    def system_info_show(self):
-        self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back}}
-        self.menu_items["SW:"] = {Token.NAME: self.git_describe, Token.ACTION: None}
+    def system_info_populate_wifi(self):
         hotspot_active = False
         key = 'hotspot_active'
         if key in self.wifi_status:
             self.menu_items[key] = {Token.NAME: self.wifi_status[key], Token.ACTION: None}
-            if self.wifi_status[key] is "1":
+            if self.wifi_status[key]:
                 hotspot_active = True
         key = 'ip_address'
         if key in self.wifi_status:
             self.menu_items["ip_addr"] = {Token.NAME: self.wifi_status[key], Token.ACTION: None}
-
+        else:
+            self.menu_items["ip_addr"] = {Token.NAME: '<unknown>', Token.ACTION: None}
+        self.menu_items.pop("Enable Hotspot", None)
+        self.menu_items.pop("Disable Hotspot", None)
         if hotspot_active:
             self.menu_items["Disable Hotspot"] = {Token.NAME: "", Token.ACTION: self.system_disable_hotspot}
         else:
             self.menu_items["Enable Hotspot"] = {Token.NAME: "", Token.ACTION: self.system_enable_hotspot}
+
+    def system_info_show(self):
+        self.current_menu = MenuType.MENU_INFO
+        self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back}}
+        self.menu_items["SW:"] = {Token.NAME: self.git_describe, Token.ACTION: None}
+        self.system_info_populate_wifi()
         self.lcd.menu_show("System Info", self.menu_items)
+        # See comment in system_menu_show()
+        self.lcd.update_wifi(self.wifi_status)
         self.selected_menu_index = 0
         self.lcd.menu_highlight(0)
+
+    def system_info_update_wifi(self):
+        self.system_info_populate_wifi()
+        self.lcd.menu_show("System Info", self.menu_items)
+        self.lcd.update_wifi(self.wifi_status)
+        self.lcd.menu_highlight(self.selected_menu_index)
 
     def system_disable_hotspot(self):
         self.system_toggle_hotspot("Disabling, please wait...", "/usr/bin/patchbox wifi hotspot down")
@@ -747,9 +785,9 @@ class Mod(Handler):
     def system_toggle_hotspot(self, msg, cmd):
         self.lcd.draw_info_message(msg)
         subprocess.check_output(cmd, shell=True)
-        time.sleep(2)  # Give networking time to settle before refreshing info
-        self.system_info_load()
-        self.system_info_show()
+#        time.sleep(2)  # Give networking time to settle before refreshing info
+#        self.system_info_load()
+#        self.system_info_show()
 
     def system_menu_save_current_pb(self):
         logging.debug("save current")
