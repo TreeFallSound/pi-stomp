@@ -24,7 +24,7 @@ class Handler:
     def noop(self):
         pass
 
-    def update_lcd_fs(self):
+    def update_lcd_fs(self, bypass_change=False):
         pass
 
     def add_lcd(self, lcd):
@@ -58,4 +58,7 @@ class Handler:
         pass
 
     def universal_encoder_sw(self, value):
+        pass
+
+    def cleanup(self):
         pass

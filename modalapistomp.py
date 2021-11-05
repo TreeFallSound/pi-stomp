@@ -26,6 +26,7 @@ from rtmidi.midiutil import open_midioutput
 import modalapi.mod as Mod
 import pistomp.audioinjector as Audiocard
 import pistomp.generichost as Generichost
+import pistomp.testhost as Testhost
 import pistomp.hardwarefactory as Hardwarefactory
 import pistomp.handler as Handler
 
@@ -37,7 +38,7 @@ def main():
     parser.add_argument("--log", "-l", nargs='+', help="Provide logging level. Example --log debug'", default="info",
                         choices=['debug', 'info', 'warning', 'error', 'critical'])
     parser.add_argument("--host", nargs='+', help="Plugin host to use. Example --host mod'", default=['mod'],
-                        choices=['mod', 'generic'])
+                        choices=['mod', 'generic', 'test'])
 
     args = parser.parse_args()
 
@@ -106,6 +107,16 @@ def main():
         hw = factory.create(handler, midiout)
         handler.add_hardware(hw)
 
+    elif args.host[0] == 'test':
+        handler = Testhost.Testhost(audiocard, homedir=cwd)
+        try:
+            factory = Hardwarefactory.Hardwarefactory()
+            hw = factory.create(handler, midiout)
+            handler.add_hardware(hw)
+        except:
+            handler.cleanup()
+            raise
+
     logging.info("Entering main loop. Press Control-C to exit.")
     period = 0
     try:
@@ -122,6 +133,7 @@ def main():
     except KeyboardInterrupt:
         logging.info('keyboard interrupt')
     finally:
+        handler.cleanup()
         logging.info("Exit.")
         midiout.close_port()
         if handler.lcd is not None:
