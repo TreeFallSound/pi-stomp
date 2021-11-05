@@ -107,16 +107,17 @@ def main():
         handler.add_hardware(hw)
 
     logging.info("Entering main loop. Press Control-C to exit.")
-    #period = 0
+    period = 0
     try:
         while True:
             handler.poll_controls()
             time.sleep(0.01)  # lower to increase responsiveness, but can cause conflict with LCD if too low
 
             # For less frequent events
-            # period += 1
-            # if period > 100:
-            #     period = 0
+            period += 1
+            if period > 100:
+                handler.poll_modui_changes()
+                period = 0
 
     except KeyboardInterrupt:
         logging.info('keyboard interrupt')
