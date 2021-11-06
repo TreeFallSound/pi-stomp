@@ -751,8 +751,6 @@ class Mod(Handler):
     def system_info_show(self):
         self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back}}
         self.menu_items["SW:"] = {Token.NAME: self.git_describe, Token.ACTION: None}
-        self.menu_items["1"] = {Token.NAME: "Please only update if connected to WiFi", Token.ACTION: None}
-        self.menu_items["Update System"] = {Token.NAME: "", Token.ACTION: self.system_updater}
         hotspot_active = False
         key = 'hotspot_active'
         if key in self.wifi_status:
@@ -767,6 +765,8 @@ class Mod(Handler):
             self.menu_items["Disable Hotspot"] = {Token.NAME: "", Token.ACTION: self.system_disable_hotspot}
         else:
             self.menu_items["Enable Hotspot"] = {Token.NAME: "", Token.ACTION: self.system_enable_hotspot}
+            self.menu_items["Update System"] = {Token.NAME: "", Token.ACTION: self.system_updater}
+            
         self.lcd.menu_show("System Info", self.menu_items)
         self.selected_menu_index = 0
         self.lcd.menu_highlight(0)
