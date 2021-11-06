@@ -11,3 +11,11 @@ git pull
 
 #Additional software that gets added should be added here as an install, even if it's not seen as required.
 #This prevents things from breaking for current users who are updating.
+FILE=/home/patch/pi-stomp/requirements.txt
+if [ -f "$FILE" ]; then
+    sudo pip3 install -r requirements.txt
+else 
+    sudo pip3 install pipreqs
+    pipreqs --encoding utf-8 /home/patch/pi-stomp --force
+    sudo pip3 install -r requirements.txt
+fi
