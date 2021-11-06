@@ -3,8 +3,14 @@ import os
 import time
 import curses
 import logging
-import alsaaudio as alsa
+
 import numpy as np
+
+# TODO this is just a temporary fix for those who do a git pull on an install which didn't previously include alsaaudio
+import importlib
+alsa_available = importlib.util.find_spec("alsaaudio")
+if alsa_available:
+    import alsaaudio as alsa
 
 from pistomp.handler import Handler
 from pistomp.hardware import Hardware
@@ -103,6 +109,8 @@ class Testhost(Handler):
         self.stdscr = None
 
     def _init_audio(self):
+        if not alsa_available:
+            return
         cidx = self.audiocard.card_index
         self.audio_in = ain = alsa.PCM(alsa.PCM_CAPTURE, alsa.PCM_NORMAL, cardindex=cidx)
         self.audio_out = aout = alsa.PCM(alsa.PCM_PLAYBACK, alsa.PCM_NORMAL, cardindex=cidx)
@@ -366,7 +374,7 @@ class Testhost(Handler):
                     ctrl.value = ctrl.last_read
                     self.dirty = True
 
-        if self.audiocard is not None:
+        if alsa_available and self.audiocard is not None:
             l,data = self.audio_in.read()
             if l > 0:
                 npd = np.frombuffer(data, dtype=np.int16)
