@@ -783,6 +783,9 @@ class Mod(Handler):
     def update_system(self, msg, cmd):
         self.lcd.draw_info_message(msg)
         subprocess.check_output(cmd, shell=True)
+        time.sleep(2) 
+        self.system_info_load()
+        self.system_info_show()
         
     def system_toggle_hotspot(self, msg, cmd):
         self.lcd.draw_info_message(msg)
