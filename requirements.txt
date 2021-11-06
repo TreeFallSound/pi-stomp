@@ -1,0 +1,16 @@
+Adafruit_Blinka==6.13.0
+adafruit_circuitpython_mcp3xxx==1.4.1
+adafruit_circuitpython_rgb_display==3.10.7
+adafruit_ssd1306==1.6.2
+board==1.0
+gfxhat==0.0.1
+numpy==1.16.2
+Pillow==8.4.0
+pyalsaaudio==0.9.0
+pyserial==3.5
+python_rtmidi==1.2.1
+PyYAML==6.0
+requests==2.21.0
+rtmidi==2.3.4
+spidev==3.5
+ST7789==0.0.4
