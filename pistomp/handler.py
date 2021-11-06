@@ -36,6 +36,9 @@ class Handler:
     def poll_controls(self):
         pass
 
+    def poll_modui_changes(self):
+        pass
+
     def preset_incr_and_change(self):
         pass
 
