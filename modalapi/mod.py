@@ -751,6 +751,8 @@ class Mod(Handler):
     def system_info_show(self):
         self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back}}
         self.menu_items["SW:"] = {Token.NAME: self.git_describe, Token.ACTION: None}
+        self.menu_items["1"] = {Token.NAME: "Please only update if connected to WiFi", Token.ACTION: None}
+        self.menu_items["Update System"] = {Token.NAME: "", Token.ACTION: self.system_updater}
         hotspot_active = False
         key = 'hotspot_active'
         if key in self.wifi_status:
@@ -774,7 +776,14 @@ class Mod(Handler):
 
     def system_enable_hotspot(self):
         self.system_toggle_hotspot("Enabling, please wait...", "/usr/bin/patchbox wifi hotspot up")
-
+        
+    def system_updater(self):
+        self.update_system("Updating system, please wait...", "/home/patch/pi-stomp/modalapi/update.sh")
+        
+    def update_system(self, msg, cmd):
+        self.lcd.draw_info_message(msg)
+        subprocess.check_output(cmd, shell=True)
+        
     def system_toggle_hotspot(self, msg, cmd):
         self.lcd.draw_info_message(msg)
         subprocess.check_output(cmd, shell=True)
