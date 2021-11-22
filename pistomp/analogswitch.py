@@ -37,7 +37,7 @@ class AnalogSwitch(analogcontrol.AnalogControl):
 
     def __init__(self, spi, adc_channel, tolerance, callback):
         super(AnalogSwitch, self).__init__(spi, adc_channel, tolerance)
-        self.last_read = None          # this keeps track of the last value
+        self.value = None          # this keeps track of the last value
         self.trigger_count = 0
         self.callback = callback
         self.longpress_state = False
@@ -45,19 +45,19 @@ class AnalogSwitch(analogcontrol.AnalogControl):
     # Override of base class method
     def refresh(self):
         # read the analog pin
-        value = self.readChannel()
+        new_value = self.readChannel()
 
         # if last read is None, this is the first refresh so don't do anything yet
-        if self.last_read == None:
-            self.last_read = value
+        if self.value is None:
+            self.value = new_value
             return
 
         # how much has it changed since the last read?
-        pot_adjust = abs(value - self.last_read)
+        pot_adjust = abs(new_value - self.value)
         value_changed = (pot_adjust > self.tolerance)
 
         # Count the number of simultaneous refresh cycles had the switch Low (triggered)
-        if not self.longpress_state and value < self.tolerance and self.last_read < self.tolerance:
+        if not self.longpress_state and new_value < self.tolerance and self.value < self.tolerance:
             self.trigger_count += 1
             if self.trigger_count > LONGPRESS_THRESHOLD:
                 value_changed = True
@@ -66,19 +66,19 @@ class AnalogSwitch(analogcontrol.AnalogControl):
         if value_changed:
 
             # save the potentiometer reading for the next loop
-            self.last_read = value
+            self.value = new_value
 
             if self.trigger_count > LONGPRESS_THRESHOLD:
-                value = Value.LONGPRESSED
-            elif value < self.tolerance:
-                value = Value.PRESSED
-            elif value >= self.tolerance:
+                new_value = Value.LONGPRESSED
+            elif new_value < self.tolerance:
+                new_value = Value.PRESSED
+            elif new_value >= self.tolerance:
                 if self.longpress_state:
                     self.longpress_state = False
                     self.trigger_count = 0
                     return
                 else:
-                    value = Value.RELEASED
+                    new_value = Value.RELEASED
             self.trigger_count = 0
 
-            self.callback(value)
+            self.callback(new_value)
