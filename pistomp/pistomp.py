@@ -147,6 +147,7 @@ class Pistomp(hardware.Hardware):
                 timeout = 1000  # 10 seconds
                 initial_value = GPIO.input(f[2])
                 while self.test_pass is False and timeout > 0:
+                    fs.poll()
                     new_value = GPIO.input(f[2])  # Verify that LED pin toggles
                     if new_value is not initial_value:
                         break
@@ -240,5 +241,5 @@ class Pistomp(hardware.Hardware):
             GPIO.cleanup()
             sys.exit()
 
-    def test_passed(self, data):
+    def test_passed(self, data = None):
         self.test_pass = True
