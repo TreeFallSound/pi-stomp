@@ -22,7 +22,7 @@ import threading
 import subprocess
 import logging
 
-class WifiMonitor():
+class WifiManager():
 
     # For now hard wire wifi interface to avoid spending time scrubbing sysfs
     #
@@ -103,3 +103,17 @@ class WifiMonitor():
                 self.changed = False
             return update
         return None
+
+    def enable_hotspot(self):
+        try:
+            subprocess.check_output(['sudo', 'systemctl', 'enable', 'wifi-hotspot']).strip().decode('utf-8')
+            subprocess.check_output(['sudo', 'systemctl', 'start', 'wifi-hotspot']).strip().decode('utf-8')
+        except:
+            logging.debug('Wifi hotspot enabling failed')
+
+    def disable_hotspot(self):
+        try:
+            subprocess.check_output(['sudo', 'systemctl', 'stop', 'wifi-hotspot']).strip().decode('utf-8')
+            subprocess.check_output(['sudo', 'systemctl', 'disable', 'wifi-hotspot']).strip().decode('utf-8')
+        except:
+            logging.debug('Wifi hotspot disabling failed')

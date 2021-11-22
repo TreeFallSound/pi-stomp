@@ -86,7 +86,7 @@ class Mod(Handler):
     __single = None
 
     def __init__(self, audiocard, homedir):
-        self.wifi_monitor = None
+        self.wifi_manager = None
 
         logging.info("Init mod")
         if Mod.__single:
@@ -127,12 +127,12 @@ class Mod(Handler):
         self.menu_items = None
         self.current_menu = MenuType.MENU_NONE
 
-        self.wifi_monitor = Wifi.WifiMonitor()
+        self.wifi_manager = Wifi.WifiManager()
 
     def __del__(self):
         logging.info("Handler cleanup")
-        if self.wifi_monitor:
-            del self.wifi_monitor
+        if self.wifi_manager:
+            del self.wifi_manager
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -379,7 +379,7 @@ class Mod(Handler):
     def poll_controls(self):
         if self.universal_encoder_mode is not UniversalEncoderMode.LOADING:
             self.hardware.poll_controls()
-        wifi_update = self.wifi_monitor.poll()
+        wifi_update = self.wifi_manager.poll()
         if wifi_update is not None:
             self.wifi_status = wifi_update
             self.lcd.update_wifi(self.wifi_status)
@@ -777,17 +777,12 @@ class Mod(Handler):
         self.lcd.menu_highlight(self.selected_menu_index)
 
     def system_disable_hotspot(self):
-        self.system_toggle_hotspot("Disabling, please wait...", "/usr/bin/patchbox wifi hotspot down")
+        self.lcd.draw_info_message("Disabling, please wait...")
+        self.wifi_manager.disable_hotspot()
 
     def system_enable_hotspot(self):
-        self.system_toggle_hotspot("Enabling, please wait...", "/usr/bin/patchbox wifi hotspot up")
-
-    def system_toggle_hotspot(self, msg, cmd):
-        self.lcd.draw_info_message(msg)
-        subprocess.check_output(cmd, shell=True)
-#        time.sleep(2)  # Give networking time to settle before refreshing info
-#        self.system_info_load()
-#        self.system_info_show()
+        self.lcd.draw_info_message("Enabling, please wait...")
+        self.wifi_manager.enable_hotspot()
 
     def system_menu_save_current_pb(self):
         logging.debug("save current")
