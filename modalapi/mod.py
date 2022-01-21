@@ -685,7 +685,7 @@ class Mod(Handler):
             if inst.has_footswitch:
                 for c in inst.controllers:
                     if isinstance(c, Footswitch):
-                        c.toggle(0)
+                        c.pressed(0)
                         return
             # Regular (non footswitch plugin)
             url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/:bypass" % inst.instance_id
