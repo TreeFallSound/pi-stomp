@@ -127,17 +127,17 @@ class Mod(Handler):
         self.menu_items = None
         self.current_menu = MenuType.MENU_NONE
 
+        # This file is modified when the pedalboard is changed via MOD UI
+        self.pedalboard_modification_file = "/var/modep/last.json"
+        self.pedalboard_change_timestamp = os.path.getmtime(self.pedalboard_modification_file)\
+            if Path(self.pedalboard_modification_file).exists() else 0
+
         self.wifi_manager = Wifi.WifiManager()
 
     def __del__(self):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
-
-        # This file is modified when the pedalboard is changed via MOD UI
-        self.pedalboard_modification_file = "/var/modep/last.json"
-        self.pedalboard_change_timestamp = os.path.getmtime(self.pedalboard_modification_file)\
-            if Path(self.pedalboard_modification_file).exists() else 0
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
