@@ -139,6 +139,7 @@ def main():
         if handler.lcd is not None:
             handler.lcd.cleanup()
         GPIO.cleanup()
+        del handler
         logging.info("Completed cleanup")
 
 
