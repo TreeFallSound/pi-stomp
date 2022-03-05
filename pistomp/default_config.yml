@@ -24,18 +24,18 @@ hardware:
   #
   footswitches:
   - id: 0
-    debounce_input: 2
-    midi_CC: 60
+    debounce_input: 0
+    gpio_output: 0
     bypass: LEFT
     preset: UP
   - id: 1
-    debounce_input: 3
-    #gpio_output: 13
+    debounce_input: 1
+    gpio_output: 13
     midi_CC: 62
     color: lime
   - id: 2
-    debounce_input: 4
-    #gpio_output: 26
+    debounce_input: 2
+    gpio_output: 26
     midi_CC: 63
     color: blue
 
@@ -49,3 +49,10 @@ hardware:
   #analog_controllers:
   #- adc_input: 0
   #  midi_CC: 70
+  #  type: KNOB
+  #- adc_input: 1
+  #  midi_CC: 71
+  #  type: KNOB
+  #- adc_input: 7
+  #  midi_CC: 77
+  #  type: EXPRESSION
