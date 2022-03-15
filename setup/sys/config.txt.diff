@@ -10,3 +10,4 @@
 +dtoverlay=pi3-disable-bt
 +dtoverlay=pi3-miniuart-bt
 +dtoverlay=midi-uart0
++gpu_mem=16
