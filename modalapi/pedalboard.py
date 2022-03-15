@@ -171,7 +171,7 @@ class Pedalboard:
                     plugin_info = plugin_dict[plugin_uri]
                 if plugin_info is not None:
                     cat = util.DICT_GET(plugin_info, Token.CATEGORY)
-                    if cat is not None:
+                    if cat is not None and len(cat) > 0:
                         category = cat[0]
 
             # Extract Parameter data
