@@ -17,7 +17,7 @@
 
 set +e
 
-MODUI_ROOT=/usr/local/lib/python3/dist-packages/mod
+MODUI_ROOT=/usr/local/lib/python3.9/dist-packages/mod
 MODUI_HTML=/usr/local/share/mod/html
 
 sudo patch -b -N -u $MODUI_ROOT/host.py -i setup/mod-tweaks/host.diff
