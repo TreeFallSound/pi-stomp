@@ -1,10 +1,10 @@
 [Unit]
 Description=MOD-ALA-PI-STOMP
-After=modep-mod-ui.service
-Requires=modep-mod-ui.service
+After=mod-ui.service
+Requires=mod-ui.service
 
 [Service]
-ExecStart=/usr/bin/python3 /home/patch/pi-stomp/modalapistomp.py
+ExecStart=/usr/bin/python3 /home/pistomp/pi-stomp/modalapistomp.py
 Restart=always
 RestartSec=2
 
