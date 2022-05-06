@@ -248,10 +248,13 @@ class Hardware:
                     preset_value = f[Token.PRESET]
                     if preset_value == Token.UP:
                         fs.add_preset(callback=self.mod.preset_incr_and_change)
-                        fs.set_display_label("Pre++")
-                    if preset_value == Token.DOWN:
+                        fs.set_display_label("Pre+")
+                    elif preset_value == Token.DOWN:
                         fs.add_preset(callback=self.mod.preset_decr_and_change)
-                        fs.set_display_label("Down")
+                        fs.set_display_label("Pre-")
+                    elif isinstance(preset_value, int):
+                        fs.add_preset(callback=self.mod.preset_set_and_change, callback_arg=preset_value)
+                        fs.set_display_label(str(preset_value))
 
                 # LCD attributes
                 if Token.COLOR in f:

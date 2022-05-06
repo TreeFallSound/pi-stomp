@@ -32,6 +32,7 @@ class Footswitch(gpioswitch.GpioSwitch):
         self.refresh_callback = refresh_callback
         self.relay_list = []
         self.preset_callback = None
+        self.preset_callback_arg = None
         self.lcd_color = None
 
         if led_pin is not None:
@@ -84,7 +85,10 @@ class Footswitch(gpioswitch.GpioSwitch):
         if self.preset_callback is not None:
             # Change the preset and exit this method. Don't flip "enabled" since
             # there is no "toggle" action associated with a preset
-            self.preset_callback()
+            if self.preset_callback_arg is None:
+                self.preset_callback()
+            else:
+                self.preset_callback(self.preset_callback_arg)
             return
 
         # Send midi
@@ -116,8 +120,9 @@ class Footswitch(gpioswitch.GpioSwitch):
     def clear_relays(self):
         self.relay_list.clear()
 
-    def add_preset(self, callback):
+    def add_preset(self, callback, callback_arg=None):
         self.preset_callback = callback
+        self.preset_callback_arg = callback_arg
 
     def clear_preset(self):
         self.preset_callback = None
