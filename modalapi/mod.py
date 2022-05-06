@@ -600,12 +600,16 @@ class Mod(Handler):
         # 0 means the preset field is selected but a new preset hasn't been scrolled to yet
         if direction != 0:
             index = self.next_preset_index(self.current.presets, self.selected_preset_index, direction is 1)
-        if index < 0:
-            return
+        self.preset_select_index(index)
+
+    def preset_select_index(self, index):
+        if index < 0 or index >= len(self.current.presets):
+            return None
         self.selected_preset_index = index
-        preset_name = None if len(self.current.presets) == 0 else self.current.presets[index]
+        preset_name = self.current.presets[index]
         highlight_only = self.universal_encoder_mode == UniversalEncoderMode.PRESET_SELECT
         self.lcd.draw_title(self.current.pedalboard.title, preset_name, False, True, highlight_only)
+        return preset_name
 
     def preset_change(self):
         index = self.selected_preset_index
@@ -636,6 +640,14 @@ class Mod(Handler):
         self.universal_encoder_mode = UniversalEncoderMode.LOADING
         self.preset_select(-1)
         self.preset_change()
+        self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
+
+    def preset_set_and_change(self, index):
+        if self.universal_encoder_mode == UniversalEncoderMode.LOADING:
+            return
+        self.universal_encoder_mode = UniversalEncoderMode.LOADING
+        if self.preset_select_index(index):
+            self.preset_change()
         self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
 
     def preset_change_plugin_update(self):
