@@ -29,13 +29,10 @@ sudo sed -i 's/sudo rpi-update/#sudo rpi-update/' /usr/bin/audioInjector-setup.s
 /usr/bin/audioInjector-setup.sh
 
 # Change jack config to use the audioinjector card 
-sudo sed -i -e 's/hw:pisound/hw:audioinjectorpi/' /etc/jackdrc
+sudo sed -i -e 's/hw:pisound/hw:0/' /etc/jackdrc
 if ! grep -q audioinjectorpi /etc/jackdrc ; then
-    sudo sed -i -e 's/hw:b1/hw:audioinjectorpi/' /etc/jackdrc
+    sudo sed -i -e 's/hw:b1/hw:0/' /etc/jackdrc
 fi
 if ! grep -q audioinjectorpi /etc/jackdrc ; then
-    sudo sed -i -e 's/hw:Headphones/hw:audioinjectorpi/' /etc/jackdrc
+    sudo sed -i -e 's/hw:Headphones/hw:0/' /etc/jackdrc
 fi
-
-# Change amixer settings
-sudo cp setup/audio/asound.state.RCA.thru.test /usr/share/doc/audioInjector/asound.state.RCA.thru.test

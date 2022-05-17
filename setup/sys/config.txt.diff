@@ -1,9 +1,11 @@
 --- /boot/config.txt	2020-08-01 21:23:23.000000000 +0000
 +++ config.txt	2020-08-01 21:24:20.414136834 +0000
-@@ -61,3 +61,9 @@
+@@ -61,3 +61,11 @@
  dtoverlay=pi3-miniuart-bt
  dtoverlay=midi-uart0
- 	dtoverlay=audioinjector-wm8731-audio
+dtoverlay=audioinjector-wm8731-audio
+#dtoverlay=iqaudio-codec
+#dtoverlay=hifiberry-dacplusadc
 +
 +# pi-stomp additions to allow DIN Midi, disables bluetooth however
 +enable_uart=1

@@ -54,8 +54,11 @@ dtparam=spi=on
 
 # Enable audio (loads snd_bcm2835)
 #dtparam=audio=on
-# enable the AudioInjector.net sound card
-	dtoverlay=audioinjector-wm8731-audio
+
+# enable the sound card (uncomment one)
+dtoverlay=audioinjector-wm8731-audio
+#dtoverlay=iqaudio-codec
+#dtoverlay=hifiberry-dacplusadc
 
 # pi-stomp additions to allow DIN Midi, disables bluetooth however
 enable_uart=1

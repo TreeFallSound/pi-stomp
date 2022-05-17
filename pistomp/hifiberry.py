@@ -17,11 +17,11 @@ import os
 import pistomp.audiocard as audiocard
 
 
-class Audioinjector(audiocard.Audiocard):
+class Hifiberry(audiocard.Audiocard):
 
     def __init__(self, cwd):
-        super(Audioinjector, self).__init__(cwd)
-        self.initial_config_file = os.path.join(cwd, 'setup', 'audio', 'audioinjector.state')
-        self.initial_config_name = 'audioinjectorpi'
-        self.CAPTURE_VOLUME = 'Capture'
-        self.MASTER = 'Master'
+        super(Hifiberry, self).__init__(cwd)
+        self.initial_config_file = os.path.join(cwd, 'setup', 'audio', 'hifiberry.state')
+        self.initial_config_name = 'sndrpihifiberry'
+        self.CAPTURE_VOLUME = 'Digital'
+        self.MASTER = None
