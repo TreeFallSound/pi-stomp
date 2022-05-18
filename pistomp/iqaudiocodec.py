@@ -1,5 +1,3 @@
-#!/bin/bash -e
-
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
@@ -15,22 +13,15 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-set +e
+import os
+import pistomp.audiocard as audiocard
 
-sudo sed -i 's/console=serial0,115200//' /boot/cmdline.txt
 
+class IQaudioCodec(audiocard.Audiocard):
 
-# append lines to config.txt
-cnt=$(grep -c "dtoverlay=pi3-disable-bt" /boot/config.txt)
-if [[ "$cnt" -eq "0" ]]; then
-sudo bash -c "cat >> /boot/config.txt <<EOF
-
-# pi-stomp additions to allow DIN Midi, disables bluetooth however
-enable_uart=1
-dtoverlay=pi3-disable-bt
-dtoverlay=pi3-miniuart-bt
-dtoverlay=midi-uart0
-EOF"
-fi
-
-exit 0
+    def __init__(self, cwd):
+        super(IQaudioCodec, self).__init__(cwd)
+        self.initial_config_file = os.path.join(cwd, 'setup', 'audio', 'iqaudiocodec.state')
+        self.initial_config_name = 'IQaudIOCODEC'
+        self.CAPTURE_VOLUME = 'Aux'
+        self.MASTER = 'Lineout'  # This is the Speaker output volume

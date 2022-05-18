@@ -13,13 +13,15 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+import os
 import pistomp.audiocard as audiocard
 
 
-class Audiocard(audiocard.Audiocard):
+class Audioinjector(audiocard.Audiocard):
 
-    def __init__(self):
-        super(Audiocard, self).__init__()
-        self.initial_config_file = '/usr/share/doc/audioInjector/asound.state.RCA.thru.test'
+    def __init__(self, cwd):
+        super(Audioinjector, self).__init__(cwd)
+        self.initial_config_file = os.path.join(cwd, 'setup', 'audio', 'audioinjector.state')
         self.initial_config_name = 'audioinjectorpi'
-        self.card_index = 0
+        self.CAPTURE_VOLUME = 'Capture'
+        self.MASTER = 'Master'

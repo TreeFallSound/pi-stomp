@@ -24,6 +24,7 @@ import time
 from rtmidi.midiutil import open_midioutput
 
 import modalapi.mod as Mod
+import pistomp.audiocardfactory as Audiocardfactory
 import pistomp.audioinjector as Audiocard
 import pistomp.generichost as Generichost
 import pistomp.testhost as Testhost
@@ -55,8 +56,9 @@ def main():
     cwd = os.path.dirname(os.path.realpath(__file__))
 
     # Audio Card Config - doing this early so audio passes ASAP
-    audiocard = Audiocard.Audiocard()
-    audiocard.restore()
+    factory = Audiocardfactory.Audiocardfactory(cwd)
+    audiocard = factory.create()
+    audiocard.restore() 
 
     # MIDI initialization
     # Prompts user for MIDI input port, unless a valid port number or name

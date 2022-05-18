@@ -21,11 +21,13 @@ import subprocess
 
 class Audiocard:
 
-    def __init__(self):
+    def __init__(self, cwd):
+        self.cwd = cwd
         self.card_index = 0
         self.config_file = '/var/lib/alsa/asound.state'  # global config used by alsamixer, etc.
         self.initial_config_file = None  # use this if common config_file loading fails
         self.initial_config_name = None
+        self.card_index = 0
         self.CAPTURE_VOLUME = 'Capture'
         self.MASTER = 'Master'
 
@@ -43,7 +45,12 @@ class Audiocard:
                     with f as text:
                         s = mmap.mmap(text.fileno(), 0, access=mmap.ACCESS_READ)
                         if s.find(looking_for) != -1:
+                            logging.info("restoring audio card settings from: %s" % fname)
                             subprocess.run(['/usr/sbin/alsactl', '-f', fname, '--no-lock', 'restore'])
+                            f.close()
+                            # If the file loaded was not the global, then save it so it will be next time
+                            if fname is not self.config_file:
+                                self.store()
                             break
                     f.close()
                 except:
@@ -55,23 +62,29 @@ class Audiocard:
         # dealing with file permissions or sync issues when settings are changed via another program (eg. aslamixer)
         try:
             subprocess.run(['/usr/sbin/alsactl', '-f', self.config_file, 'store'], stderr=subprocess.DEVNULL)
+            logging.info("audio card settings saved to: %s" % self.config_file)
         except:
             logging.error("Failed trying to store audio card settings to: %s" % self.config_file)
 
     def get_parameter(self, param_name):
         val_str = 0
+        value = 0
         cmd = "amixer -c %d -- sget %s" % (self.card_index, param_name)
         try:
             output = subprocess.check_output(cmd, shell=True)
         except subprocess.CalledProcessError:
             logging.error("Failed trying to get audio card parameter")
-            return 0
+            return value
         s = output.decode()
-        # TODO kinda lame screenscrape here for the last value eg. [0.58db] then strip off the []'s and db
-        res = s.rfind('[')
+        # TODO kinda lame screenscrape here for the last value eg. [0.58dB] then strip off the []'s and db
+        res = s.rfind('dB]')
         if res > 0:
-            val_str = s[res+1:-4]
-        value = float(val_str)
+            start = s.rfind('[', 0, res)
+            val_str = s[start+1:res-3]
+        try:
+            value = float(val_str)
+        except:
+            pass
         return value
 
     def set_parameter(self, param_name, value):
