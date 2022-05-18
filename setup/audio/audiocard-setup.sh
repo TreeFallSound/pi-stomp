@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/bash
 
 # This file is part of pi-stomp.
 #
@@ -15,22 +15,21 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-set +e
-
-sudo sed -i 's/console=serial0,115200//' /boot/cmdline.txt
-
+# check the device tree overlay is setup correctly ...
+# firstly disable PWM audio
+sudo bash -c "sed -i \"s/^\s*dtparam=audio/#dtparam=audio/\" /boot/config.txt"
 
 # append lines to config.txt
-cnt=$(grep -c "dtoverlay=pi3-disable-bt" /boot/config.txt)
+cnt=$(grep -c "dtoverlay=audioinjector-wm8731-audio" /boot/config.txt)
 if [[ "$cnt" -eq "0" ]]; then
 sudo bash -c "cat >> /boot/config.txt <<EOF
 
-# pi-stomp additions to allow DIN Midi, disables bluetooth however
-enable_uart=1
-dtoverlay=pi3-disable-bt
-dtoverlay=pi3-miniuart-bt
-dtoverlay=midi-uart0
+# enable the sound card (uncomment only one)
+dtoverlay=audioinjector-wm8731-audio
+#dtoverlay=iqaudio-codec
+#dtoverlay=hifiberry-dacplusadc
 EOF"
 fi
 
-exit 0
+# Change jack config to use card 0
+sudo sed -i -e 's/hw:pisound/hw:0/g' /etc/jackdrc
