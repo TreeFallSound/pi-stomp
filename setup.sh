@@ -68,7 +68,7 @@ printf "\n===== OS update =====\n"
 sudo apt-get update -y --allow-releaseinfo-change --fix-missing
 
 printf "\n===== Audio card setup =====\n"
-setup/audio/audioinjector-setup.sh
+setup/audio/audiocard-setup.sh
 
 printf "\n===== Modep software module install =====\n"
 patchbox module activate modep
