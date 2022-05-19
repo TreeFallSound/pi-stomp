@@ -38,6 +38,9 @@ class WifiManager():
         self.last_status = {}
         self.changed = False
         self.stop = threading.Event()
+        self.wireless_supported = False
+        self.wireless_file = os.path.join(os.sep, 'sys', 'class', 'net', self.iface_name, 'wireless')
+        self.operstate_file = os.path.join(os.sep, 'sys', 'class', 'net', self.iface_name, 'operstate')
         self.thread = threading.Thread(target=self._polling_thread, daemon=True).start()
 
     def __del__(self):
@@ -46,12 +49,18 @@ class WifiManager():
         self.thread.join()
 
     def _is_wifi_supported(self):
-        return os.path.exists('/sys/class/net/' + self.iface_name + '/wireless')
+        # Once we know it's supported, no need to check the file again
+        if self.wireless_supported:
+            return True
+        self.wireless_supported = os.path.exists(self.wireless_file)
+        return self.wireless_supported
     
     def _is_wifi_connected(self):
         try:
-            output = subprocess.check_output(['cat', '/sys/class/net/{}/operstate'.format(self.iface_name)])
-            return output.strip().decode('utf-8') == 'up'
+            with open(self.operstate_file) as f:
+                line = f.readline()
+                f.close()
+                return line.startswith('up')
         except Exception as e:
             return False
 
@@ -75,7 +84,7 @@ class WifiManager():
             print("WPA CLI fail:" + str(e))
 
     def _polling_thread(self):
-        while not self.stop.wait(1.0):
+        while not self.stop.wait(5.0):
             new_status = {}
             new_status['wifi_supported'] = supported = self._is_wifi_supported()
             new_status['wifi_connected'] = connected = self._is_wifi_connected()
