@@ -81,7 +81,7 @@ class WifiManager():
                 if key and value:
                     status[key] = value
         except Exception as e:
-            print("WPA CLI fail:" + str(e))
+            logging.error("WPA CLI fail:" + str(e))
 
     def _polling_thread(self):
         while not self.stop.wait(5.0):
