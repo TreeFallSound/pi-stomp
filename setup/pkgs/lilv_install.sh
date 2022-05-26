@@ -32,11 +32,11 @@ sudo apt-get -y install liblilv-dev lv2-dev libserd-dev libsord-dev libsratom-de
 
 # Get it
 pushd $(mktemp -d)
-wget http://download.drobilla.net/lilv-0.24.4.tar.bz2
-tar xvf lilv-0.24.4.tar.bz2
-pushd lilv-0.24.4
+wget http://download.drobilla.net/lilv-0.24.12.tar.bz2
+tar xvf lilv-0.24.12.tar.bz2
+pushd lilv-0.24.12
 
 # configure, build, install
-python3 ./waf configure --prefix=/usr/local  --static --static-progs --no-shared --no-utils --no-bash-completion --bindings --pythondir=/usr/local/lib/python3.7/dist-packages
+python3 ./waf configure --prefix=/usr/local  --static --static-progs --no-shared --no-utils --no-bash-completion --pythondir=/usr/local/lib/python3.9/dist-packages
 python3 ./waf build
 sudo python3 ./waf install
