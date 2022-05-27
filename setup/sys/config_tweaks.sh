@@ -23,6 +23,7 @@ sudo sed -i 's/console=serial0,115200//' /boot/cmdline.txt
 sudo bash -c "sed -i \"s/^\s*hdmi_force_hotplug=/#hdmi_force_hotplug=/\" /boot/config.txt"
 sudo bash -c "sed -i \"s/^\s*camera_auto_detect=/#camera_auto_detect=/\" /boot/config.txt"
 sudo bash -c "sed -i \"s/^\s*display_auto_detect=/#display_auto_detect=/\" /boot/config.txt"
+sudo bash -c "sed -i \"s/^\s*dtoverlay=vc4-kms-v3d/#dtoverlay=vc4-kms-v3d/\" /boot/config.txt"
 
 # append lines to config.txt
 cnt=$(grep -c "dtoverlay=pi3-disable-bt" /boot/config.txt)
