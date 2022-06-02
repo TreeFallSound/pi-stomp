@@ -82,3 +82,10 @@ sudo cp jackdrc /etc/
 sudo cp 80 /etc/authbind/byport/
 chmod 500 /etc/authbind/byport/80
 chown pistomp:pistomp /etc/authbind/byport/80
+
+#Copy WiFi hotspot files
+sudo cp hotspot/etc/default/hostapd.pistomp /etc/default
+sudo cp hotspot/etc/dnsmasq.d/wifi-hotspot.conf /etc/dnsmasq.d
+sudo cp hotspot/etc/hostapd/hostapd.conf /etc/hostapd
+sudo cp -R hotspot/usr/lib/pistomp-wifi /usr/lib
+sudo cp hotspot/usr/lib/systemd/system/wifi-hotspot.service /usr/lib/systemd/system
