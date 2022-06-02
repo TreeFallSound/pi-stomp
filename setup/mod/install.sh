@@ -17,6 +17,8 @@ mkdir /home/pistomp/.lv2
 mkdir /home/pistomp/data
 mkdir /home/pistomp/data/.pedalboards
 mkdir /home/pistomp/data/user-files
+sudo mkdir /usr/mod
+sudo mkdir /usr/mod/scripts
 cd /home/pistomp/data/user-files
 mkdir "Speaker Cabinets IRs"
 mkdir "Reverb IRs"
