@@ -71,7 +71,7 @@ printf "\n===== Audio card setup =====\n"
 setup/audio/audiocard-setup.sh
 
 printf "\n===== Modep software module install =====\n"
-patchbox module activate modep
+setup/mod/install.sh
 
 printf "\n===== Mod software tweaks =====\n"
 setup/mod-tweaks/mod-tweaks.sh
