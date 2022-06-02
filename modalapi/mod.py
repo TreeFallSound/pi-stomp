@@ -349,7 +349,7 @@ class Mod(Handler):
     def universal_select(self, direction):
         if self.current.pedalboard is not None:
             prev_type = self.selectable_items[self.selectable_index][0]
-            index = ((self.selectable_index + 1) if (direction is 1)
+            index = ((self.selectable_index + 1) if (direction == 1)
                      else (self.selectable_index - 1)) % len(self.selectable_items)
             self.selectable_index = index
             item_type = self.selectable_items[index][0]
@@ -408,14 +408,12 @@ class Mod(Handler):
             # Timestamp changed
             self.pedalboard_change_timestamp = ts
             self.lcd.draw_info_message("Loading...")
-            with open(self.pedalboard_modification_file, 'r') as file:
-                j = json.load(file)
-                mod_bundle = util.DICT_GET(j, 'pedalboard')
-                if mod_bundle:
-                    logging.info("Pedalboard changed via MOD from: %s to: %s" %
-                                 (self.current.pedalboard.bundle, mod_bundle))
-                    pb = self.pedalboards[mod_bundle]
-                    self.set_current_pedalboard(pb)
+            mod_bundle = self.get_pedalboard_bundle_from_mod()
+            if mod_bundle:
+                logging.info("Pedalboard changed via MOD from: %s to: %s" %
+                             (self.current.pedalboard.bundle, mod_bundle))
+                pb = self.pedalboards[mod_bundle]
+                self.set_current_pedalboard(pb)
 
     #
     # Pedalboard Stuff
@@ -451,15 +449,19 @@ class Mod(Handler):
         #logging.debug("Preset: %s %d" % (bund, self.host.pedalboard_preset))  # this value not initialized
         #logging.debug("Preset: %s" % self.get_current_preset_name())
 
+    def get_pedalboard_bundle_from_mod(self):
+        # Assumes the caller has already checked for existence of the file
+        mod_bundle = None
+        with open(self.pedalboard_modification_file, 'r') as file:
+            j = json.load(file)
+            mod_bundle = util.DICT_GET(j, 'pedalboard')
+        return mod_bundle
+
     def get_current_pedalboard_bundle_path(self):
-        url = self.root_uri + "pedalboard/current"
-        try:
-            resp = req.get(url)
-            # TODO pass code define
-            if resp.status_code == 200:
-                return resp.text
-        except:
-            return None
+        mod_bundle = None
+        if Path(self.pedalboard_modification_file).exists():
+            mod_bundle = self.get_pedalboard_bundle_from_mod()
+        return mod_bundle
 
     def set_current_pedalboard(self, pedalboard):
         # Delete previous "current"
@@ -534,7 +536,7 @@ class Mod(Handler):
             self.lcd.draw_title(self.current.pedalboard.title, None, True, False)
             return
         cur_idx = self.selected_pedalboard_index
-        next_idx = ((cur_idx - 1) if (direction is 1) else (cur_idx + 1)) % len(self.pedalboard_list)
+        next_idx = ((cur_idx - 1) if (direction == 1) else (cur_idx + 1)) % len(self.pedalboard_list)
         if self.pedalboard_list[next_idx].bundle in self.pedalboards:
             highlight_only = self.universal_encoder_mode == UniversalEncoderMode.PEDALBOARD_SELECT
             self.lcd.draw_title(self.pedalboard_list[next_idx].title, None, True, False, highlight_only)
@@ -599,7 +601,7 @@ class Mod(Handler):
         index = self.selected_preset_index
         # 0 means the preset field is selected but a new preset hasn't been scrolled to yet
         if direction != 0:
-            index = self.next_preset_index(self.current.presets, self.selected_preset_index, direction is 1)
+            index = self.next_preset_index(self.current.presets, self.selected_preset_index, direction == 1)
         self.preset_select_index(index)
 
     def preset_select_index(self, index):
@@ -683,7 +685,7 @@ class Mod(Handler):
     def plugin_select(self, direction):
         if self.current.pedalboard is not None:
             pb = self.current.pedalboard
-            index = ((self.selected_plugin_index + 1) if (direction is 1)
+            index = ((self.selected_plugin_index + 1) if (direction == 1)
                     else (self.selected_plugin_index - 1)) % len(pb.plugins)
             #index = self.next_plugin(pb.plugins, enc)
             plugin = pb.plugins[index]  # TODO check index
@@ -722,7 +724,7 @@ class Mod(Handler):
 
         # incr/decr to next item having a non-None action
         while tried < num:
-            index = ((index - 1) if (direction is not 1) else (index + 1)) % num
+            index = ((index - 1) if (direction != 1) else (index + 1)) % num
             item = sort_list[index]
             action = self.menu_items[item][Token.ACTION]
             if action is not None:
@@ -948,7 +950,7 @@ class Mod(Handler):
         value = float(param.value)
         # TODO tweak value won't change from call to call, cache it
         tweak = util.renormalize_float(self.parameter_tweak_amount, 0, 127, param.minimum, param.maximum)
-        new_value = round(((value - tweak) if (direction is not 1) else (value + tweak)), 2)
+        new_value = round(((value - tweak) if (direction != 1) else (value + tweak)), 2)
         if new_value > param.maximum:
             new_value = param.maximum
         if new_value < param.minimum:

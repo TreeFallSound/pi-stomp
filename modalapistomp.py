@@ -93,9 +93,10 @@ def main():
         # Load the current pedalboard as "current"
         current_pedal_board_bundle = handler.get_current_pedalboard_bundle_path()
         if not current_pedal_board_bundle:
-            # Apparently, no pedalboard is currently loaded so just load the first one
-            current_pedal_board_bundle = list(handler.pedalboards.keys())[0]
-        handler.set_current_pedalboard(handler.pedalboards[current_pedal_board_bundle])
+            # Apparently, no pedalboard is currently loaded so just change to the default
+            handler.pedalboard_change()
+        else:
+            handler.set_current_pedalboard(handler.pedalboards[current_pedal_board_bundle])
 
         # Load system info.  This can take a few seconds
         handler.system_info_load()
