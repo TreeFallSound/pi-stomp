@@ -60,7 +60,7 @@ cd ..
 sudo ./setup.py install
 
 #Touchosc2midi
-pushd $(mktemp -d) && git clone https://github.com/velolala/touchosc2midi
+pushd $(mktemp -d) && git clone https://github.com/BlokasLabs/touchosc2midi.git
 pushd touchosc2midi
 sudo pip3 install ./
 
