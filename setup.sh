@@ -18,7 +18,7 @@
 
 #
 # Usage and options
-#
+# 
 usage()
 {
     echo "Usage: $(basename $0) [-v <hardware_version>] [-m]"
