@@ -65,7 +65,7 @@ else
 fi
 
 printf "\n===== Mod software install =====\n"
-chmod +x setup/mod/install.sh
+setup/mod/install.sh
 setup/mod/install.sh
 
 printf "\n===== Audio card setup =====\n"
