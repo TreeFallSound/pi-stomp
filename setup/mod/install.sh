@@ -90,3 +90,5 @@ sudo cp hotspot/etc/dnsmasq.d/wifi-hotspot.conf /etc/dnsmasq.d
 sudo cp hotspot/etc/hostapd/hostapd.conf /etc/hostapd
 sudo cp -R hotspot/usr/lib/pistomp-wifi /usr/lib
 sudo cp hotspot/usr/lib/systemd/system/wifi-hotspot.service /usr/lib/systemd/system
+sudo chown -R pistomp:pistomp /usr/lib/pistomp-wifi
+sudo chmod +x -R /usr/lib/pistomp-wifi
