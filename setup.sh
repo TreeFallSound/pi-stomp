@@ -90,8 +90,6 @@ cp setup/sys/bash_aliases ~/.bash_aliases
 
 printf "\n===== Manage services =====\n"
 setup/services/create_services.sh
-setup/services/tweak_services.sh
-setup/services/stop_services.sh
 
 printf "\n===== pi-stomp setup complete =====\n"
 
