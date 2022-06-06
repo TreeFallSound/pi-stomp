@@ -66,7 +66,6 @@ fi
 
 printf "\n===== Mod software install =====\n"
 setup/mod/install.sh
-setup/mod/install.sh
 
 printf "\n===== Audio card setup =====\n"
 setup/audio/audiocard-setup.sh
