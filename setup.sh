@@ -64,15 +64,12 @@ else
     ${HOME}/pi-stomp/setup/pi-stomp-tweaks/modify_version.sh ${hardware_version}
 fi
 
-printf "\n===== OS update =====\n"
-sudo apt-get update -y --allow-releaseinfo-change --fix-missing
+printf "\n===== Mod software install =====\n"
+chmod +x setup/mod/install.sh
+setup/mod/install.sh
 
 printf "\n===== Audio card setup =====\n"
 setup/audio/audiocard-setup.sh
-
-printf "\n===== Modep software module install =====\n"
-chmod +x setup/mod/install.sh
-setup/mod/install.sh
 
 printf "\n===== Mod software tweaks =====\n"
 setup/mod-tweaks/mod-tweaks.sh
