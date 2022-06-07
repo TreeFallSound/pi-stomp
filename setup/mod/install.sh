@@ -31,6 +31,7 @@ mkdir "MIDI Songs"
 mkdir "Hydrogen Drumkits"
 mkdir "SF2 Instruments"
 mkdir "SFZ Instruments"
+mkdir "Amplifier Profiles"
 
 #Jack2
 pushd $(mktemp -d) && git clone https://github.com/moddevices/jack2.git
