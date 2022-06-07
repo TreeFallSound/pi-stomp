@@ -13,25 +13,23 @@ sudo pip3 install Pillow==8.4.0
 sudo pip3 install cython
 
 #Install Mod Software
-mkdir /home/pistomp/.lv2
-mkdir /home/pistomp/data
-mkdir /home/pistomp/data/.pedalboards
-mkdir /home/pistomp/data/user-files
-sudo mkdir /usr/mod
-sudo mkdir /usr/mod/scripts
+mkdir -p /home/pistomp/.lv2
+mkdir -p /home/pistomp/data/.pedalboards
+mkdir -p /home/pistomp/data/user-files
+sudo -p mkdir /usr/mod/scripts
 cd /home/pistomp/data/user-files
-mkdir "Speaker Cabinets IRs"
-mkdir "Reverb IRs"
-mkdir "Audio Loops"
-mkdir "Audio Recordings"
-mkdir "Audio Samples"
-mkdir "Audio Tracks"
-mkdir "MIDI Clips"
-mkdir "MIDI Songs"
-mkdir "Hydrogen Drumkits"
-mkdir "SF2 Instruments"
-mkdir "SFZ Instruments"
-mkdir "Amplifier Profiles"
+mkdir -p "Speaker Cabinets IRs"
+mkdir -p "Reverb IRs"
+mkdir -p "Audio Loops"
+mkdir -p "Audio Recordings"
+mkdir -p "Audio Samples"
+mkdir -p "Audio Tracks"
+mkdir -p "MIDI Clips"
+mkdir -p "MIDI Songs"
+mkdir -p "Hydrogen Drumkits"
+mkdir -p "SF2 Instruments"
+mkdir -p "SFZ Instruments"
+mkdir -p "Amplifier Profiles"
 
 #Jack2
 pushd $(mktemp -d) && git clone https://github.com/moddevices/jack2.git
