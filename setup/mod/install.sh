@@ -40,7 +40,7 @@ pushd jack2
 sudo ./waf install
 
 #Browsepy
-pushd $(mktemp -d) && git clone https://github.com/moddevices/browsepy.git
+pushd $(mktemp -d) && git clone https://github.com/micahvdm/browsepy.git
 pushd browsepy
 sudo pip3 install ./
 
