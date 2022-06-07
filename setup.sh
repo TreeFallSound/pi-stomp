@@ -80,6 +80,8 @@ setup/pkgs/mod-ttymidi_install.sh
 
 printf "\n===== Get extra plugins =====\n"
 setup/plugins/build_extra_plugins.sh
+chmod +x setup/plugins/kpp_tubeamp.sh
+setup/plugins/kpp_tubeamp.sh
 
 printf "\n===== Get example pedalboards =====\n"
 setup/pedalboards/get_pedalboards.sh
