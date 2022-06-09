@@ -13,7 +13,6 @@ sudo pip3 install Pillow==8.4.0
 sudo pip3 install cython
 
 #Install Mod Software
-mkdir -p /home/pistomp/.lv2
 mkdir -p /home/pistomp/data/.pedalboards
 mkdir -p /home/pistomp/data/user-files
 sudo -p mkdir /usr/mod/scripts
