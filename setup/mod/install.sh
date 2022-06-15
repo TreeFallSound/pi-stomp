@@ -15,7 +15,7 @@ sudo pip3 install cython
 #Install Mod Software
 mkdir -p /home/pistomp/data/.pedalboards
 mkdir -p /home/pistomp/data/user-files
-sudo -p mkdir /usr/mod/scripts
+sudo mkdir -p /usr/mod/scripts
 cd /home/pistomp/data/user-files
 mkdir -p "Speaker Cabinets IRs"
 mkdir -p "Reverb IRs"
