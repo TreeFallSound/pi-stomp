@@ -22,3 +22,7 @@ os_prefix=$KERN/
 overlay_prefix=o/
 [all]
 EOF
+
+#Turn off raspi-config service and set performance governor
+sudo rcconf --off raspi-config
+sudo "echo performance > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
