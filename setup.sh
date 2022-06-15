@@ -92,5 +92,9 @@ cp setup/sys/bash_aliases ~/.bash_aliases
 printf "\n===== Manage services =====\n"
 setup/services/create_services.sh
 
+printf "\n===== RT Kernel Install =====\n"
+chmod +x setup/mod/rtkernel.sh
+setup/mod/rtkernel.sh
+
 printf "\n===== pi-stomp setup complete - rebooting =====\n"
 sudo reboot now
