@@ -21,6 +21,7 @@ kernel=vmlinuz-$KERN
 # initramfs initrd.img-$KERN
 os_prefix=rtk/
 overlay_prefix=o/
+arm_64bit=1
 [all]
 EOF"
 
