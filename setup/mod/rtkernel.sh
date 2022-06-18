@@ -9,6 +9,7 @@ KERN=5.15.12-rt25-v8+
 sudo mkdir -p /boot/rtk/o/
 sudo cp -d /usr/lib/linux-image-$KERN/overlays/* /boot/rtk/o/
 sudo cp -dr /usr/lib/linux-image-$KERN/* /boot/rtk/
+sudo cp -d /usr/lib/linux-image-$KERN/broadcom/* /boot/rtk/
 sudo touch /boot/rtk/o/README
 sudo mv /boot/vmlinuz-$KERN /boot/rtk/
 sudo mv /boot/initrd.img-$KERN /boot/rtk/
