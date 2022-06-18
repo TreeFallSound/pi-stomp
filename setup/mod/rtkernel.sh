@@ -11,6 +11,7 @@ sudo cp -d /usr/lib/linux-image-$KERN/overlays/* /boot/rtk/o/
 sudo cp -dr /usr/lib/linux-image-$KERN/* /boot/rtk/
 sudo touch /boot/rtk/o/README
 sudo mv /boot/vmlinuz-$KERN /boot/rtk/
+sudo mv /boot/initrd.img-$KERN /boot/rtk/
 sudo mv /boot/System.map-$KERN /boot/rtk/
 sudo cp /boot/config-$KERN /boot/rtk/
 sudo bash -c "cat >> /boot/config.txt << EOF
