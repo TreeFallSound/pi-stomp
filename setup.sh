@@ -64,14 +64,11 @@ else
     ${HOME}/pi-stomp/setup/pi-stomp-tweaks/modify_version.sh ${hardware_version}
 fi
 
-printf "\n===== OS update =====\n"
-sudo apt-get update -y --allow-releaseinfo-change --fix-missing
+printf "\n===== Mod software install =====\n"
+setup/mod/install.sh
 
 printf "\n===== Audio card setup =====\n"
 setup/audio/audiocard-setup.sh
-
-printf "\n===== Modep software module install =====\n"
-patchbox module activate modep
 
 printf "\n===== Mod software tweaks =====\n"
 setup/mod-tweaks/mod-tweaks.sh
@@ -83,7 +80,8 @@ setup/pkgs/lilv_install.sh
 setup/pkgs/mod-ttymidi_install.sh
 
 printf "\n===== Get extra plugins =====\n"
-setup/plugins/build_extra_plugins.sh
+chmod +x setup/plugins/get_plugins.sh
+setup/plugins/get_plugins.sh
 
 printf "\n===== Get example pedalboards =====\n"
 setup/pedalboards/get_pedalboards.sh
@@ -94,8 +92,10 @@ cp setup/sys/bash_aliases ~/.bash_aliases
 
 printf "\n===== Manage services =====\n"
 setup/services/create_services.sh
-setup/services/tweak_services.sh
-setup/services/stop_services.sh
 
-printf "\n===== pi-stomp setup complete =====\n"
+printf "\n===== RT Kernel Install =====\n"
+chmod +x setup/mod/rtkernel.sh
+setup/mod/rtkernel.sh
 
+printf "\n===== pi-stomp setup complete - rebooting =====\n"
+sudo reboot now
