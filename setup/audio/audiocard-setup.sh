@@ -31,7 +31,3 @@ dtoverlay=audioinjector-wm8731-audio
 EOF"
 fi
 
-# Change jack config to use card 0
-sudo sed -i -e 's/hw:pisound/hw:0/g' /etc/jackdrc
-sudo sed -i -e 's/-p 128/-p 256/' /etc/jackdrc
-
