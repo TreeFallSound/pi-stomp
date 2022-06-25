@@ -75,7 +75,7 @@ setup/mod-tweaks/mod-tweaks.sh
 
 printf "\n===== Install pi-stomp package dependencies =====\n"
 setup/pkgs/simple_install.sh
-setup/pkgs/gfxhat_install.sh
+#setup/pkgs/gfxhat_install.sh
 setup/pkgs/lilv_install.sh
 setup/pkgs/mod-ttymidi_install.sh
 
