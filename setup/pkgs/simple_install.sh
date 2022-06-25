@@ -36,6 +36,9 @@ sudo /usr/bin/pip3 install requests
 # GPIO
 sudo /usr/bin/pip3 install RPi.GPIO
 
+#GFXHat
+sudo /usr/bin/pip3 install gfxhat
+
 # LCD
 sudo /usr/bin/pip3 install adafruit-circuitpython-rgb-display
 sudo apt install -y python3-numpy
