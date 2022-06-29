@@ -18,23 +18,24 @@
 set -x
 set -e
 
-sudo dpkg -i setup/sys/linux-image-5.15.12-rt25-v8+_5.15.12-1_arm64.deb
+wget -P /home/pistomp/pi-stomp/setup/sys https://github.com/kdoren/linux/releases/download/rpi_5.15.40/linux-image-5.15.40-llat-v8+_5.15.40-1_arm64.deb
+sudo dpkg -i setup/sys/linux-image-5.15.40-llat-v8+_5.15.40-1_arm64.deb
 
-KERN=5.15.12-rt25-v8+
-sudo mkdir -p /boot/rtk/o/
-sudo cp -d /usr/lib/linux-image-$KERN/overlays/* /boot/rtk/o/
-sudo cp -dr /usr/lib/linux-image-$KERN/* /boot/rtk/
-sudo cp -d /usr/lib/linux-image-$KERN/broadcom/* /boot/rtk/
-sudo touch /boot/rtk/o/README
-sudo mv /boot/vmlinuz-$KERN /boot/rtk/
-sudo mv /boot/initrd.img-$KERN /boot/rtk/
-sudo mv /boot/System.map-$KERN /boot/rtk/
-sudo cp /boot/config-$KERN /boot/rtk/
+KERN=5.15.40-llat-v8+
+sudo mkdir -p /boot/llat/o/
+sudo cp -d /usr/lib/linux-image-$KERN/overlays/* /boot/llat/o/
+sudo cp -dr /usr/lib/linux-image-$KERN/* /boot/llat/
+sudo cp -d /usr/lib/linux-image-$KERN/broadcom/* /boot/llat/
+sudo touch /boot/llat/o/README
+sudo mv /boot/vmlinuz-$KERN /boot/llat/
+sudo mv /boot/initrd.img-$KERN /boot/llat/
+sudo mv /boot/System.map-$KERN /boot/llat/
+sudo cp /boot/config-$KERN /boot/llat/
 sudo bash -c "cat >> /boot/config.txt << EOF
 [all]
 kernel=vmlinuz-$KERN
 # initramfs initrd.img-$KERN
-os_prefix=rtk/
+os_prefix=llat/
 overlay_prefix=o/
 arm_64bit=1
 [all]
