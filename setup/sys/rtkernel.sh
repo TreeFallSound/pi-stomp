@@ -18,7 +18,7 @@
 set -x
 set -e
 
-sudo dpkg -i ./linux-image-5.15.12-rt25-v8+_5.15.12-1_arm64.deb
+sudo dpkg -i setup/sys/linux-image-5.15.12-rt25-v8+_5.15.12-1_arm64.deb
 
 KERN=5.15.12-rt25-v8+
 sudo mkdir -p /boot/rtk/o/
