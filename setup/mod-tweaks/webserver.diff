@@ -26,7 +26,17 @@
  class EffectPresetLoad(JsonRequestHandler):
      @web.asynchronous
      @gen.engine
-@@ -1954,6 +1973,8 @@
+@@ -2101,6 +2120,9 @@
+         elif filetype == "sfz":
+             return ("SFZ Instruments", (".sfz",))
+ 
++        elif filetype == "tapf":
++            return ("Amplifier Profiles", (".tapf",))
++
+         else:
+             return (None, ())
+             
+@@ -2167,6 +2189,8 @@
              # plugin parameters
              (r"/effect/parameter/address/*(/[A-Za-z0-9_:/]+[^/])/?", EffectParameterAddress),
              (r"/effect/parameter/set/?", EffectParameterSet),

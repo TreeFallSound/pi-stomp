@@ -1,0 +1,19 @@
+[Unit]
+Description=MOD-host
+After=jack.service
+BindsTo=jack.service
+
+[Service]
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+Type=forking
+Environment=LV2_PATH=/home/pistomp/.lv2
+Environment=JACK_PROMISCUOUS_SERVER=jack
+ExecStart=/usr/local/bin/mod-host -p 5555 -f 5556
+User=pistomp
+Group=pistomp
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

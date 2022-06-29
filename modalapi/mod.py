@@ -128,7 +128,7 @@ class Mod(Handler):
         self.current_menu = MenuType.MENU_NONE
 
         # This file is modified when the pedalboard is changed via MOD UI
-        self.pedalboard_modification_file = "/var/modep/last.json"
+        self.pedalboard_modification_file = "/home/pistomp/data/last.json"
         self.pedalboard_change_timestamp = os.path.getmtime(self.pedalboard_modification_file)\
             if Path(self.pedalboard_modification_file).exists() else 0
 
