@@ -65,7 +65,6 @@ else
 fi
 
 printf "\n===== Mod software install =====\n"
-chmod +x setup/mod/install.sh
 setup/mod/install.sh
 
 printf "\n===== Audio card setup =====\n"
@@ -81,7 +80,6 @@ setup/pkgs/lilv_install.sh
 setup/pkgs/mod-ttymidi_install.sh
 
 printf "\n===== Get extra plugins =====\n"
-chmod +x setup/plugins/get_plugins.sh
 setup/plugins/get_plugins.sh
 
 printf "\n===== Get example pedalboards =====\n"
@@ -95,7 +93,6 @@ printf "\n===== Manage services =====\n"
 setup/services/create_services.sh
 
 printf "\n===== RT Kernel Install =====\n"
-chmod +x setup/mod/rtkernel.sh
 setup/sys/rtkernel.sh
 
 printf "\n===== pi-stomp setup complete - rebooting =====\n"
