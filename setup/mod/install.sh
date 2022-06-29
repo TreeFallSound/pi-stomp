@@ -92,6 +92,7 @@ sudo adduser pistomp jack --quiet
 sudo adduser root jack --quiet
 sudo adduser jack audio --quiet
 sudo cp jackdrc /etc/
+sudo chmod +x /etc/jackdrc
 sudo chown jack:jack /etc/jackdrc
 sudo cp 80 /etc/authbind/byport/
 sudo chmod 500 /etc/authbind/byport/80
