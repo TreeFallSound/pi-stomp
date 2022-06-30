@@ -18,10 +18,9 @@
 set -x
 set -e
 
-wget -P /home/pistomp/pi-stomp/setup/sys https://github.com/kdoren/linux/releases/download/rpi_5.15.40/linux-image-5.15.40-llat-v8+_5.15.40-1_arm64.deb
-sudo dpkg -i setup/sys/linux-image-5.15.40-llat-v8+_5.15.40-1_arm64.deb
+sudo dpkg -i setup/sys/linux-image-5.15.40-rt43-v8+_arm64.deb
 
-KERN=5.15.40-llat-v8+
+KERN=5.15.40-rt43-v8+
 sudo mkdir -p /boot/llat/o/
 sudo cp -d /usr/lib/linux-image-$KERN/overlays/* /boot/llat/o/
 sudo cp -dr /usr/lib/linux-image-$KERN/* /boot/llat/
