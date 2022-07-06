@@ -21,9 +21,10 @@
 #
 usage()
 {
-    echo "Usage: $(basename $0) [-v <hardware_version>] [-m]"
+    echo "Usage: $(basename $0) [-a <audio_card>] [-v <hardware_version>] [-m]"
     echo ""
     echo "Options:"
+    echo " -a <audio_card>       Specify audio card (audioinjector-wm8731-audio | iqaudio-codec | hifiberry-dacplusadc)"
     echo " -v <version>          Specify hardware version"
     echo "                         1.0 : original pi-Stomp hardware (PCB v1)"
     echo "                         2.0 : most hardware (default)"
@@ -33,14 +34,17 @@ usage()
 
 has_ttymidi=false
 
-while getopts ':v:' o; do
+while getopts 'a:v:mh' o; do
     case "${o}" in
+        a)
+            audio_card=${OPTARG}
+            ;;
         v)
             hardware_version=${OPTARG}
             ;;
 	m)
 	    has_ttymidi=true
-	    ;;
+            ;;
 	h)
 	    usage
 	    exit 0
@@ -64,11 +68,14 @@ else
     ${HOME}/pi-stomp/setup/pi-stomp-tweaks/modify_version.sh ${hardware_version}
 fi
 
-printf "\n===== Mod software install =====\n"
-setup/mod/install.sh
-
 printf "\n===== Audio card setup =====\n"
 setup/audio/audiocard-setup.sh
+if [ ! -z ${audio_card+x} ]; then
+    util/change-audio-card.sh ${audio_card} || (usage; exit 1)
+fi
+
+printf "\n===== Mod software install =====\n"
+setup/mod/install.sh
 
 printf "\n===== Mod software tweaks =====\n"
 setup/mod-tweaks/mod-tweaks.sh

@@ -40,4 +40,5 @@ if [[ ${card_found} -eq 1 ]]; then
   echo "*******************************"
 else
   echo "$opt is not a known card"
+  exit 1
 fi
