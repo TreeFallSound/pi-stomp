@@ -1,0 +1,20 @@
+--- advertise.py0	2022-07-08 11:34:53.237900811 -0700
++++ advertise.py	2022-07-08 16:47:50.654582076 -0700
+@@ -48,7 +48,7 @@
+                            socket.gethostname(),
+                            TOUCHOSC_BRIDGE
+                        ),
+-                       address=socket.inet_aton(ip),
++                       addresses=[socket.inet_aton(ip)],
+                        port=PORT,
+                        properties=dict(),
+                        server=socket.gethostname() + '.local.')
+@@ -97,7 +97,7 @@
+     def get_ip(self):
+         """:return: the service's IP as a string.
+         """
+-        return socket.inet_ntoa(self.info.address)
++        return socket.inet_ntoa(self.info.addresses[0])
+ 
+     ip = property(get_ip)
+ 

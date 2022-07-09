@@ -1,10 +1,12 @@
 [Unit]
-Description=amidithru service for touchosc2midi
-After=sound.target
-Wants=sound.target
+Description=TouchOsc2Midi service
+After=network-online.target mod-amidithru.service
+Wants=network-online.target
+BindsTo=mod-amidithru.service network-online.target jack.service
+Conflicts=touchosc2midi.service
 
 [Service]
-ExecStart=/usr/local/bin/amidithru touchosc
+ExecStart=/bin/bash /usr/mod/scripts/start_touchosc2midi.sh
 Restart=always
 RestartSec=2
 
