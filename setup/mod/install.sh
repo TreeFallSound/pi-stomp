@@ -73,6 +73,11 @@ cd ..
 sudo ./setup.py install
 
 #Touchosc2midi
+pushd $(mktemp -d) && git clone https://github.com/BlokasLabs/amidithru.git
+pushd amidithru
+sed -i 's/CXX=g++.*/CXX=g++/' Makefile
+sudo make install
+
 pushd $(mktemp -d) && git clone https://github.com/BlokasLabs/touchosc2midi.git
 pushd touchosc2midi
 sudo pip3 install ./
@@ -85,6 +90,8 @@ sudo ln -sf /usr/lib/systemd/system/browsepy.service /etc/systemd/system/multi-u
 sudo ln -sf /usr/lib/systemd/system/jack.service /etc/systemd/system/multi-user.target.wants
 sudo ln -sf /usr/lib/systemd/system/mod-host.service /etc/systemd/system/multi-user.target.wants
 sudo ln -sf /usr/lib/systemd/system/mod-ui.service /etc/systemd/system/multi-user.target.wants
+sudo ln -sf /usr/lib/systemd/system/mod-amidithru.service /etc/systemd/system/multi-user.target.wants
+sudo ln -sf /usr/lib/systemd/system/mod-touchosc2midi.service /etc/systemd/system/multi-user.target.wants
 
 #Create users and groups so services can run as user instead of root
 sudo adduser --no-create-home --system --group jack

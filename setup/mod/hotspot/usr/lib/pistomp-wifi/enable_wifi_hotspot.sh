@@ -34,4 +34,4 @@ systemctl start dnsmasq
 systemctl unmask hostapd
 systemctl start hostapd
 
-systemctl restart touchosc2midi 2>/dev/null
+systemctl restart mod-touchosc2midi 2>/dev/null

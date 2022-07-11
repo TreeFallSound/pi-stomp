@@ -18,6 +18,7 @@
 set +e
 
 MODUI_ROOT=/usr/local/lib/python3.9/dist-packages/mod
+TOUCHOSC2MIDI_ROOT=/usr/local/lib/python3.9/dist-packages/touchosc2midi
 MODUI_HTML=/usr/local/share/mod/html
 MOD_SCRIPTS=/usr/mod/scripts
 
@@ -30,5 +31,10 @@ sudo patch -b -N -u $MODUI_ROOT/webserver.py -i setup/mod-tweaks/webserver.diff
 sudo patch -b -N -u $MODUI_HTML/index.html -i setup/mod-tweaks/index.diff
 
 sudo cp setup/mod-tweaks/start_touchosc2midi.sh $MOD_SCRIPTS
+
+# This is kindof LAME and fragile.  Possibly should fork the blokasio lib instead of patching.
+# The fix is required because the latest zeroconf.ServiceInfo constructor requries a list of
+# addresses instead of the previous single address
+sudo patch -b -N -u $TOUCHOSC2MIDI_ROOT/advertise.py -i setup/mod-tweaks/advertise.diff
 
 exit 0
