@@ -853,7 +853,7 @@ class Mod(Handler):
     def system_menu_restart_sound(self):
         self.lcd.splash_show()
         logging.info("Restart sound engine (jack)")
-        os.system('systemctl restart jack')
+        os.system('sudo systemctl restart jack')
 
     def system_menu_shutdown(self):
         self.lcd.splash_show(False)
@@ -863,7 +863,7 @@ class Mod(Handler):
     def system_menu_reboot(self):
         self.lcd.splash_show(False)
         logging.info("System Reboot")
-        os.system('systemctl reboot')
+        os.system('sudo systemctl reboot')
 
     def system_menu_input_gain(self):
         title = "Input Gain"
