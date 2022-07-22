@@ -32,6 +32,7 @@ usage()
     echo " -h                    Display this message"    
 }
 
+hardware_version=2.0
 has_ttymidi=false
 
 while getopts 'a:v:mh' o; do
@@ -82,9 +83,12 @@ setup/mod-tweaks/mod-tweaks.sh
 
 printf "\n===== Install pi-stomp package dependencies =====\n"
 setup/pkgs/simple_install.sh
-#setup/pkgs/gfxhat_install.sh
 setup/pkgs/lilv_install.sh
 setup/pkgs/mod-ttymidi_install.sh
+if awk "BEGIN {exit !($hardware_version < 2.0)}"; then
+    printf "\n===== GFX HAT LCD support install =====\n"
+    setup/pkgs/gfxhat_install.sh
+fi
 
 printf "\n===== Get extra plugins =====\n"
 setup/plugins/get_plugins.sh
