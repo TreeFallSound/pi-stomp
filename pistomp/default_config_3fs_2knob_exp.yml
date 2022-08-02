@@ -25,6 +25,7 @@ hardware:
   footswitches:
   - id: 0
     debounce_input: 0
+    gpio_output: 0
     bypass: LEFT
     preset: UP
   - id: 1
