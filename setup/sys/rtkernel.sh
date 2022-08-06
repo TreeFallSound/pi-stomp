@@ -21,20 +21,21 @@ set -e
 sudo dpkg -i setup/sys/linux-image-5.15.40-rt43-v8+_arm64.deb
 
 KERN=5.15.40-rt43-v8+
-sudo mkdir -p /boot/llat/o/
-sudo cp -d /usr/lib/linux-image-$KERN/overlays/* /boot/llat/o/
-sudo cp -dr /usr/lib/linux-image-$KERN/* /boot/llat/
-sudo cp -d /usr/lib/linux-image-$KERN/broadcom/* /boot/llat/
-sudo touch /boot/llat/o/README
-sudo mv /boot/vmlinuz-$KERN /boot/llat/
-sudo mv /boot/initrd.img-$KERN /boot/llat/
-sudo mv /boot/System.map-$KERN /boot/llat/
-sudo cp /boot/config-$KERN /boot/llat/
+sudo mkdir -p /boot/$KERN/o/
+sudo cp -d /usr/lib/linux-image-$KERN/overlays/* /boot/$KERN/o/
+sudo cp -dr /usr/lib/linux-image-$KERN/* /boot/$KERN/
+sudo cp -d /usr/lib/linux-image-$KERN/broadcom/* /boot/$KERN/
+sudo touch /boot/$KERN/o/README
+sudo mv /boot/vmlinuz-$KERN /boot/$KERN/
+sudo mv /boot/initrd.img-$KERN /boot/$KERN/
+sudo mv /boot/System.map-$KERN /boot/$KERN/
+sudo cp /boot/config-$KERN /boot/$KERN/
+sudo cp iqaudio-codec.dtbo /boot/$KERN/o/
 sudo bash -c "cat >> /boot/config.txt << EOF
 [all]
 kernel=vmlinuz-$KERN
 # initramfs initrd.img-$KERN
-os_prefix=llat/
+os_prefix=$KERN/
 overlay_prefix=o/
 arm_64bit=1
 [all]

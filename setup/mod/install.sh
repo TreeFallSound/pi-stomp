@@ -71,6 +71,7 @@ cd utils
 make
 cd ..
 sudo ./setup.py install
+cp default.pedalboard /home/pistomp/data/.pedalboards
 
 #Touchosc2midi
 pushd $(mktemp -d) && git clone https://github.com/BlokasLabs/amidithru.git
