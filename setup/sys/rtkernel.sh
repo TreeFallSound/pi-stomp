@@ -30,7 +30,7 @@ sudo mv /boot/vmlinuz-$KERN /boot/$KERN/
 sudo mv /boot/initrd.img-$KERN /boot/$KERN/
 sudo mv /boot/System.map-$KERN /boot/$KERN/
 sudo cp /boot/config-$KERN /boot/$KERN/
-sudo cp iqaudio-codec.dtbo /boot/$KERN/o/
+sudo cp /home/pistomp/pi-stomp/setup/sys/iqaudio-codec.dtbo /boot/$KERN/o/
 sudo bash -c "cat >> /boot/config.txt << EOF
 [all]
 kernel=vmlinuz-$KERN
