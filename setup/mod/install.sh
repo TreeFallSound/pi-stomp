@@ -114,3 +114,10 @@ sudo cp -R hotspot/usr/lib/pistomp-wifi /usr/lib
 sudo cp hotspot/usr/lib/systemd/system/wifi-hotspot.service /usr/lib/systemd/system
 sudo chown -R pistomp:pistomp /usr/lib/pistomp-wifi
 sudo chmod +x -R /usr/lib/pistomp-wifi
+
+#Speed up boot time
+sudo raspi-config nonint do_boot_wait 0
+sudo wget -O /usr/bin/zram.sh https://raw.githubusercontent.com/novaspirit/rpi_zram/master/zram.sh
+sudo chmod +x /usr/bin/zram.sh
+sudo sed -i -e '$i \/usr/bin/zram.sh &\n' /etc/rc.local
+sudo sed -i -e '$i \/usr/bin/tvservice -o\n' /etc/rc.local
