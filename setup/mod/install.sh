@@ -116,7 +116,7 @@ sudo chown -R pistomp:pistomp /usr/lib/pistomp-wifi
 sudo chmod +x -R /usr/lib/pistomp-wifi
 
 #Speed up boot time
-sudo raspi-config nonint do_boot_wait 0
+sudo raspi-config nonint do_boot_wait 1
 sudo wget -O /usr/bin/zram.sh https://raw.githubusercontent.com/novaspirit/rpi_zram/master/zram.sh
 sudo chmod +x /usr/bin/zram.sh
 sudo sed -i -e '$i \/usr/bin/zram.sh &\n' /etc/rc.local
