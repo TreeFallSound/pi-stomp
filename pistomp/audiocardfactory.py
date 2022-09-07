@@ -52,7 +52,9 @@ class Audiocardfactory:
             card = pistomp.iqaudiocodec.IQaudioCodec(self.cwd)
         elif card_name == "sndrpihifiberry":
             card = pistomp.hifiberry.Hifiberry(self.cwd)
-        else:  # Could be explicit here but we need to return some card, so make it the most common option
+        elif card_name == "audioinjectorpi":
             card = pistomp.audioinjector.Audioinjector(self.cwd)
+        else:  # Could be explicit here but we need to return some card, so make it the most common option
+            card = pistomp.iqaudiocodec.IQaudioCodec(self.cwd)
 
         return card

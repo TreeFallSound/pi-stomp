@@ -3,48 +3,48 @@
 For more info about what it is and what it can do, go to [treefallsound.com](https://treefallsound.com)
 
 ## pi-Stomp Software and Firmware
-The raspberry pi inside a pi-Stomp runs a Raspbian based OS created by blokaslabs called [Patchbox OS](https://blokas.io/patchbox-os/)
+We start with a 64-bit Raspberry Pi lite operating system.  We then add MOD, which is an open source audio host & UI
+created by the awesome folk at moddevices.com
 
-Patchbox OS includes a module called modep which is a port of MOD for raspberry pi.  modep/MOD provide the audio host
-(mod-host) and UI (mod-ui) for pi-Stomp
-
-The pi-Stomp hardware requires drivers to interface with potentiometers, encoders, footswitches, MIDI, LCD, etc.
+The pi-Stomp hardware requires drivers to interface with the LCD, potentiometers, encoders, footswitches, MIDI, etc.
 
 A pi-Stomp software service, mod-ala-pi-stomp, uses the drivers to monitor all input devices, to drive the LCD
-and to send commands to mod-host for reading/writing pedalboard configuration information.
+and to, among other things, send commands to mod-host for reading/writing pedalboard configuration information. 
 
 This repository includes:
 * the pi-Stomp hardware drivers ('pistomp' module)
 * the mod-ala-pi-stomp service ('modalapistomp.py' & 'modalapi' module)
-* setup scripts for downloading/installing the above plus:
+* setup scripts for downloading/installing the above along with:
   * python dependencies
-  * the 'modep' module for patch OS
+  * MOD software
   * sound card drivers
   * system tweaks
   * hundreds of LV2 plugins
   * sample pedalboards
 
 ## Installing
-Patch OS must first be installed.  See [this guide](https://blokas.io/patchbox-os/docs/first-run-options/)
+For full installation instructions including etching the initial operating system, see [this guide](https://www.treefallsound.com/wiki/doku.php?id=software_installation_64-bit)
 
-After first boot, set up networking so that you can ssh
+After first boot, establish an ssh session to the RPi (the password is the one set during OS install):
 
-        ssh patch@patchbox.local
-Once connected, download the software:
+        ssh pistomp@pistomp.local
+        
+Once connected, download the pi-Stomp software:
         
         git clone https://github.com/TreeFallSound/pi-stomp.git
         
         cd pi-stomp
         
-Now run the setup utility to install the software and audio plugins.  It could take about a half hour.
-For most hardware, including pi-Stomp Core, just run:
+Now run the setup utility to install the software and audio plugins.  It could take over a half hour.
+There are a few setup options based on your system hardware.
+Typical systems should run:
         
-        ./setup.sh
+        nohup ./setup.sh > setup.log | tail -f setup.log
         
-For the original pi-Stomp hardware (pcb versions 1.x) pass the version to the setup script:
-        
-        ./sethup.sh -v 1.0
+The IQAudio Codec Zero is the default audio card, so the above command is equivalent to adding `-a iqaudio-codec`
+(eg: ./setup.sh -a iqaudio-codec).
+For an audioInjector card, add: `-a
+audioinjector-wm8731-audio`  For HiFiBerry add: `-a hifiberry-dacplusadc`
+For the original v1.x hardware, add `-v 1.0`
 
-If all went well, you can then reboot
-
-        sudo reboot
+If all went well, the system will reboot, then finally display the default pedalboard

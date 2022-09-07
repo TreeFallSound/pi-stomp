@@ -25,7 +25,6 @@ from rtmidi.midiutil import open_midioutput
 
 import modalapi.mod as Mod
 import pistomp.audiocardfactory as Audiocardfactory
-import pistomp.audioinjector as Audiocard
 import pistomp.generichost as Generichost
 import pistomp.testhost as Testhost
 import pistomp.hardwarefactory as Hardwarefactory
