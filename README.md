@@ -30,6 +30,8 @@ After first boot, establish an ssh session to the RPi (the password is the one s
         ssh pistomp@pistomp.local
         
 Once connected, download the pi-Stomp software:
+
+        sudo apt-get -y install git
         
         git clone https://github.com/TreeFallSound/pi-stomp.git
         
