@@ -25,13 +25,9 @@ if [[ "$cnt" -eq "0" ]]; then
 sudo bash -c "cat >> /boot/config.txt <<EOF
 
 # enable the sound card (uncomment only one)
-dtoverlay=audioinjector-wm8731-audio
-#dtoverlay=iqaudio-codec
+#dtoverlay=audioinjector-wm8731-audio
+dtoverlay=iqaudio-codec
 #dtoverlay=hifiberry-dacplusadc
 EOF"
 fi
-
-# Change jack config to use card 0
-sudo sed -i -e 's/hw:pisound/hw:0/g' /etc/jackdrc
-sudo sed -i -e 's/-p 128/-p 256/' /etc/jackdrc
 

@@ -21,9 +21,10 @@
 #
 usage()
 {
-    echo "Usage: $(basename $0) [-v <hardware_version>] [-m]"
+    echo "Usage: $(basename $0) [-a <audio_card>] [-v <hardware_version>] [-m]"
     echo ""
     echo "Options:"
+    echo " -a <audio_card>       Specify audio card (audioinjector-wm8731-audio | iqaudio-codec | hifiberry-dacplusadc)"
     echo " -v <version>          Specify hardware version"
     echo "                         1.0 : original pi-Stomp hardware (PCB v1)"
     echo "                         2.0 : most hardware (default)"
@@ -31,16 +32,20 @@ usage()
     echo " -h                    Display this message"    
 }
 
+hardware_version=2.0
 has_ttymidi=false
 
-while getopts ':v:' o; do
+while getopts 'a:v:mh' o; do
     case "${o}" in
+        a)
+            audio_card=${OPTARG}
+            ;;
         v)
             hardware_version=${OPTARG}
             ;;
 	m)
 	    has_ttymidi=true
-	    ;;
+            ;;
 	h)
 	    usage
 	    exit 0
@@ -69,21 +74,27 @@ sudo apt-get update -y --allow-releaseinfo-change --fix-missing
 
 printf "\n===== Audio card setup =====\n"
 setup/audio/audiocard-setup.sh
+if [ ! -z ${audio_card+x} ]; then
+    util/change-audio-card.sh ${audio_card} || (usage; exit 1)
+fi
 
-printf "\n===== Modep software module install =====\n"
-patchbox module activate modep
+printf "\n===== Mod software install =====\n"
+setup/mod/install.sh
 
 printf "\n===== Mod software tweaks =====\n"
 setup/mod-tweaks/mod-tweaks.sh
 
 printf "\n===== Install pi-stomp package dependencies =====\n"
 setup/pkgs/simple_install.sh
-setup/pkgs/gfxhat_install.sh
 setup/pkgs/lilv_install.sh
 setup/pkgs/mod-ttymidi_install.sh
+if awk "BEGIN {exit !($hardware_version < 2.0)}"; then
+    printf "\n===== GFX HAT LCD support install =====\n"
+    setup/pkgs/gfxhat_install.sh
+fi
 
 printf "\n===== Get extra plugins =====\n"
-setup/plugins/build_extra_plugins.sh
+setup/plugins/get_plugins.sh
 
 printf "\n===== Get example pedalboards =====\n"
 setup/pedalboards/get_pedalboards.sh
@@ -94,8 +105,9 @@ cp setup/sys/bash_aliases ~/.bash_aliases
 
 printf "\n===== Manage services =====\n"
 setup/services/create_services.sh
-setup/services/tweak_services.sh
-setup/services/stop_services.sh
 
-printf "\n===== pi-stomp setup complete =====\n"
+printf "\n===== RT Kernel Install =====\n"
+setup/sys/rtkernel.sh
 
+printf "\n===== pi-stomp setup complete - rebooting =====\n"
+sudo reboot now

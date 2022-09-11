@@ -18,10 +18,3 @@
 sudo systemctl disable hciuart.service
 sudo systemctl stop hciuart.service
 #sudo systemctl mask --now hciuart.service
-
-# pisound services only needed for pisound hardware and can conflict with mod-ala-pi-stomp service
-sudo systemctl mask --now pisound-btn.service
-sudo systemctl mask --now pisound-ctl.service
-
-# VNC server disabled to save CPU when not usally required
-sudo systemctl mask --now vncserver-x11-serviced.service

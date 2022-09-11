@@ -1,0 +1,3 @@
+#!/bin/sh
+#
+exec env JACK_DRIVER_DIR=/usr/local/lib/jack /usr/local/bin/jackd -t 2000 -R -P 95 -d alsa -d hw:0 -r 48000 -p 256 -n 2 -X seq -s

@@ -15,12 +15,12 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-DEST=/var/modep/pedalboards
+DEST=/home/pistomp/data/.pedalboards
 
 # Get example pedalboards, copy to pedalboard directory
 pushd $(mktemp -d) && git clone https://github.com/TreeFallSound/pi-stomp-pedalboards.git
 
 sudo cp -rT pi-stomp-pedalboards $DEST
 
-sudo chown -R modep $DEST
-sudo chgrp -R modep $DEST
+sudo chown -R pistomp $DEST
+sudo chgrp -R pistomp $DEST

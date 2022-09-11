@@ -1,6 +1,6 @@
 # This file provides some default configuration for the system
 # Most of this configuration can be overriden by pedalboard specific configuration.  To accomplish that, add
-# a file, named config.yml to the pedalboard directory (ie. /var/modep/pedalboards/<pedalboard-name>)
+# a file, named config.yml to the pedalboard directory (ie. ~/data/.pedalboards/<pedalboard-name>)
 
 ---
 hardware:
@@ -25,6 +25,7 @@ hardware:
   footswitches:
   - id: 0
     debounce_input: 0
+    gpio_output: 0
     bypass: LEFT
     preset: UP
   - id: 1

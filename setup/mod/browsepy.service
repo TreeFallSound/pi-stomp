@@ -1,0 +1,17 @@
+[Unit]
+Description=browsepy
+
+[Service]
+#Environment=HOME=/root
+Environment=BROWSEPY_HOST=0.0.0.0
+Environment=BROWSEPY_PORT=8081
+
+WorkingDirectory=/home/pistomp/data/user-files/
+ExecStart=/usr/local/bin/browsepy 0.0.0.0 8081 --directory /home/pistomp/data/user-files --upload /home/pistomp/data/user-files --removable /home/pistomp/data/user-files
+User=pistomp
+Group=pistomp
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

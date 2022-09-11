@@ -1,0 +1,11 @@
+[Unit]
+Description=WiFi Hotspot
+After=network.target
+
+[Service]
+RemainAfterExit=yes
+ExecStart=/bin/bash /usr/lib/pistomp-wifi/enable_wifi_hotspot.sh
+ExecStop=/bin/bash /usr/lib/pistomp-wifi/disable_wifi_hotspot.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,6 @@
 # This file provides some default configuration for the system
 # Most of this configuration can be overriden by pedalboard specific configuration.  To accomplish that, add
-# a file, named config.yml to the pedalboard directory (ie. /var/modep/pedalboards/<pedalboard-name>)
+# a file, named config.yml to the pedalboard directory (ie. ~/data/.pedalboards/<pedalboard-name>)
 
 ---
 hardware:
@@ -21,7 +21,6 @@ hardware:
   #   gpio_output: gpio pin used to drive indicator (LED, etc.)
   #   id: integer identifier
   #   midi_CC: msg to send (0 - 127 or None)
-  #   preset: change the preset (UP goes to next, DOWN goes to prev, fixed number selects the preset with that index)
   #
   footswitches:
   - id: 0
@@ -47,13 +46,10 @@ hardware:
   #   threshold: minimum value change to trigger a midi msg (16 default, 1024 full scale)
   #   type: control type (KNOB, EXPRESSION)
   #
-  #analog_controllers:
-  #- adc_input: 0
-  #  midi_CC: 70
-  #  type: KNOB
-  #- adc_input: 1
-  #  midi_CC: 71
-  #  type: KNOB
-  #- adc_input: 7
-  #  midi_CC: 77
-  #  type: EXPRESSION
+  analog_controllers:
+  - adc_input: 0
+    midi_CC: 70
+    type: KNOB
+  - adc_input: 1
+    midi_CC: 71
+    type: KNOB
