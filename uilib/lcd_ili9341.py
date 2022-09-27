@@ -14,7 +14,7 @@ class LcdIli9341(LcdBase):
             baudrate=baudrate
         )
         # Clear the display
-        self.disp.fill(0)
+        self.clear()
 
         # Test full screen image
         self.width = self.disp.height
@@ -26,6 +26,9 @@ class LcdIli9341(LcdBase):
 
     def default_format(self):
         return 'RGB'
+
+    def clear(self):
+        self.disp.fill(0)
 
     def update(self, image, box = None):
         # LCD coordinates

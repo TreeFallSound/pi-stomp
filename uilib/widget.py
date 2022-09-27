@@ -64,7 +64,7 @@ class Widget:
                   'sel_radius' : None
     }
 
-    def __init__(self, box, align = None, parent = None, visible = True, **kwargs):
+    def __init__(self, box, align = None, parent = None, visible = True, object=None, **kwargs):
         """box    : Box object relative to parent
            parent : parent widget
         """
@@ -85,6 +85,7 @@ class Widget:
         self.align = align
         self.children = []
         self.parent = None
+        self.object = object
         self.selected = False
         self.selectable = False
 
@@ -294,6 +295,9 @@ class Widget:
         """Return a widget boundary box"""
         return self.box
 
+    def get_object(self):
+        return self.object
+
     def attach(self, parent):
         """Attach a widget to a parent"""
         trace(self, "attaching to parent", parent)
@@ -430,7 +434,10 @@ class Widget:
 
     def input_event(self, event):
         if (event == InputEvent.CLICK or event == InputEvent.LONG_CLICK) and self.action is not None:
-            self.action(event, self)
+            if self.object is not None:
+                self.action(event, self, self.object)
+            else:
+                self.action(event, self)
             return True
         return False
 
