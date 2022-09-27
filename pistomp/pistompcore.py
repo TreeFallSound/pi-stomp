@@ -33,7 +33,7 @@ import pistomp.footswitch as Footswitch
 import pistomp.hardware as hardware
 import pistomp.relay as Relay
 
-import pistomp.lcdili9341 as Lcd
+import pistomp.lcd320x240 as Lcd
 #import pistomp.lcd128x64 as Lcd
 #import pistomp.lcd135x240 as Lcd
 #import pistomp.lcdsy7789 as Lcd
@@ -81,7 +81,7 @@ class Pistompcore(hardware.Hardware):
         self.reinit(None)
 
     def init_lcd(self):
-        self.mod.add_lcd(Lcd.Lcd(self.mod.homedir))
+        self.mod.add_lcd(Lcd.Lcd(self.mod.homedir, self.mod))
 
     def init_encoders(self):
         top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=self.mod.universal_encoder_select)

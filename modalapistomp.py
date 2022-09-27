@@ -24,6 +24,7 @@ import time
 from rtmidi.midiutil import open_midioutput
 
 import modalapi.mod as Mod
+import modalapi.modhandler as Modhandler
 import pistomp.audiocardfactory as Audiocardfactory
 import pistomp.audioinjector as Audiocard
 import pistomp.generichost as Generichost
@@ -80,7 +81,7 @@ def main():
     if args.host[0] == 'mod':
 
         # Create singleton Mod handler
-        handler = Mod.Mod(audiocard, cwd)
+        handler = Modhandler.Modhandler(audiocard, cwd)
 
         # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
         factory = Hardwarefactory.Hardwarefactory()
@@ -100,6 +101,27 @@ def main():
 
         # Load system info.  This can take a few seconds
         handler.system_info_load()
+
+    elif args.host[0] == 'mod1':
+
+        # Create singleton Mod handler
+        handler = Modhandler.Modhandler(homedir=cwd)
+
+        # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
+        factory = Hardwarefactory.Hardwarefactory()
+        hw = factory.create(handler, midiout)
+        handler.add_hardware(hw)
+
+        # Load all pedalboard info from the lilv ttl file
+        handler.load_pedalboards()
+
+        # Load the current pedalboard as "current"
+        current_pedal_board_bundle = handler.get_current_pedalboard_bundle_path()
+        if not current_pedal_board_bundle:
+            # Apparently, no pedalboard is currently loaded so just change to the default
+            handler.pedalboard_change()
+        else:
+            handler.set_current_pedalboard(handler.pedalboards[current_pedal_board_bundle])
 
     elif args.host[0] == 'generic':
         # No specific plugin host specified, so use a generic handler
