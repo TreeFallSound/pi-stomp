@@ -19,6 +19,7 @@ import time
 import functools
 import logging
 import os
+import common.token as Token
 import common.util as util
 import pistomp.lcd as abstract_lcd
 from PIL import ImageColor
@@ -67,6 +68,7 @@ class Lcd(abstract_lcd.Lcd):
             'Utility': "Gray"
         }
 
+        # TODO get fonts from config.json
         self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 26)
         self.splash_font = ImageFont.truetype('DejaVuSans.ttf', 48)
         self.small_font = ImageFont.truetype("DejaVuSans.ttf", 20)
@@ -113,6 +115,9 @@ class Lcd(abstract_lcd.Lcd):
         elif v == encoderswitch.Value.LONGPRESSED:
             self.pstack.input_event(InputEvent.LONG_CLICK)
 
+    #
+    # Main
+    #
     def link_data(self, pedalboards, current):
         self.pedalboards = pedalboards
         self.current = current
@@ -234,7 +239,7 @@ class Lcd(abstract_lcd.Lcd):
             label = label.replace("_", "")
             label = self.shorten_name(label, self.plugin_width)
             p = TextWidget(box=Box.xywh(x, y, self.plugin_width, self.plugin_height), text=label, outline_radius=5,
-                           parent=self.main_panel, action=self.handler.toggle_plugin_bypass, object=plugin)
+                           parent=self.main_panel, action=self.plugin_event, object=plugin)
             p.set_font(self.small_font)
             self.color_plugin(p, plugin)
             self.main_panel.add_sel_widget(p)
@@ -246,6 +251,13 @@ class Lcd(abstract_lcd.Lcd):
                 y = y + self.plugin_height + 2
             i += 1
         self.main_panel.refresh()
+
+    def plugin_event(self, event, widget, plugin):
+        if event == InputEvent.CLICK:
+            self.handler.toggle_plugin_bypass(widget, plugin)
+        elif event == InputEvent.LONG_CLICK:
+            self.draw_parameter_menu(plugin)
+
 
     def color_plugin(self, widget, plugin):
         color = self.get_plugin_color(plugin)
@@ -291,6 +303,16 @@ class Lcd(abstract_lcd.Lcd):
         if plugin.category:
             return self.get_category_color(plugin.category)
         return self.default_plugin_color
+
+    #
+    # Parameter
+    #
+    def draw_parameter_menu(self, plugin):
+        items = []
+        for param in plugin.parameters:
+            if param != Token.COLON_BYPASS:
+                items.append((param, None, None))   # TODO action to push a param edit panel
+        self.draw_selection_menu(items, "Parameters")
 
     #
     # System Menu

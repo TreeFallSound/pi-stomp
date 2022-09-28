@@ -298,7 +298,7 @@ class Modhandler(Handler):
     #
     # Plugin Stuff
     #
-    def toggle_plugin_bypass(self, event, widget, plugin):
+    def toggle_plugin_bypass(self, widget, plugin):
         logging.debug("toggle_plugin_bypass")
         if plugin is not None:
             if plugin.has_footswitch:
