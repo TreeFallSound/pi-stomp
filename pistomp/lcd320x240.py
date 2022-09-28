@@ -296,14 +296,13 @@ class Lcd(abstract_lcd.Lcd):
     # System Menu
     #
     def draw_system_menu(self, event, widget):
-        # TODO should this come from the handler?
         items = [("System shutdown", self.handler.system_menu_shutdown, None),
-                  ("System reboot",  self.handler.system_menu_reboot, None),
-                  #("Save current pedalboard", self.system_menu_save_current_pb, None)]
-                  ("Reload pedalboards", self.handler.system_menu_reload, None)]
-                  # {Token.NAME: "Restart sound engine", Token.ACTION: self.system_menu_restart_sound},
-                  # {Token.NAME: "Input Gain", Token.ACTION: self.system_menu_input_gain},
-                  # {Token.NAME: "Headphone Volume", Token.ACTION: self.system_menu_headphone_volume}}
+                 ("System reboot",  self.handler.system_menu_reboot, None),
+                 ("Save current pedalboard", self.handler.system_menu_save_current_pb, None),
+                 ("Reload pedalboards", self.handler.system_menu_reload, None),
+                 ("Restart sound engine", self.handler.system_menu_restart_sound, None),
+                 ("Input Gain", self.handler.system_menu_input_gain, None),
+                 ("Headphone Volume", self.handler.system_menu_headphone_volume, None)]
         self.draw_selection_menu(items, "System menu")
 
 

@@ -68,6 +68,8 @@ class Modhandler(Handler):
         self.pedalboard_change_timestamp = os.path.getmtime(self.pedalboard_modification_file)\
             if Path(self.pedalboard_modification_file).exists() else 0
 
+        self.wifi_manager = Wifi.WifiManager()
+
     def __del__(self):
         logging.info("Handler cleanup")
         if self.wifi_manager:
@@ -101,6 +103,30 @@ class Modhandler(Handler):
     def universal_encoder_sw(self, value):
         if self.lcd is not None:
             self.lcd.enc_sw(value)
+
+    def poll_modui_changes(self):
+        # This poll looks for changes made via the MOD UI and tries to sync the pi-Stomp hardware
+
+        # Look for a change of pedalboard
+        #
+        # If the pedalboard_modification_file timestamp has changed, extract the bundle path and set current pedalboard
+        #
+        # TODO this is an interim solution until better MOD-UI to pi-stomp event communication is added
+        #
+        if Path(self.pedalboard_modification_file).exists():
+            ts = os.path.getmtime(self.pedalboard_modification_file)
+            if ts == self.pedalboard_change_timestamp:
+                return
+
+            # Timestamp changed
+            self.pedalboard_change_timestamp = ts
+            self.lcd.draw_info_message("Loading...")
+            mod_bundle = self.get_pedalboard_bundle_from_mod()
+            if mod_bundle:
+                logging.info("Pedalboard changed via MOD from: %s to: %s" %
+                             (self.current.pedalboard.bundle, mod_bundle))
+                pb = self.pedalboards[mod_bundle]
+                self.set_current_pedalboard(pb)
 
     #
     # Pedalboard Stuff
@@ -321,16 +347,46 @@ class Modhandler(Handler):
         except subprocess.CalledProcessError:
             logging.error("Cannot obtain git software tag info")
 
-    def system_menu_reload(self, arg):
-        logging.info("Exiting main process, systemctl should restart if enabled")
-        sys.exit(0)
-
-    def system_menu_shutdown(self):
+    def system_menu_shutdown(self, arg):
         self.lcd.splash_show(False)
         logging.info("System Shutdown")
         os.system('sudo systemctl --no-wall poweroff')
 
-    def system_menu_reboot(self):
+    def system_menu_reboot(self, arg):
         self.lcd.splash_show(False)
         logging.info("System Reboot")
         os.system('sudo systemctl reboot')
+
+    def system_menu_save_current_pb(self, arg):
+        logging.debug("save current")
+        # TODO this works to save the pedalboard values, but just default, not Preset values
+        # Figure out how to save preset (host.py:preset_save_replace)
+        # TODO this also causes a problem if self.current.pedalboard.title != mod-host title
+        # which can happen if the pedalboard is changed via MOD UI, not via hardware
+        url = self.root_uri + "pedalboard/save"
+        try:
+            resp = req.post(url, data={"asNew": "0", "title": self.current.pedalboard.title})
+            if resp.status_code != 200:
+                logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
+            else:
+                logging.debug("saved")
+        except:
+            logging.error("status %s" % resp.status_code)
+            return
+
+    def system_menu_reload(self, arg):
+        logging.info("Exiting main process, systemctl should restart if enabled")
+        sys.exit(0)
+
+    def system_menu_restart_sound(self, arg):
+        self.lcd.splash_show()
+        logging.info("Restart sound engine (jack)")
+        os.system('sudo systemctl restart jack')
+
+    def system_menu_input_gain(self, arg):
+        info = {"shortName": "Input Gain", "symbol": "igain", "ranges": {"minimum": -19.75, "maximum": 12}}
+        self.system_menu_parameter(title, self.audiocard.CAPTURE_VOLUME, info)
+
+    def system_menu_headphone_volume(self, arg):
+        info = {"shortName": "Headphone Volume", "symbol": "hvol", "ranges": {"minimum": -25.75, "maximum": 6}}
+        self.system_menu_parameter(title, self.audiocard.MASTER, info)
