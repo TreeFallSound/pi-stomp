@@ -9,3 +9,4 @@ from uilib.menu import *
 from uilib.dialog import *
 from uilib.config import *
 from uilib.builder import *
+from uilib.parameterdialog import *

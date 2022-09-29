@@ -319,6 +319,12 @@ class Modhandler(Handler):
     #
     # Parameter Stuff
     #
+    def parameter_value_commit(self, param, value):
+        param.value = value
+        url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/%s" % (param.instance_id, param.symbol)
+        formatted_value = ("%.1f" % param.value)
+        self.parameter_set_send(url, formatted_value, 200)
+
     def parameter_set_send(self, url, value, expect_code):
         logging.debug("request: %s" % url)
         try:
@@ -384,9 +390,14 @@ class Modhandler(Handler):
         os.system('sudo systemctl restart jack')
 
     def system_menu_input_gain(self, arg):
-        info = {"shortName": "Input Gain", "symbol": "igain", "ranges": {"minimum": -19.75, "maximum": 12}}
-        self.system_menu_parameter(title, self.audiocard.CAPTURE_VOLUME, info)
+        value = self.audiocard.get_parameter(self.audiocard.CAPTURE_VOLUME)
+        self.lcd.draw_audio_parameter_dialog("Input Gain", self.audiocard.CAPTURE_VOLUME, value,
+                                             -19.75, 12, self.audio_parameter_commit)
 
     def system_menu_headphone_volume(self, arg):
-        info = {"shortName": "Headphone Volume", "symbol": "hvol", "ranges": {"minimum": -25.75, "maximum": 6}}
-        self.system_menu_parameter(title, self.audiocard.MASTER, info)
+        value = self.audiocard.get_parameter(self.audiocard.MASTER)
+        self.lcd.draw_audio_parameter_dialog("Headphone Volume", self.audiocard.MASTER, value,
+                                             -25.75, 6, self.audio_parameter_commit)
+
+    def audio_parameter_commit(self, symbol, value):
+        self.audiocard.set_parameter(symbol, value)

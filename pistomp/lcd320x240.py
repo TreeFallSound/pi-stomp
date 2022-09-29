@@ -39,8 +39,9 @@ class Lcd(abstract_lcd.Lcd):
         self.cwd = cwd
         self.imagedir = os.path.join(cwd, "images")
         Config(os.path.join(cwd, 'ui', 'config.json'))
-
         self.handler = handler
+
+        # TODO would be good to decouple the actual LCD hardware.  This file should work for any 320x240 display
         display = LcdIli9341(board.SPI(),
                              digitalio.DigitalInOut(board.CE0),
                              digitalio.DigitalInOut(board.D6),
@@ -305,14 +306,23 @@ class Lcd(abstract_lcd.Lcd):
         return self.default_plugin_color
 
     #
-    # Parameter
+    # Parameter Editing
     #
     def draw_parameter_menu(self, plugin):
         items = []
-        for param in plugin.parameters:
-            if param != Token.COLON_BYPASS:
-                items.append((param, None, None))   # TODO action to push a param edit panel
+        for (name, param) in plugin.parameters.items():
+            if name != Token.COLON_BYPASS:
+                items.append((name, self.draw_parameter_dialog, param))
         self.draw_selection_menu(items, "Parameters")
+
+    def draw_parameter_dialog(self, parameter):
+        d = Parameterdialog(self.pstack, parameter.name, parameter.value, parameter.minimum, parameter.maximum,
+                            width=270, height=130, auto_destroy=True, title=parameter.name,
+                            action=self.parameter_commit, object=parameter)
+        self.pstack.push_panel(d)
+
+    def parameter_commit(self, parameter, value):
+        self.handler.parameter_value_commit(parameter, value)
 
     #
     # System Menu
@@ -327,6 +337,11 @@ class Lcd(abstract_lcd.Lcd):
                  ("Headphone Volume", self.handler.system_menu_headphone_volume, None)]
         self.draw_selection_menu(items, "System menu")
 
+    def draw_audio_parameter_dialog(self, name, symbol, value, min, max, commit_callback):
+        d = Parameterdialog(self.pstack, name, value, min, max,
+                            width=270, height=130, auto_destroy=True, title=name,
+                            action=commit_callback, object=symbol)
+        self.pstack.push_panel(d)
 
     #
     # General
