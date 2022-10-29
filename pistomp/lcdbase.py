@@ -16,9 +16,8 @@
 
 import logging
 import os
-import common.util as util
+import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
-from PIL import ImageColor
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
 
@@ -40,7 +39,6 @@ class Lcdbase(abstract_lcd.Lcd):
         self.highlight = None
         self.color_plugin = None
         self.color_plugin_bypassed = None
-        self.category_color_map = {}
 
         # Dimensions
         self.width = None
@@ -91,28 +89,9 @@ class Lcdbase(abstract_lcd.Lcd):
                 if v not in known_exceptions:
                     logging.error("%s class doesn't set variable: %s" % (self, v))
 
-    # Try to map color to a valid displayable color, if not use foreground
-    def valid_color(self, color):
-        if color is None:
-            return self.foreground
-        try:
-            return ImageColor.getrgb(color)
-        except ValueError:
-            logging.error("Cannot convert color name: %s" % color)
-            return self.foreground
-
-    # Get the color assigned to the plugin category
-    def get_category_color(self, category):
-        color = "Silver"
-        if category:
-            c = util.DICT_GET(self.category_color_map, category)
-            if c:
-                color = c if isinstance(c, tuple) else self.valid_color(c)
-        return color
-
     def get_plugin_color(self, plugin):
         if plugin.category:
-            return self.get_category_color(plugin.category)
+            return Category.get_category_color(plugin.category)
         return "Silver"
 
     # Convert zone height values to absolute y values considering the flip setting
@@ -178,7 +157,7 @@ class Lcdbase(abstract_lcd.Lcd):
                         label = c.parameter.name
                     else:
                         label = self.shorten_name(p.instance_id, self.footswitch_width)
-                    color = self.valid_color(c.lcd_color) if c.lcd_color else self.get_plugin_color(p)
+                    color = Category.valid_color(c.lcd_color) if c.lcd_color else self.get_plugin_color(p)
                     x = self.footswitch_pitch[len(fss)] * fs_id
                     self.draw_plugin(zone, x, 0, label, self.footswitch_width, False, p, True, color)
 
@@ -187,7 +166,7 @@ class Lcdbase(abstract_lcd.Lcd):
             if fss[fs_id] is None:
                 continue
             f = fss[fs_id]
-            color = self.valid_color(f.lcd_color)
+            color = Category.valid_color(f.lcd_color)
             if self.color_plugin_bypassed is not None and not f.enabled:
                 color = self.color_plugin_bypassed
             label = "" if f.display_label is None else f.display_label

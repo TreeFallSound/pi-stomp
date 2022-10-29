@@ -21,7 +21,7 @@ import pistomp.gpioswitch as gpioswitch
 
 class Footswitch(gpioswitch.GpioSwitch):
 
-    def __init__(self, id, fs_pin, led_pin, midi_CC, midi_channel, midiout, refresh_callback):
+    def __init__(self, id, fs_pin, led_pin, pixel, midi_CC, midi_channel, midiout, refresh_callback):
         super(Footswitch, self).__init__(fs_pin, midi_channel, midi_CC)
         self.id = id
         self.display_label = None
@@ -34,6 +34,8 @@ class Footswitch(gpioswitch.GpioSwitch):
         self.preset_callback = None
         self.preset_callback_arg = None
         self.lcd_color = None
+        self.category = None
+        self.pixel = pixel
 
         if led_pin is not None:
             GPIO.setup(led_pin, GPIO.OUT)
@@ -54,6 +56,13 @@ class Footswitch(gpioswitch.GpioSwitch):
     def _set_led(self, enabled):
         if self.led_pin is not None:
             GPIO.output(self.led_pin, enabled)
+        if self.pixel:
+            self.pixel.set_enable(enabled)
+
+    def set_category(self, category):
+        self.category = category
+        if self.pixel:
+            self.pixel.set_color_by_category(category)
 
     def set_lcd_color(self, color):
         self.lcd_color = color
@@ -112,6 +121,9 @@ class Footswitch(gpioswitch.GpioSwitch):
 
     def clear_display_label(self):
         self.display_label = None
+
+    def clear_category(self):
+        self.set_category(None)
 
     def add_relay(self, relay):
         self.relay_list.append(relay)
