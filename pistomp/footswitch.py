@@ -62,7 +62,7 @@ class Footswitch(gpioswitch.GpioSwitch):
     def set_category(self, category):
         self.category = category
         if self.pixel:
-            self.pixel.set_color_by_category(category)
+            self.pixel.set_color_by_category(category, self.enabled)
 
     def set_lcd_color(self, color):
         self.lcd_color = color
@@ -119,12 +119,6 @@ class Footswitch(gpioswitch.GpioSwitch):
     def set_display_label(self, label):
         self.display_label = label
 
-    def clear_display_label(self):
-        self.display_label = None
-
-    def clear_category(self):
-        self.set_category(None)
-
     def add_relay(self, relay):
         self.relay_list.append(relay)
         self.set_value(not relay.init_state())
@@ -136,5 +130,9 @@ class Footswitch(gpioswitch.GpioSwitch):
         self.preset_callback = callback
         self.preset_callback_arg = callback_arg
 
-    def clear_preset(self):
+    def clear_pedalboard_info(self):
+        self.enabled = False
+        self.display_label = None
+        self.set_category(None)
         self.preset_callback = None
+        self.clear_relays()

@@ -14,7 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import _rpi_ws281x as ws
-from rpi_ws281x import PixelStrip, Color
+from rpi_ws281x import PixelStrip
 import matplotlib
 from PIL import ImageColor
 
@@ -56,15 +56,20 @@ class Pixel:
         self.position = position
         self.color = (0, 0, 0)
 
-    def set_color_by_category(self, category):
+    # set the color for the pixel based on category, then render based on enabled status
+    def set_color_by_category(self, category, enabled):
+        print(category, enabled)
         self._set_color(Category.get_category_color(category))
+        self.set_enable(enabled)
 
+    # render based on enable
     def set_enable(self, enable):
         if enable and self.color:
-            self._set_color_rgb(self.color[0], self.color[1], self.color[2])
+            self._render_color_rgb(self.color[0], self.color[1], self.color[2])
         else:
-            self._set_color_rgb(0, 0, 0)
+            self._render_color_rgb(0, 0, 0)
 
+    # set the color for the pixel based on the name or rgb
     def _set_color(self, color):
         try:
             c = matplotlib.colors.cnames[color]
@@ -73,11 +78,9 @@ class Pixel:
             c = color
         if c is None:
             c = (0, 0, 0)
-
         self.color = c
-        self._set_color_rgb(c[0], c[1], c[2])
 
-    def _set_color_rgb(self, r, g, b):
-        # TODO use setPixelColorRGB
-        self.strip.setPixelColor(self.position, Color(r, g, b))
+    def _render_color_rgb(self, r, g, b):
+        self.strip.setPixelColorRGB(self.position, r, g, b)
+        # TODO would be nice to do this once for multiple pixel changes
         self.strip.show()

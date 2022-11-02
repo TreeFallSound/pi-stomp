@@ -239,10 +239,13 @@ class Hardware:
                     f = None
 
             if f is not None:
-                fs.clear_display_label()
+                # TODO reusing the footswitch object for multiple pedalboards is not ideal
+                # could easily have spillover from a previous pedalboard
+                # The mutable data should probably be stored in a separate object and destructed/constructed upon
+                # each pedalboard load
+                fs.clear_pedalboard_info()
 
                 # Bypass
-                fs.clear_relays()
                 if Token.BYPASS in f:
                     # TODO no more right or left
                     if f[Token.BYPASS] == Token.LEFT_RIGHT or f[Token.BYPASS] == Token.LEFT:
@@ -265,7 +268,6 @@ class Hardware:
                         self.controllers[key] = fs   # TODO problem if this creates a new element?
 
                 # Preset Control
-                fs.clear_preset()
                 if Token.PRESET in f:
                     preset_value = f[Token.PRESET]
                     if preset_value == Token.UP:
@@ -279,7 +281,6 @@ class Hardware:
                         fs.set_display_label(str(preset_value))
 
                 # LCD/LED attributes
-                fs.clear_category()
                 if Token.COLOR in f:
                     fs.set_lcd_color(f[Token.COLOR])
 
