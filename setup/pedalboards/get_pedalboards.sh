@@ -15,8 +15,10 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-DEST=/home/pistomp/data/.pedalboards
+DEST=/usr/share/mod/pedalboards/
 
+# First create the default factory pedalboards folder
+sudo mkdir -p /usr/share/mod/pedalboards/
 # Get example pedalboards, copy to pedalboard directory
 pushd $(mktemp -d) && git clone https://github.com/TreeFallSound/pi-stomp-pedalboards.git
 
