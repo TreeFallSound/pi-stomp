@@ -1,0 +1,9 @@
+--- rc.local0	2023-03-02 17:51:25.595257014 -0800
++++ rc.local	2023-03-02 17:51:06.467289913 -0800
+@@ -17,4 +17,6 @@
+   printf "My IP address is %s\n" "$_IP"
+ fi
+ 
++sudo alsactl restore -f /var/lib/alsa/asound.state
++
+ exit 0

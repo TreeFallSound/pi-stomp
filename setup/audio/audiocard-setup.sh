@@ -19,6 +19,9 @@
 # firstly disable PWM audio
 sudo bash -c "sed -i \"s/^\s*dtparam=audio/#dtparam=audio/\" /boot/config.txt"
 
+# add alsa restore to rc.local
+sudo patch -b -N -u /etc/rc.local -i rclocal.diff
+
 # append lines to config.txt
 cnt=$(grep -c "dtoverlay=audioinjector-wm8731-audio" /boot/config.txt)
 if [[ "$cnt" -eq "0" ]]; then
