@@ -1,0 +1,12 @@
+pcm.device{
+        format S24_LE
+        rate 48000
+        type hw
+        card 0
+        device 0
+}
+
+pcm.!default{
+        type plug
+        slave.pcm "codec"
+    }

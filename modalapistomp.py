@@ -30,6 +30,7 @@ import pistomp.testhost as Testhost
 import pistomp.hardwarefactory as Hardwarefactory
 import pistomp.handler as Handler
 
+
 def main():
     sys.settrace
 
@@ -77,6 +78,9 @@ def main():
     handler = None
 
     if args.host[0] == 'mod':
+
+        #restore Aux jack as soon as possible
+        os.system('sudo amixer sset "AUX Jack" unmute')
 
         # Create singleton Mod handler
         handler = Mod.Mod(audiocard, cwd)
