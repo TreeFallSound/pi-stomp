@@ -1011,6 +1011,9 @@ class Mod(Handler):
 
     def check_usb(self):
         self.usbflash = False
+        backup_folder = '/media/usb0/backups'
+        if not os.path.exists(backup_folder):
+            os.mkdir(backup_folder)
         stat = subprocess.call(["systemctl", "is-active", "--quiet", "usbmount@dev-sda1"])
         if(stat == 0):
             self.usbflash = True
