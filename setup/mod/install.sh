@@ -123,8 +123,7 @@ sudo chown -R pistomp:pistomp /usr/lib/pistomp-wifi
 sudo chmod +x -R /usr/lib/pistomp-wifi
 
 #move default config files to data dir
-cd ../../pistomp
-cp default* /home/pistomp/data/configs
+mv /home/pistomp/pi-stomp/pistomp/default_config.yml /home/pistomp/data/configs
 
 #USB automounter
 sudo dpkg -i /home/pistomp/pi-stomp/setup/mod/usbmount.deb
