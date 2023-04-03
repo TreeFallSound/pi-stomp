@@ -30,7 +30,7 @@ sudo pip3 install cython
 #Install Mod Software
 mkdir -p /home/pistomp/data/.pedalboards
 mkdir -p /home/pistomp/data/user-files
-mkdir -p /home/pistomp/data/configs
+mkdir -p /home/pistomp/data/config_templates
 sudo mkdir -p /usr/mod/scripts
 cd /home/pistomp/data/user-files
 mkdir -p "Speaker Cabinets IRs"
@@ -123,7 +123,7 @@ sudo chown -R pistomp:pistomp /usr/lib/pistomp-wifi
 sudo chmod +x -R /usr/lib/pistomp-wifi
 
 #move default config files to data dir
-mv /home/pistomp/pi-stomp/pistomp/default_config.yml /home/pistomp/data/configs
+mv /home/pistomp/pi-stomp/setup/config_templates/default* /home/pistomp/data/config_templates
 
 #USB automounter
 sudo dpkg -i /home/pistomp/pi-stomp/setup/mod/usbmount.deb
