@@ -127,4 +127,4 @@ cd ../../pistomp
 cp default* /home/pistomp/data/configs
 
 #USB automounter
-sudo dpkg -i usbmount.deb
+sudo dpkg -i /home/pistomp/pi-stomp/setup/mod/usbmount.deb
