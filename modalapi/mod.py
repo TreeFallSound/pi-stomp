@@ -63,9 +63,14 @@ class UniversalEncoderMode(Enum):
     SYSTEM_MENU = 5
     HEADPHONE_VOLUME = 6
     INPUT_GAIN = 7
-    DEEP_EDIT = 8
-    VALUE_EDIT = 9
-    LOADING = 10
+    EQ1_GAIN = 8
+    EQ2_GAIN = 9
+    EQ3_GAIN = 10
+    EQ4_GAIN = 11
+    EQ5_GAIN = 12
+    DEEP_EDIT = 13
+    VALUE_EDIT = 14
+    LOADING = 15
 
 class SelectedType(Enum):
     PEDALBOARD = 0
@@ -75,12 +80,16 @@ class SelectedType(Enum):
     BYPASS = 4
     WIFI = 5
     SYSTEM = 6
+    EQ = 7
 
 # Replace this with menu objects
 class MenuType(Enum):
     MENU_NONE = 0
     MENU_SYSTEM = 1
     MENU_INFO = 2
+    MENU_AUDIO = 3
+    MENU_ADVANCED = 4
+    MENU_RESTORE = 5
 
 class Mod(Handler):
     __single = None
@@ -117,6 +126,7 @@ class Mod(Handler):
         self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
 
         self.wifi_status = {}
+        self.eq_status = {}
         self.software_version = None
         self.git_describe = None
 
@@ -282,6 +292,8 @@ class Mod(Handler):
                     self.update_lcd_title()
                 elif self.selected_type() == SelectedType.BYPASS:
                     self.system_toggle_bypass()
+                elif self.selected_type() == SelectedType.EQ:
+                    self.system_toggle_eq()
                 elif self.selected_type() == SelectedType.SYSTEM:
                     self.lcd.clear_select()
                     self.universal_encoder_mode = UniversalEncoderMode.SYSTEM_MENU
@@ -304,6 +316,21 @@ class Mod(Handler):
             elif mode == UniversalEncoderMode.INPUT_GAIN:
                 self.universal_encoder_mode = UniversalEncoderMode.SYSTEM_MENU
                 self.system_menu_show()
+            elif mode == UniversalEncoderMode.EQ1_GAIN:
+                self.universal_encoder_mode = UniversalEncoderMode.SYSTEM_MENU
+                self.system_audio_menu()
+            elif mode == UniversalEncoderMode.EQ2_GAIN:
+                self.universal_encoder_mode = UniversalEncoderMode.SYSTEM_MENU
+                self.system_audio_menu()
+            elif mode == UniversalEncoderMode.EQ3_GAIN:
+                self.universal_encoder_mode = UniversalEncoderMode.SYSTEM_MENU
+                self.system_audio_menu()
+            elif mode == UniversalEncoderMode.EQ4_GAIN:
+                self.universal_encoder_mode = UniversalEncoderMode.SYSTEM_MENU
+                self.system_audio_menu()
+            elif mode == UniversalEncoderMode.EQ5_GAIN:
+                self.universal_encoder_mode = UniversalEncoderMode.SYSTEM_MENU
+                self.system_audio_menu()
             elif mode == UniversalEncoderMode.DEEP_EDIT:
                 self.menu_action()
             elif mode == UniversalEncoderMode.VALUE_EDIT:
@@ -341,6 +368,16 @@ class Mod(Handler):
             self.parameter_value_change(direction, self.headphone_volume_commit)
         elif mode == UniversalEncoderMode.INPUT_GAIN:
             self.parameter_value_change(direction, self.input_gain_commit)
+        elif mode == UniversalEncoderMode.EQ1_GAIN:
+            self.parameter_value_change(direction, self.eq1_gain_commit)
+        elif mode == UniversalEncoderMode.EQ2_GAIN:
+            self.parameter_value_change(direction, self.eq2_gain_commit)
+        elif mode == UniversalEncoderMode.EQ3_GAIN:
+            self.parameter_value_change(direction, self.eq3_gain_commit)
+        elif mode == UniversalEncoderMode.EQ4_GAIN:
+            self.parameter_value_change(direction, self.eq4_gain_commit)
+        elif mode == UniversalEncoderMode.EQ5_GAIN:
+            self.parameter_value_change(direction, self.eq5_gain_commit)
         elif mode == UniversalEncoderMode.DEEP_EDIT:
             self.menu_select(direction)
         elif mode == UniversalEncoderMode.VALUE_EDIT:
@@ -360,7 +397,7 @@ class Mod(Handler):
                     self.lcd.draw_plugin_select(None)
                 elif prev_type == SelectedType.PEDALBOARD or prev_type == SelectedType.PRESET:
                     self.update_lcd_title()
-                elif prev_type == SelectedType.BYPASS or prev_type == SelectedType.SYSTEM:
+                elif prev_type == SelectedType.BYPASS or prev_type == SelectedType.SYSTEM or prev_type == SelectedType.EQ:
                     self.lcd.clear_select()
 
             # Select new item
@@ -375,6 +412,8 @@ class Mod(Handler):
                 self.lcd.draw_plugin_select(plugin)
             elif item_type == SelectedType.BYPASS:
                 self.lcd.draw_tool_select(SelectedType.BYPASS)
+            elif item_type == SelectedType.EQ:
+                self.lcd.draw_tool_select(SelectedType.EQ)
             elif item_type == SelectedType.SYSTEM:
                 self.lcd.draw_tool_select(SelectedType.SYSTEM)
 
@@ -390,6 +429,12 @@ class Mod(Handler):
             self.lcd.update_wifi(self.wifi_status)
             if self.current_menu == MenuType.MENU_INFO:
                 self.system_info_update_wifi()
+        output = subprocess.check_output(["amixer", "get", "DAC EQ"])
+        if "off" in output.decode("utf-8"):
+            self.eq_status = False
+        else:
+            self.eq_status = True
+        self.lcd.update_eq(self.eq_status)
 
     def poll_modui_changes(self):
         # This poll looks for changes made via the MOD UI and tries to sync the pi-Stomp hardware
@@ -491,6 +536,7 @@ class Mod(Handler):
         for i in range(len(self.current.pedalboard.plugins)):
             self.selectable_items.append((SelectedType.PLUGIN, i))
         if self.lcd.supports_toolbar:
+            self.selectable_items.append((SelectedType.EQ, None))
             self.selectable_items.append((SelectedType.BYPASS, None))
             self.selectable_items.append((SelectedType.SYSTEM, None))
         self.selectable_index = 0
@@ -663,7 +709,7 @@ class Mod(Handler):
             except:
                 logging.error("failed to get bypass value for: %s" % p.instance_id)
                 continue
-        self.lcd.draw_tools(SelectedType.WIFI, SelectedType.BYPASS, SelectedType.SYSTEM)
+        self.lcd.draw_tools(SelectedType.WIFI, SelectedType.EQ, SelectedType.BYPASS, SelectedType.SYSTEM)
         self.lcd.draw_analog_assignments(self.current.analog_controllers)
         self.lcd.draw_plugins(self.current.pedalboard.plugins)
         self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
@@ -770,8 +816,8 @@ class Mod(Handler):
                            "4": {Token.NAME: "Save current pedalboard", Token.ACTION: self.system_menu_save_current_pb},
                            "5": {Token.NAME: "Reload pedalboards", Token.ACTION: self.system_menu_reload},
                            "6": {Token.NAME: "Restart sound engine", Token.ACTION: self.system_menu_restart_sound},
-                           "7": {Token.NAME: "Input Gain", Token.ACTION: self.system_menu_input_gain},
-                           "8": {Token.NAME: "Headphone Volume", Token.ACTION: self.system_menu_headphone_volume}}
+                           "7": {Token.NAME: "Audio Options", Token.ACTION: self.system_audio_menu},
+                           "8": {Token.NAME: "Advanced Settings", Token.ACTION: self.system_advanced_menu}}
         self.lcd.menu_show("System menu", self.menu_items)
         # Trick: we display the wifi status in the menu, Ideally we need a better
         # state handling to know what needs to be displayed or not based on whether
@@ -828,6 +874,100 @@ class Mod(Handler):
     def system_enable_hotspot(self):
         self.lcd.draw_info_message("Enabling, please wait...")
         self.wifi_manager.enable_hotspot()
+    
+    def system_advanced_menu(self):
+        self.current_menu = MenuType.MENU_ADVANCED
+        self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back},
+                           "1": {Token.NAME: "Backup user data", Token.ACTION: self.user_backup_data},
+                           "2": {Token.NAME: "Restore user data", Token.ACTION: self.user_restore_data},
+                           "3": {Token.NAME: "System Update", Token.ACTION: self.system_update}}
+        self.lcd.menu_show("Advanced Settings", self.menu_items)
+        self.selected_menu_index = 0
+        self.lcd.menu_highlight(0)
+        
+    def system_audio_menu(self):
+        output = subprocess.check_output(["amixer", "get", "DAC EQ"])
+        if "off" in output.decode("utf-8"):
+            eq_status = False
+        else:
+            eq_status = True
+        if eq_status:
+            self.current_menu = MenuType.MENU_AUDIO
+            self.lcd.menu_show("Audio Options", self.menu_items)
+            self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back},
+                                "1": {Token.NAME: "Input Gain", Token.ACTION: self.system_menu_input_gain},
+                                "2": {Token.NAME: "Output Volume", Token.ACTION: self.system_menu_headphone_volume},
+                                "3": {Token.NAME: "Low Band Gain", Token.ACTION: self.system_menu_eq1_volume},
+                                "4": {Token.NAME: "Low-Mid Band Gain", Token.ACTION: self.system_menu_eq2_volume},
+                                "5": {Token.NAME: "Mid Band Gain", Token.ACTION: self.system_menu_eq3_volume},
+                                "6": {Token.NAME: "Mid-High Band Gain", Token.ACTION: self.system_menu_eq4_volume},
+                                "7": {Token.NAME: "High Band Gain", Token.ACTION: self.system_menu_eq5_volume}}
+            self.menu_global_eq_toggle()
+            self.menu_items.pop("Reset Global EQ", None)
+            self.menu_items["Reset Global EQ"] = {Token.NAME: "", Token.ACTION: self.reset_eq_values}
+            self.lcd.menu_show("Audio Options", self.menu_items)
+        else:
+            self.current_menu = MenuType.MENU_AUDIO
+            self.lcd.menu_show("Audio Options", self.menu_items)
+            self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back},
+                                "1": {Token.NAME: "Input Gain", Token.ACTION: self.system_menu_input_gain},
+                                "2": {Token.NAME: "Output Volume", Token.ACTION: self.system_menu_headphone_volume}}
+            self.menu_global_eq_toggle()
+            self.menu_items.pop("Reset Global EQ", None)
+            self.menu_items["Reset Global EQ"] = {Token.NAME: "", Token.ACTION: self.reset_eq_values}
+            self.lcd.menu_show("Audio Options", self.menu_items)
+        self.selected_menu_index = 0
+        self.lcd.menu_highlight(0)
+
+    def menu_global_eq_toggle(self):
+        self.lcd.menu_show("Audio Options", self.menu_items)
+        output = subprocess.check_output(["amixer", "get", "DAC EQ"])
+        if "off" in output.decode("utf-8"):
+            eq_status = False
+        else:
+            eq_status = True
+        self.menu_items.pop("Enable Global EQ", None)
+        self.menu_items.pop("Disable Global EQ", None)
+        if eq_status:
+            self.menu_items["Disable Global EQ"] = {Token.NAME: "", Token.ACTION: self.system_disable_eq}
+        else:
+            self.menu_items["Enable Global EQ"] = {Token.NAME: "", Token.ACTION: self.system_enable_eq}
+
+    def reset_eq_values(self):
+        os.system('sudo amixer sset "DAC EQ1" 13') # This sets the gain the same as with the EQ disabled
+        os.system('sudo amixer sset "DAC EQ2" 13')
+        os.system('sudo amixer sset "DAC EQ3" 13')
+        os.system('sudo amixer sset "DAC EQ4" 13')
+        os.system('sudo amixer sset "DAC EQ5" 13')
+        os.system('sudo alsactl store')
+        self.lcd.draw_info_message("EQ Bands reset")
+        self.system_info_update_eq()
+        self.lcd.menu_highlight(0)
+
+    def system_disable_eq(self):
+        os.system('sudo amixer sset "DAC EQ" mute')
+        os.system('sudo alsactl store')
+        self.lcd.draw_info_message("Disabling, please wait...")
+        self.eq_status = False
+        self.system_info_update_eq()
+
+    def system_enable_eq(self):
+        os.system('sudo amixer sset "DAC EQ" unmute')
+        os.system('sudo alsactl store')
+        self.lcd.draw_info_message("Enabling, please wait...")
+        self.eq_status = True
+        self.system_info_update_eq()
+    
+    def system_toggle_eq(self):
+        os.system('sudo amixer sset "DAC EQ" toggle')
+        os.system('sudo alsactl store')
+
+    def system_info_update_eq(self):
+        self.menu_global_eq_toggle()
+        self.system_audio_menu()
+        self.lcd.update_eq(self.eq_status)
+        self.lcd.menu_show("Audio Options", self.menu_items)
+        self.lcd.menu_highlight(self.selected_menu_index)
 
     def system_menu_save_current_pb(self):
         logging.debug("save current")
@@ -869,6 +1009,57 @@ class Mod(Handler):
         os.system('sudo alsactl store')
         os.system('sudo systemctl reboot')
 
+    def check_usb(self):
+        self.usbflash = False
+        stat = subprocess.call(["systemctl", "is-active", "--quiet", "usbmount@dev-sda1"])
+        if(stat == 0):
+            self.usbflash = True
+        else:
+            self.usbflash = False
+
+    def user_backup_data(self):
+        self.check_usb()
+        if self.usbflash:
+            self.lcd.draw_info_message("Backing up, please wait...")
+            os.system('zip -rq "/media/usb0/backups/pistomp_backup.zip" ~pistomp/data -x ~pistomp/data/.lv2')
+            self.current_menu = MenuType.MENU_ADVANCED
+            self.lcd.menu_show("Advanced Settings", self.menu_items)
+        else:
+            return
+
+    def user_restore_data(self):
+        self.check_usb()
+        if self.usbflash:
+            directory = '/media/usb0/backups'
+            filename = 'pistomp_backup.zip'
+            self.current_menu = MenuType.MENU_RESTORE
+            self.lcd.menu_show("Restore Files", self.menu_items)
+            self.menu_items = {"0": {Token.NAME: "< Back to main screen", Token.ACTION: self.system_advanced_menu}}
+            if os.path.exists(os.path.join(directory, filename)):
+                self.menu_items.pop(filename, None)
+                self.menu_items[filename] = {Token.NAME: "", Token.ACTION: self.do_restore}
+            self.lcd.menu_show("Restore Files", self.menu_items)
+            self.selected_menu_index = 0
+            self.lcd.menu_highlight(0)
+        else:
+            logging.error("Error, no backups found...")
+            return
+
+    def do_restore(self):
+        self.lcd.draw_info_message("Restoring, please wait...")
+        os.system('unzip -o -u /media/usb0/backups/pistomp_backup.zip -d ~pistomp/')
+        self.lcd.menu_show("Restore Files", self.menu_items)
+
+    def system_update(self):
+        dir = '/home/pistomp/pi-stomp'
+        username = "pistomp"
+        command = ["git", "-C", dir, "pull"]
+        self.lcd.draw_info_message("Updating, please wait...")
+        subprocess.run(['sudo', '-u', username, '--'] + command)
+        self.current_menu = MenuType.MENU_ADVANCED
+        self.lcd.menu_show("Advanced Settings", self.menu_items)
+        sys.exit(0)
+
     def system_menu_input_gain(self):
         title = "Input Gain"
         self.top_encoder_mode = TopEncoderMode.INPUT_GAIN
@@ -883,6 +1074,36 @@ class Mod(Handler):
         info = {"shortName": title, "symbol": "hvol", "ranges": {"minimum": -25.75, "maximum": 6}}
         self.system_menu_parameter(title, self.audiocard.MASTER, info)
 
+    def system_menu_eq1_volume(self):
+        title = "Low Band Gain"
+        self.universal_encoder_mode = UniversalEncoderMode.EQ1_GAIN
+        info = {"shortName": title, "symbol": "egain", "ranges": {"minimum": -10.50, "maximum": 12}}
+        self.system_menu_parameter(title, self.audiocard.EQ_1, info)
+
+    def system_menu_eq2_volume(self):
+        title = "Low-Mid Band Gain"
+        self.universal_encoder_mode = UniversalEncoderMode.EQ2_GAIN
+        info = {"shortName": title, "symbol": "egain", "ranges": {"minimum": -10.50, "maximum": 12}}
+        self.system_menu_parameter(title, self.audiocard.EQ_2, info)
+
+    def system_menu_eq3_volume(self):
+        title = "Mid Band Gain"
+        self.universal_encoder_mode = UniversalEncoderMode.EQ3_GAIN
+        info = {"shortName": title, "symbol": "egain", "ranges": {"minimum": -10.50, "maximum": 12}}
+        self.system_menu_parameter(title, self.audiocard.EQ_3, info)
+
+    def system_menu_eq4_volume(self):
+        title = "Mid-High Band Gain"
+        self.universal_encoder_mode = UniversalEncoderMode.EQ4_GAIN
+        info = {"shortName": title, "symbol": "egain", "ranges": {"minimum": -10.50, "maximum": 12}}
+        self.system_menu_parameter(title, self.audiocard.EQ_4, info)
+
+    def system_menu_eq5_volume(self):
+        title = "High Band Gain"
+        self.universal_encoder_mode = UniversalEncoderMode.EQ5_GAIN
+        info = {"shortName": title, "symbol": "egain", "ranges": {"minimum": -10.50, "maximum": 12}}
+        self.system_menu_parameter(title, self.audiocard.EQ_5, info)
+
     def system_menu_parameter(self, title, param_name, info):
         value = self.audiocard.get_parameter(param_name)
         self.deep = self.Deep(None)
@@ -896,6 +1117,21 @@ class Mod(Handler):
 
     def headphone_volume_commit(self):
         self.audiocard.set_parameter(self.audiocard.MASTER, self.deep.selected_parameter.value)
+
+    def eq1_gain_commit(self):
+        self.audiocard.set_parameter(self.audiocard.EQ_1, self.deep.selected_parameter.value)
+
+    def eq2_gain_commit(self):
+        self.audiocard.set_parameter(self.audiocard.EQ_2, self.deep.selected_parameter.value)
+
+    def eq3_gain_commit(self):
+        self.audiocard.set_parameter(self.audiocard.EQ_3, self.deep.selected_parameter.value)
+
+    def eq4_gain_commit(self):
+        self.audiocard.set_parameter(self.audiocard.EQ_4, self.deep.selected_parameter.value)
+
+    def eq5_gain_commit(self):
+        self.audiocard.set_parameter(self.audiocard.EQ_5, self.deep.selected_parameter.value)
 
     def system_toggle_bypass(self):
         relay = self.hardware.relay
@@ -991,8 +1227,9 @@ class Mod(Handler):
     #
 
     def update_lcd(self):  # TODO rename to imply the home screen
-        self.lcd.draw_tools(SelectedType.WIFI, SelectedType.BYPASS, SelectedType.SYSTEM)
+        self.lcd.draw_tools(SelectedType.WIFI, SelectedType.EQ, SelectedType.BYPASS, SelectedType.SYSTEM)
         self.lcd.update_bypass(self.hardware.relay.enabled)
+        self.lcd.update_eq(self.eq_status)
         self.update_lcd_title()
         self.lcd.draw_analog_assignments(self.current.analog_controllers)
         self.lcd.draw_plugins(self.current.pedalboard.plugins)

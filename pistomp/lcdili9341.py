@@ -100,7 +100,7 @@ class Lcd(lcdcolor.Lcdcolor):
         self.menu_image_height = self.menu_height * 10  # 10 pages (~80 parameters) enough?
         self.menu_image = Image.new('RGB', (self.width, self.menu_image_height))
         self.menu_draw = ImageDraw.Draw(self.menu_image)
-        self.menu_highlight_box_height = 20
+        self.menu_highlight_box_height = 22 # fix for cutting off bottom of some letters
         self.menu_highlight_box = ()
         self.menu_y0 = 150
         self.graph_width = 300
@@ -267,16 +267,19 @@ class Lcd(lcdcolor.Lcdcolor):
         # label
         self.draw[zone].text((xy1[0], xy2[1]), text, self.foreground, self.small_font)
 
-    def draw_tools(self, wifi_type, bypass_type, system_type):
+    def draw_tools(self, wifi_type, eq_type, bypass_type, system_type):
         if not self.supports_toolbar:
             return
         self.erase_zone(self.ZONE_TOOLS)
         tools = []
         if self.tool_wifi is None:
-            self.tool_wifi = Tool.Tool(wifi_type, 240, 1, os.path.join(self.imagedir, "wifi_gray.png"))
+            self.tool_wifi = Tool.Tool(wifi_type, 220, 1, os.path.join(self.imagedir, "wifi_gray.png"))
             tools.append(self.tool_wifi)
+        if self.tool_eq is None:
+            self.tool_eq = Tool.Tool(eq_type, 250, 1, os.path.join(self.imagedir, "eq_gray.png"))
+            tools.append(self.tool_eq)
         if self.tool_bypass is None:
-            self.tool_bypass = Tool.Tool(bypass_type, 270, 1, os.path.join(self.imagedir, "power_gray.png"))
+            self.tool_bypass = Tool.Tool(bypass_type, 275, 1, os.path.join(self.imagedir, "power_gray.png"))
             tools.append(self.tool_bypass)
         if self.tool_system is None:
             self.tool_system = Tool.Tool(system_type, 296, 1, os.path.join(self.imagedir, "wrench_silver.png"))

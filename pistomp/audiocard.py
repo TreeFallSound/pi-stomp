@@ -69,7 +69,7 @@ class Audiocard:
     def get_parameter(self, param_name):
         val_str = 0
         value = 0
-        cmd = "amixer -c %d -- sget %s" % (self.card_index, param_name)
+        cmd = "amixer -c %d -- sget '%s'" % (self.card_index, param_name)
         try:
             output = subprocess.check_output(cmd, shell=True)
         except subprocess.CalledProcessError:
@@ -88,7 +88,7 @@ class Audiocard:
         return value
 
     def set_parameter(self, param_name, value):
-        cmd = "amixer -c %d -q -- sset %s %ddb" % (self.card_index, param_name, value)
+        cmd = "amixer -c %d -q -- sset '%s' '%ddb'" % (self.card_index, param_name, value)
         try:
             subprocess.check_output(cmd, shell=True)
         except subprocess.CalledProcessError:

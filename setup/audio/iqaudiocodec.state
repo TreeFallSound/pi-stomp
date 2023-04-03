@@ -134,7 +134,7 @@ state.IQaudIOCODEC {
 	control.10 {
 		iface MIXER
 		name 'DAC EQ1 Volume'
-		value 0
+		value 13
 		comment {
 			access 'read write'
 			type INTEGER
@@ -148,7 +148,7 @@ state.IQaudIOCODEC {
 	control.11 {
 		iface MIXER
 		name 'DAC EQ2 Volume'
-		value 0
+		value 13
 		comment {
 			access 'read write'
 			type INTEGER
@@ -162,7 +162,7 @@ state.IQaudIOCODEC {
 	control.12 {
 		iface MIXER
 		name 'DAC EQ3 Volume'
-		value 0
+		value 13
 		comment {
 			access 'read write'
 			type INTEGER
@@ -176,7 +176,7 @@ state.IQaudIOCODEC {
 	control.13 {
 		iface MIXER
 		name 'DAC EQ4 Volume'
-		value 0
+		value 13
 		comment {
 			access 'read write'
 			type INTEGER
@@ -190,7 +190,7 @@ state.IQaudIOCODEC {
 	control.14 {
 		iface MIXER
 		name 'DAC EQ5 Volume'
-		value 0
+		value 13
 		comment {
 			access 'read write'
 			type INTEGER
