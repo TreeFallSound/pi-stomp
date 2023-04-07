@@ -16,7 +16,7 @@
 import os
 import yaml
 
-data_dir = '/home/pistomp/data/config_templates'
+data_dir = '/home/pistomp/data/config'
 
 DEFAULT_CONFIG_FILE = "default_config.yml"
 
