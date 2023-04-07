@@ -6,5 +6,4 @@
  
 +sudo alsactl restore -f /var/lib/alsa/asound.state
 +sudo amixer sset 'AUX Jack' unmute
-+
  exit 0
