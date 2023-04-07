@@ -40,11 +40,15 @@ class Lcd(ABC):
 
     # Toolbar
     @abstractmethod
-    def draw_tools(self, wifi_type, bypass_type, system_type):
+    def draw_tools(self, wifi_type, eq_type, bypass_type, system_type):
         pass
 
     @abstractmethod
     def update_wifi(self, wifi_status):
+        pass
+
+    @abstractmethod
+    def update_eq(self, eq_status):
         pass
 
     @abstractmethod

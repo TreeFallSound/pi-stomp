@@ -22,9 +22,11 @@ if [ -z "$1" ]
     exit
 fi
 
-config_file="$HOME/pi-stomp/pistomp/default_config.yml"
-pistomp_orig_config_file="$HOME/pi-stomp/pistomp/default_config_pistomp.yml"
-pistomp_core_config_file="$HOME/pi-stomp/pistomp/default_config_pistompcore.yml"
+mkdip -p $HOME/data/config_templates
+
+config_file="$HOME/data/config_templates/default_config.yml"
+pistomp_orig_config_file="$HOME/data/config_templates/default_config_pistomp.yml"
+pistomp_core_config_file="$HOME/data/config_templates/default_config_pistompcore.yml"
 
 
 if awk "BEGIN {exit !($1 < 2.0 )}"; then

@@ -94,6 +94,13 @@ class Lcdcolor(lcdbase.Lcdbase):
         path = os.path.join(self.imagedir, img)
         self.change_tool_img(self.tool_wifi, path)
 
+    def update_eq(self, eq_status):
+        if not self.supports_toolbar:
+            return
+        img = "eq_blue.png" if eq_status else "eq_gray.png"
+        path = os.path.join(self.imagedir, img)
+        self.change_tool_img(self.tool_eq, path)
+
     def update_bypass(self, bypass):
         if not self.supports_toolbar:
             return
