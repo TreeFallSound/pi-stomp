@@ -22,6 +22,8 @@ if [ -z "$1" ]
     exit
 fi
 
+mkdip -p $HOME/data/config_templates
+
 config_file="$HOME/data/config_templates/default_config.yml"
 pistomp_orig_config_file="$HOME/data/config_templates/default_config_pistomp.yml"
 pistomp_core_config_file="$HOME/data/config_templates/default_config_pistompcore.yml"
