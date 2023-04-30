@@ -47,8 +47,10 @@ mkdir -p "Amplifier Profiles"
 mkdir -p "Aida DSP Models"
 
 #Jack2
-pushd $(mktemp -d) && git clone https://github.com/moddevices/jack2.git
+pushd $(mktemp -d) && git clone https://github.com/micahvdm/jack2.git
 pushd jack2
+cat 01-cycle_counter_timing.patch | patch -p1
+cat 02_double-tick.patch | patch -p1
 ./waf configure
 ./waf build
 sudo ./waf install
