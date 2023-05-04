@@ -25,6 +25,8 @@ Environment=JACK_PROMISCUOUS_SERVER=jack
 Environment=PATCHSTORAGE_API_URL=https://patchstorage.com/api/beta/patches
 Environment=PATCHSTORAGE_PLATFORM_ID=8046
 Environment=PATCHSTORAGE_TARGET_ID=8278
+Environment=MOD_MODEL_TYPE=_MOD_DEVICE_DWARF
+Environment=MOD_TUNER_PLUGIN=tuna
 
 ExecStart=/usr/bin/authbind /usr/local/bin/mod-ui
 User=pistomp
