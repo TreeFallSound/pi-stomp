@@ -23,7 +23,7 @@ Environment=MOD_USER_FILES_DIR=/home/pistomp/data/user-files
 Environment=MOD_HTML_DIR=/usr/local/share/mod/html
 Environment=JACK_PROMISCUOUS_SERVER=jack
 Environment=PATCHSTORAGE_API_URL=https://patchstorage.com/api/beta/patches
-Environment=PATCHSTORAGE_PLATFORM_ID=8046
+Environment=PATCHSTORAGE_PLATFORM_ID=8280
 Environment=PATCHSTORAGE_TARGET_ID=8278
 
 ExecStart=/usr/bin/authbind /usr/local/bin/mod-ui
