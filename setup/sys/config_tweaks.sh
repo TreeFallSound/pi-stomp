@@ -42,12 +42,4 @@ dtoverlay=dwc2,dr_mode=host
 EOF"
 fi
 
-#set better realtime priorities and allow audio group to access threads better with nice priority
-sudo bash -c "cat >> /etc/security/limits.conf <<EOF
-
-@audio           -       rtprio          99
-@audio           -       memlock         unlimited
-@audio           -       nice            -10
-EOF"
-
 exit 0
