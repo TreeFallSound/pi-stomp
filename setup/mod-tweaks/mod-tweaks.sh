@@ -17,18 +17,8 @@
 
 set +e
 
-MODUI_ROOT=/usr/local/lib/python3.9/dist-packages/mod
 TOUCHOSC2MIDI_ROOT=/usr/local/lib/python3.9/dist-packages/touchosc2midi
-MODUI_HTML=/usr/local/share/mod/html
 MOD_SCRIPTS=/usr/mod/scripts
-
-sudo patch -b -N -u $MODUI_ROOT/host.py -i setup/mod-tweaks/host.diff
-
-sudo patch -b -N -u $MODUI_ROOT/session.py -i setup/mod-tweaks/session.diff
-
-sudo patch -b -N -u $MODUI_ROOT/webserver.py -i setup/mod-tweaks/webserver.diff
-
-sudo patch -b -N -u $MODUI_HTML/index.html -i setup/mod-tweaks/index.diff
 
 sudo cp setup/mod-tweaks/start_touchosc2midi.sh $MOD_SCRIPTS
 
