@@ -68,6 +68,7 @@ class Lcdbase(abstract_lcd.Lcd):
         self.tools = []
         self.imagedir = os.path.join(cwd, "images")
         self.tool_wifi = None
+        self.tool_eq = None
         self.tool_bypass = None
         self.tool_system = None
 

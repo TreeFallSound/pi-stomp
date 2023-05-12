@@ -26,11 +26,11 @@ from rtmidi.midiutil import open_midioutput
 import modalapi.mod as Mod
 import modalapi.modhandler as Modhandler
 import pistomp.audiocardfactory as Audiocardfactory
-import pistomp.audioinjector as Audiocard
 import pistomp.generichost as Generichost
 import pistomp.testhost as Testhost
 import pistomp.hardwarefactory as Hardwarefactory
 import pistomp.handler as Handler
+
 
 def main():
     sys.settrace
@@ -79,6 +79,9 @@ def main():
     handler = None
 
     if args.host[0] == 'mod':
+
+        #restore Aux jack as soon as possible
+        os.system('sudo amixer sset "AUX Jack" unmute')
 
         # Create singleton Mod handler
         handler = Modhandler.Modhandler(audiocard, cwd)

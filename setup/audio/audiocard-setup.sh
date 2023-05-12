@@ -19,14 +19,17 @@
 # firstly disable PWM audio
 sudo bash -c "sed -i \"s/^\s*dtparam=audio/#dtparam=audio/\" /boot/config.txt"
 
+# add alsa restore to rc.local
+sudo patch -b -N -u /etc/rc.local -i setup/audio/rclocal.diff
+
 # append lines to config.txt
 cnt=$(grep -c "dtoverlay=audioinjector-wm8731-audio" /boot/config.txt)
 if [[ "$cnt" -eq "0" ]]; then
 sudo bash -c "cat >> /boot/config.txt <<EOF
 
 # enable the sound card (uncomment only one)
-dtoverlay=audioinjector-wm8731-audio
-#dtoverlay=iqaudio-codec
+#dtoverlay=audioinjector-wm8731-audio
+dtoverlay=iqaudio-codec
 #dtoverlay=hifiberry-dacplusadc
 EOF"
 fi
