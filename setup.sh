@@ -21,21 +21,23 @@
 #
 usage()
 {
-    echo "Usage: $(basename $0) [-a <audio_card>] [-v <hardware_version>] [-m]"
+    echo "Usage: $(basename $0) [-a <audio_card>] [-v <hardware_version>] [-p] [-m]"
     echo ""
     echo "Options:"
     echo " -a <audio_card>       Specify audio card (audioinjector-wm8731-audio | iqaudio-codec | hifiberry-dacplusadc)"
     echo " -v <version>          Specify hardware version"
     echo "                         1.0 : original pi-Stomp hardware (PCB v1)"
     echo "                         2.0 : most hardware (default)"
+    echo " -p                    Do not install default plugins and pedalboards"
     echo " -m                    Enable MIDI via UART"
     echo " -h                    Display this message"    
 }
 
 hardware_version=2.0
 has_ttymidi=false
+plugins=true
 
-while getopts 'a:v:mh' o; do
+while getopts 'a:v:p:mh' o; do
     case "${o}" in
         a)
             audio_card=${OPTARG}
@@ -43,6 +45,9 @@ while getopts 'a:v:mh' o; do
         v)
             hardware_version=${OPTARG}
             ;;
+	p)
+	    plugins=false
+	    ;;
 	m)
 	    has_ttymidi=true
             ;;
@@ -93,11 +98,13 @@ if awk "BEGIN {exit !($hardware_version < 2.0)}"; then
     setup/pkgs/gfxhat_install.sh
 fi
 
-printf "\n===== Get extra plugins =====\n"
-setup/plugins/get_plugins.sh
-
-printf "\n===== Get example pedalboards =====\n"
-setup/pedalboards/get_pedalboards.sh
+if [[ $plugins == true ]]; then
+    printf "\n===== Get extra plugins =====\n"
+    setup/plugins/get_plugins.sh
+    
+    printf "\n===== Get example pedalboards =====\n"
+    setup/pedalboards/get_pedalboards.sh
+fi
 
 printf "\n===== System tweaks =====\n"
 setup/sys/config_tweaks.sh
