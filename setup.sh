@@ -37,7 +37,7 @@ hardware_version=2.0
 has_ttymidi=false
 plugins=true
 
-while getopts 'a:v:p:mh' o; do
+while getopts 'a:v:pmh' o; do
     case "${o}" in
         a)
             audio_card=${OPTARG}
