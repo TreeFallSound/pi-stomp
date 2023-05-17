@@ -86,7 +86,7 @@ class Lcdbase(abstract_lcd.Lcd):
     # A better solution might be to create these as abstract properties, but then they are accessed as strings
     # which is likely worse
     def check_vars_set(self):
-        known_exceptions = ["selected_plugin", "selected_box", "tool_wifi", "tool_bypass", "tool_system"]
+        known_exceptions = ["selected_plugin", "selected_box", "tool_wifi", "tool_bypass", "tool_system", "tool_eq"]
         for v in self.__dict__:
             if getattr(self, v) is None:
                 if v not in known_exceptions:
