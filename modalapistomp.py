@@ -40,7 +40,7 @@ def main():
     parser.add_argument("--log", "-l", nargs='+', help="Provide logging level. Example --log debug'", default="info",
                         choices=['debug', 'info', 'warning', 'error', 'critical'])
     parser.add_argument("--host", nargs='+', help="Plugin host to use. Example --host mod'", default=['mod'],
-                        choices=['mod', 'generic', 'test'])
+                        choices=['mod', 'mod1', 'generic', 'test'])
 
     args = parser.parse_args()
 
@@ -84,7 +84,8 @@ def main():
         os.system('sudo amixer sset "AUX Jack" unmute')
 
         # Create singleton Mod handler
-        handler = Modhandler.Modhandler(audiocard, cwd)
+        handler = Mod.Mod(audiocard, cwd)  # used for old LCD UI
+        #handler = Modhandler.Modhandler(audiocard, cwd)  # used for new LCD UI
 
         # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
         factory = Hardwarefactory.Hardwarefactory()
@@ -104,27 +105,6 @@ def main():
 
         # Load system info.  This can take a few seconds
         handler.system_info_load()
-
-    elif args.host[0] == 'mod1':
-
-        # Create singleton Mod handler
-        handler = Modhandler.Modhandler(homedir=cwd)
-
-        # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
-        factory = Hardwarefactory.Hardwarefactory()
-        hw = factory.create(handler, midiout)
-        handler.add_hardware(hw)
-
-        # Load all pedalboard info from the lilv ttl file
-        handler.load_pedalboards()
-
-        # Load the current pedalboard as "current"
-        current_pedal_board_bundle = handler.get_current_pedalboard_bundle_path()
-        if not current_pedal_board_bundle:
-            # Apparently, no pedalboard is currently loaded so just change to the default
-            handler.pedalboard_change()
-        else:
-            handler.set_current_pedalboard(handler.pedalboards[current_pedal_board_bundle])
 
     elif args.host[0] == 'generic':
         # No specific plugin host specified, so use a generic handler

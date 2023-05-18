@@ -30,7 +30,7 @@ import time
 
 class Lcd(lcdcolor.Lcdcolor):
 
-    def __init__(self, cwd):
+    def __init__(self, cwd, mod=None):
         super(Lcd, self).__init__(cwd)
 
         # Pin Configuration

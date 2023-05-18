@@ -370,6 +370,9 @@ class Lcd(abstract_lcd.Lcd):
     def update_wifi(self, wifi_status):
         pass
 
+    def update_eq(self, eq_status):
+        pass
+
     def update_bypass(self, bypass):
         pass
     
