@@ -52,9 +52,8 @@ mkdir -p "Amplifier Profiles"
 mkdir -p "Aida DSP Models"
 
 #Jack2
-pushd $(mktemp -d) && git clone https://github.com/micahvdm/jack2.git
+pushd $(mktemp -d) && git clone https://github.com/moddevices/jack2.git
 pushd jack2
-cat 01-cycle_counter_timing.patch | patch -p1
 ./waf configure
 ./waf build
 sudo ./waf install
@@ -90,7 +89,7 @@ pushd $(mktemp -d) && git clone https://github.com/BlokasLabs/touchosc2midi.git
 pushd touchosc2midi
 sudo pip3 install ./
 
-pushd $(mktemp -d) && git clone https://github.com/moddevices/mod-midi-merger.git
+pushd $(mktemp -d) && git clone https://github.com/micahvdm/mod-midi-merger.git
 pushd mod-midi-merger
 mkdir build && cd build
 cmake ..
