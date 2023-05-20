@@ -8,8 +8,6 @@ RemainAfterExit=yes
 Environment=JACK_PROMISCUOUS_SERVER=jack
 ExecStart=/usr/local/bin/jack_load mod-midi-merger
 ExecStop=/usr/local/bin/jack_unload mod-midi-merger
-User=pistomp
-Group=pistomp
 Restart=always
 RestartSec=2
 [Install]
