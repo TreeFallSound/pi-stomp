@@ -52,9 +52,8 @@ mkdir -p "Amplifier Profiles"
 mkdir -p "Aida DSP Models"
 
 #Jack2
-pushd $(mktemp -d) && git clone https://github.com/micahvdm/jack2.git
+pushd $(mktemp -d) && git clone https://github.com/moddevices/jack2.git
 pushd jack2
-cat 01-cycle_counter_timing.patch | patch -p1
 ./waf configure
 ./waf build
 sudo ./waf install
@@ -90,6 +89,13 @@ pushd $(mktemp -d) && git clone https://github.com/BlokasLabs/touchosc2midi.git
 pushd touchosc2midi
 sudo pip3 install ./
 
+pushd $(mktemp -d) && git clone https://github.com/micahvdm/mod-midi-merger.git
+pushd mod-midi-merger
+mkdir build && cd build
+cmake ..
+make
+sudo make install
+
 cd /home/pistomp
 
 ln -s /home/pistomp/data/.pedalboards /home/pistomp/.pedalboards
@@ -105,6 +111,8 @@ sudo ln -sf /usr/lib/systemd/system/mod-host.service /etc/systemd/system/multi-u
 sudo ln -sf /usr/lib/systemd/system/mod-ui.service /etc/systemd/system/multi-user.target.wants
 sudo ln -sf /usr/lib/systemd/system/mod-amidithru.service /etc/systemd/system/multi-user.target.wants
 sudo ln -sf /usr/lib/systemd/system/mod-touchosc2midi.service /etc/systemd/system/multi-user.target.wants
+sudo ln -sf /usr/lib/systemd/system/mod-midi-merger.service /etc/systemd/system/multi-user.target.wants
+sudo ln -sf /usr/lib/systemd/system/mod-midi-merger-broadcaster.service /etc/systemd/system/multi-user.target.wants
 
 #Create users and groups so services can run as user instead of root
 sudo adduser --no-create-home --system --group jack
