@@ -40,7 +40,7 @@ sudo /usr/bin/pip3 install RPi.GPIO
 sudo /usr/bin/pip3 install gfxhat
 
 # LEDstring
-sudo /usr/bin/pip3 install rpi_ws281x adafruit-circuitpython-neopixel
+sudo /usr/bin/pip3 install matplotlib rpi_ws281x adafruit-circuitpython-neopixel
 
 # LCD
 sudo /usr/bin/pip3 install adafruit-circuitpython-rgb-display
