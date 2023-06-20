@@ -20,7 +20,7 @@ import common.util as util
 
 class Parameter:
 
-    def __init__(self, plugin_info, value, binding):
+    def __init__(self, plugin_info, value, binding, instance_id=None):
         self.name = util.DICT_GET(plugin_info, Token.SHORTNAME)  # possibly use name if shortName is None
         if self.name is None:
             self.name = util.DICT_GET(plugin_info, Token.NAME)
@@ -29,6 +29,7 @@ class Parameter:
         self.maximum = util.DICT_GET(util.DICT_GET(plugin_info, Token.RANGES), Token.MAXIMUM)
         self.value = value
         self.binding = binding
+        self.instance_id = instance_id
 
     def to_json(self):
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)

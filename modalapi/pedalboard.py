@@ -204,7 +204,7 @@ class Pedalboard:
                     if symbol == Token.COLON_BYPASS:
                         info = {"shortName": "bypass", "symbol": symbol, "ranges": {"minimum": 0, "maximum": 1}}  # TODO tokenize
                         v = False if value is 0 else True
-                        param = Parameter.Parameter(info, v, binding)
+                        param = Parameter.Parameter(info, v, binding, instance_id)
                         parameters[symbol] = param
                         continue  # don't try to find matching symbol in plugin_dict
                     # Try to find a matching symbol in plugin_dict to obtain the remaining param details
@@ -217,7 +217,7 @@ class Pedalboard:
                         sym = util.DICT_GET(pp, Token.SYMBOL)
                         if sym == symbol:
                             #logging.debug("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
-                            param = Parameter.Parameter(pp, value, binding)
+                            param = Parameter.Parameter(pp, value, binding, instance_id)
                             #logging.debug("Param: %s %s %4.2f %4.2f %s" % (param.name, param.symbol, param.minimum, value, binding))
                             parameters[symbol] = param
 

@@ -1,0 +1,37 @@
+{
+    "fonts" : [
+	{
+	    "label" : "default",
+	    "name"  : "DejaVuSans.ttf",
+	    "size"  : 16
+	},
+	{
+	    "label" : "default_title",
+	    "name"  : "DejaVuSans-Bold.ttf",
+	    "size"  : 16
+	},
+	{
+	    "label" : "big_bold",
+	    "name"  : "DejaVuSans-Bold.ttf",
+	    "size"  : 36
+	}
+    ],
+    "colors" : [
+	{
+	    "label" : "default_bkgnd",
+	    "rgb"   : [ 0, 0, 0 ]
+	},
+	{
+	    "label" : "default_fgnd",
+	    "rgb"   : [ 255, 255, 255 ]
+	},
+	{
+	    "label" : "default_title_bkgnd",
+	    "rgb"   : [ 63, 63, 63 ]
+	},
+	{
+	    "label" : "default_title_fgnd",
+	    "rgb"   : [ 255, 191, 63 ]
+	}
+    ]
+}

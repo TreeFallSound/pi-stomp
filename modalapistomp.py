@@ -24,6 +24,7 @@ import time
 from rtmidi.midiutil import open_midioutput
 
 import modalapi.mod as Mod
+import modalapi.modhandler as Modhandler
 import pistomp.audiocardfactory as Audiocardfactory
 import pistomp.generichost as Generichost
 import pistomp.testhost as Testhost
@@ -39,7 +40,7 @@ def main():
     parser.add_argument("--log", "-l", nargs='+', help="Provide logging level. Example --log debug'", default="info",
                         choices=['debug', 'info', 'warning', 'error', 'critical'])
     parser.add_argument("--host", nargs='+', help="Plugin host to use. Example --host mod'", default=['mod'],
-                        choices=['mod', 'generic', 'test'])
+                        choices=['mod', 'mod1', 'generic', 'test'])
 
     args = parser.parse_args()
 
@@ -83,7 +84,8 @@ def main():
         os.system('sudo amixer sset "AUX Jack" unmute')
 
         # Create singleton Mod handler
-        handler = Mod.Mod(audiocard, cwd)
+        #handler = Mod.Mod(audiocard, cwd)  # used for old LCD UI
+        handler = Modhandler.Modhandler(audiocard, cwd)  # used for new LCD UI
 
         # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
         factory = Hardwarefactory.Hardwarefactory()

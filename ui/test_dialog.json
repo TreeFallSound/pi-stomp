@@ -1,0 +1,18 @@
+{
+    "label"     : "test_dialog",
+    "class"	: "Dialog",
+    "title"	: "Test dialog",
+    "width"	: 260,
+    "height"	: 160,
+
+    "children" : [
+	{
+	    "label" : "cancel_btn",
+	    "class" : "Button",
+	    "text"  : "Cancel",
+	    "box"   : [ 0, 140, 0, 0 ],
+	    "align" : "CENTRE_H"
+	}
+    ]
+}
+
