@@ -84,8 +84,8 @@ def main():
         os.system('sudo amixer sset "AUX Jack" unmute')
 
         # Create singleton Mod handler
-        handler = Mod.Mod(audiocard, cwd)  # used for old LCD UI
-        #handler = Modhandler.Modhandler(audiocard, cwd)  # used for new LCD UI
+        #handler = Mod.Mod(audiocard, cwd)  # used for old LCD UI
+        handler = Modhandler.Modhandler(audiocard, cwd)  # used for new LCD UI
 
         # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
         factory = Hardwarefactory.Hardwarefactory()
