@@ -565,6 +565,7 @@ class Mod(Handler):
                                 # TODO sort this list so selection orders correctly (sort on midi_CC?)
                                 plugin.has_footswitch = True
                                 footswitch_plugins.append(plugin)
+                                controller.set_category(plugin.category)
                             elif isinstance(controller, AnalogMidiControl):
                                 key = "%s:%s" % (plugin.instance_id, param.name)
                                 controller.cfg[Token.CATEGORY] = plugin.category  # somewhat LAME adding to cfg dict

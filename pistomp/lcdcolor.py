@@ -13,10 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from PIL import Image
 import os
+import pistomp.category as Category
 import pistomp.lcdbase as lcdbase
-import pistomp.tool as Tool
 import common.token as Token
 import common.util as util
 
@@ -24,21 +23,6 @@ class Lcdcolor(lcdbase.Lcdbase):
 
     def __init__(self, cwd):
         super(Lcdcolor, self).__init__(cwd)
-
-        self.category_color_map = {
-            'Delay': "MediumVioletRed",
-            'Distortion': "Lime",
-            'Dynamics': "OrangeRed",
-            'Filter': (205, 133, 40),
-            'Generator': "Indigo",
-            'Midiutility': "Gray",
-            'Modulator': (50, 50, 255),
-            'Reverb': (20, 160, 255),
-            'Simulator': "SaddleBrown",
-            'Spacial': "Gray",
-            'Spectral': "Red",
-            'Utility': "Gray"
-        }
 
     # Menu Screens (uses deep_edit image and draw objects)
     def menu_show(self, page_title, menu_items):
@@ -161,7 +145,7 @@ class Lcdcolor(lcdbase.Lcdbase):
             if color is None:
                 # color not specified for control in config file
                 category = util.DICT_GET(v, Token.CATEGORY)
-                color = self.get_category_color(category)
+                color = Category.get_category_color(category)
             name = k.split(":")[1]
             n = self.shorten_name(name, text_per_control)
             if control_type == Token.KNOB:

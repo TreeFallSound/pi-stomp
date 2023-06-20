@@ -1,0 +1,14 @@
+[Unit]
+Description=MOD MIDI Merger
+After=jack.service
+Requires=jack.service
+BindsTo=jack.service
+[Service]
+RemainAfterExit=yes
+Environment=JACK_PROMISCUOUS_SERVER=jack
+ExecStart=/usr/local/bin/jack_load mod-midi-merger
+ExecStop=/usr/local/bin/jack_unload mod-midi-merger
+Restart=always
+RestartSec=2
+[Install]
+WantedBy=multi-user.target
