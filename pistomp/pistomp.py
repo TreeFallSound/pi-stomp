@@ -118,7 +118,7 @@ class Pistomp(hardware.Hardware):
 
     def init_footswitches(self):
         for f in FOOTSW:
-            fs = Footswitch.Footswitch(f[0], f[1], f[2], f[3], self.midi_channel, self.midiout,
+            fs = Footswitch.Footswitch(f[0], f[1], f[2], None, f[3], self.midi_channel, self.midiout,
                                        refresh_callback=self.refresh_callback)
             self.footswitches.append(fs)
         self.reinit(None)
@@ -141,7 +141,7 @@ class Pistomp(hardware.Hardware):
             # Footswitches
             for f in FOOTSW:
                 self.mod.lcd.draw_info_message("Press Footswitch %d" % int(f[0] + 1))
-                fs = Footswitch.Footswitch(f[0], f[1], f[2], f[3], self.midi_channel, self.midiout,
+                fs = Footswitch.Footswitch(f[0], f[1], f[2], None, f[3], self.midi_channel, self.midiout,
                                            refresh_callback=self.test_passed)
                 self.test_pass = False
                 timeout = 1000  # 10 seconds

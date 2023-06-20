@@ -39,6 +39,9 @@ sudo /usr/bin/pip3 install RPi.GPIO
 #GFXHat
 sudo /usr/bin/pip3 install gfxhat
 
+# LEDstring
+sudo /usr/bin/pip3 install matplotlib rpi_ws281x adafruit-circuitpython-neopixel
+
 # LCD
 sudo /usr/bin/pip3 install adafruit-circuitpython-rgb-display
 sudo apt install -y python3-numpy

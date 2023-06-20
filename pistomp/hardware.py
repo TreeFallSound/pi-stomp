@@ -16,11 +16,13 @@
 import logging
 import os
 import spidev
+import sys
 
 import common.token as Token
 import common.util as Util
 import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.footswitch as Footswitch
+import pistomp.ledstrip as Ledstrip
 
 from abc import abstractmethod
 
@@ -50,6 +52,7 @@ class Hardware:
         self.footswitches = []
         self.encoder_switches = []
         self.debounce_map = None
+        self.ledstrip = None
 
     def init_spi(self):
         self.spi = spidev.SpiDev()
@@ -120,6 +123,21 @@ class Hardware:
         if cfg_fs is None:
             return
 
+        # determine if an ledstrip is referenced, if so create an object
+        ledstrip_gpio = None
+        gpio_output_list = []
+        for f in cfg_fs:
+            if self.ledstrip is None and Util.DICT_GET(f, Token.LEDSTRIP_POSITION) is not None:
+                self.ledstrip = Ledstrip.Ledstrip()
+                ledstrip_gpio = self.ledstrip.get_gpio()
+            gpio_output_list.append(Util.DICT_GET(f, Token.GPIO_OUTPUT))
+
+        # Must make sure a gpio_output is not specified on the PWM pin used for an ledstring
+        if ledstrip_gpio is not None and ledstrip_gpio in gpio_output_list:
+            logging.error("Config file error.  Cannot have %s on the same GPIO as used for an ledstring referenced by %s"
+                          % (Token.GPIO_OUTPUT, Token.LEDSTRIP_POSITION))
+            sys.exit()
+
         midi_channel = self.__get_real_midi_channel(cfg)
         idx = 0
         for f in cfg_fs:
@@ -135,12 +153,16 @@ class Hardware:
             gpio_output = Util.DICT_GET(f, Token.GPIO_OUTPUT)
             midi_cc = Util.DICT_GET(f, Token.MIDI_CC)
             id = Util.DICT_GET(f, Token.ID)
+            led_position = Util.DICT_GET(f, Token.LEDSTRIP_POSITION)
 
             if gpio_input is None:
                 logging.error("Switch specified without %s or %s" % (Token.DEBOUNCE_INPUT, Token.GPIO_INPUT))
                 continue
 
-            fs = Footswitch.Footswitch(id if id else idx, gpio_input, gpio_output, midi_cc, midi_channel,
+            pixel = None
+            if self.ledstrip and led_position is not None:
+                pixel = self.ledstrip.add_pixel(id if id else idx, led_position)
+            fs = Footswitch.Footswitch(id if id else idx, gpio_input, gpio_output, pixel, midi_cc, midi_channel,
                                        self.midiout, refresh_callback=self.refresh_callback)
             self.footswitches.append(fs)
             idx += 1
@@ -217,10 +239,13 @@ class Hardware:
                     f = None
 
             if f is not None:
-                fs.clear_display_label()
+                # TODO reusing the footswitch object for multiple pedalboards is not ideal
+                # could easily have spillover from a previous pedalboard
+                # The mutable data should probably be stored in a separate object and destructed/constructed upon
+                # each pedalboard load
+                fs.clear_pedalboard_info()
 
                 # Bypass
-                fs.clear_relays()
                 if Token.BYPASS in f:
                     # TODO no more right or left
                     if f[Token.BYPASS] == Token.LEFT_RIGHT or f[Token.BYPASS] == Token.LEFT:
@@ -243,7 +268,6 @@ class Hardware:
                         self.controllers[key] = fs   # TODO problem if this creates a new element?
 
                 # Preset Control
-                fs.clear_preset()
                 if Token.PRESET in f:
                     preset_value = f[Token.PRESET]
                     if preset_value == Token.UP:
@@ -256,7 +280,7 @@ class Hardware:
                         fs.add_preset(callback=self.mod.preset_set_and_change, callback_arg=preset_value)
                         fs.set_display_label(str(preset_value))
 
-                # LCD attributes
+                # LCD/LED attributes
                 if Token.COLOR in f:
                     fs.set_lcd_color(f[Token.COLOR])
 
