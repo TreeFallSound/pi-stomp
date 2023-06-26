@@ -46,6 +46,10 @@ class Panel(ContainerWidget):
         if self.sel is None:
             self._select_widget_idx(0)
 
+    def add_widget(self, widget):
+        assert(widget.visible)
+        self.sel_list.append(widget)  # TODO if a widget is not selectable, adding to sel_list seems wrong
+
     def _select_widget_idx(self, idx):
         if self.sel is not None:
             old = self.sel_list[self.sel]

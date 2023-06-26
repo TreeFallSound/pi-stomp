@@ -130,6 +130,7 @@ class ContainerWidget(Widget):
             image.paste(self.image, real_box.rect)
 
     def scroll(self, offset):
+        print(offset)
         self.offset = offset
         # XXX Optimize ? at least optionally for things like menus, use a local blit
         # of the backing store instead of a full refresh to work around slow text
@@ -145,6 +146,7 @@ class ContainerWidget(Widget):
             return -s * step
 
     def _scroll_into_view(self, box):
+        b0 = box
         box = box.deoffset(self.offset)
         x0,y0,x1,y1 = box.rect
         ox,oy = self.offset
@@ -161,7 +163,12 @@ class ContainerWidget(Widget):
         if movex != 0 or movey != 0:
             ox += self.__adj_off_step(movex, box.width)
             oy += self.__adj_off_step(movey, box.height)
-            self.scroll((ox, oy))
+            if b0.y0 == 0:
+                # XXX hack to allow scrolling to reset to original location when box.y0 is 0 (container top)
+                # TODO would prefer a better way
+                self.scroll((ox, 0))
+            else:
+                self.scroll((ox, oy))
             return True
         return False
 
