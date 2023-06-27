@@ -417,9 +417,9 @@ class Lcd(abstract_lcd.Lcd):
     # General
     #
     def splash_show(self, boot=True):
-        self.w_splash = ImageWidget(box=Box.xywh(12, 80, self.display_width, self.display_height),
-                        image_path=os.path.join(self.imagedir, 'startup.png' if boot is True else 'shutdown.png'), parent=self.splash_panel)
-        #self.w_splash.set_foreground(self.color_splash_up if boot is True else self.color_splash_down)
+        self.w_splash = TextWidget(box=Box.xywh(12, 80, self.display_width, self.display_height),
+                       text="pi Stomp!", font=self.splash_font, parent=self.splash_panel)
+        self.w_splash.set_foreground(self.color_splash_up if boot is True else self.color_splash_down)
         self.splash_panel.refresh()
 
     def cleanup(self):
