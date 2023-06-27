@@ -241,10 +241,14 @@ class Lcd(abstract_lcd.Lcd):
         y = 72
         per_row = 4
         i = 1
-        # erase currently rendered plugins first
+        # erase currently rendered plugins and footswitches first
+        for w in self.w_footswitches:
+            w.destroy()
+        self.w_footswitches = []
         for w in self.w_plugins:
             w.destroy()
         self.w_plugins = []
+
         for plugin in self.current.pedalboard.plugins:
             label = plugin.instance_id.replace('/', "")[:self.plugin_label_length]
             label = label.replace("_", "")
