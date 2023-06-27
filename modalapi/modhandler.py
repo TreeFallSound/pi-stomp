@@ -389,6 +389,18 @@ class Modhandler(Handler):
         logging.info("Restart sound engine (jack)")
         os.system('sudo systemctl restart jack')
 
+    def system_disable_eq(self, arg):
+        os.system('sudo amixer sset "DAC EQ" mute')
+        os.system('sudo alsactl store')
+
+    def system_enable_eq(self, arg):
+        os.system('sudo amixer sset "DAC EQ" unmute')
+        os.system('sudo alsactl store')
+
+    def system_toggle_eq(self, arg):
+        os.system('sudo amixer sset "DAC EQ" toggle')
+        os.system('sudo alsactl store')
+
     def system_menu_input_gain(self, arg):
         value = self.audiocard.get_parameter(self.audiocard.CAPTURE_VOLUME)
         self.lcd.draw_audio_parameter_dialog("Input Gain", self.audiocard.CAPTURE_VOLUME, value,
@@ -398,6 +410,31 @@ class Modhandler(Handler):
         value = self.audiocard.get_parameter(self.audiocard.MASTER)
         self.lcd.draw_audio_parameter_dialog("Headphone Volume", self.audiocard.MASTER, value,
                                              -25.75, 6, self.audio_parameter_commit)
+
+    def system_menu_eq1_gain(self, arg):
+        value = self.audiocard.get_parameter(self.audiocard.EQ_1)
+        self.lcd.draw_audio_parameter_dialog("Low Band Gain", self.audiocard.EQ_1, value,
+                                             -10.50, 12, self.audio_parameter_commit)
+
+    def system_menu_eq2_gain(self, arg):
+        value = self.audiocard.get_parameter(self.audiocard.EQ_2)
+        self.lcd.draw_audio_parameter_dialog("Low-Mid Band Gain", self.audiocard.EQ_2, value,
+                                             -10.50, 12, self.audio_parameter_commit)
+
+    def system_menu_eq3_gain(self, arg):
+        value = self.audiocard.get_parameter(self.audiocard.EQ_3)
+        self.lcd.draw_audio_parameter_dialog("Mid Band Gain", self.audiocard.EQ_3, value,
+                                             -10.50, 12, self.audio_parameter_commit)
+
+    def system_menu_eq4_gain(self, arg):
+        value = self.audiocard.get_parameter(self.audiocard.EQ_4)
+        self.lcd.draw_audio_parameter_dialog("High-Mid Band Gain", self.audiocard.EQ_4, value,
+                                             -10.50, 12, self.audio_parameter_commit)
+
+    def system_menu_eq5_gain(self, arg):
+        value = self.audiocard.get_parameter(self.audiocard.EQ_5)
+        self.lcd.draw_audio_parameter_dialog("High Band Gain", self.audiocard.EQ_5, value,
+                                             -10.50, 12, self.audio_parameter_commit)
 
     def audio_parameter_commit(self, symbol, value):
         self.audiocard.set_parameter(symbol, value)

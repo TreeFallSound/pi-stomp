@@ -89,6 +89,7 @@ class Lcd(abstract_lcd.Lcd):
 
         # widgets
         self.w_wifi = None
+        self.w_eq = None
         self.w_power = None
         self.w_wrench = None
         self.w_pedalboard = None
@@ -133,7 +134,7 @@ class Lcd(abstract_lcd.Lcd):
         self.current = current
 
     def draw_main_panel(self):
-        self.draw_tools(None, None, None)
+        self.draw_tools(None, None, None, None)
         self.draw_title()
         self.draw_plugins()
         self.draw_unbound_footswitches()
@@ -145,7 +146,12 @@ class Lcd(abstract_lcd.Lcd):
     #
     # Toolbar
     #
-    def draw_tools(self, wifi_type=None, bypass_type=None, system_type=None):
+    def draw_tools(self, wifi_type=None, eq_type=None, bypass_type=None, system_type=None):
+        if self.w_eq is not None:
+            return
+        self.w_eq = ImageWidget(box=Box.xywh(210, 0, 20, 20), image_path=os.path.join(self.imagedir,
+                                  'eq_blue.png'), parent=self.main_panel, action=self.draw_audio_menu)
+        self.main_panel.add_sel_widget(self.w_eq)
         if self.w_wifi is not None:
             return
         self.w_wifi = ImageWidget(box=Box.xywh(240, 0, 20, 20), image_path=os.path.join(self.imagedir,
@@ -230,6 +236,19 @@ class Lcd(abstract_lcd.Lcd):
 
         items.append(('\u2b05', None))  # Back arrow
         m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=180,
+                 action=menu_action)
+        self.pstack.push_panel(m)
+    
+    def draw_selection_audio(self, items, title=""):
+        # items is list of touples: (item_label, callback_method, callback_arg)
+        # The below assumes that the callback takes the menu item label as an argument
+        def menu_action(event, params):
+            callback = params[1]
+            if callback is not None:
+                callback(params[2])
+
+        items.append(('\u2b05', None))  # Back arrow
+        m = Menu(title=title, items=items, default_item=None, max_width=180, max_height=180,
                  action=menu_action)
         self.pstack.push_panel(m)
 
@@ -402,10 +421,19 @@ class Lcd(abstract_lcd.Lcd):
                  ("System reboot",  self.handler.system_menu_reboot, None),
                  ("Save current pedalboard", self.handler.system_menu_save_current_pb, None),
                  ("Reload pedalboards", self.handler.system_menu_reload, None),
-                 ("Restart sound engine", self.handler.system_menu_restart_sound, None),
-                 ("Input Gain", self.handler.system_menu_input_gain, None),
-                 ("Headphone Volume", self.handler.system_menu_headphone_volume, None)]
-        self.draw_selection_menu(items, "System menu")
+                 ("Restart sound engine", self.handler.system_menu_restart_sound, None)]
+        self.draw_selection_menu(items, "System Menu")
+
+    def draw_audio_menu(self, event, widget):
+        items = [("Input Gain", self.handler.system_menu_input_gain, None),
+                 ("Headphone Volume", self.handler.system_menu_headphone_volume, None),
+                 ("Global EQ", self.handler.system_toggle_eq, None),
+                 ("Low Band Gain", self.handler.system_menu_eq1_gain, None),
+                 ("Low-Mid Band Gain", self.handler.system_menu_eq2_gain, None),
+                 ("Mid Band Gain", self.handler.system_menu_eq3_gain, None),
+                 ("High-Mid Band Gain", self.handler.system_menu_eq4_gain, None),
+                 ("High Band Gain", self.handler.system_menu_eq5_gain, None)]
+        self.draw_selection_audio(items, "Audio Menu") 
 
     def draw_audio_parameter_dialog(self, name, symbol, value, min, max, commit_callback):
         d = Parameterdialog(self.pstack, name, value, min, max,
