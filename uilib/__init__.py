@@ -10,3 +10,5 @@ from uilib.dialog import *
 from uilib.config import *
 from uilib.builder import *
 from uilib.parameterdialog import *
+from uilib.footswitch import *
+

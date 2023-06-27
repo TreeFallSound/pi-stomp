@@ -80,6 +80,12 @@ class Lcd(abstract_lcd.Lcd):
         self.plugin_height = 31
         self.plugin_label_length = 7
         self.footswitch_height = 60
+        self.footswitch_width = 56
+        # space between footswitch icons where index is the footswitch count
+        #                                0    1    2    3    4   5   6   7
+        self.footswitch_pitch_options = [120, 120, 120, 128, 86, 65, 65, 65]
+        self.footswitch_pitch = None
+        self.footswitch_slots = {}
 
         # widgets
         self.w_wifi = None
@@ -88,14 +94,17 @@ class Lcd(abstract_lcd.Lcd):
         self.w_pedalboard = None
         self.w_preset = None
         self.w_plugins = []
+        self.w_footswitches = []
         self.w_splash = None
 
         # panels
         self.pstack = PanelStack(display, image_format='RGB')
         self.splash_panel = Panel(box=Box.xywh(0, 0, self.display_width, self.display_height))
         self.pstack.push_panel(self.splash_panel)
-        self.main_panel = Panel(box=Box.xywh(0, 0, self.display_width, 180))
+        self.main_panel = Panel(box=Box.xywh(0, 0, self.display_width, 170))
         self.main_panel_pushed = False
+        self.footswitch_panel = Panel(box=Box.xywh(0, 180, self.display_width, 60))
+        self.pstack.push_panel(self.footswitch_panel)
 
         self.pedalboards = {}
 
@@ -127,6 +136,7 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_tools(None, None, None)
         self.draw_title()
         self.draw_plugins()
+        self.draw_unbound_footswitches()
         if not self.main_panel_pushed:
             self.pstack.push_panel(self.main_panel)
             self.main_panel_pushed = True
@@ -228,7 +238,7 @@ class Lcd(abstract_lcd.Lcd):
     #
     def draw_plugins(self):
         x = 0
-        y = 81
+        y = 72
         per_row = 4
         i = 1
         # erase currently rendered plugins first
@@ -251,7 +261,12 @@ class Lcd(abstract_lcd.Lcd):
             if pos == 0:
                 y = y + self.plugin_height + 2
             i += 1
+
+            if plugin.has_footswitch:
+                self.draw_footswitch(plugin)
+
         self.main_panel.refresh()
+        self.footswitch_panel.refresh()
 
     def plugin_event(self, event, widget, plugin):
         if event == InputEvent.CLICK:
@@ -323,6 +338,57 @@ class Lcd(abstract_lcd.Lcd):
 
     def parameter_commit(self, parameter, value):
         self.handler.parameter_value_commit(parameter, value)
+
+    #
+    # Footswitches
+    #
+    def draw_footswitch(self, plugin):
+        for c in plugin.controllers:
+            if isinstance(c, Footswitch):
+                fs_id = c.id
+                #fss[fs_id] = None
+                if c.parameter.symbol != ":bypass":  # TODO token
+                    label = c.parameter.name
+                else:
+                    label = self.shorten_name(plugin.instance_id, self.footswitch_width)
+
+                y = 0
+                x = self.get_footswitch_pitch() * fs_id
+                self.footswitch_slots[fs_id] = label
+                color = self.get_plugin_color(plugin)
+                p = FootswitchWidget(Box.xywh(x, y, self.plugin_width, self.plugin_height), self.small_font,
+                             label, color, plugin.is_bypassed(), parent=self.footswitch_panel, object=c)
+                self.w_footswitches.append(p)
+                self.footswitch_panel.add_widget(p)
+                break
+
+    def draw_unbound_footswitches(self):
+        for slot in [ele for ele in range(self.handler.get_num_footswitches()) if ele not in self.footswitch_slots]:
+            y = 0
+            x = self.get_footswitch_pitch() * slot
+            p = FootswitchWidget(Box.xywh(x, y, self.plugin_width, self.plugin_height), self.small_font,
+                                 "", None, True, parent=self.footswitch_panel)
+            self.w_footswitches.append(p)
+            self.footswitch_panel.add_widget(p)
+        self.footswitch_panel.refresh()
+
+    def update_footswitch(self, footswitch):
+        for wfs in self.w_footswitches:
+            if wfs.object == footswitch:
+                wfs.toggle(footswitch.enabled == False)
+                break
+        self.footswitch_panel.refresh()
+        self.refresh_plugins()  # TODO maybe not the most efficient, does exhibit some lag time
+
+    def get_footswitch_pitch(self):
+        if self.footswitch_pitch is not None:
+            return self.footswitch_pitch
+        if self.handler:
+            num_fs = self.handler.get_num_footswitches()
+            if num_fs <= len(self.footswitch_pitch_options):
+                self.footswitch_pitch = self.footswitch_pitch_options[self.handler.get_num_footswitches()]
+                return self.footswitch_pitch
+        return self.footswitch_pitch_options[-1]
 
     #
     # System Menu

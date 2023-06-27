@@ -114,7 +114,7 @@ class Footswitch(gpioswitch.GpioSwitch):
             self.parameter.value = not self.enabled  # TODO assumes mapped parameter is :bypass
 
         # Update LCD
-        self.refresh_callback()
+        self.refresh_callback(footswitch=self)
 
     def set_display_label(self, label):
         self.display_label = label

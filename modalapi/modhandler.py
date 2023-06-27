@@ -25,17 +25,12 @@ import yaml
 
 import common.token as Token
 import common.util as util
-import pistomp.analogswitch as AnalogSwitch
-import pistomp.encoderswitch as EncoderSwitch
 import modalapi.pedalboard as Pedalboard
-import modalapi.parameter as Parameter
 import modalapi.wifi as Wifi
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.footswitch import Footswitch
 from pistomp.handler import Handler
-from pistomp.lcd320x240 import Lcd
-from enum import Enum
 from pathlib import Path
 
 
@@ -315,6 +310,11 @@ class Modhandler(Handler):
 
             #  Indicate change on LCD
             self.lcd.toggle_plugin(widget, plugin)
+    def update_lcd_fs(self, footswitch=None, bypass_change=False):
+        self.lcd.update_footswitch(footswitch)
+
+    def get_num_footswitches(self):
+        return len(self.hardware.footswitches)
 
     #
     # Parameter Stuff

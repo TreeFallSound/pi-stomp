@@ -28,8 +28,8 @@ class TextHAlign(Enum):
     CENTRE = 3
 
 # Debug helpers
-#debug = False
-debug = True
+debug = False
+#debug = True
 
 def trace(obj, *args):
     if debug:

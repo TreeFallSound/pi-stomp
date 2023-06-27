@@ -65,3 +65,6 @@ class Handler:
 
     def cleanup(self):
         pass
+
+    def get_num_footswitches(self):
+        pass
