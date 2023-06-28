@@ -147,16 +147,16 @@ class Lcd(abstract_lcd.Lcd):
     # Toolbar
     #
     def draw_tools(self, wifi_type=None, eq_type=None, bypass_type=None, system_type=None):
-        if self.w_eq is not None:
-            return
-        self.w_eq = ImageWidget(box=Box.xywh(210, 0, 20, 20), image_path=os.path.join(self.imagedir,
-                                  'eq_blue.png'), parent=self.main_panel, action=self.draw_audio_menu)
-        self.main_panel.add_sel_widget(self.w_eq)
         if self.w_wifi is not None:
             return
-        self.w_wifi = ImageWidget(box=Box.xywh(240, 0, 20, 20), image_path=os.path.join(self.imagedir,
+        self.w_wifi = ImageWidget(box=Box.xywh(210, 0, 20, 20), image_path=os.path.join(self.imagedir,
                                   'wifi_orange.png'), parent=self.main_panel, action=self.draw_wifi_dialog)
         self.main_panel.add_sel_widget(self.w_wifi)
+        if self.w_eq is not None:
+            return
+        self.w_eq = ImageWidget(box=Box.xywh(240, 0, 20, 20), image_path=os.path.join(self.imagedir,
+                                  'eq_blue.png'), parent=self.main_panel, action=self.draw_audio_menu)
+        self.main_panel.add_sel_widget(self.w_eq)
         self.w_power = ImageWidget(box=Box.xywh(270, 0, 20, 20), image_path=os.path.join(self.imagedir,
                                    'power_green.png'), parent=self.main_panel)
         self.main_panel.add_sel_widget(self.w_power)
