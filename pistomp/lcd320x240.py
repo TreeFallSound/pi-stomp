@@ -238,19 +238,6 @@ class Lcd(abstract_lcd.Lcd):
         m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=180,
                  action=menu_action)
         self.pstack.push_panel(m)
-    
-    def draw_selection_audio(self, items, title=""):
-        # items is list of touples: (item_label, callback_method, callback_arg)
-        # The below assumes that the callback takes the menu item label as an argument
-        def menu_action(event, params):
-            callback = params[1]
-            if callback is not None:
-                callback(params[2])
-
-        items.append(('\u2b05', None))  # Back arrow
-        m = Menu(title=title, items=items, default_item=None, max_width=180, max_height=180,
-                 action=menu_action)
-        self.pstack.push_panel(m)
 
     #
     # Plugins
@@ -433,7 +420,7 @@ class Lcd(abstract_lcd.Lcd):
                  ("Mid Band Gain", self.handler.system_menu_eq3_gain, None),
                  ("High-Mid Band Gain", self.handler.system_menu_eq4_gain, None),
                  ("High Band Gain", self.handler.system_menu_eq5_gain, None)]
-        self.draw_selection_audio(items, "Audio Menu") 
+        self.draw_selection_menu(items, "Audio Menu") 
 
     def draw_audio_parameter_dialog(self, name, symbol, value, min, max, commit_callback):
         d = Parameterdialog(self.pstack, name, value, min, max,
