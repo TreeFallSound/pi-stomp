@@ -64,7 +64,7 @@ class Menu(Dialog):
         # items. But we could just pile them on top of each other and move
         # them once attached.
         #
-        w = 0
+        w = 240
         h = 0
         h_margin = 10
         v_margin = 0
@@ -74,15 +74,15 @@ class Menu(Dialog):
             trace(self, "item <",t,"> tw=", tw, "th=", th)
             tw = tw + h_margin * 2
             th = th + v_margin * 2
-            if tw > w:
-                w = tw
+            #if tw > w:
+            #    w = tw
             if h == 0:
                 self.item_h = th
                 h = th * len(self.items)
         mw = self.max_width
         mh = self.max_height
         if mw is not None and w > mw:
-            w = mw
+            w = 240
         if mh is not None and h > mh:
             h = mh
         print("-> adjusted w,h:", w, h)
