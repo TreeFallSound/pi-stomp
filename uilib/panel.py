@@ -48,6 +48,7 @@ class Panel(ContainerWidget):
 
     def add_widget(self, widget):
         assert(widget.visible)
+        widget.selectable = False
         self.sel_list.append(widget)  # TODO if a widget is not selectable, adding to sel_list seems wrong
 
     def _select_widget_idx(self, idx):

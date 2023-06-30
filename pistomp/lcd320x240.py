@@ -74,6 +74,8 @@ class Lcd(abstract_lcd.Lcd):
         self.splash_font = ImageFont.truetype('DejaVuSans.ttf', 48)
         self.small_font = ImageFont.truetype("DejaVuSans.ttf", 20)
         self.tiny_font = ImageFont.truetype("DejaVuSans.ttf", 16)
+        self.title_split_orig = 190
+        self.title_split = self.title_split_orig
         self.display_width = 320
         self.display_height = 240
         self.plugin_width = 78
@@ -197,20 +199,23 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.refresh()
 
     def draw_pedalboard(self, pedalboard_name):
+        self.title_split = min(self.title_font.getmask(pedalboard_name).getbbox()[2], self.title_split_orig)
         if self.w_pedalboard is not None:
             self.w_pedalboard.set_text(pedalboard_name)
+            self.w_pedalboard.set_box(box=Box.xywh(0, 20, self.title_split, 36), realign=True, refresh=True)
             return
-
-        self.w_pedalboard = TextWidget(box=Box.xywh(0, 20, 159, 36), text=pedalboard_name, font=self.title_font,
-                                       parent=self.main_panel, action=self.draw_pedalboard_menu)
+        self.w_pedalboard = TextWidget(box=Box.xywh(0, 20, self.title_split, 36), text=pedalboard_name,
+                                       font=self.title_font, parent=self.main_panel, action=self.draw_pedalboard_menu)
         self.main_panel.add_sel_widget(self.w_pedalboard)
 
     def draw_preset(self, preset_name):
+        x = self.title_split + 4  # title_split gets set by draw_pedalboard
+        width = self.display_width - x
         if self.w_preset is not None:
             self.w_preset.set_text(preset_name)
+            self.w_preset.set_box(box=Box.xywh(x, 20, width, 36), realign=True, refresh=True)
             return
-
-        self.w_preset = TextWidget(box=Box.xywh(161, 20, 159, 36), text=preset_name, font=self.title_font,
+        self.w_preset = TextWidget(box=Box.xywh(x, 20, width, 36), text=preset_name, font=self.title_font,
                                    parent=self.main_panel, action=self.draw_preset_menu)
         self.main_panel.add_sel_widget(self.w_preset)
 

@@ -233,7 +233,7 @@ class Modhandler(Handler):
 
         if pedalboard is None:
             pedalboard = self.pedalboard_list[0]
-        self.set_current_pedalboard(pedalboard)
+        #self.set_current_pedalboard(pedalboard)  # TODO is this necessary?
         bundlepath = pedalboard.bundle
         data = {"bundlepath": bundlepath}
         resp2 = req.post(uri, data)
@@ -241,7 +241,8 @@ class Modhandler(Handler):
             logging.error("Bad Rest request: %s %s  status: %d" % (uri, data, resp2.status_code))
 
         # Now that it's presumably changed, load the dynamic "current" data
-        self.set_current_pedalboard(pedalboard)
+        # TODO this seems to be no longer required since the MOD pedalboard change will call this via poll_modui_changes()
+        #self.set_current_pedalboard(pedalboard)
 
     #
     # Preset Stuff
