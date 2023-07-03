@@ -239,9 +239,8 @@ class Lcd(abstract_lcd.Lcd):
             if callback is not None:
                 callback(params[2])
 
-        items.append(('\u2b05', None))  # Back arrow
         m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=180,
-                 action=menu_action)
+                 auto_dismiss=False, action=menu_action)
         self.pstack.push_panel(m)
 
     #

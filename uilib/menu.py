@@ -12,13 +12,16 @@ class Menu(Dialog):
         self.max_height = max_height
         self.max_width = max_width
         self.items = items
-        if font == None:
+        self.auto_dismiss = auto_dismiss
+        if auto_dismiss is False:
+            # without auto_dismiss provide a back arrow to close menu
+            self.items.append(('\u2b05', self._dismiss, None))
+        if font is None:
             font = Config().get_font('default')
         self.font = font
         self.font_metrics = font.getmetrics()
         self.item_h = 0
         self.text_halign = text_halign
-        self.auto_dismiss = auto_dismiss
         self.default_item = default_item
         super(Menu,self).__init__(width = 0, height = 0, **kwargs)
 
@@ -37,14 +40,18 @@ class Menu(Dialog):
 
         self.refresh()
 
+    def _dismiss(self, arg=None):
+        stack = self._get_stack()
+        if stack:
+            stack.pop_panel(self)
+
     def _item_action(self, event, source):
         trace(self, "item action !", event, source)
         if event == InputEvent.CLICK or event == InputEvent.LONG_CLICK:
             data = source.data
             action = self.action
             if self.auto_dismiss:
-                stack = self._get_stack()
-                stack.pop_panel(self)
+                self._dismiss()
             if action is not None:
                 action(event, data)
 
