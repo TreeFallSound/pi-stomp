@@ -50,6 +50,7 @@ mkdir -p "SF2 Instruments"
 mkdir -p "SFZ Instruments"
 mkdir -p "Amplifier Profiles"
 mkdir -p "Aida DSP Models"
+mkdir -p "NAM Models"
 
 #Jack2
 pushd $(mktemp -d) && git clone https://github.com/moddevices/jack2.git
