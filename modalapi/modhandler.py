@@ -358,10 +358,16 @@ class Modhandler(Handler):
         self.lcd.splash_show(False)
         logging.info("System Shutdown")
         os.system('sudo systemctl --no-wall poweroff')
+        os.system('sudo amixer sset "AUX Jack" mute')
+        os.system('sudo alsactl store')
+        os.system('sudo systemctl reboot')
 
     def system_menu_reboot(self, arg):
         self.lcd.splash_show(False)
         logging.info("System Reboot")
+        os.system('sudo systemctl reboot')
+        os.system('sudo amixer sset "AUX Jack" mute')
+        os.system('sudo alsactl store')
         os.system('sudo systemctl reboot')
 
     def system_menu_save_current_pb(self, arg):
