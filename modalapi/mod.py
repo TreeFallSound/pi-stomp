@@ -421,6 +421,7 @@ class Mod(Handler):
         return self.selectable_items[self.selectable_index][0]
 
     def poll_controls(self):
+        # this is called many times per second.  Only critical updates should be here
         if self.universal_encoder_mode is not UniversalEncoderMode.LOADING:
             self.hardware.poll_controls()
         wifi_update = self.wifi_manager.poll()
@@ -429,12 +430,6 @@ class Mod(Handler):
             self.lcd.update_wifi(self.wifi_status)
             if self.current_menu == MenuType.MENU_INFO:
                 self.system_info_update_wifi()
-        output = subprocess.check_output(["amixer", "get", "DAC EQ"])
-        if "off" in output.decode("utf-8"):
-            self.eq_status = False
-        else:
-            self.eq_status = True
-        self.lcd.update_eq(self.eq_status)
 
     def poll_modui_changes(self):
         # This poll looks for changes made via the MOD UI and tries to sync the pi-Stomp hardware
@@ -807,6 +802,16 @@ class Mod(Handler):
                 self.software_version = self.git_describe.split('-')[0]
         except subprocess.CalledProcessError:
             logging.error("Cannot obtain git software tag info")
+
+        self.eq_status = False
+        try:
+            output = subprocess.check_output(["amixer", "get", "DAC EQ"])
+            if "on" in output.decode("utf-8"):
+                self.eq_status = True
+        except subprocess.CalledProcessError as e:
+            logging.info("Cannot access EQ on audio card. Assuming card doesn't support global EQ")
+        finally:
+            self.lcd.update_eq(self.eq_status)
 
     def system_menu_show(self):
         self.current_menu = MenuType.MENU_SYSTEM
