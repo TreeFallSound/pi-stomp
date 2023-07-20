@@ -28,8 +28,8 @@ import pistomp.gpioswitch as gpioswitch
 import pistomp.hardware as hardware
 import pistomp.relay as Relay
 
-import pistomp.lcdili9341 as Lcd  # pistompcore UI
-#import pistomp.lcd320x240 as Lcd   # New UI
+#import pistomp.lcdili9341 as Lcd  # pistompcore UI
+import pistomp.lcd320x240 as Lcd   # New UI
 #import pistomp.lcd128x64 as Lcd
 #import pistomp.lcd135x240 as Lcd
 #import pistomp.lcdsy7789 as Lcd
