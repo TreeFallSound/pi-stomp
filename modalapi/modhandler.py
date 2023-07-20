@@ -69,6 +69,9 @@ class Modhandler(Handler):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
+    def cleanup(self):
+        if self.lcd is not None:
+            self.lcd.cleanup()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -210,6 +213,7 @@ class Modhandler(Handler):
                                 # TODO sort this list so selection orders correctly (sort on midi_CC?)
                                 plugin.has_footswitch = True
                                 footswitch_plugins.append(plugin)
+                                controller.set_category(plugin.category)
                             elif isinstance(controller, AnalogMidiControl):
                                 key = "%s:%s" % (plugin.instance_id, param.name)
                                 controller.cfg[Token.CATEGORY] = plugin.category  # somewhat LAME adding to cfg dict
@@ -340,6 +344,11 @@ class Modhandler(Handler):
         except:
             logging.debug("status: %s" % resp.status_code)
             return resp.status_code
+
+    def parameter_midi_change(self, param, direction):
+        d = self.lcd.draw_parameter_dialog(param)
+        if d:
+            self.lcd.enc_step_widget(d, direction)
 
     #
     # System Menu

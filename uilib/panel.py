@@ -249,6 +249,12 @@ class PanelStack(ContainerWidget):
 #            panel.detach()
             panel.destroy()
 
+    def find_panel_type(self, type):
+        for p in self.stack:
+            if isinstance(p, type):
+                return p
+        return None
+
     def input_event(self, event):
         assert isinstance(event, InputEvent)
         if self.current is not None:
