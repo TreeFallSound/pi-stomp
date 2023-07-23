@@ -142,6 +142,9 @@ class Mod(Handler):
 
         self.wifi_manager = Wifi.WifiManager()
 
+        # Callback function map.  Key is the user specified name, value is function from this handler
+        self.callbacks = {"set_mod_tap_tempo": self.set_mod_tap_tempo}
+
     def __del__(self):
         logging.info("Handler cleanup")
         if self.wifi_manager:
@@ -1159,6 +1162,23 @@ class Mod(Handler):
             if footswitch is not None:
                 # Update LED
                 footswitch.set_value(int(not relay.enabled))
+
+    def get_callback(self, callback_name):
+        return util.DICT_GET(self.callbacks, callback_name)
+
+    def set_mod_tap_tempo(self, bpm):
+        try:
+            resp = None
+            if bpm is not None:
+                url = self.root_uri + "set_bpm"
+                resp = req.post(url, json={"value": bpm})
+            if resp.status_code != 200:
+                logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
+            else:
+                logging.debug("BPM changed to: %d" % bpm)
+        except:
+            logging.debug("status: %s" % resp.status_code)
+            return resp.status_code
 
     #
     # Parameter Edit

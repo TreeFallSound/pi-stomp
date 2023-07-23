@@ -20,9 +20,10 @@ TAP_TEMPO_RESET_TIME = 3  # seconds between samples after which we should consid
 
 class TapTempo:
 
-    def __init__(self,):
+    def __init__(self, callback=None):
         self.timestamps = deque()
         self.taptempo = 0
+        self.callback = callback
 
     def __calc_tempo(self):
         if len(self.timestamps) < 2:
@@ -44,6 +45,9 @@ class TapTempo:
 
         # Calculate the tempo in beats per minute (BPM)
         self.taptempo = round(60 / average_time_difference, 2)
+        # Call the callback if it's not None
+        if self.callback:
+            self.callback(self.taptempo)
 
     def get_tap_tempo(self):
         return self.taptempo

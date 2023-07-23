@@ -27,7 +27,7 @@ import pistomp.switchstate as switchstate
 class Footswitch(controller.Controller):
 
     def __init__(self, id, led_pin, pixel, midi_CC, midi_channel, midiout, refresh_callback,
-                 gpio_input=None, adc_input=None, spi=None, for_tap_tempo=False):
+                 gpio_input=None, adc_input=None, spi=None, tap_tempo_callback=None):
         super(Footswitch, self).__init__(midi_channel, midi_CC)
         self.id = id
         self.display_label = None
@@ -46,9 +46,9 @@ class Footswitch(controller.Controller):
             logging.error("Switch cannot be specified with both %s and %s", (Token.adc_input, Token.gpio_input))
 
         self.gpio_switch = gpioswitch.GpioSwitch(gpio_input, midi_channel, midi_CC, self.pressed,
-                                                 for_tap_tempo=for_tap_tempo) if gpio_input else None
+                                                 tap_tempo_callback=tap_tempo_callback) if gpio_input else None
         self.adc_switch = analogswitch.AnalogSwitch(spi, adc_input, 800, self.pressed,
-                                                    for_tap_tempo=for_tap_tempo) if adc_input else None
+                                                    tap_tempo_callback=tap_tempo_callback) if adc_input else None
 
         if led_pin is not None:
             GPIO.setup(led_pin, GPIO.OUT)

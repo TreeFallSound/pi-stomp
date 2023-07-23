@@ -68,3 +68,9 @@ class Handler:
 
     def get_num_footswitches(self):
         raise NotImplementedError()
+
+    def get_callback(self, callback_name):
+        raise NotImplementedError()
+
+    def set_mod_tap_tempo(self, bpm):
+        raise NotImplementedError()

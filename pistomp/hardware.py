@@ -152,7 +152,7 @@ class Hardware:
 
             adc_input = Util.DICT_GET(f, Token.ADC_INPUT)
             gpio_output = Util.DICT_GET(f, Token.GPIO_OUTPUT)
-            for_tap_tempo = True if Util.DICT_GET(f, Token.TAP_TEMPO) else False
+            tap_tempo_callback = Util.DICT_GET(f, Token.TAP_TEMPO)
             midi_cc = Util.DICT_GET(f, Token.MIDI_CC)
             id = Util.DICT_GET(f, Token.ID)
             led_position = Util.DICT_GET(f, Token.LEDSTRIP_POSITION)
@@ -169,13 +169,15 @@ class Hardware:
             if adc_input is not None:
                 fs = Footswitch.Footswitch(id if id else idx, gpio_output, pixel, midi_cc, midi_channel,
                                            self.midiout, refresh_callback=self.refresh_callback,
-                                           adc_input=adc_input, spi=self.spi, for_tap_tempo=for_tap_tempo)
+                                           adc_input=adc_input, spi=self.spi,
+                                           tap_tempo_callback=self.handler.get_callback(tap_tempo_callback))
                 logging.info("Created Footswitch on ADC input: %d, Midi Chan: %d, CC: %s" %
                               (adc_input, midi_channel, midi_cc))
             elif gpio_input is not None:
                 fs = Footswitch.Footswitch(id if id else idx, gpio_output, pixel, midi_cc, midi_channel,
                                            self.midiout, refresh_callback=self.refresh_callback,
-                                           gpio_input=gpio_input, for_tap_tempo=for_tap_tempo)
+                                           gpio_input=gpio_input,
+                                           tap_tempo_callback=self.handler.get_callback(tap_tempo_callback))
                 logging.debug("Created Footswitch on GPIO input: %d, Midi Chan: %d, CC: %s" %
                               (gpio_input, midi_channel, midi_cc))
 
