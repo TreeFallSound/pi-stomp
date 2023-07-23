@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 
 class Lcd(ABC):
 
-    def __init__(self, cwd, handler=None):
+    def __init__(self, cwd, handler=None, flip=False):
         # expects cwd (current working directory)
         pass
 

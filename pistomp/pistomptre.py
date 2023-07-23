@@ -93,7 +93,7 @@ class Pistomptre(hardware.Hardware):
         self.reinit(None)
 
     def init_lcd(self):
-        self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler))
+        self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler, flip=False))
 
     def add_tweak_encoder(self, d_pin, clk_pin, sw_pin, callback, midi_channel, midi_CC):
         enc = EncoderMidiControl.EncoderMidiControl(self.handler, d_pin=d_pin, clk_pin=clk_pin, callback=callback,

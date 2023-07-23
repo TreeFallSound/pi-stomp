@@ -77,7 +77,7 @@ class Pistompcore(hardware.Hardware):
         self.reinit(None)
 
     def init_lcd(self):
-        self.mod.add_lcd(Lcd.Lcd(self.mod.homedir, self.mod))
+        self.mod.add_lcd(Lcd.Lcd(self.mod.homedir, self.mod, flip=True))
 
     def init_encoders(self):
         top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=self.mod.universal_encoder_select)

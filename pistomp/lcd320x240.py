@@ -31,11 +31,12 @@ from pistomp.footswitch import Footswitch  # TODO would like to avoid this modul
 
 class Lcd(abstract_lcd.Lcd):
 
-    def __init__(self, cwd, handler=None):
+    def __init__(self, cwd, handler=None, flip=False):
         self.cwd = cwd
         self.imagedir = os.path.join(cwd, "images")
         Config(os.path.join(cwd, 'ui', 'config.json'))
         self.handler = handler
+        self.flip = flip
 
         # TODO would be good to decouple the actual LCD hardware.  This file should work for any 320x240 display
         display = LcdIli9341(board.SPI(),
@@ -43,7 +44,7 @@ class Lcd(abstract_lcd.Lcd):
                              digitalio.DigitalInOut(board.D6),
                              digitalio.DigitalInOut(board.D5),
                              24000000,
-                             False)
+                             flip)
 
         # Colors
         self.background = (0, 0, 0)

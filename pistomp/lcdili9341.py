@@ -30,7 +30,7 @@ import time
 
 class Lcd(lcdcolor.Lcdcolor):
 
-    def __init__(self, cwd, mod=None):
+    def __init__(self, cwd, mod=None, flip=False):
         super(Lcd, self).__init__(cwd)
 
         # Pin Configuration
@@ -88,7 +88,7 @@ class Lcd(lcdcolor.Lcdcolor):
                             5: 34,
                             6: 66}
         self.zone_y = {}
-        self.flip = True  # Flip the LCD vertically
+        self.flip = flip  # Flip the LCD vertically
         self.calc_zone_y()
 
         # space between footswitch icons where index is the footswitch count
