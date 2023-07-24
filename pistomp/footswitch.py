@@ -14,6 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
+import time
 import RPi.GPIO as GPIO
 from rtmidi.midiconstants import CONTROL_CHANGE
 
@@ -22,9 +23,17 @@ import pistomp.controller as controller
 import pistomp.analogswitch as analogswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
+import common.util as util
 
 
 class Footswitch(controller.Controller):
+
+    # Static dict of dict which stores the timestamps for all footswitch objects
+    # The group name serves dual purpose for linking two footswithes and as a key for looking up the callback
+    # So each entry should have a corresponding entry in the handler callbacks dict
+    # Only these can be used as callbacks.  Any other specified by the user will result in no action.
+    all_longpress_groups = {"next_snapshot":dict(),
+                            "previous_snapshot":dict()}
 
     def __init__(self, id, led_pin, pixel, midi_CC, midi_channel, midiout, refresh_callback,
                  gpio_input=None, adc_input=None, spi=None, tap_tempo_callback=None):
@@ -41,6 +50,8 @@ class Footswitch(controller.Controller):
         self.lcd_color = None
         self.category = None
         self.pixel = pixel
+        self.longpress_groups = []
+        self.callbacks = {}
 
         if adc_input and gpio_input:
             logging.error("Switch cannot be specified with both %s and %s", (Token.adc_input, Token.gpio_input))
@@ -86,11 +97,38 @@ class Footswitch(controller.Controller):
         if self.gpio_switch:
             return self.gpio_switch.get_tap_tempo()
 
+    def set_longpress_groups(self, groups):
+        if isinstance(groups, str):
+            self.longpress_groups = groups.split()
+        if isinstance(groups, list):
+            self.longpress_groups = groups
+
+    def set_callbacks(self, callbacks):
+        self.callbacks = callbacks
+
     def poll(self):
         if self.adc_switch:
             self.adc_switch.refresh()
         elif self.gpio_switch:
             self.gpio_switch.poll()
+
+    def check_group_events(self):
+        # for each group this footswitch is assigned to, keep track of longpress timestamps per group.
+        # when two footswitches assigned to the same group are longpressed within the same time window,
+        # call the callback which is looked up in the callbacks dictionary.
+
+        for group in self.longpress_groups:
+            timestamps = util.DICT_GET(self.all_longpress_groups, group)
+            if timestamps is None:
+                continue
+            timestamps.update({self.id: time.monotonic()})
+            if len(timestamps) > 1:
+                last = timestamps.popitem()[1]
+                first = timestamps.popitem()[1]
+                if abs(last - first) < 0.3:  # Threshold for longpress events to be considered "simultaneous"
+                    callback = util.DICT_GET(self.callbacks, group)
+                    if callback:
+                        callback()
 
     def pressed(self, state):
         # If a footswitch can be mapped to control a relay, preset, MIDI or all 3
@@ -102,6 +140,7 @@ class Footswitch(controller.Controller):
 
         # First handle Longpress Events
         if state is switchstate.Value.LONGPRESSED:
+            self.check_group_events()
             # Update Relay (if relay is associated with this footswitch)
             if len(self.relay_list) > 0:
                 # Pin kept low (long press)

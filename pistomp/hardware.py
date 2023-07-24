@@ -171,7 +171,7 @@ class Hardware:
                                            self.midiout, refresh_callback=self.refresh_callback,
                                            adc_input=adc_input, spi=self.spi,
                                            tap_tempo_callback=self.handler.get_callback(tap_tempo_callback))
-                logging.info("Created Footswitch on ADC input: %d, Midi Chan: %d, CC: %s" %
+                logging.debug("Created Footswitch on ADC input: %d, Midi Chan: %d, CC: %s" %
                               (adc_input, midi_channel, midi_cc))
             elif gpio_input is not None:
                 fs = Footswitch.Footswitch(id if id else idx, gpio_output, pixel, midi_cc, midi_channel,
@@ -302,5 +302,11 @@ class Hardware:
                 # LCD/LED attributes
                 if Token.COLOR in f:
                     fs.set_lcd_color(f[Token.COLOR])
+
+                # Longpress groups
+                if Token.LONGPRESS_GROUPS in f:  # Can be a list or a single (string)
+                    fs.set_longpress_groups(Util.DICT_GET(f, Token.LONGPRESS_GROUPS))
+
+                fs.set_callbacks(self.handler.callbacks)
 
             idx += 1
