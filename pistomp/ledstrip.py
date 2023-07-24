@@ -58,7 +58,6 @@ class Pixel:
 
     # set the color for the pixel based on category, then render based on enabled status
     def set_color_by_category(self, category, enabled):
-        print(category, enabled)
         self._set_color(Category.get_category_color(category))
         self.set_enable(enabled)
 

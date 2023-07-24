@@ -2,6 +2,7 @@ from uilib.dialog import *
 from uilib.text import *
 import common.util as util
 
+import traceback
 
 class Parameterdialog(Dialog):
     def __init__(self, stack, param_name, param_value, param_min, param_max,

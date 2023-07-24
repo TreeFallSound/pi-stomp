@@ -15,8 +15,6 @@
 
 from enum import Enum
 
-import pistomp.gpioswitch as gpioswitch
-import time
 
 class Value(Enum):
     DEFAULT = 0
@@ -26,17 +24,3 @@ class Value(Enum):
     CLICKED = 4
     DOUBLECLICKED = 5
 
-
-class EncoderSwitch(gpioswitch.GpioSwitch):
-
-    def __init__(self, gpio, callback):
-        super(EncoderSwitch, self).__init__(gpio, None, None)
-        self.last_read = None          # this keeps track of the last value
-        self.trigger_count = 0
-        self.callback = callback
-        self.longpress_state = False
-        self.gpio = gpio
-
-    # Override of base class method
-    def pressed(self, short):
-        self.callback(Value.RELEASED if short else Value.LONGPRESSED)

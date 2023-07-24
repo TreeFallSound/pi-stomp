@@ -122,7 +122,6 @@ def main():
             hw = factory.create(handler, midiout)
             handler.add_hardware(hw)
         except:
-            handler.cleanup()
             raise
 
     logging.info("Entering main loop. Press Control-C to exit.")
@@ -141,11 +140,9 @@ def main():
     except KeyboardInterrupt:
         logging.info('keyboard interrupt')
     finally:
-        handler.cleanup()
         logging.info("Exit.")
         midiout.close_port()
-        if handler.lcd is not None:
-            handler.lcd.cleanup()
+        handler.cleanup()
         GPIO.cleanup()
         del handler
         logging.info("Completed cleanup")

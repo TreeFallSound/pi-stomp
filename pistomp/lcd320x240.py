@@ -15,38 +15,36 @@
 
 import board
 import digitalio
-import time
-import functools
 import logging
 import os
 import common.token as Token
-import common.util as util
 import pistomp.lcd as abstract_lcd
+import pistomp.switchstate as switchstate
 from PIL import ImageColor
 
-import uilib
 from uilib import *
 from uilib.lcd_ili9341 import *
-from pistomp import encoder
-from pistomp import encoderswitch
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
 
+#import traceback
 
 class Lcd(abstract_lcd.Lcd):
 
-    def __init__(self, cwd, handler=None):
+    def __init__(self, cwd, handler=None, flip=False):
         self.cwd = cwd
         self.imagedir = os.path.join(cwd, "images")
         Config(os.path.join(cwd, 'ui', 'config.json'))
         self.handler = handler
+        self.flip = flip
 
         # TODO would be good to decouple the actual LCD hardware.  This file should work for any 320x240 display
         display = LcdIli9341(board.SPI(),
                              digitalio.DigitalInOut(board.CE0),
                              digitalio.DigitalInOut(board.D6),
                              digitalio.DigitalInOut(board.D5),
-                             24000000)
+                             24000000,
+                             flip)
 
         # Colors
         self.background = (0, 0, 0)
@@ -101,7 +99,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_splash = None
 
         # panels
-        self.pstack = PanelStack(display, image_format='RGB')
+        self.pstack = PanelStack(display, image_format='RGB', use_dimming=False)  # TODO use dimming without loosing FS's
         self.splash_panel = Panel(box=Box.xywh(0, 0, self.display_width, self.display_height))
         self.pstack.push_panel(self.splash_panel)
         self.main_panel = Panel(box=Box.xywh(0, 0, self.display_width, 170))
@@ -116,16 +114,26 @@ class Lcd(abstract_lcd.Lcd):
     #
     # Navigation
     #
+
+    def enc_step_widget(self, widget, direction):
+        #traceback.print_stack()
+        # TODO check if widget is type
+        if direction > 0:
+            widget.input_event(InputEvent.RIGHT)
+        elif direction < 0:
+            widget.input_event(InputEvent.LEFT)
+
     def enc_step(self, d):
+        #traceback.print_stack()
         if d > 0:
             self.pstack.input_event(InputEvent.RIGHT)
         elif d < 0:
             self.pstack.input_event(InputEvent.LEFT)
 
     def enc_sw(self, v):
-        if v == encoderswitch.Value.RELEASED:
+        if v == switchstate.Value.RELEASED:
             self.pstack.input_event(InputEvent.CLICK)
-        elif v == encoderswitch.Value.LONGPRESSED:
+        elif v == switchstate.Value.LONGPRESSED:
             self.pstack.input_event(InputEvent.LONG_CLICK)
 
     #
@@ -345,10 +353,14 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_selection_menu(items, "Parameters")
 
     def draw_parameter_dialog(self, parameter):
-        d = Parameterdialog(self.pstack, parameter.name, parameter.value, parameter.minimum, parameter.maximum,
+        # only present one param dialog at a time
+        d = self.pstack.find_panel_type(Parameterdialog)
+        if d is None:
+            d = Parameterdialog(self.pstack, parameter.name, parameter.value, parameter.minimum, parameter.maximum,
                             width=270, height=130, auto_destroy=True, title=parameter.name,
                             action=self.parameter_commit, object=parameter)
-        self.pstack.push_panel(d)
+            self.pstack.push_panel(d)
+        return d
 
     def parameter_commit(self, parameter, value):
         self.handler.parameter_value_commit(parameter, value)

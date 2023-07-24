@@ -25,46 +25,52 @@ class Handler:
         pass
 
     def update_lcd_fs(self, bypass_change=False):
-        pass
+        raise NotImplementedError()
 
     def add_lcd(self, lcd):
-        pass
+        raise NotImplementedError()
 
     def add_hardware(self, hardware):
-        pass
+        raise NotImplementedError()
 
     def poll_controls(self):
-        pass
+        raise NotImplementedError()
 
     def poll_modui_changes(self):
-        pass
+        raise NotImplementedError()
 
     def preset_incr_and_change(self):
-        pass
+        raise NotImplementedError()
 
     def preset_decr_and_change(self):
-        pass
+        raise NotImplementedError()
 
     def top_encoder_select(self, direction):
-        pass
+        raise NotImplementedError()
 
     def top_encoder_sw(self, value):
-        pass
+        raise NotImplementedError()
 
     def bot_encoder_select(self, direction):
-        pass
+        raise NotImplementedError()
 
     def bottom_encoder_sw(self, value):
-        pass
+        raise NotImplementedError()
 
     def universal_encoder_select(self, direction):
-        pass
+        raise NotImplementedError()
 
     def universal_encoder_sw(self, value):
-        pass
+        raise NotImplementedError()
 
     def cleanup(self):
-        pass
+        raise NotImplementedError()
 
     def get_num_footswitches(self):
-        pass
+        raise NotImplementedError()
+
+    def get_callback(self, callback_name):
+        raise NotImplementedError()
+
+    def set_mod_tap_tempo(self, bpm):
+        raise NotImplementedError()

@@ -23,13 +23,8 @@
 
 import RPi.GPIO as GPIO
 
-import common.token as Token
-import common.util as Util
-
-import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.encoder as Encoder
-import pistomp.encoderswitch as EncoderSwitch
-import pistomp.footswitch as Footswitch
+import pistomp.gpioswitch as gpioswitch
 import pistomp.hardware as hardware
 import pistomp.relay as Relay
 
@@ -82,12 +77,12 @@ class Pistompcore(hardware.Hardware):
         self.reinit(None)
 
     def init_lcd(self):
-        self.mod.add_lcd(Lcd.Lcd(self.mod.homedir, self.mod))
+        self.mod.add_lcd(Lcd.Lcd(self.mod.homedir, self.mod, flip=True))
 
     def init_encoders(self):
         top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=self.mod.universal_encoder_select)
         self.encoders.append(top_enc)
-        enc_sw = EncoderSwitch.EncoderSwitch(1, callback=self.mod.universal_encoder_sw)
+        enc_sw = gpioswitch.GpioSwitch(1, None, None, callback=self.mod.universal_encoder_sw)
         self.encoder_switches.append(enc_sw)
 
     def init_relays(self):

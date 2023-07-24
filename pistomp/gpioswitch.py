@@ -17,25 +17,33 @@ import logging
 import RPi.GPIO as GPIO
 
 import pistomp.controller as controller
+import pistomp.switchstate as switchstate
+import pistomp.taptempo as taptempo
+
 import time
 import queue
 
 class GpioSwitch(controller.Controller):
 
-    def __init__(self, fs_pin, midi_channel, midi_CC):
+    def __init__(self, gpio_input, midi_channel, midi_CC, callback, tap_tempo_callback=None):
         super(GpioSwitch, self).__init__(midi_channel, midi_CC)
-        self.fs_pin = fs_pin
+        self.gpio_input = gpio_input
         self.cur_tstamp = None
         self.events = queue.Queue()
+        self.callback = callback
+        self.taptempo = taptempo.TapTempo(tap_tempo_callback) if tap_tempo_callback else None
 
         # Long press threshold in seconds
         self.long_press_threshold = 0.5
 
-        GPIO.setup(fs_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.add_event_detect(fs_pin, GPIO.FALLING, callback=self._gpio_down, bouncetime=250)
+        GPIO.setup(gpio_input, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        GPIO.add_event_detect(gpio_input, GPIO.FALLING, callback=self._gpio_down, bouncetime=250)
 
     def __del__(self):
-        GPIO.remove_event_detect(self.fs_pin)
+        GPIO.remove_event_detect(self.gpio_input)
+
+    def get_tap_tempo(self):
+        return self.taptempo.get_tap_tempo() if self.taptempo else 0
 
     def _gpio_down(self, gpio):
         # This is run from a separate thread, timestamp pressed and queue an event
@@ -46,7 +54,10 @@ class GpioSwitch(controller.Controller):
         # rising edge callback at all. So let's just timestamp and we'll handle
         # everything from the poller thread
         #
-        self.events.put(time.monotonic())
+        t = time.monotonic()
+        self.events.put(t)
+        if self.taptempo:
+            self.taptempo.stamp(t)
 
     def poll(self):
         # Grab press event if any
@@ -70,12 +81,12 @@ class GpioSwitch(controller.Controller):
         # If it's a long press, process as soon as we reach the threshold, otherwise
         # check the GPIO input
         if time_pressed > self.long_press_threshold:
-            short = False
-        elif GPIO.input(self.fs_pin):
-            short = True
+            state = switchstate.Value.LONGPRESSED
+        elif GPIO.input(self.gpio_input):
+            state = switchstate.Value.RELEASED
         else:
             return
         self.cur_tstamp = None
 
-        logging.debug("Switch %d %s press" % (self.fs_pin, "short" if short else "long"))
-        self.pressed(short)
+        logging.debug("Switch %d %s" % (self.gpio_input, state))
+        self.callback(state)

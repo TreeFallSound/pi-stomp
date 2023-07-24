@@ -29,9 +29,9 @@ from abc import abstractmethod
 
 class Hardware:
 
-    def __init__(self, default_config, mod, midiout, refresh_callback):
+    def __init__(self, default_config, handler, midiout, refresh_callback):
         logging.info("Init hardware: " + type(self).__name__)
-        self.mod = mod
+        self.handler = handler
         self.midiout = midiout
         self.refresh_callback = refresh_callback
         self.spi = None
@@ -138,7 +138,7 @@ class Hardware:
                           % (Token.GPIO_OUTPUT, Token.LEDSTRIP_POSITION))
             sys.exit()
 
-        midi_channel = self.__get_real_midi_channel(cfg)
+        midi_channel = self.get_real_midi_channel(cfg)
         idx = 0
         for f in cfg_fs:
             if Util.DICT_GET(f, Token.DISABLE) is True:
@@ -150,20 +150,37 @@ class Hardware:
             else:
                 gpio_input = Util.DICT_GET(f, Token.GPIO_INPUT)
 
+            adc_input = Util.DICT_GET(f, Token.ADC_INPUT)
             gpio_output = Util.DICT_GET(f, Token.GPIO_OUTPUT)
+            tap_tempo_callback = Util.DICT_GET(f, Token.TAP_TEMPO)
             midi_cc = Util.DICT_GET(f, Token.MIDI_CC)
             id = Util.DICT_GET(f, Token.ID)
             led_position = Util.DICT_GET(f, Token.LEDSTRIP_POSITION)
 
-            if gpio_input is None:
-                logging.error("Switch specified without %s or %s" % (Token.DEBOUNCE_INPUT, Token.GPIO_INPUT))
-                continue
-
             pixel = None
             if self.ledstrip and led_position is not None:
                 pixel = self.ledstrip.add_pixel(id if id else idx, led_position)
-            fs = Footswitch.Footswitch(id if id else idx, gpio_input, gpio_output, pixel, midi_cc, midi_channel,
-                                       self.midiout, refresh_callback=self.refresh_callback)
+
+            # Create the footswitch object
+            if adc_input is None and gpio_input is None:
+                 logging.error("Config file error.  Footswitch specified without %s or %s or %s" %
+                               (Token.DEBOUNCE_INPUT, Token.GPIO_INPUT, Token.ADC_INPUT))
+                 continue
+            if adc_input is not None:
+                fs = Footswitch.Footswitch(id if id else idx, gpio_output, pixel, midi_cc, midi_channel,
+                                           self.midiout, refresh_callback=self.refresh_callback,
+                                           adc_input=adc_input, spi=self.spi,
+                                           tap_tempo_callback=self.handler.get_callback(tap_tempo_callback))
+                logging.info("Created Footswitch on ADC input: %d, Midi Chan: %d, CC: %s" %
+                              (adc_input, midi_channel, midi_cc))
+            elif gpio_input is not None:
+                fs = Footswitch.Footswitch(id if id else idx, gpio_output, pixel, midi_cc, midi_channel,
+                                           self.midiout, refresh_callback=self.refresh_callback,
+                                           gpio_input=gpio_input,
+                                           tap_tempo_callback=self.handler.get_callback(tap_tempo_callback))
+                logging.debug("Created Footswitch on GPIO input: %d, Midi Chan: %d, CC: %s" %
+                              (gpio_input, midi_channel, midi_cc))
+
             self.footswitches.append(fs)
             idx += 1
 
@@ -171,7 +188,7 @@ class Hardware:
         if cfg is None or (Token.HARDWARE not in cfg) or (Token.ANALOG_CONTROLLERS not in cfg[Token.HARDWARE]):
             return
 
-        midi_channel = self.__get_real_midi_channel(cfg)
+        midi_channel = self.get_real_midi_channel(cfg)
         cfg_c = cfg[Token.HARDWARE][Token.ANALOG_CONTROLLERS]
         if cfg_c is None:
             return
@@ -185,10 +202,10 @@ class Hardware:
             control_type = Util.DICT_GET(c, Token.TYPE)
 
             if adc_input is None:
-                logging.error("Analog control specified without %s" % Token.ADC_INPUT)
+                logging.error("Config file error.  Analog control specified without %s" % Token.ADC_INPUT)
                 continue
             if midi_cc is None:
-                logging.error("Analog control specified without %s" % Token.MIDI_CC)
+                logging.error("Config file error.  Analog control specified without %s" % Token.MIDI_CC)
                 continue
             if threshold is None:
                 threshold = 16  # Default, 1024 is full scale
@@ -198,8 +215,10 @@ class Hardware:
             self.analog_controls.append(control)
             key = format("%d:%d" % (midi_channel, midi_cc))
             self.controllers[key] = control
+            logging.debug("Created AnalogMidiControl Input: %d, Midi Chan: %d, CC: %d" %
+                          (adc_input, midi_channel, midi_cc))
 
-    def __get_real_midi_channel(self, cfg):
+    def get_real_midi_channel(self, cfg):
         chan = 0
         try:
             val = cfg[Token.HARDWARE][Token.MIDI][Token.CHANNEL]
@@ -213,7 +232,7 @@ class Hardware:
         self.__init_midi(self.cfg)
 
     def __init_midi(self, cfg):
-        self.midi_channel = self.__get_real_midi_channel(cfg)
+        self.midi_channel = self.get_real_midi_channel(cfg)
         # TODO could iterate thru all objects here instead of handling in __init_footswitches
         for ac in self.analog_controls:
             if isinstance(ac, AnalogMidiControl.AnalogMidiControl):
@@ -271,13 +290,13 @@ class Hardware:
                 if Token.PRESET in f:
                     preset_value = f[Token.PRESET]
                     if preset_value == Token.UP:
-                        fs.add_preset(callback=self.mod.preset_incr_and_change)
+                        fs.add_preset(callback=self.handler.preset_incr_and_change)
                         fs.set_display_label("Pre+")
                     elif preset_value == Token.DOWN:
-                        fs.add_preset(callback=self.mod.preset_decr_and_change)
+                        fs.add_preset(callback=self.handler.preset_decr_and_change)
                         fs.set_display_label("Pre-")
                     elif isinstance(preset_value, int):
-                        fs.add_preset(callback=self.mod.preset_set_and_change, callback_arg=preset_value)
+                        fs.add_preset(callback=self.handler.preset_set_and_change, callback_arg=preset_value)
                         fs.set_display_label(str(preset_value))
 
                 # LCD/LED attributes
