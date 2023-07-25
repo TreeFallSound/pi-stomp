@@ -31,6 +31,7 @@ sudo pip3 install pycrypto
 sudo pip3 install tornado==4.3
 sudo pip3 install Pillow==8.4.0
 sudo pip3 install cython
+sudo pip3 install pyliblo3
 
 #Install Mod Software
 mkdir -p /home/pistomp/data/.pedalboards
@@ -86,7 +87,7 @@ pushd amidithru
 sed -i 's/CXX=g++.*/CXX=g++/' Makefile
 sudo make install
 
-pushd $(mktemp -d) && git clone https://github.com/BlokasLabs/touchosc2midi.git
+pushd $(mktemp -d) && git clone https://github.com/micahvdm/touchosc2midi.git
 pushd touchosc2midi
 sudo pip3 install ./
 
