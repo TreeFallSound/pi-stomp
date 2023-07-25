@@ -18,6 +18,8 @@ import pistomp.config as config
 
 import pistomp.pistomp as Pistomp
 import pistomp.pistompcore as Pistompcore
+import pistomp.pistomptre as Pistomptre
+
 
 class Hardwarefactory:
     __single = None
@@ -35,3 +37,5 @@ class Hardwarefactory:
             return Pistomp.Pistomp(self.cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
         elif (version >= 2.0) and (version < 3.0):
             return Pistompcore.Pistompcore(self.cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
+        elif (version >= 3.0) and (version < 4.0):
+            return Pistomptre.Pistomptre(self.cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)

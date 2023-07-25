@@ -13,72 +13,50 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import busio
-import digitalio
-import board
-import adafruit_mcp3xxx.mcp3008 as MCP
-from adafruit_mcp3xxx.analog_in import AnalogIn
-from enum import Enum
-
-
+import time
 import pistomp.analogcontrol as analogcontrol
+import pistomp.switchstate as switchstate
+import pistomp.taptempo as taptempo
 
-class Value(Enum):
-    DEFAULT = 0
-    PRESSED = 1
-    RELEASED = 2
-    LONGPRESSED = 3
-    CLICKED = 4
-    DOUBLECLICKED = 5
-
-LONGPRESS_THRESHOLD = 60  # TODO somewhat LAME.  It's dependent on the refresh frequency of the main loop
+LONG_PRESS_TIME = 0.5    # Hold seconds which defines a long press
+FALLING_THRESHOLD = 800  # ASSUMES 10-bit ADC, can be changed for debounce handling
 
 class AnalogSwitch(analogcontrol.AnalogControl):
 
-    def __init__(self, spi, adc_channel, tolerance, callback):
+    def __init__(self, spi, adc_channel, tolerance, callback, tap_tempo_callback=None):
         super(AnalogSwitch, self).__init__(spi, adc_channel, tolerance)
-        self.value = None          # this keeps track of the last value
-        self.trigger_count = 0
+        #self.value = None          # this keeps track of the last value, do we still need this?
         self.callback = callback
-        self.longpress_state = False
+        self.state = switchstate.Value.RELEASED
+        self.start_time = 0
+        self.duration = 0
+        self.taptempo = taptempo.TapTempo(tap_tempo_callback) if tap_tempo_callback else None
+
+    def get_tap_tempo(self):
+        return self.taptempo.get_tap_tempo() if self.taptempo else 0
 
     # Override of base class method
     def refresh(self):
-        # read the analog pin
+        # read the analog channel
         new_value = self.readChannel()
 
-        # if last read is None, this is the first refresh so don't do anything yet
-        if self.value is None:
-            self.value = new_value
-            return
-
-        # how much has it changed since the last read?
-        pot_adjust = abs(new_value - self.value)
-        value_changed = (pot_adjust > self.tolerance)
-
-        # Count the number of simultaneous refresh cycles had the switch Low (triggered)
-        if not self.longpress_state and new_value < self.tolerance and self.value < self.tolerance:
-            self.trigger_count += 1
-            if self.trigger_count > LONGPRESS_THRESHOLD:
-                value_changed = True
-                self.longpress_state = True
-
-        if value_changed:
-
-            # save the potentiometer reading for the next loop
-            self.value = new_value
-
-            if self.trigger_count > LONGPRESS_THRESHOLD:
-                new_value = Value.LONGPRESSED
-            elif new_value < self.tolerance:
-                new_value = Value.PRESSED
-            elif new_value >= self.tolerance:
-                if self.longpress_state:
-                    self.longpress_state = False
-                    self.trigger_count = 0
-                    return
-                else:
-                    new_value = Value.RELEASED
-            self.trigger_count = 0
-
-            self.callback(new_value)
+        if new_value <= FALLING_THRESHOLD:
+            # switch pressed
+            if self.state is switchstate.Value.RELEASED:
+                self.state = switchstate.Value.PRESSED
+                self.start_time = time.monotonic()
+                if self.taptempo:
+                    self.taptempo.stamp(self.start_time)
+            elif self.state is not switchstate.Value.LONGPRESSED:
+                # not longpress yet, but check how long
+                self.duration = time.monotonic() - self.start_time
+                if self.duration >= LONG_PRESS_TIME:
+                    self.state = switchstate.Value.LONGPRESSED
+                    self.callback(switchstate.Value.LONGPRESSED)
+        elif new_value > FALLING_THRESHOLD:
+            # switch released
+            if self.state is switchstate.Value.PRESSED:
+                self.state = switchstate.Value.RELEASED
+                self.callback(switchstate.Value.RELEASED)
+            elif self.state is switchstate.Value.LONGPRESSED:
+                self.state = switchstate.Value.RELEASED

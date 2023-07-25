@@ -28,6 +28,8 @@ class Controller:
         self.parameter = None
         self.hardware_name = None
         self.type = None
+        self.midi_min = 0
+        self.midi_max = 127
 
     def to_json(self):
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)

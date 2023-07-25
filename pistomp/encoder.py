@@ -52,7 +52,7 @@ class Encoder:
             with self._lock:
                 self.direction += d
 
-    def __init__(self, d_pin, clk_pin, callback, use_interrupt = True):
+    def __init__(self, d_pin, clk_pin, callback, use_interrupt = True, **kw):
 
         self.d_pin = d_pin
         self.clk_pin = clk_pin
@@ -74,6 +74,8 @@ class Encoder:
 
         # 16 possible grey codes.  1=Valid, 0=Invalid (bounce)
         self.rot_enc_table = [0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0]
+
+        super(Encoder, self).__init__(**kw)
 
     def __del__(self):
         GPIO.remove_event_detect(self._gpio_callback)

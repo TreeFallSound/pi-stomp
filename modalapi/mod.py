@@ -19,13 +19,11 @@ import os
 import requests as req
 import subprocess
 import sys
-import time
 import yaml
 
 import common.token as Token
 import common.util as util
-import pistomp.analogswitch as AnalogSwitch
-import pistomp.encoderswitch as EncoderSwitch
+import pistomp.switchstate as switchstate
 import modalapi.pedalboard as Pedalboard
 import modalapi.parameter as Parameter
 import modalapi.wifi as Wifi
@@ -144,10 +142,17 @@ class Mod(Handler):
 
         self.wifi_manager = Wifi.WifiManager()
 
+        # Callback function map.  Key is the user specified name, value is function from this handler
+        self.callbacks = {"set_mod_tap_tempo": self.set_mod_tap_tempo}
+
     def __del__(self):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
+
+    def cleanup(self):
+        if self.lcd is not None:
+            self.lcd.cleanup()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -188,7 +193,7 @@ class Mod(Handler):
     def top_encoder_sw(self, value):
         # State machine for top rotary encoder
         mode = self.top_encoder_mode
-        if value == AnalogSwitch.Value.RELEASED:
+        if value == switchstate.Value.RELEASED:
             if mode == TopEncoderMode.PRESET_SELECT:
                 self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
             elif mode == TopEncoderMode.PEDALBOARD_SELECT:
@@ -212,7 +217,7 @@ class Mod(Handler):
                 else:
                     self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECT
             self.update_lcd_title()
-        elif value == AnalogSwitch.Value.LONGPRESSED:
+        elif value == switchstate.Value.LONGPRESSED:
             if mode == TopEncoderMode.DEFAULT:
                 self.top_encoder_mode = TopEncoderMode.SYSTEM_MENU
                 self.system_menu_show()
@@ -243,14 +248,14 @@ class Mod(Handler):
                 self.top_encoder_mode == TopEncoderMode.INPUT_GAIN):
             return  # Ignore bottom encoder if top encoder has navigated to the system menu
         mode = self.bot_encoder_mode
-        if value == AnalogSwitch.Value.RELEASED:
+        if value == switchstate.Value.RELEASED:
             if mode == BotEncoderMode.DEFAULT:
                 self.toggle_plugin_bypass()
             elif mode == BotEncoderMode.DEEP_EDIT:
                 self.menu_action()
             #elif mode == BotEncoderMode.VALUE_EDIT:
             #    self.parameter_value_change()
-        elif value == AnalogSwitch.Value.LONGPRESSED:
+        elif value == switchstate.Value.LONGPRESSED:
             if mode == BotEncoderMode.DEFAULT or BotEncoderMode.VALUE_EDIT:
                 self.bot_encoder_mode = BotEncoderMode.DEEP_EDIT
                 self.parameter_edit_show()
@@ -278,7 +283,7 @@ class Mod(Handler):
     def universal_encoder_sw(self, value):
         # State machine for universal rotary encoder switch
         mode = self.universal_encoder_mode
-        if value == EncoderSwitch.Value.RELEASED:
+        if value == switchstate.Value.RELEASED:
             if mode == UniversalEncoderMode.DEFAULT:
                 self.universal_encoder_mode = UniversalEncoderMode.SCROLL
             elif mode == UniversalEncoderMode.SCROLL:
@@ -337,7 +342,7 @@ class Mod(Handler):
                 self.universal_encoder_mode = UniversalEncoderMode.DEEP_EDIT
                 self.parameter_edit_show(self.selected_menu_index)
 
-        elif value == EncoderSwitch.Value.LONGPRESSED:
+        elif value == switchstate.Value.LONGPRESSED:
             if mode == UniversalEncoderMode.VALUE_EDIT or (mode == UniversalEncoderMode.SCROLL and
                     self.selectable_items[self.selectable_index][0] == SelectedType.PLUGIN):
                 self.universal_encoder_mode = UniversalEncoderMode.DEEP_EDIT
@@ -1154,6 +1159,23 @@ class Mod(Handler):
                 # Update LED
                 footswitch.set_value(int(not relay.enabled))
 
+    def get_callback(self, callback_name):
+        return util.DICT_GET(self.callbacks, callback_name)
+
+    def set_mod_tap_tempo(self, bpm):
+        try:
+            resp = None
+            if bpm is not None:
+                url = self.root_uri + "set_bpm"
+                resp = req.post(url, json={"value": bpm})
+            if resp.status_code != 200:
+                logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
+            else:
+                logging.debug("BPM changed to: %d" % bpm)
+        except:
+            logging.debug("status: %s" % resp.status_code)
+            return resp.status_code
+
     #
     # Parameter Edit
     #
@@ -1255,7 +1277,7 @@ class Mod(Handler):
     def update_lcd_plugins(self):
         self.lcd.draw_plugins(self.current.pedalboard.plugins)
 
-    def update_lcd_fs(self, bypass_change=False):
+    def update_lcd_fs(self, footswitch=None, bypass_change=False):
         if bypass_change:
             self.lcd.update_bypass(self.hardware.relay.enabled)
         self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)

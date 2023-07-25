@@ -17,16 +17,21 @@ import logging
 import RPi.GPIO as GPIO
 from rtmidi.midiconstants import CONTROL_CHANGE
 
+import common.token as Token
+import pistomp.controller as controller
+import pistomp.analogswitch as analogswitch
 import pistomp.gpioswitch as gpioswitch
+import pistomp.switchstate as switchstate
 
-class Footswitch(gpioswitch.GpioSwitch):
 
-    def __init__(self, id, fs_pin, led_pin, pixel, midi_CC, midi_channel, midiout, refresh_callback):
-        super(Footswitch, self).__init__(fs_pin, midi_channel, midi_CC)
+class Footswitch(controller.Controller):
+
+    def __init__(self, id, led_pin, pixel, midi_CC, midi_channel, midiout, refresh_callback,
+                 gpio_input=None, adc_input=None, spi=None, tap_tempo_callback=None):
+        super(Footswitch, self).__init__(midi_channel, midi_CC)
         self.id = id
         self.display_label = None
         self.enabled = False
-        self.fs_pin = fs_pin
         self.led_pin = led_pin
         self.midiout = midiout
         self.refresh_callback = refresh_callback
@@ -36,6 +41,14 @@ class Footswitch(gpioswitch.GpioSwitch):
         self.lcd_color = None
         self.category = None
         self.pixel = pixel
+
+        if adc_input and gpio_input:
+            logging.error("Switch cannot be specified with both %s and %s", (Token.adc_input, Token.gpio_input))
+
+        self.gpio_switch = gpioswitch.GpioSwitch(gpio_input, midi_channel, midi_CC, self.pressed,
+                                                 tap_tempo_callback=tap_tempo_callback) if gpio_input else None
+        self.adc_switch = analogswitch.AnalogSwitch(spi, adc_input, 800, self.pressed,
+                                                    tap_tempo_callback=tap_tempo_callback) if adc_input else None
 
         if led_pin is not None:
             GPIO.setup(led_pin, GPIO.OUT)
@@ -67,7 +80,19 @@ class Footswitch(gpioswitch.GpioSwitch):
     def set_lcd_color(self, color):
         self.lcd_color = color
 
-    def pressed(self, short):
+    def get_tap_tempo(self):
+        if self.adc_switch:
+            return self.adc_switch.get_tap_tempo()
+        if self.gpio_switch:
+            return self.gpio_switch.get_tap_tempo()
+
+    def poll(self):
+        if self.adc_switch:
+            self.adc_switch.refresh()
+        elif self.gpio_switch:
+            self.gpio_switch.poll()
+
+    def pressed(self, state):
         # If a footswitch can be mapped to control a relay, preset, MIDI or all 3
         #
         # The footswitch will only "toggle" if it's associated with a relay
@@ -75,9 +100,10 @@ class Footswitch(gpioswitch.GpioSwitch):
         #
         new_enabled = not self.enabled
 
-        # Update Relay (if relay is associated with this footswitch)
-        if len(self.relay_list) > 0:
-            if short is False:
+        # First handle Longpress Events
+        if state is switchstate.Value.LONGPRESSED:
+            # Update Relay (if relay is associated with this footswitch)
+            if len(self.relay_list) > 0:
                 # Pin kept low (long press)
                 # toggle the relay and LED, exit this method
                 self.enabled = new_enabled
@@ -88,7 +114,9 @@ class Footswitch(gpioswitch.GpioSwitch):
                         r.disable()
                 self._set_led(self.enabled)
                 self.refresh_callback(True)  # True means this is a bypass change only
-                return
+            return
+
+        # Now short Press Events
 
         # If mapped to preset change
         if self.preset_callback is not None:
@@ -106,7 +134,7 @@ class Footswitch(gpioswitch.GpioSwitch):
             # Update LED
             self._set_led(self.enabled)
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.enabled else 0]
-            logging.debug("Sending CC event: %d %s" % (self.midi_CC, self.fs_pin))
+            logging.debug("Sending CC event: %d" % self.midi_CC)
             self.midiout.send_message(cc)
 
         # Update plugin parameter if any
