@@ -23,6 +23,7 @@ fi
 
 # Pyyml
 sudo /usr/bin/pip3 install pyyaml
+sudo /usr/bin/pip3 install jsonschema
 
 # For diagnostic test mode
 sudo /usr/bin/pip3 install pyalsaaudio
