@@ -377,9 +377,10 @@ class Modhandler(Handler):
             return resp.status_code
 
     def parameter_midi_change(self, param, direction):
-        d = self.lcd.draw_parameter_dialog(param)
-        if d:
-            self.lcd.enc_step_widget(d, direction)
+        if param:
+            d = self.lcd.draw_parameter_dialog(param)
+            if d:
+                self.lcd.enc_step_widget(d, direction)
 
     #
     # System Menu
