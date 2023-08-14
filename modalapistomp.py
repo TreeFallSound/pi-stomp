@@ -79,9 +79,6 @@ def main():
 
     if args.host[0] == 'mod':
 
-        #restore Aux jack as soon as possible
-        os.system('sudo amixer sset "AUX Jack" unmute')
-
         # Create singleton Mod handler
         handler = Mod.Mod(audiocard, cwd)
 

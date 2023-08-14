@@ -16,7 +16,9 @@
 import logging
 import mmap
 import os
+import re
 import subprocess
+from enum import Enum
 
 
 class Audiocard:
@@ -28,8 +30,17 @@ class Audiocard:
         self.initial_config_file = None  # use this if common config_file loading fails
         self.initial_config_name = None
         self.card_index = 0
-        self.CAPTURE_VOLUME = 'Capture'
-        self.MASTER = 'Master'
+
+        # Superset of Alsa parameters for all cards (None == not supported)
+        # Override in subclass with actual name
+        self.CAPTURE_VOLUME = None
+        self.DAC_EQ = None
+        self.EQ_1 = None
+        self.EQ_2 = None
+        self.EQ_3 = None
+        self.EQ_4 = None
+        self.EQ_5 = None
+        self.MASTER = None
 
     def restore(self):
         # If the global config_file either doesn't exist, doesn't contain the name of our audiocard, or fails restore,
@@ -66,33 +77,74 @@ class Audiocard:
         except:
             logging.error("Failed trying to store audio card settings to: %s" % self.config_file)
 
-    def get_parameter(self, param_name):
-        val_str = 0
-        value = 0
+    def _amixer_sget(self, param_name):
         cmd = "amixer -c %d -- sget '%s'" % (self.card_index, param_name)
         try:
             output = subprocess.check_output(cmd, shell=True)
         except subprocess.CalledProcessError:
             logging.error("Failed trying to get audio card parameter")
-            return value
-        s = output.decode()
-        # TODO kinda lame screenscrape here for the last value eg. [0.58dB] then strip off the []'s and db
-        res = s.rfind('dB]')
-        if res > 0:
-            start = s.rfind('[', 0, res)
-            val_str = s[start+1:res-3]
-        try:
-            value = float(val_str)
-        except:
-            pass
-        return value
+            return None
+        return output.decode()
 
-    def set_parameter(self, param_name, value):
-        cmd = "amixer -c %d -q -- sset '%s' '%ddb'" % (self.card_index, param_name, value)
+    def _amixer_sset(self, param_name, value, store):
+        # when store is False settings will not be persisted between sessions unless an explicit call
+        # to store() is made
+        # setting to False is good when you want to set a bunch of things, then store
+        cmd = "amixer -c %d -q -- sset '%s' '%s'" % (self.card_index, param_name, value)
         try:
             subprocess.check_output(cmd, shell=True)
         except subprocess.CalledProcessError:
             logging.error("Failed trying to set audio card parameter")
-        self.store()
+            return False
+        if store:
+            self.store()
+        return True
 
+    #
+    # Use the following get and set methods depending on the value type
+    #
+    def get_volume_parameter(self, param_name):
+        # for fader controls with values in dB, returns a float
+        if param_name is None:
+            return float(0)
+        s = self._amixer_sget(param_name)
+        pattern = r': (\d+) \[(\d+%)\] \[(-?\d+\.\d+)dB\]'
+        matches = re.search(pattern, s)
+        if matches:
+            return round(float(matches.group(3)), 1)
+        return float(0)
+
+    def get_switch_parameter(self, param_name):
+        # for switch/mute type controls, returns a boolean
+        if param_name is None:
+            return False
+        s = self._amixer_sget(param_name)
+        pattern = r': (.*) \[(on|off)\]'
+        matches = re.search(pattern, s)
+        if matches:
+            return bool("on" == matches.group(2))
+        return False
+
+    def get_enum_parameter(self, param_name):
+        # for enum/selection type controls, returns a string
+        if param_name is None:
+            return None
+        s = self._amixer_sget(param_name)
+        pattern = r"Item0: '(.+)'"
+        matches = re.search(pattern, s)
+        if matches:
+            return matches.group(1)
+        return None
+
+    def set_volume_parameter(self, param_name, value, store=True):
+        # value expected to be a number (int or float)
+        return self._amixer_sset(param_name, str(value) + "db", store)
+
+    def set_switch_parameter(self, param_name, value, store=True):
+        # value expected to be a boolean
+        return self._amixer_sset(param_name, "on" if value else "off", store)
+
+    def set_enum_parameter(self, param_name, value, store=True):
+        # value expected to be a string (specifically one of the enum choices for the parameter)
+        return self._amixer_sset(param_name, str(value), store)
 
