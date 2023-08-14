@@ -803,15 +803,8 @@ class Mod(Handler):
         except subprocess.CalledProcessError:
             logging.error("Cannot obtain git software tag info")
 
-        self.eq_status = False
-        try:
-            output = subprocess.check_output(["amixer", "get", "DAC EQ"])
-            if "on" in output.decode("utf-8"):
-                self.eq_status = True
-        except subprocess.CalledProcessError as e:
-            logging.info("Cannot access EQ on audio card. Assuming card doesn't support global EQ")
-        finally:
-            self.lcd.update_eq(self.eq_status)
+        self.eq_status = self.audiocard.get_switch_parameter(self.audiocard.DAC_EQ)
+        self.lcd.update_eq(self.eq_status)
 
     def system_menu_show(self):
         self.current_menu = MenuType.MENU_SYSTEM
@@ -892,11 +885,7 @@ class Mod(Handler):
         self.lcd.menu_highlight(0)
         
     def system_audio_menu(self):
-        output = subprocess.check_output(["amixer", "get", "DAC EQ"])
-        if "off" in output.decode("utf-8"):
-            eq_status = False
-        else:
-            eq_status = True
+        eq_status = self.audiocard.get_switch_parameter(self.audiocard.DAC_EQ)
         if eq_status:
             self.current_menu = MenuType.MENU_AUDIO
             self.lcd.menu_show("Audio Options", self.menu_items)
@@ -927,11 +916,7 @@ class Mod(Handler):
 
     def menu_global_eq_toggle(self):
         self.lcd.menu_show("Audio Options", self.menu_items)
-        output = subprocess.check_output(["amixer", "get", "DAC EQ"])
-        if "off" in output.decode("utf-8"):
-            eq_status = False
-        else:
-            eq_status = True
+        eq_status = self.audiocard.get_switch_parameter(self.audiocard.DAC_EQ)
         self.menu_items.pop("Enable Global EQ", None)
         self.menu_items.pop("Disable Global EQ", None)
         if eq_status:
@@ -940,33 +925,36 @@ class Mod(Handler):
             self.menu_items["Enable Global EQ"] = {Token.NAME: "", Token.ACTION: self.system_enable_eq}
 
     def reset_eq_values(self):
-        os.system('sudo amixer sset "DAC EQ1" 13') # This sets the gain the same as with the EQ disabled
-        os.system('sudo amixer sset "DAC EQ2" 13')
-        os.system('sudo amixer sset "DAC EQ3" 13')
-        os.system('sudo amixer sset "DAC EQ4" 13')
-        os.system('sudo amixer sset "DAC EQ5" 13')
-        os.system('sudo alsactl store')
-        self.lcd.draw_info_message("EQ Bands reset")
+        # This sets the gain the same as with the EQ disabled (+9dB)
+        self.lcd.draw_info_message("EQ Bands reset...")
+        self.audiocard.set_volume_parameter(self.audiocard.EQ_1, 9, store=False)
+        self.audiocard.set_volume_parameter(self.audiocard.EQ_2, 9, store=False)
+        self.audiocard.set_volume_parameter(self.audiocard.EQ_3, 9, store=False)
+        self.audiocard.set_volume_parameter(self.audiocard.EQ_4, 9, store=False)
+        self.audiocard.set_volume_parameter(self.audiocard.EQ_5, 9, store=False)
+        self.audiocard.store()
         self.system_info_update_eq()
         self.lcd.menu_highlight(0)
 
     def system_disable_eq(self):
-        os.system('sudo amixer sset "DAC EQ" mute')
-        os.system('sudo alsactl store')
         self.lcd.draw_info_message("Disabling, please wait...")
-        self.eq_status = False
+        success = self.audiocard.set_switch_parameter(self.audiocard.DAC_EQ, False)
+        if success:
+            self.eq_status = False
         self.system_info_update_eq()
 
     def system_enable_eq(self):
-        os.system('sudo amixer sset "DAC EQ" unmute')
-        os.system('sudo alsactl store')
         self.lcd.draw_info_message("Enabling, please wait...")
-        self.eq_status = True
+        success = self.audiocard.set_switch_parameter(self.audiocard.DAC_EQ, True)
+        if success:
+            self.eq_status = True
         self.system_info_update_eq()
     
     def system_toggle_eq(self):
-        os.system('sudo amixer sset "DAC EQ" toggle')
-        os.system('sudo alsactl store')
+        to_status = not self.eq_status
+        success = self.audiocard.set_volume_parameter(self.audiocard.DAC_EQ, to_status)
+        if success:
+            self.eq_status = to_status
 
     def system_info_update_eq(self):
         self.menu_global_eq_toggle()
@@ -1076,7 +1064,7 @@ class Mod(Handler):
         title = "Headphone Volume"
         self.top_encoder_mode = TopEncoderMode.HEADPHONE_VOLUME
         self.universal_encoder_mode = UniversalEncoderMode.HEADPHONE_VOLUME
-        info = {"shortName": title, "symbol": "hvol", "ranges": {"minimum": -25.75, "maximum": 6}}
+        info = {"shortName": title, "symbol": "hvol", "ranges": {"minimum": -32.0, "maximum": 6}}
         self.system_menu_parameter(title, self.audiocard.MASTER, info)
 
     def system_menu_eq1_volume(self):
@@ -1110,7 +1098,7 @@ class Mod(Handler):
         self.system_menu_parameter(title, self.audiocard.EQ_5, info)
 
     def system_menu_parameter(self, title, param_name, info):
-        value = self.audiocard.get_parameter(param_name)
+        value = self.audiocard.get_volume_parameter(param_name)
         self.deep = self.Deep(None)
         param = Parameter.Parameter(info, value, None)
         self.deep.selected_parameter = param
@@ -1118,25 +1106,25 @@ class Mod(Handler):
         self.lcd.draw_info_message(title)
 
     def input_gain_commit(self):
-        self.audiocard.set_parameter(self.audiocard.CAPTURE_VOLUME, self.deep.selected_parameter.value)
+        self.audiocard.set_volume_parameter(self.audiocard.CAPTURE_VOLUME, self.deep.selected_parameter.value)
 
     def headphone_volume_commit(self):
-        self.audiocard.set_parameter(self.audiocard.MASTER, self.deep.selected_parameter.value)
+        self.audiocard.set_volume_parameter(self.audiocard.MASTER, self.deep.selected_parameter.value)
 
     def eq1_gain_commit(self):
-        self.audiocard.set_parameter(self.audiocard.EQ_1, self.deep.selected_parameter.value)
+        self.audiocard.set_volume_parameter(self.audiocard.EQ_1, self.deep.selected_parameter.value)
 
     def eq2_gain_commit(self):
-        self.audiocard.set_parameter(self.audiocard.EQ_2, self.deep.selected_parameter.value)
+        self.audiocard.set_volume_parameter(self.audiocard.EQ_2, self.deep.selected_parameter.value)
 
     def eq3_gain_commit(self):
-        self.audiocard.set_parameter(self.audiocard.EQ_3, self.deep.selected_parameter.value)
+        self.audiocard.set_volume_parameter(self.audiocard.EQ_3, self.deep.selected_parameter.value)
 
     def eq4_gain_commit(self):
-        self.audiocard.set_parameter(self.audiocard.EQ_4, self.deep.selected_parameter.value)
+        self.audiocard.set_volume_parameter(self.audiocard.EQ_4, self.deep.selected_parameter.value)
 
     def eq5_gain_commit(self):
-        self.audiocard.set_parameter(self.audiocard.EQ_5, self.deep.selected_parameter.value)
+        self.audiocard.set_volume_parameter(self.audiocard.EQ_5, self.deep.selected_parameter.value)
 
     def system_toggle_bypass(self):
         relay = self.hardware.relay
