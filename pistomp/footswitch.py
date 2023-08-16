@@ -25,6 +25,10 @@ import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
 import common.util as util
 
+class LongpressInfo:
+    def __init__(self):
+        self.number_in_group = 0
+        self.timestamps = dict()
 
 class Footswitch(controller.Controller):
 
@@ -32,8 +36,48 @@ class Footswitch(controller.Controller):
     # The group name serves dual purpose for linking two footswithes and as a key for looking up the callback
     # So each entry should have a corresponding entry in the handler callbacks dict
     # Only these can be used as callbacks.  Any other specified by the user will result in no action.
-    all_longpress_groups = {"next_snapshot":dict(),
-                            "previous_snapshot":dict()}
+    all_longpress_groups = {"next_snapshot":LongpressInfo(),
+                            "previous_snapshot":LongpressInfo()}
+
+    # Static list of possible callbacks from the handler, set using set_class_callbacks()
+    callbacks = {}
+
+    @classmethod
+    def set_class_callbacks(cls, callbacks):
+        if len(cls.callbacks) == 0:
+            cls.callbacks = callbacks  # singleton action, only need to call once for all fs's.
+
+    @classmethod
+    def check_longpress_events(cls):
+        # This should get called once per polling cycle.
+        for (group, info) in cls.all_longpress_groups.items():
+            num_ts = len(info.timestamps)
+            # check for group longpress events (two timestamps, same group within a window were logged)
+            if num_ts > 1:
+                last = info.timestamps.popitem()[1]
+                first = info.timestamps.popitem()[1]
+                if abs(last - first) < 0.4:  # Threshold for longpress events to be considered "simultaneous"
+                    callback = util.DICT_GET(cls.callbacks, group)
+                    if callback:
+                        logging.debug("Calling %s" % group)
+                        cls._clear_all_groups()
+                        callback()
+            # check single longpress events (just one timestamp currently logged and the group requires only one fs)
+            elif num_ts == 1 and info.number_in_group == 1:
+                now = time.monotonic()
+                v = list(info.timestamps.values())[0]
+                if now >= v + 0.4:
+                     # by this time, a second footswitch from a group member has expired, consider it a single
+                     callback = util.DICT_GET(cls.callbacks, group)
+                     if callback:
+                         logging.debug("Calling %s" % group)
+                         callback()
+                     cls._clear_all_groups()
+
+    @classmethod
+    def _clear_all_groups(cls):
+        for (g, info) in cls.all_longpress_groups.items():
+            info.timestamps.clear()
 
     def __init__(self, id, led_pin, pixel, midi_CC, midi_channel, midiout, refresh_callback,
                  gpio_input=None, adc_input=None, spi=None, tap_tempo_callback=None):
@@ -51,7 +95,6 @@ class Footswitch(controller.Controller):
         self.category = None
         self.pixel = pixel
         self.longpress_groups = []
-        self.callbacks = {}
 
         if adc_input and gpio_input:
             logging.error("Switch cannot be specified with both %s and %s", (Token.adc_input, Token.gpio_input))
@@ -99,12 +142,16 @@ class Footswitch(controller.Controller):
 
     def set_longpress_groups(self, groups):
         if isinstance(groups, str):
-            self.longpress_groups = groups.split()
+            groups = groups.split()
         if isinstance(groups, list):
             self.longpress_groups = groups
+            for g in groups:
+                info = util.DICT_GET(self.all_longpress_groups, g)
+                if info is not None:
+                    info.number_in_group += 1
 
     def set_callbacks(self, callbacks):
-        self.callbacks = callbacks
+        Footswitch.set_class_callbacks(callbacks)
 
     def poll(self):
         if self.adc_switch:
@@ -112,23 +159,17 @@ class Footswitch(controller.Controller):
         elif self.gpio_switch:
             self.gpio_switch.poll()
 
-    def check_group_events(self):
+    def _log_longpress_events(self):
         # for each group this footswitch is assigned to, keep track of longpress timestamps per group.
-        # when two footswitches assigned to the same group are longpressed within the same time window,
-        # call the callback which is looked up in the callbacks dictionary.
-
+        if len(self.longpress_groups) == 0:
+            return
+        now = time.monotonic()
         for group in self.longpress_groups:
-            timestamps = util.DICT_GET(self.all_longpress_groups, group)
-            if timestamps is None:
+            info = util.DICT_GET(self.all_longpress_groups, group)
+            if info is None:
                 continue
-            timestamps.update({self.id: time.monotonic()})
-            if len(timestamps) > 1:
-                last = timestamps.popitem()[1]
-                first = timestamps.popitem()[1]
-                if abs(last - first) < 0.3:  # Threshold for longpress events to be considered "simultaneous"
-                    callback = util.DICT_GET(self.callbacks, group)
-                    if callback:
-                        callback()
+            logging.debug("longpress event logged")
+            info.timestamps.update({self.id: now})
 
     def pressed(self, state):
         # If a footswitch can be mapped to control a relay, preset, MIDI or all 3
@@ -140,7 +181,6 @@ class Footswitch(controller.Controller):
 
         # First handle Longpress Events
         if state is switchstate.Value.LONGPRESSED:
-            self.check_group_events()
             # Update Relay (if relay is associated with this footswitch)
             if len(self.relay_list) > 0:
                 # Pin kept low (long press)
@@ -153,6 +193,9 @@ class Footswitch(controller.Controller):
                         r.disable()
                 self._set_led(self.enabled)
                 self.refresh_callback(True)  # True means this is a bypass change only
+            else:
+                # TODO consider case where relay and longpress are specified
+                self._log_longpress_events()
             return
 
         # Now short Press Events

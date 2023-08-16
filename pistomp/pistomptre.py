@@ -90,7 +90,7 @@ class Pistomptre(hardware.Hardware):
 
         self.init_analog_controls()
 
-        self.reinit(None)
+        #self.reinit(None)  # TODO do we still need this?  Maybe after pb load?  mappings?
 
     def init_lcd(self):
         self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler, flip=False))

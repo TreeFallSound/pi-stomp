@@ -75,6 +75,8 @@ class Hardware:
             s.poll()
         for s in self.footswitches:
             s.poll()
+        if s:
+            s.check_longpress_events()
 
     def reinit(self, cfg):
         # reinit hardware as specified by the new cfg context (after pedalboard change, etc.)
@@ -303,10 +305,12 @@ class Hardware:
                 if Token.COLOR in f:
                     fs.set_lcd_color(f[Token.COLOR])
 
-                # Longpress groups
-                if Token.LONGPRESS_GROUPS in f:  # Can be a list or a single (string)
-                    fs.set_longpress_groups(Util.DICT_GET(f, Token.LONGPRESS_GROUPS))
-
-                fs.set_callbacks(self.handler.callbacks)
+                # Longpress and longpress groups
+                if Token.LONGPRESS in f:  # Can be a list or a single (string)
+                    fs.set_longpress_groups(Util.DICT_GET(f, Token.LONGPRESS))
 
             idx += 1
+
+        # Do this only once not for each fs
+        if fs:
+            fs.set_callbacks(self.handler.callbacks)

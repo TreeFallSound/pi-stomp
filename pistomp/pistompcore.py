@@ -74,7 +74,7 @@ class Pistompcore(hardware.Hardware):
 
         self.init_analog_controls()
 
-        self.reinit(None)
+        #self.reinit(None)
 
     def init_lcd(self):
         self.mod.add_lcd(Lcd.Lcd(self.mod.homedir, self.mod, flip=True))
