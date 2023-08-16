@@ -75,6 +75,8 @@ class Hardware:
             s.poll()
         for s in self.footswitches:
             s.poll()
+        if s:
+            s.check_longpress_events()
 
     def reinit(self, cfg):
         # reinit hardware as specified by the new cfg context (after pedalboard change, etc.)
@@ -171,7 +173,7 @@ class Hardware:
                                            self.midiout, refresh_callback=self.refresh_callback,
                                            adc_input=adc_input, spi=self.spi,
                                            tap_tempo_callback=self.handler.get_callback(tap_tempo_callback))
-                logging.info("Created Footswitch on ADC input: %d, Midi Chan: %d, CC: %s" %
+                logging.debug("Created Footswitch on ADC input: %d, Midi Chan: %d, CC: %s" %
                               (adc_input, midi_channel, midi_cc))
             elif gpio_input is not None:
                 fs = Footswitch.Footswitch(id if id else idx, gpio_output, pixel, midi_cc, midi_channel,
@@ -303,4 +305,12 @@ class Hardware:
                 if Token.COLOR in f:
                     fs.set_lcd_color(f[Token.COLOR])
 
+                # Longpress and longpress groups
+                if Token.LONGPRESS in f:  # Can be a list or a single (string)
+                    fs.set_longpress_groups(Util.DICT_GET(f, Token.LONGPRESS))
+
             idx += 1
+
+        # Do this only once not for each fs
+        if fs:
+            fs.set_callbacks(self.handler.callbacks)

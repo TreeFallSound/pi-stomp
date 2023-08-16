@@ -143,7 +143,11 @@ class Mod(Handler):
         self.wifi_manager = Wifi.WifiManager()
 
         # Callback function map.  Key is the user specified name, value is function from this handler
-        self.callbacks = {"set_mod_tap_tempo": self.set_mod_tap_tempo}
+        # Used for calling handler callbacks pointed to by names which may be user set in the config file
+        self.callbacks = {"set_mod_tap_tempo": self.set_mod_tap_tempo,
+                          "next_snapshot": self.preset_incr_and_change,
+                          "previous_snapshot": self.preset_decr_and_change
+        }
 
     def __del__(self):
         logging.info("Handler cleanup")

@@ -97,6 +97,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_plugins = []
         self.w_footswitches = []
         self.w_splash = None
+        self.w_info_msg = None
 
         # panels
         self.pstack = PanelStack(display, image_format='RGB', use_dimming=False)  # TODO use dimming without loosing FS's
@@ -204,6 +205,7 @@ class Lcd(abstract_lcd.Lcd):
     def draw_title(self):
         self.draw_pedalboard(self.current.pedalboard.title)
         self.draw_preset(self.current.presets[self.current.preset_index])
+        self.draw_info_message("")  # clear loading msg
         self.main_panel.refresh()
 
     def draw_pedalboard(self, pedalboard_name):
@@ -502,7 +504,11 @@ class Lcd(abstract_lcd.Lcd):
         pass
     
     def draw_info_message(self, text):
-        pass
+        if self.w_info_msg is None:
+            self.w_info_msg = TextWidget(box=Box.xywh(0, 0, 0, 0), text='', parent=self.main_panel, outline=0,
+                                         sel_width=0)
+        else:
+            self.w_info_msg.set_text(text)
 
     # Plugins
     

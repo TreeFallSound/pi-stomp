@@ -66,7 +66,11 @@ class Modhandler(Handler):
         self.wifi_manager = Wifi.WifiManager()
 
         # Callback function map.  Key is the user specified name, value is function from this handler
-        self.callbacks = {"set_mod_tap_tempo": self.set_mod_tap_tempo}
+        # Used for calling handler callbacks pointed to by names which may be user set in the config file
+        self.callbacks = {"set_mod_tap_tempo": self.set_mod_tap_tempo,
+                          "next_snapshot": self.preset_incr_and_change,
+                          "previous_snapshot": self.preset_decr_and_change
+        }
 
     def __del__(self):
         logging.info("Handler cleanup")
@@ -254,6 +258,22 @@ class Modhandler(Handler):
     #
     # Preset Stuff
     #
+    def next_preset_index(self, dict, current, incr):
+        # This essentially applies modulo to a set of potentially discontinuous keys
+        # a missing key occurs when a preset is deleted
+        indices = list(dict.keys())
+        if current not in indices:
+            return -1
+        cur = indices.index(current)
+        if incr:
+            if cur < len(indices) - 1:
+                return indices[cur + 1]
+            return min(indices)
+        else:
+            if cur > 0:
+                return indices[cur - 1]
+            return max(indices)
+
     def load_current_presets(self):
         url = self.root_uri + "snapshot/list"
         try:
@@ -297,6 +317,14 @@ class Modhandler(Handler):
                 logging.error("failed to get bypass value for: %s" % p.instance_id)
                 continue
         self.lcd.refresh_plugins()
+
+    def preset_incr_and_change(self):
+        index = self.next_preset_index(self.current.presets, self.current.preset_index, True)
+        self.preset_change(index)
+
+    def preset_decr_and_change(self):
+        index = self.next_preset_index(self.current.presets, self.current.preset_index, False)
+        self.preset_change(index)
 
     #
     # Plugin Stuff
@@ -349,9 +377,10 @@ class Modhandler(Handler):
             return resp.status_code
 
     def parameter_midi_change(self, param, direction):
-        d = self.lcd.draw_parameter_dialog(param)
-        if d:
-            self.lcd.enc_step_widget(d, direction)
+        if param:
+            d = self.lcd.draw_parameter_dialog(param)
+            if d:
+                self.lcd.enc_step_widget(d, direction)
 
     #
     # System Menu
