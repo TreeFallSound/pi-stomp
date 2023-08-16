@@ -106,13 +106,16 @@ class Lcd(abstract_lcd.Lcd):
     def clear_select(self):
         pass
 
-    def draw_tools(self, wifi_type, bypass_type, system_type):
+    def draw_tools(self, wifi_type, eq_type, bypass_type, system_type):
         pass
 
     def update_wifi(self, wifi_status):
         pass
 
     def update_bypass(self, bypass):
+        pass
+
+    def update_eq(self, eq_status):
         pass
 
     def draw_tool_select(self, tool_type):

@@ -19,8 +19,6 @@ set -x
 set -e
 
 sudo dpkg -i setup/sys/linux-image-5.15.65-rt49-v8+_5.15.65-rt49-v8+-2_arm64.deb
-sudo dpkg -i setup/sys/linux-headers-5.15.65-rt49-v8+_5.15.65-rt49-v8+-2_arm64.deb
-sudo dpkg -i setup/sys/linux-libc-dev_5.15.65-rt49-v8+-2_arm64.deb
 
 KERN=5.15.65-rt49-v8+
 sudo mkdir -p /boot/$KERN/o/
