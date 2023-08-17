@@ -16,27 +16,31 @@
 import common.token as Token
 import common.util as Util
 
-import pistomp.pistomp as Pistomp
-import pistomp.pistompcore as Pistompcore
-import pistomp.pistomptre as Pistomptre
+import modalapi.mod as Mod
+import modalapi.modhandler as Modhandler
 
-
-class Hardwarefactory:
+class Handlerfactory:
     __single = None
 
     def __init__(self):
-        if Hardwarefactory.__single:
-            raise Hardwarefactory.__single
-        Hardwarefactory.__single = self
+        if Handlerfactory.__single:
+            raise Handlerfactory.__single
+        Handlerfactory.__single = self
 
-    def create(self, cfg, handler, midiout):
+    def create(self, cfg, audiocard, cwd):
+        # TODO handler could be independent of hardware (ie, have a software/ui version in the config, etc.)
+        # to avoid supporting too many hardware/handler combos, we'll keep the handler locked to hardware versioning
         hw = Util.DICT_GET(cfg, Token.HARDWARE)
         if not hw:
             return None
         version = Util.DICT_GET(hw, Token.VERSION)
         if version is None or (version < 2.0):
-            return Pistomp.Pistomp(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
+            handler = Mod.Mod(audiocard, cwd)
         elif (version >= 2.0) and (version < 3.0):
-            return Pistompcore.Pistompcore(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
+            handler = Modhandler.Modhandler(audiocard, cwd)
         elif (version >= 3.0) and (version < 4.0):
-            return Pistomptre.Pistomptre(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
+            handler = Modhandler.Modhandler(audiocard, cwd)
+        else:
+            return None
+
+        return handler

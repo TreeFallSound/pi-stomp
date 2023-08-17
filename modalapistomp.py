@@ -23,13 +23,12 @@ import time
 
 from rtmidi.midiutil import open_midioutput
 
-import modalapi.mod as Mod
-import modalapi.modhandler as Modhandler
 import pistomp.audiocardfactory as Audiocardfactory
+import pistomp.config as config
 import pistomp.generichost as Generichost
 import pistomp.testhost as Testhost
+import pistomp.handlerfactory as Handlerfactory
 import pistomp.hardwarefactory as Hardwarefactory
-import pistomp.handler as Handler
 
 
 def main():
@@ -74,19 +73,26 @@ def main():
     except (EOFError, KeyboardInterrupt):
         sys.exit()
 
-    # Hardware and handler objects
-    hw = None
+    # Handler object
     handler = None
+
+    # Load the default config
+    # cfg used by factories to determine which handler and hardware objects to create
+    # Hardware object uses cfg to know how to initialize the hardware elements
+    cfg = config.load_default_cfg()
 
     if args.host[0] == 'mod':
 
         # Create singleton Mod handler
-        #handler = Mod.Mod(audiocard, cwd)  # used for old LCD UI
-        handler = Modhandler.Modhandler(audiocard, cwd)  # used for new LCD UI
+        handlerfactory = Handlerfactory.Handlerfactory()
+        handler = handlerfactory.create(cfg, audiocard, cwd)
+        if handler is None:
+            logging.error("Cannot create handler for the version specified in configuration file")
+            sys.exit()
 
         # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
         factory = Hardwarefactory.Hardwarefactory()
-        hw = factory.create(handler, midiout)
+        hw = factory.create(cfg, handler, midiout)
         handler.add_hardware(hw)
 
         # Load all pedalboard info from the lilv ttl file
@@ -109,14 +115,14 @@ def main():
         # Just initialize the control hardware (footswitches, analog controls, etc.) for use as MIDI controls
         handler = Generichost.Generichost(homedir=cwd)
         factory = Hardwarefactory.Hardwarefactory()
-        hw = factory.create(handler, midiout)
+        hw = factory.create(cfg, handler, midiout)
         handler.add_hardware(hw)
 
     elif args.host[0] == 'test':
         handler = Testhost.Testhost(audiocard, homedir=cwd)
         try:
             factory = Hardwarefactory.Hardwarefactory()
-            hw = factory.create(handler, midiout)
+            hw = factory.create(cfg, handler, midiout)
             handler.add_hardware(hw)
         except:
             raise
