@@ -122,8 +122,8 @@ class Testhost(Handler):
         aout.setrate(44100)
         aout.setformat(alsa.PCM_FORMAT_S16_LE)
         aout.setperiodsize(1024)
-        self.input_gain = self.audiocard.get_parameter(self.audiocard.CAPTURE_VOLUME)
-        self.master_vol = self.audiocard.get_parameter(self.audiocard.MASTER)
+        self.input_gain = self.audiocard.get_volume_parameter(self.audiocard.CAPTURE_VOLUME)
+        self.master_vol = self.audiocard.get_volume_parameter(self.audiocard.MASTER)
 
     def __init__(self, audiocard = None, homedir = None):
         self.hardware = None
@@ -303,7 +303,7 @@ class Testhost(Handler):
         else:
             chg = -0.25
         self.input_gain += chg
-        self.audiocard.set_parameter(self.audiocard.CAPTURE_VOLUME, self.input_gain)
+        self.audiocard.set_volume_parameter(self.audiocard.CAPTURE_VOLUME, self.input_gain)
         self.dirty = True
 
     def _key_master_vol(self, key):
@@ -314,7 +314,7 @@ class Testhost(Handler):
         else:
             chg = -0.25
         self.master_vol += chg
-        self.audiocard.set_parameter(self.audiocard.MASTER, self.master_vol)
+        self.audiocard.set_volume_parameter(self.audiocard.MASTER, self.master_vol)
         self.dirty = True
 
     def _key_beep(self, key):

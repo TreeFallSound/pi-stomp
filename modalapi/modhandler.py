@@ -55,6 +55,9 @@ class Modhandler(Handler):
         self.pedalboard_list = []  # TODO LAME to have two lists
         self.plugin_dict = {}
 
+        self.wifi_status = {}
+        self.eq_status = {}
+
         self.current = None  # pointer to Current class
         self.lcd = None
 
@@ -395,6 +398,9 @@ class Modhandler(Handler):
         except subprocess.CalledProcessError:
             logging.error("Cannot obtain git software tag info")
 
+        self.eq_status = self.audiocard.get_switch_parameter(self.audiocard.DAC_EQ)
+        self.lcd.update_eq(self.eq_status)
+
     def system_menu_shutdown(self, arg):
         self.lcd.splash_show(False)
         logging.info("System Shutdown")
@@ -431,55 +437,64 @@ class Modhandler(Handler):
         logging.info("Restart sound engine (jack)")
         os.system('sudo systemctl restart jack')
 
-    def system_disable_eq(self, arg):
-        os.system('sudo amixer sset "DAC EQ" mute')
-        os.system('sudo alsactl store')
+    def system_disable_eq(self):
+        self.lcd.draw_info_message("Disabling, please wait...")
+        success = self.audiocard.set_switch_parameter(self.audiocard.DAC_EQ, False)
+        if success:
+            self.eq_status = False
+        # TODO self.system_info_update_eq()
 
-    def system_enable_eq(self, arg):
-        os.system('sudo amixer sset "DAC EQ" unmute')
-        os.system('sudo alsactl store')
+    def system_enable_eq(self):
+        self.lcd.draw_info_message("Enabling, please wait...")
+        success = self.audiocard.set_switch_parameter(self.audiocard.DAC_EQ, True)
+        if success:
+            self.eq_status = True
+        # TODO self.system_info_update_eq()
 
     def system_toggle_eq(self, arg):
-        os.system('sudo amixer sset "DAC EQ" toggle')
-        os.system('sudo alsactl store')
+        to_status = not self.eq_status
+        if to_status:
+            self.system_enable_eq()
+        else:
+            self.system_disable_eq()
 
     def system_menu_input_gain(self, arg):
-        value = self.audiocard.get_parameter(self.audiocard.CAPTURE_VOLUME)
+        value = self.audiocard.get_volume_parameter(self.audiocard.CAPTURE_VOLUME)
         self.lcd.draw_audio_parameter_dialog("Input Gain", self.audiocard.CAPTURE_VOLUME, value,
                                              -19.75, 12, self.audio_parameter_commit)
 
     def system_menu_headphone_volume(self, arg):
-        value = self.audiocard.get_parameter(self.audiocard.MASTER)
+        value = self.audiocard.get_volume_parameter(self.audiocard.MASTER)
         self.lcd.draw_audio_parameter_dialog("Headphone Volume", self.audiocard.MASTER, value,
                                              -25.75, 6, self.audio_parameter_commit)
 
     def system_menu_eq1_gain(self, arg):
-        value = self.audiocard.get_parameter(self.audiocard.EQ_1)
+        value = self.audiocard.get_volume_parameter(self.audiocard.EQ_1)
         self.lcd.draw_audio_parameter_dialog("Low Band Gain", self.audiocard.EQ_1, value,
                                              -10.50, 12, self.audio_parameter_commit)
 
     def system_menu_eq2_gain(self, arg):
-        value = self.audiocard.get_parameter(self.audiocard.EQ_2)
+        value = self.audiocard.get_volume_parameter(self.audiocard.EQ_2)
         self.lcd.draw_audio_parameter_dialog("Low-Mid Band Gain", self.audiocard.EQ_2, value,
                                              -10.50, 12, self.audio_parameter_commit)
 
     def system_menu_eq3_gain(self, arg):
-        value = self.audiocard.get_parameter(self.audiocard.EQ_3)
+        value = self.audiocard.get_volume_parameter(self.audiocard.EQ_3)
         self.lcd.draw_audio_parameter_dialog("Mid Band Gain", self.audiocard.EQ_3, value,
                                              -10.50, 12, self.audio_parameter_commit)
 
     def system_menu_eq4_gain(self, arg):
-        value = self.audiocard.get_parameter(self.audiocard.EQ_4)
+        value = self.audiocard.get_volume_parameter(self.audiocard.EQ_4)
         self.lcd.draw_audio_parameter_dialog("High-Mid Band Gain", self.audiocard.EQ_4, value,
                                              -10.50, 12, self.audio_parameter_commit)
 
     def system_menu_eq5_gain(self, arg):
-        value = self.audiocard.get_parameter(self.audiocard.EQ_5)
+        value = self.audiocard.get_volume_parameter(self.audiocard.EQ_5)
         self.lcd.draw_audio_parameter_dialog("High Band Gain", self.audiocard.EQ_5, value,
                                              -10.50, 12, self.audio_parameter_commit)
 
     def audio_parameter_commit(self, symbol, value):
-        self.audiocard.set_parameter(symbol, value)
+        self.audiocard.set_volume_parameter(symbol, value)
 
     def get_callback(self, callback_name):
         return util.DICT_GET(self.callbacks, callback_name)

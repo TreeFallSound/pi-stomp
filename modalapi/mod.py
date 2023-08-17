@@ -961,9 +961,10 @@ class Mod(Handler):
     
     def system_toggle_eq(self):
         to_status = not self.eq_status
-        success = self.audiocard.set_volume_parameter(self.audiocard.DAC_EQ, to_status)
-        if success:
-            self.eq_status = to_status
+        if to_status:
+            self.system_enable_eq()
+        else:
+            self.system_disable_eq()
 
     def system_info_update_eq(self):
         self.menu_global_eq_toggle()

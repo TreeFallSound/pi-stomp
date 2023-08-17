@@ -250,6 +250,7 @@ class Hardware:
             return
         cfg_fs = cfg[Token.HARDWARE][Token.FOOTSWITCHES]
         idx = 0
+        fs = None
         for fs in self.footswitches:
             # See if a corresponding cfg entry exists.  if so, override
             f = None
