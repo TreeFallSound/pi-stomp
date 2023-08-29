@@ -50,16 +50,16 @@ ENC3_PIN_D = 22
 ENC3_PIN_CLK = 27
 
 # ADC channels
-# NAV_ADC_CHAN = 0  #  3.0.p1
-# FOOTSWITCH0 = 1
-# FOOTSWITCH1 = 2
-# FOOTSWITCH2 = 3
-# FOOTSWITCH3 = 4
-FOOTSWITCH0 = 0  # 3.0.rc1
-FOOTSWITCH1 = 1
-FOOTSWITCH2 = 2
-FOOTSWITCH3 = 3
-NAV_ADC_CHAN = 4
+NAV_ADC_CHAN = 0  #  3.0.p1
+FOOTSWITCH0 = 1
+FOOTSWITCH1 = 2
+FOOTSWITCH2 = 3
+FOOTSWITCH3 = 4
+# FOOTSWITCH0 = 0  # 3.0.rc1
+# FOOTSWITCH1 = 1
+# FOOTSWITCH2 = 2
+# FOOTSWITCH3 = 3
+# NAV_ADC_CHAN = 4
 EXPRESSION = 5
 CLIP_L = 6
 CLIP_R = 7
@@ -110,8 +110,8 @@ class Pistomptre(hardware.Hardware):
         # if action is specified via config file could do something like this
         # action = {}
         # action["universal_encoder_sw"] = self.handler.universal_encoder_sw
-        # enc_sw = gpioswitch.GpioSwitch(sw_pin, None, None, callback=action["universal_encoder_sw"])
-        # self.encoder_switches.append(enc_sw)
+        enc_sw = gpioswitch.GpioSwitch(sw_pin, None, None, callback=self.handler.universal_encoder_sw)
+        self.encoder_switches.append(enc_sw)
 
     def init_encoders(self):
         enc = Encoder.Encoder(NAV_PIN_D, NAV_PIN_CLK, callback=self.handler.universal_encoder_select)
@@ -135,6 +135,9 @@ class Pistomptre(hardware.Hardware):
             self.create_analog_controls(cfg)
 
         # Special case Navigation encoder switch
+        control = AnalogSwitch.AnalogSwitch(self.spi, NAV_ADC_CHAN, ENC_SW_THRESHOLD,
+                                            callback=self.handler.universal_encoder_sw)
+        self.analog_controls.append(control)
         control = AnalogSwitch.AnalogSwitch(self.spi, NAV_ADC_CHAN, ENC_SW_THRESHOLD,
                                             callback=self.handler.universal_encoder_sw)
         self.analog_controls.append(control)
