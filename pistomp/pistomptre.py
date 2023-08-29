@@ -16,6 +16,7 @@
 import RPi.GPIO as GPIO
 
 import pistomp.analogswitch as AnalogSwitch
+import pistomp.analogVU as AnalogVU
 import pistomp.encoder as Encoder
 import pistomp.encodermidicontrol as EncoderMidiControl
 import pistomp.gpioswitch as gpioswitch
@@ -49,16 +50,16 @@ ENC3_PIN_D = 22
 ENC3_PIN_CLK = 27
 
 # ADC channels
-# NAV_ADC_CHAN = 0  #  3.0.p1
-# FOOTSWITCH0 = 1
-# FOOTSWITCH1 = 2
-# FOOTSWITCH2 = 3
-# FOOTSWITCH3 = 4
-FOOTSWITCH0 = 0  # 3.0.rc1
-FOOTSWITCH1 = 1
-FOOTSWITCH2 = 2
-FOOTSWITCH3 = 3
-NAV_ADC_CHAN = 4
+NAV_ADC_CHAN = 0  #  3.0.p1
+FOOTSWITCH0 = 1
+FOOTSWITCH1 = 2
+FOOTSWITCH2 = 3
+FOOTSWITCH3 = 4
+# FOOTSWITCH0 = 0  # 3.0.rc1
+# FOOTSWITCH1 = 1
+# FOOTSWITCH2 = 2
+# FOOTSWITCH3 = 3
+# NAV_ADC_CHAN = 4
 EXPRESSION = 5
 CLIP_L = 6
 CLIP_R = 7
@@ -89,6 +90,8 @@ class Pistomptre(hardware.Hardware):
         self.init_footswitches()
 
         self.init_analog_controls()
+
+        self.init_vu()
 
         #self.reinit(None)  # TODO do we still need this?  Maybe after pb load?  mappings?
 
@@ -132,7 +135,8 @@ class Pistomptre(hardware.Hardware):
             self.create_analog_controls(cfg)
 
         # Special case Navigation encoder switch
-        control = AnalogSwitch.AnalogSwitch(self.spi, 0, ENC_SW_THRESHOLD, callback=self.handler.universal_encoder_sw)
+        control = AnalogSwitch.AnalogSwitch(self.spi, NAV_ADC_CHAN, ENC_SW_THRESHOLD,
+                                            callback=self.handler.universal_encoder_sw)
         self.analog_controls.append(control)
 
     def init_footswitches(self):
@@ -140,6 +144,12 @@ class Pistomptre(hardware.Hardware):
         cfg = self.default_cfg.copy()
         if len(self.footswitches) == 0:
             self.create_footswitches(cfg)
+
+    def init_vu(self):
+        indicator = AnalogVU.AnalogVU(self.spi, CLIP_L, 4, self.ledstrip, 5)  # TODO Make adc_chan and threshold configurable
+        self.indicators.append(indicator)
+        indicator = AnalogVU.AnalogVU(self.spi, CLIP_R, 4, self.ledstrip, 4)
+        self.indicators.append(indicator)
 
     def test(self):
         pass

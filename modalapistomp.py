@@ -136,6 +136,8 @@ def main():
 
             # For less frequent events
             period += 1
+            if period % 2 == 0:
+                handler.poll_indicators()
             if period > 100:
                 handler.poll_modui_changes()
                 period = 0

@@ -104,6 +104,10 @@ class Modhandler(Handler):
         if self.hardware:
             self.hardware.poll_controls()
 
+    def poll_indicators(self):
+        if self.hardware:
+            self.hardware.poll_indicators()
+
     def universal_encoder_select(self, direction):
         if self.lcd is not None:
             self.lcd.enc_step(direction)
