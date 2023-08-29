@@ -138,9 +138,6 @@ class Pistomptre(hardware.Hardware):
         control = AnalogSwitch.AnalogSwitch(self.spi, NAV_ADC_CHAN, ENC_SW_THRESHOLD,
                                             callback=self.handler.universal_encoder_sw)
         self.analog_controls.append(control)
-        control = AnalogSwitch.AnalogSwitch(self.spi, NAV_ADC_CHAN, ENC_SW_THRESHOLD,
-                                            callback=self.handler.universal_encoder_sw)
-        self.analog_controls.append(control)
 
     def init_footswitches(self):
         # These are defined in the config file
