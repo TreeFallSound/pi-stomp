@@ -21,7 +21,7 @@ from PIL import ImageColor
 import pistomp.category as Category
 
 # LED strip configuration:  # TODO get these from hardware impl (pisompcore.py)
-LED_COUNT = 4        # Number of LED pixels.
+LED_COUNT = 6        # Number of LED pixels.
 LED_PIN = 13          # GPIO pin connected to the pixels (must have PWM).
 LED_FREQ_HZ = 800000  # LED signal frequency in hertz (usually 800khz)
 LED_DMA = 12          # DMA channel to use for generating signal (try 10)   # TODO XXX need to figure this out
@@ -80,6 +80,6 @@ class Pixel:
         self.color = c
 
     def _render_color_rgb(self, r, g, b):
-        self.strip.setPixelColorRGB(self.position, r, g, b)
+        self.strip.setPixelColorRGB(self.position, g, r, b)
         # TODO would be nice to do this once for multiple pixel changes
         self.strip.show()

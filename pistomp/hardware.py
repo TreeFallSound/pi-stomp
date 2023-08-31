@@ -51,6 +51,7 @@ class Hardware:
         self.controllers = {}
         self.footswitches = []
         self.encoder_switches = []
+        self.indicators = []
         self.debounce_map = None
         self.ledstrip = None
 
@@ -77,6 +78,10 @@ class Hardware:
             s.poll()
         if s:
             s.check_longpress_events()
+
+    def poll_indicators(self):
+        for i in self.indicators:
+            i.refresh()
 
     def reinit(self, cfg):
         # reinit hardware as specified by the new cfg context (after pedalboard change, etc.)

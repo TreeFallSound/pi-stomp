@@ -16,6 +16,7 @@
 import RPi.GPIO as GPIO
 
 import pistomp.analogswitch as AnalogSwitch
+import pistomp.analogVU as AnalogVU
 import pistomp.encoder as Encoder
 import pistomp.encodermidicontrol as EncoderMidiControl
 import pistomp.gpioswitch as gpioswitch
@@ -90,6 +91,8 @@ class Pistomptre(hardware.Hardware):
 
         self.init_analog_controls()
 
+        self.init_vu()
+
         #self.reinit(None)  # TODO do we still need this?  Maybe after pb load?  mappings?
 
     def init_lcd(self):
@@ -107,8 +110,8 @@ class Pistomptre(hardware.Hardware):
         # if action is specified via config file could do something like this
         # action = {}
         # action["universal_encoder_sw"] = self.handler.universal_encoder_sw
-        # enc_sw = gpioswitch.GpioSwitch(sw_pin, None, None, callback=action["universal_encoder_sw"])
-        # self.encoder_switches.append(enc_sw)
+        enc_sw = gpioswitch.GpioSwitch(sw_pin, None, None, callback=self.handler.universal_encoder_sw)
+        self.encoder_switches.append(enc_sw)
 
     def init_encoders(self):
         enc = Encoder.Encoder(NAV_PIN_D, NAV_PIN_CLK, callback=self.handler.universal_encoder_select)
@@ -132,7 +135,8 @@ class Pistomptre(hardware.Hardware):
             self.create_analog_controls(cfg)
 
         # Special case Navigation encoder switch
-        control = AnalogSwitch.AnalogSwitch(self.spi, 0, ENC_SW_THRESHOLD, callback=self.handler.universal_encoder_sw)
+        control = AnalogSwitch.AnalogSwitch(self.spi, NAV_ADC_CHAN, ENC_SW_THRESHOLD,
+                                            callback=self.handler.universal_encoder_sw)
         self.analog_controls.append(control)
 
     def init_footswitches(self):
@@ -140,6 +144,12 @@ class Pistomptre(hardware.Hardware):
         cfg = self.default_cfg.copy()
         if len(self.footswitches) == 0:
             self.create_footswitches(cfg)
+
+    def init_vu(self):
+        indicator = AnalogVU.AnalogVU(self.spi, CLIP_L, 4, self.ledstrip, 5)  # TODO Make adc_chan and threshold configurable
+        self.indicators.append(indicator)
+        indicator = AnalogVU.AnalogVU(self.spi, CLIP_R, 4, self.ledstrip, 4)
+        self.indicators.append(indicator)
 
     def test(self):
         pass
