@@ -108,10 +108,10 @@ class Audiocard:
         if param_name is None:
             return float(0)
         s = self._amixer_sget(param_name)
-        pattern = r': (\d+) \[(\d+%)\] \[(-?\d+\.\d+)dB\]'
+        pattern = r': (.*)(\d+) \[(\d+%)\] \[(-?\d+\.\d+)dB\]'
         matches = re.search(pattern, s)
         if matches:
-            return round(float(matches.group(3)), 1)
+            return round(float(matches.group(4)), 1)
         return float(0)
 
     def get_switch_parameter(self, param_name):
