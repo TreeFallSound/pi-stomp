@@ -1,0 +1,13 @@
+[Unit]
+Description=Check whether connected at startup
+After=network-online.target
+After=networking.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/bin/bash /home/pistomp/pi-stomp/util/wifi_startup.sh
+
+[Install]
+WantedBy=multi-user.target
+WantedBy=network-online.target

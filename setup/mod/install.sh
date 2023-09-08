@@ -113,6 +113,7 @@ sudo ln -sf /usr/lib/systemd/system/mod-amidithru.service /etc/systemd/system/mu
 sudo ln -sf /usr/lib/systemd/system/mod-touchosc2midi.service /etc/systemd/system/multi-user.target.wants
 sudo ln -sf /usr/lib/systemd/system/mod-midi-merger.service /etc/systemd/system/multi-user.target.wants
 sudo ln -sf /usr/lib/systemd/system/mod-midi-merger-broadcaster.service /etc/systemd/system/multi-user.target.wants
+sudo ln -sf /usr/lib/systemd/system/check-wifi.service /etc/systemd/system/multi-user.target.wants
 
 #Create users and groups so services can run as user instead of root
 sudo adduser --no-create-home --system --group jack
