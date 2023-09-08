@@ -21,6 +21,5 @@ then
     echo "Connected to ${SSID}"
 else
     echo 'not connected, starting wifi hotspot mode'
-    sudo systemctl enable wifi-hotspot
     sudo systemctl start wifi-hotspot
 fi

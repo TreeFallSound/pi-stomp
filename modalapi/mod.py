@@ -992,13 +992,11 @@ class Mod(Handler):
     def system_menu_shutdown(self):
         self.lcd.splash_show(False)
         logging.info("System Shutdown")
-        os.system('sudo systemctl disable wifi-hotspot')
         os.system('sudo systemctl --no-wall poweroff')
 
     def system_menu_reboot(self):
         self.lcd.splash_show(False)
         logging.info("System Reboot")
-        os.system('sudo systemctl disable wifi-hotspot')
         os.system('sudo systemctl reboot')
 
     def check_usb(self):
