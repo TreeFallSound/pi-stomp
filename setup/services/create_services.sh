@@ -17,8 +17,21 @@
 
 sudo cp setup/services/*.service /usr/lib/systemd/system/
 sudo ln -sf /usr/lib/systemd/system/mod-ala-pi-stomp.service /etc/systemd/system/multi-user.target.wants
+sudo ln -sf /usr/lib/systemd/system/check-wifi.service /etc/systemd/system/multi-user.target.wants
 
 if [ x"$has_ttymidi" == x"true" ]; then
     echo "Enabling ttymidi service"
     sudo ln -sf /usr/lib/systemd/system/ttymidi.service /etc/systemd/system/multi-user.target.wants
 fi
+
+#Copy WiFi hotspot files
+sudo cp setup/services/hotspot/etc/default/hostapd.pistomp /etc/default
+sudo cp setup/services/hotspot/etc/dnsmasq.d/wifi-hotspot.conf /etc/dnsmasq.d
+sudo cp setup/services/hotspot/etc/hostapd/hostapd.conf /etc/hostapd
+sudo cp -R setup/services/hotspot/usr/lib/pistomp-wifi /usr/lib
+sudo cp setup/services/hotspot/usr/lib/systemd/system/wifi-hotspot.service /usr/lib/systemd/system
+sudo chown -R pistomp:pistomp /usr/lib/pistomp-wifi
+sudo chmod +x -R /usr/lib/pistomp-wifi
+
+#USB automounter
+sudo dpkg -i setup/services/usbmount.deb

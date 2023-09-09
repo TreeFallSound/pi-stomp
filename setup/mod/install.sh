@@ -18,7 +18,7 @@
 set -x
 
 #Install Dependancies
-sudo apt-get -y install virtualenv python3-pip python3-dev build-essential libasound2-dev libjack-jackd2-dev liblilv-dev libjpeg-dev \
+sudo apt-get -y install virtualenv python3-pip python3-dev python3-zeroconf build-essential libasound2-dev libjack-jackd2-dev liblilv-dev libjpeg-dev \
                         zlib1g-dev cmake debhelper dh-autoreconf dh-python gperf intltool ladspa-sdk libarmadillo-dev libavahi-gobject-dev \
                         libavcodec-dev libavutil-dev libbluetooth-dev libboost-dev libeigen3-dev libfftw3-dev libglib2.0-dev libglibmm-2.4-dev \
                         libgtk2.0-dev libgtkmm-2.4-dev liblrdf0-dev libsamplerate0-dev libsigc++-2.0-dev libsndfile1-dev libzita-convolver-dev \
@@ -50,6 +50,7 @@ mkdir -p "SF2 Instruments"
 mkdir -p "SFZ Instruments"
 mkdir -p "Amplifier Profiles"
 mkdir -p "Aida DSP Models"
+mkdir -p "NAM Models"
 
 #Jack2
 pushd $(mktemp -d) && git clone https://github.com/moddevices/jack2.git
@@ -113,7 +114,6 @@ sudo ln -sf /usr/lib/systemd/system/mod-amidithru.service /etc/systemd/system/mu
 sudo ln -sf /usr/lib/systemd/system/mod-touchosc2midi.service /etc/systemd/system/multi-user.target.wants
 sudo ln -sf /usr/lib/systemd/system/mod-midi-merger.service /etc/systemd/system/multi-user.target.wants
 sudo ln -sf /usr/lib/systemd/system/mod-midi-merger-broadcaster.service /etc/systemd/system/multi-user.target.wants
-sudo ln -sf /usr/lib/systemd/system/check-wifi.service /etc/systemd/system/multi-user.target.wants
 
 #Create users and groups so services can run as user instead of root
 sudo adduser --no-create-home --system --group jack
@@ -126,15 +126,3 @@ sudo chown jack:jack /etc/jackdrc
 sudo cp 80 /etc/authbind/byport/
 sudo chmod 500 /etc/authbind/byport/80
 sudo chown pistomp:pistomp /etc/authbind/byport/80
-
-#Copy WiFi hotspot files
-sudo cp hotspot/etc/default/hostapd.pistomp /etc/default
-sudo cp hotspot/etc/dnsmasq.d/wifi-hotspot.conf /etc/dnsmasq.d
-sudo cp hotspot/etc/hostapd/hostapd.conf /etc/hostapd
-sudo cp -R hotspot/usr/lib/pistomp-wifi /usr/lib
-sudo cp hotspot/usr/lib/systemd/system/wifi-hotspot.service /usr/lib/systemd/system
-sudo chown -R pistomp:pistomp /usr/lib/pistomp-wifi
-sudo chmod +x -R /usr/lib/pistomp-wifi
-
-#USB automounter
-sudo dpkg -i /home/pistomp/pi-stomp/setup/mod/usbmount.deb
