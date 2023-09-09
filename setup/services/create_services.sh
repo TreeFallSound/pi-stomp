@@ -35,3 +35,6 @@ sudo chmod +x -R /usr/lib/pistomp-wifi
 
 #USB automounter
 sudo dpkg -i setup/services/usbmount.deb
+
+#Disable wait for network on boot
+sudo raspi-config nonint do_boot_wait 1
