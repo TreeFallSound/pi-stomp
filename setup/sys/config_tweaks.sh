@@ -27,6 +27,8 @@ sudo bash -c "sed -i \"s/^\s*dtoverlay=vc4-kms-v3d/#dtoverlay=vc4-kms-v3d/\" /bo
 
 # Enable SPI
 sudo bash -c "sed -i \"s/^\s*#dtparam=spi=on/dtparam=spi=on/\" /boot/config.txt"
+sudo bash -c "sed -i \"s/^\s*#dtparam=i2s=on/dtparam=i2s=on/\" /boot/config.txt"
+sudo bash -c "sed -i \"s/^\s*#dtparam=i2c_arm=on/dtparam=i2c_arm=on/\" /boot/config.txt"
 
 # append lines to config.txt
 cnt=$(grep -c "dtoverlay=pi3-disable-bt" /boot/config.txt)

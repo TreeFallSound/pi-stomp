@@ -28,6 +28,7 @@ usage()
     echo " -v <version>          Specify hardware version"
     echo "                         1.0 : original pi-Stomp hardware (PCB v1)"
     echo "                         2.0 : most hardware (default)"
+    echo "                         3.0 : new tre board"
     echo " -p                    Do not install default plugins and pedalboards"
     echo " -m                    Enable MIDI via UART"
     echo " -h                    Display this message"    
@@ -74,8 +75,9 @@ else
     ${HOME}/pi-stomp/setup/pi-stomp-tweaks/modify_version.sh ${hardware_version}
 fi
 
-printf "\n===== OS update =====\n"
-sudo apt-get update -y --allow-releaseinfo-change --fix-missing
+#This is not necessary any more as we run it before we git clone
+#printf "\n===== OS update =====\n"
+#sudo apt-get update -y --allow-releaseinfo-change --fix-missing
 
 printf "\n===== Audio card setup =====\n"
 setup/audio/audiocard-setup.sh
