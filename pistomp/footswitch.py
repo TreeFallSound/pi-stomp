@@ -99,11 +99,14 @@ class Footswitch(controller.Controller):
         if adc_input and gpio_input:
             logging.error("Switch cannot be specified with both %s and %s", (Token.adc_input, Token.gpio_input))
 
-        self.gpio_switch = gpioswitch.GpioSwitch(gpio_input, midi_channel, midi_CC, self.pressed,
-                                                 tap_tempo_callback=tap_tempo_callback) if gpio_input else None
-        self.adc_switch = analogswitch.AnalogSwitch(spi, adc_input, 800, self.pressed,
-                                                    tap_tempo_callback=tap_tempo_callback) if adc_input else None
-
+        self.gpio_switch = None
+        if gpio_input is not None:
+            self.gpio_switch = gpioswitch.GpioSwitch(gpio_input, midi_channel, midi_CC, self.pressed,
+                                                     tap_tempo_callback=tap_tempo_callback)
+        self.adc_switch = None
+        if adc_input is not None:
+            self.adc_switch = analogswitch.AnalogSwitch(spi, adc_input, 800, self.pressed,
+                                                        tap_tempo_callback=tap_tempo_callback)
         if led_pin is not None:
             GPIO.setup(led_pin, GPIO.OUT)
             self._set_led(GPIO.LOW)
