@@ -33,11 +33,11 @@ pistomp_tre_config_file="$template_dir/default_config_pistomptre.yml"
 mkdir -p $config_dir
 
 
-if awk "BEGIN {exit !($1 = 1.0 )}"; then
+if awk "BEGIN {exit !($1 == 1.0 )}"; then
     cp $pistomp_orig_config_file $config_file
-elif awk "BEGIN {exit !($1 = 2.0 )}"; then
+elif awk "BEGIN {exit !($1 == 2.0 )}"; then
     cp $pistomp_core_config_file $config_file
-elif awk "BEGIN {exit !($1 = 3.0 )}"; then
+elif awk "BEGIN {exit !($1 == 3.0 )}"; then
     cp $pistomp_tre_config_file $config_file
 fi
 
