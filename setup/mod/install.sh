@@ -18,8 +18,8 @@
 set -x
 
 #Install Dependancies
-sudo apt-get -y install virtualenv python3-pip python3-dev build-essential libasound2-dev libjack-jackd2-dev liblilv-dev libjpeg-dev \
-                        zlib1g-dev cmake debhelper dh-autoreconf dh-python gperf intltool ladspa-sdk libarmadillo-dev libavahi-gobject-dev \
+sudo apt-get -y install virtualenv python3-pip python3-dev python3-zeroconf build-essential libasound2-dev libjack-jackd2-dev \
+                        zlib1g-dev cmake gperf intltool ladspa-sdk libarmadillo-dev libavahi-gobject-dev liblilv-dev libjpeg-dev \
                         libavcodec-dev libavutil-dev libbluetooth-dev libboost-dev libeigen3-dev libfftw3-dev libglib2.0-dev libglibmm-2.4-dev \
                         libgtk2.0-dev libgtkmm-2.4-dev liblrdf0-dev libsamplerate0-dev libsigc++-2.0-dev libsndfile1-dev libzita-convolver-dev \
                         libzita-resampler-dev lv2-dev p7zip-full python3-all python3-setuptools libreadline-dev zita-alsa-pcmi-utils hostapd \
@@ -29,7 +29,7 @@ sudo apt-get -y install virtualenv python3-pip python3-dev build-essential libas
 sudo pip3 install pyserial==3.0 pystache==0.5.4 aggdraw==1.3.11 scandir backports.shutil-get-terminal-size
 sudo pip3 install pycrypto
 sudo pip3 install tornado==4.3
-sudo pip3 install Pillow==8.4.0
+sudo pip3 install Pillow==9.4.0
 sudo pip3 install cython
 
 #Install Mod Software
@@ -51,6 +51,7 @@ mkdir -p "SFZ Instruments"
 mkdir -p "Amplifier Profiles"
 mkdir -p "Aida DSP Models"
 mkdir -p "NAM Models"
+mkdir -p "Captures"
 
 #Jack2
 pushd $(mktemp -d) && git clone https://github.com/moddevices/jack2.git
@@ -126,15 +127,3 @@ sudo chown jack:jack /etc/jackdrc
 sudo cp 80 /etc/authbind/byport/
 sudo chmod 500 /etc/authbind/byport/80
 sudo chown pistomp:pistomp /etc/authbind/byport/80
-
-#Copy WiFi hotspot files
-sudo cp hotspot/etc/default/hostapd.pistomp /etc/default
-sudo cp hotspot/etc/dnsmasq.d/wifi-hotspot.conf /etc/dnsmasq.d
-sudo cp hotspot/etc/hostapd/hostapd.conf /etc/hostapd
-sudo cp -R hotspot/usr/lib/pistomp-wifi /usr/lib
-sudo cp hotspot/usr/lib/systemd/system/wifi-hotspot.service /usr/lib/systemd/system
-sudo chown -R pistomp:pistomp /usr/lib/pistomp-wifi
-sudo chmod +x -R /usr/lib/pistomp-wifi
-
-#USB automounter
-sudo dpkg -i /home/pistomp/pi-stomp/setup/mod/usbmount.deb
