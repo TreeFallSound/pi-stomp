@@ -15,13 +15,14 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-LOG="/home/pistomp/wifi_check.log"
+LOG="/var/log/wifi_check.log"
+CURRENTDATE=$( date '+%F_%H:%M:%S' )
 
 iwgetid -r &>/dev/null
 
 if [ $? -eq 0 ]; then
-    echo "Wifi is connected." >> "$LOG"
+    echo "${CURRENTDATE} Wifi is connected." >> "$LOG"
 else
-    sudo systemctl start wifi-hotspot.service
-    echo "Wifi not connected. Starting hotspot." >> "$LOG"
+    sudo systemctl restart wifi-hotspot.service
+    echo "${CURRENTDATE} Wifi not connected. Starting hotspot." >> "$LOG"
 fi

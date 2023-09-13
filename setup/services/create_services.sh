@@ -34,3 +34,6 @@ sudo chmod +x -R /usr/lib/pistomp-wifi
 
 #USB automounter
 sudo dpkg -i setup/services/usbmount.deb
+
+#Move wifi_check script
+sudo mv setup/services/wifi_check.sh /etc/wpa_supplicant/
