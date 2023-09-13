@@ -37,3 +37,6 @@ sudo dpkg -i setup/services/usbmount.deb
 
 #Disable wait for network on boot
 sudo raspi-config nonint do_boot_wait 1
+
+#Move wifi_check
+sudo mv setup/services/wifi_check.sh /etc/wpa_supplicant/
