@@ -23,7 +23,7 @@ if [ x"$has_ttymidi" == x"true" ]; then
     sudo ln -sf /usr/lib/systemd/system/ttymidi.service /etc/systemd/system/multi-user.target.wants
 fi
 
-#Copy WiFi hotspot files
+# Copy WiFi hotspot files
 sudo cp setup/services/hotspot/etc/default/hostapd.pistomp /etc/default
 sudo cp setup/services/hotspot/etc/dnsmasq.d/wifi-hotspot.conf /etc/dnsmasq.d
 sudo cp setup/services/hotspot/etc/hostapd/hostapd.conf /etc/hostapd
@@ -32,5 +32,8 @@ sudo cp setup/services/hotspot/usr/lib/systemd/system/wifi-hotspot.service /usr/
 sudo chown -R pistomp:pistomp /usr/lib/pistomp-wifi
 sudo chmod +x -R /usr/lib/pistomp-wifi
 
-#USB automounter
+# USB automounter
 sudo dpkg -i setup/services/usbmount.deb
+
+# Copy wifi_check script
+sudo cp setup/services/wifi_check.sh /etc/wpa_supplicant/
