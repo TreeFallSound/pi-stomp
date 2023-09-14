@@ -39,4 +39,4 @@ sudo dpkg -i setup/services/usbmount.deb
 sudo raspi-config nonint do_boot_wait 1
 
 # Copy wifi_check
-sudo mv setup/services/wifi_check.sh /etc/wpa_supplicant/
+sudo cp setup/services/wifi_check.sh /etc/wpa_supplicant/
