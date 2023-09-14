@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-LOG="/var/log/wifi_check.log"
+LOG="/var/log/wifi.log"
 CURRENTDATE=$( date '+%F_%H:%M:%S' )
 
 iwgetid -r &>/dev/null
