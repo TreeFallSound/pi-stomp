@@ -32,11 +32,11 @@ sudo cp setup/services/hotspot/usr/lib/systemd/system/wifi-hotspot.service /usr/
 sudo chown -R pistomp:pistomp /usr/lib/pistomp-wifi
 sudo chmod +x -R /usr/lib/pistomp-wifi
 
-#USB automounter
+# USB automounter
 sudo dpkg -i setup/services/usbmount.deb
 
-#Disable wait for network on boot
+# Disable wait for network on boot
 sudo raspi-config nonint do_boot_wait 1
 
-#Move wifi_check
+# Copy wifi_check
 sudo mv setup/services/wifi_check.sh /etc/wpa_supplicant/
