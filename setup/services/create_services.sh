@@ -39,4 +39,4 @@ sudo dpkg -i setup/services/usbmount.deb
 sudo cp setup/services/wifi_check.sh /etc/wpa_supplicant/
 
 # Copy wlan0.conf to prevent wifi power save mode
-sudo cp wlan0.conf /etc/network/interfaces.d/
+sudo cp setup/services/wlan0.conf /etc/network/interfaces.d/
