@@ -50,7 +50,7 @@ ENC3_PIN_D = 22
 ENC3_PIN_CLK = 27
 
 # ADC channels
-# NAV_ADC_CHAN = 0  #  3.0.p1
+NAV_ADC_CHAN = 0  #  3.0.p1
 # FOOTSWITCH0 = 1
 # FOOTSWITCH1 = 2
 # FOOTSWITCH2 = 3
@@ -59,7 +59,7 @@ FOOTSWITCH0 = 0  # 3.0.rc1
 FOOTSWITCH1 = 1
 FOOTSWITCH2 = 2
 FOOTSWITCH3 = 3
-NAV_ADC_CHAN = 4
+#NAV_ADC_CHAN = 4
 EXPRESSION = 5
 CLIP_L = 6
 CLIP_R = 7
@@ -123,7 +123,10 @@ class Pistomptre(hardware.Hardware):
         midi_channel = self.get_real_midi_channel(cfg)
         self.add_tweak_encoder(ENC1_PIN_D, ENC1_PIN_CLK, ENC1_PIN_SW, None, midi_channel, ENC1_MIDI_CC)
         self.add_tweak_encoder(ENC2_PIN_D, ENC2_PIN_CLK, ENC2_PIN_SW, None, midi_channel, ENC2_MIDI_CC)
-        # TODO tweak3
+
+        # Volume encoder
+        enc = Encoder.Encoder(ENC3_PIN_D, ENC3_PIN_CLK, callback=self.handler.system_menu_headphone_volume)
+        self.encoders.append(enc)
 
     def init_relays(self):
         pass

@@ -1,6 +1,8 @@
 import adafruit_rgb_display.ili9341 as ili9341
 
 from uilib.panel import *
+import logging
+import threading
 
 class LcdIli9341(LcdBase):
     # XXX
@@ -13,6 +15,11 @@ class LcdIli9341(LcdBase):
             rst=reset_pin,
             baudrate=baudrate
         )
+
+        # Use this to assure we don't have multiple threads trying to change the screen
+        # All methods which do change the screen (eg. dist. calls) should acquire/release
+        self.lock = threading.Lock()
+
         # Clear the display
         self.clear()
 
@@ -28,9 +35,14 @@ class LcdIli9341(LcdBase):
         return 'RGB'
 
     def clear(self):
+        self.lock.acquire()
         self.disp.fill(0)
+        self.lock.release()
 
     def update(self, image, box = None):
+        if self.lock.locked():
+            logging.debug("LCD update was locked by another thread")
+        self.lock.acquire()
         # LCD coordinates
         #
         # portrait mode, connector = bottom
@@ -45,7 +57,7 @@ class LcdIli9341(LcdBase):
         # Check if we need to crop the image to the LCD size
         x1, y1, x2, y2 = box.rect
         if x2 > self.width:
-            x2 = width
+            x2 = self.width
         if y2 > self.height:
             y2 = self.height
         if x1 != 0 or y1 != 0 or x2 != img_width or y2 != img_width:
@@ -57,4 +69,5 @@ class LcdIli9341(LcdBase):
                 x = y1
                 y = self.width - x2
         self.disp.image(image, 270 if self.flip else 90, x, y)
+        self.lock.release()
 

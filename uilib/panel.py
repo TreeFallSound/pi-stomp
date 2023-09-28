@@ -177,6 +177,12 @@ class PanelStack(ContainerWidget):
         self._setup_act_attrs()
         self._setup()
 
+        self.lcd_needs_update = False
+
+    def poll_updates(self):
+        if self.lcd_needs_update:
+            self.refresh()
+
     def _compose(self, widget, orig_box, real_box):
         # This always called with widget = a Panel which is a direct
         # child of the stack, so we can drop orig_box
@@ -184,6 +190,7 @@ class PanelStack(ContainerWidget):
 
     def refresh(self):
         self._do_refresh(None, self.box)
+        self.lcd_needs_update = False
 
     def _do_refresh(self, panel, box):
         # XXX TODO: Optimize the case where there is only one panel,
@@ -244,7 +251,8 @@ class PanelStack(ContainerWidget):
             else:
                 current = self.stack[-1]
             self.current = current
-        self.refresh()
+        # queue a refresh
+        self.lcd_needs_update = True
         if panel.auto_destroy:
 #            panel.detach()
             panel.destroy()
