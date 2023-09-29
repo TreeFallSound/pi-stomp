@@ -28,6 +28,7 @@ class Panel(ContainerWidget):
             old_sel = None
         else:
             old_sel = self.sel_list[self.sel]
+        previously_selectable = widget.selectable
         widget.selectable = False
         self.sel_list.remove(widget)
         if old_sel is not None:
@@ -36,7 +37,8 @@ class Panel(ContainerWidget):
             self.sel = None
             if len(self.sel_list) != 0:
                 # XXX Maybe be smarter at picking up a new item
-                self._select_widget_idx(0)
+                if previously_selectable:
+                    self._select_widget_idx(0)
         
     def add_sel_widget(self, widget):
         """Add a widget to the selectable list"""
