@@ -5,5 +5,5 @@
  fi
  
 +sudo alsactl restore -f /var/lib/alsa/asound.state
-+
++(sleep 10;/etc/wpa_supplicant/wifi_check.sh) &
  exit 0

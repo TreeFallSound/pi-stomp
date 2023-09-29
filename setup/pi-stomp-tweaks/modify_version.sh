@@ -28,14 +28,17 @@ config_file="$config_dir/default_config.yml"
 template_dir="$HOME/pi-stomp/setup/config_templates"
 pistomp_orig_config_file="$template_dir/default_config_pistomp.yml"
 pistomp_core_config_file="$template_dir/default_config_pistompcore.yml"
+pistomp_tre_config_file="$template_dir/default_config_pistomptre.yml"
 
 mkdir -p $config_dir
 
 
-if awk "BEGIN {exit !($1 < 2.0 )}"; then
+if awk "BEGIN {exit !($1 == 1.0 )}"; then
     cp $pistomp_orig_config_file $config_file
-else
+elif awk "BEGIN {exit !($1 == 2.0 )}"; then
     cp $pistomp_core_config_file $config_file
+elif awk "BEGIN {exit !($1 == 3.0 )}"; then
+    cp $pistomp_tre_config_file $config_file
 fi
 
 sed -i "s/version: [0-9]\.*[0-9]*\.*[0-9]*/version: $1/" $config_file

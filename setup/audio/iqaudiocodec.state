@@ -872,7 +872,7 @@ state.IQaudIOCODEC {
 	control.68 {
 		iface MIXER
 		name 'Onboard MIC Switch'
-		value true
+		value false
 		comment {
 			access 'read write'
 			type BOOLEAN

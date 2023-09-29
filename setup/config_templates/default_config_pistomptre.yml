@@ -1,0 +1,31 @@
+# This file provides some default configuration for the system
+# Most of this configuration can be overriden by pedalboard specific configuration.  To accomplish that, add
+# a file, named config.yml to the pedalboard directory (ie. ~/data/.pedalboards/<pedalboard-name>)
+
+---
+hardware:
+  # Hardware version (1.0 for original pi-Stomp, 2.0 for pi-Stomp Core)
+  version: 3.0
+
+  # midi definition
+  # channel: midi channel used for midi messages
+  midi:
+   channel: 14
+
+  footswitches:
+  - id: 0
+    adc_input: 0
+    ledstrip_position: 0
+    midi_CC: 60
+  - id: 1
+    adc_input: 1
+    ledstrip_position: 1
+    midi_CC: 61
+  - id: 2
+    adc_input: 2
+    ledstrip_position: 2
+    midi_CC: 62
+  - id: 3
+    adc_input: 3
+    ledstrip_position: 3
+    midi_CC: 63
