@@ -2,11 +2,13 @@ from uilib.dialog import *
 from uilib.text import *
 import common.util as util
 
+import threading
 import traceback
 
 class Parameterdialog(Dialog):
     def __init__(self, stack, param_name, param_value, param_min, param_max,
-                 width, height, title, title_font=None, **kwargs):
+                 width, height, title, title_font=None, timeout=None, **kwargs):
+        self._init_attrs(Widget.INH_ATTRS, kwargs)
         super(Parameterdialog,self).__init__(width, height, title, title_font, **kwargs)
         self.stack = stack  # TODO very LAME to require the stack to be passed, ideally panel would be able to pop itself
         self.param_name = param_name
@@ -18,12 +20,17 @@ class Parameterdialog(Dialog):
         self.parameter_tweak_amount = 8
         self.tweak = util.renormalize_float(self.parameter_tweak_amount, 0, 127, self.param_min, self.param_max)
 
+        self.timeout = timeout
+        self.timer = None
+
         self._draw_contents()
 
     def _draw_contents(self):
-        b = TextWidget(box=Box.xywh(108, 100, 0, 0), text='Close', parent=self, outline=1, sel_width=3, outline_radius=5,
-                       align=WidgetAlign.NONE, name='ok_btn')
-        b.set_selected(True)
+        if self.timeout is None:
+            # Only draw close button if not using timeout autoclose
+            b = TextWidget(box=Box.xywh(108, 100, 0, 0), text='Close', parent=self, outline=1, sel_width=3,
+                           outline_radius=5, align=WidgetAlign.NONE, name='ok_btn')
+            b.set_selected(True)
         self._draw_graph()
 
     def _draw_graph(self):
@@ -58,6 +65,16 @@ class Parameterdialog(Dialog):
         self.refresh()
 
     def parameter_value_change(self, direction):
+        if self.timeout is not None:
+            # For autoclose, add a timer which eventually pops the dialog.
+            # If timer exists, reset via cancel and recreate
+            if self.timer is not None:
+                self.timer.cancel()
+            # The timeout callback (eg. self.pop) will be executed in a separate thread.
+            # that thread should not refresh the LCD or else it could cause SPI conflicts between LCD and the MCP ADC
+            self.timer = threading.Timer(self.timeout, self.pop)
+            self.timer.start()
+
         value = float(self.param_value)
         new_value = round(((value - self.tweak) if (direction != 1) else (value + self.tweak)), 2)
         if new_value > self.param_max:
@@ -73,11 +90,16 @@ class Parameterdialog(Dialog):
 
     def input_event(self, event):
         if event == InputEvent.CLICK:
-            self.stack.pop_panel(self)
+            self.pop()
         elif event == InputEvent.LEFT:
             self.parameter_value_change(-1)
         elif event == InputEvent.RIGHT:
             self.parameter_value_change(1)
 
+    def pop(self):
+        self.stack.pop_panel(self)
+        if self.timer is not None:
+            self.timer.cancel()
+            self.timer = None
 
 

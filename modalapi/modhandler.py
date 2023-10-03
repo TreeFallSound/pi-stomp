@@ -108,6 +108,10 @@ class Modhandler(Handler):
         if self.hardware:
             self.hardware.poll_indicators()
 
+    def poll_lcd_updates(self):
+        if self.lcd:
+            self.lcd.poll_updates()
+
     def universal_encoder_select(self, direction):
         if self.lcd is not None:
             self.lcd.enc_step(direction)
@@ -462,6 +466,12 @@ class Modhandler(Handler):
         else:
             self.system_disable_eq()
 
+    def audio_parameter_change(self, direction, name, symbol, value, min, max, commit_callback):
+        if symbol:
+            d = self.lcd.draw_audio_parameter_dialog(name, symbol, value, min, max, commit_callback)
+            if d:
+                self.lcd.enc_step_widget(d, direction)
+
     def system_menu_input_gain(self, arg):
         value = self.audiocard.get_volume_parameter(self.audiocard.CAPTURE_VOLUME)
         self.lcd.draw_audio_parameter_dialog("Input Gain", self.audiocard.CAPTURE_VOLUME, value,
@@ -469,7 +479,7 @@ class Modhandler(Handler):
 
     def system_menu_headphone_volume(self, arg):
         value = self.audiocard.get_volume_parameter(self.audiocard.MASTER)
-        self.lcd.draw_audio_parameter_dialog("Headphone Volume", self.audiocard.MASTER, value,
+        self.audio_parameter_change(arg, "Headphone Volume", self.audiocard.MASTER, value,
                                              -25.75, 6, self.audio_parameter_commit)
 
     def system_menu_eq1_gain(self, arg):

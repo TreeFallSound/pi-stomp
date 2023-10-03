@@ -154,6 +154,9 @@ class Lcd(abstract_lcd.Lcd):
             self.main_panel_pushed = True
         #self.main_panel.refresh()
 
+    def poll_updates(self):
+        self.pstack.poll_updates()
+
     #
     # Toolbar
     #
@@ -355,13 +358,11 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_selection_menu(items, "Parameters")
 
     def draw_parameter_dialog(self, parameter):
-        # only present one param dialog at a time
-        d = self.pstack.find_panel_type(Parameterdialog)
-        if d is None:
-            d = Parameterdialog(self.pstack, parameter.name, parameter.value, parameter.minimum, parameter.maximum,
-                            width=270, height=130, auto_destroy=True, title=parameter.name,
+        title = parameter.instance_id + ":" + parameter.name
+        d = Parameterdialog(self.pstack, parameter.name, parameter.value, parameter.minimum, parameter.maximum,
+                            width=270, height=130, auto_destroy=True, title=title, timeout=2.2,
                             action=self.parameter_commit, object=parameter)
-            self.pstack.push_panel(d)
+        self.pstack.push_panel(d)
         return d
 
     def parameter_commit(self, parameter, value):
@@ -442,9 +443,10 @@ class Lcd(abstract_lcd.Lcd):
 
     def draw_audio_parameter_dialog(self, name, symbol, value, min, max, commit_callback):
         d = Parameterdialog(self.pstack, name, value, min, max,
-                            width=270, height=130, auto_destroy=True, title=name,
+                            width=270, height=130, auto_destroy=False, title=name, timeout=2.2,
                             action=commit_callback, object=symbol)
         self.pstack.push_panel(d)
+        return d
 
     #
     # General
