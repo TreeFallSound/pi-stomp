@@ -16,6 +16,7 @@
 import _rpi_ws281x as ws
 from rpi_ws281x import PixelStrip
 import matplotlib
+import RPi.version
 from PIL import ImageColor
 
 import pistomp.category as Category
@@ -24,10 +25,15 @@ import pistomp.category as Category
 LED_COUNT = 6        # Number of LED pixels.
 LED_PIN = 13          # GPIO pin connected to the pixels (must have PWM).
 LED_FREQ_HZ = 800000  # LED signal frequency in hertz (usually 800khz)
-LED_DMA = 12          # DMA channel to use for generating signal (try 10)   # TODO XXX need to figure this out
 LED_BRIGHTNESS = 30  # Set to 0 for darkest and 255 for brightest
 LED_INVERT = False    # True to invert the signal (when using NPN transistor level shift)
 LED_CHANNEL = 1      # set to '1' for GPIOs 13, 19, 41, 45 or 53
+
+LED_DMA = 12          # DMA channel to use for generating signal
+pi_version = RPi.version.info['version']
+if pi_version == 4:
+    LED_DMA = 10
+
 
 class Ledstrip:
 

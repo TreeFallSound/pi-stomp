@@ -36,6 +36,7 @@ sudo /usr/bin/pip3 install requests
 
 # GPIO
 sudo /usr/bin/pip3 install RPi.GPIO
+sudo /usr/bin/pip3 install RPi.version
 
 #GFXHat
 sudo /usr/bin/pip3 install gfxhat
