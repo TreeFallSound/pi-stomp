@@ -510,6 +510,10 @@ class Modhandler(Handler):
     def audio_parameter_commit(self, symbol, value):
         self.audiocard.set_volume_parameter(symbol, value)
 
+        # special case since VU meters need to recalibrate based on the input gain setting
+        if symbol == self.audiocard.CAPTURE_VOLUME:
+            self.hardware.recalibrateVU(value)
+
     def get_callback(self, callback_name):
         return util.DICT_GET(self.callbacks, callback_name)
 
