@@ -50,8 +50,10 @@ class AnalogVU(AnalogControl.AnalogControl):
 
         # TODO baseline (zero signal) will likely be unique to specific ADC/Opamp
         # Should at least let user set it
-        #self.adc_baseline = self.readChannel()
+        self.adc_baseline_measured = self.readChannel()
         self.adc_baseline = 520
+        logging.debug("VU baseline: Measured: %d, Used: %d" % (self.adc_baseline_measured, self.adc_baseline))
+
         self.units_per_volt = 512 / 1.665   # ADC units/2 / supplyVoltage/2
 
         self.thresh_sig = 0
