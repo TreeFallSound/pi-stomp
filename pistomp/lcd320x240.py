@@ -433,7 +433,7 @@ class Lcd(abstract_lcd.Lcd):
 
     def draw_audio_menu(self, event, widget):
         items = [("Input Gain", self.handler.system_menu_input_gain, None),
-                 ("Headphone Volume", self.handler.system_menu_headphone_volume, None),
+                 ("Output Volume", self.handler.system_menu_headphone_volume, None),
                  ("Global EQ", self.handler.system_toggle_eq, None),
                  ("Low Band Gain", self.handler.system_menu_eq1_gain, None),
                  ("Low-Mid Band Gain", self.handler.system_menu_eq2_gain, None),

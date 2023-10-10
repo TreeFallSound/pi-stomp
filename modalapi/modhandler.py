@@ -467,9 +467,9 @@ class Modhandler(Handler):
             self.system_disable_eq()
 
     def audio_parameter_change(self, direction, name, symbol, value, min, max, commit_callback):
-        if symbol:
+        if symbol is not None:
             d = self.lcd.draw_audio_parameter_dialog(name, symbol, value, min, max, commit_callback)
-            if d:
+            if d is not None:
                 self.lcd.enc_step_widget(d, direction)
 
     def system_menu_input_gain(self, arg):
@@ -479,7 +479,9 @@ class Modhandler(Handler):
 
     def system_menu_headphone_volume(self, arg):
         value = self.audiocard.get_volume_parameter(self.audiocard.MASTER)
-        self.audio_parameter_change(arg, "Headphone Volume", self.audiocard.MASTER, value,
+        if arg is None:
+            arg = 0
+        self.audio_parameter_change(arg, "Output Volume", self.audiocard.MASTER, value,
                                              -25.75, 6, self.audio_parameter_commit)
 
     def system_menu_eq1_gain(self, arg):
