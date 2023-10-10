@@ -19,6 +19,7 @@ import matplotlib
 import RPi.version
 from PIL import ImageColor
 
+import common.util as Util
 import pistomp.category as Category
 
 # LED strip configuration:  # TODO get these from hardware impl (pisompcore.py)
@@ -61,10 +62,11 @@ class Pixel:
         self.id = id
         self.position = position
         self.color = (0, 0, 0)
+        self.color_cache = {}
 
     # set the color for the pixel based on category, then render based on enabled status
     def set_color_by_category(self, category, enabled):
-        self._set_color(Category.get_category_color(category))
+        self.set_color(Category.get_category_color(category))
         self.set_enable(enabled)
 
     # render based on enable
@@ -75,10 +77,13 @@ class Pixel:
             self._render_color_rgb(0, 0, 0)
 
     # set the color for the pixel based on the name or rgb
-    def _set_color(self, color):
+    def set_color(self, color):
         try:
-            c = matplotlib.colors.cnames[color]
-            c = ImageColor.getcolor(c, "RGB")
+            c = Util.DICT_GET(self.color_cache, color)
+            if c is None:
+                c = matplotlib.colors.cnames[color]
+                c = ImageColor.getcolor(c, "RGB")
+                self.color_cache[color] = c
         except:
             c = color
         if c is None:

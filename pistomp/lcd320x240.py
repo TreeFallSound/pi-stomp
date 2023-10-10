@@ -212,6 +212,7 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.refresh()
 
     def draw_pedalboard(self, pedalboard_name):
+        pedalboard_name += ":"
         self.title_split = min(self.title_font.getmask(pedalboard_name).getbbox()[2], self.title_split_orig)
         if self.w_pedalboard is not None:
             self.w_pedalboard.set_text(pedalboard_name)
@@ -236,15 +237,15 @@ class Lcd(abstract_lcd.Lcd):
         items = []
         for p in self.pedalboards:
             items.append((p.title, self.handler.pedalboard_change, p))
-        self.draw_selection_menu(items, "Pedalboards")
+        self.draw_selection_menu(items, "Pedalboards", auto_dismiss=True)
 
     def draw_preset_menu(self, event, widget):
         items = []
         for (i, name) in self.current.presets.items():
             items.append((name, self.handler.preset_change, i))
-        self.draw_selection_menu(items, "Snapshots")
+        self.draw_selection_menu(items, "Snapshots", auto_dismiss=True)
 
-    def draw_selection_menu(self, items, title=""):
+    def draw_selection_menu(self, items, title="", auto_dismiss=False):
         # items is list of touples: (item_label, callback_method, callback_arg)
         # The below assumes that the callback takes the menu item label as an argument
         def menu_action(event, params):
@@ -253,7 +254,7 @@ class Lcd(abstract_lcd.Lcd):
                 callback(params[2])
 
         m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=180,
-                 auto_dismiss=False, action=menu_action)
+                 auto_dismiss=auto_dismiss, action=menu_action)
         self.pstack.push_panel(m)
 
     #
@@ -432,7 +433,7 @@ class Lcd(abstract_lcd.Lcd):
 
     def draw_audio_menu(self, event, widget):
         items = [("Input Gain", self.handler.system_menu_input_gain, None),
-                 ("Headphone Volume", self.handler.system_menu_headphone_volume, None),
+                 ("Output Volume", self.handler.system_menu_headphone_volume, None),
                  ("Global EQ", self.handler.system_toggle_eq, None),
                  ("Low Band Gain", self.handler.system_menu_eq1_gain, None),
                  ("Low-Mid Band Gain", self.handler.system_menu_eq2_gain, None),

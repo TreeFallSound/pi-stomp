@@ -17,6 +17,7 @@ import RPi.GPIO as GPIO
 
 import pistomp.analogswitch as AnalogSwitch
 import pistomp.analogVU as AnalogVU
+import pistomp.audiocard as audiocard
 import pistomp.encoder as Encoder
 import pistomp.encodermidicontrol as EncoderMidiControl
 import pistomp.gpioswitch as gpioswitch
@@ -50,7 +51,7 @@ ENC3_PIN_D = 22
 ENC3_PIN_CLK = 27
 
 # ADC channels
-#NAV_ADC_CHAN = 0  #  3.0.p1
+# NAV_ADC_CHAN = 0  #  3.0.p1
 # FOOTSWITCH0 = 1
 # FOOTSWITCH1 = 2
 # FOOTSWITCH2 = 3
@@ -149,9 +150,11 @@ class Pistomptre(hardware.Hardware):
             self.create_footswitches(cfg)
 
     def init_vu(self):
-        indicator = AnalogVU.AnalogVU(self.spi, CLIP_L, 4, self.ledstrip, 5)  # TODO Make adc_chan and threshold configurable
+        # input gain setting on audio card is used to bias the VU meter thresholds
+        input_gain = self.handler.audiocard.get_volume_parameter(self.handler.audiocard.CAPTURE_VOLUME)
+        indicator = AnalogVU.AnalogVU(self.spi, CLIP_L, 4, self.ledstrip, 5, input_gain)
         self.indicators.append(indicator)
-        indicator = AnalogVU.AnalogVU(self.spi, CLIP_R, 4, self.ledstrip, 4)
+        indicator = AnalogVU.AnalogVU(self.spi, CLIP_R, 4, self.ledstrip, 4, input_gain)
         self.indicators.append(indicator)
 
     def test(self):
