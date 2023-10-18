@@ -83,6 +83,10 @@ class Hardware:
         for i in self.indicators:
             i.refresh()
 
+    def recalibrateVU(self, input_gain):
+        for i in self.indicators:
+            i.recalibrate(input_gain)
+
     def reinit(self, cfg):
         # reinit hardware as specified by the new cfg context (after pedalboard change, etc.)
         self.cfg = self.default_cfg.copy()

@@ -154,6 +154,9 @@ class Lcd(abstract_lcd.Lcd):
             self.main_panel_pushed = True
         #self.main_panel.refresh()
 
+    def poll_updates(self):
+        self.pstack.poll_updates()
+
     #
     # Toolbar
     #
@@ -209,6 +212,7 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.refresh()
 
     def draw_pedalboard(self, pedalboard_name):
+        pedalboard_name += ":"
         self.title_split = min(self.title_font.getmask(pedalboard_name).getbbox()[2], self.title_split_orig)
         if self.w_pedalboard is not None:
             self.w_pedalboard.set_text(pedalboard_name)
@@ -233,15 +237,15 @@ class Lcd(abstract_lcd.Lcd):
         items = []
         for p in self.pedalboards:
             items.append((p.title, self.handler.pedalboard_change, p))
-        self.draw_selection_menu(items, "Pedalboards")
+        self.draw_selection_menu(items, "Pedalboards", auto_dismiss=True)
 
     def draw_preset_menu(self, event, widget):
         items = []
         for (i, name) in self.current.presets.items():
             items.append((name, self.handler.preset_change, i))
-        self.draw_selection_menu(items, "Snapshots")
+        self.draw_selection_menu(items, "Snapshots", auto_dismiss=True)
 
-    def draw_selection_menu(self, items, title=""):
+    def draw_selection_menu(self, items, title="", auto_dismiss=False):
         # items is list of touples: (item_label, callback_method, callback_arg)
         # The below assumes that the callback takes the menu item label as an argument
         def menu_action(event, params):
@@ -250,7 +254,7 @@ class Lcd(abstract_lcd.Lcd):
                 callback(params[2])
 
         m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=180,
-                 auto_dismiss=False, action=menu_action)
+                 auto_dismiss=auto_dismiss, action=menu_action)
         self.pstack.push_panel(m)
 
     #
@@ -355,13 +359,11 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_selection_menu(items, "Parameters")
 
     def draw_parameter_dialog(self, parameter):
-        # only present one param dialog at a time
-        d = self.pstack.find_panel_type(Parameterdialog)
-        if d is None:
-            d = Parameterdialog(self.pstack, parameter.name, parameter.value, parameter.minimum, parameter.maximum,
-                            width=270, height=130, auto_destroy=True, title=parameter.name,
+        title = parameter.instance_id + ":" + parameter.name
+        d = Parameterdialog(self.pstack, parameter.name, parameter.value, parameter.minimum, parameter.maximum,
+                            width=270, height=130, auto_destroy=True, title=title, timeout=2.2,
                             action=self.parameter_commit, object=parameter)
-            self.pstack.push_panel(d)
+        self.pstack.push_panel(d)
         return d
 
     def parameter_commit(self, parameter, value):
@@ -431,7 +433,7 @@ class Lcd(abstract_lcd.Lcd):
 
     def draw_audio_menu(self, event, widget):
         items = [("Input Gain", self.handler.system_menu_input_gain, None),
-                 ("Headphone Volume", self.handler.system_menu_headphone_volume, None),
+                 ("Output Volume", self.handler.system_menu_headphone_volume, None),
                  ("Global EQ", self.handler.system_toggle_eq, None),
                  ("Low Band Gain", self.handler.system_menu_eq1_gain, None),
                  ("Low-Mid Band Gain", self.handler.system_menu_eq2_gain, None),
@@ -442,9 +444,10 @@ class Lcd(abstract_lcd.Lcd):
 
     def draw_audio_parameter_dialog(self, name, symbol, value, min, max, commit_callback):
         d = Parameterdialog(self.pstack, name, value, min, max,
-                            width=270, height=130, auto_destroy=True, title=name,
+                            width=270, height=130, auto_destroy=False, title=name, timeout=2.2,
                             action=commit_callback, object=symbol)
         self.pstack.push_panel(d)
+        return d
 
     #
     # General

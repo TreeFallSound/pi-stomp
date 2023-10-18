@@ -138,6 +138,8 @@ def main():
             period += 1
             if period % 2 == 0:
                 handler.poll_indicators()
+            if period % 20 == 0:
+                handler.poll_lcd_updates()
             if period > 100:
                 handler.poll_modui_changes()
                 period = 0

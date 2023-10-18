@@ -16,18 +16,25 @@
 import _rpi_ws281x as ws
 from rpi_ws281x import PixelStrip
 import matplotlib
+import RPi.version
 from PIL import ImageColor
 
+import common.util as Util
 import pistomp.category as Category
 
 # LED strip configuration:  # TODO get these from hardware impl (pisompcore.py)
 LED_COUNT = 6        # Number of LED pixels.
 LED_PIN = 13          # GPIO pin connected to the pixels (must have PWM).
 LED_FREQ_HZ = 800000  # LED signal frequency in hertz (usually 800khz)
-LED_DMA = 12          # DMA channel to use for generating signal (try 10)   # TODO XXX need to figure this out
 LED_BRIGHTNESS = 30  # Set to 0 for darkest and 255 for brightest
 LED_INVERT = False    # True to invert the signal (when using NPN transistor level shift)
 LED_CHANNEL = 1      # set to '1' for GPIOs 13, 19, 41, 45 or 53
+
+LED_DMA = 12          # DMA channel to use for generating signal
+pi_version = RPi.version.info['version']
+if pi_version == 4:
+    LED_DMA = 10
+
 
 class Ledstrip:
 
@@ -55,10 +62,11 @@ class Pixel:
         self.id = id
         self.position = position
         self.color = (0, 0, 0)
+        self.color_cache = {}
 
     # set the color for the pixel based on category, then render based on enabled status
     def set_color_by_category(self, category, enabled):
-        self._set_color(Category.get_category_color(category))
+        self.set_color(Category.get_category_color(category))
         self.set_enable(enabled)
 
     # render based on enable
@@ -69,10 +77,13 @@ class Pixel:
             self._render_color_rgb(0, 0, 0)
 
     # set the color for the pixel based on the name or rgb
-    def _set_color(self, color):
+    def set_color(self, color):
         try:
-            c = matplotlib.colors.cnames[color]
-            c = ImageColor.getcolor(c, "RGB")
+            c = Util.DICT_GET(self.color_cache, color)
+            if c is None:
+                c = matplotlib.colors.cnames[color]
+                c = ImageColor.getcolor(c, "RGB")
+                self.color_cache[color] = c
         except:
             c = color
         if c is None:

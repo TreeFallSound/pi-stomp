@@ -17,6 +17,7 @@ import RPi.GPIO as GPIO
 
 import pistomp.analogswitch as AnalogSwitch
 import pistomp.analogVU as AnalogVU
+import pistomp.audiocard as audiocard
 import pistomp.encoder as Encoder
 import pistomp.encodermidicontrol as EncoderMidiControl
 import pistomp.gpioswitch as gpioswitch
@@ -123,7 +124,10 @@ class Pistomptre(hardware.Hardware):
         midi_channel = self.get_real_midi_channel(cfg)
         self.add_tweak_encoder(ENC1_PIN_D, ENC1_PIN_CLK, ENC1_PIN_SW, None, midi_channel, ENC1_MIDI_CC)
         self.add_tweak_encoder(ENC2_PIN_D, ENC2_PIN_CLK, ENC2_PIN_SW, None, midi_channel, ENC2_MIDI_CC)
-        # TODO tweak3
+
+        # Volume encoder
+        enc = Encoder.Encoder(ENC3_PIN_D, ENC3_PIN_CLK, callback=self.handler.system_menu_headphone_volume)
+        self.encoders.append(enc)
 
     def init_relays(self):
         pass
@@ -146,9 +150,11 @@ class Pistomptre(hardware.Hardware):
             self.create_footswitches(cfg)
 
     def init_vu(self):
-        indicator = AnalogVU.AnalogVU(self.spi, CLIP_L, 4, self.ledstrip, 5)  # TODO Make adc_chan and threshold configurable
+        # input gain setting on audio card is used to bias the VU meter thresholds
+        input_gain = self.handler.audiocard.get_volume_parameter(self.handler.audiocard.CAPTURE_VOLUME)
+        indicator = AnalogVU.AnalogVU(self.spi, CLIP_L, 4, self.ledstrip, 5, input_gain)
         self.indicators.append(indicator)
-        indicator = AnalogVU.AnalogVU(self.spi, CLIP_R, 4, self.ledstrip, 4)
+        indicator = AnalogVU.AnalogVU(self.spi, CLIP_R, 4, self.ledstrip, 4, input_gain)
         self.indicators.append(indicator)
 
     def test(self):

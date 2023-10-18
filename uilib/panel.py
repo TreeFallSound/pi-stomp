@@ -28,6 +28,7 @@ class Panel(ContainerWidget):
             old_sel = None
         else:
             old_sel = self.sel_list[self.sel]
+        previously_selectable = widget.selectable
         widget.selectable = False
         self.sel_list.remove(widget)
         if old_sel is not None:
@@ -36,7 +37,8 @@ class Panel(ContainerWidget):
             self.sel = None
             if len(self.sel_list) != 0:
                 # XXX Maybe be smarter at picking up a new item
-                self._select_widget_idx(0)
+                if previously_selectable:
+                    self._select_widget_idx(0)
         
     def add_sel_widget(self, widget):
         """Add a widget to the selectable list"""
@@ -177,6 +179,12 @@ class PanelStack(ContainerWidget):
         self._setup_act_attrs()
         self._setup()
 
+        self.lcd_needs_update = False
+
+    def poll_updates(self):
+        if self.lcd_needs_update:
+            self.refresh()
+
     def _compose(self, widget, orig_box, real_box):
         # This always called with widget = a Panel which is a direct
         # child of the stack, so we can drop orig_box
@@ -184,6 +192,7 @@ class PanelStack(ContainerWidget):
 
     def refresh(self):
         self._do_refresh(None, self.box)
+        self.lcd_needs_update = False
 
     def _do_refresh(self, panel, box):
         # XXX TODO: Optimize the case where there is only one panel,
@@ -244,7 +253,8 @@ class PanelStack(ContainerWidget):
             else:
                 current = self.stack[-1]
             self.current = current
-        self.refresh()
+        # queue a refresh
+        self.lcd_needs_update = True
         if panel.auto_destroy:
 #            panel.detach()
             panel.destroy()
