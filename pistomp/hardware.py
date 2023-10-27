@@ -83,9 +83,13 @@ class Hardware:
         for i in self.indicators:
             i.refresh()
 
-    def recalibrateVU(self, input_gain):
+    def recalibrateVU_gain(self, input_gain):
         for i in self.indicators:
-            i.recalibrate(input_gain)
+            i.recalibrate_gain(input_gain)
+
+    def recalibrateVU_baseline(self, baseline):
+        for i in self.indicators:
+            i.recalibrate_baseline(baseline)
 
     def reinit(self, cfg):
         # reinit hardware as specified by the new cfg context (after pedalboard change, etc.)
@@ -112,6 +116,10 @@ class Hardware:
 
     @abstractmethod
     def init_relays(self):
+        pass
+
+    @abstractmethod
+    def cleanup(self):
         pass
 
     @abstractmethod

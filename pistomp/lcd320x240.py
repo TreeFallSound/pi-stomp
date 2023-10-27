@@ -432,8 +432,9 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_selection_menu(items, "System Menu")
 
     def draw_audio_menu(self, event, widget):
-        items = [("Input Gain", self.handler.system_menu_input_gain, None),
-                 ("Output Volume", self.handler.system_menu_headphone_volume, None),
+        items = [("Output Volume", self.handler.system_menu_headphone_volume, None),
+                 ("Input Gain", self.handler.system_menu_input_gain, None),
+                 ("VU Calibration", self.handler.system_menu_vu_calibration, None),
                  ("Global EQ", self.handler.system_toggle_eq, None),
                  ("Low Band Gain", self.handler.system_menu_eq1_gain, None),
                  ("Low-Mid Band Gain", self.handler.system_menu_eq2_gain, None),
@@ -444,6 +445,16 @@ class Lcd(abstract_lcd.Lcd):
 
     def draw_audio_parameter_dialog(self, name, symbol, value, min, max, commit_callback):
         d = Parameterdialog(self.pstack, name, value, min, max,
+                            width=270, height=130, auto_destroy=False, title=name, timeout=2.2,
+                            action=commit_callback, object=symbol)
+        self.pstack.push_panel(d)
+        return d
+
+    def draw_vu_calibration_dialog(self, symbol, value, commit_callback):
+        if value is None:
+            value = 512  # 1024 / 2
+        name = "VU Calibration"
+        d = Parameterdialog(self.pstack, name, value, 502, 522,
                             width=270, height=130, auto_destroy=False, title=name, timeout=2.2,
                             action=commit_callback, object=symbol)
         self.pstack.push_panel(d)

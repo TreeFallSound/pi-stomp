@@ -32,7 +32,7 @@ class VuState(Enum):
 
 class AnalogVU(AnalogControl.AnalogControl):
 
-    def __init__(self, spi, adc_channel, tolerance, ledstrip, ledstrip_pos, input_gain):
+    def __init__(self, spi, adc_channel, tolerance, ledstrip, ledstrip_pos, input_gain, adc_baseline):
         super(AnalogVU, self).__init__(spi, adc_channel, tolerance)
         self.ledstrip = ledstrip
         self.pixel = ledstrip.add_pixel(None, ledstrip_pos)
@@ -48,21 +48,23 @@ class AnalogVU(AnalogControl.AnalogControl):
         self.state = VuState.OFF
         self.color_map = {VuState.OFF: None, VuState.SIG: "forestgreen", VuState.WARN: "orange", VuState.CLIP: "red"}
 
-        # TODO baseline (zero signal) will likely be unique to specific ADC/Opamp
-        # Should at least let user set it
-        self.adc_baseline_measured = self.readChannel()
-        self.adc_baseline = 520
-        logging.debug("VU baseline: Measured: %d, Used: %d" % (self.adc_baseline_measured, self.adc_baseline))
-
         self.units_per_volt = 512 / 1.665   # ADC units/2 / supplyVoltage/2
 
         self.thresh_sig = 0
         self.thresh_warn = 0
         self.thresh_clip = 0
 
-        self.recalibrate(input_gain)
+        self.input_gain = input_gain
+        self.adc_baseline = adc_baseline
+        self.recalibrate(input_gain, adc_baseline)
 
-    def recalibrate(self, input_gain):
+    def recalibrate_gain(self, input_gain):
+        self.recalibrate(input_gain, self.adc_baseline)
+
+    def recalibrate_baseline(self, adc_baseline):
+        self.recalibrate(self.input_gain, adc_baseline)
+
+    def recalibrate(self, input_gain, adc_baseline):
         # This should get called when user changes ALSA capture_volume (aka input gain)
         # Since the ADC reading the input level is before any input gain adjustment,
         # The thresholds must change to accommodate the input gain.
@@ -73,16 +75,17 @@ class AnalogVU(AnalogControl.AnalogControl):
         # TODO Make these threshold values user configurable via default_config.yml
 
         thresh_sig_db = -39 - input_gain
-        self.thresh_sig = int(self.adc_baseline + ((10 ** (thresh_sig_db / 20)) * self.units_per_volt))
+        self.thresh_sig = int(adc_baseline + ((10 ** (thresh_sig_db / 20)) * self.units_per_volt))
 
         thresh_warn_db = -20 - input_gain
-        self.thresh_warn = int(self.adc_baseline + ((10 ** (thresh_warn_db / 20)) * self.units_per_volt))
+        self.thresh_warn = int(adc_baseline + ((10 ** (thresh_warn_db / 20)) * self.units_per_volt))
 
         thresh_clip_db = -15 - input_gain
-        self.thresh_clip = int(self.adc_baseline + ((10 ** (thresh_clip_db / 20)) * self.units_per_volt))
+        self.thresh_clip = int(adc_baseline + ((10 ** (thresh_clip_db / 20)) * self.units_per_volt))
 
-        logging.debug("analogVU thresholds: Signal Present: %d, Warn: %d, Clip: %d" %
-                      (thresh_sig_db, thresh_warn_db, thresh_clip_db))
+        logging.debug("analogVU: Baseline: %d, Signal Present: %d (%d dB), Warn: %d (%d dB), Clip: %d (%d dB)" %
+                      (adc_baseline, self.thresh_sig, thresh_sig_db, self.thresh_warn, thresh_warn_db,
+                       self.thresh_clip, thresh_clip_db))
 
     def calculate_average_amplitude(self, samples):
         if len(samples) == 0:
