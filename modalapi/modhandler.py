@@ -27,6 +27,7 @@ import common.token as Token
 import common.util as util
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
+import pistomp.settings as Settings
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.footswitch import Footswitch
@@ -50,6 +51,7 @@ class Modhandler(Handler):
         self.homedir = homedir
         self.root_uri = "http://localhost:80/"
         self.hardware = None
+        self.settings = Settings.Settings()
 
         self.pedalboards = {}
         self.pedalboard_list = []  # TODO LAME to have two lists
@@ -82,6 +84,8 @@ class Modhandler(Handler):
     def cleanup(self):
         if self.lcd is not None:
             self.lcd.cleanup()
+        if self.hardware is not None:
+            self.hardware.cleanup()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -484,6 +488,15 @@ class Modhandler(Handler):
         self.audio_parameter_change(arg, "Output Volume", self.audiocard.MASTER, value,
                                              -25.75, 6, self.audio_parameter_commit)
 
+    def system_menu_vu_calibration(self, arg):
+        value = self.settings.get_setting('analogVU.adc_baseline')
+        self.lcd.draw_vu_calibration_dialog('analogVU.adc_baseline', value,
+                                            commit_callback=self.settings_file_commit)
+
+    def settings_file_commit(self, symbol, value):
+        self.settings.set_setting(symbol, value)
+        self.hardware.recalibrateVU_baseline(value)
+
     def system_menu_eq1_gain(self, arg):
         value = self.audiocard.get_volume_parameter(self.audiocard.EQ_1)
         self.lcd.draw_audio_parameter_dialog("Low Band Gain", self.audiocard.EQ_1, value,
@@ -514,7 +527,7 @@ class Modhandler(Handler):
 
         # special case since VU meters need to recalibrate based on the input gain setting
         if symbol == self.audiocard.CAPTURE_VOLUME:
-            self.hardware.recalibrateVU(value)
+            self.hardware.recalibrateVU_gain(value)
 
     def get_callback(self, callback_name):
         return util.DICT_GET(self.callbacks, callback_name)

@@ -59,6 +59,10 @@ class Ledstrip:
     def get_gpio(self):
         return LED_PIN
 
+    def cleanup(self):
+        for p in self.pixels:
+            p.set_enable(False)
+
 
 class Pixel:
     def __init__(self, strip, id, position):

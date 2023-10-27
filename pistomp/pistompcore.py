@@ -97,3 +97,6 @@ class Pistompcore(hardware.Hardware):
         cfg = self.default_cfg.copy()
         if len(self.footswitches) == 0:
             self.create_footswitches(cfg)
+
+    def cleanup(self):
+        pass

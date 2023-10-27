@@ -52,15 +52,7 @@ ENC3_PIN_CLK = 27
 
 # ADC channels
 # NAV_ADC_CHAN = 0  #  3.0.p1
-# FOOTSWITCH0 = 1
-# FOOTSWITCH1 = 2
-# FOOTSWITCH2 = 3
-# FOOTSWITCH3 = 4
-FOOTSWITCH0 = 0  # 3.0.rc1
-FOOTSWITCH1 = 1
-FOOTSWITCH2 = 2
-FOOTSWITCH3 = 3
-NAV_ADC_CHAN = 4
+NAV_ADC_CHAN = 4  # 3.0.rc1
 EXPRESSION = 5
 CLIP_L = 6
 CLIP_R = 7
@@ -152,10 +144,16 @@ class Pistomptre(hardware.Hardware):
     def init_vu(self):
         # input gain setting on audio card is used to bias the VU meter thresholds
         input_gain = self.handler.audiocard.get_volume_parameter(self.handler.audiocard.CAPTURE_VOLUME)
-        indicator = AnalogVU.AnalogVU(self.spi, CLIP_L, 4, self.ledstrip, 5, input_gain)
+        adc_baseline = self.handler.settings.get_setting('analogVU.adc_baseline')
+        if adc_baseline is None:
+            adc_baseline = 512
+        indicator = AnalogVU.AnalogVU(self.spi, CLIP_L, 4, self.ledstrip, 5, input_gain, adc_baseline)
         self.indicators.append(indicator)
-        indicator = AnalogVU.AnalogVU(self.spi, CLIP_R, 4, self.ledstrip, 4, input_gain)
+        indicator = AnalogVU.AnalogVU(self.spi, CLIP_R, 4, self.ledstrip, 4, input_gain, adc_baseline)
         self.indicators.append(indicator)
+
+    def cleanup(self):
+        self.ledstrip.cleanup()
 
     def test(self):
         pass
