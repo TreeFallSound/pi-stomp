@@ -30,6 +30,7 @@ class Audiocard:
         self.initial_config_file = None  # use this if common config_file loading fails
         self.initial_config_name = None
         self.card_index = 0
+        self.bypass = False
 
         # Superset of Alsa parameters for all cards (None == not supported)
         # Override in subclass with actual name
@@ -99,6 +100,12 @@ class Audiocard:
         if store:
             self.store()
         return True
+
+    def get_bypass(self):
+        pass
+
+    def set_bypass(self, bypass):
+        pass
 
     #
     # Use the following get and set methods depending on the value type

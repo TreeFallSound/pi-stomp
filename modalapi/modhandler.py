@@ -59,6 +59,7 @@ class Modhandler(Handler):
 
         self.wifi_status = {}
         self.eq_status = {}
+        self.bypass_status = False
 
         self.current = None  # pointer to Current class
         self.lcd = None
@@ -412,6 +413,8 @@ class Modhandler(Handler):
 
         self.eq_status = self.audiocard.get_switch_parameter(self.audiocard.DAC_EQ)
         self.lcd.update_eq(self.eq_status)
+        self.bypass_status = self.audiocard.get_bypass()
+        self.lcd.update_bypass(self.bypass_status)
 
     def system_menu_shutdown(self, arg):
         self.lcd.splash_show(False)
@@ -469,6 +472,11 @@ class Modhandler(Handler):
             self.system_enable_eq()
         else:
             self.system_disable_eq()
+
+    def system_toggle_bypass(self, arg1, arg2):
+        self.bypass_status = not self.bypass_status
+        self.audiocard.set_bypass(self.bypass_status)
+        self.lcd.update_bypass(self.bypass_status)
 
     def audio_parameter_change(self, direction, name, symbol, value, min, max, commit_callback):
         if symbol is not None:
