@@ -172,7 +172,7 @@ class Lcd(abstract_lcd.Lcd):
                                   'eq_blue.png'), parent=self.main_panel, action=self.draw_audio_menu)
         self.main_panel.add_sel_widget(self.w_eq)
         self.w_power = ImageWidget(box=Box.xywh(270, 0, 20, 20), image_path=os.path.join(self.imagedir,
-                                   'power_green.png'), parent=self.main_panel)
+                                   'power_gray.png'), parent=self.main_panel, action=self.handler.system_toggle_bypass)
         self.main_panel.add_sel_widget(self.w_power)
         self.w_wrench = ImageWidget(box=Box.xywh(296, 0, 20, 20), image_path=os.path.join(self.imagedir,
                              'wrench_silver.png'), parent=self.main_panel, action=self.draw_system_menu)
@@ -491,8 +491,10 @@ class Lcd(abstract_lcd.Lcd):
         pass
 
     def update_bypass(self, bypass):
-        pass
-    
+        img = 'power_gray.png' if bypass else 'power_green.png'
+        image_path = os.path.join(self.imagedir, img)
+        self.w_power.replace_img(image_path)
+
     def draw_tool_select(self, tool_type):
         pass
 

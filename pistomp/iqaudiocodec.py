@@ -31,3 +31,16 @@ class IQaudioCodec(audiocard.Audiocard):
         self.EQ_3 = 'DAC EQ3'
         self.EQ_4 = 'DAC EQ4'
         self.EQ_5 = 'DAC EQ5'
+
+        self._init_bypass()
+
+    def _init_bypass(self):
+        self.bypass = not self.get_switch_parameter('Mixout Left DAC Left')
+
+    def get_bypass(self):
+        return self.bypass
+
+    def set_bypass(self, bypass):
+        self.bypass = not self.bypass
+        self.set_switch_parameter('Mixout Left Aux Left', self.bypass, store=False)
+        self.set_switch_parameter('Mixout Left DAC Left', not self.bypass)

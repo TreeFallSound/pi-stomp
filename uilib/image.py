@@ -19,3 +19,8 @@ class ImageWidget(Widget):
         # Draw image
         image.paste(self.image, loc)
 
+    def replace_img(self, image_path):
+        # XXX Note that the new image must be the same size as the original
+        self.image = Image.open(image_path)
+        self.refresh()
+
