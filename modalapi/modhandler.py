@@ -27,6 +27,7 @@ import common.token as Token
 import common.util as util
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
+import pistomp.settings as Settings
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.footswitch import Footswitch
@@ -50,6 +51,7 @@ class Modhandler(Handler):
         self.homedir = homedir
         self.root_uri = "http://localhost:80/"
         self.hardware = None
+        self.settings = Settings.Settings()
 
         self.pedalboards = {}
         self.pedalboard_list = []  # TODO LAME to have two lists
@@ -57,6 +59,7 @@ class Modhandler(Handler):
 
         self.wifi_status = {}
         self.eq_status = {}
+        self.bypass_status = False
 
         self.current = None  # pointer to Current class
         self.lcd = None
@@ -82,6 +85,8 @@ class Modhandler(Handler):
     def cleanup(self):
         if self.lcd is not None:
             self.lcd.cleanup()
+        if self.hardware is not None:
+            self.hardware.cleanup()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -408,6 +413,8 @@ class Modhandler(Handler):
 
         self.eq_status = self.audiocard.get_switch_parameter(self.audiocard.DAC_EQ)
         self.lcd.update_eq(self.eq_status)
+        self.bypass_status = self.audiocard.get_bypass()
+        self.lcd.update_bypass(self.bypass_status)
 
     def system_menu_shutdown(self, arg):
         self.lcd.splash_show(False)
@@ -466,6 +473,11 @@ class Modhandler(Handler):
         else:
             self.system_disable_eq()
 
+    def system_toggle_bypass(self, arg1, arg2):
+        self.bypass_status = not self.bypass_status
+        self.audiocard.set_bypass(self.bypass_status)
+        self.lcd.update_bypass(self.bypass_status)
+
     def audio_parameter_change(self, direction, name, symbol, value, min, max, commit_callback):
         if symbol is not None:
             d = self.lcd.draw_audio_parameter_dialog(name, symbol, value, min, max, commit_callback)
@@ -483,6 +495,15 @@ class Modhandler(Handler):
             arg = 0
         self.audio_parameter_change(arg, "Output Volume", self.audiocard.MASTER, value,
                                              -25.75, 6, self.audio_parameter_commit)
+
+    def system_menu_vu_calibration(self, arg):
+        value = self.settings.get_setting('analogVU.adc_baseline')
+        self.lcd.draw_vu_calibration_dialog('analogVU.adc_baseline', value,
+                                            commit_callback=self.settings_file_commit)
+
+    def settings_file_commit(self, symbol, value):
+        self.settings.set_setting(symbol, value)
+        self.hardware.recalibrateVU_baseline(value)
 
     def system_menu_eq1_gain(self, arg):
         value = self.audiocard.get_volume_parameter(self.audiocard.EQ_1)
@@ -514,7 +535,7 @@ class Modhandler(Handler):
 
         # special case since VU meters need to recalibrate based on the input gain setting
         if symbol == self.audiocard.CAPTURE_VOLUME:
-            self.hardware.recalibrateVU(value)
+            self.hardware.recalibrateVU_gain(value)
 
     def get_callback(self, callback_name):
         return util.DICT_GET(self.callbacks, callback_name)

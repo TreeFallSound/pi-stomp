@@ -16,7 +16,7 @@
 import _rpi_ws281x as ws
 from rpi_ws281x import PixelStrip
 import matplotlib
-import RPi.version
+import re
 from PIL import ImageColor
 
 import common.util as Util
@@ -30,9 +30,13 @@ LED_BRIGHTNESS = 30  # Set to 0 for darkest and 255 for brightest
 LED_INVERT = False    # True to invert the signal (when using NPN transistor level shift)
 LED_CHANNEL = 1      # set to '1' for GPIOs 13, 19, 41, 45 or 53
 
-LED_DMA = 12          # DMA channel to use for generating signal
-pi_version = RPi.version.info['version']
-if pi_version == 4:
+# DMA channel to use for generating signal
+# Determine DMA channel based on pi model, if we need finer granularity, use the Revision field
+_cpuinfo = open('/proc/cpuinfo').read()
+_info=''.join(_cpuinfo.split())
+_match = re.search(r'(?<=Model:RaspberryPi)\d', _info)
+LED_DMA = 12  # pi3
+if _match and _match.group(0) == "4":
     LED_DMA = 10
 
 
@@ -54,6 +58,10 @@ class Ledstrip:
 
     def get_gpio(self):
         return LED_PIN
+
+    def cleanup(self):
+        for p in self.pixels:
+            p.set_enable(False)
 
 
 class Pixel:

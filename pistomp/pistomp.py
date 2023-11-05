@@ -126,6 +126,9 @@ class Pistomp(hardware.Hardware):
     def init_relays(self):
         self.relay = Relay.Relay(RELAY_SET_PIN, RELAY_RESET_PIN)
 
+    def cleanup(self):
+        pass
+
     # Test procedure for verifying hardware controls
     def test(self):
         self.mod.lcd.erase_all()
