@@ -158,7 +158,5 @@ class WifiManager():
             for line in file:
                 if 'ssid=' in line:
                     current_ssid = line.split('"')[1]
-                elif 'psk=' in line:
-                    current_password = line.split('"')[1]
-            return current_ssid, current_password
+            return current_ssid
         
