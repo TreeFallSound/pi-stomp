@@ -77,4 +77,8 @@ class Handler:
 
     def system_toggle_hotspot(self, arg1, arg2):
         raise NotImplementedError()
-        
+
+    def configure_wifi_credentials(self, ssid, password):
+        raise NotImplementedError()
+
+
