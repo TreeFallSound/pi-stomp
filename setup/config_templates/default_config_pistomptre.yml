@@ -9,6 +9,7 @@ hardware:
 
   # midi definition
   # channel: midi channel used for midi messages
+  # to set tap tempo for a switch use - tap_tempo: set_mod_tap_tempo 
   midi:
    channel: 14
 
