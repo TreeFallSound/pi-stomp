@@ -185,13 +185,12 @@ class Lcd(abstract_lcd.Lcd):
         self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 0, 0), text='mySSID', prompt='SSID :', parent=d, outline=1, sel_wi>
                    outline_radius=5, align=WidgetAlign.NONE, name='cancel_btn', edit_message='WiFi SSID')
         d.add_sel_widget(self.w_wifi_ssid)
-        # NOPE self.ssid = b.edit_message
-        b = TextWidget(box=Box.xywh(0, 30, 0, 0), text='password123', prompt='Password :', parent=d, outline=1,
-                   sel_width=3, outline_radius=5,
-                   action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn',
-                   edit_message='Password')
-        d.add_sel_widget(b)
-        self.password = b.edit_message
+        self.ssid = self.w_wifi_ssid.edit_message
+        
+        self.w_wifi_pass = TextWidget(box=Box.xywh(0, 30, 0, 0), text='password123', prompt='Password :', parent=d, outline=1,
+                   sel_width=3, outline_radius=5, align=WidgetAlign.NONE, name='cancel_btn', edit_message='Password')
+        d.add_sel_widget(self.w_wifi_pass)
+        self.password = self.w_wifi_pass.edit_message
 
         b = TextWidget(box=Box.xywh(0, 60, 0, 0), text='Hotspot', parent=d, outline=1, sel_width=3, outline_radius=5,
                    action=self.handler.system_toggle_hotspot, align=WidgetAlign.NONE)
