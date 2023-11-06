@@ -179,15 +179,15 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.add_sel_widget(self.w_wrench)
 
     def draw_wifi_dialog(self, event, image):
+        self.handler.get_wifi_credentials(current_ssid, current_password)
         d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
-        # TODO ssid/password need to be obtained from wifi object to pre-populate the text widgets
-        # also need to consider if wpa_supplicant file gets changed manually
-        self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 0, 0), text='mySSID', prompt='SSID :', parent=d, outline=1, sel_wi>
+
+        self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 0, 0), text=current_ssid, prompt='SSID :', parent=d, outline=1, sel_wi>
                    outline_radius=5, align=WidgetAlign.NONE, name='cancel_btn', edit_message='WiFi SSID')
         d.add_sel_widget(self.w_wifi_ssid)
         self.ssid = self.w_wifi_ssid.edit_message
         
-        self.w_wifi_pass = TextWidget(box=Box.xywh(0, 30, 0, 0), text='password123', prompt='Password :', parent=d, outline=1,
+        self.w_wifi_pass = TextWidget(box=Box.xywh(0, 30, 0, 0), text=current_password, prompt='Password :', parent=d, outline=1,
                    sel_width=3, outline_radius=5, align=WidgetAlign.NONE, name='cancel_btn', edit_message='Password')
         d.add_sel_widget(self.w_wifi_pass)
         self.password = self.w_wifi_pass.edit_message
