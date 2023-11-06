@@ -475,9 +475,9 @@ class Modhandler(Handler):
     def system_toggle_hotspot(self, arg1, arg2):
         self.wifi_status = not self.wifi_status
         if self.wifi_status:
-            self.wifi_manager.disable_hotspot()
-        else:
             self.wifi_manager.enable_hotspot()
+        else:
+            self.wifi_manager.disable_hotspot()
         self.lcd.update_wifi(self.wifi_status)
 
     def configure_wifi_credentials(self, ssid, password):
