@@ -120,6 +120,7 @@ class WifiManager():
             self.wifi_status = True
         except:
             logging.debug('Wifi hotspot enabling failed')
+            self.wifi_status = False
 
     def disable_hotspot(self):
         try:
@@ -128,6 +129,7 @@ class WifiManager():
             self.wifi_status = False
         except:
             logging.debug('Wifi hotspot disabling failed')
+            self.wifi_status = True
 
     def configure_wifi(self, ssid, password):
         config_lines = [
