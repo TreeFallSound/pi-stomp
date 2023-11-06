@@ -74,3 +74,7 @@ class Handler:
 
     def set_mod_tap_tempo(self, bpm):
         raise NotImplementedError()
+
+    def system_toggle_hotspot(self, arg1, arg2):
+        raise NotImplementedError()
+        
