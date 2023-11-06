@@ -21,6 +21,8 @@ hardware:
   #   gpio_output: gpio pin used to drive indicator (LED, etc.)
   #   id: integer identifier
   #   midi_CC: msg to send (0 - 127 or None)
+  #   ledstrip_position: integer identifier
+  #   tap_tempo: set_mod_tap_tempo 
   #
   footswitches:
   - id: 0
