@@ -9,10 +9,21 @@ hardware:
 
   # midi definition
   # channel: midi channel used for midi messages
-  # to set tap tempo for a switch use - tap_tempo: set_mod_tap_tempo 
   midi:
    channel: 14
-
+  
+  # footswitches definition
+  #   bypass: audiocard bypass to toggle (LEFT, RIGHT or LEFT_RIGHT)
+  #   debounce_input: debounce chip pin to which switch is connected
+  #   disable: disable the switch
+  #   gpio_input: gpio pin if not using debounce
+  #   gpio_output: gpio pin used to drive indicator (LED, etc.)
+  #   id: integer identifier
+  #   midi_CC: msg to send (0 - 127 or None)
+  #   ledstrip_position: integer identifier
+  #   tap_tempo: set_mod_tap_tempo 
+  #   longpress: next_snapshot or previous_snapshot
+  #
   footswitches:
   - id: 0
     adc_input: 0
