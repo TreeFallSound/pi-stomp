@@ -128,3 +128,25 @@ class WifiManager():
             self.wifi_status = False
         except:
             logging.debug('Wifi hotspot disabling failed')
+
+    def configure_wifi(self, ssid, password):
+        config_lines = [
+            'ctrl_interface=DIR=/var/run/wpa_suplicant GROUP=netdev',
+            'update_config=1',
+            'country=US',
+            '\n'
+            'network={',
+            '\tssid="{}"'.format(ssid),
+            '\tpsk="{}"'.format(password),
+            '}'
+        ]
+        config = '\n'.join(config_lines)
+
+        os.popen("sudo chmod a+w /etc/wpa_supplicant/wpa_supplicant.conf")
+
+        with open("/etc/wpa_supplicant/wpa_supplicant.conf", "w") as wifi:
+            wifi.write(config)
+        logging.info("Wifi config added. Refreshing config")
+
+        os.popen("sudo wpa_cli -i wlan0 reconfigure")
+        
