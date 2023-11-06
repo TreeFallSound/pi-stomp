@@ -151,4 +151,14 @@ class WifiManager():
         logging.info("Wifi config added. Refreshing config")
 
         os.popen("sudo wpa_cli -i wlan0 reconfigure")
+
+    def get_wifi_credentials(self, file_path):
+        file_path = '/etc/wpa_supplicant/wpa_supplicant.conf'
+        with open(file_path, 'r') as file:
+            for line in file:
+                if 'ssid=' in line:
+                    ssid = line.split('"')[1]
+                elif 'psk=' in line:
+                    password = line.split('"')[1]
+            return ssid, password
         
