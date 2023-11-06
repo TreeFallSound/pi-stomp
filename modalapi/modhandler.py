@@ -457,14 +457,12 @@ class Modhandler(Handler):
         success = self.audiocard.set_switch_parameter(self.audiocard.DAC_EQ, False)
         if success:
             self.eq_status = False
-        # TODO self.system_info_update_eq()
 
     def system_enable_eq(self):
         self.lcd.draw_info_message("Enabling, please wait...")
         success = self.audiocard.set_switch_parameter(self.audiocard.DAC_EQ, True)
         if success:
             self.eq_status = True
-        # TODO self.system_info_update_eq()
 
     def system_toggle_eq(self, arg):
         to_status = not self.eq_status
@@ -472,6 +470,15 @@ class Modhandler(Handler):
             self.system_enable_eq()
         else:
             self.system_disable_eq()
+        self.lcd.update_eq(self.eq_status)
+
+    def system_toggle_hotspot(self, arg1, arg2):
+        self.wifi_status = not self.wifi_status
+        if self.wifi_status:
+            self.wifi_manager.disable_hotspot()
+        else:
+            self.wifi_manager.enable_hotspot()
+        self.lcd.update_wifi(self.wifi_status)
 
     def system_toggle_bypass(self, arg1, arg2):
         self.bypass_status = not self.bypass_status
