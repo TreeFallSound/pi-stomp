@@ -180,27 +180,41 @@ class Lcd(abstract_lcd.Lcd):
 
     def draw_wifi_dialog(self, event, image):
         d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
-
-        b = TextWidget(box=Box.xywh(0, 0, 0, 0), text='mySSID', prompt='SSID :', parent=d, outline=1, sel_width=3,
-                       outline_radius=5,
-                       action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn',
-                       edit_message='WiFi SSID')
-        d.add_sel_widget(b)
+        # TODO ssid/password need to be obtained from wifi object to pre-populate the text widgets
+        # also need to consider if wpa_supplicant file gets changed manually
+        self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 0, 0), text='mySSID', prompt='SSID :', parent=d, outline=1, sel_wi>
+                   outline_radius=5, align=WidgetAlign.NONE, name='cancel_btn', edit_message='WiFi SSID')
+        d.add_sel_widget(self.w_wifi_ssid)
+        # NOPE self.ssid = b.edit_message
         b = TextWidget(box=Box.xywh(0, 30, 0, 0), text='password123', prompt='Password :', parent=d, outline=1,
-                       sel_width=3, outline_radius=5,
-                       action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn',
-                       edit_message='Password')
+                   sel_width=3, outline_radius=5,
+                   action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn',
+                   edit_message='Password')
+        d.add_sel_widget(b)
+        self.password = b.edit_message
+
+        b = TextWidget(box=Box.xywh(0, 60, 0, 0), text='Hotspot', parent=d, outline=1, sel_width=3, outline_radius=5,
+                   action=self.handler.system_toggle_hotspot, align=WidgetAlign.NONE)
         d.add_sel_widget(b)
 
         b = TextWidget(box=Box.xywh(0, 90, 0, 0), text='Cancel', parent=d, outline=1, sel_width=3, outline_radius=5,
-                       action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn')
+                   action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn')
         d.add_sel_widget(b)
+
         b = TextWidget(box=Box.xywh(80, 90, 0, 0), text='Ok', parent=d, outline=1, sel_width=3, outline_radius=5,
-                       action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='ok_btn')
+                   action=self._commit_wifi_settings, align=WidgetAlign.NONE, name='ok_btn')
         d.add_sel_widget(b)
 
         self.pstack.push_panel(d)
+        self.w_wifi_dialog = d
         d.refresh()
+        
+    def _commit_wifi_settings(self, a, b):
+        ssid = self.w_wifi_ssid.get_text()
+        # password = self.w_wifi_password.get_text()
+        # print("commit_wifi_settings", ssid)
+        # self.handler.configure_wifi_credentials(ssid, password)
+        self.pstack.pop_panel(self.w_wifi_dialog)
 
     #
     # Title (Pedalboard and Preset)
@@ -485,10 +499,14 @@ class Lcd(abstract_lcd.Lcd):
 
     # Toolbar
     def update_wifi(self, wifi_status):
-        pass
+        img = 'wifi_orange.png' if wifi_status else 'wifi_silver.png'
+        image_path = os.path.join(self.imagedir, img)
+        self.w_wifi.replace_img(image_path)
 
     def update_eq(self, eq_status):
-        pass
+        img = 'eq_blue.png' if eq_status else 'eq_gray.png'
+        image_path = os.path.join(self.imagedir, img)
+        self.w_eq.replace_img(image_path)
 
     def update_bypass(self, bypass):
         img = 'power_gray.png' if bypass else 'power_green.png'
