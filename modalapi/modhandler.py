@@ -480,6 +480,9 @@ class Modhandler(Handler):
             self.wifi_manager.enable_hotspot()
         self.lcd.update_wifi(self.wifi_status)
 
+    def configure_wifi_credentials(self, ssid, password):
+        self.wifi_manager.configure_wifi(ssid, password)
+
     def system_toggle_bypass(self, arg1, arg2):
         self.bypass_status = not self.bypass_status
         self.audiocard.set_bypass(self.bypass_status)
