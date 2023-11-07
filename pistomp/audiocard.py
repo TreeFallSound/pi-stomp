@@ -101,10 +101,16 @@ class Audiocard:
             self.store()
         return True
 
-    def get_bypass(self):
+    def get_bypass_left(self):
         pass
 
-    def set_bypass(self, bypass):
+    def get_bypass_right(self):
+        pass
+
+    def set_bypass_left(self, bypass):
+        pass
+
+    def set_bypass_right(self, bypass):
         pass
 
     #

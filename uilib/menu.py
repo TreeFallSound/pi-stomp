@@ -28,7 +28,10 @@ class Menu(Dialog):
         # Create item widgets
         h = 0
         for i in items:
+            # item structure: 0:name, 1:action, 2:object, 3:selected item
             t = i[0]
+            if len(i) == 4 and i[3]:
+                t = '\u2714 ' + t   # Add checkmark to selected item
             b = Box.xywh(0,h,self.box.width,self.item_h)
             w = TextWidget(box = b, text_halign = self.text_halign, font = self.font,
                            text = t, parent = self, action = self._item_action)

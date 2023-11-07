@@ -172,11 +172,25 @@ class Lcd(abstract_lcd.Lcd):
                                   'eq_blue.png'), parent=self.main_panel, action=self.draw_audio_menu)
         self.main_panel.add_sel_widget(self.w_eq)
         self.w_power = ImageWidget(box=Box.xywh(270, 0, 20, 20), image_path=os.path.join(self.imagedir,
-                                   'power_gray.png'), parent=self.main_panel, action=self.handler.system_toggle_bypass)
+                                   'power_gray.png'), parent=self.main_panel, action=self.toggle_bypass)
         self.main_panel.add_sel_widget(self.w_power)
         self.w_wrench = ImageWidget(box=Box.xywh(296, 0, 20, 20), image_path=os.path.join(self.imagedir,
                              'wrench_silver.png'), parent=self.main_panel, action=self.draw_system_menu)
         self.main_panel.add_sel_widget(self.w_wrench)
+
+    def toggle_bypass(self, event, widget):
+        if event == InputEvent.CLICK:
+            self.handler.system_toggle_bypass(None, None)
+        elif event == InputEvent.LONG_CLICK:
+            self.draw_bypass_preference()
+
+    def draw_bypass_preference(self):
+        pref = self.handler.settings.get_setting(Token.BYPASS)
+        items = [("Left",  self.handler.change_bypass_preference, Token.LEFT, pref == Token.LEFT),
+                 ("Right", self.handler.change_bypass_preference, Token.RIGHT, pref == Token.RIGHT),
+                 ("Left & Right",  self.handler.change_bypass_preference, Token.LEFT_RIGHT,
+                  pref == Token.LEFT_RIGHT or pref == None)]
+        self.draw_selection_menu(items, "Bypass Preference", auto_dismiss=True)
 
     def draw_wifi_dialog(self, event, image):
         d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
@@ -490,8 +504,15 @@ class Lcd(abstract_lcd.Lcd):
     def update_eq(self, eq_status):
         pass
 
-    def update_bypass(self, bypass):
-        img = 'power_gray.png' if bypass else 'power_green.png'
+    def update_bypass(self, bypass_left, bypass_right):
+        if not bypass_left and not bypass_right:
+            img = 'power_green.png'
+        elif not bypass_left:
+            img = 'power_left.png'
+        elif not bypass_right:
+            img = 'power_right.png'
+        else:
+            img = 'power_gray.png'
         image_path = os.path.join(self.imagedir, img)
         self.w_power.replace_img(image_path)
 

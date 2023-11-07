@@ -59,7 +59,8 @@ class Modhandler(Handler):
 
         self.wifi_status = {}
         self.eq_status = {}
-        self.bypass_status = False
+        self.bypass_left = False
+        self.bypass_right = False
 
         self.current = None  # pointer to Current class
         self.lcd = None
@@ -413,8 +414,9 @@ class Modhandler(Handler):
 
         self.eq_status = self.audiocard.get_switch_parameter(self.audiocard.DAC_EQ)
         self.lcd.update_eq(self.eq_status)
-        self.bypass_status = self.audiocard.get_bypass()
-        self.lcd.update_bypass(self.bypass_status)
+        self.bypass_left = self.audiocard.get_bypass_left()
+        self.bypass_right = self.audiocard.get_bypass_right()
+        self.lcd.update_bypass(self.bypass_left, self.bypass_right)
 
     def system_menu_shutdown(self, arg):
         self.lcd.splash_show(False)
@@ -474,9 +476,17 @@ class Modhandler(Handler):
             self.system_disable_eq()
 
     def system_toggle_bypass(self, arg1, arg2):
-        self.bypass_status = not self.bypass_status
-        self.audiocard.set_bypass(self.bypass_status)
-        self.lcd.update_bypass(self.bypass_status)
+        bypass_preference = self.settings.get_setting(Token.BYPASS)
+        if bypass_preference is None or bypass_preference == Token.LEFT or bypass_preference == Token.LEFT_RIGHT:
+            self.bypass_left = not self.bypass_left
+            self.audiocard.set_bypass_left(self.bypass_left)
+        if bypass_preference is None or bypass_preference == Token.RIGHT or bypass_preference == Token.LEFT_RIGHT:
+            self.bypass_right = not self.bypass_right
+            self.audiocard.set_bypass_right(self.bypass_right)
+        self.lcd.update_bypass(self.bypass_left, self.bypass_right)
+
+    def change_bypass_preference(self, pref):
+        self.settings.set_setting(Token.BYPASS, pref)
 
     def audio_parameter_change(self, direction, name, symbol, value, min, max, commit_callback):
         if symbol is not None:
