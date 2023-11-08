@@ -76,7 +76,8 @@ class Modhandler(Handler):
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
         self.callbacks = {"set_mod_tap_tempo": self.set_mod_tap_tempo,
                           "next_snapshot": self.preset_incr_and_change,
-                          "previous_snapshot": self.preset_decr_and_change
+                          "previous_snapshot": self.preset_decr_and_change,
+                          "toggle_bypass": self.system_toggle_bypass
         }
 
     def __del__(self):
@@ -475,7 +476,7 @@ class Modhandler(Handler):
         else:
             self.system_disable_eq()
 
-    def system_toggle_bypass(self, arg1, arg2):
+    def system_toggle_bypass(self):
         bypass_preference = self.settings.get_setting(Token.BYPASS)
         if bypass_preference is None or bypass_preference == Token.LEFT or bypass_preference == Token.LEFT_RIGHT:
             self.bypass_left = not self.bypass_left

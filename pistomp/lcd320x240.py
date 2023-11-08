@@ -181,7 +181,7 @@ class Lcd(abstract_lcd.Lcd):
 
     def toggle_bypass(self, event, widget):
         if event == InputEvent.CLICK:
-            self.handler.system_toggle_bypass(None, None)
+            self.handler.system_toggle_bypass()
         elif event == InputEvent.LONG_CLICK:
             self.draw_bypass_preference()
 
