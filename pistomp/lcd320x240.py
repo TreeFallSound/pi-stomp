@@ -140,9 +140,10 @@ class Lcd(abstract_lcd.Lcd):
     #
     # Main
     #
-    def link_data(self, pedalboards, current):
+    def link_data(self, pedalboards, current, footswitches):
         self.pedalboards = pedalboards
         self.current = current
+        self.footswitches = footswitches
 
     def draw_main_panel(self):
         self.draw_tools(None, None, None, None)
@@ -407,11 +408,15 @@ class Lcd(abstract_lcd.Lcd):
                 break
 
     def draw_unbound_footswitches(self):
-        for slot in [ele for ele in range(self.handler.get_num_footswitches()) if ele not in self.footswitch_slots]:
+        for fs in self.footswitches:
+            if fs.id in self.footswitch_slots:
+                continue
+            slot = fs.id
+            label = "" if fs.display_label is None else fs.display_label
             y = 0
             x = self.get_footswitch_pitch() * slot
             p = FootswitchWidget(Box.xywh(x, y, self.plugin_width, self.plugin_height), self.small_font,
-                                 "", None, True, parent=self.footswitch_panel)
+                                 label, None, True, parent=self.footswitch_panel)
             self.w_footswitches.append(p)
             self.footswitch_panel.add_widget(p)
         self.footswitch_panel.refresh()

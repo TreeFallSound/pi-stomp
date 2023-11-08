@@ -211,7 +211,7 @@ class Modhandler(Handler):
         self.load_current_presets()
         #self.lcd.init_data(self.pedalboard_list, pedalboard,
         #                   self.current.presets, self.current.preset_index)
-        self.lcd.link_data(self.pedalboard_list, self.current)
+        self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
         self.lcd.draw_main_panel()
 
     def bind_current_pedalboard(self):
