@@ -18,6 +18,7 @@ import digitalio
 import logging
 import os
 import common.token as Token
+import modalapi.parameter as Parameter
 import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
 from PIL import ImageColor
@@ -100,7 +101,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_info_msg = None
 
         # panels
-        self.pstack = PanelStack(display, image_format='RGB', use_dimming=False)  # TODO use dimming without loosing FS's
+        self.pstack = PanelStack(display, image_format='RGB', use_dimming=True)  # TODO use dimming without loosing FS's
         self.splash_panel = Panel(box=Box.xywh(0, 0, self.display_width, self.display_height))
         self.pstack.push_panel(self.splash_panel)
         self.main_panel = Panel(box=Box.xywh(0, 0, self.display_width, 170))
@@ -368,21 +369,40 @@ class Lcd(abstract_lcd.Lcd):
     #
     def draw_parameter_menu(self, plugin):
         items = []
-        for (name, param) in plugin.parameters.items():
+        for (name, param) in sorted(plugin.parameters.items()):
             if name != Token.COLON_BYPASS:
                 items.append((name, self.draw_parameter_dialog, param))
         self.draw_selection_menu(items, "Parameters")
 
     def draw_parameter_dialog(self, parameter):
         title = parameter.instance_id + ":" + parameter.name
-        d = Parameterdialog(self.pstack, parameter.name, parameter.value, parameter.minimum, parameter.maximum,
-                            width=270, height=130, auto_destroy=True, title=title, timeout=2.2,
-                            action=self.parameter_commit, object=parameter)
-        self.pstack.push_panel(d)
-        return d
+        current_value = parameter.value
+        if parameter.type == Parameter.Type.ENUMERATION:
+            items = []
+            for (label, value) in parameter.get_enum_value_list():
+                item = (label, self.parameter_commit_enum, (parameter, value), value==current_value)
+                items.append(item)
+            self.draw_selection_menu(items, title, auto_dismiss=True)
+            return None
+        elif parameter.type == Parameter.Type.TOGGLED:
+            items = [ ("On",  self.parameter_commit_enum, (parameter, 1), current_value==1),
+                      ("Off", self.parameter_commit_enum, (parameter, 0), current_value==0)]
+            self.draw_selection_menu(items, title, auto_dismiss=True)
+            return None
+        else:
+            taper = 2 if parameter.type == Parameter.Type.LOGARITHMIC else 1
+            d = Parameterdialog(self.pstack, parameter.name, current_value, parameter.minimum, parameter.maximum,
+                                width=270, height=130, auto_destroy=True, title=title, timeout=2.2,
+                                action=self.parameter_commit, object=parameter, taper=taper)
+            self.pstack.push_panel(d)
+            return d  # return the dialog so the parameter can be modified using the tweak knob
 
     def parameter_commit(self, parameter, value):
         self.handler.parameter_value_commit(parameter, value)
+
+    def parameter_commit_enum(self, param_value_tuple):
+        # (parameter_object, value)
+        self.parameter_commit(param_value_tuple[0], param_value_tuple[1])
 
     #
     # Footswitches
@@ -465,7 +485,7 @@ class Lcd(abstract_lcd.Lcd):
     def draw_audio_parameter_dialog(self, name, symbol, value, min, max, commit_callback):
         d = Parameterdialog(self.pstack, name, value, min, max,
                             width=270, height=130, auto_destroy=False, title=name, timeout=2.2,
-                            action=commit_callback, object=symbol)
+                            action=commit_callback, object=symbol, taper=1)
         self.pstack.push_panel(d)
         return d
 

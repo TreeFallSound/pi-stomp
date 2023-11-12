@@ -60,7 +60,7 @@ class Widget:
     INH_ATTRS = { 'bkgnd_color': (0,0,0),
                   'fgnd_color' : (255,255,255),
                   'sel_color'  : (255,255,0),
-                  'sel_width'  : 1,
+                  'sel_width'  : 2,
                   'sel_radius' : None
     }
 
