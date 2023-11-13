@@ -201,7 +201,7 @@ class Lcd(abstract_lcd.Lcd):
         
         d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
 
-        self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 0, 0), text='mySSID', prompt='SSID :', parent=d, outline=1, sel_wi>
+        self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 0, 0), text='mySSID', prompt='SSID :', parent=d, outline=1, sel_width=3,
                    outline_radius=5, align=WidgetAlign.NONE, name='cancel_btn', edit_message='WiFi SSID')
         d.add_sel_widget(self.w_wifi_ssid)
         self.ssid = self.w_wifi_ssid.edit_message
@@ -228,9 +228,9 @@ class Lcd(abstract_lcd.Lcd):
         d.refresh()
         
     def _commit_wifi_settings(self, a, b):
-        ssid = self.w_wifi_ssid.get_text()
-        # password = self.w_wifi_password.get_text()
-        # print("commit_wifi_settings", ssid)
+        self.ssid = self.w_wifi_ssid.get_text()
+        self.password = self.w_wifi_password.get_text()
+        print("commit_wifi_settings", self.ssid, self.password)
         # self.handler.configure_wifi_credentials(ssid, password)
         self.pstack.pop_panel(self.w_wifi_dialog)
 

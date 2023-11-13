@@ -22,6 +22,8 @@ import threading
 import subprocess
 import logging
 
+WPA_PATH = '/etc/wpa_supplicant/wpa_supplicant.conf'
+
 class WifiManager():
 
     # For now hard wire wifi interface to avoid spending time scrubbing sysfs
@@ -144,19 +146,12 @@ class WifiManager():
         ]
         config = '\n'.join(config_lines)
 
-        os.popen("sudo chmod a+w /etc/wpa_supplicant/wpa_supplicant.conf")
+        os.popen("sudo chmod a+w {WPA_PATH}")
 
-        with open("/etc/wpa_supplicant/wpa_supplicant.conf", "w") as wifi:
+        with open(WPA_PATH, "w") as wifi:
             wifi.write(config)
         logging.info("Wifi config added. Refreshing config")
 
         os.popen("sudo wpa_cli -i wlan0 reconfigure")
 
-    def get_wifi_credentials(self, file_path):
-        file_path = '/etc/wpa_supplicant/wpa_supplicant.conf'
-        with open(file_path, 'r') as file:
-            for line in file:
-                if 'ssid=' in line:
-                    current_ssid = line.split('"')[1]
-            return current_ssid
         
