@@ -398,7 +398,7 @@ class Lcd(abstract_lcd.Lcd):
         else:
             taper = 2 if parameter.type == Parameter.Type.LOGARITHMIC else 1
             d = Parameterdialog(self.pstack, parameter.name, current_value, parameter.minimum, parameter.maximum,
-                                width=270, height=130, auto_destroy=True, title=title, timeout=2.2,
+                                width=270, height=130, auto_destroy=True, title=title, timeout=None,
                                 action=self.parameter_commit, object=parameter, taper=taper)
             self.pstack.push_panel(d)
 
