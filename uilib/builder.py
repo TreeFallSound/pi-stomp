@@ -2,7 +2,6 @@ import json
 from PIL import ImageFont
 
 from uilib.panel import *
-from uilib.choicedialog import *
 from uilib.dialog import *
 from uilib.text import *
 from uilib.image import *
