@@ -32,15 +32,26 @@ class IQaudioCodec(audiocard.Audiocard):
         self.EQ_4 = 'DAC EQ4'
         self.EQ_5 = 'DAC EQ5'
 
+        self.bypass_left = False
+        self.bypass_right = False
         self._init_bypass()
 
     def _init_bypass(self):
-        self.bypass = not self.get_switch_parameter('Mixout Left DAC Left')
+        self.bypass_left = not self.get_switch_parameter('Mixout Left DAC Left')
+        self.bypass_right = not self.get_switch_parameter('Mixout Right DAC Right')
 
-    def get_bypass(self):
-        return self.bypass
+    def get_bypass_left(self):
+        return self.bypass_left
 
-    def set_bypass(self, bypass):
-        self.bypass = not self.bypass
-        self.set_switch_parameter('Mixout Left Aux Left', self.bypass, store=False)
-        self.set_switch_parameter('Mixout Left DAC Left', not self.bypass)
+    def get_bypass_right(self):
+        return self.bypass_right
+
+    def set_bypass_left(self, bypass):
+        self.bypass_left = bypass
+        self.set_switch_parameter('Mixout Left Aux Left', self.bypass_left, store=False)
+        self.set_switch_parameter('Mixout Left DAC Left', not self.bypass_left)
+
+    def set_bypass_right(self, bypass):
+        self.bypass_right = bypass
+        self.set_switch_parameter('Mixout Right Aux Right', self.bypass_right, store=False)
+        self.set_switch_parameter('Mixout Right DAC Right', not self.bypass_right)

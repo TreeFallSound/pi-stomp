@@ -18,6 +18,7 @@ import digitalio
 import logging
 import os
 import common.token as Token
+import modalapi.parameter as Parameter
 import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
 from PIL import ImageColor
@@ -98,9 +99,10 @@ class Lcd(abstract_lcd.Lcd):
         self.w_footswitches = []
         self.w_splash = None
         self.w_info_msg = None
+        self.w_parameter_dialogs = {}
 
         # panels
-        self.pstack = PanelStack(display, image_format='RGB', use_dimming=False)  # TODO use dimming without loosing FS's
+        self.pstack = PanelStack(display, image_format='RGB', use_dimming=True)  # TODO use dimming without loosing FS's
         self.splash_panel = Panel(box=Box.xywh(0, 0, self.display_width, self.display_height))
         self.pstack.push_panel(self.splash_panel)
         self.main_panel = Panel(box=Box.xywh(0, 0, self.display_width, 170))
@@ -140,9 +142,10 @@ class Lcd(abstract_lcd.Lcd):
     #
     # Main
     #
-    def link_data(self, pedalboards, current):
+    def link_data(self, pedalboards, current, footswitches):
         self.pedalboards = pedalboards
         self.current = current
+        self.footswitches = footswitches
 
     def draw_main_panel(self):
         self.draw_tools(None, None, None, None)
@@ -172,11 +175,25 @@ class Lcd(abstract_lcd.Lcd):
                                   'eq_blue.png'), parent=self.main_panel, action=self.draw_audio_menu)
         self.main_panel.add_sel_widget(self.w_eq)
         self.w_power = ImageWidget(box=Box.xywh(270, 0, 20, 20), image_path=os.path.join(self.imagedir,
-                                   'power_gray.png'), parent=self.main_panel, action=self.handler.system_toggle_bypass)
+                                   'power_gray.png'), parent=self.main_panel, action=self.toggle_bypass)
         self.main_panel.add_sel_widget(self.w_power)
         self.w_wrench = ImageWidget(box=Box.xywh(296, 0, 20, 20), image_path=os.path.join(self.imagedir,
                              'wrench_silver.png'), parent=self.main_panel, action=self.draw_system_menu)
         self.main_panel.add_sel_widget(self.w_wrench)
+
+    def toggle_bypass(self, event, widget):
+        if event == InputEvent.CLICK:
+            self.handler.system_toggle_bypass()
+        elif event == InputEvent.LONG_CLICK:
+            self.draw_bypass_preference()
+
+    def draw_bypass_preference(self):
+        pref = self.handler.settings.get_setting(Token.BYPASS)
+        items = [("Left",  self.handler.change_bypass_preference, Token.LEFT, pref == Token.LEFT),
+                 ("Right", self.handler.change_bypass_preference, Token.RIGHT, pref == Token.RIGHT),
+                 ("Left & Right",  self.handler.change_bypass_preference, Token.LEFT_RIGHT,
+                  pref == Token.LEFT_RIGHT or pref == None)]
+        self.draw_selection_menu(items, "Bypass Preference", auto_dismiss=True)
 
     def draw_wifi_dialog(self, event, image):
         # The below seems to crash due to 'Lcd' object has no attribute 'current_ssid' 'current_password'
@@ -271,6 +288,7 @@ class Lcd(abstract_lcd.Lcd):
         m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=180,
                  auto_dismiss=auto_dismiss, action=menu_action)
         self.pstack.push_panel(m)
+        return m
 
     #
     # Plugins
@@ -368,21 +386,46 @@ class Lcd(abstract_lcd.Lcd):
     #
     def draw_parameter_menu(self, plugin):
         items = []
-        for (name, param) in plugin.parameters.items():
+        for (name, param) in sorted(plugin.parameters.items()):
             if name != Token.COLON_BYPASS:
                 items.append((name, self.draw_parameter_dialog, param))
         self.draw_selection_menu(items, "Parameters")
 
     def draw_parameter_dialog(self, parameter):
+        # If we already have an active dialog for the parameter, use it
+        d = util.DICT_GET(self.w_parameter_dialogs, parameter.name)
+        if d is not None and d.parent is not None:
+            return d
+
+        # Create a new dialog
         title = parameter.instance_id + ":" + parameter.name
-        d = Parameterdialog(self.pstack, parameter.name, parameter.value, parameter.minimum, parameter.maximum,
-                            width=270, height=130, auto_destroy=True, title=title, timeout=2.2,
-                            action=self.parameter_commit, object=parameter)
-        self.pstack.push_panel(d)
-        return d
+        current_value = parameter.value
+        if parameter.type == Parameter.Type.ENUMERATION:
+            items = []
+            for (label, value) in parameter.get_enum_value_list():
+                item = (label, self.parameter_commit_enum, (parameter, value), value==current_value)
+                items.append(item)
+            d = self.draw_selection_menu(items, title, auto_dismiss=True)
+        elif parameter.type == Parameter.Type.TOGGLED:
+            items = [ ("On",  self.parameter_commit_enum, (parameter, 1), current_value==1),
+                      ("Off", self.parameter_commit_enum, (parameter, 0), current_value==0)]
+            d = self.draw_selection_menu(items, title, auto_dismiss=True)
+        else:
+            taper = 2 if parameter.type == Parameter.Type.LOGARITHMIC else 1
+            d = Parameterdialog(self.pstack, parameter.name, current_value, parameter.minimum, parameter.maximum,
+                                width=270, height=130, auto_destroy=True, title=title, timeout=None,
+                                action=self.parameter_commit, object=parameter, taper=taper)
+            self.pstack.push_panel(d)
+
+        self.w_parameter_dialogs[parameter.name] = d
+        return d  # return the dialog so the parameter can be modified using the tweak knob
 
     def parameter_commit(self, parameter, value):
         self.handler.parameter_value_commit(parameter, value)
+
+    def parameter_commit_enum(self, param_value_tuple):
+        # (parameter_object, value)
+        self.parameter_commit(param_value_tuple[0], param_value_tuple[1])
 
     #
     # Footswitches
@@ -408,11 +451,15 @@ class Lcd(abstract_lcd.Lcd):
                 break
 
     def draw_unbound_footswitches(self):
-        for slot in [ele for ele in range(self.handler.get_num_footswitches()) if ele not in self.footswitch_slots]:
+        for fs in self.footswitches:
+            if fs.id in self.footswitch_slots:
+                continue
+            slot = fs.id
+            label = "" if fs.display_label is None else fs.display_label
             y = 0
             x = self.get_footswitch_pitch() * slot
             p = FootswitchWidget(Box.xywh(x, y, self.plugin_width, self.plugin_height), self.small_font,
-                                 "", None, True, parent=self.footswitch_panel)
+                                 label, None, True, parent=self.footswitch_panel)
             self.w_footswitches.append(p)
             self.footswitch_panel.add_widget(p)
         self.footswitch_panel.refresh()
@@ -461,7 +508,7 @@ class Lcd(abstract_lcd.Lcd):
     def draw_audio_parameter_dialog(self, name, symbol, value, min, max, commit_callback):
         d = Parameterdialog(self.pstack, name, value, min, max,
                             width=270, height=130, auto_destroy=False, title=name, timeout=2.2,
-                            action=commit_callback, object=symbol)
+                            action=commit_callback, object=symbol, taper=1)
         self.pstack.push_panel(d)
         return d
 
@@ -509,8 +556,15 @@ class Lcd(abstract_lcd.Lcd):
         image_path = os.path.join(self.imagedir, img)
         self.w_eq.replace_img(image_path)
 
-    def update_bypass(self, bypass):
-        img = 'power_gray.png' if bypass else 'power_green.png'
+    def update_bypass(self, bypass_left, bypass_right):
+        if not bypass_left and not bypass_right:
+            img = 'power_green.png'
+        elif not bypass_left:
+            img = 'power_left.png'
+        elif not bypass_right:
+            img = 'power_right.png'
+        else:
+            img = 'power_gray.png'
         image_path = os.path.join(self.imagedir, img)
         self.w_power.replace_img(image_path)
 

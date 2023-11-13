@@ -51,7 +51,7 @@ ENC3_PIN_D = 22
 ENC3_PIN_CLK = 27
 
 # ADC channels
-# NAV_ADC_CHAN = 0  #  3.0.p1
+#NAV_ADC_CHAN = 0  #  3.0.p1
 NAV_ADC_CHAN = 4  # 3.0.rc1
 EXPRESSION = 5
 CLIP_L = 6

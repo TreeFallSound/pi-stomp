@@ -37,7 +37,8 @@ class Footswitch(controller.Controller):
     # So each entry should have a corresponding entry in the handler callbacks dict
     # Only these can be used as callbacks.  Any other specified by the user will result in no action.
     all_longpress_groups = {"next_snapshot":LongpressInfo(),
-                            "previous_snapshot":LongpressInfo()}
+                            "previous_snapshot":LongpressInfo(),
+                            "toggle_bypass":LongpressInfo()}
 
     # Static list of possible callbacks from the handler, set using set_class_callbacks()
     callbacks = {}

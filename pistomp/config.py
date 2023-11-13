@@ -84,7 +84,7 @@ schema = {
                 "type" : "array",
                 "items" : {
                   "type" : "string",
-                  "enum" : ["next_snapshot", "previous_snapshot"]
+                  "enum" : ["next_snapshot", "previous_snapshot", "toggle_bypass"]
                 }
               },
               "midi_CC": {

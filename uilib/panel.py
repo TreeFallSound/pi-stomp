@@ -171,7 +171,7 @@ class PanelStack(ContainerWidget):
         self.visible = True
         if use_dimming:
             size = (box.width, box.height)
-            self.dimmer = Image.new('RGBA', size, (0,0,0,128))
+            self.dimmer = Image.new('RGBA', size, (0,0,0,64))
         else:
             self.dimmer = None
             

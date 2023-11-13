@@ -44,7 +44,6 @@ class DialogDecorator(PanelDecorator):
 
 class Dialog(Panel):
     def __init__(self, width, height, title, title_font = None, **kwargs):
-        print("Dialog, width=",width,"height=",height,"title=",title)
         box = Box.xywh(0, 0, width, height)
         # Fixed radius for now
         radius = 10
