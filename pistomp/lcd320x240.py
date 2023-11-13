@@ -195,10 +195,7 @@ class Lcd(abstract_lcd.Lcd):
                   pref == Token.LEFT_RIGHT or pref == None)]
         self.draw_selection_menu(items, "Bypass Preference", auto_dismiss=True)
 
-    def draw_wifi_dialog(self, event, image):
-        # The below seems to crash due to 'Lcd' object has no attribute 'current_ssid' 'current_password'
-        # self.handler.get_wifi_credentials(current_ssid, current_password)
-        
+    def draw_wifi_dialog(self, event, image): 
         d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
 
         self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 0, 0), text='mySSID', prompt='SSID :', parent=d, outline=1, sel_width=3,
