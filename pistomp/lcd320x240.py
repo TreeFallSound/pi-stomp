@@ -99,6 +99,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_footswitches = []
         self.w_splash = None
         self.w_info_msg = None
+        self.w_parameter_dialogs = {}
 
         # panels
         self.pstack = PanelStack(display, image_format='RGB', use_dimming=True)  # TODO use dimming without loosing FS's
@@ -272,6 +273,7 @@ class Lcd(abstract_lcd.Lcd):
         m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=180,
                  auto_dismiss=auto_dismiss, action=menu_action)
         self.pstack.push_panel(m)
+        return m
 
     #
     # Plugins
@@ -375,6 +377,12 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_selection_menu(items, "Parameters")
 
     def draw_parameter_dialog(self, parameter):
+        # If we already have an active dialog for the parameter, use it
+        d = util.DICT_GET(self.w_parameter_dialogs, parameter.name)
+        if d is not None and d.parent is not None:
+            return d
+
+        # Create a new dialog
         title = parameter.instance_id + ":" + parameter.name
         current_value = parameter.value
         if parameter.type == Parameter.Type.ENUMERATION:
@@ -382,20 +390,20 @@ class Lcd(abstract_lcd.Lcd):
             for (label, value) in parameter.get_enum_value_list():
                 item = (label, self.parameter_commit_enum, (parameter, value), value==current_value)
                 items.append(item)
-            self.draw_selection_menu(items, title, auto_dismiss=True)
-            return None
+            d = self.draw_selection_menu(items, title, auto_dismiss=True)
         elif parameter.type == Parameter.Type.TOGGLED:
             items = [ ("On",  self.parameter_commit_enum, (parameter, 1), current_value==1),
                       ("Off", self.parameter_commit_enum, (parameter, 0), current_value==0)]
-            self.draw_selection_menu(items, title, auto_dismiss=True)
-            return None
+            d = self.draw_selection_menu(items, title, auto_dismiss=True)
         else:
             taper = 2 if parameter.type == Parameter.Type.LOGARITHMIC else 1
             d = Parameterdialog(self.pstack, parameter.name, current_value, parameter.minimum, parameter.maximum,
                                 width=270, height=130, auto_destroy=True, title=title, timeout=2.2,
                                 action=self.parameter_commit, object=parameter, taper=taper)
             self.pstack.push_panel(d)
-            return d  # return the dialog so the parameter can be modified using the tweak knob
+
+        self.w_parameter_dialogs[parameter.name] = d
+        return d  # return the dialog so the parameter can be modified using the tweak knob
 
     def parameter_commit(self, parameter, value):
         self.handler.parameter_value_commit(parameter, value)
