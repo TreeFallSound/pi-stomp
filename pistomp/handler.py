@@ -35,6 +35,9 @@ class Handler:
 
     def poll_controls(self):
         raise NotImplementedError()
+    
+    def poll_wifi(self):
+        raise NotImplementedError()
 
     def poll_modui_changes(self):
         raise NotImplementedError()
