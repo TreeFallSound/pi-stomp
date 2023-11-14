@@ -544,7 +544,7 @@ class Lcd(abstract_lcd.Lcd):
 
     # Toolbar
     def update_wifi(self, wifi_status):
-        img = 'wifi_silver.png' if wifi_status else 'wifi_orange.png'
+        img = 'wifi_orange.png' if wifi_status else 'wifi_silver.png'
         image_path = os.path.join(self.imagedir, img)
         self.w_wifi.replace_img(image_path)
 
