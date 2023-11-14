@@ -83,12 +83,6 @@ class Hardware:
         for i in self.indicators:
             i.refresh()
 
-    def poll_wifi(self):
-        wifi_update = self.wifi_manager.poll()
-        if wifi_update is not None:
-            self.wifi_status = wifi_update
-            self.lcd.update_wifi(self.wifi_status)
-
     def recalibrateVU_gain(self, input_gain):
         for i in self.indicators:
             i.recalibrate_gain(input_gain)
