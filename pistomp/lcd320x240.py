@@ -198,7 +198,7 @@ class Lcd(abstract_lcd.Lcd):
     def draw_wifi_dialog(self, event, image): 
         d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
 
-        self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 0, 0), text='mySSID', prompt='SSID :', parent=d, outline=1, sel_width=3,
+        self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 0, 0), text=self.wifi_ssid, prompt='SSID :', parent=d, outline=1, sel_width=3,
                    outline_radius=5, align=WidgetAlign.NONE, name='cancel_btn', edit_message='WiFi SSID')
         d.add_sel_widget(self.w_wifi_ssid)
         self.ssid = self.w_wifi_ssid.edit_message
@@ -207,9 +207,9 @@ class Lcd(abstract_lcd.Lcd):
                    sel_width=3, outline_radius=5, align=WidgetAlign.NONE, name='cancel_btn', edit_message='Password')
         d.add_sel_widget(self.w_wifi_pass)
         self.password = self.w_wifi_pass.edit_message
-
-        b = TextWidget(box=Box.xywh(0, 60, 0, 0), text='Hotspot', parent=d, outline=1, sel_width=3, outline_radius=5,
-                   action=self.handler.system_toggle_hotspot, align=WidgetAlign.NONE)
+        
+        b = TextWidget(box=Box.xywh(0, 60, 0, 0), text=self.hotspot_text, parent=d, outline=1, sel_width=3, outline_radius=5,
+                   action=self.update_hotspot_button, align=WidgetAlign.NONE)
         d.add_sel_widget(b)
 
         b = TextWidget(box=Box.xywh(0, 90, 0, 0), text='Cancel', parent=d, outline=1, sel_width=3, outline_radius=5,
@@ -544,7 +544,12 @@ class Lcd(abstract_lcd.Lcd):
 
     # Toolbar
     def update_wifi(self, wifi_status):
-        img = 'wifi_orange.png' if wifi_status else 'wifi_silver.png'
+        if util.DICT_GET(wifi_status, 'hotspot_active'):
+            img = "wifi_orange.png"
+        elif util.DICT_GET(wifi_status, 'wifi_connected'):
+            img = "wifi_silver.png"
+        else:
+            img = "wifi_gray.png"
         image_path = os.path.join(self.imagedir, img)
         self.w_wifi.replace_img(image_path)
 
@@ -564,6 +569,19 @@ class Lcd(abstract_lcd.Lcd):
             img = 'power_gray.png'
         image_path = os.path.join(self.imagedir, img)
         self.w_power.replace_img(image_path)
+
+    def update_hotspot_button(self, wifi_status):
+        if util.DICT_GET(wifi_status, 'hotspot_active'):
+            wifi_button = "Switch to WiFi"
+        elif util.DICT_GET(wifi_status, 'wifi_connected'):
+            wifi_button = "Switch to Hotspot"
+        self.handler.system_toggle_hotspot()
+        self.hotspot_text = self.set_text(wifi_button)
+
+    def update_wifi_ssid(self, wifi_status):
+        if util.DICT_GET(wifi_status, 'ssid'):
+            ssid = wifi_status
+        self.wifi_ssid = self.set_text(ssid)
 
     def draw_tool_select(self, tool_type):
         pass
