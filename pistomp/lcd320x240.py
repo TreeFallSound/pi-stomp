@@ -195,7 +195,7 @@ class Lcd(abstract_lcd.Lcd):
 
     def toggle_hotspot(self, event, widget):
         if event == InputEvent.CLICK:
-            self.draw_wifi_dialog()
+            self.draw_wifi_dialog(event, widget)
         elif event == InputEvent.LONG_CLICK:
             self.handler.system_toggle_hotspot()
 
