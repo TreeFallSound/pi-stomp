@@ -7,13 +7,13 @@ class Menu(Dialog):
            Returns a tuple (image, draw, box) where:
     """
     def __init__(self, items, font = None, max_width = None, max_height = None,
-                 text_halign = TextHAlign.CENTRE, auto_dismiss = True,
+                 text_halign = TextHAlign.CENTRE, auto_dismiss = True, dismiss_option = False,
                  default_item = None, **kwargs):
         self.max_height = max_height
         self.max_width = max_width
         self.items = items
         self.auto_dismiss = auto_dismiss
-        if auto_dismiss is False:
+        if auto_dismiss is False or dismiss_option is True:
             # without auto_dismiss provide a back arrow to close menu
             self.items.append(('\u2b05', self._dismiss, None))
         if font is None:
