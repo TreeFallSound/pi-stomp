@@ -210,7 +210,7 @@ class Lcd(abstract_lcd.Lcd):
     def draw_wifi_dialog(self, event, image): 
         d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
 
-        self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 0, 0), text=self.wifi_ssid, prompt='SSID :', parent=d, outline=1, sel_width=3,
+        self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 0, 0), text='mySSID', prompt='SSID :', parent=d, outline=1, sel_width=3,
                    outline_radius=5, align=WidgetAlign.NONE, name='cancel_btn', edit_message='WiFi SSID')
         d.add_sel_widget(self.w_wifi_ssid)
         self.ssid = self.w_wifi_ssid.edit_message
