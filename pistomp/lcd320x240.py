@@ -197,7 +197,7 @@ class Lcd(abstract_lcd.Lcd):
         if event == InputEvent.CLICK:
             self.draw_wifi_dialog(event, widget)
         elif event == InputEvent.LONG_CLICK:
-            self.handler.system_toggle_hotspot()
+            self.handler.system_toggle_hotspot(arg1, arg2)
 
     def draw_bypass_preference(self):
         pref = self.handler.settings.get_setting(Token.BYPASS)
