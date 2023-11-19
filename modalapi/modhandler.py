@@ -154,7 +154,7 @@ class Modhandler(Handler):
             if mod_bundle:
                 logging.info("Pedalboard changed via MOD from: %s to: %s" %
                              (self.current.pedalboard.bundle, mod_bundle))
-                pb = self.pedalboards[mod_bundle]
+                pb = self.reload_pedalboard(mod_bundle)
                 self.set_current_pedalboard(pb)
 
     #
@@ -183,6 +183,27 @@ class Modhandler(Handler):
             self.pedalboards[bundle] = pedalboard
             self.pedalboard_list.append(pedalboard)
             #logging.debug("dump: %s" % pedalboard.to_json())
+
+    def reload_pedalboard(self, bundle):
+        # find the current pedalboard object associated with that bundle
+        old = self.pedalboards[bundle]
+        title = old.title
+
+        # create a new one
+        pedalboard = Pedalboard.Pedalboard(title, bundle)
+        pedalboard.load_bundle(bundle, self.plugin_dict)
+        self.pedalboards[bundle] = pedalboard
+
+        # replace the pedalboard in pedalboard_list with the new one
+        try:
+            index = self.pedalboard_list.index(old)
+        except:
+            logging.error("Cannot locate pedalboard: %s", title)
+        else:
+            self.pedalboard_list[index] = pedalboard
+        del old
+
+        return pedalboard
 
     def get_pedalboard_bundle_from_mod(self):
         # Assumes the caller has already checked for existence of the file
@@ -216,8 +237,6 @@ class Modhandler(Handler):
         # Initialize the data and draw on LCD
         self.bind_current_pedalboard()
         self.load_current_presets()
-        #self.lcd.init_data(self.pedalboard_list, pedalboard,
-        #                   self.current.presets, self.current.preset_index)
         self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
         self.lcd.draw_main_panel()
 
