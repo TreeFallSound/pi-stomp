@@ -172,7 +172,7 @@ class Lcd(abstract_lcd.Lcd):
         if self.w_eq is not None:
             return
         self.w_eq = ImageWidget(box=Box.xywh(240, 0, 20, 20), image_path=os.path.join(self.imagedir,
-                                  'eq_blue.png'), parent=self.main_panel, action=self.draw_audio_menu)
+                                  'eq_blue.png'), parent=self.main_panel, action=self.toggle_eq)
         self.main_panel.add_sel_widget(self.w_eq)
         self.w_power = ImageWidget(box=Box.xywh(270, 0, 20, 20), image_path=os.path.join(self.imagedir,
                                    'power_gray.png'), parent=self.main_panel, action=self.toggle_bypass)
