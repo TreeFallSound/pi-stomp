@@ -167,7 +167,7 @@ class Lcd(abstract_lcd.Lcd):
         if self.w_wifi is not None:
             return
         self.w_wifi = ImageWidget(box=Box.xywh(210, 0, 20, 20), image_path=os.path.join(self.imagedir,
-                                  'wifi_gray.png'), parent=self.main_panel, action=self.draw_wifi_dialog)
+                                  'wifi_gray.png'), parent=self.main_panel, action=self.toggle_hotspot)
         self.main_panel.add_sel_widget(self.w_wifi)
         if self.w_eq is not None:
             return
@@ -193,6 +193,12 @@ class Lcd(abstract_lcd.Lcd):
         elif event == InputEvent.LONG_CLICK:
             self.handler.system_toggle_eq(None)
 
+    def toggle_hotspot(self, event, widget):
+        if event == InputEvent.CLICK:
+            self.draw_wifi_dialog()
+        elif event == InputEvent.LONG_CLICK:
+            self.update_hotspot_button()
+
     def draw_bypass_preference(self):
         pref = self.handler.settings.get_setting(Token.BYPASS)
         items = [("Left",  self.handler.change_bypass_preference, Token.LEFT, pref == Token.LEFT),
@@ -214,9 +220,9 @@ class Lcd(abstract_lcd.Lcd):
         d.add_sel_widget(self.w_wifi_pass)
         self.password = self.w_wifi_pass.edit_message
         
-        b = TextWidget(box=Box.xywh(0, 60, 0, 0), text=self.hotspot_text, parent=d, outline=1, sel_width=3, outline_radius=5,
-                   action=self.update_hotspot_button, align=WidgetAlign.NONE)
-        d.add_sel_widget(b)
+        # b = TextWidget(box=Box.xywh(0, 60, 0, 0), text=self.hotspot_text, parent=d, outline=1, sel_width=3, outline_radius=5,
+        #            action=self.update_hotspot_button, align=WidgetAlign.NONE)
+        # d.add_sel_widget(b)
 
         b = TextWidget(box=Box.xywh(0, 90, 0, 0), text='Cancel', parent=d, outline=1, sel_width=3, outline_radius=5,
                    action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn')
@@ -574,14 +580,6 @@ class Lcd(abstract_lcd.Lcd):
             img = 'power_gray.png'
         image_path = os.path.join(self.imagedir, img)
         self.w_power.replace_img(image_path)
-
-    def update_hotspot_button(self, wifi_status):
-        if util.DICT_GET(wifi_status, 'hotspot_active'):
-            wifi_button = "Switch to WiFi"
-        elif util.DICT_GET(wifi_status, 'wifi_connected'):
-            wifi_button = "Switch to Hotspot"
-        self.handler.system_toggle_hotspot()
-        self.hotspot_text = self.set_text(wifi_button)
 
     def update_wifi_ssid(self, wifi_status):
         if util.DICT_GET(wifi_status, 'ssid'):
