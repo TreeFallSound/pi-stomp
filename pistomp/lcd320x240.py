@@ -187,11 +187,11 @@ class Lcd(abstract_lcd.Lcd):
         elif event == InputEvent.LONG_CLICK:
             self.draw_bypass_preference()
 
-    def toggle_eq(self, event, widget):
+    def toggle_eq(self):
         if event == InputEvent.CLICK:
             self.draw_audio_menu()
         elif event == InputEvent.LONG_CLICK:
-            self.handler.system_toggle_eq()
+            self.handler.system_toggle_eq(None)
 
     def draw_bypass_preference(self):
         pref = self.handler.settings.get_setting(Token.BYPASS)
