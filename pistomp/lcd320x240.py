@@ -187,6 +187,12 @@ class Lcd(abstract_lcd.Lcd):
         elif event == InputEvent.LONG_CLICK:
             self.draw_bypass_preference()
 
+    def toggle_eq(self, event, widget):
+        if event == InputEvent.CLICK:
+            self.draw_audio_menu()
+        elif event == InputEvent.LONG_CLICK:
+            self.handler.system_toggle_eq()
+
     def draw_bypass_preference(self):
         pref = self.handler.settings.get_setting(Token.BYPASS)
         items = [("Left",  self.handler.change_bypass_preference, Token.LEFT, pref == Token.LEFT),
@@ -494,7 +500,6 @@ class Lcd(abstract_lcd.Lcd):
         items = [("Output Volume", self.handler.system_menu_headphone_volume, None),
                  ("Input Gain", self.handler.system_menu_input_gain, None),
                  ("VU Calibration", self.handler.system_menu_vu_calibration, None),
-                 ("Global EQ", self.handler.system_toggle_eq, None),
                  ("Low Band Gain", self.handler.system_menu_eq1_gain, None),
                  ("Low-Mid Band Gain", self.handler.system_menu_eq2_gain, None),
                  ("Mid Band Gain", self.handler.system_menu_eq3_gain, None),
