@@ -17,23 +17,23 @@
 
 set +e
 
-sudo sed -i 's/console=serial0,115200//' /boot/cmdline.txt
+sudo sed -i 's/console=serial0,115200//' /boot/firmware/cmdline.txt
 
 # Remove devices not needed for audio
-sudo bash -c "sed -i \"s/^\s*hdmi_force_hotplug=/#hdmi_force_hotplug=/\" /boot/config.txt"
-sudo bash -c "sed -i \"s/^\s*camera_auto_detect=/#camera_auto_detect=/\" /boot/config.txt"
-sudo bash -c "sed -i \"s/^\s*display_auto_detect=/#display_auto_detect=/\" /boot/config.txt"
-sudo bash -c "sed -i \"s/^\s*dtoverlay=vc4-kms-v3d/#dtoverlay=vc4-kms-v3d/\" /boot/config.txt"
+sudo bash -c "sed -i \"s/^\s*hdmi_force_hotplug=/#hdmi_force_hotplug=/\" /boot/firmware/config.txt"
+sudo bash -c "sed -i \"s/^\s*camera_auto_detect=/#camera_auto_detect=/\" /boot/firmware/config.txt"
+sudo bash -c "sed -i \"s/^\s*display_auto_detect=/#display_auto_detect=/\" /boot/firmware/config.txt"
+sudo bash -c "sed -i \"s/^\s*dtoverlay=vc4-kms-v3d/#dtoverlay=vc4-kms-v3d/\" /boot/firmware/config.txt"
 
 # Enable SPI
-sudo bash -c "sed -i \"s/^\s*#dtparam=spi=on/dtparam=spi=on/\" /boot/config.txt"
-sudo bash -c "sed -i \"s/^\s*#dtparam=i2s=on/dtparam=i2s=on/\" /boot/config.txt"
-sudo bash -c "sed -i \"s/^\s*#dtparam=i2c_arm=on/dtparam=i2c_arm=on/\" /boot/config.txt"
+sudo bash -c "sed -i \"s/^\s*#dtparam=spi=on/dtparam=spi=on/\" /boot/firmware/config.txt"
+sudo bash -c "sed -i \"s/^\s*#dtparam=i2s=on/dtparam=i2s=on/\" /boot/firmware/config.txt"
+sudo bash -c "sed -i \"s/^\s*#dtparam=i2c_arm=on/dtparam=i2c_arm=on/\" /boot/firmware/config.txt"
 
 # append lines to config.txt
-cnt=$(grep -c "dtoverlay=pi3-disable-bt" /boot/config.txt)
+cnt=$(grep -c "dtoverlay=pi3-disable-bt" /boot/firmware/config.txt)
 if [[ "$cnt" -eq "0" ]]; then
-sudo bash -c "cat >> /boot/config.txt <<EOF
+sudo bash -c "cat >> /boot/firmware/config.txt <<EOF
 
 # pi-stomp additions to allow DIN Midi, disables bluetooth however
 enable_uart=1

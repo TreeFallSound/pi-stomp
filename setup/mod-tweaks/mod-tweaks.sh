@@ -17,7 +17,7 @@
 
 set +e
 
-TOUCHOSC2MIDI_ROOT=/usr/local/lib/python3.9/dist-packages/touchosc2midi
+TOUCHOSC2MIDI_ROOT=/usr/local/lib/python3.11/dist-packages/touchosc2midi
 MOD_SCRIPTS=/usr/mod/scripts
 
 sudo cp setup/mod-tweaks/start_touchosc2midi.sh $MOD_SCRIPTS

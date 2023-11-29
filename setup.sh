@@ -34,7 +34,7 @@ usage()
     echo " -h                    Display this message"    
 }
 
-hardware_version=2.0
+hardware_version=3.0
 has_ttymidi=false
 plugins=true
 
