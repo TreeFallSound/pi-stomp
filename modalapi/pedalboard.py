@@ -188,7 +188,7 @@ class Pedalboard:
                         controller_num = self.world.get(binding, self.world.ns.midi.controllerNumber, None)
                         channel = self.world.get(binding, self.world.ns.midi.channel, None)
                         if (controller_num is not None) and (channel is not None):
-                            binding = "%d:%d" % (self.world.new_int(channel), self.world.new_int(controller_num))
+                            binding = "%d:%d" % (self.world.new_int(int(channel)), self.world.new_int(int(controller_num)))
                             logging.debug("  MIDI CC binding %s" % binding)
                     path = str(port)
                     symbol = os.path.basename(path)
@@ -197,7 +197,7 @@ class Pedalboard:
                         if param_value.is_float():
                             value = float(self.world.new_float(param_value))
                         elif param_value.is_int():
-                            value = int(self.world.new_int(param_value))
+                            value = int(self.world.new_int(int(param_value)))
                         else:
                             value = str(value)
                     # Bypass "parameter" is a special case without an entry in the plugin definition
