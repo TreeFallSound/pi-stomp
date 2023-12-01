@@ -74,7 +74,7 @@ make
 sudo make install
 
 #Mod-ui
-pushd $(mktemp -d) && git clone https://github.com/micahvdm/mod-ui.git
+pushd $(mktemp -d) && git clone -b bookworm https://github.com/micahvdm/mod-ui.git
 pushd mod-ui
 chmod +x setup.py
 cd utils
