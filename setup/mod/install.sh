@@ -59,6 +59,13 @@ mkdir -p "Aida DSP Models"
 mkdir -p "NAM Models"
 mkdir -p "Captures"
 
+#Hylia
+export NOOPT=true
+pushd $(mktemp -d) && git clone --recursive https://github.com/falkTX/Hylia.git
+pushd Hylia
+make
+make install
+
 #Jack2
 pushd $(mktemp -d) && git clone https://github.com/micahvdm/jack2.git
 pushd jack2
@@ -72,7 +79,7 @@ pushd browsepy
 sudo pip3 install ./
 
 #Mod-host
-pushd $(mktemp -d) && git clone https://github.com/moddevices/mod-host.git
+pushd $(mktemp -d) && git clone https://github.com/micahvdm/mod-host.git
 pushd mod-host
 make
 sudo make install
