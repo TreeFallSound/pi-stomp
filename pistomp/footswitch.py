@@ -123,6 +123,7 @@ class Footswitch(controller.Controller):
     def set_value(self, value):
         self.enabled = (value < 1)
         self._set_led(self.enabled)
+        self.refresh_callback(footswitch=self)
 
     def _set_led(self, enabled):
         if self.led_pin is not None:
