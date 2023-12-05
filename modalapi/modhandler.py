@@ -30,6 +30,7 @@ import modalapi.wifi as Wifi
 import pistomp.settings as Settings
 
 from pistomp.analogmidicontrol import AnalogMidiControl
+from pistomp.encodermidicontrol import EncoderMidiControl
 from pistomp.footswitch import Footswitch
 from pistomp.handler import Handler
 from pathlib import Path
@@ -262,12 +263,30 @@ class Modhandler(Handler):
                                 key = "%s:%s" % (plugin.instance_id, param.name)
                                 controller.cfg[Token.CATEGORY] = plugin.category  # somewhat LAME adding to cfg dict
                                 controller.cfg[Token.TYPE] = controller.type
+                                controller.cfg[Token.ID] = controller.id
+                                self.current.analog_controllers[key] = controller.cfg
+                            elif isinstance(controller, EncoderMidiControl):
+                                key = "%s:%s" % (plugin.instance_id, param.name)
+                                controller.cfg[Token.CATEGORY] = plugin.category  # somewhat LAME adding to cfg dict
+                                controller.cfg[Token.TYPE] = controller.type
+                                controller.cfg[Token.ID] = controller.id
                                 self.current.analog_controllers[key] = controller.cfg
 
             # Move Footswitch controlled plugins to the end of the list
             self.current.pedalboard.plugins = [elem for elem in self.current.pedalboard.plugins
                                                if elem.has_footswitch is False]
             self.current.pedalboard.plugins += footswitch_plugins
+
+            # LAME special case for volume control
+            # Doesn't seem quite right to add this here, but it's where all the mapped controls are bound
+            for e in self.hardware.encoders:
+                if e.type == Token.VOLUME:
+                    cfg = {
+                        Token.CATEGORY : None,
+                        Token.TYPE : e.type,
+                        Token.ID : e.id
+                    }
+                    self.current.analog_controllers[Token.VOLUME] = cfg
 
     def pedalboard_change(self, pedalboard=None):
         logging.info("Pedalboard change")
@@ -355,11 +374,11 @@ class Modhandler(Handler):
                 continue
         self.lcd.refresh_plugins()
 
-    def preset_incr_and_change(self):
+    def preset_incr_and_change(self, arg=None):
         index = self.next_preset_index(self.current.presets, self.current.preset_index, True)
         self.preset_change(index)
 
-    def preset_decr_and_change(self):
+    def preset_decr_and_change(self, arg=None):
         index = self.next_preset_index(self.current.presets, self.current.preset_index, False)
         self.preset_change(index)
 
@@ -495,7 +514,7 @@ class Modhandler(Handler):
         else:
             self.system_disable_eq()
 
-    def system_toggle_bypass(self):
+    def system_toggle_bypass(self, arg=None):
         bypass_preference = self.settings.get_setting(Token.BYPASS)
         if bypass_preference is None or bypass_preference == Token.LEFT or bypass_preference == Token.LEFT_RIGHT:
             self.bypass_left = not self.bypass_left

@@ -80,7 +80,7 @@ schema = {
               "ledstrip_position": {
                 "type": "integer"
               },
-              "longpress_groups": {
+              "longpress": {
                 "type" : "array",
                 "items" : {
                   "type" : "string",
@@ -126,6 +126,30 @@ schema = {
             "required": [
               "adc_input",
               "midi_CC"
+            ]
+          }
+        },
+        "encoders": {
+          "type": "array",
+          "uniqueItems": True,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "midi_CC": {
+                "type": "integer"
+              },
+              "type": {
+                "enum": ["KNOB", "VOLUME"]
+              },
+              "longpress": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
             ]
           }
         }

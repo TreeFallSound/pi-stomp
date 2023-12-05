@@ -52,12 +52,13 @@ class Encoder:
             with self._lock:
                 self.direction += d
 
-    def __init__(self, d_pin, clk_pin, callback, use_interrupt = True, **kw):
-
+    def __init__(self, d_pin, clk_pin, callback, use_interrupt=True, type=None, id=None, **kw):
         self.d_pin = d_pin
         self.clk_pin = clk_pin
         self.callback = callback
         self.use_interrupt = use_interrupt
+        self.type = type
+        self.id = id
 
         GPIO.setup(self.d_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         GPIO.setup(self.clk_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -98,5 +99,5 @@ class Encoder:
                     self.direction -= d
         else:
             d = self._process_gpios()
-        if d != 0:
+        if d != 0 and self.callback is not None:
             self.callback(d)

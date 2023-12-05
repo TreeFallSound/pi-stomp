@@ -3,6 +3,7 @@ from PIL import ImageFont
 
 from uilib.panel import *
 from uilib.dialog import *
+from uilib.icon import *
 from uilib.text import *
 from uilib.image import *
 from uilib.config import *
@@ -54,6 +55,10 @@ class UiBuilder:
         UiBuilder._set_default(attrs, 'font', 'title', Config().fonts)
         return UiBuilder._fixup_panel(attrs)
 
+    def _fixup_icon(attrs):
+        UiBuilder._set_default(attrs, 'font', None, Config().fonts)
+        return UiBuilder._fixup_widget(attrs)
+
     def _fixup_text_widget(attrs):
         UiBuilder._set_default(attrs, 'font', None, Config().fonts)
         return UiBuilder._fixup_widget(attrs)
@@ -102,6 +107,7 @@ class UiBuilder:
         wtypes = {
             'Panel' : (Panel, UiBuilder._fixup_panel),
             'Dialog' : (Dialog, UiBuilder._fixup_dialog),
+            'Icon' : (Icon, UiBuilder._fixup_icon),
             'Widget' : (Widget, UiBuilder._fixup_widget),
             'TextWidget' : (TextWidget, UiBuilder._fixup_text_widget),
             'ImageWidget' : (ImageWidget, UiBuilder._fixup_image_widget),

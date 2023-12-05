@@ -24,16 +24,18 @@ import logging
 
 class EncoderMidiControl(encoder.Encoder, controller.Controller):
 
-    def __init__(self, handler, d_pin, clk_pin, callback, use_interrupt, midi_CC, midi_channel, midiout):
+    def __init__(self, handler, d_pin, clk_pin, callback, use_interrupt, midi_CC, midi_channel, midiout,
+                 type=None, id=None):
         super(EncoderMidiControl, self).__init__(d_pin=d_pin, clk_pin=clk_pin, callback=callback,
-                                                 use_interrupt=use_interrupt, midi_CC=midi_CC,
-                                                 midi_channel=midi_channel)
+                                                 use_interrupt=use_interrupt, type=type, id=id,
+                                                 midi_CC=midi_CC, midi_channel=midi_channel)
         self.handler = handler
         self.midi_CC = midi_CC
         self.midi_channel = midi_channel
         self.midiout = midiout
 
         self.value = 0       # the user view of the value
+        self.cfg = {}
         self.midi_value = 0  # the midi equivalent value
         self.per_click = 8   # resolution (midi values per click)
 

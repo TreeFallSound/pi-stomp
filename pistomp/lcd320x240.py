@@ -19,6 +19,7 @@ import logging
 import os
 import common.token as Token
 import modalapi.parameter as Parameter
+import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
 from PIL import ImageColor
@@ -78,7 +79,7 @@ class Lcd(abstract_lcd.Lcd):
         self.display_width = 320
         self.display_height = 240
         self.plugin_width = 78
-        self.plugin_height = 31
+        self.plugin_height = 29
         self.plugin_label_length = 7
         self.footswitch_height = 60
         self.footswitch_width = 56
@@ -97,6 +98,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_preset = None
         self.w_plugins = []
         self.w_footswitches = []
+        self.w_controls = []
         self.w_splash = None
         self.w_info_msg = None
         self.w_parameter_dialogs = {}
@@ -150,6 +152,7 @@ class Lcd(abstract_lcd.Lcd):
     def draw_main_panel(self):
         self.draw_tools(None, None, None, None)
         self.draw_title()
+        self.draw_analog_assignments(self.current.analog_controllers)
         self.draw_plugins()
         self.draw_unbound_footswitches()
         if not self.main_panel_pushed:
@@ -280,7 +283,7 @@ class Lcd(abstract_lcd.Lcd):
     #
     def draw_plugins(self):
         x = 0
-        y = 72
+        y = 78
         per_row = 4
         i = 1
         # erase currently rendered plugins and footswitches first
@@ -376,7 +379,7 @@ class Lcd(abstract_lcd.Lcd):
                 items.append((name, self.draw_parameter_dialog, param))
         self.draw_selection_menu(items, "Parameters")
 
-    def draw_parameter_dialog(self, parameter):
+    def draw_parameter_dialog(self, parameter, timeout=None):
         # If we already have an active dialog for the parameter, use it
         d = util.DICT_GET(self.w_parameter_dialogs, parameter.name)
         if d is not None and d.parent is not None:
@@ -398,7 +401,7 @@ class Lcd(abstract_lcd.Lcd):
         else:
             taper = 2 if parameter.type == Parameter.Type.LOGARITHMIC else 1
             d = Parameterdialog(self.pstack, parameter.name, current_value, parameter.minimum, parameter.maximum,
-                                width=270, height=130, auto_destroy=True, title=title, timeout=None,
+                                width=270, height=130, auto_destroy=True, title=title, timeout=timeout,
                                 action=self.parameter_commit, object=parameter, taper=taper)
             self.pstack.push_panel(d)
 
@@ -569,9 +572,68 @@ class Lcd(abstract_lcd.Lcd):
         pass
 
     # Analog Assignments (Tweak, Expression Pedal, etc.)
-    
     def draw_analog_assignments(self, controllers):
-        pass
+        # Quite a few assumptions here
+        # Expression pedal in first position, then 3 knobs
+        # Should work for more or fewer but won't likely look great on the LCD
+
+        # spacing and scaling of text
+        num = max(4, len(controllers))
+        width_per_control = int(round(self.display_width / num))
+        text_per_control = width_per_control - 16  # minus height of control icon
+
+        # clean up previous control widgets
+        for w in self.w_controls:
+            w.destroy()
+
+        x = 0
+        y = 56  # vertical position on screen
+        for i in range(0, num):
+            k = None
+            v = None
+            for key, value in controllers.items():
+                id = util.DICT_GET(value, Token.ID)
+                if id is not None and int(id) == i:
+                    k = key
+                    v = value
+                    break
+
+            if k is None:
+                # Non-mapped control
+                name = "none"
+                control_type = Token.EXPRESSION if i == 0 else Token.KNOB  # HACK cuz we don't know type of unmapped
+                color = Category.get_category_color(None)
+                text_color =color
+            else:
+                # Mapped control or Volume
+                control_type = util.DICT_GET(v, Token.TYPE)
+                if control_type == Token.VOLUME:
+                    name = "volume"
+                    control_type = Token.KNOB
+                    color = self.default_plugin_color
+                    text_color = color
+                else:
+                    n = k.split(":")[1]
+                    name = self.shorten_name(n, text_per_control)
+                    color = util.DICT_GET(v, Token.COLOR)
+                    if color is None:
+                        # color not specified for control in config file
+                        category = util.DICT_GET(v, Token.CATEGORY)
+                        text_color = Category.get_category_color(category)
+                        color = self.default_plugin_color
+
+            if control_type == Token.KNOB:
+                w = Icon(box=Box.xywh(x, y, 0, 0), text=name, text_color=text_color, parent=self.main_panel, outline=0)
+                w.set_foreground(color)
+                w.add_knob()
+                self.w_controls.append(w)
+            elif control_type == Token.EXPRESSION:
+                w = Icon(box=Box.xywh(x, y, 0, 0), text=name, text_color=text_color, parent=self.main_panel, outline=0)
+                w.set_foreground(color)
+                w.add_pedal()
+                self.w_controls.append(w)
+
+            x += width_per_control
     
     def draw_info_message(self, text):
         if self.w_info_msg is None:

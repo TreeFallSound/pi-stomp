@@ -13,11 +13,13 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+import logging
 import RPi.GPIO as GPIO
 
 import pistomp.analogswitch as AnalogSwitch
 import pistomp.analogVU as AnalogVU
-import pistomp.audiocard as audiocard
+import common.token as Token
+import common.util as Util
 import pistomp.encoder as Encoder
 import pistomp.encodermidicontrol as EncoderMidiControl
 import pistomp.gpioswitch as gpioswitch
@@ -36,19 +38,12 @@ import pistomp.lcd320x240 as Lcd   # Tre UI
 #
 # A new version with different controls should have a new separate subclass
 
-# Pins
+# Encoder Pins
 NAV_PIN_D = 17
 NAV_PIN_CLK = 4
-ENC1_PIN_D = 12
-ENC1_PIN_CLK = 25
-ENC1_PIN_SW = 16
-ENC1_MIDI_CC = 70
-ENC2_PIN_D = 24
-ENC2_PIN_CLK = 23
-ENC2_PIN_SW = 26
-ENC2_MIDI_CC = 71
-ENC3_PIN_D = 22
-ENC3_PIN_CLK = 27
+ENC = {1: {'D': 12, 'CLK': 25, 'SW': 16},
+       2: {'D': 24, 'CLK': 23, 'SW': 26},
+       3: {'D': 22, 'CLK': 27, 'SW': None}}
 
 # ADC channels
 #NAV_ADC_CHAN = 0  #  3.0.p1
@@ -91,20 +86,33 @@ class Pistomptre(hardware.Hardware):
     def init_lcd(self):
         self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler, flip=False))
 
-    def add_tweak_encoder(self, d_pin, clk_pin, sw_pin, callback, midi_channel, midi_CC):
-        enc = EncoderMidiControl.EncoderMidiControl(self.handler, d_pin=d_pin, clk_pin=clk_pin, callback=callback,
-                                                    use_interrupt=True, midi_channel=midi_channel, midi_CC=midi_CC,
-                                                    midiout=self.midiout)
-        self.encoders.append(enc)
-        key = format("%d:%d" % (midi_channel, midi_CC))
-        self.controllers[key] = enc
+    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
+        enc_pins = Util.DICT_GET(ENC, id)
+        if enc_pins is None:
+            logging.error("Cannot create encoder object for id:", id)
+            return
 
-        # TODO add encoder switch action
-        # if action is specified via config file could do something like this
-        # action = {}
-        # action["universal_encoder_sw"] = self.handler.universal_encoder_sw
-        enc_sw = gpioswitch.GpioSwitch(sw_pin, None, None, callback=self.handler.universal_encoder_sw)
-        self.encoder_switches.append(enc_sw)
+        # map the id to the actual pins
+        d_pin = Util.DICT_GET(enc_pins, 'D')
+        clk_pin = Util.DICT_GET(enc_pins, 'CLK')
+        sw_pin = Util.DICT_GET(enc_pins, 'SW')
+
+        if type == Token.VOLUME:
+            enc = Encoder.Encoder(d_pin, clk_pin, callback=self.handler.system_menu_headphone_volume,
+                                  type=type, id=id)
+        else:
+            enc = EncoderMidiControl.EncoderMidiControl(self.handler, d_pin=d_pin, clk_pin=clk_pin,
+                                                        callback=callback, use_interrupt=True,
+                                                        midi_channel=midi_channel, midi_CC=midi_cc,
+                                                        midiout=self.midiout, type=Token.KNOB, id=id)
+
+        if sw_pin is not None:
+            longpress = self.handler.get_callback(longpress_callback)
+            enc_sw = gpioswitch.GpioSwitch(sw_pin, None, None, callback=self.handler.universal_encoder_sw,
+                                           longpress_callback=longpress)
+            self.encoder_switches.append(enc_sw)
+
+        return enc
 
     def init_encoders(self):
         enc = Encoder.Encoder(NAV_PIN_D, NAV_PIN_CLK, callback=self.handler.universal_encoder_select)
@@ -113,13 +121,7 @@ class Pistomptre(hardware.Hardware):
 
         # Tweak encoders
         cfg = self.default_cfg.copy()
-        midi_channel = self.get_real_midi_channel(cfg)
-        self.add_tweak_encoder(ENC1_PIN_D, ENC1_PIN_CLK, ENC1_PIN_SW, None, midi_channel, ENC1_MIDI_CC)
-        self.add_tweak_encoder(ENC2_PIN_D, ENC2_PIN_CLK, ENC2_PIN_SW, None, midi_channel, ENC2_MIDI_CC)
-
-        # Volume encoder
-        enc = Encoder.Encoder(ENC3_PIN_D, ENC3_PIN_CLK, callback=self.handler.system_menu_headphone_volume)
-        self.encoders.append(enc)
+        self.create_encoders(cfg)
 
     def init_relays(self):
         pass

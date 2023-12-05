@@ -215,6 +215,7 @@ class Hardware:
             if Util.DICT_GET(c, Token.DISABLE) is True:
                 continue
 
+            id = Util.DICT_GET(c, Token.ID)
             adc_input = Util.DICT_GET(c, Token.ADC_INPUT)
             midi_cc = Util.DICT_GET(c, Token.MIDI_CC)
             threshold = Util.DICT_GET(c, Token.THRESHOLD)
@@ -230,12 +231,44 @@ class Hardware:
                 threshold = 16  # Default, 1024 is full scale
 
             control = AnalogMidiControl.AnalogMidiControl(self.spi, adc_input, threshold, midi_cc, midi_channel,
-                                                          self.midiout, control_type, c)
+                                                          self.midiout, control_type, id, c)
             self.analog_controls.append(control)
             key = format("%d:%d" % (midi_channel, midi_cc))
             self.controllers[key] = control
             logging.debug("Created AnalogMidiControl Input: %d, Midi Chan: %d, CC: %d" %
                           (adc_input, midi_channel, midi_cc))
+
+    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
+        # This should be implemented by hardware subclasses that support tweak encoders (Tre at least)
+        pass
+    def create_encoders(self, cfg):
+        if cfg is None or (Token.HARDWARE not in cfg) or (Token.ENCODERS not in cfg[Token.HARDWARE]):
+            return
+
+        midi_channel = self.get_real_midi_channel(cfg)
+        cfg_c = cfg[Token.HARDWARE][Token.ENCODERS]
+        if cfg_c is None:
+            return
+        for c in cfg_c:
+            if Util.DICT_GET(c, Token.DISABLE) is True:
+                continue
+
+            id = Util.DICT_GET(c, Token.ID)
+            type = Util.DICT_GET(c, Token.TYPE)
+            midi_cc = Util.DICT_GET(c, Token.MIDI_CC)
+            longpress_callback = Util.DICT_GET(c, Token.LONGPRESS)
+
+            if id is None:
+                logging.error("Config file error.  Encoder specified without %s" % Token.ID)
+                continue
+
+            control = self.add_encoder(id, type, None, longpress_callback, midi_channel, midi_cc)
+            self.encoders.append(control)
+
+            if midi_cc is not None:
+                key = format("%d:%d" % (midi_channel, midi_cc))
+                self.controllers[key] = control
+                logging.debug("Created Encoder: %d, Midi Chan: %d, CC: %d" % (id, midi_channel, midi_cc))
 
     def get_real_midi_channel(self, cfg):
         chan = 0

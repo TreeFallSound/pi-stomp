@@ -25,13 +25,15 @@ import queue
 
 class GpioSwitch(controller.Controller):
 
-    def __init__(self, gpio_input, midi_channel, midi_CC, callback, tap_tempo_callback=None):
+    def __init__(self, gpio_input, midi_channel, midi_CC, callback, tap_tempo_callback=None,
+                 longpress_callback=None):
         super(GpioSwitch, self).__init__(midi_channel, midi_CC)
         self.gpio_input = gpio_input
         self.cur_tstamp = None
         self.events = queue.Queue()
         self.callback = callback
         self.taptempo = taptempo.TapTempo(tap_tempo_callback) if tap_tempo_callback else None
+        self.longpress_callback = longpress_callback
 
         # Long press threshold in seconds
         self.long_press_threshold = 0.5
@@ -89,4 +91,7 @@ class GpioSwitch(controller.Controller):
         self.cur_tstamp = None
 
         logging.debug("Switch %d %s" % (self.gpio_input, state))
-        self.callback(state)
+        if state == switchstate.Value.LONGPRESSED and self.longpress_callback is not None:
+            self.longpress_callback(state)
+        else:
+            self.callback(state)
