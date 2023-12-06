@@ -254,11 +254,20 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.add_sel_widget(self.w_preset)
 
     def draw_pedalboard_menu(self, event, widget):
-        bank_pbs = util.DICT_GET(self.handler.get_banks(), self.handler.get_bank())
         items = []
-        for p in self.pedalboards:
-            if bank_pbs is None or p.title in bank_pbs:
+        bank_pbs = util.DICT_GET(self.handler.get_banks(), self.handler.get_bank())
+
+        if bank_pbs is None:
+            # No bank so display all pedalboards as they're stored (alphabetically)
+            for p in self.pedalboards:
                 items.append((p.title, self.handler.pedalboard_change, p))
+        else:
+            # Bank is set so show only those in the bank and in the order defined by the bank
+            for b in bank_pbs:
+                for p in self.pedalboards:  # LAME ugly O(N2) search
+                    if p.title == b:
+                        items.append((p.title, self.handler.pedalboard_change, p))
+
         self.draw_selection_menu(items, "Pedalboards", auto_dismiss=True, dismiss_option=True)
 
     def draw_preset_menu(self, event, widget):
