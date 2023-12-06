@@ -254,9 +254,11 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.add_sel_widget(self.w_preset)
 
     def draw_pedalboard_menu(self, event, widget):
+        bank_pbs = util.DICT_GET(self.handler.get_banks(), self.handler.get_bank())
         items = []
         for p in self.pedalboards:
-            items.append((p.title, self.handler.pedalboard_change, p))
+            if bank_pbs is None or p.title in bank_pbs:
+                items.append((p.title, self.handler.pedalboard_change, p))
         self.draw_selection_menu(items, "Pedalboards", auto_dismiss=True, dismiss_option=True)
 
     def draw_preset_menu(self, event, widget):
@@ -476,10 +478,18 @@ class Lcd(abstract_lcd.Lcd):
     def draw_system_menu(self, event, widget):
         items = [("System shutdown", self.handler.system_menu_shutdown, None),
                  ("System reboot",  self.handler.system_menu_reboot, None),
+                 ("Bank Select", self.draw_bank_menu, None),
                  ("Save current pedalboard", self.handler.system_menu_save_current_pb, None),
                  ("Reload pedalboards", self.handler.system_menu_reload, None),
                  ("Restart sound engine", self.handler.system_menu_restart_sound, None)]
         self.draw_selection_menu(items, "System Menu")
+
+    def draw_bank_menu(self, event):
+        current_bank = self.handler.get_bank()
+        items = [("None (All pedalboards)", self.handler.set_bank, None, current_bank==None)]
+        for k,v in self.handler.get_banks().items():
+            items.append((k, self.handler.set_bank, k, k==current_bank))
+        self.draw_selection_menu(items, "Bank Select", auto_dismiss=True)
 
     def draw_audio_menu(self, event, widget):
         items = [("Output Volume", self.handler.system_menu_headphone_volume, None),
