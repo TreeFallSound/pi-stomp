@@ -513,9 +513,14 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_selection_menu(items, "Audio Menu") 
 
     def draw_audio_parameter_dialog(self, name, symbol, value, min, max, commit_callback):
+        d = util.DICT_GET(self.w_parameter_dialogs, symbol)
+        if d is not None and d.parent is not None:
+            return d
+
         d = Parameterdialog(self.pstack, name, value, min, max,
-                            width=270, height=130, auto_destroy=False, title=name, timeout=2.2,
+                            width=270, height=130, auto_destroy=True, title=name, timeout=2.2,
                             action=commit_callback, object=symbol, taper=1)
+        self.w_parameter_dialogs[symbol] = d
         self.pstack.push_panel(d)
         return d
 
