@@ -33,10 +33,10 @@ sudo pip3 install pycrypto
 sudo pip3 install tornado==4.3
 sudo pip3 install Pillow==9.4.0
 sudo pip3 install cython
-pip3 install tornado_xstatic xstatic
+#pip3 install tornado_xstatic xstatic
 # The next command prints an error that i don't know how to avoid, so i send the error to /dev/null for avoid breaking nightly builds
-pip3 install XStatic_term.js 2>/dev/null
-pip3 install terminado==0.13.3
+#pip3 install XStatic_term.js 2>/dev/null
+#pip3 install terminado==0.13.3
 
 #Install Mod Software
 mkdir -p /home/pistomp/data/.pedalboards
@@ -85,7 +85,7 @@ make
 sudo make install
 
 #Mod-ui
-pushd $(mktemp -d) && git clone -b bookworm https://github.com/micahvdm/mod-ui.git
+pushd $(mktemp -d) && git clone https://github.com/micahvdm/mod-ui.git
 pushd mod-ui
 chmod +x setup.py
 cd utils
