@@ -96,6 +96,7 @@ def main():
         handler.add_hardware(hw)
 
         # Load all pedalboard info from the lilv ttl file
+        handler.load_banks()
         handler.load_pedalboards()
 
         # Load the current pedalboard as "current"

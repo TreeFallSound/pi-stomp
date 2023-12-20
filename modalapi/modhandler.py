@@ -66,6 +66,12 @@ class Modhandler(Handler):
         self.current = None  # pointer to Current class
         self.lcd = None
 
+        # Banks
+        self.banks_file = "/home/pistomp/data/banks.json"
+        self.banks_file_timestamp = os.path.getmtime(self.banks_file) if Path(self.banks_file).exists() else 0
+        self.banks = {}
+        self.current_bank = None
+
         # This file is modified when the pedalboard is changed via MOD UI
         self.pedalboard_modification_file = "/home/pistomp/data/last.json"
         self.pedalboard_change_timestamp = os.path.getmtime(self.pedalboard_modification_file)\
@@ -139,18 +145,52 @@ class Modhandler(Handler):
         #
         if Path(self.pedalboard_modification_file).exists():
             ts = os.path.getmtime(self.pedalboard_modification_file)
-            if ts == self.pedalboard_change_timestamp:
-                return
+            if ts != self.pedalboard_change_timestamp:
+                # Timestamp changed
+                self.pedalboard_change_timestamp = ts
+                self.lcd.draw_info_message("Loading...")
+                mod_bundle = self.get_pedalboard_bundle_from_mod()
+                if mod_bundle:
+                    logging.info("Pedalboard changed via MOD from: %s to: %s" %
+                                 (self.current.pedalboard.bundle, mod_bundle))
+                    pb = self.reload_pedalboard(mod_bundle)
+                    self.set_current_pedalboard(pb)
 
-            # Timestamp changed
-            self.pedalboard_change_timestamp = ts
-            self.lcd.draw_info_message("Loading...")
-            mod_bundle = self.get_pedalboard_bundle_from_mod()
-            if mod_bundle:
-                logging.info("Pedalboard changed via MOD from: %s to: %s" %
-                             (self.current.pedalboard.bundle, mod_bundle))
-                pb = self.reload_pedalboard(mod_bundle)
-                self.set_current_pedalboard(pb)
+        # Look for a change in banks file
+        if Path(self.banks_file).exists():
+            ts = os.path.getmtime(self.banks_file)
+            if ts != self.banks_file_timestamp:
+                # Timestamp changed
+                logging.info("Reloading banks file: %s" % self.banks_file)
+                self.banks_file_timestamp = ts
+                self.load_banks()
+
+    #
+    # Bank Stuff
+    #
+    def load_banks(self):
+        self.current_bank = self.settings.get_setting(Token.BANK)
+        if Path(self.banks_file).exists():
+            with open(self.banks_file, 'r') as file:
+                self.banks = {}
+                j = json.load(file)
+                for bd in j:
+                    bank = util.DICT_GET(bd, 'title')
+                    pbs = util.DICT_GET(bd, 'pedalboards')
+                    b = self.banks[bank] = []
+                    for p in pbs:
+                        title = util.DICT_GET(p, 'title')
+                        b.append(title)
+
+    def get_banks(self):
+        return self.banks
+
+    def get_bank(self):
+        return self.current_bank
+
+    def set_bank(self, bank_name):
+        self.current_bank = bank_name
+        self.settings.set_setting(Token.BANK, bank_name)
 
     #
     # Pedalboard Stuff

@@ -16,6 +16,7 @@
 ACTION = 'action'
 ADC_INPUT = 'adc_input'
 ANALOG_CONTROLLERS = 'analog_controllers'
+BANK = 'bank'
 BUNDLE = 'bundle'
 BYPASS = 'bypass'
 CATEGORY = 'category'
