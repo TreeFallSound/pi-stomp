@@ -24,6 +24,7 @@ import pistomp.encoder as Encoder
 import pistomp.encodermidicontrol as EncoderMidiControl
 import pistomp.gpioswitch as gpioswitch
 import pistomp.hardware as hardware
+import pistomp.ledstrip as Ledstrip
 
 #import pistomp.lcdili9341 as Lcd   # pistompcore UI
 import pistomp.lcd320x240 as Lcd   # Tre UI
@@ -46,8 +47,8 @@ ENC = {1: {'D': 12, 'CLK': 25, 'SW': 16},
        3: {'D': 22, 'CLK': 27, 'SW': None}}
 
 # ADC channels
-#NAV_ADC_CHAN = 0  #  3.0.p1
-NAV_ADC_CHAN = 4  # 3.0.rc1
+NAV_ADC_CHAN = 0  #  3.0.p1
+#NAV_ADC_CHAN = 4  # 3.0.rc1
 EXPRESSION = 5
 CLIP_L = 6
 CLIP_R = 7
@@ -68,6 +69,12 @@ class Pistomptre(hardware.Hardware):
         self.midiout = midiout
 
         GPIO.setmode(GPIO.BCM)
+
+        try:
+            self.ledstrip = Ledstrip.Ledstrip()
+        except Exception as e:
+            self.ledstrip = None
+            logging.error("Could not initialize LED Strip")
 
         self.init_spi()
 
@@ -102,7 +109,7 @@ class Pistomptre(hardware.Hardware):
                                   type=type, id=id)
         else:
             enc = EncoderMidiControl.EncoderMidiControl(self.handler, d_pin=d_pin, clk_pin=clk_pin,
-                                                        callback=callback, use_interrupt=True,
+                                                        callback=callback,
                                                         midi_channel=midi_channel, midi_CC=midi_cc,
                                                         midiout=self.midiout, type=Token.KNOB, id=id)
 
@@ -144,6 +151,9 @@ class Pistomptre(hardware.Hardware):
             self.create_footswitches(cfg)
 
     def init_vu(self):
+        if self.ledstrip is None:
+            return
+
         # input gain setting on audio card is used to bias the VU meter thresholds
         input_gain = self.handler.audiocard.get_volume_parameter(self.handler.audiocard.CAPTURE_VOLUME)
         adc_baseline = self.handler.settings.get_setting('analogVU.adc_baseline')
@@ -155,7 +165,8 @@ class Pistomptre(hardware.Hardware):
         self.indicators.append(indicator)
 
     def cleanup(self):
-        self.ledstrip.cleanup()
+        if self.ledstrip is not None:
+            self.ledstrip.cleanup()
 
     def test(self):
         pass

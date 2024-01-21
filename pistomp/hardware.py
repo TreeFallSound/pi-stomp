@@ -22,7 +22,6 @@ import common.token as Token
 import common.util as Util
 import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.footswitch as Footswitch
-import pistomp.ledstrip as Ledstrip
 
 from abc import abstractmethod
 
@@ -72,8 +71,9 @@ class Hardware:
             c.refresh()
         for e in self.encoders:
             e.read_rotary()
-        for s in self.encoder_switches:
-            s.poll()
+        for es in self.encoder_switches:
+            es.poll()
+        s = None
         for s in self.footswitches:
             s.poll()
         if s:
@@ -146,8 +146,7 @@ class Hardware:
         ledstrip_gpio = None
         gpio_output_list = []
         for f in cfg_fs:
-            if self.ledstrip is None and Util.DICT_GET(f, Token.LEDSTRIP_POSITION) is not None:
-                self.ledstrip = Ledstrip.Ledstrip()
+            if self.ledstrip is not None and Util.DICT_GET(f, Token.LEDSTRIP_POSITION) is not None:
                 ledstrip_gpio = self.ledstrip.get_gpio()
             gpio_output_list.append(Util.DICT_GET(f, Token.GPIO_OUTPUT))
 

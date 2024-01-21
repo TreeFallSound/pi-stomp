@@ -13,11 +13,10 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import RPi.GPIO as GPIO
 import threading
 
 from functools import partial
-
+from gpiozero import Button   # TODO consider using Encoder class instead
 
 class Encoder:
 
@@ -26,9 +25,9 @@ class Encoder:
         # https://www.best-microcontroller-projects.com/rotary-encoder.html
 
         self.prevNextCode <<= 2
-        if GPIO.input(self.clk_pin):
+        if self.get_data():
             self.prevNextCode |= 0x02
-        if GPIO.input(self.d_pin):
+        if self.get_clk():
             self.prevNextCode |= 0x01
         self.prevNextCode &= 0x0f
 
@@ -52,22 +51,22 @@ class Encoder:
             with self._lock:
                 self.direction += d
 
-    def __init__(self, d_pin, clk_pin, callback, use_interrupt=True, type=None, id=None, **kw):
+    def __init__(self, d_pin, clk_pin, callback, type=None, id=None, **kw):
         self.d_pin = d_pin
         self.clk_pin = clk_pin
         self.callback = callback
-        self.use_interrupt = use_interrupt
         self.type = type
         self.id = id
 
-        GPIO.setup(self.d_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.setup(self.clk_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        # It works fine without a lock since this is just dumb UI, but let's be correct..
+        self._lock = threading.Lock()
 
-        if self.use_interrupt:
-            GPIO.add_event_detect(self.d_pin, GPIO.BOTH, callback=self._gpio_callback)
-            GPIO.add_event_detect(self.clk_pin, GPIO.BOTH, callback=self._gpio_callback)
-            # It works fine without a lock since this is just dumb UI, but let's be correct..
-            self._lock = threading.Lock()
+        self.data = Button(d_pin)
+        self.data.when_pressed = self._gpio_callback
+        self.data.when_released = self._gpio_callback
+        self.clk = Button(clk_pin)
+        self.clk.when_pressed = self._gpio_callback
+        self.clk.when_released = self._gpio_callback
 
         self.prevNextCode = 0
         self.store = 0
@@ -79,24 +78,24 @@ class Encoder:
         super(Encoder, self).__init__(**kw)
 
     def __del__(self):
-        GPIO.remove_event_detect(self._gpio_callback)
+        self.data.close()
+        self.clk.close()
 
     def get_data(self):
-        return GPIO.input(self.d_pin)
+        return self.data.value
 
     def get_clk(self):
-        return GPIO.input(self.clk_pin)
+        return self.clk.value
 
     def read_rotary(self):
         d = 0
-        if self.use_interrupt:
-            if self.direction != 0:
-                with self._lock:
-                    if self.direction > 0:
-                        d = 1
-                    elif self.direction < 0:
-                        d = -1
-                    self.direction -= d
+        if self.direction != 0:
+            with self._lock:
+                if self.direction > 0:
+                    d = 1
+                elif self.direction < 0:
+                    d = -1
+                self.direction -= d
         else:
             d = self._process_gpios()
         if d != 0 and self.callback is not None:

@@ -17,7 +17,6 @@
 import argparse
 import logging
 import os
-import RPi.GPIO as GPIO
 import sys
 import time
 
@@ -151,7 +150,6 @@ def main():
         logging.info("Exit.")
         midiout.close_port()
         handler.cleanup()
-        GPIO.cleanup()
         del handler
         logging.info("Completed cleanup")
 

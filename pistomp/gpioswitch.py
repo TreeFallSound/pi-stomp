@@ -14,7 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
-import RPi.GPIO as GPIO
+from gpiozero import Button
 
 import pistomp.controller as controller
 import pistomp.switchstate as switchstate
@@ -38,11 +38,15 @@ class GpioSwitch(controller.Controller):
         # Long press threshold in seconds
         self.long_press_threshold = 0.5
 
-        GPIO.setup(gpio_input, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.add_event_detect(gpio_input, GPIO.FALLING, callback=self._gpio_down, bouncetime=250)
+        self.button = Button(gpio_input)
+        self.button.when_pressed = self._gpio_down   # Deal with bounce?
+
+        #GPIO.setup(gpio_input, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        #GPIO.add_event_detect(gpio_input, GPIO.FALLING, callback=self._gpio_down, bouncetime=250)
 
     def __del__(self):
-        GPIO.remove_event_detect(self.gpio_input)
+        self.button.close()
+        #GPIO.remove_event_detect(self.gpio_input)
 
     def get_tap_tempo(self):
         return self.taptempo.get_tap_tempo() if self.taptempo else 0
@@ -84,7 +88,7 @@ class GpioSwitch(controller.Controller):
         # check the GPIO input
         if time_pressed > self.long_press_threshold:
             state = switchstate.Value.LONGPRESSED
-        elif GPIO.input(self.gpio_input):
+        elif self.button.value:
             state = switchstate.Value.RELEASED
         else:
             return
