@@ -25,12 +25,18 @@ sudo apt-get -y install virtualenv python3-pip python3-dev python3-zeroconf buil
                         libzita-resampler-dev lv2-dev p7zip-full python3-all python3-setuptools libreadline-dev zita-alsa-pcmi-utils hostapd \
                         dnsmasq iptables python3-smbus liblo-dev python3-liblo libzita-alsa-pcmi-dev authbind rcconf libfluidsynth-dev lockfile-progs
 
+sudo rm /usr/lib/python3.11/EXTERNALLY-MANAGED
+
 #Install Python Dependancies
 sudo pip3 install pyserial==3.0 pystache==0.5.4 aggdraw==1.3.11 scandir backports.shutil-get-terminal-size
 sudo pip3 install pycrypto
 sudo pip3 install tornado==4.3
 sudo pip3 install Pillow==9.4.0
 sudo pip3 install cython
+#pip3 install tornado_xstatic xstatic
+# The next command prints an error that i don't know how to avoid, so i send the error to /dev/null for avoid breaking nightly builds
+#pip3 install XStatic_term.js 2>/dev/null
+#pip3 install terminado==0.13.3
 
 #Install Mod Software
 mkdir -p /home/pistomp/data/.pedalboards
@@ -53,8 +59,15 @@ mkdir -p "Aida DSP Models"
 mkdir -p "NAM Models"
 mkdir -p "Captures"
 
+#Hylia
+export NOOPT=true
+pushd $(mktemp -d) && git clone --recursive https://github.com/falkTX/Hylia.git
+pushd Hylia
+make
+make install
+
 #Jack2
-pushd $(mktemp -d) && git clone https://github.com/moddevices/jack2.git
+pushd $(mktemp -d) && git clone https://github.com/micahvdm/jack2.git
 pushd jack2
 ./waf configure
 ./waf build
@@ -66,7 +79,7 @@ pushd browsepy
 sudo pip3 install ./
 
 #Mod-host
-pushd $(mktemp -d) && git clone https://github.com/moddevices/mod-host.git
+pushd $(mktemp -d) && git clone https://github.com/micahvdm/mod-host.git
 pushd mod-host
 make
 sudo make install
@@ -80,6 +93,7 @@ make
 cd ..
 sudo ./setup.py install
 cp -r default.pedalboard /home/pistomp/data/.pedalboards
+sudo sed -i -e 's/collections.MutableMapping/collections.abc.MutableMapping/' /usr/local/lib/python3.11/dist-packages/tornado/httputil.py
 
 #Touchosc2midi
 pushd $(mktemp -d) && git clone https://github.com/BlokasLabs/amidithru.git
@@ -119,6 +133,7 @@ sudo ln -sf /usr/lib/systemd/system/mod-midi-merger-broadcaster.service /etc/sys
 #Create users and groups so services can run as user instead of root
 sudo adduser --no-create-home --system --group jack
 sudo adduser pistomp jack --quiet
+sudo adduser pistomp audio --quiet
 sudo adduser root jack --quiet
 sudo adduser jack audio --quiet
 sudo cp jackdrc /etc/

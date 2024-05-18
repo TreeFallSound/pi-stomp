@@ -24,14 +24,17 @@ fi
 
 config_dir="$HOME/data/config"
 config_file="$config_dir/default_config.yml"
+hwfile="$config_dir/hardware-descriptor.json"
 
 template_dir="$HOME/pi-stomp/setup/config_templates"
 pistomp_orig_config_file="$template_dir/default_config_pistomp.yml"
 pistomp_core_config_file="$template_dir/default_config_pistompcore.yml"
 pistomp_tre_config_file="$template_dir/default_config_pistomptre.yml"
+default_hwfile="$template_dir/default-hardware-descriptor.json"
 
 mkdir -p $config_dir
 
+cp $default_hwfile $hwfile
 
 if awk "BEGIN {exit !($1 == 1.0 )}"; then
     cp $pistomp_orig_config_file $config_file

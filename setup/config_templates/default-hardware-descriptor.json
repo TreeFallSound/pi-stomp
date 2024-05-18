@@ -1,0 +1,14 @@
+{
+ "name": "pi-Stomp",
+ "architecture": "aarch64",
+ "platform": "pistomp",
+ "codec_truebypass": false,
+ "factory_pedalboards": true,
+ "has_noisegate": false,
+ "hmi_bank_navigation": false,
+ "hmi_set_index": false,
+ "hmi_set_master_vol": false,
+ "hmi_set_pb_name": true,
+ "hmi_set_ss_name": true,
+ "hmi_actuator_group_prefix": false
+}

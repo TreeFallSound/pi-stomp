@@ -17,7 +17,7 @@
 
 # check the device tree overlay is setup correctly ...
 # firstly disable PWM audio
-sudo bash -c "sed -i \"s/^\s*dtparam=audio/#dtparam=audio/\" /boot/config.txt"
+sudo bash -c "sed -i \"s/^\s*dtparam=audio/#dtparam=audio/\" /boot/firmware/config.txt"
 
 # add alsa restore to rc.local
 sudo patch -b -N -u /etc/rc.local -i setup/audio/rclocal.diff
@@ -25,7 +25,7 @@ sudo patch -b -N -u /etc/rc.local -i setup/audio/rclocal.diff
 # append lines to config.txt
 cnt=$(grep -c "dtoverlay=audioinjector-wm8731-audio" /boot/config.txt)
 if [[ "$cnt" -eq "0" ]]; then
-sudo bash -c "cat >> /boot/config.txt <<EOF
+sudo bash -c "cat >> /boot/firmware/config.txt <<EOF
 
 # enable the sound card (uncomment only one)
 #dtoverlay=audioinjector-wm8731-audio
