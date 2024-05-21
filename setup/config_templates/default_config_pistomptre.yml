@@ -51,11 +51,11 @@ hardware:
   # type: <KNOB | EXPRESSION>     The control type, used to represent the control on the screen (optional)
   # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
   #
-  analog_controllers:
-    - adc_input: 5
-      id: 0
-      type: EXPRESSION
-      midi_CC: 75
+  #analog_controllers:
+  #  - adc_input: 5
+  #    id: 0
+  #    type: EXPRESSION
+  #    midi_CC: 75
 
   # encoders:
   # Each encoder definition is a list which starts with the id
@@ -74,3 +74,4 @@ hardware:
       longpress: next_snapshot
     - id: 3
       type: VOLUME
+

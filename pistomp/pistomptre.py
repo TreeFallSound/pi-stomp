@@ -47,8 +47,8 @@ ENC = {1: {'D': 12, 'CLK': 25, 'SW': 16},
        3: {'D': 22, 'CLK': 27, 'SW': None}}
 
 # ADC channels
-NAV_ADC_CHAN = 0  #  3.0.p1
-#NAV_ADC_CHAN = 4  # 3.0.rc1
+#NAV_ADC_CHAN = 0  #  3.0.p1
+NAV_ADC_CHAN = 4  # 3.0.1
 EXPRESSION = 5
 CLIP_L = 6
 CLIP_R = 7
