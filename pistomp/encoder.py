@@ -38,9 +38,9 @@ class Encoder:
             self.store |= self.prevNextCode
             # Check last two codes (end of detent transition)
             if (self.store & 0xff) == 0x2b:  # code 2 followed by code 11 (full sequence is 13,4,2,11)
-                direction = -1  # Counter Clockwise
-            if (self.store & 0xff) == 0x17:  # code 1 followed by code 7 (full sequence is 14,8,1,7)
                 direction = 1  # Clockwise
+            if (self.store & 0xff) == 0x17:  # code 1 followed by code 7 (full sequence is 14,8,1,7)
+                direction = -1  # Counter Clockwise
         if direction != 0:
             self.store = self.prevNextCode
         return direction
