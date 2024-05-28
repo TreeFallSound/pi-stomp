@@ -34,9 +34,6 @@ sudo /usr/bin/pip3 install python-rtmidi
 # Requests
 sudo /usr/bin/pip3 install requests
 
-# GPIO
-sudo /usr/bin/pip3 install RPi.GPIO
-
 #GFXHat
 sudo /usr/bin/pip3 install gfxhat
 

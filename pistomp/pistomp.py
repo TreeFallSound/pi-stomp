@@ -21,7 +21,7 @@
 #
 # A new version with different controls should have a new separate subclass
 
-import RPi.GPIO as GPIO
+import gpiozero as GPIO
 
 from pathlib import Path
 import pistomp.analogmidicontrol as AnalogMidiControl
@@ -76,8 +76,6 @@ class Pistomp(hardware.Hardware):
 
         self.mod = mod
         self.midiout = midiout
-
-        GPIO.setmode(GPIO.BCM)
 
         self.init_spi()
 
@@ -136,8 +134,6 @@ class Pistomp(hardware.Hardware):
         failed = 0
 
         try:
-            GPIO.setmode(GPIO.BCM)
-
             # TODO kinda lame that the instantiations of hardware objects here must match those in __init__
             # except with different callbacks
 
@@ -148,10 +144,11 @@ class Pistomp(hardware.Hardware):
                                            refresh_callback=self.test_passed, gpio_input=f[1])
                 self.test_pass = False
                 timeout = 1000  # 10 seconds
-                initial_value = GPIO.input(f[2])
+                led = fs.led
+                initial_value = led.is_lit
                 while self.test_pass is False and timeout > 0:
                     fs.poll()
-                    new_value = GPIO.input(f[2])  # Verify that LED pin toggles
+                    new_value = led.is_lit  # Verify that LED pin toggles
                     if new_value is not initial_value:
                         break
                     time.sleep(0.01)
@@ -241,7 +238,6 @@ class Pistomp(hardware.Hardware):
 
         finally:
             self.mod.lcd.cleanup()
-            GPIO.cleanup()
             sys.exit()
 
     def test_passed(self, data = None):
