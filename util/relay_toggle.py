@@ -18,7 +18,6 @@
 import sys, os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-import RPi.GPIO as GPIO
 import pistomp.relay as Relay
 
 
@@ -28,11 +27,6 @@ RELAY_SET_PIN = 12
 
 
 def main():
-    mode_previously_unset = False
-    if GPIO.getmode() is None:
-        print ("set GPIO mode")
-        mode_previously_unset = True
-        GPIO.setmode(GPIO.BCM)
 
     relay = Relay.Relay(RELAY_SET_PIN, RELAY_RESET_PIN)
     relay.init_state()
@@ -42,10 +36,6 @@ def main():
     else:
         print("enabling...")
         relay.enable()
-
-    if mode_previously_unset is True:
-        print ("cleanup GPIO")
-        GPIO.cleanup()
 
 if __name__ == '__main__':
     main()

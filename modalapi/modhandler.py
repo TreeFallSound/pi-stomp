@@ -493,9 +493,14 @@ class Modhandler(Handler):
 
         self.eq_status = self.audiocard.get_switch_parameter(self.audiocard.DAC_EQ)
         self.lcd.update_eq(self.eq_status)
-        self.bypass_left = self.audiocard.get_bypass_left()
-        self.bypass_right = self.audiocard.get_bypass_right()
-        self.lcd.update_bypass(self.bypass_left, self.bypass_right)
+        if self.hardware.relay is not None:
+            enabled = not self.hardware.relay.get()
+            self.lcd.update_bypass(enabled, enabled)
+            # We assume here that if hardware has a physical relay there's no reason to do audiocard bypass (below)
+        else:
+            self.bypass_left = self.audiocard.get_bypass_left()
+            self.bypass_right = self.audiocard.get_bypass_right()
+            self.lcd.update_bypass(self.bypass_left, self.bypass_right)
 
     def system_menu_shutdown(self, arg):
         self.lcd.splash_show(False)
@@ -555,6 +560,13 @@ class Modhandler(Handler):
             self.system_disable_eq()
 
     def system_toggle_bypass(self, arg=None):
+        if self.hardware.relay is not None:
+            enabled = self.hardware.relay.get()
+            self.hardware.relay.update(not enabled)
+            self.lcd.update_bypass(enabled, enabled)
+            # We assume here that if hardware has a physical relay there's no reason to do audiocard bypass (below)
+            return
+
         bypass_preference = self.settings.get_setting(Token.BYPASS)
         if bypass_preference is None or bypass_preference == Token.LEFT or bypass_preference == Token.LEFT_RIGHT:
             self.bypass_left = not self.bypass_left

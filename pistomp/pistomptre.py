@@ -14,7 +14,6 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
-import RPi.GPIO as GPIO
 
 import pistomp.analogswitch as AnalogSwitch
 import pistomp.analogVU as AnalogVU
@@ -67,8 +66,6 @@ class Pistomptre(hardware.Hardware):
 
         self.handler = handler
         self.midiout = midiout
-
-        GPIO.setmode(GPIO.BCM)
 
         try:
             self.ledstrip = Ledstrip.Ledstrip()
