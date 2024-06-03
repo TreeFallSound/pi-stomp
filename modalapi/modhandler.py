@@ -312,11 +312,6 @@ class Modhandler(Handler):
                                 controller.cfg[Token.ID] = controller.id
                                 self.current.analog_controllers[key] = controller.cfg
 
-            # Move Footswitch controlled plugins to the end of the list
-            self.current.pedalboard.plugins = [elem for elem in self.current.pedalboard.plugins
-                                               if elem.has_footswitch is False]
-            self.current.pedalboard.plugins += footswitch_plugins
-
             # LAME special case for volume control
             # Doesn't seem quite right to add this here, but it's where all the mapped controls are bound
             for e in self.hardware.encoders:
