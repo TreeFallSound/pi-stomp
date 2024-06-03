@@ -15,7 +15,7 @@
 
 import logging
 import time
-import RPi.GPIO as GPIO
+import gpiozero as GPIO
 from rtmidi.midiconstants import CONTROL_CHANGE
 
 import common.token as Token
@@ -86,7 +86,7 @@ class Footswitch(controller.Controller):
         self.id = id
         self.display_label = None
         self.enabled = False
-        self.led_pin = led_pin
+        self.led = None
         self.midiout = midiout
         self.refresh_callback = refresh_callback
         self.relay_list = []
@@ -109,8 +109,7 @@ class Footswitch(controller.Controller):
             self.adc_switch = analogswitch.AnalogSwitch(spi, adc_input, 800, self.pressed,
                                                         tap_tempo_callback=tap_tempo_callback)
         if led_pin is not None:
-            GPIO.setup(led_pin, GPIO.OUT)
-            self._set_led(GPIO.LOW)
+            self.led = GPIO.LED(led_pin)
 
     # Should this be in Controller ?
     def set_midi_CC(self, midi_CC):
@@ -126,8 +125,11 @@ class Footswitch(controller.Controller):
         self.refresh_callback(footswitch=self)
 
     def _set_led(self, enabled):
-        if self.led_pin is not None:
-            GPIO.output(self.led_pin, enabled)
+        if self.led is not None:
+            if enabled:
+                self.led.on()
+            else:
+                self.led.off()
         if self.pixel:
             self.pixel.set_enable(enabled)
 

@@ -21,8 +21,6 @@
 #
 # A new version with different controls should have a new separate subclass
 
-import RPi.GPIO as GPIO
-
 import pistomp.encoder as Encoder
 import pistomp.gpioswitch as gpioswitch
 import pistomp.hardware as hardware
@@ -60,8 +58,6 @@ class Pistompcore(hardware.Hardware):
         self.midiout = midiout
         self.debounce_map = DEBOUNCE_MAP
 
-        GPIO.setmode(GPIO.BCM)
-
         self.init_spi()
 
         self.init_lcd()
@@ -87,6 +83,7 @@ class Pistompcore(hardware.Hardware):
 
     def init_relays(self):
         self.relay = Relay.Relay(RELAY_SET_PIN, RELAY_RESET_PIN)
+        self.relay.init_state()
 
     def init_analog_controls(self):
         cfg = self.default_cfg.copy()

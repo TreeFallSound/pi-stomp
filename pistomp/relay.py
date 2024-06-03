@@ -16,7 +16,7 @@
 import logging
 import os
 from pathlib import Path
-import RPi.GPIO as GPIO
+import gpiozero as GPIO
 import shutil
 import time
 
@@ -32,10 +32,8 @@ class Relay:
         # Non-existence indicates the pi-stomp should process audio
         self.sentinel_file = os.path.join(os.path.expanduser("~"), ".relay_bypass%d" % set_pin)
 
-        GPIO.setup(reset_pin, GPIO.OUT)
-        GPIO.output(reset_pin, GPIO.LOW)
-        GPIO.setup(set_pin, GPIO.OUT)
-        GPIO.output(set_pin, GPIO.LOW)
+        self.set = GPIO.DigitalOutputDevice(pin=set_pin)
+        self.reset = GPIO.DigitalOutputDevice(pin=reset_pin)
 
     def init_state(self):
         bypass = os.path.isfile(self.sentinel_file)
@@ -46,23 +44,32 @@ class Relay:
         return not bypass
 
     def enable(self):
-        GPIO.output(self.set_pin, GPIO.HIGH)
+        self.set.on()
         time.sleep(0.04)
         self.enabled = True
-        GPIO.output(self.set_pin, GPIO.LOW)
+        self.set.off()
         logging.debug("Relay on: %d" % self.set_pin)
 
         if os.path.isfile(self.sentinel_file):
             os.remove(self.sentinel_file)
 
     def disable(self):
-        GPIO.output(self.reset_pin, GPIO.HIGH)
+        self.reset.on()
         time.sleep(0.04)
         self.enabled = False
-        GPIO.output(self.reset_pin, GPIO.LOW)
+        self.reset.off()
         logging.debug("Relay off: %d" % self.reset_pin)
 
         f = Path(self.sentinel_file)
         f.touch()
         shutil.chown(f, user="pistomp", group=None)
+
+    def update(self, enable):
+        if enable:
+            self.enable()
+        else:
+            self.disable()
+
+    def get(self):
+        return self.enabled
 
