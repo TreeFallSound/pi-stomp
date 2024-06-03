@@ -58,7 +58,7 @@ class Audiocard:
                         s = mmap.mmap(text.fileno(), 0, access=mmap.ACCESS_READ)
                         if s.find(looking_for) != -1:
                             logging.info("restoring audio card settings from: %s" % fname)
-                            subprocess.run(['/usr/sbin/alsactl', '-f', fname, '--no-lock', 'restore'])
+                            subprocess.run(['/usr/sbin/alsactl', '-f', fname, '--no-lock', '--no-ucm', 'restore'])
                             f.close()
                             # If the file loaded was not the global, then save it so it will be next time
                             if fname is not self.config_file:
