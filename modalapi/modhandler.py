@@ -373,12 +373,27 @@ class Modhandler(Handler):
                 pass
         except:
             return None
+        ret = resp.text
         dict = json.loads(resp.text)
         for key, name in dict.items():
             if key.isdigit():
                 index = int(key)
                 self.current.presets[index] = name
-        return resp.text
+
+        # Get current snapshot (preset) info
+        url = self.root_uri + "snapshot/name?id=current"  # this will fail (500) for non pi-stomp versions of mod-ui
+        try:
+            resp = req.get(url)
+        except:
+            return None
+        if resp.status_code == 200 and resp.text is not None:
+            current_snapshot_name = util.DICT_GET(json.loads(resp.text), "name")
+            for i, n in self.current.presets.items():
+                if n == current_snapshot_name:
+                    self.current.preset_index = i
+                    break
+
+        return ret
 
     def preset_change(self, index):
         logging.info("preset change: %d" % index)
