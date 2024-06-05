@@ -109,7 +109,7 @@ class Lcd(abstract_lcd.Lcd):
         self.pstack.push_panel(self.splash_panel)
         self.main_panel = Panel(box=Box.xywh(0, 0, self.display_width, 170))
         self.main_panel_pushed = False
-        self.footswitch_panel = Panel(box=Box.xywh(0, 180, self.display_width, 60))
+        self.footswitch_panel = Panel(box=Box.xywh(0, 176, self.display_width, 64))
         self.pstack.push_panel(self.footswitch_panel)
 
         self.pedalboards = {}
