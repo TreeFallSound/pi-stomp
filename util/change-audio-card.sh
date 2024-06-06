@@ -1,8 +1,15 @@
 #!/bin/bash
 
 cards=("audioinjector-wm8731-audio" "iqaudio-codec" "hifiberry-dacplusadc")
-config_file=/boot/config.txt
+config_file=/boot/firmware/config.txt
 state_file=/var/lib/alsa/asound.state
+
+if [ -e "$config_file" ]; then
+    echo "Modifying $config_file"
+else
+    config_file=/boot/config.txt
+    echo "Modifying $config_file"
+fi
 
 if [ $# -eq 0 ]; then
   PS3="Select a card: "
