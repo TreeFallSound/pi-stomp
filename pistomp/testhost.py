@@ -3,6 +3,7 @@ import os
 import time
 import curses
 import logging
+import common.util as util
 
 import numpy as np
 
@@ -84,7 +85,7 @@ class Testhost(Handler):
         self.log_handler.setFormatter(formatterDisplay)
         logger = logging.getLogger()
         logger.addHandler(self.log_handler)
-        logger.setLevel(logging.DEBUG)
+        logger.setLevel(logging.ERROR)
         curses.init_pair(self.VU_GREEN, curses.COLOR_GREEN, -1)
         curses.init_pair(self.VU_YELLOW, curses.COLOR_YELLOW, -1)
         curses.init_pair(self.VU_RED, curses.COLOR_RED, -1)
@@ -281,7 +282,7 @@ class Testhost(Handler):
         self.enclast = time.monotonic_ns()
         self.dirty = True
 
-    def update_lcd_fs(self, bypass_change = False):
+    def update_lcd_fs(self, footswitch=None, bypass_change = False):
         self.dirty = True
 
     def add_hardware(self, hardware):
@@ -392,3 +393,17 @@ class Testhost(Handler):
         if self.dirty:
             self.dirty = False
             self.refresh()
+
+    def get_callback(self, callback_name):
+        pass
+
+    def poll_indicators(self):
+        if self.hardware:
+            self.hardware.poll_indicators()
+
+    def poll_lcd_updates(self):
+        if self.lcd:
+            self.lcd.poll_updates()
+
+    def poll_modui_changes(self):
+        pass

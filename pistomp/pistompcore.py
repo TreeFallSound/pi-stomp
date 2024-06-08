@@ -78,7 +78,8 @@ class Pistompcore(hardware.Hardware):
     def init_encoders(self):
         top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=self.mod.universal_encoder_select)
         self.encoders.append(top_enc)
-        enc_sw = gpioswitch.GpioSwitch(1, None, None, callback=self.mod.universal_encoder_sw)
+        enc_sw = gpioswitch.GpioSwitch(1, None, None, callback=self.mod.universal_encoder_sw,
+                                       longpress_callback=self.mod.universal_encoder_sw)
         self.encoder_switches.append(enc_sw)
 
     def init_relays(self):

@@ -16,6 +16,7 @@
 import logging
 import time
 import gpiozero as GPIO
+import sys
 from rtmidi.midiconstants import CONTROL_CHANGE
 
 import common.token as Token
@@ -99,6 +100,7 @@ class Footswitch(controller.Controller):
 
         if adc_input and gpio_input:
             logging.error("Switch cannot be specified with both %s and %s", (Token.adc_input, Token.gpio_input))
+            sys.exit()
 
         self.gpio_switch = None
         if gpio_input is not None:

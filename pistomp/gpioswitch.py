@@ -29,73 +29,42 @@ class GpioSwitch(controller.Controller):
                  longpress_callback=None):
         super(GpioSwitch, self).__init__(midi_channel, midi_CC)
         self.gpio_input = gpio_input
-        self.cur_tstamp = None
-        self.events = queue.Queue()
         self.callback = callback
         self.taptempo = taptempo.TapTempo(tap_tempo_callback) if tap_tempo_callback else None
         self.longpress_callback = longpress_callback
 
         # Long press threshold in seconds
         self.long_press_threshold = 0.5
+        self.is_long = False
 
-        self.button = Button(gpio_input)
-        self.button.when_pressed = self._gpio_down   # Deal with bounce?
-
-        #GPIO.setup(gpio_input, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        #GPIO.add_event_detect(gpio_input, GPIO.FALLING, callback=self._gpio_down, bouncetime=250)
+        self.button = Button(gpio_input, bounce_time=0.008, hold_time=self.long_press_threshold)
+        self.button.when_pressed = self._gpio_down
+        self.button.when_released = self._gpio_up
+        self.button.when_held = self._longpress
 
     def __del__(self):
         self.button.close()
-        #GPIO.remove_event_detect(self.gpio_input)
 
     def get_tap_tempo(self):
         return self.taptempo.get_tap_tempo() if self.taptempo else 0
 
     def _gpio_down(self, gpio):
-        # This is run from a separate thread, timestamp pressed and queue an event
-        #
-        # I considered using a dual edge callback and handle the timestamp here
-        # to queue long/short press events, but in practice, I noticed dual edge
-        # is rather unreliable with such a long debounce, we often don't get the
-        # rising edge callback at all. So let's just timestamp and we'll handle
-        # everything from the poller thread
-        #
-        t = time.monotonic()
-        self.events.put(t)
         if self.taptempo:
-            self.taptempo.stamp(t)
+            self.taptempo.stamp(time.monotonic())
+
+    def _gpio_up(self):
+        if not self.is_long:
+            self.callback(switchstate.Value.RELEASED)
+            logging.debug("Switch %d %s %s" % (self.gpio_input, switchstate.Value.RELEASED,
+                                            self.callback))
+        self.is_long = False
+
+    def _longpress(self):
+        self.is_long = True
+        self.longpress_callback(switchstate.Value.LONGPRESSED)
+        logging.debug("Switch %d %s %s" % (self.gpio_input, switchstate.Value.LONGPRESSED,
+                                        self.longpress_callback))
 
     def poll(self):
-        # Grab press event if any
-        if not self.events.empty():
-            new_tstamp = self.events.get_nowait()
-        else:
-            new_tstamp = None
-
-        # If we were a already pressed and waiting for a release, drop it, it's easier
-        # that way and we should be polling fast enough for this not to matter.
-        # Otherwise record it
-        if self.cur_tstamp is None:
-            self.cur_tstamp = new_tstamp
-
-        # Are we waiting for release ?
-        if self.cur_tstamp is None:
-            return
-
-        time_pressed = time.monotonic() - self.cur_tstamp
-
-        # If it's a long press, process as soon as we reach the threshold, otherwise
-        # check the GPIO input
-        if time_pressed > self.long_press_threshold:
-            state = switchstate.Value.LONGPRESSED
-        elif self.button.value:
-            state = switchstate.Value.RELEASED
-        else:
-            return
-        self.cur_tstamp = None
-
-        logging.debug("Switch %d %s" % (self.gpio_input, state))
-        if state == switchstate.Value.LONGPRESSED and self.longpress_callback is not None:
-            self.longpress_callback(state)
-        else:
-            self.callback(state)
+        # Now that we're using gpiozero, gpioswitch doesn't need to be polled.
+        pass

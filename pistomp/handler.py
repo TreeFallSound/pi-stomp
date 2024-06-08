@@ -24,7 +24,7 @@ class Handler:
     def noop(self):
         pass
 
-    def update_lcd_fs(self, bypass_change=False):
+    def update_lcd_fs(self, footswitch=None, bypass_change=False):
         raise NotImplementedError()
 
     def add_lcd(self, lcd):
