@@ -19,6 +19,7 @@ import sys
 
 import yaml
 from jsonschema import validate
+from jsonschema import exceptions
 
 data_dir = '/home/pistomp/data/config'
 
@@ -174,8 +175,11 @@ def load_default_cfg():
         # Now validate.  Error message if problem found but it won't be fatal
         try:
             validate(instance=cfg, schema=schema)
-        except:
-            msg = ("Config file error in: %s\n%s" % (default_config_file, sys.exc_info()))
+        except exceptions.SchemaError as e:
+            msg = ("Badly formatted schema in: %s %s" % (os.path.basename(__file__), e.message))
+            logging.error(msg)
+        except exceptions.ValidationError as e:
+            msg = ("Config file error in: %s\n%s\n%s" % (default_config_file, e.schema_path, e.message))
             logging.error(msg)
 
         return cfg

@@ -61,9 +61,10 @@ class GpioSwitch(controller.Controller):
 
     def _longpress(self):
         self.is_long = True
-        self.longpress_callback(switchstate.Value.LONGPRESSED)
-        logging.debug("Switch %d %s %s" % (self.gpio_input, switchstate.Value.LONGPRESSED,
-                                        self.longpress_callback))
+        if self.longpress_callback:
+            self.longpress_callback(switchstate.Value.LONGPRESSED)
+            logging.debug("Switch %d %s %s" % (self.gpio_input, switchstate.Value.LONGPRESSED,
+                                               self.longpress_callback))
 
     def poll(self):
         # Now that we're using gpiozero, gpioswitch doesn't need to be polled.

@@ -240,5 +240,5 @@ class Pistomp(hardware.Hardware):
             self.mod.lcd.cleanup()
             sys.exit()
 
-    def test_passed(self, data = None):
+    def test_passed(self, data = None, footswitch = None):
         self.test_pass = True

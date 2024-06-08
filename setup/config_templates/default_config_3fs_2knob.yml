@@ -20,7 +20,7 @@ hardware:
   #   gpio_input: gpio pin if not using debounce
   #   gpio_output: gpio pin used to drive indicator (LED, etc.)
   #   id: integer identifier
-  #   midi_CC: msg to send (0 - 127 or None)
+  #   midi_CC: msg to send (0 - 127)
   #
   footswitches:
   - id: 0
@@ -42,7 +42,7 @@ hardware:
   # analog control definition
   #   adc_input: adc chip pin to which control is connected
   #   disable: disable the control
-  #   midi_CC: msg to send (0 - 127 or None)
+  #   midi_CC: msg to send (0 - 127)
   #   threshold: minimum value change to trigger a midi msg (16 default, 1024 full scale)
   #   type: control type (KNOB, EXPRESSION)
   #

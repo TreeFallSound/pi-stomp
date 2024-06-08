@@ -1278,4 +1278,16 @@ class Mod(Handler):
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
         if bypass_change:
             self.lcd.update_bypass(self.hardware.relay.enabled)
-        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
+        if self.current and self.current.pedalboard:
+            self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
+
+    # TODO these should be implemented for mod.py (v1 hardware) eventually
+    def load_banks(self):
+        pass
+
+    def poll_indicators(self):
+        pass
+
+    def poll_lcd_updates(self):
+        pass
+

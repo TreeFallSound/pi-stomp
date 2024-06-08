@@ -74,3 +74,12 @@ class Handler:
 
     def set_mod_tap_tempo(self, bpm):
         raise NotImplementedError()
+
+    def load_banks(self):
+        raise NotImplementedError()
+
+    def poll_indicators(self):
+        raise NotImplementedError()
+
+    def poll_lcd_updates(self):
+        raise NotImplementedError()

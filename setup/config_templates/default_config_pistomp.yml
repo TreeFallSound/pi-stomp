@@ -13,7 +13,6 @@ hardware:
   - id: 0
     bypass: LEFT_RIGHT
     preset: UP
-    midi_CC: None
   - id: 1
     midi_CC: 62
   - id: 2
