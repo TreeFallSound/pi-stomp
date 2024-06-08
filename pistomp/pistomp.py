@@ -24,6 +24,8 @@
 import gpiozero as GPIO
 
 from pathlib import Path
+import common.token as Token
+import common.util as Util
 import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.analogswitch as AnalogSwitch
 import pistomp.encoder as Encoder
@@ -74,6 +76,7 @@ class Pistomp(hardware.Hardware):
             raise Pistomp.__single
         Pistomp.__single = self
 
+        self.cfg = cfg
         self.mod = mod
         self.midiout = midiout
 
@@ -115,9 +118,19 @@ class Pistomp(hardware.Hardware):
         self.analog_controls.append(control)
 
     def init_footswitches(self):
+        cfg_fss = self.cfg[Token.HARDWARE][Token.FOOTSWITCHES]
         for f in FOOTSW:
+            id = None
+            tt = None
+            # look for any special functions defined in config file (eg. tap_tempo)
+            for cfg_fs in cfg_fss:
+                id = Util.DICT_GET(cfg_fs, Token.ID)
+            if id:
+                tt = Util.DICT_GET(cfg_fs, Token.TAP_TEMPO)
+
             fs = Footswitch.Footswitch(f[0], f[2], None, f[3], self.midi_channel, self.midiout,
-                                       refresh_callback=self.refresh_callback, gpio_input=f[1])
+                                       refresh_callback=self.refresh_callback, gpio_input=f[1],
+                                       tap_tempo_callback=self.handler.get_callback(tt))
             self.footswitches.append(fs)
         self.reinit(None)
 
