@@ -97,6 +97,7 @@ class Footswitch(controller.Controller):
         self.category = None
         self.pixel = pixel
         self.longpress_groups = []
+        self.tap_tempo_callback = tap_tempo_callback
 
         if adc_input and gpio_input:
             logging.error("Switch cannot be specified with both %s and %s", (Token.adc_input, Token.gpio_input))
@@ -126,9 +127,20 @@ class Footswitch(controller.Controller):
         self._set_led(self.enabled)
         self.refresh_callback(footswitch=self)
 
+    def _display_tap_tempo(self):
+        tempo = self.get_tap_tempo()
+        if tempo:
+            self.set_display_label(str(int(tempo)))
+
     def _set_led(self, enabled):
         if self.led is not None:
-            if enabled:
+            if self.tap_tempo_callback:  # TODO the condition should be a mode not simply existence of a callback
+                tempo = self.get_tap_tempo()
+                if tempo:
+                    period = 60/tempo
+                    on = 0.1
+                    self.led.blink(on_time=on, off_time=period - 0.1)
+            elif enabled:
                 self.led.on()
             else:
                 self.led.off()
@@ -227,6 +239,10 @@ class Footswitch(controller.Controller):
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.enabled else 0]
             logging.debug("Sending CC event: %d" % self.midi_CC)
             self.midiout.send_message(cc)
+
+        # Tap Tempo
+        if self.tap_tempo_callback:  # TODO the condition should be a mode not simply existence of a callback
+            self._display_tap_tempo()
 
         # Update plugin parameter if any
         if self.parameter is not None:
