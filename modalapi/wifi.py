@@ -126,3 +126,22 @@ class WifiManager():
             subprocess.check_output(['sudo', 'systemctl', 'disable', 'wifi-hotspot']).strip().decode('utf-8')
         except:
             logging.debug('Wifi hotspot disabling failed')
+
+    def configure_wifi(ssid, password):
+        # Disconnect from any connected network
+        subprocess.run(['nmcli', 'device', 'disconnect', 'wlan0'], check=True)
+    
+        # Add a new WiFi connection with the provided SSID and password
+        subprocess.run([
+            'nmcli', 'device', 'wifi', 'connect', ssid,
+            'password', password,
+            'ifname', 'wlan0'
+        ], check=True)
+
+    def get_wifi_name():
+        try:
+            # Run nmcli command to get connected wifi name
+            result = subprocess.run(['nmcli', '-t', '-f', 'NAME', 'connection', 'show', '--active'], capture_output=True, text=True)
+            
+            # Extract the wifi name from the output
+            wifi_name = result.stdout.strip()
