@@ -138,7 +138,7 @@ class WifiManager():
             'ifname', 'wlan0'
         ], check=True)
 
-    def get_wifi_name():
+    def get_wifi_name(self):
         try:
             # Run nmcli command to get connected wifi name
             result = subprocess.run(['nmcli', '-t', '-f', 'NAME', 'connection', 'show', '--active'], capture_output=True, text=True)
