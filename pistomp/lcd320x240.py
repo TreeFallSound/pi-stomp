@@ -438,6 +438,7 @@ class Lcd(abstract_lcd.Lcd):
                     label = c.parameter.name
                 else:
                     label = self.shorten_name(plugin.instance_id, self.footswitch_width)
+                c.set_display_label(label)
 
                 y = 0
                 x = self.get_footswitch_pitch() * fs_id
@@ -454,11 +455,12 @@ class Lcd(abstract_lcd.Lcd):
             if fs.id in self.footswitch_slots:
                 continue
             slot = fs.id
-            label = "" if fs.display_label is None else fs.display_label
+            dl = fs.get_display_label()
+            label = "" if dl is None else dl
             y = 0
             x = self.get_footswitch_pitch() * slot
             p = FootswitchWidget(Box.xywh(x, y, self.plugin_width, self.plugin_height), self.small_font,
-                                 label, None, True, parent=self.footswitch_panel)
+                                 label, None, True, parent=self.footswitch_panel, object=fs)
             self.w_footswitches.append(p)
             self.footswitch_panel.add_widget(p)
         self.footswitch_panel.refresh()
@@ -467,9 +469,16 @@ class Lcd(abstract_lcd.Lcd):
         for wfs in self.w_footswitches:
             if wfs.object == footswitch:
                 wfs.toggle(footswitch.enabled == False)
+                label = footswitch.get_display_label()
+                if label:
+                    wfs.label = label
                 break
         self.footswitch_panel.refresh()
         self.refresh_plugins()  # TODO maybe not the most efficient, does exhibit some lag time
+
+    def update_footswitches(self):
+        for fs in self.footswitches:
+            self.update_footswitch(fs)
 
     def get_footswitch_pitch(self):
         if self.footswitch_pitch is not None:

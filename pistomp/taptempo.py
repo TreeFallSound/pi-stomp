@@ -15,8 +15,9 @@
 
 from collections import deque
 
-TAP_TEMPO_SAMPLES = 4     # number of samples to consider in calculation, higher can skew the average for higher tempos
-TAP_TEMPO_RESET_TIME = 3  # seconds between samples after which we should consider clearing the (likely stale) samples
+TAP_TEMPO_SAMPLES = 4       # number of samples to consider in calculation, higher can skew the average for higher tempos
+TAP_TEMPO_RESET_TIME = 1.5    # seconds between samples after which we should consider clearing the (likely stale) samples
+TAP_TEMPO_MINIMUM = 60 / TAP_TEMPO_RESET_TIME
 
 class TapTempo:
 
@@ -24,6 +25,7 @@ class TapTempo:
         self.timestamps = deque()
         self.taptempo = 0
         self.callback = callback
+        self.enabled = False
 
     def __calc_tempo(self):
         if len(self.timestamps) < 2:
@@ -45,14 +47,33 @@ class TapTempo:
 
         # Calculate the tempo in beats per minute (BPM)
         self.taptempo = round(60 / average_time_difference, 2)
+
         # Call the callback if it's not None
-        if self.callback:
+        if self.taptempo >= TAP_TEMPO_MINIMUM and self.callback:
             self.callback(self.taptempo)
 
-    def get_tap_tempo(self):
+    def set_callback(self, callback):
+        self.callback = callback
+
+    def enable(self, enable):
+        self.enabled = enable
+
+    def is_enabled(self):
+        return self.enabled
+
+    def toggle_enable(self):
+        self.enabled = not self.enabled
+
+    def get_bpm(self):
         return self.taptempo
 
+    def set_bpm(self, bpm):
+        # this is to set the initial bpm as obtained from the handler
+        self.taptempo = bpm
+
     def stamp(self, t):
+        if not self.enabled:
+            return
         self.timestamps.append(t)
         if len(self.timestamps) > TAP_TEMPO_SAMPLES:
             self.timestamps.popleft()

@@ -82,10 +82,10 @@ schema = {
                 "type": "integer"
               },
               "longpress": {
-                "type" : "array",
+                "type" : ["array", "string"],
                 "items" : {
                   "type" : "string",
-                  "enum" : ["next_snapshot", "previous_snapshot", "toggle_bypass"]
+                  "enum" : ["next_snapshot", "previous_snapshot", "toggle_bypass", "set_mod_tap_tempo", "toggle_tap_tempo_enable"]
                 }
               },
               "midi_CC": {
