@@ -23,17 +23,14 @@ FALLING_THRESHOLD = 800  # ASSUMES 10-bit ADC, can be changed for debounce handl
 
 class AnalogSwitch(analogcontrol.AnalogControl):
 
-    def __init__(self, spi, adc_channel, tolerance, callback, tap_tempo_callback=None):
+    def __init__(self, spi, adc_channel, tolerance, callback, taptempo=None):
         super(AnalogSwitch, self).__init__(spi, adc_channel, tolerance)
         #self.value = None          # this keeps track of the last value, do we still need this?
         self.callback = callback
         self.state = switchstate.Value.RELEASED
         self.start_time = 0
         self.duration = 0
-        self.taptempo = taptempo.TapTempo(tap_tempo_callback) if tap_tempo_callback else None
-
-    def get_tap_tempo(self):
-        return self.taptempo.get_tap_tempo() if self.taptempo else 0
+        self.taptempo = taptempo
 
     # Override of base class method
     def refresh(self):

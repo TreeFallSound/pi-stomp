@@ -39,7 +39,9 @@ class Footswitch(controller.Controller):
     # Only these can be used as callbacks.  Any other specified by the user will result in no action.
     all_longpress_groups = {"next_snapshot":LongpressInfo(),
                             "previous_snapshot":LongpressInfo(),
-                            "toggle_bypass":LongpressInfo()}
+                            "toggle_bypass":LongpressInfo(),
+                            "set_mod_tap_tempo":LongpressInfo(),
+                            "toggle_tap_tempo_enable":LongpressInfo()}
 
     # Static list of possible callbacks from the handler, set using set_class_callbacks()
     callbacks = {}
@@ -82,7 +84,7 @@ class Footswitch(controller.Controller):
             info.timestamps.clear()
 
     def __init__(self, id, led_pin, pixel, midi_CC, midi_channel, midiout, refresh_callback,
-                 gpio_input=None, adc_input=None, spi=None, tap_tempo_callback=None):
+                 gpio_input=None, adc_input=None, spi=None, taptempo=None):
         super(Footswitch, self).__init__(midi_channel, midi_CC)
         self.id = id
         self.display_label = None
@@ -97,22 +99,31 @@ class Footswitch(controller.Controller):
         self.category = None
         self.pixel = pixel
         self.longpress_groups = []
-        self.tap_tempo_callback = tap_tempo_callback
+        self.taptempo = taptempo
 
         if adc_input and gpio_input:
-            logging.error("Switch cannot be specified with both %s and %s", (Token.adc_input, Token.gpio_input))
+            logging.error("Switch cannot be specified with both %s and %s", (Token.ADC_INPUT, Token.GPIO_INPUT))
             sys.exit()
 
         self.gpio_switch = None
         if gpio_input is not None:
             self.gpio_switch = gpioswitch.GpioSwitch(gpio_input, midi_channel, midi_CC, self.pressed,
-                                                     tap_tempo_callback=tap_tempo_callback)
+                                                     taptempo = self.taptempo)
+
         self.adc_switch = None
         if adc_input is not None:
-            self.adc_switch = analogswitch.AnalogSwitch(spi, adc_input, 800, self.pressed,
-                                                        tap_tempo_callback=tap_tempo_callback)
+            self.adc_switch = analogswitch.AnalogSwitch(spi, adc_input, 800, self.pressed, taptempo = self.taptempo)
+
         if led_pin is not None:
             self.led = GPIO.LED(led_pin)
+
+    def get_display_label(self):
+        if self.taptempo and self.taptempo.is_enabled():
+            return str(round(self.taptempo.get_bpm()))
+        elif self.midi_CC is None:
+            return "BPM"
+        else:
+            return self.display_label
 
     # Should this be in Controller ?
     def set_midi_CC(self, midi_CC):
@@ -127,15 +138,10 @@ class Footswitch(controller.Controller):
         self._set_led(self.enabled)
         self.refresh_callback(footswitch=self)
 
-    def _display_tap_tempo(self):
-        tempo = self.get_tap_tempo()
-        if tempo:
-            self.set_display_label(str(int(tempo)))
-
     def _set_led(self, enabled):
         if self.led is not None:
-            if self.tap_tempo_callback:  # TODO the condition should be a mode not simply existence of a callback
-                tempo = self.get_tap_tempo()
+            if self.taptempo:
+                tempo = self.taptempo.get_tap_bpm()
                 if tempo:
                     period = 60/tempo
                     on = 0.1
@@ -154,12 +160,6 @@ class Footswitch(controller.Controller):
 
     def set_lcd_color(self, color):
         self.lcd_color = color
-
-    def get_tap_tempo(self):
-        if self.adc_switch:
-            return self.adc_switch.get_tap_tempo()
-        if self.gpio_switch:
-            return self.gpio_switch.get_tap_tempo()
 
     def set_longpress_groups(self, groups):
         if isinstance(groups, str):
@@ -221,8 +221,11 @@ class Footswitch(controller.Controller):
 
         # Now short Press Events
 
+        if self.taptempo and self.taptempo.is_enabled():
+            pass  # Don't process other events when in taptempo mode
+
         # If mapped to preset change
-        if self.preset_callback is not None:
+        elif self.preset_callback is not None:
             # Change the preset and exit this method. Don't flip "enabled" since
             # there is no "toggle" action associated with a preset
             if self.preset_callback_arg is None:
@@ -232,17 +235,13 @@ class Footswitch(controller.Controller):
             return
 
         # Send midi
-        if self.midi_CC is not None:
+        elif self.midi_CC is not None:
             self.enabled = new_enabled
             # Update LED
             self._set_led(self.enabled)
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.enabled else 0]
             logging.debug("Sending CC event: %d" % self.midi_CC)
             self.midiout.send_message(cc)
-
-        # Tap Tempo
-        if self.tap_tempo_callback:  # TODO the condition should be a mode not simply existence of a callback
-            self._display_tap_tempo()
 
         # Update plugin parameter if any
         if self.parameter is not None:

@@ -84,7 +84,8 @@ class Modhandler(Handler):
         self.callbacks = {"set_mod_tap_tempo": self.set_mod_tap_tempo,
                           "next_snapshot": self.preset_incr_and_change,
                           "previous_snapshot": self.preset_decr_and_change,
-                          "toggle_bypass": self.system_toggle_bypass
+                          "toggle_bypass": self.system_toggle_bypass,
+                          "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable
         }
 
     def __del__(self):
@@ -130,7 +131,7 @@ class Modhandler(Handler):
         if self.lcd is not None:
             self.lcd.enc_step(direction)
 
-    def universal_encoder_sw(self, value):
+    def universal_encoder_sw(self, value, obj=None):
         if self.lcd is not None:
             self.lcd.enc_sw(value)
 
@@ -424,11 +425,11 @@ class Modhandler(Handler):
                 continue
         self.lcd.refresh_plugins()
 
-    def preset_incr_and_change(self, arg=None):
+    def preset_incr_and_change(self, *argv):
         index = self.next_preset_index(self.current.presets, self.current.preset_index, True)
         self.preset_change(index)
 
-    def preset_decr_and_change(self, arg=None):
+    def preset_decr_and_change(self, *argv):
         index = self.next_preset_index(self.current.presets, self.current.preset_index, False)
         self.preset_change(index)
 
@@ -664,3 +665,21 @@ class Modhandler(Handler):
         except:
             logging.debug("status: %s" % resp.status_code)
             return resp.status_code
+
+    def get_bpm(self):
+        url = self.root_uri + "get_bpm"
+        try:
+            resp = req.get(url)
+        except:
+            logging.debug("status: %s" % resp.status_code)
+            return 0
+
+        if resp.status_code != 200:
+            logging.error("Cannot connect to mod-host.  Status: %s" % resp.status_code)
+            return 0
+
+        return float(resp.text)
+
+    def toggle_tap_tempo_enable(self, *argv):
+        self.hardware.toggle_tap_tempo_enable(self.get_bpm())
+        self.lcd.update_footswitches()

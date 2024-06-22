@@ -128,9 +128,12 @@ class Pistomp(hardware.Hardware):
             if id:
                 tt = Util.DICT_GET(cfg_fs, Token.TAP_TEMPO)
 
+            taptempo = (self.taptempo if tt else None)
+            if taptempo:
+                taptempo.set_callback(self.handler.get_callback(tt))
             fs = Footswitch.Footswitch(f[0], f[2], None, f[3], self.midi_channel, self.midiout,
                                        refresh_callback=self.refresh_callback, gpio_input=f[1],
-                                       tap_tempo_callback=self.handler.get_callback(tt))
+                                       taptempo=taptempo)
             self.footswitches.append(fs)
         self.reinit(None)
 
