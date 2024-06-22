@@ -24,7 +24,6 @@ if [[ "$(systemctl is-system-running || true)" == "stopping" ]]; then
 fi
 
 rfkill unblock wifi
-dhcpcd --allowinterfaces wlan0
 systemctl stop hostapd
 systemctl stop dnsmasq
 systemctl disable hostapd
@@ -35,4 +34,4 @@ echo 0 > /proc/sys/net/ipv4/ip_forward
 iwlist wlan0 scan > /dev/null 2>&1
 ifconfig wlan0 up
 systemctl restart avahi-daemon
-wpa_cli -i wlan0 reconnect
+nmcli device connect wlan0
