@@ -20,8 +20,7 @@
 #
 
 rfkill unblock wifi
-wpa_cli -i wlan0 disconnect
-dhcpcd --denyinterfaces wlan0
+nmcli device disconnect wlan0
 ifconfig wlan0 down
 ifconfig wlan0 172.24.1.1 netmask 255.255.255.0 broadcast 172.24.1.255
 systemctl stop dnsmasq
