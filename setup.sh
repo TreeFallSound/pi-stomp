@@ -65,16 +65,6 @@ done
 
 export has_ttymidi
 
-#
-# Hardware specific
-#
-if [ -z ${hardware_version+x} ]; then
-    printf "\nUsing default hardware configuration\n";
-else
-    printf "\n===== pi-Stomp mods for hardware version specified =====\n"
-    ${HOME}/pi-stomp/setup/pi-stomp-tweaks/modify_version.sh ${hardware_version}
-fi
-
 #This is not necessary any more as we run it before we git clone
 #printf "\n===== OS update =====\n"
 #sudo apt-get update -y --allow-releaseinfo-change --fix-missing
@@ -90,6 +80,14 @@ setup/mod/install.sh
 
 printf "\n===== Mod software tweaks =====\n"
 setup/mod-tweaks/mod-tweaks.sh
+
+# Hardware specific
+if [ -z ${hardware_version+x} ]; then
+    printf "\nUsing default hardware configuration\n";
+else
+    printf "\n===== pi-Stomp mods for hardware version specified =====\n"
+    ${HOME}/pi-stomp/setup/pi-stomp-tweaks/modify_version.sh ${hardware_version}
+fi
 
 printf "\n===== Install pi-stomp package dependencies =====\n"
 setup/pkgs/simple_install.sh
