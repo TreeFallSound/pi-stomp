@@ -145,3 +145,5 @@ class WifiManager():
             
             # Extract the wifi name from the output
             wifi_name = result.stdout.strip()
+        except:
+            logging.debug('Failure running nmcli to get wifi name')
