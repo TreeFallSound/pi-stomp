@@ -123,6 +123,12 @@ class Modhandler(Handler):
         if self.hardware:
             self.hardware.poll_indicators()
 
+    def poll_wifi(self):
+        wifi_update = self.wifi_manager.poll()
+        if wifi_update is not None:
+            self.wifi_status = wifi_update
+            self.lcd.update_wifi(self.wifi_status)
+
     def poll_lcd_updates(self):
         if self.lcd:
             self.lcd.poll_updates()

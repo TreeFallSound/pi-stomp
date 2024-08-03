@@ -142,6 +142,7 @@ def main():
                 handler.poll_lcd_updates()
             if period > 100:
                 handler.poll_modui_changes()
+                handler.poll_wifi()
                 period = 0
 
     except KeyboardInterrupt:

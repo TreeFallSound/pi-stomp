@@ -83,3 +83,6 @@ class Handler:
 
     def poll_lcd_updates(self):
         raise NotImplementedError()
+
+    def poll_wifi(self):
+        raise NotImplementedError()

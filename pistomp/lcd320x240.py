@@ -170,7 +170,7 @@ class Lcd(abstract_lcd.Lcd):
         if self.w_wifi is not None:
             return
         self.w_wifi = ImageWidget(box=Box.xywh(210, 0, 20, 20), image_path=os.path.join(self.imagedir,
-                                  'wifi_orange.png'), parent=self.main_panel, action=self.draw_wifi_dialog)
+                                  'wifi_gray.png'), parent=self.main_panel, action=self.draw_wifi_dialog)
         self.main_panel.add_sel_widget(self.w_wifi)
         if self.w_eq is not None:
             return
@@ -568,7 +568,14 @@ class Lcd(abstract_lcd.Lcd):
 
     # Toolbar
     def update_wifi(self, wifi_status):
-        pass
+        if util.DICT_GET(wifi_status, 'hotspot_active'):
+            img = "wifi_orange.png"
+        elif util.DICT_GET(wifi_status, 'wifi_connected'):
+            img = "wifi_silver.png"
+        else:
+            img = "wifi_gray.png"
+        image_path = os.path.join(self.imagedir, img)
+        self.w_wifi.replace_img(image_path)
 
     def update_eq(self, eq_status):
         pass

@@ -433,6 +433,8 @@ class Mod(Handler):
         # this is called many times per second.  Only critical updates should be here
         if self.universal_encoder_mode is not UniversalEncoderMode.LOADING:
             self.hardware.poll_controls()
+
+    def poll_wifi(self):
         wifi_update = self.wifi_manager.poll()
         if wifi_update is not None:
             self.wifi_status = wifi_update
