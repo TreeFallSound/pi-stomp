@@ -150,6 +150,7 @@ class Lcd(abstract_lcd.Lcd):
         self.footswitches = footswitches
 
     def draw_main_panel(self):
+        self.footswitch_slots = {}
         self.draw_tools(None, None, None, None)
         self.draw_title()
         self.draw_analog_assignments(self.current.analog_controllers)
