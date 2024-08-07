@@ -66,7 +66,12 @@ class WifiManager():
 
     def _is_hotspot_active(self):
         try:
-            subprocess.check_output(['systemctl', 'is-active', 'wifi-hotspot', '--quiet']).strip().decode('utf-8')
+            result = subprocess.run(['systemctl', 'is-active', 'wifi-hotspot'], stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True)
+            if result.stdout.strip() == 'active':
+                return True
+            else:
+                return False
         except:
             return False
         return True
@@ -115,15 +120,13 @@ class WifiManager():
 
     def enable_hotspot(self):
         try:
-            subprocess.check_output(['sudo', 'systemctl', 'enable', 'wifi-hotspot']).strip().decode('utf-8')
-            subprocess.check_output(['sudo', 'systemctl', 'start', 'wifi-hotspot']).strip().decode('utf-8')
+            subprocess.check_output(['sudo', 'systemctl', 'enable', '--now', 'wifi-hotspot']).strip().decode('utf-8')
         except:
             logging.debug('Wifi hotspot enabling failed')
 
     def disable_hotspot(self):
         try:
-            subprocess.check_output(['sudo', 'systemctl', 'stop', 'wifi-hotspot']).strip().decode('utf-8')
-            subprocess.check_output(['sudo', 'systemctl', 'disable', 'wifi-hotspot']).strip().decode('utf-8')
+            subprocess.check_output(['sudo', 'systemctl', 'disable', '--now', 'wifi-hotspot']).strip().decode('utf-8')
         except:
             logging.debug('Wifi hotspot disabling failed')
 

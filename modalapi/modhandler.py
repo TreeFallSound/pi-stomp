@@ -596,6 +596,12 @@ class Modhandler(Handler):
     def change_bypass_preference(self, pref):
         self.settings.set_setting(Token.BYPASS, pref)
 
+    def system_toggle_hotspot(self):
+        if util.DICT_GET(self.wifi_status, 'hotspot_active'):
+            self.wifi_manager.disable_hotspot()
+        else:
+            self.wifi_manager.enable_hotspot()
+
     def audio_parameter_change(self, direction, name, symbol, value, min, max, commit_callback):
         if symbol is not None:
             d = self.lcd.draw_audio_parameter_dialog(name, symbol, value, min, max, commit_callback)

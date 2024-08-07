@@ -1,4 +1,5 @@
 from uilib.container import *
+from pathlib import Path
 
 #
 # Note about coordinates:
@@ -244,6 +245,9 @@ class PanelStack(ContainerWidget):
         self.refresh()
 
     def pop_panel(self, panel):
+        # panel == None is a special case meaning just pop the current panel
+        if panel is None:
+            panel = self.current
         assert panel in self.stack
         self.stack.remove(panel)
         panel.hide(refresh = False)

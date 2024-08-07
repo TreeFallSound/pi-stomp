@@ -171,7 +171,7 @@ class Lcd(abstract_lcd.Lcd):
         if self.w_wifi is not None:
             return
         self.w_wifi = ImageWidget(box=Box.xywh(210, 0, 20, 20), image_path=os.path.join(self.imagedir,
-                                  'wifi_gray.png'), parent=self.main_panel, action=self.draw_wifi_dialog)
+                                  'wifi_gray.png'), parent=self.main_panel, action=self.draw_wifi_menu)
         self.main_panel.add_sel_widget(self.w_wifi)
         if self.w_eq is not None:
             return
@@ -199,7 +199,15 @@ class Lcd(abstract_lcd.Lcd):
                   pref == Token.LEFT_RIGHT or pref == None)]
         self.draw_selection_menu(items, "Bypass Preference", auto_dismiss=True)
 
-    def draw_wifi_dialog(self, event, image):
+    def toggle_hotspot(self, arg1):
+        self.pstack.pop_panel(None)
+        self.draw_info_message("connecting...")
+        self.main_panel.refresh()
+        self.handler.system_toggle_hotspot()
+        self.draw_info_message("")
+        self.main_panel.refresh()
+
+    def draw_wifi_dialog(self, event):
         d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
 
         b = TextWidget(box=Box.xywh(0, 0, 0, 0), text='mySSID', prompt='SSID :', parent=d, outline=1, sel_width=3,
@@ -509,6 +517,12 @@ class Lcd(abstract_lcd.Lcd):
         for k,v in self.handler.get_banks().items():
             items.append((k, self.handler.set_bank, k, k==current_bank))
         self.draw_selection_menu(items, "Bank Select", auto_dismiss=True)
+
+    def draw_wifi_menu(self, event, widget):
+        label = "Switch to Wifi" if util.DICT_GET(self.handler.wifi_status, 'hotspot_active') else "Switch to Hotspot"
+        items = [("Configure WiFi", self.draw_wifi_dialog, None),
+                 (label, self.toggle_hotspot, None)]
+        self.draw_selection_menu(items, "WiFi Menu", dismiss_option = True)
 
     def draw_audio_menu(self, event, widget):
         items = [("Output Volume", self.handler.system_menu_headphone_volume, None),
