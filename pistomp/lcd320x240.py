@@ -208,14 +208,17 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.refresh()
 
     def draw_wifi_dialog(self, event):
+        ssid = self.handler.wifi_manager.get_ssid()
+        ssid = ssid if ssid else "SSID"
+
         d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
 
-        b = TextWidget(box=Box.xywh(0, 0, 0, 0), text='mySSID', prompt='SSID :', parent=d, outline=1, sel_width=3,
+        b = TextWidget(box=Box.xywh(0, 0, 190, 0), text=ssid, prompt='SSID :', parent=d, outline=1, sel_width=3,
                        outline_radius=5,
                        action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn',
                        edit_message='WiFi SSID')
         d.add_sel_widget(b)
-        b = TextWidget(box=Box.xywh(0, 30, 0, 0), text='password123', prompt='Password :', parent=d, outline=1,
+        b = TextWidget(box=Box.xywh(0, 30, 169, 0), text='password123', prompt='Passwd :', parent=d, outline=1,
                        sel_width=3, outline_radius=5,
                        action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn',
                        edit_message='Password')
@@ -224,7 +227,7 @@ class Lcd(abstract_lcd.Lcd):
         b = TextWidget(box=Box.xywh(0, 90, 0, 0), text='Cancel', parent=d, outline=1, sel_width=3, outline_radius=5,
                        action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn')
         d.add_sel_widget(b)
-        b = TextWidget(box=Box.xywh(80, 90, 0, 0), text='Ok', parent=d, outline=1, sel_width=3, outline_radius=5,
+        b = TextWidget(box=Box.xywh(80, 90, 0, 0), text='Connect', parent=d, outline=1, sel_width=3, outline_radius=5,
                        action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='ok_btn')
         d.add_sel_widget(b)
 

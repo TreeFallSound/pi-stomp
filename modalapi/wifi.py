@@ -34,6 +34,7 @@ class WifiManager():
     def __init__(self, ifname = 'wlan0'):
         # Grab default wifi interface
         self.iface_name = 'wlan0'
+        self.ssid = ''
         self.lock = threading.Lock()
         self.last_status = {}
         self.changed = False
@@ -80,7 +81,7 @@ class WifiManager():
         try:
             text_out = subprocess.check_output(['wpa_cli', '-i', self.iface_name, 'status']).strip().decode('utf-8')
             for i in text_out.split('\n'):
-                if len(i) is 0:
+                if len(i) == 0:
                     continue
                 (key, value) = i.split('=')
                 if key and value:
@@ -96,6 +97,8 @@ class WifiManager():
             new_status['hotspot_active'] = hp_active = self._is_hotspot_active()
             if supported and (connected or hp_active):
                 self._get_wpa_status(new_status)
+            if supported and connected:
+                self.ssid = self._acquire_ssid()
             if new_status != self.last_status:
                 logging.debug("Wifi status changed:" + str(new_status))
                 self.lock.acquire()
@@ -141,12 +144,26 @@ class WifiManager():
             'ifname', 'wlan0'
         ], check=True)
 
-    def get_wifi_name(self):
+    def _acquire_ssid(self):
         try:
-            # Run nmcli command to get connected wifi name
-            result = subprocess.run(['nmcli', '-t', '-f', 'NAME', 'connection', 'show', '--active'], capture_output=True, text=True)
-            
-            # Extract the wifi name from the output
-            wifi_name = result.stdout.strip()
+            # Run the nmcli command and capture the output
+            result = subprocess.run(
+                ['nmcli', '-t', '-f', 'active,ssid', 'dev', 'wifi'],
+                stdout=subprocess.PIPE,
+                text=True
+            )
+
+            # Split the output into lines
+            lines = result.stdout.splitlines()
+
+            # Find the line where the connection is active ('yes')
+            for line in lines:
+                fields = line.split(':')
+                if fields[0] == 'yes':
+                    return fields[1]  # Return the SSID
+
+            return None  # Return None if no active connection is found
         except:
             logging.debug('Failure running nmcli to get wifi name')
+    def get_ssid(self):
+        return self.ssid
