@@ -154,6 +154,7 @@ class Lcd(abstract_lcd.Lcd):
     def draw_main_panel(self):
         self.footswitch_slots = {}
         self.draw_tools(None, None, None, None)
+        self.main_panel.sel_widget(self.w_wrench)  # Make the System tool (wrench) the initial selected item
         self.draw_title()
         self.draw_analog_assignments(self.current.analog_controllers)
         self.draw_plugins()
