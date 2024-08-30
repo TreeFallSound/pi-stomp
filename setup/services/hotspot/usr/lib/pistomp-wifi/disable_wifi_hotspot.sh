@@ -1,37 +1,36 @@
-#!/bin/sh
+#!/bin/bash
 
-# patchbox-wifi scripts for enabling/disabling wifi hotspot
-#
-# Copyright (C) 2017  Vilniaus Blokas UAB, https://blokas.io/pisound
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; version 2 of the
-# License.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-#
-
-if [[ "$(systemctl is-system-running || true)" == "stopping" ]]; then
+status=$(systemctl is-system-running)
+if [ "$status" == "stopping" ]; then
 	exit
 fi
 
+# Unblock Wi-Fi
 rfkill unblock wifi
-systemctl stop hostapd
-systemctl stop dnsmasq
-systemctl disable hostapd
-systemctl disable dnsmasq
-ifconfig wlan0 0.0.0.0
-echo | iptables-restore
-echo 0 > /proc/sys/net/ipv4/ip_forward
-iwlist wlan0 scan > /dev/null 2>&1
-ifconfig wlan0 up
-systemctl restart avahi-daemon
-nmcli device connect wlan0
+
+# Stop the hotspot and related services
+nmcli connection down Hotspot
+nmcli connection delete Hotspot
+
+# If hostapd and dnsmasq are running outside of NM, stop them
+sudo systemctl stop hostapd
+sudo systemctl stop dnsmasq
+sudo systemctl disable hostapd
+sudo systemctl disable dnsmasq
+
+# Reset IP forwarding and iptables (only needed if custom rules were added)
+echo 0 | sudo tee /proc/sys/net/ipv4/ip_forward
+sudo iptables -t nat -F
+sudo iptables -F
+
+# Restart the NetworkManager to reset the interface (this seems to cause issues when bringing wlan0 back up)
+#sudo systemctl restart NetworkManager
+
+# Restart Avahi Daemon if needed
+sudo systemctl restart avahi-daemon
+
+# Connect to a Wi-Fi network using NetworkManager
+nmcli device up wlan0
+
+# Optional: Connect to a specific Wi-Fi network
+# nmcli device wifi connect "YourSSID" password "YourPassword"

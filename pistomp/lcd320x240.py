@@ -91,6 +91,8 @@ class Lcd(abstract_lcd.Lcd):
 
         # widgets
         self.w_wifi = None
+        self.w_wifi_ssid = None
+        self.w_wifi_pw = None
         self.w_eq = None
         self.w_power = None
         self.w_wrench = None
@@ -207,28 +209,41 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_info_message("")
         self.main_panel.refresh()
 
+    def configure_wifi(self, event, button):
+        result = self.handler.configure_wifi_credentials(self.w_wifi_ssid.text, self.w_wifi_pw.text)
+
+        # Show Error dialog if configure was not successful
+        if result is not None:
+            self.draw_error_dialog(result.decode("utf-8"))
+        else:
+            self.pstack.pop_panel(button.parent)
+
     def draw_wifi_dialog(self, event):
         ssid = self.handler.wifi_manager.get_ssid()
-        ssid = ssid if ssid else "SSID"
+        ssid = ssid if ssid else "None"
+        psk = self.handler.wifi_manager.get_psk()
+        psk = psk if ssid else "None"
 
         d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
 
-        b = TextWidget(box=Box.xywh(0, 0, 190, 0), text=ssid, prompt='SSID :', parent=d, outline=1, sel_width=3,
+        self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 190, 0), text=ssid, prompt='SSID :', parent=d,
+                       outline=1, sel_width=3,
                        outline_radius=5,
-                       action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn',
+                       align=WidgetAlign.NONE, name='cancel_btn',
                        edit_message='WiFi SSID')
-        d.add_sel_widget(b)
-        b = TextWidget(box=Box.xywh(0, 30, 169, 0), text='password123', prompt='Passwd :', parent=d, outline=1,
+        d.add_sel_widget(self.w_wifi_ssid)
+        self.w_wifi_pw = TextWidget(box=Box.xywh(0, 30, 169, 0), text=psk, prompt='Passwd :', parent=d,
+                       outline=1,
                        sel_width=3, outline_radius=5,
-                       action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn',
+                       align=WidgetAlign.NONE, name='cancel_btn',
                        edit_message='Password')
-        d.add_sel_widget(b)
+        d.add_sel_widget(self.w_wifi_pw)
 
         b = TextWidget(box=Box.xywh(0, 90, 0, 0), text='Cancel', parent=d, outline=1, sel_width=3, outline_radius=5,
                        action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn')
         d.add_sel_widget(b)
-        b = TextWidget(box=Box.xywh(80, 90, 0, 0), text='Connect', parent=d, outline=1, sel_width=3, outline_radius=5,
-                       action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='ok_btn')
+        b = TextWidget(box=Box.xywh(80, 90, 0, 0), text='Ok', parent=d, outline=1, sel_width=3, outline_radius=5,
+                       action=self.configure_wifi, align=WidgetAlign.NONE, name='ok_btn')
         d.add_sel_widget(b)
 
         self.pstack.push_panel(d)
@@ -583,6 +598,20 @@ class Lcd(abstract_lcd.Lcd):
 
     def clear_select(self):
         pass
+
+    def draw_error_dialog(self, err):
+        err_dialog_width = 20  # wrap after this number of chars (ideally would convert font to pixel per char)
+        chunks = [err[i:i + err_dialog_width] for i in range(0, len(err), err_dialog_width)]
+        wrapped = '\n'.join(chunks)
+        d = Dialog(width=200, height=90, title='Error', auto_destroy=True)
+        t = TextWidget(box=Box.xywh(5, 0, 190, 50), text=wrapped, parent=d, outline=0, sel_width=0,
+                       align=WidgetAlign.NONE)
+        d.add_widget(t)
+        b = TextWidget(box=Box.xywh(80, 60, 0, 0), text='Ok', parent=d, outline=1, sel_width=3, outline_radius=5,
+                       action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='ok_btn')
+        d.add_sel_widget(b)
+        d.sel_widget(b)
+        self.pstack.push_panel(d)
 
     # Toolbar
     def update_wifi(self, wifi_status):

@@ -33,8 +33,10 @@ class WifiManager():
     #
     def __init__(self, ifname = 'wlan0'):
         # Grab default wifi interface
-        self.iface_name = 'wlan0'
-        self.ssid = ''
+        self.iface_name = ifname
+        self.connection_name = 'WiFi'
+        self.ssid = None
+        self.psk = None
         self.lock = threading.Lock()
         self.last_status = {}
         self.changed = False
@@ -90,28 +92,37 @@ class WifiManager():
             logging.error("WPA CLI fail:" + str(e))
 
     def _polling_thread(self):
-        while not self.stop.wait(5.0):
+        while True:
             new_status = {}
             new_status['wifi_supported'] = supported = self._is_wifi_supported()
             new_status['wifi_connected'] = connected = self._is_wifi_connected()
             new_status['hotspot_active'] = hp_active = self._is_hotspot_active()
             if supported and (connected or hp_active):
-                self._get_wpa_status(new_status)
-            if supported and connected:
-                self.ssid = self._acquire_ssid()
+                self._get_wpa_status(new_status)  # TODO replace this with an NetworkManager equivalent status
             if new_status != self.last_status:
                 logging.debug("Wifi status changed:" + str(new_status))
+                creds=()
+                if supported and connected:
+                    creds = self._acquire_creds()
+
                 self.lock.acquire()
+                if supported and connected and len(creds)==2:
+                    self.ssid = creds[0]
+                    self.psk = creds[1]
                 self.last_status = new_status
                 self.changed = True
                 self.lock.release()
+
+            # loop wait
+            if self.stop.wait(5.0):
+                break
 
     # External API
     def poll(self):
         if self.changed:
             logging.debug("wifi poll changed detect !")
-            # We don't need to do a deep copy because that dictionnary content
-            # is never modified by the Timer thread (the whole dictionnary is
+            # We don't need to do a deep copy because that dictionary content
+            # is never modified by the Timer thread (the whole dictionary is
             # replaced)
             #
             # Note: Use context manager to use a non-blocking lock safely vs. ctrl-C
@@ -133,37 +144,43 @@ class WifiManager():
         except:
             logging.debug('Wifi hotspot disabling failed')
 
-    def configure_wifi(ssid, password):
-        # Disconnect from any connected network
-        subprocess.run(['nmcli', 'device', 'disconnect', 'wlan0'], check=True)
-    
-        # Add a new WiFi connection with the provided SSID and password
-        subprocess.run([
-            'nmcli', 'device', 'wifi', 'connect', ssid,
-            'password', password,
-            'ifname', 'wlan0'
-        ], check=True)
+    def configure_wifi(self, ssid, password):
+        # This changes updates the config (ssid and psk) in the /etc/NetworkManager/system-connections file
+        # Bringing the connection up is expected to be done elsewhere (eg. disable_hotspot)
+        #
+        # TODO check credentials without connecting - problem is reusing wlan0 for hotspot, would prob need separate dev
+        # Can be done by making a test conn with a different profile, try to conn, disconnect if success, error if not.
+        # nmcli connection add type wifi ifname wlan0 con-name temp-test ssid "SSID" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "Password"
+        # nmcli connection up temp-test
+        # nmcli connection delete temp-test
+        try:
+            result = subprocess.check_output([
+                'sudo', 'nmcli', 'Rconnection', 'modify', self.connection_name,
+                '802-11-wireless.ssid', ssid,
+                '802-11-wireless-security.psk', password
+            ], stderr=subprocess.STDOUT)
+            return None
+        except subprocess.CalledProcessError as exc:
+            return exc.output
 
-    def _acquire_ssid(self):
+    def _acquire_creds(self):
         try:
             # Run the nmcli command and capture the output
             result = subprocess.run(
-                ['nmcli', '-t', '-f', 'active,ssid', 'dev', 'wifi'],
+                ['sudo', 'nmcli', '-s', '-g', '802-11-wireless.ssid,802-11-wireless-security.psk', 'connection',
+                 'show', self.connection_name],
                 stdout=subprocess.PIPE,
                 text=True
             )
+            fields = result.stdout.split('\n')
+            if len(fields) == 3:
+                return fields[:2]
 
-            # Split the output into lines
-            lines = result.stdout.splitlines()
-
-            # Find the line where the connection is active ('yes')
-            for line in lines:
-                fields = line.split(':')
-                if fields[0] == 'yes':
-                    return fields[1]  # Return the SSID
-
-            return None  # Return None if no active connection is found
         except:
             logging.debug('Failure running nmcli to get wifi name')
+
     def get_ssid(self):
         return self.ssid
+
+    def get_psk(self):
+        return self.psk
