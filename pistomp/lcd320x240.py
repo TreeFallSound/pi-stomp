@@ -215,7 +215,8 @@ class Lcd(abstract_lcd.Lcd):
 
         # Show Error dialog if configure was not successful
         if result is not None:
-            self.draw_error_dialog(result.decode("utf-8"))
+            d = MessageDialog(self.pstack, result.decode("utf-8"), title="Error")
+            self.pstack.push_panel(d)
         else:
             self.pstack.pop_panel(button.parent)
 
@@ -524,11 +525,24 @@ class Lcd(abstract_lcd.Lcd):
     def draw_system_menu(self, event, widget):
         items = [("System shutdown", self.handler.system_menu_shutdown, None),
                  ("System reboot",  self.handler.system_menu_reboot, None),
+                 ("Restart sound engine", self.handler.system_menu_restart_sound, None),
                  ("Bank Select", self.draw_bank_menu, None),
                  ("Save current pedalboard", self.handler.system_menu_save_current_pb, None),
                  ("Reload pedalboards", self.handler.system_menu_reload, None),
-                 ("Restart sound engine", self.handler.system_menu_restart_sound, None)]
+                 ("Update sample pedalboards", self.update_sample_pedalboards, None)]
         self.draw_selection_menu(items, "System Menu")
+
+    def update_sample_pedalboards(self, arg):
+        self.pstack.pop_panel(None)
+        self.draw_info_message("updating...")
+        self.main_panel.refresh()
+        result = self.handler.system_menu_update_sample_pedalboards()
+        self.draw_info_message("")
+        self.main_panel.refresh()
+
+        # Show update stdout dialog
+        d = MessageDialog(self.pstack, str(result), title="Pedalboard Update", width=250, height=140)
+        self.pstack.push_panel(d)
 
     def draw_bank_menu(self, event):
         current_bank = self.handler.get_bank()
@@ -599,20 +613,6 @@ class Lcd(abstract_lcd.Lcd):
 
     def clear_select(self):
         pass
-
-    def draw_error_dialog(self, err):
-        err_dialog_width = 20  # wrap after this number of chars (ideally would convert font to pixel per char)
-        chunks = [err[i:i + err_dialog_width] for i in range(0, len(err), err_dialog_width)]
-        wrapped = '\n'.join(chunks)
-        d = Dialog(width=200, height=90, title='Error', auto_destroy=True)
-        t = TextWidget(box=Box.xywh(5, 0, 190, 50), text=wrapped, parent=d, outline=0, sel_width=0,
-                       align=WidgetAlign.NONE)
-        d.add_widget(t)
-        b = TextWidget(box=Box.xywh(80, 60, 0, 0), text='Ok', parent=d, outline=1, sel_width=3, outline_radius=5,
-                       action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='ok_btn')
-        d.add_sel_widget(b)
-        d.sel_widget(b)
-        self.pstack.push_panel(d)
 
     # Toolbar
     def update_wifi(self, wifi_status):

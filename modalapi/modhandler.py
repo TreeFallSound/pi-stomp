@@ -50,6 +50,7 @@ class Modhandler(Handler):
         self.audiocard = audiocard
 
         self.homedir = homedir
+        self.username = "pistomp"
         self.root_uri = "http://localhost:80/"
         self.hardware = None
         self.settings = Settings.Settings()
@@ -545,6 +546,16 @@ class Modhandler(Handler):
         except:
             logging.error("status %s" % resp.status_code)
             return
+
+    def system_menu_update_sample_pedalboards(self):
+        logging.debug("update_sample_pedalboards")
+        cmd = os.path.join(self.homedir, 'util', 'update-sample-pedalboards.sh')
+        try:
+            output = subprocess.check_output(['sudo', '-u', self.username, cmd])
+            return output.decode('utf-8')
+        except subprocess.CalledProcessError as e:
+            logging.error("update sample pedalboards:" + str(e.output))
+            return e.output.decode('utf-8')
 
     def system_menu_reload(self, arg):
         logging.info("Exiting main process, systemctl should restart if enabled")
