@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Change dir to pedalboards location
-pushd /home/pistomp/data/pb/test3 > /dev/null || { echo "Cannot change to pedalboard dir"; exit 1; }
+pushd /home/pistomp/.pedalboards > /dev/null || { echo "Cannot change to pedalboard dir"; exit 1; }
 
 # See if the dir has any user made changes
 git diff --quiet
