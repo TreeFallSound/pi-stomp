@@ -224,7 +224,7 @@ class Lcd(abstract_lcd.Lcd):
         ssid = self.handler.wifi_manager.get_ssid()
         ssid = ssid if ssid else "None"
         psk = self.handler.wifi_manager.get_psk()
-        psk = psk if ssid else "None"
+        psk = psk if psk else "None"
 
         d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
 

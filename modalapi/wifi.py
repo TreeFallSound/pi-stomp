@@ -34,7 +34,7 @@ class WifiManager():
     def __init__(self, ifname = 'wlan0'):
         # Grab default wifi interface
         self.iface_name = ifname
-        self.connection_name = 'WiFi'
+        self.connection_name = 'preconfigured' # Name given by Rpi imager
         self.ssid = None
         self.psk = None
         self.lock = threading.Lock()
