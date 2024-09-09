@@ -106,7 +106,7 @@ class WifiManager():
                     creds = self._acquire_creds()
 
                 self.lock.acquire()
-                if supported and connected and len(creds)==2:
+                if supported and connected and creds and len(creds)==2:
                     self.ssid = creds[0]
                     self.psk = creds[1]
                 self.last_status = new_status
