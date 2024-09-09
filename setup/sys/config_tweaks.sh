@@ -30,6 +30,13 @@ sudo bash -c "sed -i \"s/^\s*#dtparam=spi=on/dtparam=spi=on/\" /boot/firmware/co
 sudo bash -c "sed -i \"s/^\s*#dtparam=i2s=on/dtparam=i2s=on/\" /boot/firmware/config.txt"
 sudo bash -c "sed -i \"s/^\s*#dtparam=i2c_arm=on/dtparam=i2c_arm=on/\" /boot/firmware/config.txt"
 
+# Add an empty dtoverlay to prevent the loading of any HAT overlay
+# make sure it doesn't already exist in the first 10 lines, if not, add it at the first blank line
+found=$(head -n 10 "/boot/firmware/config.txt" | grep -Fx "dtoverlay=")
+if [ -z "$found" ]; then
+    sudo sed -i '0,/^[[:space:]]*$/ {s//\n# Prevent loading of any HAT overlay\ndtoverlay=\n/;}' "/boot/firmware/config.txt"
+fi
+
 # append lines to config.txt
 cnt=$(grep -c "dtoverlay=pi3-disable-bt" /boot/firmware/config.txt)
 if [[ "$cnt" -eq "0" ]]; then
