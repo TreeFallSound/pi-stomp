@@ -1,55 +1,77 @@
 # This file provides some default configuration for the system
 # Most of this configuration can be overriden by pedalboard specific configuration.  To accomplish that, add
 # a file, named config.yml to the pedalboard directory (ie. ~/data/.pedalboards/<pedalboard-name>)
+#
+# WARNING
+# Changes made to this file can cause software errors or hardware failures
+# Change only the elements required for the modified behavior desired
 
 ---
 hardware:
-  # Hardware version (1.0 for original pi-Stomp, 2.0 for pi-Stomp Core)
-  version: 2.0
+  # Hardware version (1.0 for original pi-Stomp, 2.0 for pi-Stomp Core, 3.0 for Tre)
+  version: 3.0
 
-  # midi definition
-  #  channel: midi channel used for midi messages
+  # midi:
+  # channel: <integer>            The midi channel used for midi messages (required)
+  #                               can be changed to value 0 thru 15 to avoid conflicts with other hardware
   midi:
-    channel: 14
+   channel: 14
 
-  # footswitches definition
-  #   bypass: relay(s) to toggle (LEFT, RIGHT or LEFT_RIGHT)
-  #   color: color to use for enable status halo on LCD
-  #   debounce_input: debounce chip pin to which switch is connected
-  #   disable: disable the switch
-  #   gpio_input: gpio pin if not using debounce
-  #   gpio_output: gpio pin used to drive indicator (LED, etc.)
-  #   id: integer identifier
-  #   midi_CC: msg to send (0 - 127)
+  # footswitches:
+  # Each footswitch definition is a list which starts with the id
+  # id: <integer>                 The footswitch id number (required)
+  # adc_input: <integer>          The analog input to which the switch is connected (required)
+  # ledstrip_position: <integer>  The position of the corresponding LED (optional)
+  # midi_CC: <integer>            The MIDI CC message to be sent when switch is clicked (optional)
+  # longpress: <callback_name>    The name of a handler method to call when switch is long-pressed (optional)
+  #                               longpress can be a list enclosed with []'s
   #
   footswitches:
   - id: 0
-    debounce_input: 0
-    gpio_output: 0
-    bypass: LEFT
-    preset: UP
+    adc_input: 0
+    ledstrip_position: 0
+    midi_CC: 60
   - id: 1
-    debounce_input: 1
-    gpio_output: 13
-    midi_CC: 62
-    color: lime
+    adc_input: 1
+    ledstrip_position: 1
+    midi_CC: 61
   - id: 2
-    debounce_input: 2
-    gpio_output: 26
+    adc_input: 2
+    ledstrip_position: 2
+    midi_CC: 62
+  - id: 3
+    adc_input: 3
+    ledstrip_position: 3
     midi_CC: 63
-    color: blue
 
-  # analog control definition
-  #   adc_input: adc chip pin to which control is connected
-  #   disable: disable the control
-  #   midi_CC: msg to send (0 - 127)
-  #   threshold: minimum value change to trigger a midi msg (16 default, 1024 full scale)
-  #   type: control type (KNOB, EXPRESSION)
+  # analog_controllers:
+  # Each control definition is a list which starts with the adc_input
+  # adc_input: <integer>          The analog input to which the control is connected (required)
+  # id: <integer>                 The id and position on the screen (starting with 0 on the left)
+  # type: <KNOB | EXPRESSION>     The control type, used to represent the control on the screen (optional)
+  # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
   #
-  analog_controllers:
-  - adc_input: 0
-    midi_CC: 70
-    type: KNOB
-  - adc_input: 1
-    midi_CC: 71
-    type: KNOB
+  #analog_controllers:
+  #  - adc_input: 5
+  #    id: 0
+  #    type: EXPRESSION
+  #    midi_CC: 75
+
+  # encoders:
+  # Each encoder definition is a list which starts with the id
+  # id: <integer>                 The encoder id and position on the screen (required)
+  # type: <KNOB | VOLUME>         The control type (default is KNOB, VOLUME controls output volume)
+  # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
+  #                               cannot be used along with type=VOLUME
+  # longpress: <callback_name>    The name of a handler method to call when switch is long-pressed (optional)
+  #
+  encoders:
+    - id: 1
+      midi_CC: 70
+      longpress: previous_snapshot
+    - id: 2
+      midi_CC: 71
+      longpress: next_snapshot
+    - id: 3
+      type: VOLUME
+
