@@ -31,6 +31,7 @@ hardware:
     adc_input: 0
     ledstrip_position: 0
     midi_CC: 60
+    longpress: next_snapshot
   - id: 1
     adc_input: 1
     ledstrip_position: 1
@@ -39,10 +40,13 @@ hardware:
     adc_input: 2
     ledstrip_position: 2
     midi_CC: 62
+    longpress: previous_snapshot
   - id: 3
     adc_input: 3
     ledstrip_position: 3
     midi_CC: 63
+    longpress: toggle_tap_tempo_enable
+    tap_tempo: set_mod_tap_tempo
 
   # analog_controllers:
   # Each control definition is a list which starts with the adc_input
