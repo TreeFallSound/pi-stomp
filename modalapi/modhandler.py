@@ -506,6 +506,7 @@ class Modhandler(Handler):
             if output:
                 self.git_describe = output.decode()
                 self.software_version = self.git_describe.split('-')[0]
+                logging.info("pi-Stomp Software Version: %s" % self.software_version)
         except subprocess.CalledProcessError:
             logging.error("Cannot obtain git software tag info")
 

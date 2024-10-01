@@ -313,7 +313,7 @@ class Lcd(abstract_lcd.Lcd):
             if callback is not None:
                 callback(params[2])
 
-        m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=180,
+        m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=220,
                  auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action)
         self.pstack.push_panel(m)
         return m
@@ -525,6 +525,7 @@ class Lcd(abstract_lcd.Lcd):
     def draw_system_menu(self, event, widget):
         items = [("System shutdown", self.handler.system_menu_shutdown, None),
                  ("System reboot",  self.handler.system_menu_reboot, None),
+                 ("System info", self.draw_system_info_dialog, None),
                  ("Restart sound engine", self.handler.system_menu_restart_sound, None),
                  ("Bank Select", self.draw_bank_menu, None),
                  ("Save current pedalboard", self.handler.system_menu_save_current_pb, None),
@@ -542,6 +543,10 @@ class Lcd(abstract_lcd.Lcd):
 
         # Show update stdout dialog
         d = MessageDialog(self.pstack, str(result), title="Pedalboard Update", width=250, height=140)
+        self.pstack.push_panel(d)
+
+    def draw_system_info_dialog(self, arg):
+        d = MessageDialog(self.pstack, self.handler.software_version, title="System Info", width=250, height=100)
         self.pstack.push_panel(d)
 
     def draw_bank_menu(self, event):
