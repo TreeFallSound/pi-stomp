@@ -313,10 +313,14 @@ class Lcd(abstract_lcd.Lcd):
             if callback is not None:
                 callback(params[2])
 
-        m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=220,
+        m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=200,
                  auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action)
         self.pstack.push_panel(m)
         return m
+
+    def draw_message_dialog(self, text, title="Error"):
+        d = MessageDialog(self.pstack, text, title=title)
+        self.pstack.push_panel(d)
 
     #
     # Plugins
@@ -525,13 +529,19 @@ class Lcd(abstract_lcd.Lcd):
     def draw_system_menu(self, event, widget):
         items = [("System shutdown", self.handler.system_menu_shutdown, None),
                  ("System reboot",  self.handler.system_menu_reboot, None),
-                 ("System info", self.draw_system_info_dialog, None),
                  ("Restart sound engine", self.handler.system_menu_restart_sound, None),
-                 ("Bank Select", self.draw_bank_menu, None),
-                 ("Save current pedalboard", self.handler.system_menu_save_current_pb, None),
-                 ("Reload pedalboards", self.handler.system_menu_reload, None),
-                 ("Update sample pedalboards", self.update_sample_pedalboards, None)]
+                 ("Bank Select >", self.draw_bank_menu, None),
+                 ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None),
+                 ("System info", self.draw_system_info_dialog, None)]
         self.draw_selection_menu(items, "System Menu")
+
+    def draw_pedalboard_mgmt_menu(self, arg):
+        items = [("Save current pedalboard", self.handler.system_menu_save_current_pb, None),
+                 ("Reload pedalboards", self.handler.system_menu_reload, None),
+                 ("Update sample pedalboards", self.update_sample_pedalboards, None),
+                 ("Backup data", self.handler.user_backup_data, None),
+                 ("Restore Backup data", self.handler.user_restore_data, None)]
+        self.draw_selection_menu(items, "Pedalboard Management")
 
     def update_sample_pedalboards(self, arg):
         self.pstack.pop_panel(None)
@@ -728,12 +738,14 @@ class Lcd(abstract_lcd.Lcd):
 
             x += width_per_control
     
-    def draw_info_message(self, text):
+    def draw_info_message(self, text, refresh=False):
         if self.w_info_msg is None:
             self.w_info_msg = TextWidget(box=Box.xywh(0, 0, 0, 0), text='', parent=self.main_panel, outline=0,
                                          sel_width=0)
         else:
             self.w_info_msg.set_text(text)
+        if refresh:
+            self.main_panel.refresh()
 
     # Plugins
     

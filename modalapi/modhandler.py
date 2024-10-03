@@ -67,14 +67,19 @@ class Modhandler(Handler):
         self.current = None  # pointer to Current class
         self.lcd = None
 
+        # Backup
+        self.backup_dir = "/media/usb0/backups"
+        self.backup_file = "pistomp_backup.zip"
+        self.data_dir = "/home/pistomp/data"
+
         # Banks
-        self.banks_file = "/home/pistomp/data/banks.json"
+        self.banks_file = os.path.join(self.data_dir, "banks.json")
         self.banks_file_timestamp = os.path.getmtime(self.banks_file) if Path(self.banks_file).exists() else 0
         self.banks = {}
         self.current_bank = None
 
         # This file is modified when the pedalboard is changed via MOD UI
-        self.pedalboard_modification_file = "/home/pistomp/data/last.json"
+        self.pedalboard_modification_file = os.path.join(self.data_dir, "last.json")
         self.pedalboard_change_timestamp = os.path.getmtime(self.pedalboard_modification_file)\
             if Path(self.pedalboard_modification_file).exists() else 0
 
@@ -530,6 +535,55 @@ class Modhandler(Handler):
         self.lcd.splash_show(False)
         logging.info("System Reboot")
         os.system('sudo systemctl reboot')
+
+    def check_usb(self):
+        self.usbflash = False
+        if not os.path.exists(self.backup_dir):
+            os.mkdir(self.backup_dir)
+        stat = subprocess.call(["systemctl", "is-active", "--quiet", "usbmount@dev-sda1"])
+        if(stat == 0):
+            self.usbflash = True
+        else:
+            self.usbflash = False
+
+    def user_backup_data(self, arg):
+        self.check_usb()
+        if self.usbflash:
+            self.lcd.draw_info_message("Backing up, please wait...", refresh=True)
+            logging.info("Data backup...")
+            cmd = os.path.join(self.homedir, 'util', 'data-backup.sh')
+            try:
+                output = subprocess.check_output([cmd, os.path.join(self.backup_dir, self.backup_file), self.data_dir])
+                self.lcd.draw_message_dialog("Backup complete", "Info")
+                logging.info("Backup complete")
+            except subprocess.CalledProcessError as e:
+                logging.error("user_backup_data:" + str(e.output))
+                return e.output.decode('utf-8')
+            finally:
+                self.lcd.draw_info_message("", refresh=True)
+        else:
+            logging.info("No USB device found")
+            self.lcd.draw_message_dialog("No USB device found")
+
+    def user_restore_data(self, arg):
+        self.check_usb()
+        if self.usbflash:
+            self.lcd.draw_info_message("Restoring, please wait...", refresh=True)
+            logging.info("Restoring data backup...")
+            cmd = os.path.join(self.homedir, 'util', 'data-restore.sh')
+            try:
+                output = subprocess.check_output(['sudo', '-u', self.username, cmd,
+                                                  os.path.join(self.backup_dir, self.backup_file), self.data_dir])
+                logging.info("Restore complete")
+                self.system_menu_restart_sound(None)
+            except subprocess.CalledProcessError as e:
+                self.lcd.draw_message_dialog(e.output.decode('utf-8'))
+                logging.error("user_restore_data: " + e.output.decode('utf-8'))
+            finally:
+                self.lcd.draw_info_message("", refresh=True)
+        else:
+            logging.info("No USB device found")
+            self.lcd.draw_message_dialog("No USB device found")
 
     def system_menu_save_current_pb(self, arg):
         logging.debug("save current")
