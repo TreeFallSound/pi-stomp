@@ -92,7 +92,15 @@ schema = {
                 "type": "integer"
               },
               "preset": {
-                "enum": ["UP", "DOWN"]
+                "oneOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["UP", "DOWN"]
+                  }
+                ]
               },
               "tap_tempo": {
                 "enum": ["set_mod_tap_tempo"]

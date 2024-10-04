@@ -410,6 +410,9 @@ class Modhandler(Handler):
 
     def preset_change(self, index):
         logging.info("preset change: %d" % index)
+        if index < 0 or index >= len(self.current.presets):
+            self.lcd.draw_message_dialog("Snapshot id %d does not exist for this pedalboard" % index)
+            return
         self.lcd.draw_info_message("Loading...")
         url = (self.root_uri + "snapshot/load?id=%d" % index)
         # req.get(self.root_uri + "reset")
@@ -443,6 +446,9 @@ class Modhandler(Handler):
 
     def preset_decr_and_change(self, *argv):
         index = self.next_preset_index(self.current.presets, self.current.preset_index, False)
+        self.preset_change(index)
+
+    def preset_set_and_change(self, index):
         self.preset_change(index)
 
     #
