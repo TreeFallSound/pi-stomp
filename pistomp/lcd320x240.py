@@ -556,7 +556,8 @@ class Lcd(abstract_lcd.Lcd):
         self.pstack.push_panel(d)
 
     def draw_system_info_dialog(self, arg):
-        d = MessageDialog(self.pstack, self.handler.software_version, title="System Info", width=250, height=100)
+        msg="Software:{}\nBuild:{}".format(self.handler.software_version, self.handler.build_version)
+        d = MessageDialog(self.pstack, msg, title="System Info", width=300, height=100)
         self.pstack.push_panel(d)
 
     def draw_bank_menu(self, event):

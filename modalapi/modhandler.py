@@ -54,6 +54,9 @@ class Modhandler(Handler):
         self.root_uri = "http://localhost:80/"
         self.hardware = None
         self.settings = Settings.Settings()
+        self.software_version = None
+        self.build_version = "User build"
+        self.build_file = "/home/pistomp/.osbuild"
 
         self.pedalboards = {}
         self.pedalboard_list = []  # TODO LAME to have two lists
@@ -513,13 +516,26 @@ class Modhandler(Handler):
     def system_info_load(self):
         try:
             output = subprocess.check_output(['git', '--git-dir', self.homedir + '/.git',
-                                              '--work-tree', self.homedir, 'describe'])
+                                              '--work-tree', self.homedir, 'describe',
+                                              '--dirty=*', '--always'])
             if output:
-                self.git_describe = output.decode()
-                self.software_version = self.git_describe.split('-')[0]
+                self.software_version = output.decode()
                 logging.info("pi-Stomp Software Version: %s" % self.software_version)
         except subprocess.CalledProcessError:
             logging.error("Cannot obtain git software tag info")
+
+        try:
+            if Path(self.build_file).exists():
+                self.build_version = ""
+                with open(self.build_file, 'r') as file:
+                    j = json.load(file)
+                    build_tag = util.DICT_GET(j, 'build-tag')
+                    build_date = util.DICT_GET(j, 'build-date')
+                    self.build_version = "{}-{}".format(build_tag, build_date)
+            else:
+                logging.warning("Build file does not exist: %s" % self.build_file)
+        except:
+            logging.error("Cannot read build file: %s" % self.build_file)
 
         self.eq_status = self.audiocard.get_switch_parameter(self.audiocard.DAC_EQ)
         self.lcd.update_eq(self.eq_status)
