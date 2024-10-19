@@ -105,8 +105,14 @@ class Hardware:
         self.cfg = self.default_cfg.copy()
 
         self.__init_midi_default()
+
+        # Global footswitch init (callbacks and groups)
+        Footswitch.Footswitch.init(self.handler.callbacks)
+
+        # Footswitch configuration
         self.__init_footswitches(self.cfg)
 
+        # Pedalboard specific config
         if cfg is not None:
             self.__init_midi(cfg)
             self.__init_footswitches(cfg)
@@ -374,7 +380,3 @@ class Hardware:
                     fs.set_longpress_groups(Util.DICT_GET(f, Token.LONGPRESS))
 
             idx += 1
-
-        # Do this only once not for each fs
-        if fs:
-            fs.set_callbacks(self.handler.callbacks)

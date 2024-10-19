@@ -32,24 +32,25 @@ class LongpressInfo:
         self.timestamps = dict()
 
 class Footswitch(controller.Controller):
-
-    # Static dict of dict which stores the timestamps for all footswitch objects
-    # The group name serves dual purpose for linking two footswithes and as a key for looking up the callback
-    # So each entry should have a corresponding entry in the handler callbacks dict
-    # Only these can be used as callbacks.  Any other specified by the user will result in no action.
-    all_longpress_groups = {"next_snapshot":LongpressInfo(),
-                            "previous_snapshot":LongpressInfo(),
-                            "toggle_bypass":LongpressInfo(),
-                            "set_mod_tap_tempo":LongpressInfo(),
-                            "toggle_tap_tempo_enable":LongpressInfo()}
-
-    # Static list of possible callbacks from the handler, set using set_class_callbacks()
+    # Global static info
+    all_longpress_groups = {}
     callbacks = {}
 
     @classmethod
-    def set_class_callbacks(cls, callbacks):
+    def init(cls, callbacks):
+        # Static dict of dict which stores the timestamps for all footswitch objects
+        # The group name serves dual purpose for linking two footswithes and as a key for looking up the callback
+        # So each entry should have a corresponding entry in the handler callbacks dict
+        # Only these can be used as callbacks.  Any other specified by the user will result in no action.
+        cls.all_longpress_groups = {"next_snapshot":LongpressInfo(),
+                                    "previous_snapshot":LongpressInfo(),
+                                    "toggle_bypass":LongpressInfo(),
+                                    "set_mod_tap_tempo":LongpressInfo(),
+                                    "toggle_tap_tempo_enable":LongpressInfo()}
+
+        # Static list of possible callbacks from the handler
         if len(cls.callbacks) == 0:
-            cls.callbacks = callbacks  # singleton action, only need to call once for all fs's.
+            cls.callbacks = callbacks
 
     @classmethod
     def check_longpress_events(cls):
@@ -170,9 +171,6 @@ class Footswitch(controller.Controller):
                 info = util.DICT_GET(self.all_longpress_groups, g)
                 if info is not None:
                     info.number_in_group += 1
-
-    def set_callbacks(self, callbacks):
-        Footswitch.set_class_callbacks(callbacks)
 
     def poll(self):
         if self.adc_switch:
