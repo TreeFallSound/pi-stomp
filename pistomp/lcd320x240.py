@@ -527,12 +527,12 @@ class Lcd(abstract_lcd.Lcd):
     # System Menu
     #
     def draw_system_menu(self, event, widget):
-        items = [("System shutdown", self.handler.system_menu_shutdown, None),
+        items = [("System info", self.draw_system_info_dialog, None),
+                 ("System shutdown", self.handler.system_menu_shutdown, None),
                  ("System reboot",  self.handler.system_menu_reboot, None),
                  ("Restart sound engine", self.handler.system_menu_restart_sound, None),
                  ("Bank Select >", self.draw_bank_menu, None),
-                 ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None),
-                 ("System info", self.draw_system_info_dialog, None)]
+                 ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None)]
         self.draw_selection_menu(items, "System Menu")
 
     def draw_pedalboard_mgmt_menu(self, arg):
