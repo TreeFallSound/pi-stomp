@@ -13,45 +13,29 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import _rpi_ws281x as ws
-from rpi_ws281x import PixelStrip
 import matplotlib
-import re
 from PIL import ImageColor
 
 import common.util as Util
 import pistomp.category as Category
+import board
+import neopixel
 
 # LED strip configuration:  # TODO get these from hardware impl (pisompcore.py)
-LED_COUNT = 6        # Number of LED pixels.
-LED_PIN = 13          # GPIO pin connected to the pixels (must have PWM).
-LED_FREQ_HZ = 800000  # LED signal frequency in hertz (usually 800khz)
-LED_BRIGHTNESS = 30  # Set to 0 for darkest and 255 for brightest
-LED_INVERT = False    # True to invert the signal (when using NPN transistor level shift)
-LED_CHANNEL = 1      # set to '1' for GPIOs 13, 19, 41, 45 or 53
-
-# DMA channel to use for generating signal
-# Determine DMA channel based on pi model, if we need finer granularity, use the Revision field
-_cpuinfo = open('/proc/cpuinfo').read()
-_info=''.join(_cpuinfo.split())
-_match = re.search(r'(?<=Model:RaspberryPi)\d', _info)
-LED_DMA = 12  # pi3
-if _match and _match.group(0) == "4":
-    LED_DMA = 10
-
+LED_COUNT = 6          # Number of LED pixels.
+LED_PIN = board.D13    # GPIO pin connected to the pixels (must have PWM).
+LED_BRIGHTNESS = 0.22  # Set to 0 for darkest, 1.0 for brightest
 
 class Ledstrip:
 
     def __init__(self):
-        # Create NeoPixel object with appropriate configuration.
-        self.strip = PixelStrip(LED_COUNT, LED_PIN, LED_FREQ_HZ, LED_DMA, LED_INVERT, LED_BRIGHTNESS, LED_CHANNEL,
-                                strip_type=ws.WS2811_STRIP_RGB)
-        # Intialize the library (must be called once before other functions).
-        self.strip.begin()
-
+        # Create NeoPixel object with appropriate configuration
+        self.strip = neopixel.NeoPixel(LED_PIN, LED_COUNT, brightness=LED_BRIGHTNESS)  # GPIO18 (PWM-capable), 8 pixels
         self.pixels = []
 
     def add_pixel(self, id, position):
+        if position >= LED_COUNT:
+            raise ValueError(f"Position {position} exceeds LED strip length {LED_COUNT}")
         p = Pixel(self.strip, id, position)
         self.pixels.append(p)
         return p
@@ -99,6 +83,6 @@ class Pixel:
         self.color = c
 
     def _render_color_rgb(self, r, g, b):
-        self.strip.setPixelColorRGB(self.position, g, r, b)
+        self.strip[self.position] = (r, g, b) # Set the pixel color
         # TODO would be nice to do this once for multiple pixel changes
-        self.strip.show()
+        #self.strip.show()
