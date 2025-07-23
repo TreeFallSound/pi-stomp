@@ -31,7 +31,11 @@ else
   git pull --quiet || { echo "git pull failed"; exit 1; }
 
   # Reapply the local stashed changes, favor stashed version.  XXX possibility of badly merged changes
-  git stash apply --index --quiet || { echo "git stash apply failed"; exit 1; }
+  if ! git stash apply --index --quiet; then
+    echo "git stash apply failed"
+    git stash pop --index
+    exit 1
+  fi
 
   if [[ $count -eq 0 ]]; then
     echo "Already up to date"

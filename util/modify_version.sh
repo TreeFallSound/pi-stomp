@@ -26,6 +26,7 @@ jackdrc_file="/etc/jackdrc"
 config_dir="$HOME/data/config"
 config_file="$config_dir/default_config.yml"
 hwfile="$config_dir/hardware-descriptor.json"
+pb_dir="/home/pistomp/.pedalboards"
 
 template_dir="$HOME/pi-stomp/setup/config_templates"
 pistomp_orig_config_file="$template_dir/default_config_pistomp.yml"
@@ -40,12 +41,24 @@ cp $default_hwfile $hwfile
 if awk "BEGIN {exit !($1 >= 3.0 )}"; then
     cp $pistomp_tre_config_file $config_file
     sudo sed -i 's/-p [0-9]\+/-p 128/' $jackdrc_file
+    if ! git -C "$pb_dir" checkout master; then
+      echo "Git checkout failed"
+      exit 1
+    fi
 elif awk "BEGIN {exit !($1 >= 2.0 )}"; then
     cp $pistomp_core_config_file $config_file
     sudo sed -i 's/-p [0-9]\+/-p 256/' $jackdrc_file
+    if ! git -C "$pb_dir" checkout v2; then
+      echo "Git checkout failed"
+      exit 1
+    fi
 elif awk "BEGIN {exit !($1 >= 1.0 )}"; then
     cp $pistomp_orig_config_file $config_file
     sudo sed -i 's/-p [0-9]\+/-p 256/' $jackdrc_file
+    if ! git -C "$pb_dir" checkout v1; then
+      echo "Git checkout failed"
+      exit 1
+    fi
 fi
 
 sed -i "s/version: [0-9]\.*[0-9]*\.*[0-9]*/version: $1/" $config_file
