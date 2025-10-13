@@ -24,7 +24,7 @@ import neopixel
 # LED strip configuration:  # TODO get these from hardware impl (pisompcore.py)
 LED_COUNT = 6          # Number of LED pixels.
 LED_PIN = board.D13    # GPIO pin connected to the pixels (must have PWM).
-LED_BRIGHTNESS = 0.22  # Set to 0 for darkest, 1.0 for brightest
+LED_BRIGHTNESS = 0.19  # Set to 0 for darkest, 1.0 for brightest (0.19 seems good, 0.06 for photos)
 
 class Ledstrip:
 
