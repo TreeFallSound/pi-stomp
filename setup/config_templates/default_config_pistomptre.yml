@@ -31,16 +31,16 @@ hardware:
     adc_input: 0
     ledstrip_position: 0
     midi_CC: 60
-    longpress: next_snapshot
+    longpress: previous_snapshot
   - id: 1
     adc_input: 1
     ledstrip_position: 1
     midi_CC: 61
+    longpress: next_snapshot
   - id: 2
     adc_input: 2
     ledstrip_position: 2
     midi_CC: 62
-    longpress: previous_snapshot
   - id: 3
     adc_input: 3
     ledstrip_position: 3
