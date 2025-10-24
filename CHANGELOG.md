@@ -4,6 +4,18 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [v3.0.0] - 2025-10-23
+### Added
+- Use PIO neopixel to allow WS28 support on pi5
+- Add pi5 Eeprom update script
+
+### Changed
+- Change default longpress and tap tempo assignments
+
+### Fixed
+- Fix display of analog assignments
+- Fix wifi config function
+
 ## [v2.3.0-beta.1] - 2024-10-03
 ### Added
 - Pre-built software installation
