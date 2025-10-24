@@ -1,5 +1,5 @@
 # pi-Stomp!
-#### pi-Stomp is a DIY high definition, multi-effects stompbox platform for guitar bass and keyboards
+#### pi-Stomp is a DIY high definition, multi-effects stompbox platform for guitar, bass and keyboards
 For more info about what it is and what it can do, go to [treefallsound.com](https://treefallsound.com)
 
 ## pi-Stomp Software and Firmware
@@ -14,7 +14,7 @@ and to, among other things, send commands to mod-host for reading/writing pedalb
 This repository includes:
 * the pi-Stomp hardware drivers ('pistomp' module)
 * the mod-ala-pi-stomp service ('modalapistomp.py' & 'modalapi' module)
-* setup scripts for downloading/installing the above along with:
+* setup scripts (deprecated support - see below) for downloading/installing the above along with:
   * python dependencies
   * MOD software
   * sound card drivers
@@ -23,30 +23,17 @@ This repository includes:
   * sample pedalboards
 
 ## Installing
-For full installation instructions including etching the initial operating system, see [this guide](https://www.treefallsound.com/wiki/doku.php?id=software_installation_64-bit)
+For full installation instructions, see [this guide](https://www.treefallsound.com/wiki/doku.php?id=software_installation_3.x)
 
-After first boot, establish an ssh session to the RPi (the password is the one set during OS install):
+Those instructions start with a pre-built pi-Stomp image.  The supporting packages are pre-installed.
+This is the recommended method of installation for most users.
 
-        ssh pistomp@pistomp.local
-        
-Once connected, download the pi-Stomp software:
-        
-        sudo apt update --allow-releaseinfo-change --fix-missing && sudo apt install -y git
-        
-        git clone https://github.com/TreeFallSound/pi-stomp.git
-        
-        cd pi-stomp
-        
-Now run the setup utility to install the software and audio plugins.  It could take over a half hour.
-There are a few setup options based on your system hardware.
-Typical systems should run:
-        
-        nohup ./setup.sh > setup.log | tail -f setup.log
-        
-The IQAudio Codec Zero is the default audio card, so the above command is equivalent to adding `-a iqaudio-codec`
-(eg: ./setup.sh -a iqaudio-codec).
-For an audioInjector card, add: `-a
-audioinjector-wm8731-audio`  For HiFiBerry add: `-a hifiberry-dacplusadc`
-For the original v1.x hardware, add `-v 1.0`
+This [pi-gen-pistomp](https://github.com/rreichenbach/pi-gen-pistomp) repository is used to create the pre-built images.
+We recommend forking this for creating your own modified images.
 
-If all went well, the system will reboot, then finally display the default pedalboard
+The now deprecated method of using the setup scripts in this repository to build from scratch is another option.
+You can start with a base RPi image and use these
+[2.x install instructions](https://www.treefallsound.com/wiki/doku.php?id=software_installation_64-bit),
+but note that the setup scripts have not been updated to work with the newer v3 hardware so you are on your own there.
+Also keep in mind that there are hundreds of packages used to build the system.
+Package version incompatibilities are much more likely using this method.
