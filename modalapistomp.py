@@ -130,6 +130,10 @@ def main():
     logging.info("Entering main loop. Press Control-C to exit.")
     period = 0
     try:
+        # startup actions
+        handler.poll_system_info()
+
+        # main loop
         while True:
             handler.poll_controls()
             time.sleep(0.01)  # lower to increase responsiveness, but can cause conflict with LCD if too low
@@ -140,9 +144,12 @@ def main():
                 handler.poll_indicators()
             if period % 20 == 0:
                 handler.poll_lcd_updates()
-            if period > 100:
+            if period % 100 == 0:
                 handler.poll_modui_changes()
+            if period % 200 == 0:
                 handler.poll_wifi()
+            if period > 6000: # every 60 seconds (when sleep = 0.01)
+                handler.poll_system_info()
                 period = 0
 
     except KeyboardInterrupt:
