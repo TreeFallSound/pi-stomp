@@ -687,7 +687,8 @@ class Lcd(abstract_lcd.Lcd):
         # Should work for more or fewer but won't likely look great on the LCD
 
         # spacing and scaling of text
-        num = max(3, len(controllers) + 1)
+        minimum = 4 if self.handler.hardware.version >= 3 else 3
+        num = max(minimum, len(controllers) + 1)
         width_per_control = int(round(self.display_width / num))
         text_per_control = width_per_control - 16  # minus height of control icon
 
