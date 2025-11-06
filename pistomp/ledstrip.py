@@ -83,6 +83,8 @@ class Pixel:
         self.color = c
 
     def _render_color_rgb(self, r, g, b):
-        self.strip[self.position] = (r, g, b) # Set the pixel color
-        # TODO would be nice to do this once for multiple pixel changes
-        #self.strip.show()
+        try:
+            self.strip[self.position] = (r, g, b) # Set the pixel color
+        except:
+            logging.warning("Failed to set LED pixel color for pixel %d", self.position)
+            pass
