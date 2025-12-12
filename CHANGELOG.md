@@ -4,6 +4,21 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [v3.0.3] - 2025-12-12
+### Changed
+- Improved ALSA settings to better handle hot guitar pickups
+
+### Fixed
+- Fixed shutdown action display of red pi-Stomp splash screen
+
+## [v3.0.2] - 2025-11-05
+### Added
+- Add system dianostics to System Info page: SystemState, Temp, Throttled
+
+### Fixed
+- try/except with warning when LED color can't be changed (RP1 issues, etc.)
+- Calculate number of minimum analog controls based on hardware version
+
 ## [v3.0.0] - 2025-10-23
 ### Added
 - Use PIO neopixel to allow WS28 support on pi5
