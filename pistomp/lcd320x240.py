@@ -622,9 +622,11 @@ class Lcd(abstract_lcd.Lcd):
         self.splash_panel.refresh()
 
     def cleanup(self):
+        self.pstack.pop_panel(None)  # current panel
+        self.pstack.pop_panel(self.footswitch_panel)
+        self.pstack.pop_panel(self.main_panel)
         self.w_splash.set_foreground(self.color_splash_down)
         self.splash_panel.refresh()
-        self.pstack.pop_panel(self.main_panel)
     
     def clear(self):
         pass

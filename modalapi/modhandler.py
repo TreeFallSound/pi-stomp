@@ -537,6 +537,7 @@ class Modhandler(Handler):
 
             #  Indicate change on LCD
             self.lcd.toggle_plugin(widget, plugin)
+
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
         self.lcd.update_footswitch(footswitch)
 
@@ -612,7 +613,7 @@ class Modhandler(Handler):
             self.lcd.update_bypass(self.bypass_left, self.bypass_right)
 
     def system_menu_shutdown(self, arg):
-        self.lcd.splash_show(False)
+        self.lcd.cleanup()
         logging.info("System Shutdown")
         os.system('sudo systemctl --no-wall poweroff')
 
