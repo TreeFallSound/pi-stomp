@@ -28,6 +28,7 @@ import pistomp.generichost as Generichost
 import pistomp.testhost as Testhost
 import pistomp.handlerfactory as Handlerfactory
 import pistomp.hardwarefactory as Hardwarefactory
+import pistomp.midiouthandler as MidiOutHandler
 
 
 def main():
@@ -89,9 +90,12 @@ def main():
             logging.error("Cannot create handler for the version specified in configuration file")
             sys.exit()
 
+        # Wrap midiout to enable external MIDI passthrough
+        midiout_wrapped = MidiOutHandler.MidiOutHandler(midiout, handler.external_midi)
+
         # Initialize hardware (Footswitches, Encoders, Analog inputs, etc.)
         factory = Hardwarefactory.Hardwarefactory()
-        hw = factory.create(cfg, handler, midiout)
+        hw = factory.create(cfg, handler, midiout_wrapped)
         handler.add_hardware(hw)
 
         # Load all pedalboard info from the lilv ttl file

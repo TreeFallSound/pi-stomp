@@ -19,10 +19,46 @@ import fnmatch
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 import yaml
 import rtmidi
+
+
+class PassthroughMapping(TypedDict, total=False):
+    """Configuration for MIDI pass-through mapping."""
+
+    source_channel: int
+    source_cc: int
+    dest_channel: int
+    dest_cc: int
+
+
+class PortConfig(TypedDict, total=False):
+    """Configuration for a MIDI port."""
+
+    auto_detect: list[str]
+    port_index: int
+    passthrough: list[PassthroughMapping]
+
+
+class PortMessageConfig(TypedDict, total=False):
+    """Configuration for messages sent to a port."""
+
+    port: str
+    messages: list[list[int]]
+    delay_ms: int
+
+
+class SettingsConfig(TypedDict, total=False):
+    """Global settings configuration."""
+
+    enabled: bool
+    send_delay_ms: int
+
+
+PedalboardMappings = dict[str, list[PortMessageConfig]]
+MidiPorts = dict[str, PortConfig]
 
 
 class ExternalMidiManager:
@@ -41,9 +77,9 @@ class ExternalMidiManager:
         """
         self.data_dir: str = data_dir
         self.config_path: str | None = config_path
-        self.config: dict[str, Any] = {}
+        self.config: SettingsConfig = {}
         self.midi_ports: dict[str, rtmidi.MidiOut | None] = {}
-        self.port_configs: dict[str, dict[str, Any]] = {}
+        self.port_configs: MidiPorts = {}
         self.enabled: bool = False
 
         # Load configuration
@@ -73,19 +109,19 @@ class ExternalMidiManager:
             config_file = Path(config_file)
             if config_file.exists():
                 try:
-                    with open(config_file, 'r') as f:
+                    with open(config_file, "r") as f:
                         self.config = yaml.safe_load(f) or {}
 
                     # Validate and extract settings
-                    settings = self.config.get('settings', {})
-                    self.enabled = settings.get('enabled', True)
+                    settings = self.config.get("settings", {})
+                    self.enabled = settings.get("enabled", True)
 
                     if not self.enabled:
                         logging.info(f"External MIDI disabled in config: {config_file}")
                         return False
 
                     # Store port configurations for lazy initialization
-                    self.port_configs = self.config.get('midi_ports', {})
+                    self.port_configs = self.config.get("midi_ports", {})
 
                     logging.info(f"External MIDI config loaded from: {config_file}")
                     return True
@@ -115,7 +151,7 @@ class ExternalMidiManager:
             logging.error(f"Failed to enumerate MIDI ports: {e}")
             return []
 
-    def _find_port_by_name(self, port_config: dict[str, Any]) -> int | None:
+    def _find_port_by_name(self, port_config: PortConfig) -> int | None:
         """
         Find MIDI port index by auto-detection patterns.
 
@@ -126,11 +162,11 @@ class ExternalMidiManager:
             Port index if found, None otherwise.
         """
         # Check for manual port_index override
-        if 'port_index' in port_config:
-            return port_config['port_index']
+        if "port_index" in port_config:
+            return port_config["port_index"]
 
         # Auto-detect by name patterns
-        auto_detect = port_config.get('auto_detect', [])
+        auto_detect = port_config.get("auto_detect", [])
         if not auto_detect:
             return None
 
@@ -157,8 +193,7 @@ class ExternalMidiManager:
         if len(matched_ports) > 1:
             port_names = [name for _, name in matched_ports]
             logging.warning(
-                f"Multiple MIDI ports matched {auto_detect}: {port_names}. "
-                f"Using first match: {matched_ports[0][1]}"
+                f"Multiple MIDI ports matched {auto_detect}: {port_names}. Using first match: {matched_ports[0][1]}"
             )
 
         selected_idx, selected_name = matched_ports[0]
@@ -233,10 +268,10 @@ class ExternalMidiManager:
 
         return True
 
-    def _match_pedalboard(self, pedalboard) -> list[dict[str, Any]] | None:
+    def _match_pedalboard(self, pedalboard) -> list[PortMessageConfig] | None:
         """
         Find matching MIDI configuration for a pedalboard.
-        Uses priority: exact bundle path > exact title > glob pattern title.
+        Uses priority: exact bundle path > exact title > glob pattern title > default.
 
         Args:
             pedalboard: Pedalboard object with .bundle and .title attributes.
@@ -244,7 +279,7 @@ class ExternalMidiManager:
         Returns:
             List of port message configurations, or None if no match.
         """
-        pedalboard_mappings = self.config.get('pedalboards', {})
+        pedalboard_mappings: PedalboardMappings = self.config.get("pedalboards", {})
         if not pedalboard_mappings:
             return None
 
@@ -262,9 +297,10 @@ class ExternalMidiManager:
             return pedalboard_mappings[title]
 
         # Priority 3: Glob pattern title match (longest match wins)
+        # Skip 'default' key during pattern matching
         matched_patterns = []
         for pattern, config in pedalboard_mappings.items():
-            if fnmatch.fnmatch(title, pattern):
+            if pattern != "default" and fnmatch.fnmatch(title, pattern):
                 matched_patterns.append((pattern, config))
 
         if matched_patterns:
@@ -273,6 +309,11 @@ class ExternalMidiManager:
             matched_pattern, matched_config = matched_patterns[0]
             logging.debug(f"Matched pedalboard by glob pattern '{matched_pattern}': {title}")
             return matched_config
+
+        # Priority 4: Default configuration (if exists)
+        if "default" in pedalboard_mappings:
+            logging.info(f"Using default MIDI configuration for pedalboard: {title}")
+            return pedalboard_mappings["default"]
 
         # No match
         logging.debug(f"No external MIDI mapping for pedalboard: {title}")
@@ -293,11 +334,9 @@ class ExternalMidiManager:
             logging.warning(f"Skipping messages for unavailable port: {port_name}")
             return
 
-        # Send each message
         for i, message in enumerate(messages):
-            # Validate message
             if not self._validate_midi_message(message):
-                logging.warning(f"Skipping invalid MIDI message {i+1}/{len(messages)}: {message}")
+                logging.warning(f"Skipping invalid MIDI message {i + 1}/{len(messages)}: {message}")
                 continue
 
             try:
@@ -310,6 +349,64 @@ class ExternalMidiManager:
 
             except Exception as e:
                 logging.error(f"Failed to send MIDI message to {port_name}: {e}")
+
+    def send_passthrough_cc(self, source_channel: int, source_cc: int, value: int) -> bool:
+        """
+        Send MIDI CC pass-through message to external devices.
+        Remaps channel and CC number based on port passthrough configuration.
+
+        Args:
+            source_channel: Source MIDI channel (0-15, where 0 = channel 1).
+            source_cc: Source MIDI CC number (0-127).
+            value: CC value (0-127).
+
+        Returns:
+            True if any messages were sent, False otherwise.
+        """
+        if not self.enabled:
+            return False
+
+        sent_any = False
+
+        # Check each port's passthrough configuration
+        for port_name, port_config in self.port_configs.items():
+            passthrough_mappings = port_config.get("passthrough", [])
+            if not passthrough_mappings:
+                continue
+
+            # Check if this message matches any passthrough mapping
+            for mapping in passthrough_mappings:
+                map_src_channel = mapping.get("source_channel")
+                map_src_cc = mapping.get("source_cc")
+
+                # Skip if required fields missing
+                if map_src_channel is None or map_src_cc is None:
+                    continue
+
+                # Apply same channel conversion as hardware.py (channel - 1)
+                # to match the parameter space used in default_config.yml
+                real_src_channel = map_src_channel - 1 if map_src_channel > 0 else 0
+
+                # Check if this mapping matches the incoming message
+                if real_src_channel == source_channel and map_src_cc == source_cc:
+                    # Get destination channel and CC (default to source if not specified)
+                    dest_channel = mapping.get("dest_channel", source_channel)
+                    dest_cc = mapping.get("dest_cc", source_cc)
+
+                    # Build MIDI CC message: [0xBn, cc, value]
+                    # 0xB0 is Control Change status byte, n is channel (0-15)
+                    status_byte = 0xB0 | (dest_channel & 0x0F)
+                    message = [status_byte, dest_cc & 0x7F, value & 0x7F]
+
+                    # Send the message
+                    logging.debug(
+                        f"Pass-through: CH{source_channel + 1} CC{source_cc} -> "
+                        + f"{port_name} CH{dest_channel + 1} CC{dest_cc} = {value}"
+                    )
+                    self._send_messages(port_name, [message], delay_ms=0)
+                    sent_any = True
+
+        return sent_any
 
     def send_messages_for_pedalboard(self, pedalboard) -> bool:
         """
@@ -324,20 +421,17 @@ class ExternalMidiManager:
         if not self.enabled:
             return False
 
-        # Find matching configuration
         port_configs = self._match_pedalboard(pedalboard)
         if not port_configs:
             return False
 
-        # Get global delay setting
-        settings = self.config.get('settings', {})
-        default_delay = settings.get('send_delay_ms', 10)
+        settings: SettingsConfig = self.config.get("settings", {})
+        default_delay = settings.get("send_delay_ms", 10)
 
-        # Send messages to each configured port
         for port_config in port_configs:
-            port_name = port_config.get('port')
-            messages = port_config.get('messages', [])
-            delay = port_config.get('delay_ms', default_delay)
+            port_name = port_config.get("port")
+            messages = port_config.get("messages", [])
+            delay = port_config.get("delay_ms", default_delay)
 
             if not port_name:
                 logging.warning("Port configuration missing 'port' field, skipping")

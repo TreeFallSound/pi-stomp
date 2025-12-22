@@ -37,6 +37,23 @@ midi_ports:
     # Uncomment and set if auto-detection doesn't work
     # port_index: 1
 
+    # Pass-through mapping: Forward piStomp MIDI controls to external device
+    # Allows expression pedals, encoders, etc. to control external devices
+    # Maps source (piStomp) MIDI channel/CC to destination device channel/CC
+    passthrough:
+      # Example: Forward piStomp expression pedal to C4
+      # piStomp default: Channel 14 (source_channel: 14), CC 75
+      # C4 expects: Channel 1 (dest_channel: 1), CC 100 for expression
+      - source_channel: 14       # piStomp MIDI channel (0-15, where 0 = channel 1)
+        source_cc: 75            # piStomp expression pedal CC
+        dest_channel: 0          # C4 MIDI channel (0 = channel 1)
+        dest_cc: 100             # C4 expression CC (MIDI Remote Expression)
+      # Add more pass-through mappings as needed
+      # - source_channel: 14
+      #   source_cc: 70           # piStomp encoder 1
+      #   dest_channel: 0
+      #   dest_cc: 1              # C4 mod wheel
+
   # Example: Line 6 HX Stomp
   # hx_stomp:
   #   auto_detect: ["*HX Stomp*", "*Line 6*"]
@@ -51,9 +68,23 @@ midi_ports:
 #   1. Exact pedalboard title: "My Clean Tone"
 #   2. Glob pattern on title: "Lead*" (matches "Lead Rhythm", "Lead Solo", etc.)
 #   3. Exact bundle path: "/home/pistomp/.pedalboards/My_Board.pedalboard"
+#   4. Special key "default": Used for pedalboards without specific mappings
 #
-# Matching priority: bundle path > exact title > glob pattern (longest match)
+# Matching priority: bundle path > exact title > glob pattern (longest match) > default
+#
+# The "default" section is useful for resetting/bypassing external devices when
+# switching to pedalboards that don't use them.
 pedalboards:
+
+  # Special "default" configuration for pedalboards without specific mappings
+  # Example: Bypass the C4 when loading pedalboards that don't need it
+  default:
+    - port: c4
+      messages:
+        # CC 102 controls bypass on Source Audio pedals
+        # Values 0-64 = bypassed, 65-127 = engaged
+        - [0xB0, 0x66, 0x00]  # CC 102 (0x66) = 0 (bypass)
+
 
   # Example 1: Exact title match
   # Sends Program Change 0 to C4 when "Clean Rhythm" pedalboard loads
