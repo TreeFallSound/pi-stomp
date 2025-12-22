@@ -37,23 +37,6 @@ midi_ports:
     # Uncomment and set if auto-detection doesn't work
     # port_index: 1
 
-    # Pass-through mapping: Forward piStomp MIDI controls to external device
-    # Allows expression pedals, encoders, etc. to control external devices
-    # Maps source (piStomp) MIDI channel/CC to destination device channel/CC
-    passthrough:
-      # Example: Forward piStomp expression pedal to C4
-      # piStomp default: Channel 14 (source_channel: 14), CC 75
-      # C4 expects: Channel 1 (dest_channel: 1), CC 100 for expression
-      - source_channel: 14       # piStomp MIDI channel (0-15, where 0 = channel 1)
-        source_cc: 75            # piStomp expression pedal CC
-        dest_channel: 0          # C4 MIDI channel (0 = channel 1)
-        dest_cc: 100             # C4 expression CC (MIDI Remote Expression)
-      # Add more pass-through mappings as needed
-      # - source_channel: 14
-      #   source_cc: 70           # piStomp encoder 1
-      #   dest_channel: 0
-      #   dest_cc: 1              # C4 mod wheel
-
   # Example: Line 6 HX Stomp
   # hx_stomp:
   #   auto_detect: ["*HX Stomp*", "*Line 6*"]

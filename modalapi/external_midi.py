@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import subprocess
 import time
 from pathlib import Path
 from typing import TypedDict
@@ -25,21 +26,11 @@ import yaml
 import rtmidi
 
 
-class PassthroughMapping(TypedDict, total=False):
-    """Configuration for MIDI pass-through mapping."""
-
-    source_channel: int
-    source_cc: int
-    dest_channel: int
-    dest_cc: int
-
-
 class PortConfig(TypedDict, total=False):
     """Configuration for a MIDI port."""
 
     auto_detect: list[str]
     port_index: int
-    passthrough: list[PassthroughMapping]
 
 
 class PortMessageConfig(TypedDict, total=False):
@@ -81,11 +72,52 @@ class ExternalMidiManager:
         self.midi_ports: dict[str, rtmidi.MidiOut | None] = {}
         self.port_configs: MidiPorts = {}
         self.enabled: bool = False
+        self.virtual_midi_out: rtmidi.MidiOut | None = None
+        self.amidithru_process: subprocess.Popen | None = None
 
         # Load configuration
         if self.load_config():
             # Config loaded successfully - feature is enabled
             logging.info("External MIDI synchronization enabled (lazy port initialization)")
+
+        # Create virtual MIDI port using amidithru (so MOD can see it)
+        # This allows routing through LV2 MIDI plugins in the MOD pedalboard
+        try:
+            # Start amidithru process to create the ALSA port
+            self.amidithru_process = subprocess.Popen(
+                ["/usr/local/bin/amidithru", "piStomp-Expression"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            logging.info("Started amidithru process for piStomp-Expression")
+
+            # Wait a moment for the port to be created
+            time.sleep(0.5)
+
+            # Connect to the amidithru port with rtmidi to send messages
+            self.virtual_midi_out = rtmidi.MidiOut()
+            ports = self.virtual_midi_out.get_ports()
+
+            # Find the piStomp-Expression port
+            target_port = None
+            for i, port_name in enumerate(ports):
+                if "piStomp-Expression" in port_name:
+                    target_port = i
+                    break
+
+            if target_port is not None:
+                self.virtual_midi_out.open_port(target_port)
+                logging.info(f"Connected to virtual MIDI port: {ports[target_port]}")
+            else:
+                logging.warning("Could not find piStomp-Expression port to connect")
+                self.virtual_midi_out = None
+
+        except Exception as e:
+            logging.warning(f"Failed to create virtual MIDI port: {e}")
+            if self.amidithru_process:
+                self.amidithru_process.terminate()
+                self.amidithru_process = None
+            self.virtual_midi_out = None
 
     def load_config(self) -> bool:
         """
@@ -352,8 +384,7 @@ class ExternalMidiManager:
 
     def send_passthrough_cc(self, source_channel: int, source_cc: int, value: int) -> bool:
         """
-        Send MIDI CC pass-through message to external devices.
-        Remaps channel and CC number based on port passthrough configuration.
+        Send MIDI CC message to virtual port for routing in MOD pedalboard.
 
         Args:
             source_channel: Source MIDI channel (0-15, where 0 = channel 1).
@@ -361,52 +392,23 @@ class ExternalMidiManager:
             value: CC value (0-127).
 
         Returns:
-            True if any messages were sent, False otherwise.
+            True if message was sent, False otherwise.
         """
-        if not self.enabled:
-            return False
+        # Send MIDI message to virtual port - MOD handles all routing from there
+        if self.virtual_midi_out is not None:
+            try:
+                status_byte = 0xB0 | (source_channel & 0x0F)
+                message = [status_byte, source_cc & 0x7F, value & 0x7F]
+                self.virtual_midi_out.send_message(message)
+                logging.debug(
+                    f"Sent to virtual port: CH{source_channel + 1} CC{source_cc} = {value}"
+                )
+                return True
+            except Exception as e:
+                logging.warning(f"Failed to send to virtual MIDI port: {e}")
+                return False
 
-        sent_any = False
-
-        # Check each port's passthrough configuration
-        for port_name, port_config in self.port_configs.items():
-            passthrough_mappings = port_config.get("passthrough", [])
-            if not passthrough_mappings:
-                continue
-
-            # Check if this message matches any passthrough mapping
-            for mapping in passthrough_mappings:
-                map_src_channel = mapping.get("source_channel")
-                map_src_cc = mapping.get("source_cc")
-
-                # Skip if required fields missing
-                if map_src_channel is None or map_src_cc is None:
-                    continue
-
-                # Apply same channel conversion as hardware.py (channel - 1)
-                # to match the parameter space used in default_config.yml
-                real_src_channel = map_src_channel - 1 if map_src_channel > 0 else 0
-
-                # Check if this mapping matches the incoming message
-                if real_src_channel == source_channel and map_src_cc == source_cc:
-                    # Get destination channel and CC (default to source if not specified)
-                    dest_channel = mapping.get("dest_channel", source_channel)
-                    dest_cc = mapping.get("dest_cc", source_cc)
-
-                    # Build MIDI CC message: [0xBn, cc, value]
-                    # 0xB0 is Control Change status byte, n is channel (0-15)
-                    status_byte = 0xB0 | (dest_channel & 0x0F)
-                    message = [status_byte, dest_cc & 0x7F, value & 0x7F]
-
-                    # Send the message
-                    logging.debug(
-                        f"Pass-through: CH{source_channel + 1} CC{source_cc} -> "
-                        + f"{port_name} CH{dest_channel + 1} CC{dest_cc} = {value}"
-                    )
-                    self._send_messages(port_name, [message], delay_ms=0)
-                    sent_any = True
-
-        return sent_any
+        return False
 
     def send_messages_for_pedalboard(self, pedalboard) -> bool:
         """
@@ -450,6 +452,30 @@ class ExternalMidiManager:
         """
         Close all MIDI ports and cleanup resources.
         """
+        # Close virtual MIDI port
+        if self.virtual_midi_out is not None:
+            try:
+                self.virtual_midi_out.close_port()
+                logging.debug("Closed virtual MIDI port: piStomp-Expression")
+            except Exception as e:
+                logging.warning(f"Error closing virtual MIDI port: {e}")
+            self.virtual_midi_out = None
+
+        # Terminate amidithru process
+        if self.amidithru_process is not None:
+            try:
+                self.amidithru_process.terminate()
+                self.amidithru_process.wait(timeout=2)
+                logging.debug("Terminated amidithru process")
+            except Exception as e:
+                logging.warning(f"Error terminating amidithru process: {e}")
+                try:
+                    self.amidithru_process.kill()
+                except:
+                    pass
+            self.amidithru_process = None
+
+        # Close external MIDI ports
         for port_name, midi_out in self.midi_ports.items():
             if midi_out is not None:
                 try:

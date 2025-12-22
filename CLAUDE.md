@@ -57,3 +57,16 @@ curl -s http://localhost:80/pedalboard/list | python3 -m json.tool
 - Service runs as `root` with Python 3.11
 - Uses unbuffered mode (`python3 -u`) for proper logging
 - Dependencies installed system-wide via `pip3`
+
+## MIDI Routing Architecture
+
+**Expression Pedal → MOD Integration:**
+- Hardware expression pedal (ADC) read by `pistomp/analogmidicontrol.py`
+- MIDI messages sent to virtual ALSA port via `modalapi/external_midi.py`
+- Virtual port created using `amidithru` subprocess (appears in MOD as "piStomp Expression MIDI 1")
+- All routing handled in MOD pedalboard using LV2 MIDI plugins (CC Map, Channel Map, etc.)
+
+**External Device Sync:**
+- Pedalboard load triggers MIDI messages to external devices (e.g., Source Audio C4)
+- Configured via `/home/pistomp/data/config/external_midi.yml`
+- See `setup/config_templates/external_midi.yml.example` for documentation
