@@ -85,11 +85,11 @@ class ExternalMidiManager:
         try:
             # Start amidithru process to create the ALSA port
             self.amidithru_process = subprocess.Popen(
-                ["/usr/local/bin/amidithru", "piStomp-Expression"],
+                ["/usr/local/bin/amidithru", "piStomp-MIDI"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
-            logging.info("Started amidithru process for piStomp-Expression")
+            logging.info("Started amidithru process for piStomp-MIDI")
 
             # Wait a moment for the port to be created
             time.sleep(0.5)
@@ -98,10 +98,10 @@ class ExternalMidiManager:
             self.virtual_midi_out = rtmidi.MidiOut()
             ports = self.virtual_midi_out.get_ports()
 
-            # Find the piStomp-Expression port
+            # Find the piStomp-MIDI port
             target_port = None
             for i, port_name in enumerate(ports):
-                if "piStomp-Expression" in port_name:
+                if "piStomp-MIDI" in port_name:
                     target_port = i
                     break
 
@@ -109,7 +109,7 @@ class ExternalMidiManager:
                 self.virtual_midi_out.open_port(target_port)
                 logging.info(f"Connected to virtual MIDI port: {ports[target_port]}")
             else:
-                logging.warning("Could not find piStomp-Expression port to connect")
+                logging.warning("Could not find piStomp-MIDI port to connect")
                 self.virtual_midi_out = None
 
         except Exception as e:
@@ -456,7 +456,7 @@ class ExternalMidiManager:
         if self.virtual_midi_out is not None:
             try:
                 self.virtual_midi_out.close_port()
-                logging.debug("Closed virtual MIDI port: piStomp-Expression")
+                logging.debug("Closed virtual MIDI port: piStomp-MIDI")
             except Exception as e:
                 logging.warning(f"Error closing virtual MIDI port: {e}")
             self.virtual_midi_out = None

@@ -60,13 +60,32 @@ curl -s http://localhost:80/pedalboard/list | python3 -m json.tool
 
 ## MIDI Routing Architecture
 
-**Expression Pedal → MOD Integration:**
-- Hardware expression pedal (ADC) read by `pistomp/analogmidicontrol.py`
-- MIDI messages sent to virtual ALSA port via `modalapi/external_midi.py`
-- Virtual port created using `amidithru` subprocess (appears in MOD as "piStomp Expression MIDI 1")
-- All routing handled in MOD pedalboard using LV2 MIDI plugins (CC Map, Channel Map, etc.)
+### Hardware Controls → Virtual MIDI Port
 
-**External Device Sync:**
+```
+Hardware Controls (Footswitches, Rotary Encoders, Expression Pedals)
+    ↓
+MidiOutHandler (wrapper intercepts all MIDI CCs)
+    ↓
+├─→ MOD-UI (internal MIDI routing)
+└─→ send_passthrough_cc()
+        ↓
+    Virtual Port "piStomp-MIDI" (created by amidithru)
+        ↓
+    MOD Pedalboard (LV2 MIDI plugins: CC Map, Channel Map, Filter, etc.)
+        ↓
+    External MIDI Devices (C4, HX Stomp, etc.)
+```
+
+### Which Controls Send MIDI?
+
+- ✅ Expression Pedal (CC 75) - rotates and sends to virtual port
+- ✅ Footswitches (CC 60-63) - send to virtual port when pressed
+- ✅ Rotary Encoder Rotation (Tweak1=CC70, Tweak2=CC71) - send to virtual port
+- ❌ Encoder Button Presses - handled by `gpioswitch.py`, no MIDI sent (used for snapshots/navigation)
+
+### External Device Sync
+
 - Pedalboard load triggers MIDI messages to external devices (e.g., Source Audio C4)
 - Configured via `/home/pistomp/data/config/external_midi.yml`
 - See `setup/config_templates/external_midi.yml.example` for documentation
