@@ -575,6 +575,9 @@ class Mod(Handler):
             except Exception as e:
                 logging.warning(f"Failed to send external MIDI messages: {e}")
 
+        # Sync current state of analog controls (expression pedals, etc.)
+        self.hardware.sync_analog_controls()
+
         # Selection info
         self.selectable_items.clear()
         self.selectable_items.append((SelectedType.PEDALBOARD, None))

@@ -88,6 +88,18 @@ class Hardware:
         if s:
             s.check_longpress_events()
 
+    def sync_analog_controls(self):
+        """
+        Send current values of all analog controls via MIDI.
+        Used for syncing external devices during pedalboard load.
+        """
+        for control in self.analog_controls:
+            if hasattr(control, 'send_current_value'):
+                try:
+                    control.send_current_value()
+                except Exception as e:
+                    logging.warning(f"Failed to sync analog control {control.midi_CC}: {e}")
+
     def poll_indicators(self):
         for i in self.indicators:
             i.refresh()

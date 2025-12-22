@@ -395,6 +395,9 @@ class Modhandler(Handler):
             except Exception as e:
                 logging.warning(f"Failed to send external MIDI messages: {e}")
 
+        # Sync current state of analog controls (expression pedals, etc.)
+        self.hardware.sync_analog_controls()
+
     def bind_current_pedalboard(self):
         # "current" being the pedalboard mod-host says is current
         # The pedalboard data has already been loaded, but this will overlay

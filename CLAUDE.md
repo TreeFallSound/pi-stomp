@@ -109,3 +109,11 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 - Pedalboard load triggers MIDI messages to external devices (e.g., Source Audio C4)
 - Configured via `/home/pistomp/data/config/external_midi.yml`
 - See `setup/config_templates/external_midi.yml.example` for documentation
+
+### Analog Control State Sync
+
+- On pedalboard load, all analog controls (expression pedals, etc.) send current position to virtual port
+- MIDI flows to "piStomp-MIDI" virtual port → available to LV2 MIDI plugins in pedalboard
+- Prevents state mismatch - no need to wiggle pedals after switching pedalboards
+- Implemented via `Hardware.sync_analog_controls()` → `AnalogMidiControl.send_current_value()`
+- Works for both v1/v2 (`mod.py`) and v3 (`modhandler.py`) hardware
