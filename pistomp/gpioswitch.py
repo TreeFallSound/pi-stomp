@@ -101,7 +101,6 @@ class GpioSwitch(controller.Controller):
             else:
                 self.longpress_callback(state)
         else:
-            # Call the shortpress callback
             if self.callback is not None:
                 logging.debug("GPIO Switch %d %s %s" % (self.gpio_input, state, self.callback))
                 if self.callback_arg is not None and isinstance(self.callback_arg, dict):
@@ -110,3 +109,5 @@ class GpioSwitch(controller.Controller):
                     self.callback(state, self.callback_arg)
                 else:
                     self.callback(state)
+            else:
+                logging.error("GPIO Switch %d has no callback" % self.gpio_input)
