@@ -23,6 +23,9 @@ import subprocess
 import sys
 import yaml
 
+from pathlib import Path
+from rtmidi.midiconstants import CONTROL_CHANGE
+
 import common.token as Token
 import common.util as util
 import modalapi.pedalboard as Pedalboard
@@ -33,8 +36,6 @@ import pistomp.settings as Settings
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encodermidicontrol import EncoderMidiControl
 from pistomp.footswitch import Footswitch
-from pistomp.handler import Handler
-from pathlib import Path
 
 
 class Modhandler(Handler):
@@ -105,7 +106,8 @@ class Modhandler(Handler):
                           "next_snapshot": self.preset_incr_and_change,
                           "previous_snapshot": self.preset_decr_and_change,
                           "toggle_bypass": self.system_toggle_bypass,
-                          "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable
+                          "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable,
+                          "send_midi_cc": self.send_midi_cc
         }
 
     def __del__(self):
@@ -225,6 +227,24 @@ class Modhandler(Handler):
     def universal_encoder_sw(self, value, obj=None):
         if self.lcd is not None:
             self.lcd.enc_sw(value)
+
+    def send_midi_cc(self, state, cc):
+        """
+        Send MIDI CC message from encoder button press.
+
+        Config example:
+            shortpress:
+              callback: send_midi_cc
+              args: {cc: 72}
+        """
+        if self.hardware is None or self.hardware.midiout is None:
+            logging.warning("send_midi_cc: midiout not available")
+            return
+
+        midi_channel = self.hardware.midi_channel
+        cc_msg = [midi_channel | CONTROL_CHANGE, cc & 0x7F, 127]
+        logging.debug("send_midi_cc: sending %s" % cc_msg)
+        self.hardware.midiout.send_message(cc_msg)
 
     def poll_modui_changes(self):
         # This poll looks for changes made via the MOD UI and tries to sync the pi-Stomp hardware

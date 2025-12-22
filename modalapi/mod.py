@@ -21,6 +21,9 @@ import subprocess
 import sys
 import yaml
 
+from enum import Enum
+from rtmidi.midiconstants import CONTROL_CHANGE
+
 import common.token as Token
 import common.util as util
 import pistomp.switchstate as switchstate
@@ -32,7 +35,6 @@ import modalapi.external_midi as ExternalMidi
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.footswitch import Footswitch
 from pistomp.handler import Handler
-from enum import Enum
 from pathlib import Path
 
 #sys.path.append('/usr/lib/python3.5/site-packages')  # TODO possibly /usr/local/modep/mod-ui
@@ -155,7 +157,8 @@ class Mod(Handler):
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
         self.callbacks = {"set_mod_tap_tempo": self.set_mod_tap_tempo,
                           "next_snapshot": self.preset_incr_and_change,
-                          "previous_snapshot": self.preset_decr_and_change
+                          "previous_snapshot": self.preset_decr_and_change,
+                          "send_midi_cc": self.send_midi_cc
         }
 
     def __del__(self):
@@ -296,6 +299,24 @@ class Mod(Handler):
     #
     # Universal Encoder State Machine (single encoder navigation for pi-Stomp Core)
     #
+
+    def send_midi_cc(self, state, cc):
+        """
+        Send MIDI CC message from encoder button press.
+
+        Config example:
+            shortpress:
+              callback: send_midi_cc
+              args: {cc: 72}
+        """
+        if self.hardware is None or self.hardware.midiout is None:
+            logging.warning("send_midi_cc: midiout not available")
+            return
+
+        midi_channel = self.hardware.midi_channel
+        cc_msg = [midi_channel | CONTROL_CHANGE, cc & 0x7F, 127]
+        logging.debug("send_midi_cc: sending %s" % cc_msg)
+        self.hardware.midiout.send_message(cc_msg)
 
     def universal_encoder_sw(self, value):
         # State machine for universal rotary encoder switch

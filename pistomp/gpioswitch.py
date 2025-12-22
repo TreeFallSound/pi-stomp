@@ -25,13 +25,16 @@ import queue
 
 class GpioSwitch(controller.Controller):
 
-    def __init__(self, gpio_input, midi_channel, midi_CC, callback, longpress_callback=None, taptempo=None):
+    def __init__(self, gpio_input, midi_channel, midi_CC, callback, longpress_callback=None,
+                 taptempo=None, callback_arg=None, longpress_callback_arg=None):
         super(GpioSwitch, self).__init__(midi_channel, midi_CC)
         self.gpio_input = gpio_input
         self.cur_tstamp = None
         self.events = queue.Queue()
         self.callback = callback
+        self.callback_arg = callback_arg
         self.longpress_callback = longpress_callback
+        self.longpress_callback_arg = longpress_callback_arg
         self.taptempo = taptempo
 
         # Long press threshold in seconds
@@ -91,7 +94,19 @@ class GpioSwitch(controller.Controller):
 
         if state == switchstate.Value.LONGPRESSED and self.longpress_callback is not None:
             logging.debug("GPIO Switch %d %s %s" % (self.gpio_input, state, self.longpress_callback))
-            self.longpress_callback(state)
+            if self.longpress_callback_arg is not None and isinstance(self.longpress_callback_arg, dict):
+                self.longpress_callback(state, **self.longpress_callback_arg)
+            elif self.longpress_callback_arg is not None:
+                self.longpress_callback(state, self.longpress_callback_arg)
+            else:
+                self.longpress_callback(state)
         else:
-            logging.debug("GPIO Switch %d %s %s" % (self.gpio_input, state, self.callback))
-            self.callback(state)
+            # Call the shortpress callback
+            if self.callback is not None:
+                logging.debug("GPIO Switch %d %s %s" % (self.gpio_input, state, self.callback))
+                if self.callback_arg is not None and isinstance(self.callback_arg, dict):
+                    self.callback(state, **self.callback_arg)
+                elif self.callback_arg is not None:
+                    self.callback(state, self.callback_arg)
+                else:
+                    self.callback(state)

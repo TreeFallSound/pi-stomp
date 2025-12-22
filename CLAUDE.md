@@ -79,10 +79,30 @@ MidiOutHandler (wrapper intercepts all MIDI CCs)
 
 ### Which Controls Send MIDI?
 
-- ✅ Expression Pedal (CC 75) - rotates and sends to virtual port
+- ✅ Expression Pedal (CC 75) - sends to virtual port
 - ✅ Footswitches (CC 60-63) - send to virtual port when pressed
 - ✅ Rotary Encoder Rotation (Tweak1=CC70, Tweak2=CC71) - send to virtual port
-- ❌ Encoder Button Presses - handled by `gpioswitch.py`, no MIDI sent (used for snapshots/navigation)
+- ✅ Encoder Button Presses - Can optionally send MIDI via `shortpress` config (see below)
+
+### Encoder Button Configuration (v3 only)
+
+Encoder buttons support configurable `shortpress` callbacks:
+
+```yaml
+encoders:
+  - id: 1
+    midi_CC: 70  # Rotation
+    longpress: previous_snapshot
+    shortpress: universal_encoder_sw  # Default if omitted
+
+  - id: 2
+    midi_CC: 71
+    shortpress:
+      callback: send_midi_cc
+      args: {cc: 72}  # Button sends CC 72 to virtual port
+```
+
+Shortpress accepts string (callback name) or object with `callback` and `args` (expanded as kwargs).
 
 ### External Device Sync
 

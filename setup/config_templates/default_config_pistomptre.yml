@@ -65,14 +65,18 @@ hardware:
   # Each encoder definition is a list which starts with the id
   # id: <integer>                 The encoder id and position on the screen (required)
   # type: <KNOB | VOLUME>         The control type (default is KNOB, VOLUME controls output volume)
-  # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
+  # midi_CC: <integer>            The MIDI CC message to be sent when rotation is adjusted (optional)
   #                               cannot be used along with type=VOLUME
   # longpress: <callback_name>    The name of a handler method to call when switch is long-pressed (optional)
+  # shortpress: <callback_name>   The name of a handler method to call when switch is short-pressed (optional)
+  #             or {callback: <name>, args: {key: value}}  for callbacks with arguments
+  #             Example: shortpress: {callback: send_midi_cc, args: {cc: 72}}
   #
   encoders:
     - id: 1
       midi_CC: 70
       longpress: previous_snapshot
+      # shortpress: {callback: send_midi_cc, args: {cc: 72}}  # Uncomment to send MIDI CC on button press
     - id: 2
       midi_CC: 71
       longpress: next_snapshot
