@@ -27,6 +27,7 @@ import pistomp.switchstate as switchstate
 import modalapi.pedalboard as Pedalboard
 import modalapi.parameter as Parameter
 import modalapi.wifi as Wifi
+import modalapi.external_midi as ExternalMidi
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.footswitch import Footswitch
@@ -136,11 +137,19 @@ class Mod(Handler):
         self.current_menu = MenuType.MENU_NONE
 
         # This file is modified when the pedalboard is changed via MOD UI
-        self.pedalboard_modification_file = "/home/pistomp/data/last.json"
+        self.data_dir = "/home/pistomp/data"
+        self.pedalboard_modification_file = os.path.join(self.data_dir, "last.json")
         self.pedalboard_change_timestamp = os.path.getmtime(self.pedalboard_modification_file)\
             if Path(self.pedalboard_modification_file).exists() else 0
 
         self.wifi_manager = Wifi.WifiManager()
+
+        # External MIDI device synchronization
+        self.external_midi = None
+        try:
+            self.external_midi = ExternalMidi.ExternalMidiManager(data_dir=self.data_dir)
+        except Exception as e:
+            logging.warning(f"Failed to initialize external MIDI manager: {e}")
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
@@ -153,10 +162,14 @@ class Mod(Handler):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
+        if self.external_midi is not None:
+            self.external_midi.close()
 
     def cleanup(self):
         if self.lcd is not None:
             self.lcd.cleanup()
+        if self.external_midi is not None:
+            self.external_midi.close()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -533,6 +546,13 @@ class Mod(Handler):
         self.bind_current_pedalboard()
         self.load_current_presets()
         self.update_lcd()
+
+        # Send external MIDI messages for this pedalboard
+        if self.external_midi is not None:
+            try:
+                self.external_midi.send_messages_for_pedalboard(pedalboard)
+            except Exception as e:
+                logging.warning(f"Failed to send external MIDI messages: {e}")
 
         # Selection info
         self.selectable_items.clear()

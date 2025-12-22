@@ -1,0 +1,173 @@
+# External MIDI Device Synchronization Configuration
+#
+# This file configures automatic MIDI message sending to external devices
+# when pedalboards are loaded on the piStomp.
+#
+# Use case: Sync external MIDI devices (like Source Audio C4, HX Stomp, etc.)
+# to change presets/settings automatically when you switch pedalboards.
+#
+# Installation:
+#   1. Copy this file to /home/pistomp/data/config/external_midi.yml
+#   2. Edit the configuration below to match your setup
+#   3. Restart pistomp service: sudo systemctl restart mod-ala-pi-stomp
+#
+# Location: /home/pistomp/data/config/external_midi.yml
+
+---
+# Global settings
+settings:
+  # Enable/disable external MIDI synchronization
+  enabled: true
+
+  # Default delay between consecutive MIDI messages (milliseconds)
+  # Adjust if your external device needs more time to process messages
+  send_delay_ms: 10
+
+# MIDI port definitions
+# Define external MIDI devices that will receive messages
+midi_ports:
+  # Example: Source Audio C4 Synth
+  c4:
+    # Auto-detect port by name (case-insensitive glob patterns)
+    # Use glob wildcards: * (any characters), ? (single character)
+    # The first port matching any pattern will be used
+    auto_detect: ["*C4*", "*Source Audio*"]
+
+    # Alternative: Manually specify port index (overrides auto_detect)
+    # Uncomment and set if auto-detection doesn't work
+    # port_index: 1
+
+  # Example: Line 6 HX Stomp
+  # hx_stomp:
+  #   auto_detect: ["*HX Stomp*", "*Line 6*"]
+
+  # Example: MIDI interface output port
+  # midi_out:
+  #   auto_detect: ["*MIDI*", "*USB*"]
+  #   port_index: 2  # Use specific port if multiple matches
+
+# Pedalboard to MIDI message mappings
+# Key can be one of:
+#   1. Exact pedalboard title: "My Clean Tone"
+#   2. Glob pattern on title: "Lead*" (matches "Lead Rhythm", "Lead Solo", etc.)
+#   3. Exact bundle path: "/home/pistomp/.pedalboards/My_Board.pedalboard"
+#
+# Matching priority: bundle path > exact title > glob pattern (longest match)
+pedalboards:
+
+  # Example 1: Exact title match
+  # Sends Program Change 0 to C4 when "Clean Rhythm" pedalboard loads
+  "Clean Rhythm":
+    - port: c4
+      messages:
+        - [0xC0, 0x00]  # Program Change (channel 1) to preset 0
+
+  # Example 2: Glob pattern match
+  # Any pedalboard starting with "Lead" sends PC 5 to C4
+  "Lead*":
+    - port: c4
+      messages:
+        - [0xC0, 0x05]  # Program Change to preset 5
+
+  # Example 3: Multiple MIDI messages
+  # Sends program change AND volume CC
+  "Ambient Delay":
+    - port: c4
+      messages:
+        - [0xC0, 0x03]        # Program Change to preset 3
+        - [0xB0, 0x07, 0x64]  # CC 7 (Volume) to 100
+      # Optional: Override delay for this pedalboard
+      delay_ms: 20
+
+  # Example 4: Multiple MIDI ports
+  # Control both C4 and HX Stomp from one pedalboard
+  # "Big Ambient Pad":
+  #   - port: c4
+  #     messages:
+  #       - [0xC0, 0x08]
+  #   - port: hx_stomp
+  #     messages:
+  #       - [0xC0, 0x12]
+
+  # Example 5: Bundle path match (most specific)
+  # Useful when multiple pedalboards have the same title
+  # "/home/pistomp/.pedalboards/Special_Clean.pedalboard":
+  #   - port: c4
+  #     messages:
+  #       - [0xC0, 0x0A]
+
+  # Example 6: Advanced MIDI messages
+  # "Octave Down":
+  #   - port: c4
+  #     messages:
+  #       - [0xC0, 0x15]        # Program Change to preset 21
+  #       - [0xB0, 0x01, 0x40]  # CC 1 (Mod Wheel) to 64
+  #       - [0xB0, 0x11, 0x7F]  # CC 17 (General Purpose 2) to 127
+
+# ============================================================================
+# MIDI Message Format Reference
+# ============================================================================
+#
+# Messages are lists of bytes in hexadecimal format: [0xSS, 0xDD, 0xDD]
+#
+# Program Change (PC):
+#   Format: [0xCn, program]
+#   - n = MIDI channel (0-F for channels 1-16)
+#   - program = program number (0x00-0x7F / 0-127)
+#   Examples:
+#     [0xC0, 0x00]  # Channel 1, Program 0
+#     [0xC0, 0x10]  # Channel 1, Program 16
+#     [0xC1, 0x05]  # Channel 2, Program 5
+#
+# Control Change (CC):
+#   Format: [0xBn, controller, value]
+#   - n = MIDI channel (0-F for channels 1-16)
+#   - controller = CC number (0x00-0x7F / 0-127)
+#   - value = CC value (0x00-0x7F / 0-127)
+#   Examples:
+#     [0xB0, 0x07, 0x7F]  # Channel 1, CC 7 (Volume) = 127 (max)
+#     [0xB0, 0x01, 0x40]  # Channel 1, CC 1 (Mod Wheel) = 64 (center)
+#     [0xB0, 0x0B, 0x00]  # Channel 1, CC 11 (Expression) = 0 (min)
+#
+# Common CC Numbers:
+#   CC 1  = Mod Wheel
+#   CC 7  = Volume
+#   CC 10 = Pan
+#   CC 11 = Expression
+#   CC 64 = Sustain (0-63=off, 64-127=on)
+#   CC 71-74 = Filter, Resonance, Release, Attack
+#
+# Note: SysEx messages are not currently supported
+#
+# ============================================================================
+# Troubleshooting
+# ============================================================================
+#
+# 1. Find available MIDI ports:
+#    Run: python3 -c "import rtmidi; m=rtmidi.MidiOut(); print(m.get_ports())"
+#
+# 2. Enable debug logging:
+#    Check piStomp logs: sudo journalctl -u pistomp -f
+#    Look for "External MIDI" messages
+#
+# 3. Test configuration:
+#    - Logs will show which port was matched
+#    - Logs will show when messages are sent
+#    - Warning messages indicate problems
+#
+# 4. Common issues:
+#    - "No MIDI ports matched" = Check auto_detect glob patterns or use port_index
+#      Examples: "*C4*" matches "Source Audio C4 Port 1"
+#                "C4" only matches exact "C4" (no wildcard)
+#                "*USB*MIDI*" matches "USB MIDI Interface Port 1"
+#    - "Invalid MIDI message" = Check message format (status byte 0x80-0xFF, data 0x00-0x7F)
+#    - "Multiple ports matched" = Be more specific in auto_detect or use port_index
+#    - Messages not sent = Check that enabled: true and pedalboard name matches exactly
+#
+# 5. Glob pattern tips:
+#    - Both pedalboard titles and MIDI port names use glob patterns
+#    - "*" matches any characters: "*Clean*" matches "My Clean Tone"
+#    - "?" matches single character: "Lead?" matches "Lead1" but not "Lead10"
+#    - Use exact strings for exact matches: "Clean" only matches "Clean"
+#
+# ============================================================================
