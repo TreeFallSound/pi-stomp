@@ -28,7 +28,7 @@ scp modalapi/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/modalapi/
 ssh pistomp@pistomp.local "rm -rf /home/pistomp/pi-stomp/modalapi/__pycache__/* && sudo systemctl restart mod-ala-pi-stomp"
 ```
 
-## Key Paths
+## Key Data Paths
 
 - **Code**: `/home/pistomp/pi-stomp/`
 - **Data**: `/home/pistomp/data/`
@@ -117,3 +117,280 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 - Prevents state mismatch - no need to wiggle pedals after switching pedalboards
 - Implemented via `Hardware.sync_analog_controls()` → `AnalogMidiControl.send_current_value()`
 - Works for both v1/v2 (`mod.py`) and v3 (`modhandler.py`) hardware
+
+## Key Development Principles
+
+### Hardware-First Design
+- **Polling over events** - Fixed-frequency loops for predictable timing (10ms critical path)
+- **Direct hardware access** - No HAL layer, direct SPI/GPIO/MIDI interaction
+- **Real-time constraints** - Never block in critical path, separate frequencies by priority
+- **Hardware reality drives architecture** - Embrace limitations (ADC polling, SPI timing)
+
+### Version Handling
+- **Explicit version routing** - Factory pattern with known version checks, not capability detection
+- **Shared base class** - Common functionality in `Hardware`, version-specific in subclasses
+- **No breaking changes** - New features extend, don't replace (v1/v2/v3 all supported)
+
+### Configuration Philosophy
+- **Overlay, don't replace** - Pedalboard config merges with defaults at field level
+- **Minimal config files** - Users specify only what changes from default
+- **Config-driven behavior** - Callbacks by name, extensible without code changes
+- **Safe defaults always** - Missing config keys use sensible defaults
+
+### State Management
+- **Incremental updates** - `reinit()` pattern updates objects in-place, no recreation
+- **Shared class state where needed** - Footswitch groups coordinate via class-level dicts
+- **Explicit state machines** - Encoder modes (v1/v2) use clear state enums
+- **Timestamp-based change detection** - File mtimes for MOD sync, not polling APIs
+
+### MOD Integration
+- **Direct REST calls** - No SDK abstraction, just `requests` to `localhost:80`
+- **LILV for local parsing** - Parse `.ttl` bundles locally for performance and rich data
+- **Trust MOD for audio** - piStomp is controller interface, not audio processor
+- **Sync on change** - Reload pedalboard data when MOD writes `last.json`
+
+### Code Organization
+- **Factories for versioning** - `Handlerfactory` and `Hardwarefactory` route versions
+- **Handlers = business logic** - `mod.py`/`modhandler.py` orchestrate system
+- **Hardware = physical** - Hardware classes only talk to GPIO/SPI/ADC
+- **Callbacks for extensibility** - Handler methods exposed by name in config
+
+### MIDI Architecture
+- **Single interception point** - `MidiOutHandler` wraps all MIDI output
+- **Passthrough for external** - All CCs automatically available to virtual port
+- **Lazy port initialization** - External MIDI ports opened on first use
+- **Sync on pedalboard load** - Send analog positions + external MIDI messages
+
+### Development Guidelines
+- **Pragmatic over perfect** - Simple solutions over complex abstractions
+- **Explicit over implicit** - Clear code paths, minimal magic
+- **Configuration over compilation** - Users customize via YAML, not Python
+- **Fail gracefully** - Log warnings, continue operation where possible
+
+### When Extending
+- **New hardware version?** Add factory branch, inherit from `Hardware`
+- **New footswitch action?** Add handler method, reference by name in config
+- **New config field?** Add to TypedDict, handle in `reinit()` or `update_config()`
+- **New MIDI routing?** Extend `MidiOutHandler` or `ExternalMidiManager`
+- **Performance issue?** Check polling loop frequency first
+
+## System Architecture
+
+### Entry Point & Main Loop
+
+**`modalapistomp.py`** - System initialization and polling loop
+
+```python
+# Startup sequence
+1. Parse CLI args (log level, host type)
+2. Initialize audio card (early for audio pass-through)
+3. Create MIDI output via rtmidi
+4. Create handler (Mod or Modhandler) via Handlerfactory
+5. Wrap midiout with MidiOutHandler for external MIDI passthrough
+6. Create hardware (Pistomp/Core/Tre) via Hardwarefactory
+7. Load pedalboards from MOD API (parsed via LILV)
+8. Load current pedalboard and initialize hardware
+```
+
+**Polling Loop (Different Frequencies)**:
+- `10ms`: `poll_controls()` - Read hardware inputs (critical path)
+- `20ms`: `poll_indicators()` - Update LEDs/VU meters
+- `200ms`: `poll_lcd_updates()` - Render LCD
+- `1000ms`: `poll_modui_changes()` - Sync with MOD UI changes
+- `2000ms`: `poll_wifi()` - Update WiFi status
+- `60s`: `poll_system_info()` - System health (CPU, throttling)
+
+### Hardware Version Selection
+
+**Factory Pattern** routes version-specific implementations:
+
+```python
+# Handlerfactory (business logic)
+< 2.0     → Mod (v1)
+>= 2.0    → Modhandler (v2/v3)
+
+# Hardwarefactory (physical interface)
+< 2.0     → Pistomp (v1: dual encoders, 3 switches, mono LCD)
+>= 2.0 < 3.0 → Pistompcore (v2: single encoder, color LCD, relay)
+>= 3.0    → Pistomptre (v3: 4 encoders, LED strip, VU meters)
+```
+
+**All inherit from `Hardware` base class** - provides common functionality:
+- `reinit(cfg)` - Reload config on pedalboard change
+- `poll_controls()` - Read all inputs
+- `sync_analog_controls()` - Send current positions on pedalboard load
+- SPI/ADC communication
+- Controller dictionary: `{channel:CC}` → controller object
+
+### Configuration System
+
+**Two-Layer Config Overlay**:
+
+```
+Default Config (global)
+  ↓ loaded at startup
+Hardware objects created
+  ↓ pedalboard load
+Pedalboard Config (overlay)
+  ↓ hardware.reinit(cfg)
+Config merged and applied
+```
+
+**Config Files**:
+- Global: `/home/pistomp/data/config/default_config.yml` (or built-in templates)
+- Per-pedalboard: `{pedalboard}.pedalboard/config.yml`
+
+**Overlay Strategy**: Pedalboard config overrides only specified fields
+- Example: Change footswitch MIDI CC for specific pedalboard
+- Fields not specified keep default values
+
+### MOD Integration
+
+**HTTP REST API** to `localhost:80`:
+
+```bash
+# Pedalboard operations
+GET  /pedalboard/list                    # List all pedalboards
+POST /pedalboard/load_bundle/            # Load pedalboard
+POST /pedalboard/save                    # Save state
+
+# Snapshot/preset operations
+GET /snapshot/list                       # Get all snapshots
+GET /snapshot/load?id={n}                # Load snapshot n
+
+# Parameter control
+POST /effect/parameter/pi_stomp_set//graph{id}/{symbol}  # Set parameter
+GET  /effect/parameter/pi_stomp_get//graph{id}/:bypass   # Get bypass state
+
+# Tempo
+POST /set_bpm                            # Set tap tempo
+GET  /get_bpm                            # Get current BPM
+```
+
+**Pedalboard Data Loading** via LILV (LV2 bundle parser):
+1. Parse `.ttl` files in pedalboard bundle
+2. Extract plugin chain (tail-chase audio connections)
+3. For each plugin: instance ID, parameters (min/max/value), MIDI bindings
+4. Create `Pedalboard` object with `Plugin` and `Parameter` objects
+
+**Change Detection**:
+- Watches `/home/pistomp/data/last.json` timestamp
+- MOD UI writes this when pedalboard changes
+- piStomp detects → reloads pedalboard → syncs hardware
+
+### Core Components
+
+**Footswitches** (`pistomp/footswitch.py`):
+- **Modes**: MIDI CC, Relay Bypass, Preset Change, Tap Tempo
+- **Longpress Groups**: Shared class-level state for multi-switch actions
+  - Two switches in group pressed within 400ms → group callback
+  - Examples: `next_snapshot`, `previous_snapshot`, `toggle_bypass`
+- **Config Overlay**: Per-pedalboard override of MIDI CC, bypass, preset, color
+- **Physical**: GPIO-based (`gpioswitch.py`) or ADC-based (`analogswitch.py`)
+
+**Encoders** (`pistomp/encoder.py`, `pistomp/encodermidicontrol.py`):
+- **Base**: Quadrature decoding, GPIO interrupts, debounce
+- **MIDI Control**: Sends CC on rotation (v3 tweak encoders)
+- **Buttons**: Configurable shortpress (callback + args) and longpress
+- **State Machines** (v1/v2 only): `TopEncoderMode`, `BotEncoderMode`, `UniversalEncoderMode`
+
+**Analog Controls** (`pistomp/analogmidicontrol.py`):
+- Read 10-bit ADC via MCP3008 SPI chip
+- Convert to MIDI CC (0-127) with threshold-based change detection
+- Types: `KNOB`, `EXPRESSION`
+- `send_current_value()` forces sync on pedalboard load
+
+**LCD System**:
+- **v1**: `lcdgfx.py` - Monochrome text display
+- **v2/v3**: `lcd320x240.py` - Color GUI with widget-based UI library (`uilib/`)
+  - Builder pattern constructs UI from pedalboard data
+  - Event-driven updates via `link_data()`
+
+### Data Flow Examples
+
+**Expression Pedal → External Device**:
+
+```
+poll_controls() (10ms)
+  → AnalogMidiControl.refresh()
+    → ADC read (0-1023) → MIDI CC (0-127)
+      → MidiOutHandler.send_message([0xB0|ch, 75, value])
+        ├→ ALSA MIDI Through → MOD-UI (internal)
+        └→ send_passthrough_cc(ch, 75, value)
+          → Virtual Port "piStomp-MIDI"
+            → MOD Pedalboard LV2 MIDI plugins
+              → External MIDI devices
+```
+
+**Pedalboard Change (via MOD UI)**:
+
+```
+MOD-UI writes /home/pistomp/data/last.json
+  → poll_modui_changes() detects timestamp change (1000ms)
+    → reload_pedalboard(bundle)
+      → LILV parses TTL → creates Pedalboard object
+        → set_current_pedalboard(pb)
+          → Load {bundle}/config.yml
+          → hardware.reinit(cfg) - overlay config
+          → bind_current_pedalboard() - map controllers to parameters
+          → external_midi.send_messages_for_pedalboard()
+          → hardware.sync_analog_controls()
+          → update_lcd()
+```
+
+**Footswitch Press → Plugin Bypass**:
+
+```
+poll_controls()
+  → Footswitch.poll() → detect press
+    → footswitch.pressed()
+      → Toggle self.enabled
+      → Update LED
+      → Send MIDI CC (if configured)
+      → Update bound parameter.value (e.g., :bypass)
+      → refresh_callback(footswitch=self)
+        → Handler.update_lcd_fs()
+          → LCD.update_footswitch() - redraw indicator
+```
+
+### Key Files
+
+**Entry & Factories**:
+- `modalapistomp.py` - Main entry point and polling loop
+- `pistomp/handlerfactory.py` - Handler version selection
+- `pistomp/hardwarefactory.py` - Hardware version selection
+
+**Handlers** (Business Logic):
+- `pistomp/handler.py` - Abstract base
+- `modalapi/mod.py` - v1/v2 handler
+- `modalapi/modhandler.py` - v3 handler
+
+**Hardware** (Physical Interface):
+- `pistomp/hardware.py` - Base abstraction
+- `pistomp/pistomp.py` - v1 implementation
+- `pistomp/pistompcore.py` - v2 implementation
+- `pistomp/pistomptre.py` - v3 implementation
+
+**Controls**:
+- `pistomp/footswitch.py` - Footswitch logic, longpress groups
+- `pistomp/encoder.py` - Rotary encoder decoding
+- `pistomp/encodermidicontrol.py` - Encoder with MIDI output
+- `pistomp/analogmidicontrol.py` - ADC-based MIDI controller
+
+**MIDI**:
+- `pistomp/midiouthandler.py` - Wrapper with passthrough
+- `modalapi/external_midi.py` - External device sync
+
+**MOD API**:
+- `modalapi/pedalboard.py` - LILV parser
+- `modalapi/parameter.py` - Parameter representation
+- `modalapi/plugin.py` - Plugin representation
+
+**Config & State**:
+- `pistomp/config.py` - Config loading/validation
+- `pistomp/settings.py` - Persistent settings (JSON)
+
+**Display**:
+- `pistomp/lcd320x240.py` - Color LCD (v2/v3)
+- `pistomp/lcdgfx.py` - Mono LCD (v1)
+- `uilib/*` - Widget library (v3)
