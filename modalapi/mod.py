@@ -149,7 +149,7 @@ class Mod(Handler):
         # External MIDI device synchronization
         self.external_midi = None
         try:
-            self.external_midi = ExternalMidi.ExternalMidiManager(data_dir=self.data_dir)
+            self.external_midi = ExternalMidi.ExternalMidiManager()
         except Exception as e:
             logging.warning(f"Failed to initialize external MIDI manager: {e}")
 
@@ -199,6 +199,9 @@ class Mod(Handler):
 
     def add_hardware(self, hardware):
         self.hardware = hardware
+        # Pass external MIDI manager to hardware for config updates
+        if hasattr(hardware, 'external_midi'):
+            hardware.external_midi = self.external_midi
 
     def add_lcd(self, lcd):
         self.lcd = lcd
@@ -569,9 +572,10 @@ class Mod(Handler):
         self.update_lcd()
 
         # Send external MIDI messages for this pedalboard
+        # Config was already updated by hardware.reinit(cfg) above
         if self.external_midi is not None:
             try:
-                self.external_midi.send_messages_for_pedalboard(pedalboard)
+                self.external_midi.send_messages_for_pedalboard()
             except Exception as e:
                 logging.warning(f"Failed to send external MIDI messages: {e}")
 

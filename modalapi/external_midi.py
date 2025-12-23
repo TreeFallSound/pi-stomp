@@ -19,11 +19,13 @@ import fnmatch
 import logging
 import subprocess
 import time
-from pathlib import Path
 from typing import TypedDict
 
-import yaml
 import rtmidi
+
+
+# Type alias for MIDI message (list of bytes)
+MidiMessage = list[int]
 
 
 class PortConfig(TypedDict, total=False):
@@ -33,23 +35,13 @@ class PortConfig(TypedDict, total=False):
     port_index: int
 
 
-class PortMessageConfig(TypedDict, total=False):
-    """Configuration for messages sent to a port."""
-
-    port: str
-    messages: list[list[int]]
-    delay_ms: int
-
-
-class SettingsConfig(TypedDict, total=False):
-    """Global settings configuration."""
+class ExternalMidiConfig(TypedDict, total=False):
+    """External MIDI configuration (part of hardware config)."""
 
     enabled: bool
     send_delay_ms: int
-
-
-PedalboardMappings = dict[str, list[PortMessageConfig]]
-MidiPorts = dict[str, PortConfig]
+    ports: dict[str, PortConfig]
+    messages: dict[str, list[MidiMessage]]  # port_name -> list of MIDI messages
 
 
 class ExternalMidiManager:
@@ -58,36 +50,25 @@ class ExternalMidiManager:
     Sends MIDI messages to external devices when pedalboards are loaded.
     """
 
-    def __init__(self, data_dir: str, config_path: str | None = None):
+    def __init__(self):
         """
         Initialize the External MIDI Manager.
-
-        Args:
-            data_dir: Data directory path (required).
-            config_path: Optional path to config file. If None, uses default location.
+        Configuration will be provided via update_config() method.
         """
-        self.data_dir: str = data_dir
-        self.config_path: str | None = config_path
-        self.config: SettingsConfig = {}
         self.midi_ports: dict[str, rtmidi.MidiOut | None] = {}
-        self.port_configs: MidiPorts = {}
+        self.port_configs: dict[str, PortConfig] = {}
+        self.messages: dict[str, list[MidiMessage]] = {}
         self.enabled: bool = False
+        self.send_delay_ms: int = 10
         self.virtual_midi_out: rtmidi.MidiOut | None = None
         self.amidithru_process: subprocess.Popen | None = None
-
-        # Load configuration
-        if self.load_config():
-            # Config loaded successfully - feature is enabled
-            logging.info("External MIDI synchronization enabled (lazy port initialization)")
 
         # Create virtual MIDI port using amidithru (so MOD can see it)
         # This allows routing through LV2 MIDI plugins in the MOD pedalboard
         try:
             # Start amidithru process to create the ALSA port
             self.amidithru_process = subprocess.Popen(
-                ["/usr/local/bin/amidithru", "piStomp-MIDI"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                ["/usr/local/bin/amidithru", "piStomp-MIDI"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
             logging.info("Started amidithru process for piStomp-MIDI")
 
@@ -119,53 +100,41 @@ class ExternalMidiManager:
                 self.amidithru_process = None
             self.virtual_midi_out = None
 
-    def load_config(self) -> bool:
+    def update_config(self, cfg: ExternalMidiConfig | None) -> None:
         """
-        Load configuration from file.
-        Checks multiple locations in order of priority.
+        Update configuration incrementally (can be called multiple times).
+        Follows the same pattern as footswitch config - only updates fields that are present.
 
-        Returns:
-            True if config loaded successfully, False otherwise.
+        Called from hardware.reinit():
+        - First with default config (sets everything)
+        - Then with pedalboard config (overlays only what's specified)
+
+        Args:
+            cfg: External MIDI configuration from hardware config, or None to skip.
         """
-        config_locations = []
+        if cfg is None:
+            return
 
-        # Use explicit path if provided
-        if self.config_path:
-            config_locations.append(self.config_path)
-        else:
-            # Default location: data_dir/config/external_midi.yml
-            config_locations.append(Path(self.data_dir) / "config" / "external_midi.yml")
+        # Update only fields that are present (incremental pattern)
+        if "enabled" in cfg:
+            self.enabled = cfg["enabled"]
+            if self.enabled:
+                logging.debug("External MIDI enabled")
+            else:
+                logging.debug("External MIDI disabled")
 
-        # Try each location
-        for config_file in config_locations:
-            config_file = Path(config_file)
-            if config_file.exists():
-                try:
-                    with open(config_file, "r") as f:
-                        self.config = yaml.safe_load(f) or {}
+        if "send_delay_ms" in cfg:
+            self.send_delay_ms = cfg["send_delay_ms"]
 
-                    # Validate and extract settings
-                    settings = self.config.get("settings", {})
-                    self.enabled = settings.get("enabled", True)
+        if "ports" in cfg:
+            # Merge ports (port-level granularity)
+            self.port_configs.update(cfg["ports"])
 
-                    if not self.enabled:
-                        logging.info(f"External MIDI disabled in config: {config_file}")
-                        return False
-
-                    # Store port configurations for lazy initialization
-                    self.port_configs = self.config.get("midi_ports", {})
-
-                    logging.info(f"External MIDI config loaded from: {config_file}")
-                    return True
-
-                except Exception as e:
-                    logging.warning(f"Failed to load external MIDI config from {config_file}: {e}")
-                    self.enabled = False
-                    return False
-
-        # No config found - disable feature silently
-        self.enabled = False
-        return False
+        if "messages" in cfg:
+            # Merge messages at port level
+            # This allows pedalboard config to override specific ports while keeping others
+            self.messages.update(cfg["messages"])
+            logging.debug(f"Updated external MIDI messages for ports: {list(cfg['messages'].keys())}")
 
     def _get_available_ports(self) -> list[str]:
         """
@@ -272,7 +241,7 @@ class ExternalMidiManager:
             self.midi_ports[port_name] = None
             return None
 
-    def _validate_midi_message(self, message: list[int]) -> bool:
+    def _validate_midi_message(self, message: MidiMessage) -> bool:
         """
         Validate MIDI message format.
 
@@ -300,58 +269,7 @@ class ExternalMidiManager:
 
         return True
 
-    def _match_pedalboard(self, pedalboard) -> list[PortMessageConfig] | None:
-        """
-        Find matching MIDI configuration for a pedalboard.
-        Uses priority: exact bundle path > exact title > glob pattern title > default.
-
-        Args:
-            pedalboard: Pedalboard object with .bundle and .title attributes.
-
-        Returns:
-            List of port message configurations, or None if no match.
-        """
-        pedalboard_mappings: PedalboardMappings = self.config.get("pedalboards", {})
-        if not pedalboard_mappings:
-            return None
-
-        bundle_path = pedalboard.bundle
-        title = pedalboard.title
-
-        # Priority 1: Exact bundle path match
-        if bundle_path in pedalboard_mappings:
-            logging.debug(f"Matched pedalboard by bundle path: {bundle_path}")
-            return pedalboard_mappings[bundle_path]
-
-        # Priority 2: Exact title match
-        if title in pedalboard_mappings:
-            logging.debug(f"Matched pedalboard by exact title: {title}")
-            return pedalboard_mappings[title]
-
-        # Priority 3: Glob pattern title match (longest match wins)
-        # Skip 'default' key during pattern matching
-        matched_patterns = []
-        for pattern, config in pedalboard_mappings.items():
-            if pattern != "default" and fnmatch.fnmatch(title, pattern):
-                matched_patterns.append((pattern, config))
-
-        if matched_patterns:
-            # Sort by pattern length (descending) to get most specific match
-            matched_patterns.sort(key=lambda x: len(x[0]), reverse=True)
-            matched_pattern, matched_config = matched_patterns[0]
-            logging.debug(f"Matched pedalboard by glob pattern '{matched_pattern}': {title}")
-            return matched_config
-
-        # Priority 4: Default configuration (if exists)
-        if "default" in pedalboard_mappings:
-            logging.info(f"Using default MIDI configuration for pedalboard: {title}")
-            return pedalboard_mappings["default"]
-
-        # No match
-        logging.debug(f"No external MIDI mapping for pedalboard: {title}")
-        return None
-
-    def _send_messages(self, port_name: str, messages: list[list[int]], delay_ms: int = 10):
+    def _send_messages(self, port_name: str, messages: list[MidiMessage], delay_ms: int = 10):
         """
         Send MIDI messages to a port.
 
@@ -400,9 +318,7 @@ class ExternalMidiManager:
                 status_byte = 0xB0 | (source_channel & 0x0F)
                 message = [status_byte, source_cc & 0x7F, value & 0x7F]
                 self.virtual_midi_out.send_message(message)
-                logging.debug(
-                    f"Sent to virtual port: CH{source_channel + 1} CC{source_cc} = {value}"
-                )
+                logging.debug(f"Sent to virtual port: CH{source_channel + 1} CC{source_cc} = {value}")
                 return True
             except Exception as e:
                 logging.warning(f"Failed to send to virtual MIDI port: {e}")
@@ -410,12 +326,10 @@ class ExternalMidiManager:
 
         return False
 
-    def send_messages_for_pedalboard(self, pedalboard) -> bool:
+    def send_messages_for_pedalboard(self) -> bool:
         """
-        Send external MIDI messages for a pedalboard load.
-
-        Args:
-            pedalboard: Pedalboard object with .bundle and .title attributes.
+        Send external MIDI messages for current pedalboard configuration.
+        Configuration should have been set via update_config() before calling this.
 
         Returns:
             True if messages were sent successfully, False otherwise.
@@ -423,28 +337,18 @@ class ExternalMidiManager:
         if not self.enabled:
             return False
 
-        port_configs = self._match_pedalboard(pedalboard)
-        if not port_configs:
+        if not self.messages:
+            logging.debug("No external MIDI messages configured")
             return False
 
-        settings: SettingsConfig = self.config.get("settings", {})
-        default_delay = settings.get("send_delay_ms", 10)
-
-        for port_config in port_configs:
-            port_name = port_config.get("port")
-            messages = port_config.get("messages", [])
-            delay = port_config.get("delay_ms", default_delay)
-
-            if not port_name:
-                logging.warning("Port configuration missing 'port' field, skipping")
-                continue
-
+        # Send messages to each configured port
+        for port_name, messages in self.messages.items():
             if not messages:
                 logging.debug(f"No messages configured for port {port_name}, skipping")
                 continue
 
-            logging.info(f"Sending {len(messages)} MIDI message(s) to {port_name} for pedalboard: {pedalboard.title}")
-            self._send_messages(port_name, messages, delay)
+            logging.info(f"Sending {len(messages)} MIDI message(s) to {port_name}")
+            self._send_messages(port_name, messages, self.send_delay_ms)
 
         return True
 
@@ -471,7 +375,7 @@ class ExternalMidiManager:
                 logging.warning(f"Error terminating amidithru process: {e}")
                 try:
                     self.amidithru_process.kill()
-                except:
+                except Exception:
                     pass
             self.amidithru_process = None
 

@@ -107,8 +107,8 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 ### External Device Sync
 
 - Pedalboard load triggers MIDI messages to external devices (e.g., Source Audio C4)
-- Configured via `/home/pistomp/data/config/external_midi.yml`
-- See `setup/config_templates/external_midi.yml.example` for documentation
+- Configured via `hardware.external_midi` in default config and per-pedalboard config.yml
+- See `setup/config_templates/default_config_pistomptre.yml` for example configuration
 
 ### Analog Control State Sync
 
