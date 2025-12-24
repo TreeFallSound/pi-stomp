@@ -16,7 +16,6 @@
 import adafruit_mcp3xxx.mcp3008 as MCP
 from adafruit_mcp3xxx.analog_in import AnalogIn
 
-from rtmidi.midiutil import open_midioutput
 from rtmidi.midiconstants import CONTROL_CHANGE
 
 import common.util as util
