@@ -200,8 +200,7 @@ class Mod(Handler):
     def add_hardware(self, hardware):
         self.hardware = hardware
         # Pass external MIDI manager to hardware for config updates
-        if hasattr(hardware, 'external_midi'):
-            hardware.external_midi = self.external_midi
+        hardware.external_midi = self.external_midi
 
     def add_lcd(self, lcd):
         self.lcd = lcd

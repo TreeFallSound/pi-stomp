@@ -60,22 +60,29 @@ curl -s http://localhost:80/pedalboard/list | python3 -m json.tool
 
 ## MIDI Routing Architecture
 
-### Hardware Controls → Virtual MIDI Port
+### Single MIDI Source Design
+
+piStomp uses a **single virtual MIDI port** for all MIDI routing:
 
 ```
 Hardware Controls (Footswitches, Rotary Encoders, Expression Pedals)
     ↓
-MidiOutHandler (wrapper intercepts all MIDI CCs)
+VirtualMidiPort (pistomp/virtualmidiport.py)
     ↓
-├─→ MOD-UI (internal MIDI routing)
-└─→ send_passthrough_cc()
+ALSA Virtual Port "piStomp-MIDI" (created by amidithru)
+    ↓
+JACK (bridges via `-X seq`)
+    ↓
+    ├─→ mod-host:midi_in (MIDI Learn for parameter control)
+    │   Auto-connected in separated mode via PortRegistration callback
+    │
+    └─→ Available in MOD-UI for manual wiring
         ↓
-    Virtual Port "piStomp-MIDI" (created by amidithru)
+        LV2 MIDI plugins (CC Map, Channel Map, Filter, etc.)
         ↓
-    MOD Pedalboard (LV2 MIDI plugins: CC Map, Channel Map, Filter, etc.)
-        ↓
-    External MIDI Devices (C4, HX Stomp, etc.)
+        External MIDI Devices (C4, HX Stomp, etc.)
 ```
+
 
 ### Which Controls Send MIDI?
 
@@ -156,8 +163,8 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 - **Callbacks for extensibility** - Handler methods exposed by name in config
 
 ### MIDI Architecture
-- **Single interception point** - `MidiOutHandler` wraps all MIDI output
-- **Passthrough for external** - All CCs automatically available to virtual port
+- **Single MIDI source** - `VirtualMidiPort` manages piStomp-MIDI virtual port lifecycle
+- **Direct routing** - All hardware controls send to same port
 - **Lazy port initialization** - External MIDI ports opened on first use
 - **Sync on pedalboard load** - Send analog positions + external MIDI messages
 
@@ -171,7 +178,7 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 - **New hardware version?** Add factory branch, inherit from `Hardware`
 - **New footswitch action?** Add handler method, reference by name in config
 - **New config field?** Add to TypedDict, handle in `reinit()` or `update_config()`
-- **New MIDI routing?** Extend `MidiOutHandler` or `ExternalMidiManager`
+- **New MIDI routing?** Modify `VirtualMidiPort` or `ExternalMidiManager`
 - **Performance issue?** Check polling loop frequency first
 
 ## System Architecture
@@ -184,12 +191,11 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 # Startup sequence
 1. Parse CLI args (log level, host type)
 2. Initialize audio card (early for audio pass-through)
-3. Create MIDI output via rtmidi
+3. Create virtual MIDI port via VirtualMidiPort (amidithru subprocess)
 4. Create handler (Mod or Modhandler) via Handlerfactory
-5. Wrap midiout with MidiOutHandler for external MIDI passthrough
-6. Create hardware (Pistomp/Core/Tre) via Hardwarefactory
-7. Load pedalboards from MOD API (parsed via LILV)
-8. Load current pedalboard and initialize hardware
+5. Create hardware (Pistomp/Core/Tre) via Hardwarefactory with midiout
+6. Load pedalboards from MOD API (parsed via LILV)
+7. Load current pedalboard and initialize hardware
 ```
 
 **Polling Loop (Different Frequencies)**:
@@ -308,18 +314,18 @@ GET  /get_bpm                            # Get current BPM
 
 ### Data Flow Examples
 
-**Expression Pedal → External Device**:
+**Expression Pedal Movement**:
 
 ```
 poll_controls() (10ms)
   → AnalogMidiControl.refresh()
     → ADC read (0-1023) → MIDI CC (0-127)
-      → MidiOutHandler.send_message([0xB0|ch, 75, value])
-        ├→ ALSA MIDI Through → MOD-UI (internal)
-        └→ send_passthrough_cc(ch, 75, value)
-          → Virtual Port "piStomp-MIDI"
-            → MOD Pedalboard LV2 MIDI plugins
-              → External MIDI devices
+      → midiout.send_message([0xB0|ch, 75, value])
+        → ALSA Virtual Port "piStomp-MIDI"
+          → JACK (bridged via -X seq)
+            ├→ mod-host:midi_in (MIDI Learn / parameter control)
+            └→ Available in MOD-UI for wiring to LV2 MIDI plugins
+                → External MIDI devices (if wired through plugins)
 ```
 
 **Pedalboard Change (via MOD UI)**:
@@ -378,7 +384,7 @@ poll_controls()
 - `pistomp/analogmidicontrol.py` - ADC-based MIDI controller
 
 **MIDI**:
-- `pistomp/midiouthandler.py` - Wrapper with passthrough
+- `pistomp/virtualmidiport.py` - Virtual MIDI port
 - `modalapi/external_midi.py` - External device sync
 
 **MOD API**:

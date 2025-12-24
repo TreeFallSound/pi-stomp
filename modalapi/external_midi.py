@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import fnmatch
 import logging
-import subprocess
 import time
 from typing import TypedDict
 
@@ -60,45 +59,6 @@ class ExternalMidiManager:
         self.messages: dict[str, list[MidiMessage]] = {}
         self.enabled: bool = False
         self.send_delay_ms: int = 10
-        self.virtual_midi_out: rtmidi.MidiOut | None = None
-        self.amidithru_process: subprocess.Popen | None = None
-
-        # Create virtual MIDI port using amidithru (so MOD can see it)
-        # This allows routing through LV2 MIDI plugins in the MOD pedalboard
-        try:
-            # Start amidithru process to create the ALSA port
-            self.amidithru_process = subprocess.Popen(
-                ["/usr/local/bin/amidithru", "piStomp-MIDI"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-            logging.info("Started amidithru process for piStomp-MIDI")
-
-            # Wait a moment for the port to be created
-            time.sleep(0.5)
-
-            # Connect to the amidithru port with rtmidi to send messages
-            self.virtual_midi_out = rtmidi.MidiOut()
-            ports = self.virtual_midi_out.get_ports()
-
-            # Find the piStomp-MIDI port
-            target_port = None
-            for i, port_name in enumerate(ports):
-                if "piStomp-MIDI" in port_name:
-                    target_port = i
-                    break
-
-            if target_port is not None:
-                self.virtual_midi_out.open_port(target_port)
-                logging.info(f"Connected to virtual MIDI port: {ports[target_port]}")
-            else:
-                logging.warning("Could not find piStomp-MIDI port to connect")
-                self.virtual_midi_out = None
-
-        except Exception as e:
-            logging.warning(f"Failed to create virtual MIDI port: {e}")
-            if self.amidithru_process:
-                self.amidithru_process.terminate()
-                self.amidithru_process = None
-            self.virtual_midi_out = None
 
     def update_config(self, cfg: ExternalMidiConfig | None) -> None:
         """
@@ -300,32 +260,6 @@ class ExternalMidiManager:
             except Exception as e:
                 logging.error(f"Failed to send MIDI message to {port_name}: {e}")
 
-    def send_passthrough_cc(self, source_channel: int, source_cc: int, value: int) -> bool:
-        """
-        Send MIDI CC message to virtual port for routing in MOD pedalboard.
-
-        Args:
-            source_channel: Source MIDI channel (0-15, where 0 = channel 1).
-            source_cc: Source MIDI CC number (0-127).
-            value: CC value (0-127).
-
-        Returns:
-            True if message was sent, False otherwise.
-        """
-        # Send MIDI message to virtual port - MOD handles all routing from there
-        if self.virtual_midi_out is not None:
-            try:
-                status_byte = 0xB0 | (source_channel & 0x0F)
-                message = [status_byte, source_cc & 0x7F, value & 0x7F]
-                self.virtual_midi_out.send_message(message)
-                logging.debug(f"Sent to virtual port: CH{source_channel + 1} CC{source_cc} = {value}")
-                return True
-            except Exception as e:
-                logging.warning(f"Failed to send to virtual MIDI port: {e}")
-                return False
-
-        return False
-
     def send_messages_for_pedalboard(self) -> bool:
         """
         Send external MIDI messages for current pedalboard configuration.
@@ -338,7 +272,6 @@ class ExternalMidiManager:
             return False
 
         if not self.messages:
-            logging.debug("No external MIDI messages configured")
             return False
 
         # Send messages to each configured port
@@ -356,29 +289,6 @@ class ExternalMidiManager:
         """
         Close all MIDI ports and cleanup resources.
         """
-        # Close virtual MIDI port
-        if self.virtual_midi_out is not None:
-            try:
-                self.virtual_midi_out.close_port()
-                logging.debug("Closed virtual MIDI port: piStomp-MIDI")
-            except Exception as e:
-                logging.warning(f"Error closing virtual MIDI port: {e}")
-            self.virtual_midi_out = None
-
-        # Terminate amidithru process
-        if self.amidithru_process is not None:
-            try:
-                self.amidithru_process.terminate()
-                self.amidithru_process.wait(timeout=2)
-                logging.debug("Terminated amidithru process")
-            except Exception as e:
-                logging.warning(f"Error terminating amidithru process: {e}")
-                try:
-                    self.amidithru_process.kill()
-                except Exception:
-                    pass
-            self.amidithru_process = None
-
         # Close external MIDI ports
         for port_name, midi_out in self.midi_ports.items():
             if midi_out is not None:
