@@ -111,6 +111,15 @@ encoders:
 
 Shortpress accepts string (callback name) or object with `callback` and `args` (expanded as kwargs).
 
+#### Implementation Details
+
+| Control | Shortpress | Longpress |
+|---------|------------|-----------|
+| Encoder | String or `{callback, args}` via `encoderconfig.parse_shortpress_config()` | String only (no args) |
+| Footswitch | Hardcoded (toggle/MIDI) - no config | String or list (group names) - no args |
+| `GpioSwitch` | `callback_arg` (dict→kwargs, value→arg, None) | `longpress_callback_arg` (dict→kwargs, value→arg, None) |
+| `AnalogSwitch` | Single `callback(state)` - no separate longpress | Same callback, state=LONGPRESSED |
+
 ### External Device Sync
 
 - Pedalboard load triggers MIDI messages to external devices (e.g., Source Audio C4)
