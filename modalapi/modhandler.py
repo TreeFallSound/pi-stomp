@@ -230,7 +230,7 @@ class Modhandler(Handler):
             # Snapshot changed within current pedalboard
             logging.info(f"WebSocket: Snapshot changed to {msg.snapshot_id} ({msg.snapshot_name})")
             self.current.preset_index = msg.snapshot_id
-            self.lcd.draw_title(self.current.pedalboard.title, msg.snapshot_name, False, True, False)
+            self.lcd.draw_title()
 
     def poll_modui_changes(self):
         """Poll for changes from MOD-UI via WebSocket messages."""
