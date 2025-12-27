@@ -54,6 +54,7 @@ class AsyncWebSocketBridge:
         self.ws_url = ws_url
         self.backpressure_threshold = backpressure_threshold
         self.command_queue: queue.Queue = queue.Queue(maxsize=max_queue_size)
+        self.received_queue: queue.Queue = queue.Queue()  # Thread-safe queue for incoming messages
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
         self.thread: Optional[threading.Thread] = None
@@ -62,6 +63,7 @@ class AsyncWebSocketBridge:
         # Metrics
         self.messages_sent = 0
         self.messages_dropped = 0
+        self.messages_received = 0
         self.backpressure_events = 0
         self.backpressure_active = False  # Track if we're currently in backpressure state
 
@@ -136,6 +138,21 @@ class AsyncWebSocketBridge:
 
         return stats
 
+    def get_received_messages(self) -> list:
+        """
+        Get all pending received messages from server (non-blocking).
+
+        Called from main thread to process server messages.
+        Returns list of message strings.
+        """
+        messages = []
+        try:
+            while True:
+                messages.append(self.received_queue.get_nowait())
+        except queue.Empty:
+            pass
+        return messages
+
     def clear_queue(self) -> int:
         """
         Clear all pending messages from the queue.
@@ -192,7 +209,11 @@ class AsyncWebSocketBridge:
                     logging.info(f"WebSocket connected to {self.ws_url}")
                     retry_delay = 1.0  # Reset retry delay on successful connect
 
-                    await self._process_queue(ws)
+                    # Run send and receive tasks concurrently
+                    await asyncio.gather(
+                        self._send_messages(ws),
+                        self._receive_messages(ws)
+                    )
 
             except (websockets.exceptions.WebSocketException, OSError, ConnectionRefusedError) as e:
                 logging.error(f"WebSocket connection error: {e}")
@@ -206,8 +227,8 @@ class AsyncWebSocketBridge:
                 self.ws = None
                 await asyncio.sleep(retry_delay)
 
-    async def _process_queue(self, ws):
-        """Process messages from queue and send via WebSocket."""
+    async def _send_messages(self, ws):
+        """Send messages from queue to WebSocket."""
         while self.running:
             try:
                 # Get message from thread-safe queue (non-blocking)
@@ -257,6 +278,18 @@ class AsyncWebSocketBridge:
             except Exception as e:
                 logging.error(f"Error sending message '{msg[:50]}...': {e}")
                 # Continue processing other messages
+
+    async def _receive_messages(self, ws):
+        """Receive messages from WebSocket and queue them for main thread."""
+        try:
+            async for message in ws:
+                self.received_queue.put(message)
+                self.messages_received += 1
+                logging.debug(f"Received message from server: {message[:100]}")
+        except websockets.exceptions.ConnectionClosed:
+            logging.debug("WebSocket receive loop closed")
+        except Exception as e:
+            logging.error(f"Error receiving message: {e}")
 
     def _get_write_buffer_size(self, ws) -> int:
         """
