@@ -230,6 +230,10 @@ class Modhandler(Handler):
                 self.next_pedalboard_preset_index = msg.snapshot_id
             else:
                 logging.info(f"WebSocket: Snapshot changed to {msg.snapshot_id} ({msg.snapshot_name})")
+
+                if msg.snapshot_id not in self.current.presets:
+                    self.current.presets[msg.snapshot_id] = msg.snapshot_name
+
                 self.current.preset_index = msg.snapshot_id
                 self.lcd.draw_title()
 
@@ -249,6 +253,10 @@ class Modhandler(Handler):
             mod_bundle = self.pedalboard_monitor.get_current_pedalboard_bundle()
             if mod_bundle and mod_bundle != self.current.pedalboard.bundle:
                 logging.info(f"Pedalboard changed via MOD from: {self.current.pedalboard.bundle} to: {mod_bundle}")
+
+                if mod_bundle not in self.pedalboards:
+                    self.load_pedalboards()
+
                 pb = self.reload_pedalboard(mod_bundle)
                 self.set_current_pedalboard(pb)
 
