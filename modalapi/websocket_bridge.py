@@ -32,6 +32,11 @@ except ImportError:
     logging.error("websockets library not installed. Run: pip install websockets")
     raise
 
+def should_log_message(message: str) -> bool:
+    if message == "ping":
+        return False
+    return not message.startswith(('stats ', 'sys_stats '))
+
 
 class AsyncWebSocketBridge:
     """
@@ -285,7 +290,8 @@ class AsyncWebSocketBridge:
             async for message in ws:
                 self.received_queue.put(message)
                 self.messages_received += 1
-                logging.debug(f"Received message from server: {message[:100]}")
+                if should_log_message(message):
+                    logging.debug(f"Received message from server: {message[:100]}")
         except websockets.exceptions.ConnectionClosed:
             logging.debug("WebSocket receive loop closed")
         except Exception as e:
