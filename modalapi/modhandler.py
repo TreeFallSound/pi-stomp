@@ -226,8 +226,23 @@ class Modhandler(Handler):
 
         elif isinstance(msg, PedalSnapshotMessage):
             if self.next_pedalboard_preset_index is not None:
-                logging.info(f"WebSocket: Pre-switch snapshot changed to {msg.snapshot_id}")
-                self.next_pedalboard_preset_index = msg.snapshot_id
+                # Check if we're still on the same pedalboard (stale flag from previous load)
+                mod_bundle = self.pedalboard_monitor.get_current_pedalboard_bundle()
+                if mod_bundle and self.current and mod_bundle == self.current.pedalboard.bundle:
+                    # Same pedalboard - this is a new snapshot on current board, not a pre-switch
+                    logging.info(f"WebSocket: Snapshot changed to {msg.snapshot_id} ({msg.snapshot_name}) - clearing stale pre-switch flag")
+                    self.next_pedalboard_preset_index = None
+
+                    if msg.snapshot_id not in self.current.presets:
+                        self.current.presets[msg.snapshot_id] = msg.snapshot_name
+
+                    self.current.preset_index = msg.snapshot_id
+                    self._handle_collage_mode_snapshot_change(msg.snapshot_id)
+                    self.lcd.draw_title()
+                else:
+                    # Different pedalboard pending - this is a legitimate pre-switch update
+                    logging.info(f"WebSocket: Pre-switch snapshot changed to {msg.snapshot_id}")
+                    self.next_pedalboard_preset_index = msg.snapshot_id
             else:
                 logging.info(f"WebSocket: Snapshot changed to {msg.snapshot_id} ({msg.snapshot_name})")
 
@@ -259,6 +274,13 @@ class Modhandler(Handler):
 
                 pb = self.reload_pedalboard(mod_bundle)
                 self.set_current_pedalboard(pb)
+            elif mod_bundle and self.next_pedalboard_preset_index is not None:
+                # Same pedalboard reloaded with a pending snapshot - apply it now
+                logging.info(f"Applying pending snapshot {self.next_pedalboard_preset_index} to current pedalboard")
+                self.current.preset_index = self.next_pedalboard_preset_index
+                self._handle_collage_mode_snapshot_change(self.next_pedalboard_preset_index)
+                self.next_pedalboard_preset_index = None
+                self.lcd.draw_title()
 
         # Look for a change in banks file
         if Path(self.banks_file).exists():
