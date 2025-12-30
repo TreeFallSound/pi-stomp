@@ -288,6 +288,16 @@ class AsyncWebSocketBridge:
         """Receive messages from WebSocket and queue them for main thread."""
         try:
             async for message in ws:
+
+                # We must respond to pings and data_ready immediately
+                # Otherwise, other websocket clients break
+                if message == "ping":
+                    await ws.send("pong")
+                    continue
+                elif message.startswith("data_ready "):
+                    await ws.send(message)
+                    continue
+
                 self.received_queue.put(message)
                 self.messages_received += 1
                 if should_log_message(message):
