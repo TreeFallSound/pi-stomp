@@ -222,7 +222,8 @@ class Modhandler(Handler):
 
         if isinstance(msg, LoadingEndMessage):
             logging.info(f"WebSocket: Pedalboard loading finished, snapshot={msg.snapshot_id}")
-            self.next_pedalboard_preset_index = msg.snapshot_id
+            # Sometimes mod-ui sends us -1 for preset index, but shows 0 anyway ("Default")
+            self.next_pedalboard_preset_index = max(0, msg.snapshot_id)
 
         elif isinstance(msg, PedalSnapshotMessage):
             if self.next_pedalboard_preset_index is not None:
