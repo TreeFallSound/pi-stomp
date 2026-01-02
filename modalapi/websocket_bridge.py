@@ -28,15 +28,19 @@ from typing import Optional
 
 try:
     import websockets
+
+    WEBSOCKETS_AVAILABLE = True
 except ImportError:
-    logging.error("websockets library not installed. Run: pip install websockets")
+    WEBSOCKETS_AVAILABLE = False
+    websockets = None
     raise
+
 
 def should_log_message(message: str) -> bool:
     """Filter out high-frequency messages to reduce log spam."""
     if message == "ping":
         return False
-    return not message.startswith(('output_set ', 'stats ', 'sys_stats '))
+    return not message.startswith(("output_set ", "stats ", "sys_stats "))
 
 
 class AsyncWebSocketBridge:
@@ -48,7 +52,9 @@ class AsyncWebSocketBridge:
     no functional changes to timing).
     """
 
-    def __init__(self, ws_url: str = 'ws://localhost:80/websocket', max_queue_size: int = 100, backpressure_threshold: int = 8192):
+    def __init__(
+        self, ws_url: str = "ws://localhost:80/websocket", max_queue_size: int = 100, backpressure_threshold: int = 8192
+    ):
         """
         Initialize WebSocket bridge.
 
@@ -75,6 +81,10 @@ class AsyncWebSocketBridge:
 
     def start(self):
         """Start background async worker thread."""
+        if not WEBSOCKETS_AVAILABLE:
+            logging.warning("websockets library not installed. Run: pip3 install websockets")
+            return
+
         if self.running:
             logging.warning("WebSocket bridge already running")
             return
@@ -87,6 +97,7 @@ class AsyncWebSocketBridge:
     def stop(self):
         """Stop background worker and cleanup."""
         if not self.running:
+            logging.warning("WebSocket bridge not running")
             return
 
         self.running = False
@@ -107,7 +118,7 @@ class AsyncWebSocketBridge:
             True if queued successfully, False if queue full (backpressure)
         """
         # Strip leading slash if present (instance_id may be "/StompBox_fuzz" or "StompBox_fuzz")
-        instance_id = instance_id.lstrip('/')
+        instance_id = instance_id.lstrip("/")
         msg = f"param_set /graph/{instance_id}/{symbol} {value}"
 
         try:
@@ -131,16 +142,16 @@ class AsyncWebSocketBridge:
     def get_stats(self) -> dict:
         """Get performance statistics."""
         stats = {
-            'queue_depth': self.get_queue_depth(),
-            'messages_sent': self.messages_sent,
-            'messages_dropped': self.messages_dropped,
-            'backpressure_events': self.backpressure_events,
-            'backpressure_active': self.backpressure_active,
+            "queue_depth": self.get_queue_depth(),
+            "messages_sent": self.messages_sent,
+            "messages_dropped": self.messages_dropped,
+            "backpressure_events": self.backpressure_events,
+            "backpressure_active": self.backpressure_active,
         }
 
         # Add write buffer size if available
         if self.ws:
-            stats['write_buffer_bytes'] = self._get_write_buffer_size(self.ws)
+            stats["write_buffer_bytes"] = self._get_write_buffer_size(self.ws)
 
         return stats
 
@@ -206,9 +217,9 @@ class AsyncWebSocketBridge:
                 # Connect to WebSocket
                 async with websockets.connect(
                     self.ws_url,
-                    max_queue=32,       # Allow 32 messages queued in websockets lib
+                    max_queue=32,  # Allow 32 messages queued in websockets lib
                     write_limit=65536,  # 64 KiB write buffer
-                    ping_interval=None, # Disable automatic pings (we'll use manual ping for backpressure)
+                    ping_interval=None,  # Disable automatic pings (we'll use manual ping for backpressure)
                     close_timeout=1.0,  # Quick close on shutdown
                 ) as ws:
                     self.ws = ws
@@ -216,10 +227,7 @@ class AsyncWebSocketBridge:
                     retry_delay = 1.0  # Reset retry delay on successful connect
 
                     # Run send and receive tasks concurrently
-                    await asyncio.gather(
-                        self._send_messages(ws),
-                        self._receive_messages(ws)
-                    )
+                    await asyncio.gather(self._send_messages(ws), self._receive_messages(ws))
 
             except (websockets.exceptions.WebSocketException, OSError, ConnectionRefusedError) as e:
                 logging.error(f"WebSocket connection error: {e}")
@@ -268,14 +276,13 @@ class AsyncWebSocketBridge:
                     # Falling edge - exiting backpressure
                     self.backpressure_active = False
                     logging.info(
-                        f"WebSocket backpressure CLEAR: {buffer_size} bytes buffered, "
-                        f"queue={self.get_queue_depth()}"
+                        f"WebSocket backpressure CLEAR: {buffer_size} bytes buffered, queue={self.get_queue_depth()}"
                     )
 
                 # Periodically log stats
                 if self.messages_sent % 1000 == 0:
                     stats = self.get_stats()
-                    stats['write_buffer_bytes'] = buffer_size
+                    stats["write_buffer_bytes"] = buffer_size
                     logging.debug(f"WebSocket stats: {stats}")
 
             except websockets.exceptions.ConnectionClosed as e:
@@ -289,7 +296,6 @@ class AsyncWebSocketBridge:
         """Receive messages from WebSocket and queue them for main thread."""
         try:
             async for message in ws:
-
                 # We must respond to pings and data_ready immediately
                 # Otherwise, other websocket clients break
                 if message == "ping":
@@ -323,7 +329,7 @@ class AsyncWebSocketBridge:
             Number of bytes in write buffer, or 0 if unavailable
         """
         try:
-            if hasattr(ws, 'transport') and ws.transport:
+            if hasattr(ws, "transport") and ws.transport:
                 return ws.transport.get_write_buffer_size()
             return 0
         except Exception:
