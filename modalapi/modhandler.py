@@ -28,7 +28,6 @@ import common.util as util
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
 import pistomp.settings as Settings
-from modalapi.websocket_bridge import AsyncWebSocketBridge
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encodermidicontrol import EncoderMidiControl
