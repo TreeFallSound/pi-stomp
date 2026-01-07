@@ -26,8 +26,12 @@ import pistomp.analogcontrol as analogcontrol
 import logging
 
 
-class AnalogMidiControl(analogcontrol.AnalogControl):
+def as_midi_value(adc_value: int):
+    """Convert a 10-bit ADC value (0-1023) to a MIDI value (0-127)."""
+    return util.renormalize(adc_value, 0, 1023, 0, 127)
 
+
+class AnalogMidiControl(analogcontrol.AnalogControl):
     def __init__(self, spi, adc_channel, tolerance, midi_CC, midi_channel, midiout, type, id=None, cfg={}):
         super(AnalogMidiControl, self).__init__(spi, adc_channel, tolerance)
         self.midi_CC = midi_CC
@@ -37,7 +41,7 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
         # Parent member overrides
         self.type = type
         self.id = id
-        self.last_read = 0          # this keeps track of the last potentiometer value
+        self.last_read = 0  # this keeps track of the last potentiometer value
         self.value = None
         self.cfg = cfg
 
@@ -47,6 +51,22 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
     def set_value(self, value):
         self.value = value
 
+    def send_current_value(self):
+        """
+        Force-send the current analog control value via MIDI.
+        Used for syncing external devices during pedalboard load.
+        """
+        # read the analog pin
+        value = self.readChannel()
+        set_volume = as_midi_value(value)
+
+        cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, set_volume]
+        logging.debug("AnalogControl force-sending CC event %s" % cc)
+        self.midiout.send_message(cc)
+
+        # save the reading to prevent duplicate sends on next poll
+        self.last_read = value
+
     # Override of base class method
     def refresh(self):
         # read the analog pin
@@ -54,11 +74,10 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
 
         # how much has it changed since the last read?
         pot_adjust = abs(value - self.last_read)
-        value_changed = (pot_adjust > self.tolerance)
+        value_changed = pot_adjust > self.tolerance
 
         if value_changed:
-            # convert 16bit adc0 (0-65535) trim pot read into 0-100 volume level
-            set_volume = util.renormalize(value, 0, 1023, 0, 127)
+            set_volume = as_midi_value(value)
 
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, set_volume]
             logging.debug("AnalogControl Sending CC event %s" % cc)
