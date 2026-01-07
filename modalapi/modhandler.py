@@ -28,6 +28,7 @@ import common.util as util
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
 import pistomp.settings as Settings
+from modalapi.websocket_bridge import AsyncWebSocketBridge
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encodermidicontrol import EncoderMidiControl
@@ -479,6 +480,7 @@ class Modhandler(Handler):
         if index < 0 or index >= len(self.current.presets):
             self.lcd.draw_message_dialog("Snapshot id %d does not exist for this pedalboard" % index)
             return
+
         self.lcd.draw_info_message("Loading...")
         url = (self.root_uri + "snapshot/load?id=%d" % index)
         # req.get(self.root_uri + "reset")
