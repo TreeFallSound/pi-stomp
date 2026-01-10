@@ -652,6 +652,8 @@ class Lcd(abstract_lcd.Lcd):
         pass
 
     def update_bypass(self, bypass_left, bypass_right):
+        if self.w_power is None:
+            return
         if not bypass_left and not bypass_right:
             img = 'power_green.png'
         elif not bypass_left:
