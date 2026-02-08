@@ -89,17 +89,6 @@ class Hardware:
         if s:
             s.check_longpress_events()
 
-    def sync_analog_controls(self):
-        """
-        Send current values of all analog controls via MIDI.
-        Used for syncing external devices during pedalboard load.
-        """
-        for control in self.analog_controls:
-            try:
-                control.send_current_value()
-            except Exception as e:
-                logging.warning(f"Failed to sync analog control {control}: {e}")
-
     def poll_indicators(self):
         for i in self.indicators:
             i.refresh()
@@ -116,13 +105,15 @@ class Hardware:
         # reinit hardware as specified by the new cfg context (after pedalboard change, etc.)
         self.cfg = self.default_cfg.copy()
 
-        self.__init_midi_default()
-
         # Global footswitch init (callbacks and groups)
         Footswitch.Footswitch.init(self.handler.callbacks)
 
-        # Footswitch configuration
-        self.__init_footswitches(self.cfg)
+        # Analog control configuration
+        for ac in self.analog_controls:
+            try:
+                ac.initialize()
+            except Exception as e:
+                logging.warning(f"Failed to initialize analog control {ac}: {e}")
 
         # Pedalboard specific config
         if cfg is not None:
@@ -251,6 +242,7 @@ class Hardware:
             midi_cc = Util.DICT_GET(c, Token.MIDI_CC)
             threshold = Util.DICT_GET(c, Token.THRESHOLD)
             control_type = Util.DICT_GET(c, Token.TYPE)
+            autosync = Util.DICT_GET(c, Token.AUTOSYNC)
 
             if adc_input is None:
                 logging.error("Config file error.  Analog control specified without %s" % Token.ADC_INPUT)
@@ -260,9 +252,11 @@ class Hardware:
                 continue
             if threshold is None:
                 threshold = 16  # Default, 1024 is full scale
+            if autosync is None:
+                autosync = False  # Default to False
 
             control = AnalogMidiControl.AnalogMidiControl(self.spi, adc_input, threshold, midi_cc, midi_channel,
-                                                          self.midiout, control_type, id, c)
+                                                          self.midiout, control_type, id, c, autosync)
             self.analog_controls.append(control)
             key = format("%d:%d" % (midi_channel, midi_cc))
             self.controllers[key] = control
@@ -310,9 +304,6 @@ class Hardware:
         except KeyError:
             pass
         return chan
-
-    def __init_midi_default(self):
-        self.__init_midi(self.cfg)
 
     def __init_midi(self, cfg):
         self.midi_channel = self.get_real_midi_channel(cfg)

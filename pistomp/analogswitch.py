@@ -60,7 +60,7 @@ class AnalogSwitch(analogcontrol.AnalogControl):
                 self.state = switchstate.Value.RELEASED
 
     @override
-    def send_current_value(self):
+    def initialize(self):
         # no-op for stateless switches
         pass
     

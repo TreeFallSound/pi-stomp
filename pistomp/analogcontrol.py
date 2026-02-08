@@ -40,6 +40,6 @@ class AnalogControl:
         """Read current value from hardware and potentially take action."""
         logging.error("AnalogControl subclass hasn't overriden the refresh method")
 
-    def send_current_value(self):
-        """Force-send the current analog control value to the pedalboard."""
-        logging.error("AnalogControl subclass hasn't implemented send_current_value method")
+    def initialize(self):
+        """Called when the pedalboard has been loaded, e.g. to sync current value."""
+        logging.error("AnalogControl subclass hasn't implemented initialize method")

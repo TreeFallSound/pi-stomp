@@ -33,11 +33,12 @@ def as_midi_value(adc_value: int):
 
 
 class AnalogMidiControl(analogcontrol.AnalogControl):
-    def __init__(self, spi, adc_channel, tolerance, midi_CC, midi_channel, midiout, type, id=None, cfg={}):
+    def __init__(self, spi, adc_channel, tolerance, midi_CC, midi_channel, midiout, type, id=None, cfg={}, autosync=False):
         super(AnalogMidiControl, self).__init__(spi, adc_channel, tolerance)
         self.midi_CC = midi_CC
         self.midiout = midiout
         self.midi_channel = midi_channel
+        self.autosync = autosync
 
         # Parent member overrides
         self.type = type
@@ -53,7 +54,10 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
         self.value = value
 
     @override
-    def send_current_value(self):
+    def initialize(self):
+        if not self.autosync:
+            return
+
         # read the analog pin
         value = self.readChannel()
         set_volume = as_midi_value(value)
