@@ -624,7 +624,8 @@ class Lcd(abstract_lcd.Lcd):
     def cleanup(self):
         self.pstack.pop_panel(None)  # current panel
         self.pstack.pop_panel(self.footswitch_panel)
-        self.pstack.pop_panel(self.main_panel)
+        if self.main_panel_pushed:
+            self.pstack.pop_panel(self.main_panel)
         self.w_splash.set_foreground(self.color_splash_down)
         self.splash_panel.refresh()
     
@@ -652,6 +653,8 @@ class Lcd(abstract_lcd.Lcd):
         pass
 
     def update_bypass(self, bypass_left, bypass_right):
+        if self.w_power is None:
+            return
         if not bypass_left and not bypass_right:
             img = 'power_green.png'
         elif not bypass_left:
