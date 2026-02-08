@@ -20,6 +20,7 @@ import sys
 
 import common.token as Token
 import common.util as Util
+from pistomp.analogcontrol import AnalogControl
 import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.footswitch as Footswitch
 import pistomp.taptempo as taptempo
@@ -46,7 +47,7 @@ class Hardware:
 
         # Standard hardware objects (not required to exist)
         self.relay = None
-        self.analog_controls = []
+        self.analog_controls: list[AnalogControl] = []
         self.encoders = []
         self.controllers = {}
         self.footswitches = []
@@ -94,11 +95,10 @@ class Hardware:
         Used for syncing external devices during pedalboard load.
         """
         for control in self.analog_controls:
-            if hasattr(control, 'send_current_value'):
-                try:
-                    control.send_current_value()
-                except Exception as e:
-                    logging.warning(f"Failed to sync analog control {control.midi_CC}: {e}")
+            try:
+                control.send_current_value()
+            except Exception as e:
+                logging.warning(f"Failed to sync analog control {control}: {e}")
 
     def poll_indicators(self):
         for i in self.indicators:

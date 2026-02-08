@@ -12,6 +12,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+from typing import override
 
 import adafruit_mcp3xxx.mcp3008 as MCP
 from adafruit_mcp3xxx.analog_in import AnalogIn
@@ -51,11 +52,8 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
     def set_value(self, value):
         self.value = value
 
+    @override
     def send_current_value(self):
-        """
-        Force-send the current analog control value via MIDI.
-        Used for syncing external devices during pedalboard load.
-        """
         # read the analog pin
         value = self.readChannel()
         set_volume = as_midi_value(value)
@@ -67,7 +65,7 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
         # save the reading to prevent duplicate sends on next poll
         self.last_read = value
 
-    # Override of base class method
+    @override
     def refresh(self):
         # read the analog pin
         value = self.readChannel()
