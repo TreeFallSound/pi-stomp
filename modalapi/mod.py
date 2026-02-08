@@ -442,6 +442,9 @@ class Mod(Handler):
             if self.current_menu == MenuType.MENU_INFO:
                 self.system_info_update_wifi()
 
+    def poll_system_info(self):
+        pass
+
     def poll_modui_changes(self):
         # This poll looks for changes made via the MOD UI and tries to sync the pi-Stomp hardware
 
