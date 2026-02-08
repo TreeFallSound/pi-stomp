@@ -14,10 +14,20 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
-import argparse
+
+# Configure logging BEFORE any imports to ensure it takes effect
 import logging
-import os
 import sys
+
+# Set up logging with format that works well with systemd journal
+logging.basicConfig(
+    level=logging.INFO,  # Default level, will be overridden by CLI arg
+    format='%(levelname)s:%(name)s:%(message)s',
+    stream=sys.stderr
+)
+
+import argparse
+import os
 import time
 
 from rtmidi.midiutil import open_midioutput
@@ -42,14 +52,14 @@ def main():
 
     args = parser.parse_args()
 
-    # Handle Log Level
+    # Handle Log Level - override the default INFO level set at startup
     level_config = {'debug': logging.DEBUG, 'info': logging.INFO, 'warning': logging.WARNING, 'error': logging.ERROR,
                     'critical': logging.CRITICAL}
     log = args.log[0]
     log_level = level_config[log] if log in level_config else None
     if log_level:
         print("Log level now set to: %s" % logging.getLevelName(log_level))
-        logging.basicConfig(level=log_level)
+        logging.getLogger().setLevel(log_level)
 
     # Disable websockets library debug logging (too noisy)
     logging.getLogger('websockets').setLevel(logging.WARNING)
