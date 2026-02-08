@@ -28,7 +28,7 @@ For full installation instructions, see [this guide](https://www.treefallsound.c
 Those instructions start with a pre-built pi-Stomp image.  The supporting packages are pre-installed.
 This is the recommended method of installation for most users.
 
-This [pi-gen-pistomp](https://github.com/rreichenbach/pi-gen-pistomp) repository is used to create the pre-built images.
+This [pi-gen-pistomp](https://github.com/TreeFallSound/pi-gen-pistomp) repository is used to create the pre-built images.
 We recommend forking this for creating your own modified images.
 
 The now deprecated method of using the setup scripts in this repository to build from scratch is another option.
