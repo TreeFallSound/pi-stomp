@@ -7,8 +7,10 @@
 ## Service Management
 
 ```bash
-# Restart piStomp service
-sudo systemctl restart mod-ala-pi-stomp
+# Control piStomp service
+ps-restart
+ps-run
+ps-stop
 
 # View logs (live)
 sudo journalctl -u mod-ala-pi-stomp -f
@@ -19,13 +21,23 @@ sudo journalctl -u mod-ala-pi-stomp -n 50
 
 ## Deployment Workflow
 
+### Local development
+
 ```bash
 # 1. Edit files locally in /Users/cam/dev/pi-stomp/
 # 2. Copy Python files to device
 scp modalapi/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/modalapi/
 
-# 3. Restart the service (Python takes care of re-creating __pycache__ files)
-ssh pistomp@pistomp.local "sudo systemctl restart mod-ala-pi-stomp"
+# 3. Restart the service
+ssh pistomp@pistomp.local "ps-restart"
+```
+
+### Mounting the SSH folder
+
+The remote filesystem can also be mounted into a local directory using sshfs, depending on OS support. For example:
+
+```bash
+sshfs pistomp@pistomp.local:/home/pistomp <LOCAL_DIR> -o defer_permissions -o volname=Server
 ```
 
 ## Key Data Paths
