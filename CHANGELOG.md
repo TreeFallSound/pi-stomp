@@ -18,9 +18,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Prevent multiple USB audio devices from taking over index=0
 - Charge SPI0 hack in config.txt to use GPIO46 (virtual) instead of wasting GPIO0
 
-### Updates
-- Updated NAM plugin to v0.1.9
-
 ## [v3.0.3] - 2025-12-12
 ### Changed
 - Improved ALSA settings to better handle hot guitar pickups
