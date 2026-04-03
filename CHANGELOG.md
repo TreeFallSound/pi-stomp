@@ -6,20 +6,20 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [v3.0.4] - 2026-04-04
 ### Added
-Add GUIDE.md for developer documentation
-Add pyproject.toml and uv.lock for local development tooling
+- Add GUIDE.md for developer documentation
+- Add pyproject.toml and uv.lock for local development tooling
 
 ### Fixed
-Sync current state of analog controls on pedalboard load
-Fix loading of plugins dependent on old version of fluidsynth lib (Calf, FluidGM, BlackPearl, etc.)
+- Sync current state of analog controls on pedalboard load
+- Fix loading of plugins dependent on old version of fluidsynth lib (Calf, FluidGM, BlackPearl, etc.)
 
 ### Changed
-Change reverb on NAM pedalboard to avoid crazy loading noise burst
-Prevent multiple USB audio devices from taking over index=0
-Charge SPI0 hack in config.txt to use GPIO46 (virtual) instead of wasting GPIO0
+- Change reverb on NAM pedalboard to avoid crazy loading noise burst
+- Prevent multiple USB audio devices from taking over index=0
+- Charge SPI0 hack in config.txt to use GPIO46 (virtual) instead of wasting GPIO0
 
 ### Updates
-Updated NAM plugin to v0.1.9
+- Updated NAM plugin to v0.1.9
 
 ## [v3.0.3] - 2025-12-12
 ### Changed
