@@ -4,7 +4,7 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## [v3.0.4] - 2026-04-08
+## [v3.0.4] - 2026-04-09
 ### Added
 - Add GUIDE.md for developer documentation
 - Add pyproject.toml and uv.lock for local development tooling
@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Changed
 - Change reverb on NAM pedalboard to avoid crazy loading noise burst
+- Attempt to normalize volumes accross pedalboards
 - Prevent multiple USB audio devices from taking over index=0
 - Many pi-gen-pistomp improvements for building the OS
 
