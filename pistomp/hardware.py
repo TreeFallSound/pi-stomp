@@ -105,8 +105,13 @@ class Hardware:
         # reinit hardware as specified by the new cfg context (after pedalboard change, etc.)
         self.cfg = self.default_cfg.copy()
 
+        self.__init_midi_default()
+
         # Global footswitch init (callbacks and groups)
         Footswitch.Footswitch.init(self.handler.callbacks)
+
+        # Footswitch configuration
+        self.__init_footswitches(self.cfg)
 
         # Analog control configuration
         for ac in self.analog_controls:
@@ -304,6 +309,9 @@ class Hardware:
         except KeyError:
             pass
         return chan
+
+    def __init_midi_default(self):
+        self.__init_midi(self.cfg)
 
     def __init_midi(self, cfg):
         self.midi_channel = self.get_real_midi_channel(cfg)
