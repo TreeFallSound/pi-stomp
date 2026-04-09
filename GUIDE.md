@@ -138,10 +138,10 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 
 ### Analog Control State Sync
 
-- On pedalboard load, all analog controls (expression pedals, etc.) send current position to MIDI Through
+- On pedalboard load, all analog controls send initial position to MIDI Through if `autosync=True` (via config)
 - MIDI flows to MIDI Through port 14:0 → available to LV2 MIDI plugins in pedalboard
 - Prevents state mismatch - no need to wiggle pedals after switching pedalboards
-- Implemented via `Hardware.sync_analog_controls()` → `AnalogMidiControl.send_current_value()`
+- Implemented via `AnalogMidiControl.initialize()`
 - Works for both v1/v2 (`mod.py`) and v3 (`modhandler.py`) hardware
 
 ## Key Development Principles
@@ -243,7 +243,6 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 **All inherit from `Hardware` base class** - provides common functionality:
 - `reinit(cfg)` - Reload config on pedalboard change
 - `poll_controls()` - Read all inputs
-- `sync_analog_controls()` - Send current positions on pedalboard load
 - SPI/ADC communication
 - Controller dictionary: `{channel:CC}` → controller object
 
@@ -367,7 +366,6 @@ MOD-UI writes /home/pistomp/data/last.json
           → hardware.reinit(cfg) - overlay config
           → bind_current_pedalboard() - map controllers to parameters
           → external_midi.send_messages_for_pedalboard()
-          → hardware.sync_analog_controls()
           → update_lcd()
 ```
 

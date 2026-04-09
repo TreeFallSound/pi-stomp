@@ -348,9 +348,6 @@ class Modhandler(Handler):
                 cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
         self.hardware.reinit(cfg)
 
-        # Sync current state of analog controls (expression pedals, etc.)
-        self.hardware.sync_analog_controls()
-
         # Initialize the data and draw on LCD
         self.bind_current_pedalboard()
         self.load_current_presets()
