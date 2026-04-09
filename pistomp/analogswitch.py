@@ -12,7 +12,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
-from typing import override
+
+from typing_extensions import override
 
 import time
 import pistomp.analogcontrol as analogcontrol
