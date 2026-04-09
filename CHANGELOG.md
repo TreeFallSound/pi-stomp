@@ -4,7 +4,7 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## [v3.0.4] - 2026-04-04
+## [v3.0.4] - 2026-04-08
 ### Added
 - Add GUIDE.md for developer documentation
 - Add pyproject.toml and uv.lock for local development tooling
@@ -12,11 +12,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Fixed
 - Sync current state of analog controls on pedalboard load
 - Fix loading of plugins dependent on old version of fluidsynth lib (Calf, FluidGM, BlackPearl, etc.)
+- Improved handling of tweak encoders (only pop main panel if encoder pressed)
 
 ### Changed
 - Change reverb on NAM pedalboard to avoid crazy loading noise burst
 - Prevent multiple USB audio devices from taking over index=0
-- Charge SPI0 hack in config.txt to use GPIO46 (virtual) instead of wasting GPIO0
+- Many pi-gen-pistomp improvements for building the OS
 
 ## [v3.0.3] - 2025-12-12
 ### Changed
