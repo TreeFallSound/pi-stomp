@@ -13,26 +13,28 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from typing_extensions import override
+
 import time
 import pistomp.analogcontrol as analogcontrol
 import pistomp.switchstate as switchstate
-import pistomp.taptempo as taptempo
+from pistomp.taptempo import TapTempo
 
 LONG_PRESS_TIME = 0.5    # Hold seconds which defines a long press
 FALLING_THRESHOLD = 800  # ASSUMES 10-bit ADC, can be changed for debounce handling
 
 class AnalogSwitch(analogcontrol.AnalogControl):
 
-    def __init__(self, spi, adc_channel, tolerance, callback, taptempo=None):
+    def __init__(self, spi, adc_channel, tolerance, callback, taptempo: TapTempo | None = None):
         super(AnalogSwitch, self).__init__(spi, adc_channel, tolerance)
         #self.value = None          # this keeps track of the last value, do we still need this?
         self.callback = callback
         self.state = switchstate.Value.RELEASED
         self.start_time = 0
         self.duration = 0
-        self.taptempo = taptempo
+        self.taptempo: TapTempo | None = taptempo
 
-    # Override of base class method
+    @override
     def refresh(self):
         # read the analog channel
         new_value = self.readChannel()
@@ -57,3 +59,9 @@ class AnalogSwitch(analogcontrol.AnalogControl):
                 self.callback(switchstate.Value.RELEASED)
             elif self.state is switchstate.Value.LONGPRESSED:
                 self.state = switchstate.Value.RELEASED
+
+    @override
+    def initialize(self):
+        # no-op for stateless switches
+        pass
+    

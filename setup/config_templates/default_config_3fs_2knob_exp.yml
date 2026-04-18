@@ -48,12 +48,14 @@ hardware:
   # id: <integer>                 The id and position on the screen (starting with 0 on the left)
   # type: <KNOB | EXPRESSION>     The control type, used to represent the control on the screen (optional)
   # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
+  # autosync: <true | false>      Whether to send current value on pedalboard load (optional, default: false)
   #
   analog_controllers:
   - adc_input: 7
     id: 0
     midi_CC: 77
     type: EXPRESSION
+    autosync: true
   - adc_input: 0
     id: 1
     midi_CC: 70
