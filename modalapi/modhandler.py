@@ -24,12 +24,14 @@ import subprocess
 import sys
 import yaml
 
+from typing import cast, Any
+
 import common.token as Token
 import common.util as util
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
 from pistomp.lcd320x240 import Lcd
-from pistomp.hardware import Hardware
+from pistomp.hardware import Controller, Hardware
 import pistomp.settings as Settings
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -116,11 +118,11 @@ class Modhandler(Handler):
     # replaced when a different pedalboard is made current (old Current object
     # gets deleted and a new one added via self.set_current_pedalboard()
     class Current:
-        def __init__(self, pedalboard):
-            self.pedalboard = pedalboard
-            self.presets = {}
-            self.preset_index = 0
-            self.analog_controllers = {}  # { type: (plugin_name, param_name) }
+        def __init__(self, pedalboard: Pedalboard.Pedalboard):
+            self.pedalboard: Pedalboard.Pedalboard = pedalboard
+            self.presets: dict[int, str] = {}
+            self.preset_index: int = 0
+            self.analog_controllers: dict[str, dict[str, Any]] = {}  # { type: (plugin_name, param_name) }
 
     def _rest_get(self, url: str) -> Response | None:
         try:
@@ -378,7 +380,7 @@ class Modhandler(Handler):
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
         footswitch_plugins = []
-        if self.current and self.current.pedalboard:
+        if self.current:
             #logging.debug(self.current.pedalboard.to_json())
             for plugin in self.current.pedalboard.plugins:
                 if plugin is None or plugin.parameters is None:
@@ -389,7 +391,7 @@ class Modhandler(Handler):
                         if controller is not None:
                             # TODO possibly use a setter instead of accessing var directly
                             # What if multiple params could map to the same controller?
-                            controller.parameter = param
+                            controller.parameter = param  # pyright: ignore[reportAttributeAccessIssue]
                             controller.set_value(param.value)
                             plugin.controllers.append(controller)
                             if isinstance(controller, Footswitch):
@@ -486,7 +488,7 @@ class Modhandler(Handler):
             return
 
         if resp.status_code == 200 and resp.text is not None:
-            current_snapshot_name = util.DICT_GET(json.loads(resp.text), "name")
+            current_snapshot_name = cast(str, util.DICT_GET(json.loads(resp.text), "name"))
             for i, n in self.current.presets.items():
                 if n == current_snapshot_name:
                     self.current.preset_index = i

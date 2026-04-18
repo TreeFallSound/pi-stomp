@@ -15,6 +15,7 @@
 
 import logging
 import os
+from typing import Union
 import spidev
 import sys
 
@@ -22,13 +23,17 @@ import common.token as Token
 import common.util as Util
 from pistomp.analogcontrol import AnalogControl
 import pistomp.analogmidicontrol as AnalogMidiControl
+import pistomp.encoder as Encoder
+import pistomp.encodermidicontrol as EncoderMidiControl
 import pistomp.footswitch as Footswitch
 import pistomp.taptempo as taptempo
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
+
+Controller = Union[AnalogMidiControl.AnalogMidiControl, EncoderMidiControl.EncoderMidiControl, Footswitch.Footswitch]
 
 
-class Hardware:
+class Hardware(ABC):
 
     def __init__(self, default_config, handler, midiout, refresh_callback):
         logging.info("Init hardware: " + type(self).__name__)
@@ -49,7 +54,7 @@ class Hardware:
         self.relay = None
         self.analog_controls: list[AnalogControl] = []
         self.encoders = []
-        self.controllers = {}
+        self.controllers: dict[str, Controller] = {}
         self.footswitches: list[Footswitch.Footswitch] = []
         self.encoder_switches = []
         self.indicators = []
@@ -270,9 +275,11 @@ class Hardware:
             logging.debug("Created AnalogMidiControl Input: %d, Midi Chan: %d, CC: %d" %
                           (adc_input, midi_channel, midi_cc))
 
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
+    @abstractmethod
+    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc) -> Encoder.Encoder | EncoderMidiControl.EncoderMidiControl:
         # This should be implemented by hardware subclasses that support tweak encoders (Tre at least)
-        pass
+        ...
+
     def create_encoders(self, cfg):
         if cfg is None or (Token.HARDWARE not in cfg) or (Token.ENCODERS not in cfg[Token.HARDWARE]):
             return
@@ -294,10 +301,15 @@ class Hardware:
                 logging.error("Config file error.  Encoder specified without %s" % Token.ID)
                 continue
 
-            control = self.add_encoder(id, type, None, longpress_callback, midi_channel, midi_cc)
-            self.encoders.append(control)
+            try:
+                control = self.add_encoder(id, type, None, longpress_callback, midi_channel, midi_cc)
+                self.encoders.append(control)
+            except Exception:
+                logging.exception("Failed to create encoder with config: %s" % c)
+                continue
 
             if midi_cc is not None:
+                assert not isinstance(control, Encoder.Encoder), "Encoder specified with MIDI CC must be of type EncoderMidiControl"
                 key = format("%d:%d" % (midi_channel, midi_cc))
                 self.controllers[key] = control
                 logging.debug("Created Encoder: %d, Midi Chan: %d, CC: %d" % (id, midi_channel, midi_cc))
