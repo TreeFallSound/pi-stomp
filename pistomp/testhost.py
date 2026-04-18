@@ -16,7 +16,6 @@
 import time
 import curses
 import logging
-import common.util as util
 
 import numpy as np
 

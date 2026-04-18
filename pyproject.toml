@@ -37,7 +37,7 @@ hardware = [
 ]
 
 # Development dependencies
-dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1.0", "pyright>=1.1.408"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1.0", "pyright>=1.1.408", "numpy>=2.4.1"]
 
 [project.urls]
 Homepage = "https://treefallsound.com"
