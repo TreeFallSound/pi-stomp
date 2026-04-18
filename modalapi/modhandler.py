@@ -164,8 +164,7 @@ class Modhandler(Handler):
         wifi_update = self.wifi_manager.poll()
         if wifi_update is not None:
             self.wifi_status = wifi_update
-            if self.lcd is not None:
-                self.lcd.update_wifi(self.wifi_status)
+            self.lcd.update_wifi(self.wifi_status)
 
     def poll_system_info(self):
         # Get the system state from the systemd service
@@ -228,16 +227,15 @@ class Modhandler(Handler):
             self.temperature = "unknown"
 
     def poll_lcd_updates(self):
-        if self.lcd:
-            self.lcd.poll_updates()
+        self.lcd.poll_updates()
 
     def universal_encoder_select(self, direction):
-        if self.lcd is not None:
-            self.lcd.enc_step(direction)
+        if self._lcd is not None:
+            self._lcd.enc_step(direction)
 
     def universal_encoder_sw(self, value, obj=None):
-        if self.lcd is not None:
-            self.lcd.enc_sw(value)
+        if self._lcd is not None:
+            self._lcd.enc_sw(value)
 
     def poll_modui_changes(self):
         # This poll looks for changes made via the MOD UI and tries to sync the pi-Stomp hardware
@@ -253,8 +251,7 @@ class Modhandler(Handler):
             if ts != self.pedalboard_change_timestamp:
                 # Timestamp changed
                 self.pedalboard_change_timestamp = ts
-                if self.lcd:
-                    self.lcd.draw_info_message("Loading...")
+                self.lcd.draw_info_message("Loading...")
                 mod_bundle = self.get_pedalboard_bundle_from_mod()
                 if mod_bundle:
                     logging.info("Pedalboard changed via MOD from: %s to: %s" %
