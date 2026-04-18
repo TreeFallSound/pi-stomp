@@ -21,6 +21,7 @@ dependencies = [
     "jsonschema>=4.0",
     "python-rtmidi>=1.4",
     "requests>=2.28",
+    "Pillow>=9.2",
     "pyalsaaudio>=0.9; sys_platform == 'linux'",
 ]
 
