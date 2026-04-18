@@ -132,27 +132,27 @@ class Hardware(ABC):
 
     @abstractmethod
     def init_analog_controls(self):
-        pass
+        ...
 
     @abstractmethod
     def init_encoders(self):
-        pass
+        ...
 
     @abstractmethod
     def init_footswitches(self):
-        pass
+        ...
 
     @abstractmethod
     def init_relays(self):
-        pass
+        ...
 
     @abstractmethod
     def cleanup(self):
-        pass
+        ...
 
     @abstractmethod
     def test(self):
-        pass
+        ...
 
     def run_test(self):
         # if test sentinel file exists execute hardware test
