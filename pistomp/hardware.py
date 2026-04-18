@@ -50,19 +50,19 @@ class Hardware:
         self.analog_controls: list[AnalogControl] = []
         self.encoders = []
         self.controllers = {}
-        self.footswitches = []
+        self.footswitches: list[Footswitch.Footswitch] = []
         self.encoder_switches = []
         self.indicators = []
         self.debounce_map = None
         self.ledstrip = None
         self.taptempo = taptempo.TapTempo(None)
 
-    def toggle_tap_tempo_enable(self, bpm=0):
+    def toggle_tap_tempo_enable(self, bpm: float = 0.0):
         if self.taptempo:
             self.taptempo.toggle_enable()
             if self.taptempo.is_enabled() and bpm > 0:
                 self.taptempo.set_bpm(bpm)
-                logging.debug("tap tempo mode enabled: %d", bpm)
+                logging.debug("tap tempo mode enabled: %f", bpm)
 
     def init_spi(self):
         self.spi = spidev.SpiDev()
@@ -212,6 +212,7 @@ class Hardware:
             if taptempo:
                 taptempo.set_callback(self.handler.get_callback(tap_tempo_callback))
 
+            fs: Footswitch.Footswitch | None = None
             if adc_input is not None:
                 fs = Footswitch.Footswitch(id if id else idx, gpio_output, pixel, midi_cc, midi_channel,
                                            self.midiout, refresh_callback=self.refresh_callback,
@@ -227,6 +228,7 @@ class Hardware:
                 logging.debug("Created Footswitch on GPIO input: %d, Midi Chan: %d, CC: %s" %
                               (gpio_input, midi_channel, midi_cc))
 
+            assert fs is not None, "No footswitch created for config: %s" % f
             self.footswitches.append(fs)
             idx += 1
 

@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import requests as req
+from requests import Response
 import subprocess
 import sys
 import yaml
@@ -27,6 +28,8 @@ import common.token as Token
 import common.util as util
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
+from pistomp.lcd320x240 import Lcd
+from pistomp.hardware import Hardware
 import pistomp.settings as Settings
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -39,11 +42,9 @@ class Modhandler(Handler):
     __single = None
 
     def __init__(self, audiocard, homedir):
-        self.wifi_manager = None
-
         logging.info("Init modhandler")
         if Modhandler.__single:
-            raise Modhandler.__single
+            raise RuntimeError("Attempt to create second Modhandler singleton", Modhandler.__single)
         Modhandler.__single = self
 
         self.audiocard = audiocard
@@ -51,7 +52,6 @@ class Modhandler(Handler):
         self.homedir = homedir
         self.username = "pistomp"
         self.root_uri = "http://localhost:80/"
-        self.hardware = None
         self.settings = Settings.Settings()
         self.software_version = None
         self.build_version = "User build"
@@ -69,8 +69,9 @@ class Modhandler(Handler):
         self.bypass_left = False
         self.bypass_right = False
 
-        self.current = None  # pointer to Current class
-        self.lcd = None
+        self.current: Modhandler.Current | None = None
+        self._lcd: Lcd | None = None
+        self._hardware: Hardware | None = None
 
         # Backup
         self.backup_dir = "/media/usb0/backups"
@@ -103,11 +104,12 @@ class Modhandler(Handler):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
+
     def cleanup(self):
-        if self.lcd is not None:
-            self.lcd.cleanup()
-        if self.hardware is not None:
-            self.hardware.cleanup()
+        if self._lcd is not None:
+            self._lcd.cleanup()
+        if self._hardware is not None:
+            self._hardware.cleanup()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -120,11 +122,35 @@ class Modhandler(Handler):
             self.preset_index = 0
             self.analog_controllers = {}  # { type: (plugin_name, param_name) }
 
+    def _rest_get(self, url: str) -> Response | None:
+        try:
+            return req.get(url)
+        except Exception as e:
+            logging.error("REST GET failed: %s %s" % (url, e))
+            return None
+
+    def _rest_post(self, url: str, *, json=None, data=None) -> Response | None:
+        try:
+            return req.post(url, json=json, data=data)
+        except Exception as e:
+            logging.error("REST POST failed: %s %s" % (url, e))
+            return None
+
     def add_hardware(self, hardware):
-        self.hardware = hardware
+        self._hardware = hardware
 
     def add_lcd(self, lcd):
-        self.lcd = lcd
+        self._lcd = lcd
+
+    @property
+    def lcd(self):
+        assert self._lcd is not None, "LCD has not been initialized"
+        return self._lcd
+
+    @property
+    def hardware(self):
+        assert self._hardware is not None, "Hardware has not been initialized"
+        return self._hardware
 
     def poll_controls(self):
         if self.hardware:
@@ -138,7 +164,8 @@ class Modhandler(Handler):
         wifi_update = self.wifi_manager.poll()
         if wifi_update is not None:
             self.wifi_status = wifi_update
-            self.lcd.update_wifi(self.wifi_status)
+            if self.lcd is not None:
+                self.lcd.update_wifi(self.wifi_status)
 
     def poll_system_info(self):
         # Get the system state from the systemd service
@@ -226,11 +253,12 @@ class Modhandler(Handler):
             if ts != self.pedalboard_change_timestamp:
                 # Timestamp changed
                 self.pedalboard_change_timestamp = ts
-                self.lcd.draw_info_message("Loading...")
+                if self.lcd:
+                    self.lcd.draw_info_message("Loading...")
                 mod_bundle = self.get_pedalboard_bundle_from_mod()
                 if mod_bundle:
                     logging.info("Pedalboard changed via MOD from: %s to: %s" %
-                                 (self.current.pedalboard.bundle, mod_bundle))
+                                 (self.current.pedalboard.bundle if self.current else None, mod_bundle))
                     pb = self.reload_pedalboard(mod_bundle)
                     self.set_current_pedalboard(pb)
 
@@ -254,7 +282,7 @@ class Modhandler(Handler):
                 j = json.load(file)
                 for bd in j:
                     bank = util.DICT_GET(bd, 'title')
-                    pbs = util.DICT_GET(bd, 'pedalboards')
+                    pbs = util.DICT_GET(bd, 'pedalboards') or {}
                     b = self.banks[bank] = []
                     for p in pbs:
                         title = util.DICT_GET(p, 'title')
@@ -276,14 +304,9 @@ class Modhandler(Handler):
     def load_pedalboards(self):
         url = self.root_uri + "pedalboard/list"
 
-        try:
-            resp = req.get(url)
-        except:  # TODO
+        resp = self._rest_get(url)
+        if resp is None or resp.status_code != 200:
             logging.error("Cannot connect to mod-host")
-            sys.exit()
-
-        if resp.status_code != 200:
-            logging.error("Cannot connect to mod-host.  Status: %s" % resp.status_code)
             sys.exit()
 
         pbs = json.loads(resp.text)
@@ -310,7 +333,7 @@ class Modhandler(Handler):
         # replace the pedalboard in pedalboard_list with the new one
         try:
             index = self.pedalboard_list.index(old)
-        except:
+        except Exception:
             logging.error("Cannot locate pedalboard: %s", title)
         else:
             self.pedalboard_list[index] = pedalboard
@@ -358,7 +381,7 @@ class Modhandler(Handler):
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
         footswitch_plugins = []
-        if self.current.pedalboard:
+        if self.current and self.current.pedalboard:
             #logging.debug(self.current.pedalboard.to_json())
             for plugin in self.current.pedalboard.plugins:
                 if plugin is None or plugin.parameters is None:
@@ -405,8 +428,8 @@ class Modhandler(Handler):
         logging.info("Pedalboard change")
         self.lcd.draw_info_message("Loading...")
 
-        resp1 = req.get(self.root_uri + "reset")
-        if resp1.status_code != 200:
+        resp1 = self._rest_get(self.root_uri + "reset")
+        if resp1 is None or resp1.status_code != 200:
             logging.error("Bad Reset request")
 
         uri = self.root_uri + "pedalboard/load_bundle/"
@@ -416,9 +439,9 @@ class Modhandler(Handler):
         #self.set_current_pedalboard(pedalboard)  # TODO is this necessary?
         bundlepath = pedalboard.bundle
         data = {"bundlepath": bundlepath}
-        resp2 = req.post(uri, data)
-        if resp2.status_code != 200:
-            logging.error("Bad Rest request: %s %s  status: %d" % (uri, data, resp2.status_code))
+        resp2 = self._rest_post(uri, data=data)
+        if resp2 is None or resp2.status_code != 200:
+            logging.error("Bad Rest request: %s %s" % (uri, data))
 
         # Now that it's presumably changed, load the dynamic "current" data
         # TODO this seems to be no longer required since the MOD pedalboard change will call this via poll_modui_changes()
@@ -443,15 +466,16 @@ class Modhandler(Handler):
                 return indices[cur - 1]
             return max(indices)
 
-    def load_current_presets(self):
+    def load_current_presets(self) -> None:
         url = self.root_uri + "snapshot/list"
-        try:
-            resp = req.get(url)
-            if resp.status_code == 200:
-                pass
-        except:
-            return None
-        ret = resp.text
+        resp = self._rest_get(url)
+        if resp is None or resp.status_code != 200:
+            return
+
+        if not self.current:
+            logging.error("Cannot load presets since current pedalboard is not set")
+            return
+
         dict = json.loads(resp.text)
         for key, name in dict.items():
             if key.isdigit():
@@ -460,10 +484,10 @@ class Modhandler(Handler):
 
         # Get current snapshot (preset) info
         url = self.root_uri + "snapshot/name?id=current"  # this will fail (500) for non pi-stomp versions of mod-ui
-        try:
-            resp = req.get(url)
-        except:
-            return None
+        resp = self._rest_get(url)
+        if resp is None:
+            return
+
         if resp.status_code == 200 and resp.text is not None:
             current_snapshot_name = util.DICT_GET(json.loads(resp.text), "name")
             for i, n in self.current.presets.items():
@@ -471,9 +495,11 @@ class Modhandler(Handler):
                     self.current.preset_index = i
                     break
 
-        return ret
-
     def preset_change(self, index):
+        if not self.current:
+            logging.error("Cannot change preset since current pedalboard is not set")
+            return
+
         logging.info("preset change: %d" % index)
         if index < 0 or index >= len(self.current.presets):
             self.lcd.draw_message_dialog("Snapshot id %d does not exist for this pedalboard" % index)
@@ -481,9 +507,9 @@ class Modhandler(Handler):
         self.lcd.draw_info_message("Loading...")
         url = (self.root_uri + "snapshot/load?id=%d" % index)
         # req.get(self.root_uri + "reset")
-        resp = req.get(url)
-        if resp.status_code != 200:
-            logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
+        resp = self._rest_get(url)
+        if resp is None or resp.status_code != 200:
+            logging.error("Bad Rest request: %s" % url)
         self.current.preset_index = index
 
         # Update name on lcd
@@ -493,23 +519,26 @@ class Modhandler(Handler):
         self.preset_change_plugin_update()
 
     def preset_change_plugin_update(self):
+        assert self.current is not None, "Current pedalboard is not set"
+
         # Now that the preset has changed on the host, update plugin bypass indicators
         for p in self.current.pedalboard.plugins:
             uri = self.root_uri + "effect/parameter/pi_stomp_get//graph" + p.instance_id + "/:bypass"
-            try:
-                resp = req.get(uri)
-                if resp.status_code == 200:
-                    p.set_bypass(resp.text == "true")
-            except:
+            resp = self._rest_get(uri)
+            if resp is None:
                 logging.error("failed to get bypass value for: %s" % p.instance_id)
                 continue
+            if resp.status_code == 200:
+                p.set_bypass(resp.text == "true")
         self.lcd.refresh_plugins()
 
     def preset_incr_and_change(self, *argv):
+        assert self.current is not None, "Current pedalboard is not set"
         index = self.next_preset_index(self.current.presets, self.current.preset_index, True)
         self.preset_change(index)
 
     def preset_decr_and_change(self, *argv):
+        assert self.current is not None, "Current pedalboard is not set"
         index = self.next_preset_index(self.current.presets, self.current.preset_index, False)
         self.preset_change(index)
 
@@ -530,8 +559,8 @@ class Modhandler(Handler):
             # Regular (non footswitch plugin)
             url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/:bypass" % plugin.instance_id
             value = plugin.toggle_bypass()
-            code = self.parameter_set_send(url, "1" if value else "0", 200)
-            if (code != 200):
+            resp = self._rest_post(url, json={"value": "1" if value else "0"})
+            if resp is None or resp.status_code != 200:
                 plugin.toggle_bypass()  # toggle back to original value since request wasn't successful
 
             #  Indicate change on LCD
@@ -549,23 +578,7 @@ class Modhandler(Handler):
     def parameter_value_commit(self, param, value):
         param.value = value
         url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/%s" % (param.instance_id, param.symbol)
-        formatted_value = ("%.1f" % param.value)
-        self.parameter_set_send(url, formatted_value, 200)
-
-    def parameter_set_send(self, url, value, expect_code):
-        logging.debug("request: %s" % url)
-        try:
-            resp = None
-            if value is not None:
-                logging.debug("value: %s" % value)
-                resp = req.post(url, json={"value": value})
-            if resp.status_code != expect_code:
-                logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
-            else:
-                logging.debug("Parameter changed to: %d" % value)
-        except:
-            logging.debug("status: %s" % resp.status_code)
-            return resp.status_code
+        self._rest_post(url, json={"value": "%.1f" % param.value})
 
     def parameter_midi_change(self, param, direction):
         if param:
@@ -670,22 +683,23 @@ class Modhandler(Handler):
             logging.info("No USB device found")
             self.lcd.draw_message_dialog("No USB device found")
 
-    def system_menu_save_current_pb(self, arg):
+    def system_menu_save_current_pb(self, _arg: None):
+        if self.current is None:
+            logging.error("No current pedalboard set, cannot save")
+            self.lcd.draw_message_dialog("No current pedalboard set, cannot save")
+            return
+
         logging.debug("save current")
         # TODO this works to save the pedalboard values, but just default, not Preset values
         # Figure out how to save preset (host.py:preset_save_replace)
         # TODO this also causes a problem if self.current.pedalboard.title != mod-host title
         # which can happen if the pedalboard is changed via MOD UI, not via hardware
         url = self.root_uri + "pedalboard/save"
-        try:
-            resp = req.post(url, data={"asNew": "0", "title": self.current.pedalboard.title})
-            if resp.status_code != 200:
-                logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
-            else:
-                logging.debug("saved")
-        except:
-            logging.error("status %s" % resp.status_code)
-            return
+        resp = self._rest_post(url, data={"asNew": "0", "title": self.current.pedalboard.title})
+        if resp is None or resp.status_code != 200:
+            logging.error("Bad Rest request: %s" % url)
+        else:
+            logging.debug("saved")
 
     def system_menu_update_sample_pedalboards(self):
         logging.debug("update_sample_pedalboards")
@@ -747,7 +761,7 @@ class Modhandler(Handler):
     def change_bypass_preference(self, pref):
         self.settings.set_setting(Token.BYPASS, pref)
 
-    def system_toggle_hotspot(self):
+    def system_toggle_hotspot(self, **kwargs):
         if util.DICT_GET(self.wifi_status, 'hotspot_active'):
             self.wifi_manager.disable_hotspot()
         else:
@@ -819,31 +833,18 @@ class Modhandler(Handler):
         return util.DICT_GET(self.callbacks, callback_name)
 
     def set_mod_tap_tempo(self, bpm):
-        try:
-            resp = None
-            if bpm is not None:
-                url = self.root_uri + "set_bpm"
-                resp = req.post(url, json={"value": bpm})
-            if resp.status_code != 200:
-                logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
-            else:
-                logging.debug("BPM changed to: %d" % bpm)
-        except:
-            logging.debug("status: %s" % resp.status_code)
-            return resp.status_code
+        url = self.root_uri + "set_bpm"
+        resp = self._rest_post(url, json={"value": bpm})
+        if resp is None or resp.status_code != 200:
+            logging.error("Bad Rest request: %s" % url)
+        else:
+            logging.debug("BPM changed to: %d" % bpm)
 
     def get_bpm(self):
         url = self.root_uri + "get_bpm"
-        try:
-            resp = req.get(url)
-        except:
-            logging.debug("status: %s" % resp.status_code)
-            return 0
-
-        if resp.status_code != 200:
-            logging.error("Cannot connect to mod-host.  Status: %s" % resp.status_code)
-            return 0
-
+        resp = self._rest_get(url)
+        if resp is None or resp.status_code != 200:
+            return 0.0
         return float(resp.text)
 
     def toggle_tap_tempo_enable(self, *argv):

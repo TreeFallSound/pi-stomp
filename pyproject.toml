@@ -58,6 +58,7 @@ packages = ["modalapi", "pistomp", "uilib", "common"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+ignore = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
