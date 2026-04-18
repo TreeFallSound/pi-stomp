@@ -231,6 +231,8 @@ class TextWidget(Widget):
         super(TextWidget,self)._adjust_box()
 
     def set_text(self, text):
+        if self.text == text:
+            return
         self.text = text
         self.text_size_valid = False
         self.refresh()
