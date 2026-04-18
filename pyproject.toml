@@ -30,6 +30,7 @@ hardware = [
     "gfxhat>=0.0.1; sys_platform == 'linux'",
     "matplotlib>=3.5",
     "rpi-ws281x>=5.0; sys_platform == 'linux'",
+    "spidev>=3.0; sys_platform == 'linux'",
     "adafruit-circuitpython-neopixel>=6.3",
     "adafruit-circuitpython-rgb-display>=3.10",
     "adafruit-circuitpython-mcp3xxx>=1.4",
@@ -63,6 +64,12 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+stubPath = "typings"
+pythonVersion = "3.11"
 
 [dependency-groups]
 dev = ["pyright>=1.1.408"]

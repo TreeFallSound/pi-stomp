@@ -832,6 +832,7 @@ hardware = [
     { name = "gfxhat", marker = "sys_platform == 'linux'" },
     { name = "matplotlib" },
     { name = "rpi-ws281x", marker = "sys_platform == 'linux'" },
+    { name = "spidev", marker = "sys_platform == 'linux'" },
 ]
 
 [package.dev-dependencies]
@@ -856,6 +857,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.28" },
     { name = "rpi-ws281x", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "spidev", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=3.0" },
 ]
 provides-extras = ["hardware", "dev"]
 
@@ -1344,6 +1346,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/8c/52/a1193f17528aad6a1
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/4a/ef93284eb47608162abfe682e254f1d50c940bfcb9929d56fb1b0bcd26c4/sn3218-3.0.0-py3-none-any.whl", hash = "sha256:5b5f0ee1c24bf22a3fe3d09de5b9b0620732b6e68f7acf30a7bd1381e45b28d2", size = 6553, upload-time = "2024-02-15T12:38:25.909Z" },
 ]
+
+[[package]]
+name = "spidev"
+version = "3.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/67/87/039b6eeea781598015b538691bc174cc0bf77df9d4d2d3b8bf9245c0de8c/spidev-3.8.tar.gz", hash = "sha256:2bc02fb8c6312d519ebf1f4331067427c0921d3f77b8bcaf05189a2e8b8382c0", size = 13893, upload-time = "2025-09-15T18:56:20.672Z" }
 
 [[package]]
 name = "sysv-ipc"
