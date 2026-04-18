@@ -32,7 +32,6 @@ import pistomp.settings as Settings
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encodermidicontrol import EncoderMidiControl
 from pistomp.footswitch import Footswitch
-from pistomp.handler import Handler
 from pathlib import Path
 
 
