@@ -80,7 +80,6 @@ class WifiManager():
         return True
 
     def _get_wpa_status(self, status):
-        # Use NetworkManager instead of wpa_cli for better Arch Linux compatibility
         try:
             result = subprocess.run(
                 ['nmcli', '-t', '-f', 'GENERAL.STATE,GENERAL.CONNECTION,IP4.ADDRESS,802-11-WIRELESS.SSID',
@@ -106,7 +105,7 @@ class WifiManager():
             new_status['wifi_connected'] = connected = self._is_wifi_connected()
             new_status['hotspot_active'] = hp_active = self._is_hotspot_active()
             if supported and (connected or hp_active):
-                self._get_wpa_status(new_status)  # Uses NetworkManager for status
+                self._get_wpa_status(new_status)
             if new_status != self.last_status:
                 logging.debug("Wifi status changed:" + str(new_status))
                 creds=()
