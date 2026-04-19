@@ -10,6 +10,8 @@ import pytest
 from PIL import Image
 
 PROJECT_ROOT = Path(__file__).parent.parent
+_TESTS_DIR   = Path(__file__).parent
+_SNAPSHOT_DIR = _TESTS_DIR / "snapshots"
 
 _PI_MODULES = [
     "alsaaudio",
@@ -44,9 +46,6 @@ for _mod in _PI_MODULES:
 # Snapshot helpers
 # ---------------------------------------------------------------------------
 
-_SNAPSHOT_DIR = Path(__file__).parent / "snapshots"
-
-
 def pytest_addoption(parser):
     parser.addoption("--snapshot-update", action="store_true", default=False,
                      help="Overwrite stored snapshots with current output")
@@ -68,6 +67,30 @@ def assert_snapshot(image: Image.Image, name: str, *, update: bool = False):
     assert rgb.tobytes() == expected.tobytes(), (
         f"Snapshot mismatch: {name}  (re-run with --snapshot-update to accept)"
     )
+
+
+@pytest.fixture
+def snapshot(request, fake_lcd, snapshot_update):
+    """Assert the latest LCD frame matches a stored PNG snapshot.
+
+    Path is auto-derived from the test file and function name so no manual
+    string is needed.  Call snapshot() for an auto-numbered frame or
+    snapshot("label") for a named one.  Re-use the same label to assert the
+    screen returned to an earlier state.
+    """
+    counter = [0]
+    rel    = Path(request.fspath).relative_to(_TESTS_DIR)
+    module = str(rel.with_suffix(""))   # e.g. "v3/test_startup"
+    test   = request.node.name
+
+    def _assert(suffix=None):
+        if suffix is None:
+            suffix = str(counter[0])
+            counter[0] += 1
+        assert_snapshot(fake_lcd.frames[-1], f"{module}/{test}/{suffix}",
+                        update=snapshot_update)
+
+    return _assert
 
 
 # ---------------------------------------------------------------------------

@@ -560,13 +560,16 @@ class Modhandler(Handler):
             if value is not None:
                 logging.debug("value: %s" % value)
                 resp = req.post(url, json={"value": value})
+            if resp is None:
+                return None
             if resp.status_code != expect_code:
                 logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
             else:
-                logging.debug("Parameter changed to: %d" % value)
-        except:
-            logging.debug("status: %s" % resp.status_code)
+                logging.debug("Parameter changed to: %s" % value)
             return resp.status_code
+        except Exception as e:
+            logging.error("parameter_set_send: %s" % e)
+            return None
 
     def parameter_midi_change(self, param, direction):
         if param:
@@ -820,18 +823,17 @@ class Modhandler(Handler):
         return util.DICT_GET(self.callbacks, callback_name)
 
     def set_mod_tap_tempo(self, bpm):
+        if bpm is None:
+            return
         try:
-            resp = None
-            if bpm is not None:
-                url = self.root_uri + "set_bpm"
-                resp = req.post(url, json={"value": bpm})
+            url = self.root_uri + "set_bpm"
+            resp = req.post(url, json={"value": bpm})
             if resp.status_code != 200:
                 logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
             else:
                 logging.debug("BPM changed to: %d" % bpm)
-        except:
-            logging.debug("status: %s" % resp.status_code)
-            return resp.status_code
+        except Exception as e:
+            logging.error("set_mod_tap_tempo: %s" % e)
 
     def get_bpm(self):
         url = self.root_uri + "get_bpm"

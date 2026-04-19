@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from tests.conftest import PROJECT_ROOT, assert_snapshot
+from tests.conftest import PROJECT_ROOT
 from pistomp.lcd320x240 import Lcd
 import common.token as Token
 
@@ -72,22 +72,20 @@ def setup_main_ui(instance):
     instance.draw_main_panel()
 
 
-def test_splash_snapshot(lcd, snapshot_update):
+def test_splash_snapshot(lcd, snapshot):
     _, fake = lcd
     assert len(fake.frames) > 0, "expected at least one frame from splash_show during __init__"
-    assert_snapshot(fake.frames[-1], "lcd320x240/splash", update=snapshot_update)
+    snapshot()
 
 
-def test_main_panel_snapshot(lcd, snapshot_update):
-    instance, fake = lcd
+def test_main_panel_snapshot(lcd, snapshot):
+    instance, _ = lcd
     setup_main_ui(instance)
-    assert_snapshot(fake.frames[-1], "lcd320x240/main_panel", update=snapshot_update)
+    snapshot()
 
 
-def test_analog_assignments_snapshot(lcd, snapshot_update):
-    instance, fake = lcd
-
-    # Custom mock data for this specific test
+def test_analog_assignments_snapshot(lcd, snapshot):
+    instance, _ = lcd
     mock_pedalboard = MockObject(title="Analog Test", plugins=[])
     mock_current = MockObject(
         pedalboard=mock_pedalboard,
@@ -99,103 +97,74 @@ def test_analog_assignments_snapshot(lcd, snapshot_update):
             "vol:knob": {Token.ID: 2, Token.TYPE: Token.VOLUME, Token.COLOR: "Blue", Token.NAME: "Volume"},
         },
     )
-
     instance.link_data(pedalboards=[mock_pedalboard], current=mock_current, footswitches=[])
     instance.draw_main_panel()
+    snapshot()
 
-    assert_snapshot(fake.frames[-1], "lcd320x240/analog_assignments", update=snapshot_update)
 
-
-def test_wifi_menu_snapshot(lcd, snapshot_update):
-    instance, fake = lcd
+def test_wifi_menu_snapshot(lcd, snapshot):
+    instance, _ = lcd
     instance.handler.wifi_status = {"hotspot_active": False}
     setup_main_ui(instance)
-
     instance.draw_wifi_menu(None, None)
-    assert_snapshot(fake.frames[-1], "lcd320x240/wifi_menu", update=snapshot_update)
+    snapshot()
 
 
-def test_system_menu_snapshot(lcd, snapshot_update):
-    instance, fake = lcd
+def test_system_menu_snapshot(lcd, snapshot):
+    instance, _ = lcd
     setup_main_ui(instance)
-
     instance.draw_system_menu(None, None)
-    assert_snapshot(fake.frames[-1], "lcd320x240/system_menu", update=snapshot_update)
+    snapshot()
 
 
-def test_parameter_dialog_snapshot(lcd, snapshot_update):
-    instance, fake = lcd
+def test_parameter_dialog_snapshot(lcd, snapshot):
+    instance, _ = lcd
     setup_main_ui(instance)
-
     mock_param = MockObject(
         name="Gain",
         instance_id="delay",
         value=0.5,
         minimum=0.0,
         maximum=1.0,
-        type=MockObject(value=0),  # Default
+        type=MockObject(value=0),
     )
-
     instance.draw_parameter_dialog(mock_param)
-    assert_snapshot(fake.frames[-1], "lcd320x240/parameter_dialog", update=snapshot_update)
+    snapshot()
 
 
-def test_update_footswitch_off_snapshot(lcd, snapshot_update):
-    instance, fake = lcd
-
+def test_update_footswitch_off_snapshot(lcd, snapshot):
+    instance, _ = lcd
     mock_fs = MockObject(id=0, enabled=True, get_display_label=lambda: "Dist", color="Red")
-
-    # Draw main UI first to clear splash and set context
     mock_current = MockObject(
         pedalboard=MockObject(title="PB", plugins=[]), presets={0: "Clean"}, preset_index=0, analog_controllers={}
     )
     instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
     instance.draw_main_panel()
-
-    # Now update footswitch to OFF (bypassed)
     mock_fs.enabled = False  # pyright: ignore[reportAttributeAccessIssue]
     instance.update_footswitch(mock_fs)
+    snapshot()
 
-    assert_snapshot(fake.frames[-1], "lcd320x240/footswitch_off", update=snapshot_update)
 
-
-def test_update_footswitch_on_snapshot(lcd, snapshot_update):
-    instance, fake = lcd
-
+def test_update_footswitch_on_snapshot(lcd, snapshot):
+    instance, _ = lcd
     mock_fs = MockObject(id=1, enabled=False, get_display_label=lambda: "Drive", color="Orange")
-
-    # Draw main UI first
     mock_current = MockObject(
         pedalboard=MockObject(title="PB", plugins=[]), presets={0: "Clean"}, preset_index=0, analog_controllers={}
     )
     instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
     instance.draw_main_panel()
-
-    # Now update footswitch to ON (not bypassed)
     mock_fs.enabled = True  # pyright: ignore[reportAttributeAccessIssue]
     instance.update_footswitch(mock_fs)
+    snapshot()
 
-    assert_snapshot(fake.frames[-1], "lcd320x240/footswitch_on", update=snapshot_update)
 
-
-def test_tap_tempo_snapshot(lcd, snapshot_update):
-    instance, fake = lcd
-
-    # Mock footswitch with tap tempo enabled
-    mock_fs = MockObject(
-        id=2,
-        enabled=True,
-        get_display_label=lambda: "120",  # BPM
-    )
-
-    # Mock main UI
+def test_tap_tempo_snapshot(lcd, snapshot):
+    instance, _ = lcd
+    mock_fs = MockObject(id=2, enabled=True, get_display_label=lambda: "120")
     mock_current = MockObject(
         pedalboard=MockObject(title="BPM Test", plugins=[]), presets={0: "Clean"}, preset_index=0, analog_controllers={}
     )
     instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
     instance.draw_main_panel()
-
-    # Trigger update to show BPM
     instance.update_footswitch(mock_fs)
-
-    assert_snapshot(fake.frames[-1], "lcd320x240/tap_tempo", update=snapshot_update)
+    snapshot()
