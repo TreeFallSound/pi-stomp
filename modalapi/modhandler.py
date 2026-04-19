@@ -284,7 +284,7 @@ class Modhandler(Handler):
         if self.pedalboard_monitor.check_for_change():
             self.lcd.draw_info_message("Loading...")
             mod_bundle = self.pedalboard_monitor.get_current_pedalboard_bundle()
-            if mod_bundle and mod_bundle != self.current.pedalboard.bundle:
+            if mod_bundle and self.current and mod_bundle != self.current.pedalboard.bundle:
                 logging.info(f"Pedalboard changed via MOD from: {self.current.pedalboard.bundle} to: {mod_bundle}")
 
                 if mod_bundle not in self.pedalboards:
