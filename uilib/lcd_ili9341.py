@@ -32,12 +32,13 @@ class LcdIli9341(LcdBase):
 
         self.disp = ili9341.ILI9341(spi, cs=cs_pin, dc=dc_pin, rst=rst, baudrate=baudrate)
 
-        if not self.has_system_splash:
-            self._set_stamp()
-
         # Use this to assure we don't have multiple threads trying to change the screen
         # All methods which do change the screen (eg. dist. calls) should acquire/release
         self.lock = threading.Lock()
+
+        if not self.has_system_splash:
+            self.clear()
+            self._set_stamp()
 
         # Test full screen image
         self.width = self.disp.height
