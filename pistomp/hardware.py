@@ -26,6 +26,7 @@ import pistomp.footswitch as Footswitch
 import pistomp.taptempo as taptempo
 
 from abc import abstractmethod
+from modalapi.external_midi import ExternalMidiManager
 
 
 class Hardware:
@@ -56,6 +57,7 @@ class Hardware:
         self.debounce_map = None
         self.ledstrip = None
         self.taptempo = taptempo.TapTempo(None)
+        self.external_midi: ExternalMidiManager | None = None
 
     def toggle_tap_tempo_enable(self, bpm=0):
         if self.taptempo:
@@ -113,6 +115,9 @@ class Hardware:
         # Footswitch configuration
         self.__init_footswitches(self.cfg)
 
+        # External MIDI configuration
+        self.__init_external_midi(self.cfg)
+
         # Analog control configuration
         for ac in self.analog_controls:
             try:
@@ -124,6 +129,7 @@ class Hardware:
         if cfg is not None:
             self.__init_midi(cfg)
             self.__init_footswitches(cfg)
+            self.__init_external_midi(cfg)
 
     @abstractmethod
     def init_analog_controls(self):
@@ -319,6 +325,16 @@ class Hardware:
         for ac in self.analog_controls:
             if isinstance(ac, AnalogMidiControl.AnalogMidiControl):
                 ac.set_midi_channel(self.midi_channel)
+
+    def __init_external_midi(self, cfg):
+        """Initialize/update external MIDI config (called for both default and pedalboard config)."""
+        if self.external_midi is None:
+            return
+        if cfg is None or Token.HARDWARE not in cfg:
+            return
+        ext_cfg = cfg[Token.HARDWARE].get("external_midi")
+        if ext_cfg:
+            self.external_midi.update_config(ext_cfg)
 
     def __init_footswitches_default(self):
         for fs in self.footswitches:

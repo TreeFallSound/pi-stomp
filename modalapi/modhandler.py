@@ -27,6 +27,8 @@ import common.token as Token
 import common.util as util
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
+import modalapi.external_midi as ExternalMidi
+from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 import pistomp.settings as Settings
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -97,18 +99,31 @@ class Modhandler(Handler):
                           "next_snapshot": self.preset_incr_and_change,
                           "previous_snapshot": self.preset_decr_and_change,
                           "toggle_bypass": self.system_toggle_bypass,
-                          "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable
+                          "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable,
+                          "universal_encoder_sw": self.universal_encoder_sw
         }
+
+        # External MIDI device synchronization
+        self.external_midi = None
+        try:
+            self.external_midi = ExternalMidi.ExternalMidiManager()
+        except Exception as e:
+            logging.warning(f"Failed to initialize external MIDI manager: {e}")
 
     def __del__(self):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
+        if self.external_midi is not None:
+            self.external_midi.close()
+
     def cleanup(self):
         if self.lcd is not None:
             self.lcd.cleanup()
         if self.hardware is not None:
             self.hardware.cleanup()
+        if self.external_midi is not None:
+            self.external_midi.close()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -123,6 +138,7 @@ class Modhandler(Handler):
 
     def add_hardware(self, hardware):
         self.hardware = hardware
+        hardware.external_midi = self.external_midi
 
     def add_lcd(self, lcd):
         self.lcd = lcd
@@ -229,7 +245,7 @@ class Modhandler(Handler):
                 self.pedalboard_change_timestamp = ts
                 self.lcd.draw_info_message("Loading...")
                 mod_bundle = self.get_pedalboard_bundle_from_mod()
-                if mod_bundle:
+                if mod_bundle and self.current:
                     logging.info("Pedalboard changed via MOD from: %s to: %s" %
                                  (self.current.pedalboard.bundle, mod_bundle))
                     pb = self.reload_pedalboard(mod_bundle)
@@ -353,6 +369,14 @@ class Modhandler(Handler):
         self.load_current_presets()
         self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
         self.lcd.draw_main_panel()
+
+        # Send external MIDI messages for this pedalboard
+        # Config was already updated by hardware.reinit(cfg) above
+        if self.external_midi is not None:
+            try:
+                self.external_midi.send_messages_for_pedalboard()
+            except Exception as e:
+                logging.warning(f"Failed to send external MIDI messages: {e}")
 
     def bind_current_pedalboard(self):
         # "current" being the pedalboard mod-host says is current
