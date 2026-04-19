@@ -2,6 +2,7 @@
 Shims for Raspberry Pi / CircuitPython hardware modules unavailable on macOS/Windows.
 Injected into sys.modules at import time so application code can be imported in tests.
 """
+
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -10,7 +11,7 @@ import pytest
 from PIL import Image
 
 PROJECT_ROOT = Path(__file__).parent.parent
-_TESTS_DIR   = Path(__file__).parent
+_TESTS_DIR = Path(__file__).parent
 _SNAPSHOT_DIR = _TESTS_DIR / "snapshots"
 
 _PI_MODULES = [
@@ -46,9 +47,11 @@ for _mod in _PI_MODULES:
 # Snapshot helpers
 # ---------------------------------------------------------------------------
 
+
 def pytest_addoption(parser):
-    parser.addoption("--snapshot-update", action="store_true", default=False,
-                     help="Overwrite stored snapshots with current output")
+    parser.addoption(
+        "--snapshot-update", action="store_true", default=False, help="Overwrite stored snapshots with current output"
+    )
 
 
 @pytest.fixture
@@ -64,9 +67,7 @@ def assert_snapshot(image: Image.Image, name: str, *, update: bool = False):
         rgb.save(path)
         return
     expected = Image.open(path).convert("RGB")
-    assert rgb.tobytes() == expected.tobytes(), (
-        f"Snapshot mismatch: {name}  (re-run with --snapshot-update to accept)"
-    )
+    assert rgb.tobytes() == expected.tobytes(), f"Snapshot mismatch: {name}  (re-run with --snapshot-update to accept)"
 
 
 @pytest.fixture
@@ -79,16 +80,15 @@ def snapshot(request, fake_lcd, snapshot_update):
     screen returned to an earlier state.
     """
     counter = [0]
-    rel    = Path(request.fspath).relative_to(_TESTS_DIR)
-    module = str(rel.with_suffix(""))   # e.g. "v3/test_startup"
-    test   = request.node.name
+    rel = Path(request.fspath).relative_to(_TESTS_DIR)
+    module = str(rel.with_suffix(""))  # e.g. "v3/test_startup"
+    test = request.node.name
 
     def _assert(suffix=None):
         if suffix is None:
             suffix = str(counter[0])
             counter[0] += 1
-        assert_snapshot(fake_lcd.frames[-1], f"{module}/{test}/{suffix}",
-                        update=snapshot_update)
+        assert_snapshot(fake_lcd.frames[-1], f"{module}/{test}/{suffix}", update=snapshot_update)
 
     return _assert
 
@@ -96,6 +96,7 @@ def snapshot(request, fake_lcd, snapshot_update):
 # ---------------------------------------------------------------------------
 # FakeLcd — captures rendered frames without touching hardware
 # ---------------------------------------------------------------------------
+
 
 class FakeLcd:
     def __init__(self):
@@ -113,7 +114,54 @@ class FakeLcd:
     def update(self, image: Image.Image, box=None):
         self.frames.append(image.copy())
 
+    def update_bypass(self, enabled: bool, latched: bool):
+        pass
+
 
 @pytest.fixture
 def fake_lcd():
     return FakeLcd()
+
+
+# ---------------------------------------------------------------------------
+# Shared factory fixtures (available to all test directories)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def make_plugin():
+    from modalapi.plugin import Plugin
+    from modalapi.parameter import Parameter
+
+    def _make(instance_id, category="Distortion", bypassed=False, has_footswitch=False, parameters=None):
+        if parameters is None:
+            parameters = {}
+        bypass_info = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
+        bypass_param = Parameter(bypass_info, bypassed, None, instance_id)
+        parameters[":bypass"] = bypass_param
+        p = Plugin(instance_id, parameters, {}, category)
+        p.has_footswitch = has_footswitch
+        return p
+
+    return _make
+
+
+@pytest.fixture
+def make_parameter():
+    from modalapi.parameter import Parameter
+
+    def _make(name, instance_id, value=0.5, minimum=0.0, maximum=1.0):
+        info = {"shortName": name, "symbol": name.lower(), "ranges": {"minimum": minimum, "maximum": maximum}}
+        return Parameter(info, value, None, instance_id)
+
+    return _make
+
+
+@pytest.fixture
+def get_urls():
+    """Return a helper that extracts called URLs from a mock's call history."""
+
+    def _get(mock_obj):
+        return [call.args[0] for call in mock_obj.call_args_list]
+
+    return _get

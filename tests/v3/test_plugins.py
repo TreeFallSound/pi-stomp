@@ -1,20 +1,19 @@
 """Controller binding, plugin bypass toggle, preset plugin update, and parameter editing."""
 
-import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pistomp.switchstate as switchstate
-from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encodermidicontrol import EncoderMidiControl
-from pistomp.footswitch import Footswitch
 import common.token as Token
+from tests.types import SystemFixture
 
 
 # ---------------------------------------------------------------------------
 # Controller binding
 # ---------------------------------------------------------------------------
 
-def test_v3_bind_footswitch_to_plugin(v3_system, make_plugin):
+
+def test_v3_bind_footswitch_to_plugin(v3_system: SystemFixture, make_plugin):
     """bind_current_pedalboard() links a footswitch to a plugin's :bypass param."""
     handler, hw, _, _, _ = v3_system
 
@@ -24,6 +23,7 @@ def test_v3_bind_footswitch_to_plugin(v3_system, make_plugin):
     plugin = make_plugin("fuzz")
     plugin.parameters[":bypass"].binding = binding_key
 
+    assert handler.current
     handler.current.pedalboard.plugins = [plugin]
     handler.bind_current_pedalboard()
 
@@ -32,13 +32,14 @@ def test_v3_bind_footswitch_to_plugin(v3_system, make_plugin):
     assert plugin in [p for p in handler.current.pedalboard.plugins if p.has_footswitch]
 
 
-def test_v3_bind_encoder_midi_to_plugin(v3_system, make_plugin):
+def test_v3_bind_encoder_midi_to_plugin(v3_system: SystemFixture, make_plugin):
     """bind_current_pedalboard() populates analog_controllers for EncoderMidiControl bindings."""
     handler, hw, _, _, _ = v3_system
 
     enc = next((v for v in hw.controllers.values() if isinstance(v, EncoderMidiControl)), None)
     if enc is None:
         import pytest
+
         pytest.skip("No EncoderMidiControl in default config")
 
     binding_key = next(k for k, v in hw.controllers.items() if v is enc)
@@ -46,15 +47,18 @@ def test_v3_bind_encoder_midi_to_plugin(v3_system, make_plugin):
     plugin = make_plugin("wah")
     plugin.parameters[":bypass"].binding = binding_key
 
+    assert handler.current
     handler.current.pedalboard.plugins = [plugin]
     handler.bind_current_pedalboard()
 
     assert any("wah" in k for k in handler.current.analog_controllers)
 
 
-def test_v3_bind_volume_encoder_populates_analog_controllers(v3_system):
+def test_v3_bind_volume_encoder_populates_analog_controllers(v3_system: SystemFixture):
     """The VOLUME-type encoder always appears in analog_controllers after binding."""
     handler, hw, _, _, _ = v3_system
+
+    assert handler.current
     handler.current.pedalboard.plugins = []
 
     handler.bind_current_pedalboard()
@@ -66,9 +70,13 @@ def test_v3_bind_volume_encoder_populates_analog_controllers(v3_system):
 # Plugin bypass
 # ---------------------------------------------------------------------------
 
-def test_v3_toggle_plugin_bypass_direct(v3_system, make_plugin, snapshot, get_urls):
+
+def test_v3_toggle_plugin_bypass_direct(v3_system: SystemFixture, make_plugin, snapshot, get_urls):
     """Non-footswitch plugin: toggle_plugin_bypass() sends pi_stomp_set POST and flips bypass."""
     handler, hw, _, _, mock_post = v3_system
+
+    assert handler.current
+    assert handler.lcd
 
     plugin = make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=False)
     handler.current.pedalboard.plugins = [plugin]
@@ -84,9 +92,11 @@ def test_v3_toggle_plugin_bypass_direct(v3_system, make_plugin, snapshot, get_ur
     snapshot()
 
 
-def test_v3_toggle_plugin_bypass_via_footswitch(v3_system, make_plugin, get_urls):
+def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_plugin, get_urls):
     """Plugin with has_footswitch: toggle_plugin_bypass() routes through footswitch.pressed()."""
     handler, hw, _, _, mock_post = v3_system
+
+    assert handler.current
 
     plugin = make_plugin("fuzz", has_footswitch=True)
     plugin.controllers = [hw.footswitches[0]]
@@ -98,9 +108,12 @@ def test_v3_toggle_plugin_bypass_via_footswitch(v3_system, make_plugin, get_urls
     assert hw.footswitches[0].enabled is True
 
 
-def test_v3_preset_change_plugin_update(v3_system, make_plugin, snapshot):
+def test_v3_preset_change_plugin_update(v3_system: SystemFixture, make_plugin, snapshot):
     """preset_change_plugin_update() GETs bypass state for each plugin and refreshes LCD."""
     handler, hw, _, mock_get, _ = v3_system
+
+    assert handler.current
+    assert handler.lcd
 
     plugin = make_plugin("fuzz", bypassed=False)
     handler.current.pedalboard.plugins = [plugin]
@@ -125,14 +138,19 @@ def test_v3_preset_change_plugin_update(v3_system, make_plugin, snapshot):
 # Parameter editing
 # ---------------------------------------------------------------------------
 
-def test_v3_parameter_edit(v3_system, make_parameter, snapshot):
+
+def test_v3_parameter_edit(v3_system: SystemFixture, make_parameter, snapshot):
     """Full parameter-edit flow: navigate to plugin, open dialog, tweak, close."""
     handler, hw, _, _, mock_post = v3_system
 
+    assert handler.current
+    assert handler.lcd
+
     gain_param = make_parameter("Gain", "delay", value=0.5)
-    from tests.v3.conftest import PROJECT_ROOT  # noqa: F401 — ensure import path works
+    from tests.integration.conftest import PROJECT_ROOT  # noqa: F401 — ensure import path works
     from modalapi.plugin import Plugin
     from modalapi.parameter import Parameter
+
     bypass_info = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
     bp = Parameter(bypass_info, False, None, "delay")
     plugin = Plugin("delay", {"gain": gain_param, ":bypass": bp}, {}, "Delay")
@@ -162,7 +180,7 @@ def test_v3_parameter_edit(v3_system, make_parameter, snapshot):
     snapshot("param_closed")
 
 
-def test_v3_parameter_midi_change(v3_system, make_parameter, snapshot):
+def test_v3_parameter_midi_change(v3_system: SystemFixture, make_parameter, snapshot):
     """parameter_midi_change() draws a parameter dialog and steps the value."""
     handler, _, _, _, _ = v3_system
 
