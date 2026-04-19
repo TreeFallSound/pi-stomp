@@ -90,7 +90,7 @@ class Pistomptre(hardware.Hardware):
     def init_lcd(self):
         self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler, flip=False))
 
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
+    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc, shortpress_config=None, midiout=None):
         enc_pins = Util.DICT_GET(ENC, id)
         if enc_pins is None:
             logging.error("Cannot create encoder object for id:", id)
@@ -108,7 +108,8 @@ class Pistomptre(hardware.Hardware):
             enc = EncoderMidiControl.EncoderMidiControl(self.handler, d_pin=d_pin, clk_pin=clk_pin,
                                                         callback=callback,
                                                         midi_channel=midi_channel, midi_CC=midi_cc,
-                                                        midiout=self.midiout, type=Token.KNOB, id=id)
+                                                        midiout=midiout if midiout is not None else self.midiout,
+                                                        type=Token.KNOB, id=id)
 
         if sw_pin is not None:
             longpress = self.handler.get_callback(longpress_callback)

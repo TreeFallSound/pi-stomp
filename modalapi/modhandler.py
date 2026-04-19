@@ -32,6 +32,7 @@ from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 import pistomp.settings as Settings
 
 from pistomp.analogmidicontrol import AnalogMidiControl
+from pistomp.controller import RoutingDestination
 from pistomp.encodermidicontrol import EncoderMidiControl
 from pistomp.footswitch import Footswitch
 from pistomp.handler import Handler
@@ -364,6 +365,9 @@ class Modhandler(Handler):
                 cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
         self.hardware.reinit(cfg)
 
+        # Sync current state of analog controls (expression pedals, etc.)
+        self.hardware.sync_analog_controls()
+
         # Initialize the data and draw on LCD
         self.bind_current_pedalboard()
         self.load_current_presets()
@@ -382,6 +386,16 @@ class Modhandler(Handler):
         # "current" being the pedalboard mod-host says is current
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
+
+        # Clear previous parameter bindings from all controllers except volume encoder
+        for controller in self.hardware.controllers.values():
+            is_volume = hasattr(controller, 'type') and controller.type == Token.VOLUME
+            if not is_volume:
+                controller.parameter = None
+
+        # Clear analog controllers display data
+        self.current.analog_controllers = {}
+
         footswitch_plugins = []
         if self.current.pedalboard:
             #logging.debug(self.current.pedalboard.to_json())
@@ -392,8 +406,16 @@ class Modhandler(Handler):
                     if param.binding is not None:
                         controller = self.hardware.controllers.get(param.binding)
                         if controller is not None:
-                            # TODO possibly use a setter instead of accessing var directly
-                            # What if multiple params could map to the same controller?
+                            routing = controller.get_routing_info()
+
+                            # External controllers shouldn't be bound to plugin parameters
+                            if routing.destination == RoutingDestination.EXTERNAL:
+                                logging.warning(
+                                    f"Plugin parameter {plugin.name}:{param.name} is bound to external controller "
+                                    f"{param.binding} (routed to {routing.port_name}) - ignoring plugin binding"
+                                )
+                                continue
+
                             controller.parameter = param
                             controller.set_value(param.value)
                             plugin.controllers.append(controller)
@@ -415,16 +437,40 @@ class Modhandler(Handler):
                                 controller.cfg[Token.ID] = controller.id
                                 self.current.analog_controllers[key] = controller.cfg
 
-            # LAME special case for volume control
-            # Doesn't seem quite right to add this here, but it's where all the mapped controls are bound
+            # Special case for volume control
             for e in self.hardware.encoders:
                 if e.type == Token.VOLUME:
                     cfg = {
-                        Token.CATEGORY : None,
-                        Token.TYPE : e.type,
-                        Token.ID : e.id
+                        Token.CATEGORY: None,
+                        Token.TYPE: e.type,
+                        Token.ID: e.id
                     }
                     self.current.analog_controllers[Token.VOLUME] = cfg
+
+        # Handle external controllers (bind synthetic parameter + add to display)
+        for controller in self.hardware.controllers.values():
+            routing = controller.get_routing_info()
+            if routing.destination == RoutingDestination.EXTERNAL:
+                if controller.midi_CC is not None:
+                    controller.parameter = self.hardware._create_external_parameter(
+                        controller, routing.port_name, controller.midi_channel, controller.midi_CC
+                    )
+                if isinstance(controller, AnalogMidiControl):
+                    if controller.midi_CC is not None:
+                        key = f"{controller.midi_channel}:{controller.midi_CC}"
+                        display_info = controller.get_display_info()
+                        display_info['category'] = 'External'
+                        self.current.analog_controllers[key] = display_info
+                elif isinstance(controller, EncoderMidiControl):
+                    if controller.midi_CC is not None:
+                        key = f"{controller.midi_channel}:{controller.midi_CC}"
+                        cfg = {
+                            Token.CATEGORY: 'External',
+                            Token.TYPE: controller.type,
+                            Token.ID: controller.id,
+                            **controller.get_display_info()
+                        }
+                        self.current.analog_controllers[key] = cfg
 
     def pedalboard_change(self, pedalboard=None):
         logging.info("Pedalboard change")
@@ -573,6 +619,17 @@ class Modhandler(Handler):
     #
     def parameter_value_commit(self, param, value):
         param.value = value
+
+        # Audio parameter (volume, EQ, etc.) - no REST update needed
+        if param.instance_id is None:
+            self.audio_parameter_commit(param.symbol, value)
+            return
+
+        # External MIDI parameters are local-only (visual feedback), no REST update needed
+        if param.instance_id == EXTERNAL_INSTANCE_ID:
+            logging.debug("Skipping REST update for external parameter: %s" % param.symbol)
+            return
+
         url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/%s" % (param.instance_id, param.symbol)
         formatted_value = ("%.1f" % param.value)
         self.parameter_set_send(url, formatted_value, 200)

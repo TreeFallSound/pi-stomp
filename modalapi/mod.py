@@ -30,6 +30,7 @@ import modalapi.wifi as Wifi
 import modalapi.external_midi as ExternalMidi
 
 from pistomp.analogmidicontrol import AnalogMidiControl
+from pistomp.controller import RoutingDestination
 from pistomp.footswitch import Footswitch
 from pistomp.handler import Handler
 from enum import Enum
@@ -559,6 +560,9 @@ class Mod(Handler):
             except Exception as e:
                 logging.warning(f"Failed to send external MIDI messages: {e}")
 
+        # Sync current state of analog controls (expression pedals, etc.)
+        self.hardware.sync_analog_controls()
+
         # Selection info
         self.selectable_items.clear()
         self.selectable_items.append((SelectedType.PEDALBOARD, None))
@@ -577,6 +581,15 @@ class Mod(Handler):
         # "current" being the pedalboard mod-host says is current
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
+
+        # Clear previous parameter bindings from all controllers
+        # TODO: modhandler.py skips volume encoders here — align these two once we understand why
+        for controller in self.hardware.controllers.values():
+            controller.parameter = None
+
+        # Clear analog controllers display data
+        self.current.analog_controllers = {}
+
         footswitch_plugins = []
         if self.current.pedalboard:
             #logging.debug(self.current.pedalboard.to_json())
@@ -587,6 +600,16 @@ class Mod(Handler):
                     if param.binding is not None:
                         controller = self.hardware.controllers.get(param.binding)
                         if controller is not None:
+                            routing = controller.get_routing_info()
+
+                            # External controllers shouldn't be bound to plugin parameters
+                            if routing.destination == RoutingDestination.EXTERNAL:
+                                logging.warning(
+                                    f"Plugin parameter {plugin.name}:{param.name} is bound to external controller "
+                                    f"{param.binding} (routed to {routing.port_name}) - ignoring plugin binding"
+                                )
+                                continue
+
                             # TODO possibly use a setter instead of accessing var directly
                             # What if multiple params could map to the same controller?
                             controller.parameter = param
