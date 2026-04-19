@@ -39,7 +39,7 @@ from pathlib import Path
 class Modhandler(Handler):
     __single = None
 
-    def __init__(self, audiocard, homedir):
+    def __init__(self, audiocard, homedir, data_dir="/home/pistomp/data"):
         self.wifi_manager = None
 
         logging.info("Init modhandler")
@@ -76,7 +76,7 @@ class Modhandler(Handler):
         # Backup
         self.backup_dir = "/media/usb0/backups"
         self.backup_file = "pistomp_backup.zip"
-        self.data_dir = "/home/pistomp/data"
+        self.data_dir = data_dir
 
         # Banks
         self.banks_file = os.path.join(self.data_dir, "banks.json")
