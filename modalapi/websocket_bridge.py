@@ -52,20 +52,17 @@ class AsyncWebSocketBridge:
     no functional changes to timing).
     """
 
-    def __init__(
-        self, ws_url: str = "ws://localhost:80/websocket", max_queue_size: int = 100, backpressure_threshold: int = 8192
-    ):
+    def __init__(self, ws_url: str = "ws://localhost:80/websocket", backpressure_threshold: int = 8192):
         """
         Initialize WebSocket bridge.
 
         Args:
             ws_url: WebSocket URL to connect to
-            max_queue_size: Maximum number of messages to queue (backpressure threshold)
             backpressure_threshold: TCP write buffer size (bytes) to trigger backpressure warning (default: 8KB)
         """
         self.ws_url = ws_url
         self.backpressure_threshold = backpressure_threshold
-        self.command_queue: queue.Queue = queue.Queue(maxsize=max_queue_size)
+        self.command_queue: queue.Queue = queue.Queue()  # Unbounded - never drop blend mode messages
         self.received_queue: queue.Queue = queue.Queue()  # Thread-safe queue for incoming messages
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
@@ -74,7 +71,6 @@ class AsyncWebSocketBridge:
 
         # Metrics
         self.messages_sent = 0
-        self.messages_dropped = 0
         self.messages_received = 0
         self.backpressure_events = 0
         self.backpressure_active = False  # Track if we're currently in backpressure state
@@ -103,7 +99,7 @@ class AsyncWebSocketBridge:
         self.running = False
         if self.thread:
             self.thread.join(timeout=2.0)
-        logging.info(f"WebSocket worker stopped (sent={self.messages_sent}, dropped={self.messages_dropped})")
+        logging.info(f"WebSocket worker stopped (sent={self.messages_sent})")
 
     def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
         """
@@ -120,20 +116,8 @@ class AsyncWebSocketBridge:
         # Strip leading slash if present (instance_id may be "/StompBox_fuzz" or "StompBox_fuzz")
         instance_id = instance_id.lstrip("/")
         msg = f"param_set /graph/{instance_id}/{symbol} {value}"
-
-        try:
-            # Non-blocking put - fails immediately if queue full
-            self.command_queue.put_nowait(msg)
-            return True
-        except queue.Full:
-            # Queue full = backpressure!
-            self.messages_dropped += 1
-            if self.messages_dropped % 10 == 1:  # Log every 10th drop to avoid spam
-                logging.warning(
-                    f"WebSocket queue full ({self.command_queue.qsize()})! "
-                    f"Dropped {self.messages_dropped} messages total"
-                )
-            return False
+        self.command_queue.put_nowait(msg)
+        return True
 
     def get_queue_depth(self) -> int:
         """Get current queue depth (for monitoring)."""
@@ -144,7 +128,6 @@ class AsyncWebSocketBridge:
         stats = {
             "queue_depth": self.get_queue_depth(),
             "messages_sent": self.messages_sent,
-            "messages_dropped": self.messages_dropped,
             "backpressure_events": self.backpressure_events,
             "backpressure_active": self.backpressure_active,
         }
@@ -225,6 +208,18 @@ class AsyncWebSocketBridge:
                     self.ws = ws
                     logging.info(f"WebSocket connected to {self.ws_url}")
                     retry_delay = 1.0  # Reset retry delay on successful connect
+
+                    # Flush stale messages from before the disconnect.
+                    # After a reconnect, mod-ui sends a fresh loading_end which re-syncs state
+                    flushed = 0
+                    while not self.command_queue.empty():
+                        try:
+                            self.command_queue.get_nowait()
+                            flushed += 1
+                        except queue.Empty:
+                            break
+                    if flushed:
+                        logging.info(f"Flushed {flushed} stale messages from queue after reconnect")
 
                     # Run send and receive tasks concurrently
                     await asyncio.gather(self._send_messages(ws), self._receive_messages(ws))
