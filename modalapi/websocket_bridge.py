@@ -28,9 +28,19 @@ from typing import Optional
 
 try:
     import websockets
+
+    WEBSOCKETS_AVAILABLE = True
 except ImportError:
-    logging.error("websockets library not installed. Run: pip install websockets")
+    WEBSOCKETS_AVAILABLE = False
+    websockets = None
     raise
+
+
+def should_log_message(message: str) -> bool:
+    """Filter out high-frequency messages to reduce log spam."""
+    if message == "ping":
+        return False
+    return not message.startswith(("output_set ", "stats ", "sys_stats "))
 
 
 class AsyncWebSocketBridge:
@@ -42,7 +52,7 @@ class AsyncWebSocketBridge:
     no functional changes to timing).
     """
 
-    def __init__(self, ws_url: str = 'ws://localhost:80/websocket', backpressure_threshold: int = 8192):
+    def __init__(self, ws_url: str = "ws://localhost:80/websocket", backpressure_threshold: int = 8192):
         """
         Initialize WebSocket bridge.
 
@@ -53,6 +63,7 @@ class AsyncWebSocketBridge:
         self.ws_url = ws_url
         self.backpressure_threshold = backpressure_threshold
         self.command_queue: queue.Queue = queue.Queue()  # Unbounded - never drop blend mode messages
+        self.received_queue: queue.Queue = queue.Queue()  # Thread-safe queue for incoming messages
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
         self.thread: Optional[threading.Thread] = None
@@ -60,11 +71,16 @@ class AsyncWebSocketBridge:
 
         # Metrics
         self.messages_sent = 0
+        self.messages_received = 0
         self.backpressure_events = 0
         self.backpressure_active = False  # Track if we're currently in backpressure state
 
     def start(self):
         """Start background async worker thread."""
+        if not WEBSOCKETS_AVAILABLE:
+            logging.warning("websockets library not installed. Run: pip3 install websockets")
+            return
+
         if self.running:
             logging.warning("WebSocket bridge already running")
             return
@@ -77,6 +93,7 @@ class AsyncWebSocketBridge:
     def stop(self):
         """Stop background worker and cleanup."""
         if not self.running:
+            logging.warning("WebSocket bridge not running")
             return
 
         self.running = False
@@ -97,9 +114,8 @@ class AsyncWebSocketBridge:
             True if queued successfully, False if queue full (backpressure)
         """
         # Strip leading slash if present (instance_id may be "/StompBox_fuzz" or "StompBox_fuzz")
-        instance_id = instance_id.lstrip('/')
+        instance_id = instance_id.lstrip("/")
         msg = f"param_set /graph/{instance_id}/{symbol} {value}"
-
         self.command_queue.put_nowait(msg)
         return True
 
@@ -110,17 +126,32 @@ class AsyncWebSocketBridge:
     def get_stats(self) -> dict:
         """Get performance statistics."""
         stats = {
-            'queue_depth': self.get_queue_depth(),
-            'messages_sent': self.messages_sent,
-            'backpressure_events': self.backpressure_events,
-            'backpressure_active': self.backpressure_active,
+            "queue_depth": self.get_queue_depth(),
+            "messages_sent": self.messages_sent,
+            "backpressure_events": self.backpressure_events,
+            "backpressure_active": self.backpressure_active,
         }
 
         # Add write buffer size if available
         if self.ws:
-            stats['write_buffer_bytes'] = self._get_write_buffer_size(self.ws)
+            stats["write_buffer_bytes"] = self._get_write_buffer_size(self.ws)
 
         return stats
+
+    def get_received_messages(self) -> list:
+        """
+        Get all pending received messages from server (non-blocking).
+
+        Called from main thread to process server messages.
+        Returns list of message strings.
+        """
+        messages = []
+        try:
+            while True:
+                messages.append(self.received_queue.get_nowait())
+        except queue.Empty:
+            pass
+        return messages
 
     def clear_queue(self) -> int:
         """
@@ -169,9 +200,9 @@ class AsyncWebSocketBridge:
                 # Connect to WebSocket
                 async with websockets.connect(
                     self.ws_url,
-                    max_queue=32,       # Allow 32 messages queued in websockets lib
+                    max_queue=32,  # Allow 32 messages queued in websockets lib
                     write_limit=65536,  # 64 KiB write buffer
-                    ping_interval=None, # Disable automatic pings (we'll use manual ping for backpressure)
+                    ping_interval=None,  # Disable automatic pings (we'll use manual ping for backpressure)
                     close_timeout=1.0,  # Quick close on shutdown
                 ) as ws:
                     self.ws = ws
@@ -190,7 +221,8 @@ class AsyncWebSocketBridge:
                     if flushed:
                         logging.info(f"Flushed {flushed} stale messages from queue after reconnect")
 
-                    await self._process_queue(ws)
+                    # Run send and receive tasks concurrently
+                    await asyncio.gather(self._send_messages(ws), self._receive_messages(ws))
 
             except (websockets.exceptions.WebSocketException, OSError, ConnectionRefusedError) as e:
                 logging.error(f"WebSocket connection error: {e}")
@@ -204,8 +236,8 @@ class AsyncWebSocketBridge:
                 self.ws = None
                 await asyncio.sleep(retry_delay)
 
-    async def _process_queue(self, ws):
-        """Process messages from queue and send via WebSocket."""
+    async def _send_messages(self, ws):
+        """Send messages from queue to WebSocket."""
         while self.running:
             try:
                 # Get message from thread-safe queue (non-blocking)
@@ -239,14 +271,13 @@ class AsyncWebSocketBridge:
                     # Falling edge - exiting backpressure
                     self.backpressure_active = False
                     logging.info(
-                        f"WebSocket backpressure CLEAR: {buffer_size} bytes buffered, "
-                        f"queue={self.get_queue_depth()}"
+                        f"WebSocket backpressure CLEAR: {buffer_size} bytes buffered, queue={self.get_queue_depth()}"
                     )
 
                 # Periodically log stats
                 if self.messages_sent % 1000 == 0:
                     stats = self.get_stats()
-                    stats['write_buffer_bytes'] = buffer_size
+                    stats["write_buffer_bytes"] = buffer_size
                     logging.debug(f"WebSocket stats: {stats}")
 
             except websockets.exceptions.ConnectionClosed as e:
@@ -255,6 +286,28 @@ class AsyncWebSocketBridge:
             except Exception as e:
                 logging.error(f"Error sending message '{msg[:50]}...': {e}")
                 # Continue processing other messages
+
+    async def _receive_messages(self, ws):
+        """Receive messages from WebSocket and queue them for main thread."""
+        try:
+            async for message in ws:
+                # We must respond to pings and data_ready immediately
+                # Otherwise, other websocket clients break
+                if message == "ping":
+                    await ws.send("pong")
+                    continue
+                elif message.startswith("data_ready "):
+                    await ws.send(message)
+                    continue
+
+                self.received_queue.put(message)
+                self.messages_received += 1
+                if should_log_message(message):
+                    logging.debug(f"Received message from server: {message[:100]}")
+        except websockets.exceptions.ConnectionClosed:
+            logging.debug("WebSocket receive loop closed")
+        except Exception as e:
+            logging.error(f"Error receiving message: {e}")
 
     def _get_write_buffer_size(self, ws) -> int:
         """
@@ -271,7 +324,7 @@ class AsyncWebSocketBridge:
             Number of bytes in write buffer, or 0 if unavailable
         """
         try:
-            if hasattr(ws, 'transport') and ws.transport:
+            if hasattr(ws, "transport") and ws.transport:
                 return ws.transport.get_write_buffer_size()
             return 0
         except Exception:
