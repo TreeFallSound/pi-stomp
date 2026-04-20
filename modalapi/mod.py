@@ -28,7 +28,7 @@ import modalapi.pedalboard as Pedalboard
 import modalapi.parameter as Parameter
 import modalapi.wifi as Wifi
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import PedalboardMonitor
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -150,7 +150,6 @@ class Mod(Handler):
         try:
             self.ws_bridge = AsyncWebSocketBridge(
                 ws_url='ws://localhost:80/websocket',
-                max_queue_size=100,
                 backpressure_threshold=8192  # 8 KB
             )
             self.ws_bridge.start()
@@ -464,20 +463,22 @@ class Mod(Handler):
             if self.current_menu == MenuType.MENU_INFO:
                 self.system_info_update_wifi()
 
-    def _handle_ws_message(self, raw_message: str):
-        """Handle incoming WebSocket message from MOD-UI using typed protocol."""
-        msg = parse_message(raw_message)
+    def poll_system_info(self):
+        pass
 
+    def _handle_ws_message(self, msg: WebSocketMessage):
+        """Handle incoming WebSocket message from MOD-UI"""
         if isinstance(msg, LoadingEndMessage):
-            logging.info(f"WebSocket: Pedalboard loading finished, snapshot={msg.snapshot_id}")
+            logging.debug(f"WebSocket: Pedalboard loading finished, snapshot={msg.snapshot_id}")
             self.next_pedalboard_preset_index = msg.snapshot_id
 
         elif isinstance(msg, PedalSnapshotMessage):
             if self.next_pedalboard_preset_index is not None:
-                logging.info(f"WebSocket: Pre-switch snapshot changed to {msg.snapshot_id}")
+                logging.debug(f"WebSocket: Pre-switch snapshot changed to {msg.snapshot_id}")
                 self.next_pedalboard_preset_index = msg.snapshot_id
             else:
-                logging.info(f"WebSocket: Snapshot changed to {msg.snapshot_id} ({msg.snapshot_name})")
+                assert self.current is not None, "Received snapshot message but no current pedalboard is set"
+                logging.debug(f"WebSocket: Snapshot changed to {msg.snapshot_id} ({msg.snapshot_name})")
 
                 if msg.snapshot_id not in self.current.presets:
                     self.current.presets[msg.snapshot_id] = msg.snapshot_name
@@ -485,16 +486,13 @@ class Mod(Handler):
                 self.current.preset_index = msg.snapshot_id
                 self.update_lcd_title()
 
-    def poll_system_info(self):
-        pass
-
     def poll_modui_changes(self):
-        """Poll for changes from MOD-UI"""
+        """Poll for changes from MOD-UI: websockets and file watching"""
         if self.ws_bridge is not None:
             messages = self.ws_bridge.get_received_messages()
             for msg in messages:
                 try:
-                    self._handle_ws_message(msg)
+                    self._handle_ws_message(parse_message(msg))
                 except Exception as e:
                     logging.error(f"Error handling WebSocket message '{msg}': {e}")
 
