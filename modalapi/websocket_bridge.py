@@ -42,15 +42,17 @@ class WebSocketWorker:
     reconnection and backpressure monitoring.
     """
 
-    def __init__(self, ws_url: str, backpressure_threshold: int, command_queue: queue.Queue):
+    def __init__(self, ws_url: str, backpressure_threshold: int, command_queue: queue.Queue, received_queue: queue.Queue):
         self.ws_url = ws_url
         self.backpressure_threshold = backpressure_threshold
         self.command_queue = command_queue
+        self.received_queue = received_queue
         self.running = False
         self.ws = None
 
         # Metrics
         self.messages_sent = 0
+        self.messages_received = 0
         self.backpressure_events = 0
         self.backpressure_active = False
 
@@ -94,7 +96,7 @@ class WebSocketWorker:
                     if flushed:
                         logging.info(f"Flushed {flushed} stale messages from queue after reconnect")
 
-                    await self._process_queue(ws)
+                    await asyncio.gather(self._process_queue(ws), self._receive_messages(ws))
 
             except (websockets.exceptions.WebSocketException, OSError, ConnectionRefusedError) as e:
                 logging.error(f"WebSocket connection error: {e}")
@@ -154,6 +156,24 @@ class WebSocketWorker:
                 else:
                     logging.error(f"Error in WebSocket worker: {e}", exc_info=True)
 
+    async def _receive_messages(self, ws):
+        """Receive messages from WebSocket and queue them for the main thread."""
+        try:
+            async for message in ws:
+                if message == "ping":
+                    await ws.send("pong")
+                    continue
+                elif message.startswith("data_ready "):
+                    await ws.send(message)
+                    continue
+                self.received_queue.put(message)
+                self.messages_received += 1
+                logging.debug(f"Received message from server: {message[:100]}")
+        except websockets.exceptions.ConnectionClosed:
+            logging.debug("WebSocket receive loop closed")
+        except Exception as e:
+            logging.error(f"Error receiving message: {e}")
+
     def _get_write_buffer_size(self, ws) -> int:
         """Return bytes waiting in the TCP write buffer, or 0 if unavailable."""
         try:
@@ -172,7 +192,8 @@ class AsyncWebSocketBridge:
     def __init__(self, ws_url: str = "ws://localhost:80/websocket", backpressure_threshold: int = 8192):
         self.ws_url = ws_url
         self.command_queue: queue.Queue = queue.Queue()  # Unbounded - never drop blend mode messages
-        self._worker = WebSocketWorker(ws_url, backpressure_threshold, self.command_queue)
+        self.received_queue: queue.Queue = queue.Queue()
+        self._worker = WebSocketWorker(ws_url, backpressure_threshold, self.command_queue, self.received_queue)
         self._thread: Optional[threading.Thread] = None
 
     def start(self):
@@ -213,6 +234,16 @@ class AsyncWebSocketBridge:
         self.command_queue.put_nowait(msg)
         return True
 
+    def get_received_messages(self) -> list:
+        """Drain all pending inbound messages (non-blocking). Called from main thread."""
+        messages = []
+        try:
+            while True:
+                messages.append(self.received_queue.get_nowait())
+        except queue.Empty:
+            pass
+        return messages
+
     def get_queue_depth(self) -> int:
         return self.command_queue.qsize()
 
@@ -220,6 +251,7 @@ class AsyncWebSocketBridge:
         stats = {
             "queue_depth": self.get_queue_depth(),
             "messages_sent": self._worker.messages_sent,
+            "messages_received": self._worker.messages_received,
             "backpressure_events": self._worker.backpressure_events,
             "backpressure_active": self._worker.backpressure_active,
         }
