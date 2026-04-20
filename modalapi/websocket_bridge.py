@@ -28,82 +28,177 @@ from typing import Optional
 
 try:
     import websockets
-
-    WEBSOCKETS_AVAILABLE = True
 except ImportError:
-    WEBSOCKETS_AVAILABLE = False
-    websockets = None
+    logging.error("websockets library not installed. Run: pip install websockets")
     raise
 
 
-def should_log_message(message: str) -> bool:
-    """Filter out high-frequency messages to reduce log spam."""
-    if message == "ping":
-        return False
-    return not message.startswith(("output_set ", "stats ", "sys_stats "))
+class WebSocketWorker:
+    """
+    Async worker that owns the WebSocket connection lifecycle.
+
+    Runs inside a dedicated background thread's event loop. Reads from a
+    shared queue and forwards messages to mod-ui, with exponential-backoff
+    reconnection and backpressure monitoring.
+    """
+
+    def __init__(self, ws_url: str, backpressure_threshold: int, command_queue: queue.Queue):
+        self.ws_url = ws_url
+        self.backpressure_threshold = backpressure_threshold
+        self.command_queue = command_queue
+        self.running = False
+        self.ws = None
+
+        # Metrics
+        self.messages_sent = 0
+        self.backpressure_events = 0
+        self.backpressure_active = False
+
+    def run(self):
+        """Entry point for the background thread."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._async_worker())
+        except Exception as e:
+            logging.error(f"WebSocket worker crashed: {e}", exc_info=True)
+        finally:
+            loop.close()
+
+    async def _async_worker(self):
+        """Connects and drives the message loop, with exponential-backoff reconnection."""
+        retry_delay = 1.0
+
+        while self.running:
+            try:
+                async with websockets.connect(
+                    self.ws_url,
+                    max_queue=32,
+                    write_limit=65536,
+                    ping_interval=None,
+                    close_timeout=1.0,
+                ) as ws:
+                    self.ws = ws
+                    logging.info(f"WebSocket connected to {self.ws_url}")
+                    retry_delay = 1.0  # Reset on successful connect
+
+                    # Flush stale messages from before the disconnect.
+                    # After a reconnect, mod-ui sends a fresh loading_end which re-syncs state.
+                    flushed = 0
+                    while not self.command_queue.empty():
+                        try:
+                            self.command_queue.get_nowait()
+                            flushed += 1
+                        except queue.Empty:
+                            break
+                    if flushed:
+                        logging.info(f"Flushed {flushed} stale messages from queue after reconnect")
+
+                    await self._process_queue(ws)
+
+            except (websockets.exceptions.WebSocketException, OSError, ConnectionRefusedError) as e:
+                logging.error(f"WebSocket connection error: {e}")
+                self.ws = None
+                if self.running:
+                    logging.info(f"Reconnecting in {retry_delay}s...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, 30.0)
+            except Exception as e:
+                logging.error(f"Unexpected WebSocket error: {e}", exc_info=True)
+                self.ws = None
+                await asyncio.sleep(retry_delay)
+
+    async def _process_queue(self, ws):
+        """Drain the queue and send messages; exits on connection close."""
+        while self.running:
+            msg = None
+            try:
+                try:
+                    msg = self.command_queue.get_nowait()
+                except queue.Empty:
+                    await asyncio.sleep(0.001)  # 1ms yield
+                    continue
+
+                await ws.send(msg)
+                self.messages_sent += 1
+                self.command_queue.task_done()
+
+                buffer_size = self._get_write_buffer_size(ws)
+
+                if buffer_size > self.backpressure_threshold and not self.backpressure_active:
+                    self.backpressure_active = True
+                    self.backpressure_events += 1
+                    logging.warning(
+                        f"WebSocket backpressure START: {buffer_size} bytes buffered, "
+                        f"queue={self.command_queue.qsize()}, threshold={self.backpressure_threshold}"
+                    )
+                elif buffer_size <= self.backpressure_threshold and self.backpressure_active:
+                    self.backpressure_active = False
+                    logging.info(
+                        f"WebSocket backpressure CLEAR: {buffer_size} bytes buffered, "
+                        f"queue={self.command_queue.qsize()}"
+                    )
+
+                if self.messages_sent % 1000 == 0:
+                    logging.debug(
+                        f"WebSocket stats: sent={self.messages_sent}, "
+                        f"buffer={buffer_size}, queue={self.command_queue.qsize()}"
+                    )
+
+            except websockets.exceptions.ConnectionClosed as e:
+                logging.warning(f"WebSocket connection closed: {e}")
+                break
+            except Exception as e:
+                if msg:
+                    logging.error(f"Error sending message: {msg[:50]}...'", exc_info=True)
+                else:
+                    logging.error(f"Error in WebSocket worker: {e}", exc_info=True)
+
+    def _get_write_buffer_size(self, ws) -> int:
+        """Return bytes waiting in the TCP write buffer, or 0 if unavailable."""
+        try:
+            return ws.transport.get_write_buffer_size()
+        except Exception:
+            return 0
 
 
 class AsyncWebSocketBridge:
     """
-    Bridge between sync main loop and async WebSocket.
+    Thread-safe bridge between the synchronous main loop and a WebSocketWorker.
 
-    Queues messages from main thread, sends via async worker in background.
-    Monitors WebSocket write buffer for backpressure detection (logging only,
-    no functional changes to timing).
+    Queues messages from the main thread; the worker drains them asynchronously.
     """
 
     def __init__(self, ws_url: str = "ws://localhost:80/websocket", backpressure_threshold: int = 8192):
-        """
-        Initialize WebSocket bridge.
-
-        Args:
-            ws_url: WebSocket URL to connect to
-            backpressure_threshold: TCP write buffer size (bytes) to trigger backpressure warning (default: 8KB)
-        """
         self.ws_url = ws_url
-        self.backpressure_threshold = backpressure_threshold
         self.command_queue: queue.Queue = queue.Queue()  # Unbounded - never drop blend mode messages
-        self.received_queue: queue.Queue = queue.Queue()  # Thread-safe queue for incoming messages
-        self.loop: Optional[asyncio.AbstractEventLoop] = None
-        self.ws: Optional[websockets.WebSocketClientProtocol] = None
-        self.thread: Optional[threading.Thread] = None
-        self.running = False
-
-        # Metrics
-        self.messages_sent = 0
-        self.messages_received = 0
-        self.backpressure_events = 0
-        self.backpressure_active = False  # Track if we're currently in backpressure state
+        self._worker = WebSocketWorker(ws_url, backpressure_threshold, self.command_queue)
+        self._thread: Optional[threading.Thread] = None
 
     def start(self):
         """Start background async worker thread."""
-        if not WEBSOCKETS_AVAILABLE:
-            logging.warning("websockets library not installed. Run: pip3 install websockets")
-            return
-
-        if self.running:
+        if self._worker.running:
             logging.warning("WebSocket bridge already running")
             return
 
-        self.running = True
-        self.thread = threading.Thread(target=self._run_loop, daemon=True, name="WebSocketWorker")
-        self.thread.start()
+        self._worker.running = True
+        self._thread = threading.Thread(target=self._worker.run, daemon=True, name="WebSocketWorker")
+        self._thread.start()
         logging.info(f"WebSocket worker started, connecting to {self.ws_url}")
 
     def stop(self):
         """Stop background worker and cleanup."""
-        if not self.running:
-            logging.warning("WebSocket bridge not running")
+        if not self._worker.running:
             return
 
-        self.running = False
-        if self.thread:
-            self.thread.join(timeout=2.0)
-        logging.info(f"WebSocket worker stopped (sent={self.messages_sent})")
+        self._worker.running = False
+        if self._thread:
+            self._thread.join(timeout=2.0)
+        logging.info(f"WebSocket worker stopped (sent={self._worker.messages_sent})")
 
     def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
         """
-        Send parameter update (non-blocking, called from main thread).
+        Queue a parameter update (non-blocking).
 
         Args:
             instance_id: Plugin instance ID (e.g., "xfade", "/CollisionDrive")
@@ -111,58 +206,29 @@ class AsyncWebSocketBridge:
             value: Parameter value
 
         Returns:
-            True if queued successfully, False if queue full (backpressure)
+            True if queued successfully
         """
-        # Strip leading slash if present (instance_id may be "/StompBox_fuzz" or "StompBox_fuzz")
         instance_id = instance_id.lstrip("/")
         msg = f"param_set /graph/{instance_id}/{symbol} {value}"
         self.command_queue.put_nowait(msg)
         return True
 
     def get_queue_depth(self) -> int:
-        """Get current queue depth (for monitoring)."""
         return self.command_queue.qsize()
 
     def get_stats(self) -> dict:
-        """Get performance statistics."""
         stats = {
             "queue_depth": self.get_queue_depth(),
-            "messages_sent": self.messages_sent,
-            "backpressure_events": self.backpressure_events,
-            "backpressure_active": self.backpressure_active,
+            "messages_sent": self._worker.messages_sent,
+            "backpressure_events": self._worker.backpressure_events,
+            "backpressure_active": self._worker.backpressure_active,
         }
-
-        # Add write buffer size if available
-        if self.ws:
-            stats["write_buffer_bytes"] = self._get_write_buffer_size(self.ws)
-
+        if self._worker.ws:
+            stats["write_buffer_bytes"] = self._worker._get_write_buffer_size(self._worker.ws)
         return stats
 
-    def get_received_messages(self) -> list:
-        """
-        Get all pending received messages from server (non-blocking).
-
-        Called from main thread to process server messages.
-        Returns list of message strings.
-        """
-        messages = []
-        try:
-            while True:
-                messages.append(self.received_queue.get_nowait())
-        except queue.Empty:
-            pass
-        return messages
-
     def clear_queue(self) -> int:
-        """
-        Clear all pending messages from the queue.
-
-        Useful when switching contexts (e.g., pedalboard changes) to prevent
-        stale parameter updates from being sent.
-
-        Returns:
-            Number of messages that were cleared
-        """
+        """Clear all pending messages from the queue, returning num cleared."""
         cleared_count = 0
         try:
             while True:
@@ -176,156 +242,3 @@ class AsyncWebSocketBridge:
             logging.debug(f"Cleared {cleared_count} pending messages from WebSocket queue")
 
         return cleared_count
-
-    # --- Background thread methods ---
-
-    def _run_loop(self):
-        """Background thread - runs asyncio event loop."""
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-
-        try:
-            self.loop.run_until_complete(self._async_worker())
-        except Exception as e:
-            logging.error(f"WebSocket worker crashed: {e}", exc_info=True)
-        finally:
-            self.loop.close()
-
-    async def _async_worker(self):
-        """Async worker - connects and processes queue."""
-        retry_delay = 1.0
-
-        while self.running:
-            try:
-                # Connect to WebSocket
-                async with websockets.connect(
-                    self.ws_url,
-                    max_queue=32,  # Allow 32 messages queued in websockets lib
-                    write_limit=65536,  # 64 KiB write buffer
-                    ping_interval=None,  # Disable automatic pings (we'll use manual ping for backpressure)
-                    close_timeout=1.0,  # Quick close on shutdown
-                ) as ws:
-                    self.ws = ws
-                    logging.info(f"WebSocket connected to {self.ws_url}")
-                    retry_delay = 1.0  # Reset retry delay on successful connect
-
-                    # Flush stale messages from before the disconnect.
-                    # After a reconnect, mod-ui sends a fresh loading_end which re-syncs state
-                    flushed = 0
-                    while not self.command_queue.empty():
-                        try:
-                            self.command_queue.get_nowait()
-                            flushed += 1
-                        except queue.Empty:
-                            break
-                    if flushed:
-                        logging.info(f"Flushed {flushed} stale messages from queue after reconnect")
-
-                    # Run send and receive tasks concurrently
-                    await asyncio.gather(self._send_messages(ws), self._receive_messages(ws))
-
-            except (websockets.exceptions.WebSocketException, OSError, ConnectionRefusedError) as e:
-                logging.error(f"WebSocket connection error: {e}")
-                self.ws = None
-                if self.running:
-                    logging.info(f"Reconnecting in {retry_delay}s...")
-                    await asyncio.sleep(retry_delay)
-                    retry_delay = min(retry_delay * 2, 30.0)  # Exponential backoff, max 30s
-            except Exception as e:
-                logging.error(f"Unexpected WebSocket error: {e}", exc_info=True)
-                self.ws = None
-                await asyncio.sleep(retry_delay)
-
-    async def _send_messages(self, ws):
-        """Send messages from queue to WebSocket."""
-        while self.running:
-            try:
-                # Get message from thread-safe queue (non-blocking)
-                try:
-                    msg = self.command_queue.get_nowait()
-                except queue.Empty:
-                    # No messages - yield to event loop
-                    await asyncio.sleep(0.001)  # 1ms
-                    continue
-
-                # Send message (returns when buffered locally, NOT when ACKed)
-                await ws.send(msg)
-                self.messages_sent += 1
-
-                # Mark queue task done
-                self.command_queue.task_done()
-
-                # Check for backpressure (monitoring only, no functional changes)
-                buffer_size = self._get_write_buffer_size(ws)
-
-                # Log when crossing threshold in either direction
-                if buffer_size > self.backpressure_threshold and not self.backpressure_active:
-                    # Rising edge - entering backpressure
-                    self.backpressure_active = True
-                    self.backpressure_events += 1
-                    logging.warning(
-                        f"WebSocket backpressure START: {buffer_size} bytes buffered, "
-                        f"queue={self.get_queue_depth()}, threshold={self.backpressure_threshold}"
-                    )
-                elif buffer_size <= self.backpressure_threshold and self.backpressure_active:
-                    # Falling edge - exiting backpressure
-                    self.backpressure_active = False
-                    logging.info(
-                        f"WebSocket backpressure CLEAR: {buffer_size} bytes buffered, queue={self.get_queue_depth()}"
-                    )
-
-                # Periodically log stats
-                if self.messages_sent % 1000 == 0:
-                    stats = self.get_stats()
-                    stats["write_buffer_bytes"] = buffer_size
-                    logging.debug(f"WebSocket stats: {stats}")
-
-            except websockets.exceptions.ConnectionClosed as e:
-                logging.warning(f"WebSocket connection closed: {e}")
-                break  # Exit to reconnect
-            except Exception as e:
-                logging.error(f"Error sending message '{msg[:50]}...': {e}")
-                # Continue processing other messages
-
-    async def _receive_messages(self, ws):
-        """Receive messages from WebSocket and queue them for main thread."""
-        try:
-            async for message in ws:
-                # We must respond to pings and data_ready immediately
-                # Otherwise, other websocket clients break
-                if message == "ping":
-                    await ws.send("pong")
-                    continue
-                elif message.startswith("data_ready "):
-                    await ws.send(message)
-                    continue
-
-                self.received_queue.put(message)
-                self.messages_received += 1
-                if should_log_message(message):
-                    logging.debug(f"Received message from server: {message[:100]}")
-        except websockets.exceptions.ConnectionClosed:
-            logging.debug("WebSocket receive loop closed")
-        except Exception as e:
-            logging.error(f"Error receiving message: {e}")
-
-    def _get_write_buffer_size(self, ws) -> int:
-        """
-        Get the WebSocket's TCP write buffer size.
-
-        Returns the number of bytes waiting to be sent on the socket.
-        This is the real backpressure indicator - if this grows large,
-        we're sending faster than mod-ui can process.
-
-        Args:
-            ws: WebSocket connection
-
-        Returns:
-            Number of bytes in write buffer, or 0 if unavailable
-        """
-        try:
-            if hasattr(ws, "transport") and ws.transport:
-                return ws.transport.get_write_buffer_size()
-            return 0
-        except Exception:
-            return 0
