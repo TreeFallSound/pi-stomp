@@ -28,7 +28,7 @@ import modalapi.wifi as Wifi
 import pistomp.settings as Settings
 from modalapi.websocket_bridge import AsyncWebSocketBridge
 from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, WebSocketMessage
-from modalapi.pedalboard_monitor import PedalboardMonitor
+from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encodermidicontrol import EncoderMidiControl
@@ -84,11 +84,11 @@ class Modhandler(Handler):
 
         # Banks
         self.banks_file = os.path.join(self.data_dir, "banks.json")
-        self.banks_file_timestamp = os.path.getmtime(self.banks_file) if Path(self.banks_file).exists() else 0
         self.banks = {}
         self.current_bank = None
 
-        self.pedalboard_monitor = PedalboardMonitor(self.data_dir)
+        self.last_json_monitor = FileChangeMonitor(os.path.join(self.data_dir, "last.json"))
+        self.banks_monitor = FileChangeMonitor(self.banks_file)
 
         self.wifi_manager = Wifi.WifiManager()
 
@@ -242,7 +242,7 @@ class Modhandler(Handler):
         elif isinstance(msg, PedalSnapshotMessage):
             if self.next_pedalboard_preset_index is not None:
                 # Check if we're still on the same pedalboard (stale flag from previous load)
-                mod_bundle = self.pedalboard_monitor.get_current_pedalboard_bundle()
+                mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
                 if mod_bundle and self.current and mod_bundle == self.current.pedalboard.bundle:
                     # Same pedalboard - this is a new snapshot on current board, not a pre-switch
                     logging.debug(f"WebSocket: Snapshot changed to {msg.snapshot_id} ({msg.snapshot_name}) - clearing stale pre-switch flag")
@@ -279,9 +279,9 @@ class Modhandler(Handler):
                     logging.error(f"Error handling WebSocket message '{msg}': {e}")
 
         # Check for pedalboard change via last.json
-        if self.pedalboard_monitor.check_for_change():
+        if self.last_json_monitor.check_for_change():
             self.lcd.draw_info_message("Loading...")
-            mod_bundle = self.pedalboard_monitor.get_current_pedalboard_bundle()
+            mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
             if mod_bundle and self.current and mod_bundle != self.current.pedalboard.bundle:
                 logging.info(f"Pedalboard changed via MOD from: {self.current.pedalboard.bundle} to: {mod_bundle}")
 
@@ -299,13 +299,9 @@ class Modhandler(Handler):
                 self.lcd.draw_title()
 
         # Look for a change in banks file
-        if Path(self.banks_file).exists():
-            ts = os.path.getmtime(self.banks_file)
-            if ts != self.banks_file_timestamp:
-                # Timestamp changed
-                logging.info("Reloading banks file: %s" % self.banks_file)
-                self.banks_file_timestamp = ts
-                self.load_banks()
+        if self.banks_monitor.check_for_change():
+            logging.info("Reloading banks file: %s" % self.banks_file)
+            self.load_banks()
 
     #
     # Bank Stuff
@@ -383,7 +379,7 @@ class Modhandler(Handler):
         return pedalboard
 
     def get_current_pedalboard_bundle_path(self):
-        return self.pedalboard_monitor.get_current_pedalboard_bundle()
+        return read_pedalboard_bundle(self.last_json_monitor.path)
 
     def set_current_pedalboard(self, pedalboard):
         # Delete previous "current"

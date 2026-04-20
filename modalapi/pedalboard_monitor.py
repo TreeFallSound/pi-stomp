@@ -14,9 +14,10 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Because the loading_end WebSocket message does not include the
-pedalboard name, we monitor last.json for changes to get it
-(happens ~4s after loading_end message).
+Monitors a file for modification-time changes.
+
+Used to detect when MOD-UI writes last.json (pedalboard change) or
+banks.json (bank list change) without polling the WebSocket.
 """
 
 import json
@@ -26,35 +27,33 @@ from pathlib import Path
 from typing import Optional
 
 
-class PedalboardMonitor:
-    """Supplements WebSocket messages by monitoring last.json for pedalboard changes."""
+class FileChangeMonitor:
+    """Detects when a file has been modified since the last check."""
 
-    def __init__(self, data_dir: str = "/home/pistomp/data"):
-        self.last_state_file = os.path.join(data_dir, "last.json")
-        self.last_state_timestamp = self._get_current_timestamp()
+    def __init__(self, file_path: str):
+        self.path = file_path
+        self._last_timestamp = self._current_timestamp()
 
-    def _get_current_timestamp(self) -> float:
-        if Path(self.last_state_file).exists():
-            return os.path.getmtime(self.last_state_file)
-        return 0.0
+    def _current_timestamp(self) -> float:
+        p = Path(self.path)
+        return os.path.getmtime(self.path) if p.exists() else 0.0
 
     def check_for_change(self) -> bool:
-        """Check if last.json has been modified since last check."""
-        current_timestamp = self._get_current_timestamp()
-        if current_timestamp != self.last_state_timestamp:
-            self.last_state_timestamp = current_timestamp
+        """Return True (and update baseline) if the file was modified since last call."""
+        ts = self._current_timestamp()
+        if ts != self._last_timestamp:
+            self._last_timestamp = ts
             return True
         return False
 
-    def get_current_pedalboard_bundle(self) -> Optional[str]:
-        """Read current pedalboard bundle name from last.json."""
-        if not Path(self.last_state_file).exists():
-            return None
 
-        try:
-            with open(self.last_state_file, "r") as f:
-                data = json.load(f)
-                return data.get("pedalboard")
-        except (json.JSONDecodeError, IOError) as e:
-            logging.warning(f"Failed to read {self.last_state_file}: {e}")
-            return None
+def read_pedalboard_bundle(last_json_path: str) -> Optional[str]:
+    """Read the current pedalboard bundle name from last.json."""
+    if not Path(last_json_path).exists():
+        return None
+    try:
+        with open(last_json_path, "r") as f:
+            return json.load(f).get("pedalboard")
+    except (json.JSONDecodeError, IOError) as e:
+        logging.warning(f"Failed to read {last_json_path}: {e}")
+        return None

@@ -29,7 +29,7 @@ import modalapi.parameter as Parameter
 import modalapi.wifi as Wifi
 from modalapi.websocket_bridge import AsyncWebSocketBridge
 from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, WebSocketMessage
-from modalapi.pedalboard_monitor import PedalboardMonitor
+from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.footswitch import Footswitch
@@ -142,7 +142,7 @@ class Mod(Handler):
         self.current_menu = MenuType.MENU_NONE
 
         self.data_dir = "/home/pistomp/data"
-        self.pedalboard_monitor = PedalboardMonitor(self.data_dir)
+        self.last_json_monitor = FileChangeMonitor(os.path.join(self.data_dir, "last.json"))
         self.wifi_manager = Wifi.WifiManager()
 
         # WebSocket bridge for MOD-UI communication
@@ -497,9 +497,9 @@ class Mod(Handler):
                     logging.error(f"Error handling WebSocket message '{msg}': {e}")
 
         # Check for pedalboard change via last.json
-        if self.pedalboard_monitor.check_for_change():
+        if self.last_json_monitor.check_for_change():
             self.lcd.draw_info_message("Loading...")
-            mod_bundle = self.pedalboard_monitor.get_current_pedalboard_bundle()
+            mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
             if mod_bundle and mod_bundle != self.current.pedalboard.bundle:
                 logging.info(f"Pedalboard changed via MOD from: {self.current.pedalboard.bundle} to: {mod_bundle}")
 
@@ -544,7 +544,7 @@ class Mod(Handler):
         #logging.debug("Preset: %s" % self.get_current_preset_name())
 
     def get_current_pedalboard_bundle_path(self):
-        return self.pedalboard_monitor.get_current_pedalboard_bundle()
+        return read_pedalboard_bundle(self.last_json_monitor.path)
 
     def set_current_pedalboard(self, pedalboard):
         # Delete previous "current"
