@@ -27,18 +27,21 @@ import logging
 @dataclass
 class LoadingStartMessage:
     """Pedalboard loading started."""
+
     is_default: bool
 
 
 @dataclass
 class LoadingEndMessage:
     """Pedalboard loading finished."""
+
     snapshot_id: int
 
 
 @dataclass
 class PedalSnapshotMessage:
     """Snapshot changed within current pedalboard."""
+
     snapshot_id: int
     snapshot_name: str
 
@@ -46,6 +49,7 @@ class PedalSnapshotMessage:
 @dataclass
 class SizeMessage:
     """Pedalboard canvas size."""
+
     width: int
     height: int
 
@@ -53,6 +57,7 @@ class SizeMessage:
 @dataclass
 class AddHwPortMessage:
     """Hardware port appeared (JACK)."""
+
     port_name: str
     port_type: str  # "audio" or "midi"
     is_output: bool
@@ -63,12 +68,14 @@ class AddHwPortMessage:
 @dataclass
 class RemoveHwPortMessage:
     """Hardware port disappeared."""
+
     port_name: str
 
 
 @dataclass
 class TrueBypassMessage:
     """True bypass state changed."""
+
     left: int
     right: int
 
@@ -76,6 +83,7 @@ class TrueBypassMessage:
 @dataclass
 class UnknownMessage:
     """Message type we don't handle yet."""
+
     raw: str
 
 
@@ -93,69 +101,79 @@ WebSocketMessage = Union[
 
 
 def parse_message(raw_message: str) -> WebSocketMessage:
-    """
-    Parse raw WebSocket message string into typed message object.
-
-    Args:
-        raw_message: Raw message string from WebSocket
-
-    Returns:
-        Typed message object
-    """
-    parts = raw_message.split(' ', 2)
-    if not parts:
-        return UnknownMessage(raw=raw_message)
-
-    cmd = parts[0]
-
+    """Parse raw WebSocket message string into typed message object."""
     try:
-        if cmd == "loading_start":
-            is_default = bool(int(parts[1])) if len(parts) > 1 else False
-            return LoadingStartMessage(is_default=is_default)
+        match raw_message.split(" ", 2):
+            # Format: loading_start {isDefault}
+            case ["loading_start", flag, *_]:
+                return LoadingStartMessage(is_default=bool(int(flag)))
+            case ["loading_start", *_]:
+                return LoadingStartMessage(is_default=False)
 
-        elif cmd == "loading_end":
-            snapshot_id = int(parts[1]) if len(parts) > 1 else 0
-            return LoadingEndMessage(snapshot_id=snapshot_id)
+            # Format: loading_end {snapshotId}
+            case ["loading_end", sid, *_]:
+                return LoadingEndMessage(snapshot_id=int(sid))
+            case ["loading_end"]:
+                return LoadingEndMessage(snapshot_id=0)
 
-        elif cmd == "pedal_snapshot":
-            snapshot_id = int(parts[1]) if len(parts) > 1 else 0
-            snapshot_name = parts[2] if len(parts) > 2 else ""
-            return PedalSnapshotMessage(snapshot_id=snapshot_id, snapshot_name=snapshot_name)
+            # Format: pedal_snapshot {snapshotId} {snapshotName}
+            case ["pedal_snapshot", sid, name]:
+                return PedalSnapshotMessage(snapshot_id=int(sid), snapshot_name=name)
+            case ["pedal_snapshot", sid]:
+                return PedalSnapshotMessage(snapshot_id=int(sid), snapshot_name="")
+            case ["pedal_snapshot"]:
+                return PedalSnapshotMessage(snapshot_id=0, snapshot_name="")
 
-        elif cmd == "size":
-            width = int(parts[1]) if len(parts) > 1 else 0
-            height = int(parts[2].split()[0]) if len(parts) > 2 else 0
-            return SizeMessage(width=width, height=height)
+            # Format: size {width} {height}
+            case ["size", w, h_trailing]:
+                return SizeMessage(width=int(w), height=int(h_trailing.split()[0]))
+            case ["size", w]:
+                return SizeMessage(width=int(w), height=0)
+            case ["size"]:
+                return SizeMessage(width=0, height=0)
 
-        elif cmd == "add_hw_port":
             # Format: add_hw_port /graph/{name} {type} {isOutput} {title} {index}
-            if len(parts) > 1:
-                details = parts[1].split(' ', 4)
-                port_name = details[0] if len(details) > 0 else ""
-                port_type = details[1] if len(details) > 1 else ""
-                is_output = bool(int(details[2])) if len(details) > 2 else False
-                title = details[3] if len(details) > 3 else ""
-                index = int(details[4]) if len(details) > 4 else 0
-                return AddHwPortMessage(
-                    port_name=port_name,
-                    port_type=port_type,
-                    is_output=is_output,
-                    title=title,
-                    index=index
-                )
+            case ["add_hw_port", port_name, rest]:
+                match rest.split(" ", 3):
+                    case [port_type, is_out, title, index]:
+                        return AddHwPortMessage(
+                            port_name=port_name,
+                            port_type=port_type,
+                            is_output=bool(int(is_out)),
+                            title=title,
+                            index=int(index),
+                        )
+                    case [port_type, is_out, title]:
+                        return AddHwPortMessage(
+                            port_name=port_name, port_type=port_type, is_output=bool(int(is_out)), title=title, index=0
+                        )
+                    case [port_type, is_out]:
+                        return AddHwPortMessage(
+                            port_name=port_name, port_type=port_type, is_output=bool(int(is_out)), title="", index=0
+                        )
+                    case [port_type]:
+                        return AddHwPortMessage(
+                            port_name=port_name, port_type=port_type, is_output=False, title="", index=0
+                        )
+            case ["add_hw_port", port_name]:
+                return AddHwPortMessage(port_name=port_name, port_type="", is_output=False, title="", index=0)
 
-        elif cmd == "remove_hw_port":
-            port_name = parts[1] if len(parts) > 1 else ""
-            return RemoveHwPortMessage(port_name=port_name)
+            # Format: remove_hw_port /graph/{name}
+            case ["remove_hw_port", port_name, *_]:
+                return RemoveHwPortMessage(port_name=port_name)
+            case ["remove_hw_port"]:
+                return RemoveHwPortMessage(port_name="")
 
-        elif cmd == "truebypass":
-            left = int(parts[1]) if len(parts) > 1 else 0
-            right = int(parts[2].split()[0]) if len(parts) > 2 else 0
-            return TrueBypassMessage(left=left, right=right)
+            # Format: truebypass {left} {right}
+            case ["truebypass", left, right_trailing]:
+                return TrueBypassMessage(left=int(left), right=int(right_trailing.split()[0]))
+            case ["truebypass", left]:
+                return TrueBypassMessage(left=int(left), right=0)
+            case ["truebypass"]:
+                return TrueBypassMessage(left=0, right=0)
 
     except (ValueError, IndexError) as e:
         logging.warning(f"Failed to parse WebSocket message '{raw_message}': {e}")
         return UnknownMessage(raw=raw_message)
 
-    # Unknown command
     return UnknownMessage(raw=raw_message)
