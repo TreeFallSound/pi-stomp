@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageFont
 
 PROJECT_ROOT = Path(__file__).parent.parent
 _TESTS_DIR = Path(__file__).parent
@@ -41,6 +41,22 @@ _PI_MODULES = [
 for _mod in _PI_MODULES:
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
+
+
+# ---------------------------------------------------------------------------
+# Force consistent font rendering across platforms (Linux / MacOS)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def force_basic_layout(monkeypatch):
+    original = ImageFont.truetype
+
+    def patched(font, size=10, **kwargs):
+        kwargs["layout_engine"] = ImageFont.Layout.BASIC
+        return original(font, size, **kwargs)
+
+    monkeypatch.setattr(ImageFont, "truetype", patched)
 
 
 # ---------------------------------------------------------------------------

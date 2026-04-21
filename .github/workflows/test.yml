@@ -1,0 +1,27 @@
+name: Tests
+
+on:
+  push:
+    branches: [pistomp-v3]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential libasound2-dev libjack-dev pkg-config
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run tests
+        run: uv run pytest
