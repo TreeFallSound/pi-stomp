@@ -217,6 +217,12 @@ class AsyncWebSocketBridge:
             self._thread.join(timeout=2.0)
         logging.info(f"WebSocket worker stopped (sent={self._worker.messages_sent})")
 
+    def send_bpm(self, bpm: float) -> bool:
+        """Queue a BPM change (non-blocking)."""
+        msg = f"transport-bpm {bpm}"
+        self.command_queue.put_nowait(msg)
+        return True
+
     def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
         """
         Queue a parameter update (non-blocking).
