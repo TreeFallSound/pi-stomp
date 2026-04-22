@@ -8,7 +8,7 @@ from tests.types import SystemFixture
 
 def test_poll_system_info(modhandler_system: SystemFixture):
     """poll_system_info() parses systemctl + vcgencmd output into handler state."""
-    handler, _, _, _, _ = modhandler_system
+    handler, _, _, _, _, _ = modhandler_system
 
     def sub_output(cmd, **kwargs):
         if cmd[0] == "systemctl":
@@ -29,7 +29,7 @@ def test_poll_system_info(modhandler_system: SystemFixture):
 
 def test_poll_system_info_subprocess_failure(modhandler_system: SystemFixture):
     """poll_system_info() sets state to 'unknown' when subprocess calls fail."""
-    handler, _, _, _, _ = modhandler_system
+    handler, _, _, _, _, _ = modhandler_system
 
     with patch("subprocess.check_output", side_effect=subprocess.CalledProcessError(1, "vcgencmd")):
         handler.poll_system_info()
@@ -41,6 +41,6 @@ def test_poll_system_info_subprocess_failure(modhandler_system: SystemFixture):
 
 def test_poll_lcd_updates(modhandler_system: SystemFixture):
     """poll_lcd_updates() calls through without raising."""
-    handler, _, _, _, _ = modhandler_system
+    handler, _, _, _, _, _ = modhandler_system
     handler.poll_lcd_updates()
     assert handler.lcd is not None

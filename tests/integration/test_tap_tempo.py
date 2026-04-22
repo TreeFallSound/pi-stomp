@@ -5,26 +5,25 @@ from unittest.mock import MagicMock
 from tests.types import SystemFixture
 
 
-def test_set_mod_tap_tempo(modhandler_system: SystemFixture, get_urls):
-    """set_mod_tap_tempo() POSTs the BPM value to /set_bpm."""
-    handler, _, _, _, mock_post = modhandler_system
+def test_set_mod_tap_tempo(modhandler_system: SystemFixture):
+    """set_mod_tap_tempo() sends a transport-bpm WebSocket message."""
+    handler, _, _, _, _, ws_bridge = modhandler_system
 
     handler.set_mod_tap_tempo(120)
 
-    assert any("set_bpm" in u for u in get_urls(mock_post))
-    assert mock_post.call_args[1].get("json") == {"value": 120}
+    assert any(m == "transport-bpm 120" for m in ws_bridge.sent)
 
 
-def test_set_mod_tap_tempo_none(modhandler_system: SystemFixture, get_urls):
+def test_set_mod_tap_tempo_none(modhandler_system: SystemFixture):
     """set_mod_tap_tempo(None) is a no-op."""
-    handler, _, _, _, mock_post = modhandler_system
+    handler, _, _, _, _, ws_bridge = modhandler_system
     handler.set_mod_tap_tempo(None)
-    assert not any("set_bpm" in u for u in get_urls(mock_post))
+    assert not any("transport-bpm" in m for m in ws_bridge.sent)
 
 
 def test_get_bpm(modhandler_system: SystemFixture, get_urls):
     """get_bpm() GETs /get_bpm and returns the parsed float."""
-    handler, _, _, mock_get, _ = modhandler_system
+    handler, _, _, mock_get, _, _ = modhandler_system
 
     def get_side_effect(url, **kwargs):
         resp = MagicMock()
@@ -40,7 +39,7 @@ def test_get_bpm(modhandler_system: SystemFixture, get_urls):
 
 def test_toggle_tap_tempo_enable(modhandler_system: SystemFixture):
     """toggle_tap_tempo_enable() calls hardware and updates the LCD footswitches."""
-    handler, _, _, mock_get, _ = modhandler_system
+    handler, _, _, mock_get, _, _ = modhandler_system
 
     def get_side_effect(url, **kwargs):
         resp = MagicMock()

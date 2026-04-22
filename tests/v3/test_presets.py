@@ -10,7 +10,7 @@ from tests.types import SystemFixture
 
 def test_v3_preset_change_via_footswitch_longpress(v3_system: SystemFixture, snapshot, get_urls):
     """Footswitch 0 longpress fires previous_snapshot → wraps from 0 to max index."""
-    handler, hw, _, mock_get, _ = v3_system
+    handler, hw, _, mock_get, _, _ = v3_system
 
     hw.footswitches[0].pressed(switchstate.Value.LONGPRESSED)
     with patch("time.monotonic", return_value=time.monotonic() + 1.0):
@@ -22,7 +22,7 @@ def test_v3_preset_change_via_footswitch_longpress(v3_system: SystemFixture, sna
 
 def test_v3_preset_change_via_lcd(v3_system: SystemFixture, snapshot, get_urls):
     """Encoder navigates to preset widget, opens menu, selects 'Lead', fires snapshot/load."""
-    handler, _, _, mock_get, _ = v3_system
+    handler, _, _, mock_get, _, _ = v3_system
 
     snapshot("nav_A")
 

@@ -4,21 +4,21 @@ import pistomp.switchstate as switchstate
 
 
 def test_v3_startup_snapshot(v3_system, snapshot):
-    _, _, lcd, _, _ = v3_system
+    _, _, lcd, _, _, _ = v3_system
     assert len(lcd.frames) > 0
     snapshot()
 
 
 def test_v3_nav_to_system_menu(v3_system, snapshot):
     """Wrench is initially selected; clicking encoder opens the system menu."""
-    handler, _, _, _, _ = v3_system
+    handler, _, _, _, _, _ = v3_system
     handler.universal_encoder_sw(switchstate.Value.RELEASED)
     snapshot()
 
 
 def test_v3_footswitch_press(v3_system, snapshot):
     """Footswitch 0 toggles enabled, sends MIDI CC 60, and updates the LCD."""
-    handler, hw, _, _, _ = v3_system
+    handler, hw, _, _, _, _ = v3_system
     midiout = hw.midiout
 
     hw.footswitches[0].pressed(switchstate.Value.RELEASED)
