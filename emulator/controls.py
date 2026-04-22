@@ -38,6 +38,7 @@ class MockEncoder(encoder.Encoder):
     def __init__(self, callback, type=None, id=None):
         super().__init__(d_pin=None, clk_pin=None, callback=callback, type=type, id=id)
         self.press_callback = None
+        self.label: str | None = None
 
     def read_rotary(self):
         pass

@@ -46,11 +46,13 @@ class EmulatorHardwareV1(EmulatorHardwareBase):
     def init_encoders(self):
         top = MockEncoder(callback=self.handler.top_encoder_select, id=0)
         top.press_callback = self.handler.top_encoder_sw
+        top.label = "Nav1 (pedalboard/preset)"
         self.encoders.append(top)
         self.nav_encoder = top
 
         bot = MockEncoder(callback=self.handler.bot_encoder_select, id=1)
         bot.press_callback = self.handler.bottom_encoder_sw
+        bot.label = "Nav2 (plugin/value)"
         self.encoders.append(bot)
         self.tweak_encoders.append(bot)
 

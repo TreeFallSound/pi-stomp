@@ -178,6 +178,8 @@ class EmulatorWindow:
             return "Enc %s (CC%d)" % (enc.id, enc.midi_CC)
         if getattr(enc, 'type', None) == 'VOLUME':
             return "Vol (enc %s)" % enc.id
+        if getattr(enc, 'label', None) is not None:
+            return enc.label
         return "Nav"
 
     def _add_encoder_row(self, enc, label, y):
