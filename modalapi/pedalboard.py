@@ -116,8 +116,6 @@ class Pedalboard:
     # Get info from an lv2 bundle
     # @a bundle is a string, consisting of a directory in the filesystem (absolute pathname).
     def load_bundle(self, bundlepath, plugin_dict):
-        if self.world is None:
-            return
         # Load the bundle, return the single plugin for the pedalboard
         plugin = self.get_pedalboard_plugin(self.world, bundlepath)
 
