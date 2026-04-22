@@ -26,6 +26,7 @@ import pistomp.footswitch as Footswitch
 import pistomp.taptempo as taptempo
 
 from abc import abstractmethod
+import pistomp.relay as Relay
 
 
 class Hardware:
@@ -46,7 +47,7 @@ class Hardware:
         self.midi_channel = 0
 
         # Standard hardware objects (not required to exist)
-        self.relay = None
+        self.relay: Relay.Relay | None = None
         self.analog_controls: list[AnalogControl] = []
         self.encoders = []
         self.controllers = {}

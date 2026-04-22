@@ -47,7 +47,7 @@ class DialogDecorator(PanelDecorator):
         self.box = Box(pb.x0 - m, pb.y0 - self.th - m - tmargin,
                        pb.x1 + m, pb.y1 + m)
         trace(self, "new box=", self.box)
-        tbox = Box(o, o, 16 + self.box.width - o, self.th + o)
+        tbox = Box(o, o, self.box.width - o, self.th + o)
         self.title.set_box(tbox, refresh = False)
         self.title.show(refresh = False)
 
@@ -83,7 +83,8 @@ class MessageDialog(Dialog):
     def __init__(self, panelstack, message, title="Error", width=200, height=90):
         super(MessageDialog, self).__init__(width=width, height=height, title=title, auto_destroy=True)
 
-        chars_per_line = width // int(Config().get_font('default_title').getsize("a")[0])
+        bbox = Config().get_font('default_title').getbbox("a")
+        chars_per_line = width // int(bbox[2] - bbox[0])
         chunks = textwrap.wrap(message, width=chars_per_line)
         wrapped = '\n'.join(chunks)
 

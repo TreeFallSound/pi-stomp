@@ -718,7 +718,7 @@ class Lcd(abstract_lcd.Lcd):
                 name = "none"
                 control_type = Token.EXPRESSION if i == 0 else Token.KNOB  # HACK cuz we don't know type of unmapped
                 color = Category.get_category_color(None)
-                text_color =color
+                text_color = color
             else:
                 # Mapped control or Volume
                 control_type = util.DICT_GET(v, Token.TYPE)
@@ -736,6 +736,8 @@ class Lcd(abstract_lcd.Lcd):
                         category = util.DICT_GET(v, Token.CATEGORY)
                         text_color = Category.get_category_color(category)
                         color = self.default_plugin_color
+                    else:
+                        text_color = color
 
             if control_type == Token.KNOB:
                 w = Icon(box=Box.xywh(x, y, 0, 0), text=name, text_color=text_color, parent=self.main_panel, outline=0)
@@ -774,7 +776,8 @@ class Lcd(abstract_lcd.Lcd):
         text = ""
         for x in name.lower().replace('_', '').replace('/', '').replace(' ', ''):
             test = text + x
-            test_size = self.small_font.getsize(test)[0]
+            test_bbox = self.small_font.getbbox(test)
+            test_size = test_bbox[2] - test_bbox[0]
             if test_size >= width:
                 break
             text = test

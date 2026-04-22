@@ -42,7 +42,8 @@ class LetterSelector(Widget):
         cs = self.charsets[mode]
         mw, mh = 0, 0
         for c in cs:
-            w, h = self.font.getsize(c)
+            bbox = self.font.getbbox(c)
+            w, h = bbox[2] - bbox[0], bbox[3]
             mw = max(mw,w)
             mh = max(mh,h)
         self.l_w = mw
@@ -128,7 +129,8 @@ class TextEditor(RoundedPanel):
         self.outline = 2
         self.curline = widget.text
         self.font = ImageFont.truetype("DejaVuSans.ttf", 18)
-        msg_w, msg_h = self.font.getsize(widget.edit_message)
+        bbox = self.font.getbbox(widget.edit_message)
+        msg_w, msg_h = bbox[2] - bbox[0], bbox[3]
         msg_box = Box.xywh(10, 10, msg_w, msg_h)
         self.msg = TextWidget(box = msg_box, text = widget.edit_message, font = self.font, parent = self)
         edit_box = Box.xywh(10,30,280,20)
@@ -229,6 +231,8 @@ class TextWidget(Widget):
         super(TextWidget,self)._adjust_box()
 
     def set_text(self, text):
+        if self.text == text:
+            return
         self.text = text
         self.text_size_valid = False
         self.refresh()

@@ -37,3 +37,9 @@ You can start with a base RPi image and use these
 but note that the setup scripts have not been updated to work with the newer v3 hardware so you are on your own there.
 Also keep in mind that there are hundreds of packages used to build the system.
 Package version incompatibilities are much more likely using this method.
+
+## Running tests
+
+Run tests using `pytest` in the virtual environment. There is a Github Actions workflow that runs this in CI as well.
+
+If you are writing new snapshot tests, or experiencing unexpected snapshot assertion failures, try running `pytest --snapshot-update` and inspect the diff. Sometimes there are cross-platform differences; use PIL tweaks in `conftest.py` to align them.
