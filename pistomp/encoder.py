@@ -60,7 +60,7 @@ class Encoder:
         # It works fine without a lock since this is just dumb UI, but let's be correct..
         self._lock = threading.Lock()
 
-        from gpiozero import Button
+        from gpiozero import Button   # TODO consider using Encoder class instead
         self.data = Button(d_pin)
         self.data.when_pressed = self._gpio_callback
         self.data.when_released = self._gpio_callback

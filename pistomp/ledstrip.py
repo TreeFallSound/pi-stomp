@@ -19,6 +19,7 @@ from PIL import ImageColor
 import common.util as Util
 import pistomp.category as Category
 
+# LED strip configuration:  # TODO get these from hardware impl (pisompcore.py)
 LED_COUNT = 6          # Number of LED pixels.
 LED_BRIGHTNESS = 0.19  # Set to 0 for darkest, 1.0 for brightest (0.19 seems good, 0.06 for photos)
 
@@ -27,7 +28,7 @@ class Ledstrip:
     def __init__(self):
         import board
         import neopixel
-        self._led_pin = board.D13
+        self._led_pin = board.D13  # TODO get this from hardware impl (pisompcore.py)
         self.strip = neopixel.NeoPixel(self._led_pin, LED_COUNT, brightness=LED_BRIGHTNESS)
         self.pixels = []
 
