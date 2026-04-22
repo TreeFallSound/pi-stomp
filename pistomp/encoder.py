@@ -16,12 +16,6 @@
 import threading
 
 from functools import partial
-try:
-    from gpiozero import Button
-    _gpio_available = True
-except (ImportError, NotImplementedError):
-    _gpio_available = False
-    Button = None
 
 class Encoder:
 
@@ -66,16 +60,13 @@ class Encoder:
         # It works fine without a lock since this is just dumb UI, but let's be correct..
         self._lock = threading.Lock()
 
-        if _gpio_available:
-            self.data = Button(d_pin)
-            self.data.when_pressed = self._gpio_callback
-            self.data.when_released = self._gpio_callback
-            self.clk = Button(clk_pin)
-            self.clk.when_pressed = self._gpio_callback
-            self.clk.when_released = self._gpio_callback
-        else:
-            self.data = None
-            self.clk = None
+        from gpiozero import Button
+        self.data = Button(d_pin)
+        self.data.when_pressed = self._gpio_callback
+        self.data.when_released = self._gpio_callback
+        self.clk = Button(clk_pin)
+        self.clk.when_pressed = self._gpio_callback
+        self.clk.when_released = self._gpio_callback
 
         self.prevNextCode = 0
         self.store = 0
@@ -87,16 +78,14 @@ class Encoder:
         super(Encoder, self).__init__(**kw)
 
     def __del__(self):
-        if self.data:
-            self.data.close()
-        if self.clk:
-            self.clk.close()
+        self.data.close()
+        self.clk.close()
 
     def get_data(self):
-        return self.data.value if self.data else 0
+        return self.data.value
 
     def get_clk(self):
-        return self.clk.value if self.clk else 0
+        return self.clk.value
 
     def read_rotary(self):
         d = 0

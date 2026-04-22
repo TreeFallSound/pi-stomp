@@ -16,12 +16,6 @@
 import logging
 import os
 from typing import Union
-try:
-    import spidev
-    _spidev_available = True
-except ImportError:
-    _spidev_available = False
-    spidev = None
 import sys
 
 import common.token as Token
@@ -75,9 +69,7 @@ class Hardware(ABC):
                 logging.debug("tap tempo mode enabled: %f", bpm)
 
     def init_spi(self):
-        if not _spidev_available:
-            logging.warning("spidev not available - SPI disabled")
-            return
+        import spidev
         self.spi = spidev.SpiDev()
         self.spi.open(0, 1)  # Bus 0, CE1
         # TODO SPI bus is shared by ADC and LCD.  Ideally, they would use the same frequency.

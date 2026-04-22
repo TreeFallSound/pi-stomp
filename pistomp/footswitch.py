@@ -15,12 +15,6 @@
 
 import logging
 import time
-try:
-    import gpiozero as GPIO
-    _gpio_available = True
-except (ImportError, NotImplementedError):
-    _gpio_available = False
-    GPIO = None
 import sys
 from rtmidi.midiconstants import CONTROL_CHANGE
 
@@ -120,8 +114,9 @@ class Footswitch(controller.Controller):
         if adc_input is not None:
             self.adc_switch = analogswitch.AnalogSwitch(spi, adc_input, 800, self.pressed, taptempo = self.taptempo)
 
-        if led_pin is not None and _gpio_available:
+        if led_pin is not None:
             try:
+                import gpiozero as GPIO
                 self.led = GPIO.LED(led_pin)
             except Exception as e:
                 logging.error("Initializing LED for footswitch %d: %s" % (id, str(e)))

@@ -84,46 +84,33 @@ def main():
     # Current Working Dir
     cwd = os.path.dirname(os.path.realpath(__file__))
 
-    is_emulator = args.host[0] == "emulator"
+    # Handler object
+    handler = None
+    midiout = None
 
-    if not is_emulator:
+    if args.host[0] != "emulator":
         # Audio Card Config - doing this early so audio passes ASAP
         factory = Audiocardfactory.Audiocardfactory(cwd)
         audiocard = factory.create()
         audiocard.restore()
-    else:
-        audiocard = None
 
-    # MIDI initialization
-    # Prompts user for MIDI input port, unless a valid port number or name
-    # is given as the first argument on the command line.
-    # API backend defaults to ALSA on Linux.
-    # TODO discover and use the thru port (seems to be 14:0 on my system)
-    # shouldn't need to aconnect, just send msgs directly to the thru port
-    port = 0  # TODO get this (the Midi Through port) programmatically
-    # port = sys.argv[1] if len(sys.argv) > 1 else None
-    if not is_emulator:
+        # MIDI initialization
+        # Prompts user for MIDI input port, unless a valid port number or name
+        # is given as the first argument on the command line.
+        # API backend defaults to ALSA on Linux.
+        # TODO discover and use the thru port (seems to be 14:0 on my system)
+        # shouldn't need to aconnect, just send msgs directly to the thru port
+        port = 0  # TODO get this (the Midi Through port) programmatically
+        # port = sys.argv[1] if len(sys.argv) > 1 else None
         try:
             midiout, port_name = open_midioutput(port)
         except (EOFError, KeyboardInterrupt):
             sys.exit()
-    else:
-        try:
-            midiout, port_name = open_midioutput(port)
-        except Exception:
-            logging.warning("MIDI output unavailable in emulator mode - continuing without MIDI")
-            midiout = None
 
-    # Handler object
-    handler = None
-
-    # Load the default config
-    # cfg used by factories to determine which handler and hardware objects to create
-    # Hardware object uses cfg to know how to initialize the hardware elements
-    if not is_emulator:
+        # Load the default config
+        # cfg used by factories to determine which handler and hardware objects to create
+        # Hardware object uses cfg to know how to initialize the hardware elements
         cfg = config.load_default_cfg()
-    else:
-        cfg = config.load_cfg_from_file(EMULATOR_CONFIG_TEMPLATE)
 
     if args.host[0] == "mod":
         # Create singleton Mod handler
@@ -176,7 +163,15 @@ def main():
         from emulator.hardware import EmulatorHardware
         from emulator.window import EmulatorWindow
 
-        handler = EmulatorModhandler(audiocard, cwd)
+        port = 0
+        try:
+            midiout, port_name = open_midioutput(port)
+        except Exception:
+            logging.warning("MIDI output unavailable in emulator mode - continuing without MIDI")
+            midiout = None
+        cfg = config.load_cfg_from_file(EMULATOR_CONFIG_TEMPLATE)
+
+        handler = EmulatorModhandler(cwd)
         hw = EmulatorHardware(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
         handler.add_hardware(hw)
 
@@ -224,7 +219,8 @@ def main():
         logging.info("keyboard interrupt")
     finally:
         logging.info("Exit.")
-        midiout.close_port()
+        if midiout:
+            midiout.close_port()
         handler.cleanup()
         del handler
         logging.info("Completed cleanup")

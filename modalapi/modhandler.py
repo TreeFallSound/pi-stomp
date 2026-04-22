@@ -313,7 +313,7 @@ class Modhandler(Handler):
             logging.info("Loading pedalboard info: %s" % pb[Token.TITLE])
             bundle = pb[Token.BUNDLE]
             title = pb[Token.TITLE]
-            pedalboard = Pedalboard.Pedalboard(title, bundle)
+            pedalboard = Pedalboard.Pedalboard(title, bundle, root_uri=self.root_uri)
             pedalboard.load_bundle(bundle, self.plugin_dict)
             self.pedalboards[bundle] = pedalboard
             self.pedalboard_list.append(pedalboard)
@@ -325,7 +325,7 @@ class Modhandler(Handler):
         title = old.title
 
         # create a new one
-        pedalboard = Pedalboard.Pedalboard(title, bundle)
+        pedalboard = Pedalboard.Pedalboard(title, bundle, root_uri=self.root_uri)
         pedalboard.load_bundle(bundle, self.plugin_dict)
         self.pedalboards[bundle] = pedalboard
 

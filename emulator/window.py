@@ -77,6 +77,17 @@ SLIDER_BG       = (60, 60, 60)
 SLIDER_FG       = (0, 160, 200)
 
 
+class _Label:
+    """Non-interactive text drawn on the controls panel."""
+
+    def __init__(self, pos, text, font, color=DIM_TEXT):
+        self._surf = font.render(text, True, color)
+        self._pos = pos
+
+    def draw(self, surf):
+        surf.blit(self._surf, self._pos)
+
+
 class _Btn:
     """Simple clickable rectangle."""
 
@@ -122,6 +133,7 @@ class EmulatorWindow:
 
         self._buttons: list[_Btn] = []
         self._fs_btns: list[tuple[_Btn, int]] = []   # (btn, fs_index)
+        self._labels: list[_Label] = []
         self._build_ui()
 
     # -------------------------------------------------------------------------
@@ -131,12 +143,12 @@ class EmulatorWindow:
     def _build_ui(self):
         self._buttons.clear()
         self._fs_btns.clear()
+        self._labels.clear()
 
         y = 15
         bw, bh = 60, 30   # default button size
 
         # --- Footswitches ----------------------------------------------------
-        self._draw_label_placeholder = []   # rebuilt in render()
         num_fs = len(self.hw.footswitches)
         fs_spacing = min(68, (CTRL_W - 20) // max(num_fs, 1))
         for i, fs in enumerate(self.hw.footswitches):
@@ -171,6 +183,9 @@ class EmulatorWindow:
         return "Nav"
 
     def _add_encoder_row(self, enc, label, y):
+        self._labels.append(_Label((CTRL_X + 5, y), label, self.font_sm))
+        y += 15
+
         bw, bh = 38, 28
         has_press = getattr(enc, 'press_callback', None) is not None
 
@@ -227,9 +242,7 @@ class EmulatorWindow:
         self.screen.fill(BG)
 
         # LCD (scaled 2×)
-        lcd_surf = self.hw.lcd_pygame.surface
-        scaled = pygame.transform.scale(lcd_surf, (LCD_DISP_W, LCD_DISP_H))
-        self.screen.blit(scaled, (0, 0))
+        self.hw.lcd_pygame.blit_scaled(self.screen, pygame.Rect(0, 0, LCD_DISP_W, LCD_DISP_H))
 
         # Controls panel background
         panel_rect = pygame.Rect(LCD_DISP_W, 0, CTRL_W, WIN_H)
@@ -245,20 +258,13 @@ class EmulatorWindow:
             tr = text.get_rect(center=btn.rect.center)
             self.screen.blit(text, tr)
 
-        # All other buttons
+        # All other buttons and encoder header labels
         fs_btn_set = {id(b) for b, _ in self._fs_btns}
         for btn in self._buttons:
             if id(btn) not in fs_btn_set:
                 btn.draw(self.screen)
-
-        # Encoder labels
-        enc_y = 75
-        for enc in self.hw.encoders:
-            lbl = self.font_sm.render(self._enc_label(enc), True, DIM_TEXT)
-            self.screen.blit(lbl, (CTRL_X + 5, enc_y))
-            bh = 28
-            has_press = getattr(enc, 'press_callback', None) is not None
-            enc_y += bh + 2 + 8
+        for lbl in self._labels:
+            lbl.draw(self.screen)
 
         # Expression pedal
         if self.hw.analog_controls:
@@ -305,8 +311,6 @@ class EmulatorWindow:
         return encs[index] if index < len(encs) else None
 
     def _handle_key(self, key, mod):
-        K = pygame.K_ESCAPE, pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN
-
         if key == pygame.K_ESCAPE:
             raise KeyboardInterrupt
 

@@ -13,28 +13,22 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-try:
-    import matplotlib
-    import board
-    import neopixel
-    _ledstrip_available = True
-except (ImportError, NotImplementedError):
-    _ledstrip_available = False
+import logging
 from PIL import ImageColor
 
 import common.util as Util
 import pistomp.category as Category
 
-# LED strip configuration:  # TODO get these from hardware impl (pisompcore.py)
 LED_COUNT = 6          # Number of LED pixels.
-LED_PIN = board.D13 if _ledstrip_available else None
 LED_BRIGHTNESS = 0.19  # Set to 0 for darkest, 1.0 for brightest (0.19 seems good, 0.06 for photos)
 
 class Ledstrip:
 
     def __init__(self):
-        # Create NeoPixel object with appropriate configuration
-        self.strip = neopixel.NeoPixel(LED_PIN, LED_COUNT, brightness=LED_BRIGHTNESS)  # GPIO18 (PWM-capable), 8 pixels
+        import board
+        import neopixel
+        self._led_pin = board.D13
+        self.strip = neopixel.NeoPixel(self._led_pin, LED_COUNT, brightness=LED_BRIGHTNESS)
         self.pixels = []
 
     def add_pixel(self, id, position):
@@ -45,7 +39,7 @@ class Ledstrip:
         return p
 
     def get_gpio(self):
-        return LED_PIN
+        return self._led_pin
 
     def cleanup(self):
         for p in self.pixels:
@@ -74,6 +68,7 @@ class Pixel:
 
     # set the color for the pixel based on the name or rgb
     def set_color(self, color):
+        import matplotlib
         try:
             c = Util.DICT_GET(self.color_cache, color)
             if c is None:

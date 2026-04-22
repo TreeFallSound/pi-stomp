@@ -28,7 +28,7 @@ from modalapi.modhandler import Modhandler
 
 class EmulatorModhandler(Modhandler):
 
-    def __init__(self, audiocard, homedir):
+    def __init__(self, homedir):
         emu_cfg_dir = os.path.join(os.path.expanduser("~"), ".pistomp_emulator", "config")
         os.makedirs(emu_cfg_dir, exist_ok=True)
         Settings_module.DATA_DIR = emu_cfg_dir
@@ -46,29 +46,6 @@ class EmulatorModhandler(Modhandler):
         self.wifi_manager = _StubWifiManager()
 
         self._window = None   # set by the caller after window is created
-
-    # -------------------------------------------------------------------------
-    # Pedalboard loading — pass root_uri through to Pedalboard objects
-    # -------------------------------------------------------------------------
-
-    def load_pedalboards(self):
-        import json
-        import modalapi.pedalboard as Pedalboard
-        import common.token as Token
-        import sys
-        url = self.root_uri + "pedalboard/list"
-        resp = self._rest_get(url)
-        if resp is None or resp.status_code != 200:
-            logging.error("Cannot connect to mod-host")
-            sys.exit()
-        for pb in json.loads(resp.text):
-            logging.info("Loading pedalboard info: %s" % pb[Token.TITLE])
-            bundle = pb[Token.BUNDLE]
-            title  = pb[Token.TITLE]
-            pedalboard = Pedalboard.Pedalboard(title, bundle, root_uri=self.root_uri)
-            pedalboard.load_bundle(bundle, self.plugin_dict)
-            self.pedalboards[bundle] = pedalboard
-            self.pedalboard_list.append(pedalboard)
 
     def pedalboard_change(self, pedalboard=None):
         if pedalboard is None and self.pedalboard_list:

@@ -55,3 +55,8 @@ class LcdPygame(LcdBase):
 
         pg_surf = pygame.image.fromstring(image.tobytes(), image.size, image.mode)
         self.surface.blit(pg_surf, dest)
+
+    def blit_scaled(self, dest_surface, dest_rect):
+        """Scale the LCD surface to dest_rect and blit it onto dest_surface."""
+        scaled = pygame.transform.scale(self.surface, (dest_rect.width, dest_rect.height))
+        dest_surface.blit(scaled, dest_rect.topleft)

@@ -18,11 +18,7 @@ import common.util as util
 import os
 import pistomp.lcd as abstract_lcd
 
-try:
-    from gfxhat import touch, lcd, backlight, fonts
-    _gfxhat_available = True
-except (ImportError, NotImplementedError):
-    _gfxhat_available = False
+from gfxhat import touch, lcd, backlight, fonts
 from PIL import Image, ImageFont, ImageDraw
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details

@@ -13,13 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-try:
-    import board
-    import digitalio
-    _board_available = True
-except (ImportError, NotImplementedError):
-    _board_available = False
-
 import logging
 import os
 import common.token as Token
@@ -46,8 +39,8 @@ class Lcd(abstract_lcd.Lcd):
         self.flip = flip
 
         if display is None:
-            if not _board_available:
-                raise RuntimeError("No display provided and hardware not available (not running on Pi)")
+            import board
+            import digitalio
             display = LcdIli9341(board.SPI(),
                                  digitalio.DigitalInOut(board.CE0),
                                  digitalio.DigitalInOut(board.D6),
