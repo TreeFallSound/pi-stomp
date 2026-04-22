@@ -172,20 +172,21 @@ def main():
     elif args.host[0] in ("emulator_v1", "emulator_v2", "emulator_v3"):
         import pygame
         import pygame._freetype as _freetype
-        import pistomp.settings as Settings_module
-        from emulator.modhandler import EmulatorModhandler
         from emulator.window import EmulatorWindow
 
         _emu_version = args.host[0]  # "emulator_v1" / "emulator_v2" / "emulator_v3"
 
-        if _emu_version == "emulator_v2":
+        if _emu_version == "emulator_v1":
+            from emulator.hardware_v1 import EmulatorHardwareV1 as _EmuHW
+            from emulator.mod import EmulatorMod as _EmuHandler
+            _emu_cfg_template = EMULATOR_V1_CONFIG_TEMPLATE
+        elif _emu_version == "emulator_v2":
             from emulator.hardware_v2 import EmulatorHardwareV2 as _EmuHW
+            from emulator.modhandler import EmulatorModhandler as _EmuHandler
             _emu_cfg_template = EMULATOR_V2_CONFIG_TEMPLATE
-        elif _emu_version == "emulator_v1":
-            logging.error("emulator_v1 is not yet implemented")
-            sys.exit(1)
         else:  # emulator_v3
             from emulator.hardware_v3 import EmulatorHardwareV3 as _EmuHW
+            from emulator.modhandler import EmulatorModhandler as _EmuHandler
             _emu_cfg_template = EMULATOR_CONFIG_TEMPLATE
 
         pygame.init()
@@ -199,11 +200,13 @@ def main():
             midiout = None
         cfg = config.load_cfg_from_file(_emu_cfg_template)
 
-        emu_cfg_dir = os.path.join(os.path.expanduser("~"), ".pistomp_emulator", "config")
-        os.makedirs(emu_cfg_dir, exist_ok=True)
-        Settings_module.DATA_DIR = emu_cfg_dir
+        if _emu_version != "emulator_v1":
+            import pistomp.settings as Settings_module
+            emu_cfg_dir = os.path.join(os.path.expanduser("~"), ".pistomp_emulator", "config")
+            os.makedirs(emu_cfg_dir, exist_ok=True)
+            Settings_module.DATA_DIR = emu_cfg_dir
 
-        handler = EmulatorModhandler(cwd)
+        handler = _EmuHandler(cwd)
         hw = _EmuHW(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
         handler.add_hardware(hw)
 

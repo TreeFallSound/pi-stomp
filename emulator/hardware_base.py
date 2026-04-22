@@ -26,6 +26,7 @@ import common.util as Util
 
 from emulator.controls import MockFootswitch, MockAnalogControl, MockEncoder
 from emulator.lcd_pygame import LcdPygame
+from emulator.stubs import StubRelay
 
 
 class EmulatorHardwareBase(hardware.Hardware):
@@ -41,6 +42,9 @@ class EmulatorHardwareBase(hardware.Hardware):
         self.nav_encoder: MockEncoder | None = None
         self.tweak_encoders: list = []
         self.volume_encoder: MockEncoder | None = None
+
+        # Ensure relay is always a stub so bypass footswitch config doesn't crash
+        self.init_relays()
 
     # -------------------------------------------------------------------------
     # Shared init helpers
@@ -94,7 +98,7 @@ class EmulatorHardwareBase(hardware.Hardware):
             self.controllers[key] = ctrl
 
     def init_relays(self):
-        pass
+        self.relay = StubRelay()
 
     def cleanup(self):
         import pygame

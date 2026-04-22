@@ -53,15 +53,9 @@ class _FTFont:
         surf, _ = self._ft.render(text, color)
         return surf
 
-# ---- dimensions -------------------------------------------------------------
-LCD_W, LCD_H    = 320, 240
-SCALE           = 2
-LCD_DISP_W      = LCD_W * SCALE   # 640
-LCD_DISP_H      = LCD_H * SCALE   # 480
+# ---- dimensions (per-instance; these module-level values are defaults) ------
 CTRL_W          = 300
-WIN_W           = LCD_DISP_W + CTRL_W   # 940
-WIN_H           = LCD_DISP_H            # 480
-CTRL_X          = LCD_DISP_W + 10       # x origin of controls panel
+_TARGET_H       = 480   # desired display area height — scale is computed to match
 
 # ---- colours ----------------------------------------------------------------
 BG              = (30, 30, 30)
@@ -119,7 +113,16 @@ class EmulatorWindow:
         self.hw = hardware
         self.running = True
 
-        self.screen = pygame.display.set_mode((WIN_W, WIN_H))
+        lcd_w = hardware.lcd_pygame.width
+        lcd_h = hardware.lcd_pygame.height
+        scale = max(1, _TARGET_H // lcd_h)
+        self.lcd_disp_w = lcd_w * scale
+        self.lcd_disp_h = lcd_h * scale
+        self.win_w = self.lcd_disp_w + CTRL_W
+        self.win_h = self.lcd_disp_h
+        self.ctrl_x = self.lcd_disp_w + 10
+
+        self.screen = pygame.display.set_mode((self.win_w, self.win_h))
         version_label = getattr(hardware, 'VERSION_LABEL', '')
         title = "pi-Stomp Emulator (%s)" % version_label if version_label else "pi-Stomp Emulator"
         pygame.display.set_caption(title)
@@ -148,7 +151,7 @@ class EmulatorWindow:
         num_fs = len(self.hw.footswitches)
         fs_spacing = min(68, (CTRL_W - 20) // max(num_fs, 1))
         for i, fs in enumerate(self.hw.footswitches):
-            x = CTRL_X + 5 + i * fs_spacing
+            x = self.ctrl_x + 5 + i * fs_spacing
             idx = i
             btn = _Btn((x, y, 56, 46),
                        "FS%d" % (i + 1),
@@ -168,7 +171,7 @@ class EmulatorWindow:
 
         self._exp_slider_y = enc_y + 10
         self._exp_slider_rect = pygame.Rect(
-            CTRL_X + 5, self._exp_slider_y + 16, CTRL_W - 20, 12)
+            self.ctrl_x + 5, self._exp_slider_y + 16, CTRL_W - 20, 12)
 
     def _enc_label(self, enc):
         if hasattr(enc, 'midi_CC') and enc.midi_CC is not None:
@@ -178,13 +181,13 @@ class EmulatorWindow:
         return "Nav"
 
     def _add_encoder_row(self, enc, label, y):
-        self._labels.append(_Label((CTRL_X + 5, y), label, self.font_sm))
+        self._labels.append(_Label((self.ctrl_x + 5, y), label, self.font_sm))
         y += 15
 
         bw, bh = 38, 28
         has_press = getattr(enc, 'press_callback', None) is not None
 
-        left_x  = CTRL_X + 5
+        left_x  = self.ctrl_x + 5
         mid_x   = left_x + bw + 4
         right_x = mid_x + (bw + 4 if has_press else 0)
 
@@ -237,10 +240,10 @@ class EmulatorWindow:
         self.screen.fill(BG)
 
         # LCD (scaled 2×)
-        self.hw.lcd_pygame.blit_scaled(self.screen, pygame.Rect(0, 0, LCD_DISP_W, LCD_DISP_H))
+        self.hw.lcd_pygame.blit_scaled(self.screen, pygame.Rect(0, 0, self.lcd_disp_w, self.lcd_disp_h))
 
         # Controls panel background
-        panel_rect = pygame.Rect(LCD_DISP_W, 0, CTRL_W, WIN_H)
+        panel_rect = pygame.Rect(self.lcd_disp_w, 0, CTRL_W, self.win_h)
         pygame.draw.rect(self.screen, PANEL_BG, panel_rect)
 
         # Footswitch state colours
@@ -283,10 +286,10 @@ class EmulatorWindow:
         else:
             hints.append("Esc=quit")
 
-        hy = WIN_H - len(hints) * 16 - 5
+        hy = self.win_h - len(hints) * 16 - 5
         for h in hints:
             surf = self.font_sm.render(h, True, DIM_TEXT)
-            self.screen.blit(surf, (CTRL_X + 4, hy))
+            self.screen.blit(surf, (self.ctrl_x + 4, hy))
             hy += 16
 
         pygame.display.flip()
@@ -295,7 +298,7 @@ class EmulatorWindow:
         ctrl = self.hw.analog_controls[0]
         y = self._exp_slider_y
         lbl = self.font_sm.render("Expr (CC%s)" % ctrl.midi_CC, True, DIM_TEXT)
-        self.screen.blit(lbl, (CTRL_X + 5, y))
+        self.screen.blit(lbl, (self.ctrl_x + 5, y))
 
         r = self._exp_slider_rect
         pygame.draw.rect(self.screen, SLIDER_BG, r, border_radius=4)
