@@ -14,7 +14,12 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import json
-import lilv
+try:
+    import lilv
+    _lilv_available = True
+except ImportError:
+    _lilv_available = False
+    lilv = None
 import logging
 import operator
 import os
@@ -34,6 +39,10 @@ class Pedalboard:
         self.title = title
         self.bundle = bundle  # TODO used?
         self.plugins = []
+
+        if not _lilv_available:
+            self.world = None
+            return
 
         self.world = lilv.World()
 
@@ -116,6 +125,8 @@ class Pedalboard:
     # Get info from an lv2 bundle
     # @a bundle is a string, consisting of a directory in the filesystem (absolute pathname).
     def load_bundle(self, bundlepath, plugin_dict):
+        if not _lilv_available or self.world is None:
+            return
         # Load the bundle, return the single plugin for the pedalboard
         plugin = self.get_pedalboard_plugin(self.world, bundlepath)
 

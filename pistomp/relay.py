@@ -16,7 +16,12 @@
 import logging
 import os
 from pathlib import Path
-import gpiozero as GPIO
+try:
+    import gpiozero as GPIO
+    _gpio_available = True
+except (ImportError, NotImplementedError):
+    _gpio_available = False
+    GPIO = None
 import shutil
 import time
 

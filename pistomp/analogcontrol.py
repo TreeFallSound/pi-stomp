@@ -13,12 +13,16 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import busio
-import digitalio
-import board
-import adafruit_mcp3xxx.mcp3008 as MCP
+try:
+    import busio
+    import digitalio
+    import board
+    import adafruit_mcp3xxx.mcp3008 as MCP
+    from adafruit_mcp3xxx.analog_in import AnalogIn
+    _adc_available = True
+except (ImportError, NotImplementedError):
+    _adc_available = False
 import logging
-from adafruit_mcp3xxx.analog_in import AnalogIn
 
 
 class AnalogControl:

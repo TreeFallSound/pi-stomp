@@ -39,6 +39,10 @@ import pistomp.testhost as Testhost
 import pistomp.handlerfactory as Handlerfactory
 import pistomp.hardwarefactory as Hardwarefactory
 
+EMULATOR_CONFIG_TEMPLATE = os.path.join(
+    os.path.dirname(os.path.realpath(__file__)), "setup", "config_templates", "default_config_pistomptre.yml"
+)
+
 
 def main():
     sys.settrace
@@ -58,7 +62,7 @@ def main():
         nargs="+",
         help="Plugin host to use. Example --host mod'",
         default=["mod"],
-        choices=["mod", "mod1", "generic", "test"],
+        choices=["mod", "mod1", "generic", "test", "emulator"],
     )
 
     args = parser.parse_args()
@@ -80,10 +84,15 @@ def main():
     # Current Working Dir
     cwd = os.path.dirname(os.path.realpath(__file__))
 
-    # Audio Card Config - doing this early so audio passes ASAP
-    factory = Audiocardfactory.Audiocardfactory(cwd)
-    audiocard = factory.create()
-    audiocard.restore()
+    is_emulator = args.host[0] == "emulator"
+
+    if not is_emulator:
+        # Audio Card Config - doing this early so audio passes ASAP
+        factory = Audiocardfactory.Audiocardfactory(cwd)
+        audiocard = factory.create()
+        audiocard.restore()
+    else:
+        audiocard = None
 
     # MIDI initialization
     # Prompts user for MIDI input port, unless a valid port number or name
@@ -93,10 +102,17 @@ def main():
     # shouldn't need to aconnect, just send msgs directly to the thru port
     port = 0  # TODO get this (the Midi Through port) programmatically
     # port = sys.argv[1] if len(sys.argv) > 1 else None
-    try:
-        midiout, port_name = open_midioutput(port)
-    except (EOFError, KeyboardInterrupt):
-        sys.exit()
+    if not is_emulator:
+        try:
+            midiout, port_name = open_midioutput(port)
+        except (EOFError, KeyboardInterrupt):
+            sys.exit()
+    else:
+        try:
+            midiout, port_name = open_midioutput(port)
+        except Exception:
+            logging.warning("MIDI output unavailable in emulator mode - continuing without MIDI")
+            midiout = None
 
     # Handler object
     handler = None
@@ -104,7 +120,10 @@ def main():
     # Load the default config
     # cfg used by factories to determine which handler and hardware objects to create
     # Hardware object uses cfg to know how to initialize the hardware elements
-    cfg = config.load_default_cfg()
+    if not is_emulator:
+        cfg = config.load_default_cfg()
+    else:
+        cfg = config.load_cfg_from_file(EMULATOR_CONFIG_TEMPLATE)
 
     if args.host[0] == "mod":
         # Create singleton Mod handler
@@ -151,6 +170,29 @@ def main():
             handler.add_hardware(hw)
         except:
             raise
+
+    elif args.host[0] == "emulator":
+        from emulator.modhandler import EmulatorModhandler
+        from emulator.hardware import EmulatorHardware
+        from emulator.window import EmulatorWindow
+
+        handler = EmulatorModhandler(audiocard, cwd)
+        hw = EmulatorHardware(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
+        handler.add_hardware(hw)
+
+        window = EmulatorWindow(hw)
+        handler._window = window
+
+        handler.load_banks()
+        handler.load_pedalboards()
+
+        current_bundle = handler.get_current_pedalboard_bundle_path()
+        if current_bundle and current_bundle in handler.pedalboards:
+            handler.set_current_pedalboard(handler.pedalboards[current_bundle])
+        else:
+            handler.pedalboard_change()
+
+        handler.system_info_load()
 
     assert handler is not None
     logging.info("Entering main loop. Press Control-C to exit.")

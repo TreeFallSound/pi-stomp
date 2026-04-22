@@ -21,7 +21,12 @@
 #
 # A new version with different controls should have a new separate subclass
 
-import gpiozero as GPIO
+try:
+    import gpiozero as GPIO
+    _gpio_available = True
+except (ImportError, NotImplementedError):
+    _gpio_available = False
+    GPIO = None
 
 from pathlib import Path
 import common.token as Token

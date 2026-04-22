@@ -22,6 +22,7 @@ dependencies = [
     "python-rtmidi>=1.4",
     "requests>=2.28",
     "Pillow>=9.4",
+    "numpy>=1.24",
     "pyalsaaudio>=0.9; sys_platform == 'linux'",
 ]
 
@@ -39,6 +40,9 @@ hardware = [
 
 # Development dependencies
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1.0", "pyright>=1.1.408", "numpy>=2.4.1"]
+
+# Local emulator (macOS / Linux desktop, no Pi hardware required)
+emulator = ["pygame>=2.5"]
 
 [project.urls]
 Homepage = "https://treefallsound.com"

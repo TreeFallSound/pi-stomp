@@ -13,8 +13,13 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import board
-import digitalio
+try:
+    import board
+    import digitalio
+    _board_available = True
+except (ImportError, NotImplementedError):
+    _board_available = False
+
 import logging
 import os
 import common.token as Token
@@ -33,20 +38,22 @@ from pistomp.footswitch import Footswitch  # TODO would like to avoid this modul
 
 class Lcd(abstract_lcd.Lcd):
 
-    def __init__(self, cwd, handler=None, flip=False):
+    def __init__(self, cwd, handler=None, flip=False, display=None):
         self.cwd = cwd
         self.imagedir = os.path.join(cwd, "images")
         Config(os.path.join(cwd, 'ui', 'config.json'))
         self.handler = handler
         self.flip = flip
 
-        # TODO would be good to decouple the actual LCD hardware.  This file should work for any 320x240 display
-        display = LcdIli9341(board.SPI(),
-                             digitalio.DigitalInOut(board.CE0),
-                             digitalio.DigitalInOut(board.D6),
-                             digitalio.DigitalInOut(board.D5),
-                             24000000,
-                             flip)
+        if display is None:
+            if not _board_available:
+                raise RuntimeError("No display provided and hardware not available (not running on Pi)")
+            display = LcdIli9341(board.SPI(),
+                                 digitalio.DigitalInOut(board.CE0),
+                                 digitalio.DigitalInOut(board.D6),
+                                 digitalio.DigitalInOut(board.D5),
+                                 24000000,
+                                 flip)
 
         # Colors
         self.background = (0, 0, 0)

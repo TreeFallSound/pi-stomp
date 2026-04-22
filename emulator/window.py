@@ -1,0 +1,371 @@
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
+"""EmulatorWindow — pygame window that shows the 320×240 LCD (2× scaled)
+alongside clickable representations of the physical controls.
+
+Layout (total 940 × 500):
+  ┌────────────────────────┬────────────────────────┐
+  │  LCD 640×480 (2×)      │  Controls panel 300px  │
+  └────────────────────────┴────────────────────────┘
+
+Keyboard shortcuts
+  ← / →          nav encoder left / right
+  Enter / Space  nav encoder press (click)
+  L              nav encoder long-press
+  1 / 2 / 3 / 4  footswitch 1 / 2 / 3 / 4
+  Q / W          tweak enc 1 left / right   E = press
+  A / S          tweak enc 2 left / right   D = press
+  Z / X          volume enc left / right  (no press)
+  ↑ / ↓          expression pedal +/-
+  Esc            quit
+"""
+
+import pygame
+import pistomp.switchstate as switchstate
+
+# ---- dimensions -------------------------------------------------------------
+LCD_W, LCD_H    = 320, 240
+SCALE           = 2
+LCD_DISP_W      = LCD_W * SCALE   # 640
+LCD_DISP_H      = LCD_H * SCALE   # 480
+CTRL_W          = 300
+WIN_W           = LCD_DISP_W + CTRL_W   # 940
+WIN_H           = LCD_DISP_H            # 480
+CTRL_X          = LCD_DISP_W + 10       # x origin of controls panel
+
+# ---- colours ----------------------------------------------------------------
+BG              = (30, 30, 30)
+PANEL_BG        = (45, 45, 45)
+BTN_IDLE        = (80, 80, 80)
+BTN_HOVER       = (120, 120, 120)
+BTN_ACTIVE      = (200, 200, 200)
+FS_ON           = (0, 200, 80)
+FS_OFF          = (80, 80, 80)
+TEXT_COLOR      = (220, 220, 220)
+DIM_TEXT        = (130, 130, 130)
+SLIDER_BG       = (60, 60, 60)
+SLIDER_FG       = (0, 160, 200)
+
+
+class _Btn:
+    """Simple clickable rectangle."""
+
+    def __init__(self, rect, label, action, font):
+        self.rect   = pygame.Rect(rect)
+        self.label  = label
+        self.action = action
+        self.font   = font
+        self._hover = False
+
+    def draw(self, surf, active=False):
+        color = BTN_ACTIVE if active else (BTN_HOVER if self._hover else BTN_IDLE)
+        pygame.draw.rect(surf, color, self.rect, border_radius=4)
+        text = self.font.render(self.label, True, (0, 0, 0) if active else TEXT_COLOR)
+        tr = text.get_rect(center=self.rect.center)
+        surf.blit(text, tr)
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEMOTION:
+            self._hover = self.rect.collidepoint(event.pos)
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.rect.collidepoint(event.pos):
+                self.action()
+
+
+class EmulatorWindow:
+
+    def __init__(self, hardware):
+        self.hw = hardware
+        self.running = True
+
+        pygame.init()
+        self.screen = pygame.display.set_mode((WIN_W, WIN_H))
+        pygame.display.set_caption("pi-Stomp Emulator (v3)")
+
+        self.font_sm  = pygame.font.SysFont("monospace", 13)
+        self.font_med = pygame.font.SysFont("monospace", 15, bold=True)
+        self.font_hdr = pygame.font.SysFont("monospace", 14, bold=True)
+
+        self._exp_value = 64   # 0-127 MIDI value for expression pedal
+        self._exp_dragging = False
+
+        self._buttons: list[_Btn] = []
+        self._fs_btns: list[tuple[_Btn, int]] = []   # (btn, fs_index)
+        self._build_ui()
+
+    # -------------------------------------------------------------------------
+    # UI construction
+    # -------------------------------------------------------------------------
+
+    def _build_ui(self):
+        self._buttons.clear()
+        self._fs_btns.clear()
+
+        y = 15
+        bw, bh = 60, 30   # default button size
+
+        # --- Footswitches ----------------------------------------------------
+        self._draw_label_placeholder = []   # rebuilt in render()
+        num_fs = len(self.hw.footswitches)
+        fs_spacing = min(68, (CTRL_W - 20) // max(num_fs, 1))
+        for i, fs in enumerate(self.hw.footswitches):
+            x = CTRL_X + 5 + i * fs_spacing
+            idx = i
+            btn = _Btn((x, y, 56, 46),
+                       "FS%d" % (i + 1),
+                       lambda fs=fs: fs.press(),
+                       self.font_med)
+            self._buttons.append(btn)
+            self._fs_btns.append((btn, idx))
+
+        y += 60
+
+        # --- Encoders --------------------------------------------------------
+        # encoders[0] = nav, encoders[1:] = tweak/vol
+        enc_y = y
+        for enc in self.hw.encoders:
+            label = self._enc_label(enc)
+            enc_y = self._add_encoder_row(enc, label, enc_y)
+            enc_y += 8
+
+        self._exp_slider_y = enc_y + 10
+        self._exp_slider_rect = pygame.Rect(
+            CTRL_X + 5, self._exp_slider_y + 16, CTRL_W - 20, 12)
+
+    def _enc_label(self, enc):
+        if hasattr(enc, 'midi_CC') and enc.midi_CC is not None:
+            return "Enc %s (CC%d)" % (enc.id, enc.midi_CC)
+        if getattr(enc, 'type', None) == 'VOLUME':
+            return "Vol (enc %s)" % enc.id
+        return "Nav"
+
+    def _add_encoder_row(self, enc, label, y):
+        bw, bh = 38, 28
+        has_press = getattr(enc, 'press_callback', None) is not None
+
+        left_x  = CTRL_X + 5
+        mid_x   = left_x + bw + 4
+        right_x = mid_x + (bw + 4 if has_press else 0)
+
+        self._buttons.append(_Btn(
+            (left_x, y, bw, bh), "◄",
+            lambda e=enc: e.step(-1), self.font_med))
+
+        if has_press:
+            self._buttons.append(_Btn(
+                (mid_x, y, bw, bh), "●",
+                lambda e=enc: e.press(switchstate.Value.RELEASED),
+                self.font_med))
+            self._buttons.append(_Btn(
+                (right_x, y, bw, bh), "►",
+                lambda e=enc: e.step(1), self.font_med))
+        else:
+            self._buttons.append(_Btn(
+                (mid_x, y, bw, bh), "►",
+                lambda e=enc: e.step(1), self.font_med))
+
+        return y + bh + 2
+
+    # -------------------------------------------------------------------------
+    # Main loop integration
+    # -------------------------------------------------------------------------
+
+    def process_events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                raise KeyboardInterrupt
+
+            for btn in self._buttons:
+                btn.handle_event(event)
+
+            if event.type == pygame.KEYDOWN:
+                self._handle_key(event.key, event.mod)
+
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self._exp_slider_rect.collidepoint(event.pos):
+                    self._exp_dragging = True
+                    self._update_exp_from_mouse(event.pos[0])
+
+            if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                self._exp_dragging = False
+
+            if event.type == pygame.MOUSEMOTION and self._exp_dragging:
+                self._update_exp_from_mouse(event.pos[0])
+
+    def render(self):
+        self.screen.fill(BG)
+
+        # LCD (scaled 2×)
+        lcd_surf = self.hw.lcd_pygame.surface
+        scaled = pygame.transform.scale(lcd_surf, (LCD_DISP_W, LCD_DISP_H))
+        self.screen.blit(scaled, (0, 0))
+
+        # Controls panel background
+        panel_rect = pygame.Rect(LCD_DISP_W, 0, CTRL_W, WIN_H)
+        pygame.draw.rect(self.screen, PANEL_BG, panel_rect)
+
+        # Footswitch state colours
+        for btn, idx in self._fs_btns:
+            fs = self.hw.footswitches[idx]
+            color = FS_ON if fs.enabled else FS_OFF
+            pygame.draw.rect(self.screen, color, btn.rect, border_radius=4)
+            lbl = fs.get_display_label() or ("FS%d" % (idx + 1))
+            text = self.font_med.render(lbl[:6], True, TEXT_COLOR)
+            tr = text.get_rect(center=btn.rect.center)
+            self.screen.blit(text, tr)
+
+        # All other buttons
+        fs_btn_set = {id(b) for b, _ in self._fs_btns}
+        for btn in self._buttons:
+            if id(btn) not in fs_btn_set:
+                btn.draw(self.screen)
+
+        # Encoder labels
+        enc_y = 75
+        for enc in self.hw.encoders:
+            lbl = self.font_sm.render(self._enc_label(enc), True, DIM_TEXT)
+            self.screen.blit(lbl, (CTRL_X + 5, enc_y))
+            bh = 28
+            has_press = getattr(enc, 'press_callback', None) is not None
+            enc_y += bh + 2 + 8
+
+        # Expression pedal
+        if self.hw.analog_controls:
+            self._draw_exp_slider()
+
+        # Keyboard hint (bottom of panel)
+        hints = [
+            "← → nav  Enter=click  L=long",
+            "1-4 footswitches",
+            "Q/W enc1  A/S enc2  Z/X vol",
+            "↑↓ expr pedal   Esc=quit",
+        ]
+        hy = WIN_H - len(hints) * 16 - 5
+        for h in hints:
+            surf = self.font_sm.render(h, True, DIM_TEXT)
+            self.screen.blit(surf, (CTRL_X + 4, hy))
+            hy += 16
+
+        pygame.display.flip()
+
+    def _draw_exp_slider(self):
+        ctrl = self.hw.analog_controls[0]
+        y = self._exp_slider_y
+        lbl = self.font_sm.render("Expr (CC%s)" % ctrl.midi_CC, True, DIM_TEXT)
+        self.screen.blit(lbl, (CTRL_X + 5, y))
+
+        r = self._exp_slider_rect
+        pygame.draw.rect(self.screen, SLIDER_BG, r, border_radius=4)
+        fill_w = int(r.width * self._exp_value / 127)
+        if fill_w > 0:
+            pygame.draw.rect(self.screen, SLIDER_FG,
+                             (r.x, r.y, fill_w, r.height), border_radius=4)
+        # thumb
+        tx = r.x + fill_w
+        pygame.draw.circle(self.screen, TEXT_COLOR, (tx, r.centery), 7)
+
+    # -------------------------------------------------------------------------
+    # Input handling
+    # -------------------------------------------------------------------------
+
+    def _enc(self, index):
+        """Return encoder by index (0=nav, 1=enc1, 2=enc2, 3=vol)."""
+        encs = self.hw.encoders
+        return encs[index] if index < len(encs) else None
+
+    def _handle_key(self, key, mod):
+        K = pygame.K_ESCAPE, pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN
+
+        if key == pygame.K_ESCAPE:
+            raise KeyboardInterrupt
+
+        # Nav encoder
+        elif key == pygame.K_LEFT:
+            e = self._enc(0)
+            if e: e.step(-1)
+        elif key == pygame.K_RIGHT:
+            e = self._enc(0)
+            if e: e.step(1)
+        elif key in (pygame.K_RETURN, pygame.K_SPACE):
+            e = self._enc(0)
+            if e: e.press(switchstate.Value.RELEASED)
+        elif key == pygame.K_l:
+            e = self._enc(0)
+            if e: e.press(switchstate.Value.LONGPRESSED)
+
+        # Footswitches
+        elif key in (pygame.K_1, pygame.K_KP1):
+            self._press_fs(0)
+        elif key in (pygame.K_2, pygame.K_KP2):
+            self._press_fs(1)
+        elif key in (pygame.K_3, pygame.K_KP3):
+            self._press_fs(2)
+        elif key in (pygame.K_4, pygame.K_KP4):
+            self._press_fs(3)
+
+        # Tweak encoder 1 (encoders[1])
+        elif key == pygame.K_q:
+            e = self._enc(1)
+            if e: e.step(-1)
+        elif key == pygame.K_w:
+            e = self._enc(1)
+            if e: e.step(1)
+        elif key == pygame.K_e:
+            e = self._enc(1)
+            if e: e.press(switchstate.Value.RELEASED)
+
+        # Tweak encoder 2 (encoders[2])
+        elif key == pygame.K_a:
+            e = self._enc(2)
+            if e: e.step(-1)
+        elif key == pygame.K_s:
+            e = self._enc(2)
+            if e: e.step(1)
+        elif key == pygame.K_d:
+            e = self._enc(2)
+            if e: e.press(switchstate.Value.RELEASED)
+
+        # Volume encoder (encoders[3])
+        elif key == pygame.K_z:
+            e = self._enc(3)
+            if e: e.step(-1)
+        elif key == pygame.K_x:
+            e = self._enc(3)
+            if e: e.step(1)
+
+        # Expression pedal
+        elif key == pygame.K_UP:
+            self._nudge_exp(5)
+        elif key == pygame.K_DOWN:
+            self._nudge_exp(-5)
+
+    def _press_fs(self, index):
+        if index < len(self.hw.footswitches):
+            self.hw.footswitches[index].press()
+
+    def _nudge_exp(self, delta):
+        if not self.hw.analog_controls:
+            return
+        self._exp_value = max(0, min(127, self._exp_value + delta))
+        ctrl = self.hw.analog_controls[0]
+        ctrl.send_midi(self._exp_value)
+
+    def _update_exp_from_mouse(self, mouse_x):
+        r = self._exp_slider_rect
+        ratio = (mouse_x - r.x) / r.width
+        self._exp_value = int(max(0.0, min(1.0, ratio)) * 127)
+        if self.hw.analog_controls:
+            self.hw.analog_controls[0].send_midi(self._exp_value)
