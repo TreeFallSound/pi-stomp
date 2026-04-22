@@ -13,8 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from abc import ABC
 from uilib.container import *
-from pathlib import Path
 
 #
 # Note about coordinates:
@@ -156,15 +156,15 @@ class RoundedPanel(Panel):
                 color = self.fgnd_color
             draw.rounded_rectangle(real_box.PIL_rect, self.radius, None, color, self.outline)
 
-class LcdBase:
-    def dimensions(self):
-        pass
+class LcdBase(ABC):
+    def dimensions(self) -> tuple[int, int]:
+        ...
 
-    def default_format(self):
-        pass
+    def default_format(self) -> str:
+        ...
 
-    def update(self, image, box = None):
-        pass
+    def update(self, image, box = None) -> None:
+        ...
 
 class PanelStack(ContainerWidget):
     def __init__(self, lcd, box = None, image_format = None, use_dimming = True):

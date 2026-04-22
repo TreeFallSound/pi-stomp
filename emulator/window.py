@@ -119,8 +119,6 @@ class EmulatorWindow:
         self.hw = hardware
         self.running = True
 
-        pygame.init()
-        _freetype.init()
         self.screen = pygame.display.set_mode((WIN_W, WIN_H))
         pygame.display.set_caption("pi-Stomp Emulator (v3)")
 
@@ -132,7 +130,7 @@ class EmulatorWindow:
         self._exp_dragging = False
 
         self._buttons: list[_Btn] = []
-        self._fs_btns: list[tuple[_Btn, int]] = []   # (btn, fs_index)
+        self._fs_btns: list[tuple[_Btn, int]] = []
         self._labels: list[_Label] = []
         self._build_ui()
 
@@ -141,10 +139,6 @@ class EmulatorWindow:
     # -------------------------------------------------------------------------
 
     def _build_ui(self):
-        self._buttons.clear()
-        self._fs_btns.clear()
-        self._labels.clear()
-
         y = 15
         bw, bh = 60, 30   # default button size
 
@@ -305,28 +299,19 @@ class EmulatorWindow:
     # Input handling
     # -------------------------------------------------------------------------
 
-    def _enc(self, index):
-        """Return encoder by index (0=nav, 1=enc1, 2=enc2, 3=vol)."""
-        encs = self.hw.encoders
-        return encs[index] if index < len(encs) else None
-
     def _handle_key(self, key, mod):
         if key == pygame.K_ESCAPE:
             raise KeyboardInterrupt
 
         # Nav encoder
         elif key == pygame.K_LEFT:
-            e = self._enc(0)
-            if e: e.step(-1)
+            self.hw.nav_encoder.step(-1)
         elif key == pygame.K_RIGHT:
-            e = self._enc(0)
-            if e: e.step(1)
+            self.hw.nav_encoder.step(1)
         elif key in (pygame.K_RETURN, pygame.K_SPACE):
-            e = self._enc(0)
-            if e: e.press(switchstate.Value.RELEASED)
+            self.hw.nav_encoder.press(switchstate.Value.RELEASED)
         elif key == pygame.K_l:
-            e = self._enc(0)
-            if e: e.press(switchstate.Value.LONGPRESSED)
+            self.hw.nav_encoder.press(switchstate.Value.LONGPRESSED)
 
         # Footswitches
         elif key in (pygame.K_1, pygame.K_KP1):
@@ -338,35 +323,27 @@ class EmulatorWindow:
         elif key in (pygame.K_4, pygame.K_KP4):
             self._press_fs(3)
 
-        # Tweak encoder 1 (encoders[1])
+        # Tweak encoder 1
         elif key == pygame.K_q:
-            e = self._enc(1)
-            if e: e.step(-1)
+            self.hw.tweak_encoders[0].step(-1)
         elif key == pygame.K_w:
-            e = self._enc(1)
-            if e: e.step(1)
+            self.hw.tweak_encoders[0].step(1)
         elif key == pygame.K_e:
-            e = self._enc(1)
-            if e: e.press(switchstate.Value.RELEASED)
+            self.hw.tweak_encoders[0].press(switchstate.Value.RELEASED)
 
-        # Tweak encoder 2 (encoders[2])
+        # Tweak encoder 2
         elif key == pygame.K_a:
-            e = self._enc(2)
-            if e: e.step(-1)
+            self.hw.tweak_encoders[1].step(-1)
         elif key == pygame.K_s:
-            e = self._enc(2)
-            if e: e.step(1)
+            self.hw.tweak_encoders[1].step(1)
         elif key == pygame.K_d:
-            e = self._enc(2)
-            if e: e.press(switchstate.Value.RELEASED)
+            self.hw.tweak_encoders[1].press(switchstate.Value.RELEASED)
 
-        # Volume encoder (encoders[3])
+        # Volume encoder
         elif key == pygame.K_z:
-            e = self._enc(3)
-            if e: e.step(-1)
+            self.hw.volume_encoder.step(-1)
         elif key == pygame.K_x:
-            e = self._enc(3)
-            if e: e.step(1)
+            self.hw.volume_encoder.step(1)
 
         # Expression pedal
         elif key == pygame.K_UP:
@@ -383,6 +360,7 @@ class EmulatorWindow:
             return
         self._exp_value = max(0, min(127, self._exp_value + delta))
         ctrl = self.hw.analog_controls[0]
+        ctrl.set_value(self._exp_value)
         ctrl.send_midi(self._exp_value)
 
     def _update_exp_from_mouse(self, mouse_x):
@@ -390,4 +368,6 @@ class EmulatorWindow:
         ratio = (mouse_x - r.x) / r.width
         self._exp_value = int(max(0.0, min(1.0, ratio)) * 127)
         if self.hw.analog_controls:
-            self.hw.analog_controls[0].send_midi(self._exp_value)
+            ctrl = self.hw.analog_controls[0]
+            ctrl.set_value(self._exp_value)
+            ctrl.send_midi(self._exp_value)

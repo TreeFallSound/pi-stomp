@@ -18,20 +18,12 @@ from uilib.panel import LcdBase
 
 
 class LcdPygame(LcdBase):
-    """LcdBase implementation that renders into a pygame Surface.
-
-    The surface is read by EmulatorWindow each frame and blitted (scaled) to
-    the screen.  All uilib / lcd320x240 logic above this layer is unchanged.
-    """
+    """LCD implementation that renders into a pygame Surface."""
 
     def __init__(self, width=320, height=240):
         self.width = width
         self.height = height
-        # pygame.init() must already have been called by the time this is
-        # instantiated (done in modalapistomp.py before hardware creation).
         self.surface = pygame.Surface((width, height))
-
-    # --- LcdBase interface ---------------------------------------------------
 
     def dimensions(self):
         return (self.width, self.height)

@@ -22,17 +22,12 @@ Overrides Pi-only system calls and wires pygame rendering into the poll loop.
 import logging
 import os
 
-import pistomp.settings as Settings_module
 from modalapi.modhandler import Modhandler
 
 
 class EmulatorModhandler(Modhandler):
 
     def __init__(self, homedir):
-        emu_cfg_dir = os.path.join(os.path.expanduser("~"), ".pistomp_emulator", "config")
-        os.makedirs(emu_cfg_dir, exist_ok=True)
-        Settings_module.DATA_DIR = emu_cfg_dir
-
         super().__init__(_VirtualAudiocard(), homedir)
 
         emu_data_dir = os.path.join(os.path.expanduser("~"), ".pistomp_emulator")
@@ -45,7 +40,10 @@ class EmulatorModhandler(Modhandler):
         self.root_uri = "http://127.0.0.1:18181/"
         self.wifi_manager = _StubWifiManager()
 
-        self._window = None   # set by the caller after window is created
+        self._window = None
+
+    def set_window(self, window):
+        self._window = window
 
     def pedalboard_change(self, pedalboard=None):
         if pedalboard is None and self.pedalboard_list:

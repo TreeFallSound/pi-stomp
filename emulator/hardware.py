@@ -37,6 +37,9 @@ class EmulatorHardware(hardware.Hardware):
         # spi stays None — no init_spi() call
 
         self.lcd_pygame: LcdPygame | None = None
+        self.nav_encoder: MockEncoder
+        self.tweak_encoders: list[MockEncoderMidi] = []
+        self.volume_encoder: MockEncoder
 
         self.init_lcd()
         self.init_encoders()
@@ -58,6 +61,7 @@ class EmulatorHardware(hardware.Hardware):
         nav = MockEncoder(callback=self.handler.universal_encoder_select, id=0)
         nav.press_callback = self.handler.universal_encoder_sw
         self.encoders.append(nav)
+        self.nav_encoder = nav
 
         # Tweak / volume encoders from config
         cfg = self.default_cfg.copy()
@@ -71,6 +75,7 @@ class EmulatorHardware(hardware.Hardware):
                 callback=self.handler.system_menu_headphone_volume,
                 type=type, id=id)
             # volume encoder has no press on the real hardware
+            self.volume_encoder = enc
         else:
             enc = MockEncoderMidi(
                 handler=self.handler,
@@ -81,6 +86,7 @@ class EmulatorHardware(hardware.Hardware):
                 type=Token.KNOB,
                 id=id)
             enc.press_callback = self.handler.universal_encoder_sw
+            self.tweak_encoders.append(enc)
 
         # Wire longpress (same callback as press for simplicity)
         if longpress_callback:
@@ -92,11 +98,7 @@ class EmulatorHardware(hardware.Hardware):
 
     def init_footswitches(self):
         cfg = self.default_cfg.copy()
-        if (cfg is None
-                or Token.HARDWARE not in cfg
-                or Token.FOOTSWITCHES not in cfg[Token.HARDWARE]):
-            return
-        cfg_fs = cfg[Token.HARDWARE][Token.FOOTSWITCHES]
+        cfg_fs = cfg.get(Token.HARDWARE, {}).get(Token.FOOTSWITCHES)
         if not cfg_fs:
             return
 
@@ -139,7 +141,8 @@ class EmulatorHardware(hardware.Hardware):
         pass
 
     def cleanup(self):
-        pass
+        import pygame
+        pygame.quit()
 
     def test(self):
         pass

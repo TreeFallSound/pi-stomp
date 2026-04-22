@@ -15,6 +15,7 @@
 
 import logging
 import os
+from typing import Any
 
 import yaml
 from jsonschema import validate
@@ -188,7 +189,7 @@ def load_cfg_from_file(path):
         logging.error("Config file error in: %s\n%s\n%s" % (path, e.schema_path, e.message))
     return cfg
 
-def load_default_cfg():
+def load_default_cfg() -> dict[str, Any]:
     # Read the default config file - should only need to read once per session
     default_config_file = os.path.join(data_dir, DEFAULT_CONFIG_FILE)
     with open(default_config_file, 'r') as ymlfile:

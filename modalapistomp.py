@@ -18,6 +18,7 @@
 # Configure logging BEFORE any imports to ensure it takes effect
 import logging
 import sys
+from typing import Any
 
 # Set up logging with format that works well with systemd journal
 logging.basicConfig(
@@ -32,6 +33,7 @@ import time
 
 from rtmidi.midiutil import open_midioutput
 
+from pistomp.audiocard import Audiocard
 import pistomp.audiocardfactory as Audiocardfactory
 import pistomp.config as config
 import pistomp.generichost as Generichost
@@ -87,6 +89,9 @@ def main():
     # Handler object
     handler = None
     midiout = None
+
+    cfg: dict[str, Any] | None = None
+    audiocard: Audiocard | None = None
 
     if args.host[0] != "emulator":
         # Audio Card Config - doing this early so audio passes ASAP
@@ -159,9 +164,15 @@ def main():
             raise
 
     elif args.host[0] == "emulator":
+        import pygame
+        import pygame._freetype as _freetype
+        import pistomp.settings as Settings_module
         from emulator.modhandler import EmulatorModhandler
         from emulator.hardware import EmulatorHardware
         from emulator.window import EmulatorWindow
+
+        pygame.init()
+        _freetype.init()
 
         port = 0
         try:
@@ -171,12 +182,16 @@ def main():
             midiout = None
         cfg = config.load_cfg_from_file(EMULATOR_CONFIG_TEMPLATE)
 
+        emu_cfg_dir = os.path.join(os.path.expanduser("~"), ".pistomp_emulator", "config")
+        os.makedirs(emu_cfg_dir, exist_ok=True)
+        Settings_module.DATA_DIR = emu_cfg_dir
+
         handler = EmulatorModhandler(cwd)
         hw = EmulatorHardware(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
         handler.add_hardware(hw)
 
         window = EmulatorWindow(hw)
-        handler._window = window
+        handler.set_window(window)
 
         handler.load_banks()
         handler.load_pedalboards()
