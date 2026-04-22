@@ -13,14 +13,16 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Software-only stand-ins for the physical controls on pi-Stomp Tre.
+"""Software-only stand-ins for the physical controls on pi-Stomp.
 
-Each mock control has the same interface that Hardware.poll_controls() expects
-(read_rotary / poll / refresh) but does nothing on its own.  The emulator
-window drives them by calling their step() / press() / set_value() methods.
+Each mock control subclasses the corresponding real hardware class so that
+type checkers are satisfied, but bypasses any GPIO / SPI / ADC init.
 """
 
-import logging
+import pistomp.analogcontrol as analogcontrol
+import pistomp.encoder as encoder
+import pistomp.encodermidicontrol as encodermidicontrol
+import pistomp.footswitch as footswitch
 
 try:
     from rtmidi.midiconstants import CONTROL_CHANGE
@@ -30,14 +32,12 @@ except ImportError:
     CONTROL_CHANGE = 0xB0
 
 
-class MockEncoder:
-    """Nav encoder (no GPIO, no MIDI CC).  Driven externally via step()."""
+class MockEncoder(encoder.Encoder):
+    """Nav encoder (no GPIO).  Driven externally via step() / press()."""
 
     def __init__(self, callback, type=None, id=None):
-        self.callback = callback
-        self.press_callback = None   # set by EmulatorHardware after creation
-        self.type = type
-        self.id = id
+        super().__init__(d_pin=None, clk_pin=None, callback=callback, type=type, id=id)
+        self.press_callback = None
 
     def read_rotary(self):
         pass
@@ -51,35 +51,30 @@ class MockEncoder:
             self.press_callback(value)
 
 
-class MockEncoderMidi:
+class MockEncoderMidi(encodermidicontrol.EncoderMidiControl):
     """Tweak encoder with MIDI CC.  Driven externally via step() / press()."""
 
     def __init__(self, handler, callback, midi_channel, midi_CC, midiout,
                  type=None, id=None, cfg=None):
-        self.handler = handler
-        self.callback = callback
-        self.press_callback = None   # set by EmulatorHardware after creation
-        self.midi_channel = midi_channel
-        self.midi_CC = midi_CC
-        self.midiout = midiout
-        self.type = type
-        self.id = id
+        super().__init__(handler=handler, d_pin=None, clk_pin=None, callback=callback,
+                         midi_CC=midi_CC, midi_channel=midi_channel, midiout=midiout,
+                         type=type, id=id)
         self.cfg = cfg or {'type': type, 'id': id}
-        self.parameter = None
-        self._midi_value = 64
+        self.midi_value = 64
+        self.press_callback = None
 
     def read_rotary(self):
         pass
 
     def set_value(self, value):
-        self._midi_value = int(value)
+        self.midi_value = int(value)
 
     def step(self, direction):
-        self._midi_value = max(0, min(127, self._midi_value + direction))
+        self.midi_value = max(0, min(127, self.midi_value + direction))
         if self.midiout and self.midi_CC is not None and _rtmidi_available:
             self.midiout.send_message(
                 [CONTROL_CHANGE | (self.midi_channel & 0x0F),
-                 self.midi_CC, self._midi_value])
+                 self.midi_CC, self.midi_value])
         if self.callback:
             self.callback(direction)
 
@@ -88,41 +83,18 @@ class MockEncoderMidi:
             self.press_callback(value)
 
 
-class MockFootswitch:
+class MockFootswitch(footswitch.Footswitch):
     """Footswitch with no GPIO/ADC.  Driven externally via press()."""
-
-    # Match the Footswitch class-level interface expected by Hardware.reinit()
-    all_longpress_groups = {}
-    callbacks = {}
-
-    @classmethod
-    def init(cls, callbacks):
-        cls.callbacks = callbacks
 
     @classmethod
     def check_longpress_events(cls):
         pass
 
     def __init__(self, id, midi_CC, midi_channel, midiout, refresh_callback):
-        self.id = id
-        self.midi_CC = midi_CC
-        self.midi_channel = midi_channel
-        self.midiout = midiout
-        self.refresh_callback = refresh_callback
-        self.enabled = False
-        self.display_label = None
-        self.lcd_color = None
-        self.category = None
-        self.longpress_groups = []
-        self.relay_list = []
-        self.preset_callback = None
-        self.preset_callback_arg = None
-        self.parameter = None
+        # led_pin=None, pixel=None, gpio_input=None, adc_input=None — no GPIO paths taken
+        super().__init__(id, None, None, midi_CC, midi_channel, midiout, refresh_callback)
         self.type = None
         self.cfg = {}
-
-    def get_display_label(self):
-        return self.display_label or ""
 
     def poll(self):
         pass
@@ -135,58 +107,14 @@ class MockFootswitch:
                  self.midi_CC, 0 if self.enabled else 127])
         self.refresh_callback(footswitch=self)
 
-    # --- interface expected by Hardware.reinit / bind_current_pedalboard -----
 
-    def set_value(self, value):
-        self.enabled = (value < 1)
-        self.refresh_callback(footswitch=self)
-
-    def set_midi_CC(self, cc):
-        self.midi_CC = cc
-
-    def set_midi_channel(self, ch):
-        self.midi_channel = ch
-
-    def set_display_label(self, label):
-        self.display_label = label
-
-    def set_lcd_color(self, color):
-        self.lcd_color = color
-
-    def set_category(self, category):
-        self.category = category
-
-    def set_longpress_groups(self, groups):
-        if isinstance(groups, str):
-            groups = groups.split()
-        if isinstance(groups, list):
-            self.longpress_groups = groups
-
-    def clear_pedalboard_info(self):
-        self.display_label = None
-        self.lcd_color = None
-        self.category = None
-        self.preset_callback = None
-        self.preset_callback_arg = None
-        self.relay_list = []
-
-    def clear_relays(self):
-        self.relay_list = []
-
-    def add_relay(self, relay):
-        if relay:
-            self.relay_list.append(relay)
-
-    def add_preset(self, callback, callback_arg=None):
-        self.preset_callback = callback
-        self.preset_callback_arg = callback_arg
-
-
-class MockAnalogControl:
+class MockAnalogControl(analogcontrol.AnalogControl):
     """Expression pedal / knob with no SPI/ADC.  Value set externally."""
 
     def __init__(self, midi_CC, midi_channel, midiout, control_type=None,
                  id=None, cfg=None):
+        # AnalogControl.__init__ only stores spi/channel/tolerance — safe with None
+        super().__init__(spi=None, adc_channel=None, tolerance=0)
         self.midi_CC = midi_CC
         self.midi_channel = midi_channel
         self.midiout = midiout

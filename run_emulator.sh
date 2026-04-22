@@ -46,4 +46,11 @@ if [ -n "$_lilv_libpath" ]; then
     esac
 fi
 
-exec uv run python3 modalapistomp.py --host emulator "$@"
+# Optional first argument: v1 / v2 / v3 (default: v3)
+_version="${1:-v3}"
+case "$_version" in
+    v1|v2|v3) shift ;;
+    *) _version="v3" ;;
+esac
+
+exec uv run python3 modalapistomp.py --host "emulator_${_version}" "$@"

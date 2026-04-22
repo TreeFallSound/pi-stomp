@@ -44,6 +44,12 @@ import pistomp.hardwarefactory as Hardwarefactory
 EMULATOR_CONFIG_TEMPLATE = os.path.join(
     os.path.dirname(os.path.realpath(__file__)), "setup", "config_templates", "default_config_pistomptre.yml"
 )
+EMULATOR_V2_CONFIG_TEMPLATE = os.path.join(
+    os.path.dirname(os.path.realpath(__file__)), "setup", "config_templates", "default_config_pistompcore.yml"
+)
+EMULATOR_V1_CONFIG_TEMPLATE = os.path.join(
+    os.path.dirname(os.path.realpath(__file__)), "setup", "config_templates", "default_config_pistomp.yml"
+)
 
 
 def main():
@@ -64,7 +70,7 @@ def main():
         nargs="+",
         help="Plugin host to use. Example --host mod'",
         default=["mod"],
-        choices=["mod", "mod1", "generic", "test", "emulator"],
+        choices=["mod", "mod1", "generic", "test", "emulator_v1", "emulator_v2", "emulator_v3"],
     )
 
     args = parser.parse_args()
@@ -93,7 +99,7 @@ def main():
     cfg: dict[str, Any] | None = None
     audiocard: Audiocard | None = None
 
-    if args.host[0] != "emulator":
+    if args.host[0] not in ("emulator_v1", "emulator_v2", "emulator_v3"):
         # Audio Card Config - doing this early so audio passes ASAP
         factory = Audiocardfactory.Audiocardfactory(cwd)
         audiocard = factory.create()
@@ -163,13 +169,24 @@ def main():
         except:
             raise
 
-    elif args.host[0] == "emulator":
+    elif args.host[0] in ("emulator_v1", "emulator_v2", "emulator_v3"):
         import pygame
         import pygame._freetype as _freetype
         import pistomp.settings as Settings_module
         from emulator.modhandler import EmulatorModhandler
-        from emulator.hardware import EmulatorHardware
         from emulator.window import EmulatorWindow
+
+        _emu_version = args.host[0]  # "emulator_v1" / "emulator_v2" / "emulator_v3"
+
+        if _emu_version == "emulator_v2":
+            from emulator.hardware_v2 import EmulatorHardwareV2 as _EmuHW
+            _emu_cfg_template = EMULATOR_V2_CONFIG_TEMPLATE
+        elif _emu_version == "emulator_v1":
+            logging.error("emulator_v1 is not yet implemented")
+            sys.exit(1)
+        else:  # emulator_v3
+            from emulator.hardware_v3 import EmulatorHardwareV3 as _EmuHW
+            _emu_cfg_template = EMULATOR_CONFIG_TEMPLATE
 
         pygame.init()
         _freetype.init()
@@ -180,14 +197,14 @@ def main():
         except Exception:
             logging.warning("MIDI output unavailable in emulator mode - continuing without MIDI")
             midiout = None
-        cfg = config.load_cfg_from_file(EMULATOR_CONFIG_TEMPLATE)
+        cfg = config.load_cfg_from_file(_emu_cfg_template)
 
         emu_cfg_dir = os.path.join(os.path.expanduser("~"), ".pistomp_emulator", "config")
         os.makedirs(emu_cfg_dir, exist_ok=True)
         Settings_module.DATA_DIR = emu_cfg_dir
 
         handler = EmulatorModhandler(cwd)
-        hw = EmulatorHardware(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
+        hw = _EmuHW(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
         handler.add_hardware(hw)
 
         window = EmulatorWindow(hw)

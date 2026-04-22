@@ -13,88 +13,44 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""EmulatorHardware - software-only Hardware subclass for the v3 emulator.
+"""Shared base for all emulator Hardware subclasses.
 
-Replaces all GPIO / SPI / ADC interactions with mock controls and injects a
-pygame-backed LCD driver.  No real hardware is touched.
+Provides init_lcd, init_footswitches, init_analog_controls, init_relays,
+cleanup, and test.  Subclasses only need to implement init_encoders (and
+optionally add_encoder for config-driven encoder creation).
 """
 
-import logging
-
+import pistomp.hardware as hardware
 import common.token as Token
 import common.util as Util
-import pistomp.hardware as hardware
 
-from emulator.controls import (MockEncoder, MockEncoderMidi,
-                               MockFootswitch, MockAnalogControl)
+from emulator.controls import MockFootswitch, MockAnalogControl, MockEncoder
 from emulator.lcd_pygame import LcdPygame
 
 
-class EmulatorHardware(hardware.Hardware):
+class EmulatorHardwareBase(hardware.Hardware):
+
+    VERSION_LABEL = ""
+    lcd_flip = False
 
     def __init__(self, cfg, handler, midiout, refresh_callback):
         super().__init__(cfg, handler, midiout, refresh_callback)
         # spi stays None — no init_spi() call
 
         self.lcd_pygame: LcdPygame | None = None
-        self.nav_encoder: MockEncoder
-        self.tweak_encoders: list[MockEncoderMidi] = []
-        self.volume_encoder: MockEncoder
-
-        self.init_lcd()
-        self.init_encoders()
-        self.init_footswitches()
-        self.init_analog_controls()
+        self.nav_encoder: MockEncoder | None = None
+        self.tweak_encoders: list = []
+        self.volume_encoder: MockEncoder | None = None
 
     # -------------------------------------------------------------------------
-    # Abstract method implementations
+    # Shared init helpers
     # -------------------------------------------------------------------------
 
     def init_lcd(self):
         import pistomp.lcd320x240 as Lcd
         self.lcd_pygame = LcdPygame(320, 240)
         self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler,
-                                     flip=False, display=self.lcd_pygame))
-
-    def init_encoders(self):
-        # Nav encoder — no MIDI CC, drives universal_encoder_select
-        nav = MockEncoder(callback=self.handler.universal_encoder_select, id=0)
-        nav.press_callback = self.handler.universal_encoder_sw
-        self.encoders.append(nav)
-        self.nav_encoder = nav
-
-        # Tweak / volume encoders from config
-        cfg = self.default_cfg.copy()
-        self.create_encoders(cfg)
-
-    def add_encoder(self, id, type, callback, longpress_callback,
-                    midi_channel, midi_cc):
-        """Called by Hardware.create_encoders() for each encoder in config."""
-        if type == Token.VOLUME:
-            enc = MockEncoder(
-                callback=self.handler.system_menu_headphone_volume,
-                type=type, id=id)
-            # volume encoder has no press on the real hardware
-            self.volume_encoder = enc
-        else:
-            enc = MockEncoderMidi(
-                handler=self.handler,
-                callback=callback,
-                midi_channel=midi_channel,
-                midi_CC=midi_cc,
-                midiout=self.midiout,
-                type=Token.KNOB,
-                id=id)
-            enc.press_callback = self.handler.universal_encoder_sw
-            self.tweak_encoders.append(enc)
-
-        # Wire longpress (same callback as press for simplicity)
-        if longpress_callback:
-            lp = self.handler.get_callback(longpress_callback)
-            if lp and isinstance(enc, MockEncoderMidi):
-                enc.press_callback = lp
-
-        return enc
+                                     flip=self.lcd_flip, display=self.lcd_pygame))
 
     def init_footswitches(self):
         cfg = self.default_cfg.copy()
