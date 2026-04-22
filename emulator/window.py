@@ -33,8 +33,25 @@ Keyboard shortcuts
   Esc            quit
 """
 
+import os
 import pygame
+import pygame._freetype as _freetype
 import pistomp.switchstate as switchstate
+
+_FONTS_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_FONT_MONO      = os.path.join(_FONTS_DIR, "DejaVuSansMono.ttf")
+_FONT_MONO_BOLD = os.path.join(_FONTS_DIR, "DejaVuSansMono-Bold.ttf")
+
+
+class _FTFont:
+    """Wraps pygame._freetype.Font to match the pygame.font.Font render API."""
+
+    def __init__(self, path, size):
+        self._ft = _freetype.Font(path, size)
+
+    def render(self, text, antialias, color):
+        surf, _ = self._ft.render(text, color)
+        return surf
 
 # ---- dimensions -------------------------------------------------------------
 LCD_W, LCD_H    = 320, 240
@@ -92,12 +109,13 @@ class EmulatorWindow:
         self.running = True
 
         pygame.init()
+        _freetype.init()
         self.screen = pygame.display.set_mode((WIN_W, WIN_H))
         pygame.display.set_caption("pi-Stomp Emulator (v3)")
 
-        self.font_sm  = pygame.font.SysFont("monospace", 13)
-        self.font_med = pygame.font.SysFont("monospace", 15, bold=True)
-        self.font_hdr = pygame.font.SysFont("monospace", 14, bold=True)
+        self.font_sm  = _FTFont(_FONT_MONO,      13)
+        self.font_med = _FTFont(_FONT_MONO_BOLD, 15)
+        self.font_hdr = _FTFont(_FONT_MONO_BOLD, 14)
 
         self._exp_value = 64   # 0-127 MIDI value for expression pedal
         self._exp_dragging = False

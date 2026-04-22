@@ -629,9 +629,11 @@ class Lcd(abstract_lcd.Lcd):
         self.splash_panel.refresh()
 
     def cleanup(self):
-        self.pstack.pop_panel(None)  # current panel
-        self.pstack.pop_panel(self.footswitch_panel)
-        if self.main_panel_pushed:
+        if self.pstack.current is not None:
+            self.pstack.pop_panel(None)
+        if self.footswitch_panel in self.pstack.stack:
+            self.pstack.pop_panel(self.footswitch_panel)
+        if self.main_panel_pushed and self.main_panel in self.pstack.stack:
             self.pstack.pop_panel(self.main_panel)
         self.w_splash.set_foreground(self.color_splash_down)
         self.splash_panel.refresh()
