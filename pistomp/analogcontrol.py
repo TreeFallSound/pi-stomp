@@ -37,4 +37,9 @@ class AnalogControl:
         return data
 
     def refresh(self):
+        """Read current value from hardware and potentially take action."""
         logging.error("AnalogControl subclass hasn't overriden the refresh method")
+
+    def initialize(self):
+        """Called when the pedalboard has been loaded, e.g. to sync current value."""
+        logging.error("AnalogControl subclass hasn't implemented initialize method")
