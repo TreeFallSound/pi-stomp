@@ -38,7 +38,7 @@ import pygame
 import pygame._freetype as _freetype
 import pistomp.switchstate as switchstate
 
-_FONTS_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_FONTS_DIR  = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fonts")
 _FONT_MONO      = os.path.join(_FONTS_DIR, "DejaVuSansMono.ttf")
 _FONT_MONO_BOLD = os.path.join(_FONTS_DIR, "DejaVuSansMono-Bold.ttf")
 
