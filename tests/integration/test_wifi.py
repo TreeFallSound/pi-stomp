@@ -6,7 +6,7 @@ from tests.types import SystemFixture
 
 def test_poll_wifi_update(modhandler_system: SystemFixture):
     """poll_wifi() dispatches a wifi update to handler state."""
-    handler, _, _, _, _ = modhandler_system
+    handler = modhandler_system.handler
 
     assert handler.wifi_manager
 
@@ -20,7 +20,7 @@ def test_poll_wifi_update(modhandler_system: SystemFixture):
 
 def test_poll_wifi_no_update(modhandler_system: SystemFixture):
     """poll_wifi() does nothing when wifi_manager.poll() returns None."""
-    handler, _, _, _, _ = modhandler_system
+    handler = modhandler_system.handler
 
     assert handler.wifi_manager
 
@@ -33,7 +33,7 @@ def test_poll_wifi_no_update(modhandler_system: SystemFixture):
 
 
 def test_system_toggle_hotspot_enable(modhandler_system: SystemFixture):
-    handler, _, _, _, _ = modhandler_system
+    handler = modhandler_system.handler
 
     assert handler.wifi_manager
 
@@ -44,7 +44,7 @@ def test_system_toggle_hotspot_enable(modhandler_system: SystemFixture):
 
 
 def test_system_toggle_hotspot_disable(modhandler_system: SystemFixture):
-    handler, _, _, _, _ = modhandler_system
+    handler = modhandler_system.handler
 
     assert handler.wifi_manager
 
@@ -55,7 +55,7 @@ def test_system_toggle_hotspot_disable(modhandler_system: SystemFixture):
 
 
 def test_configure_wifi_credentials(modhandler_system: SystemFixture):
-    handler, _, _, _, _ = modhandler_system
+    handler = modhandler_system.handler
 
     assert handler.wifi_manager
 

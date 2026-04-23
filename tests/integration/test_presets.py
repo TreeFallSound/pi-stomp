@@ -5,7 +5,8 @@ from tests.types import SystemFixture
 
 def test_preset_incr_and_change(modhandler_system: SystemFixture, get_urls):
     """preset_incr_and_change() advances from index 0 → 1."""
-    handler, _, _, mock_get, _ = modhandler_system
+    handler = modhandler_system.handler
+    mock_get = modhandler_system.mock_get
 
     handler.preset_incr_and_change()
 
@@ -16,7 +17,8 @@ def test_preset_incr_and_change(modhandler_system: SystemFixture, get_urls):
 
 def test_preset_set_and_change(modhandler_system: SystemFixture, get_urls):
     """preset_set_and_change(1) loads snapshot index 1 directly."""
-    handler, _, _, mock_get, _ = modhandler_system
+    handler = modhandler_system.handler
+    mock_get = modhandler_system.mock_get
 
     handler.preset_set_and_change(1)
 
@@ -25,7 +27,8 @@ def test_preset_set_and_change(modhandler_system: SystemFixture, get_urls):
 
 def test_preset_change_out_of_range(modhandler_system: SystemFixture, get_urls):
     """preset_change() with an invalid index shows a dialog and makes no HTTP call."""
-    handler, _, _, mock_get, _ = modhandler_system
+    handler = modhandler_system.handler
+    mock_get = modhandler_system.mock_get
 
     handler.preset_change(99)
 

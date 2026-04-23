@@ -5,7 +5,8 @@ from tests.types import SystemFixture
 
 def test_system_toggle_bypass_audiocard(v3_system: SystemFixture):
     """Without a relay, toggle_bypass flips both L/R audiocard channels."""
-    handler, hw, _, _, _ = v3_system
+    handler = v3_system.handler
+    hw = v3_system.hw
     assert hw.relay is None
     handler.settings.get_setting.return_value = None  # pyright: ignore[reportAttributeAccessIssue]
     handler.bypass_left = False

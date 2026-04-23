@@ -9,7 +9,7 @@ from tests.types import SystemFixture
 
 
 def test_load_banks(modhandler_system: SystemFixture, tmp_path):
-    handler, _, _, _, _ = modhandler_system
+    handler = modhandler_system.handler
     banks_data = [
         {"title": "Live", "pedalboards": [{"title": "Rig 1"}, {"title": "Rig 2"}]},
         {"title": "Studio", "pedalboards": [{"title": "Studio Rig"}]},
@@ -24,7 +24,7 @@ def test_load_banks(modhandler_system: SystemFixture, tmp_path):
 
 
 def test_set_bank(modhandler_system: SystemFixture):
-    handler, _, _, _, _ = modhandler_system
+    handler = modhandler_system.handler
     handler.set_bank("Live")
     assert handler.current_bank == "Live"
     handler.settings.set_setting.assert_called_with(Token.BANK, "Live")  # pyright: ignore[reportAttributeAccessIssue]
@@ -32,7 +32,7 @@ def test_set_bank(modhandler_system: SystemFixture):
 
 def test_banks_change_detected_via_poll(modhandler_system: SystemFixture, tmp_path):
     """poll_modui_changes() reloads banks when the file mtime changes."""
-    handler, _, _, _, _ = modhandler_system
+    handler = modhandler_system.handler
     banks_data = [{"title": "Bank A", "pedalboards": [{"title": "Rig 1"}]}]
     banks_file = tmp_path / "data" / "banks.json"
     banks_file.write_text(json.dumps(banks_data))
@@ -46,7 +46,7 @@ def test_banks_change_detected_via_poll(modhandler_system: SystemFixture, tmp_pa
 
 def test_set_current_pedalboard_with_config_file(modhandler_system: SystemFixture, tmp_path):
     """config.yml found in bundle dir is passed to hardware.reinit()."""
-    handler, _, _, _, _ = modhandler_system
+    handler = modhandler_system.handler
     from modalapi.pedalboard import Pedalboard as PB
 
     bundle_dir = tmp_path / "cfg_test.pedalboard"
@@ -64,5 +64,5 @@ def test_set_current_pedalboard_with_config_file(modhandler_system: SystemFixtur
 
 
 def test_get_current_pedalboard_bundle_path(modhandler_system: SystemFixture):
-    handler, _, _, _, _ = modhandler_system
+    handler = modhandler_system.handler
     assert handler.get_current_pedalboard_bundle_path() == "/path/to/rig.pedalboard"

@@ -7,7 +7,8 @@ from tests.types import SystemFixture
 
 def test_system_info_load(v2_system: SystemFixture):
     """On v2 (relay present), system_info_load reads bypass from the relay, not the audiocard."""
-    handler, hw, _, _, _ = v2_system
+    handler = v2_system.handler
+    hw = v2_system.hw
     hw.relay = MagicMock()
     hw.relay.get.return_value = False  # relay not engaged → bypass enabled
     handler.audiocard.get_switch_parameter.return_value = True

@@ -11,7 +11,9 @@ from tests.types import SystemFixture
 
 def test_v3_pedalboard_change_via_modui(v3_system: SystemFixture, make_plugin, snapshot):
     """MOD-UI writes last.json → poll_modui_changes() reloads without a load_bundle POST."""
-    handler, _, _, mock_get, mock_post = v3_system
+    handler = v3_system.handler
+    mock_get = v3_system.mock_get
+    mock_post = v3_system.mock_post
 
     pb2 = handler.pedalboards["/path/to/new.pedalboard"]
     pb2.plugins = [make_plugin("fuzz", category="Distortion")]
@@ -45,7 +47,9 @@ def test_v3_pedalboard_change_via_modui(v3_system: SystemFixture, make_plugin, s
 
 def test_v3_pedalboard_change_via_lcd(v3_system: SystemFixture, make_plugin, snapshot, get_urls):
     """Encoder selects the second board → POST load_bundle fires, MOD-UI confirms via last.json."""
-    handler, _, _, mock_get, mock_post = v3_system
+    handler = v3_system.handler
+    mock_get = v3_system.mock_get
+    mock_post = v3_system.mock_post
 
     handler.pedalboards["/path/to/new.pedalboard"].plugins = [make_plugin("fuzz")]
 

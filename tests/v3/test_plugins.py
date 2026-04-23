@@ -15,7 +15,8 @@ from tests.types import SystemFixture
 
 def test_v3_bind_footswitch_to_plugin(v3_system: SystemFixture, make_plugin):
     """bind_current_pedalboard() links a footswitch to a plugin's :bypass param."""
-    handler, hw, _, _, _ = v3_system
+    handler = v3_system.handler
+    hw = v3_system.hw
 
     fs0 = hw.footswitches[0]
     binding_key = next(k for k, v in hw.controllers.items() if v is fs0)
@@ -34,7 +35,8 @@ def test_v3_bind_footswitch_to_plugin(v3_system: SystemFixture, make_plugin):
 
 def test_v3_bind_encoder_midi_to_plugin(v3_system: SystemFixture, make_plugin):
     """bind_current_pedalboard() populates analog_controllers for EncoderMidiControl bindings."""
-    handler, hw, _, _, _ = v3_system
+    handler = v3_system.handler
+    hw = v3_system.hw
 
     enc = next((v for v in hw.controllers.values() if isinstance(v, EncoderMidiControl)), None)
     if enc is None:
@@ -56,7 +58,8 @@ def test_v3_bind_encoder_midi_to_plugin(v3_system: SystemFixture, make_plugin):
 
 def test_v3_bind_volume_encoder_populates_analog_controllers(v3_system: SystemFixture):
     """The VOLUME-type encoder always appears in analog_controllers after binding."""
-    handler, hw, _, _, _ = v3_system
+    handler = v3_system.handler
+    hw = v3_system.hw
 
     assert handler.current
     handler.current.pedalboard.plugins = []
@@ -73,7 +76,9 @@ def test_v3_bind_volume_encoder_populates_analog_controllers(v3_system: SystemFi
 
 def test_v3_toggle_plugin_bypass_direct(v3_system: SystemFixture, make_plugin, snapshot, get_urls):
     """Non-footswitch plugin: toggle_plugin_bypass() sends pi_stomp_set POST and flips bypass."""
-    handler, hw, _, _, mock_post = v3_system
+    handler = v3_system.handler
+    hw = v3_system.hw
+    mock_post = v3_system.mock_post
 
     assert handler.current
     assert handler.lcd
@@ -94,7 +99,9 @@ def test_v3_toggle_plugin_bypass_direct(v3_system: SystemFixture, make_plugin, s
 
 def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_plugin, get_urls):
     """Plugin with has_footswitch: toggle_plugin_bypass() routes through footswitch.pressed()."""
-    handler, hw, _, _, mock_post = v3_system
+    handler = v3_system.handler
+    hw = v3_system.hw
+    mock_post = v3_system.mock_post
 
     assert handler.current
 
@@ -110,7 +117,9 @@ def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_p
 
 def test_v3_preset_change_plugin_update(v3_system: SystemFixture, make_plugin, snapshot):
     """preset_change_plugin_update() GETs bypass state for each plugin and refreshes LCD."""
-    handler, hw, _, mock_get, _ = v3_system
+    handler = v3_system.handler
+    hw = v3_system.hw
+    mock_get = v3_system.mock_get
 
     assert handler.current
     assert handler.lcd
@@ -141,7 +150,9 @@ def test_v3_preset_change_plugin_update(v3_system: SystemFixture, make_plugin, s
 
 def test_v3_parameter_edit(v3_system: SystemFixture, make_parameter, snapshot):
     """Full parameter-edit flow: navigate to plugin, open dialog, tweak, close."""
-    handler, hw, _, _, mock_post = v3_system
+    handler = v3_system.handler
+    hw = v3_system.hw
+    mock_post = v3_system.mock_post
 
     assert handler.current
     assert handler.lcd
@@ -182,7 +193,7 @@ def test_v3_parameter_edit(v3_system: SystemFixture, make_parameter, snapshot):
 
 def test_v3_parameter_midi_change(v3_system: SystemFixture, make_parameter, snapshot):
     """parameter_midi_change() draws a parameter dialog and steps the value."""
-    handler, _, _, _, _ = v3_system
+    handler = v3_system.handler
 
     param = make_parameter("Gain", "delay", value=0.5)
     handler.parameter_midi_change(param, 1)

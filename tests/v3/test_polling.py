@@ -7,7 +7,8 @@ from tests.types import SystemFixture
 
 def test_v3_poll_controls_delegates_to_hardware(v3_system: SystemFixture):
     """poll_controls() calls hardware.poll_controls() exactly once."""
-    handler, hw, _, _, _ = v3_system
+    handler = v3_system.handler
+    hw = v3_system.hw
 
     with patch.object(hw, "poll_controls") as mock_poll:
         handler.poll_controls()
