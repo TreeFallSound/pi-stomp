@@ -7,7 +7,8 @@ from tests.types import SystemFixture
 
 def test_set_mod_tap_tempo(modhandler_system: SystemFixture):
     """set_mod_tap_tempo() sends a transport-bpm WebSocket message."""
-    handler, _, _, _, _, ws_bridge = modhandler_system
+    handler = modhandler_system.handler
+    ws_bridge = modhandler_system.ws_bridge
 
     handler.set_mod_tap_tempo(120)
 
@@ -16,14 +17,16 @@ def test_set_mod_tap_tempo(modhandler_system: SystemFixture):
 
 def test_set_mod_tap_tempo_none(modhandler_system: SystemFixture):
     """set_mod_tap_tempo(None) is a no-op."""
-    handler, _, _, _, _, ws_bridge = modhandler_system
+    handler = modhandler_system.handler
+    ws_bridge = modhandler_system.ws_bridge
     handler.set_mod_tap_tempo(None)
     assert not any("transport-bpm" in m for m in ws_bridge.sent)
 
 
 def test_get_bpm(modhandler_system: SystemFixture, get_urls):
     """get_bpm() GETs /get_bpm and returns the parsed float."""
-    handler, _, _, mock_get, _, _ = modhandler_system
+    handler = modhandler_system.handler
+    mock_get = modhandler_system.mock_get
 
     def get_side_effect(url, **kwargs):
         resp = MagicMock()
@@ -39,7 +42,8 @@ def test_get_bpm(modhandler_system: SystemFixture, get_urls):
 
 def test_toggle_tap_tempo_enable(modhandler_system: SystemFixture):
     """toggle_tap_tempo_enable() calls hardware and updates the LCD footswitches."""
-    handler, _, _, mock_get, _, _ = modhandler_system
+    handler = modhandler_system.handler
+    mock_get = modhandler_system.mock_get
 
     def get_side_effect(url, **kwargs):
         resp = MagicMock()
