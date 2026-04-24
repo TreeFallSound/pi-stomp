@@ -60,7 +60,7 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
             return
 
         # read the analog pin
-        value = self.readChannel()
+        value = self._clamp_endpoints(self.readChannel())
         set_volume = as_midi_value(value)
 
         cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, set_volume]
@@ -70,10 +70,22 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
         # save the reading to prevent duplicate sends on next poll
         self.last_read = value
 
+    def _clamp_endpoints(self, value: int) -> int:
+        """Clamp ADC values within tolerance of endpoints to exact endpoints.
+
+        Creates a deadband at both extremes so the control always reaches
+        exactly 0 and 1023, with natural hysteresis at the tolerance boundary.
+        """
+        if value <= self.tolerance:
+            return 0
+        if value >= 1023 - self.tolerance:
+            return 1023
+        return value
+
     @override
     def refresh(self):
         # read the analog pin
-        value = self.readChannel()
+        value = self._clamp_endpoints(self.readChannel())
 
         # how much has it changed since the last read?
         pot_adjust = abs(value - self.last_read)
