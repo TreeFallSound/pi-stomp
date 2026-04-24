@@ -82,20 +82,21 @@ class EmulatorMod(Mod):
         logging.info("Emulator: reload configs is a no-op")
 
     # -------------------------------------------------------------------------
-    # Window integration — render on every poll_controls tick
+    # Window integration — drain events every tick; couple LCD flush +
+    # window repaint to poll_lcd_updates so the emulator respects the main
+    # loop's gating instead of rendering at ~100 fps.
     # -------------------------------------------------------------------------
 
     def poll_controls(self):
         if self._window is not None:
             self._window.process_events()
         super().poll_controls()
+
+    def poll_lcd_updates(self):
         if self.lcd is not None:
             self.lcd.poll_updates()
         if self._window is not None:
             self._window.render()
-
-    def poll_lcd_updates(self):
-        pass  # handled in poll_controls
 
 
     def cleanup(self):

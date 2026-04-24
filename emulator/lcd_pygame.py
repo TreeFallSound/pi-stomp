@@ -13,16 +13,28 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+import time
+
 import pygame
 from uilib.panel import LcdBase
 
 
 class LcdPygame(LcdBase):
-    """LCD implementation that renders into a pygame Surface."""
+    """LCD implementation that renders into a pygame Surface.
 
-    def __init__(self, width=320, height=240):
+    Simulates SPI transfer latency so partial zone refreshes stay snappy
+    but full-screen redraws feel sluggish the way they do on the device.
+    Default matches the ILI9341 wiring in lcdili9341.py (24 MHz, RGB565).
+    """
+
+    # Bits per pixel when clocked over SPI. PIL 'RGB' is 24bpp in memory but
+    # ILI9341 takes RGB565 on the wire; '1'/'L' are mono/8bpp for small OLEDs.
+    _BPP_BY_MODE = {"1": 1, "L": 8, "RGB": 16, "RGBA": 16}
+
+    def __init__(self, width=320, height=240, spi_hz=24_000_000):
         self.width = width
         self.height = height
+        self.spi_hz = spi_hz
         self.surface = pygame.Surface((width, height))
 
     def dimensions(self):
@@ -47,6 +59,11 @@ class LcdPygame(LcdBase):
 
         pg_surf = pygame.image.fromstring(image.tobytes(), image.size, image.mode)
         self.surface.blit(pg_surf, dest)
+
+        bpp = self._BPP_BY_MODE.get(image.mode, 16)
+        transfer_s = (image.size[0] * image.size[1] * bpp) / self.spi_hz
+        if transfer_s > 0:
+            time.sleep(transfer_s)
 
     def blit_scaled(self, dest_surface, dest_rect):
         """Scale the LCD surface to dest_rect and blit it onto dest_surface."""

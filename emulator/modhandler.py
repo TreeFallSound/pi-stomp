@@ -97,18 +97,18 @@ class EmulatorModhandler(Modhandler):
         return None
 
     # -------------------------------------------------------------------------
-    # Window integration — render on every poll_controls tick (~100 fps)
-    # instead of waiting for the gated poll_lcd_updates (every 200 ms).
+    # Window integration — drain events every tick for input responsiveness,
+    # but couple LCD flush + window repaint to poll_lcd_updates so the
+    # emulator refresh rate matches the main loop's gating (200 ms on the
+    # device) instead of running at ~100 fps.
     # -------------------------------------------------------------------------
 
     def poll_controls(self):
         if self._window is not None:
             self._window.process_events()
         super().poll_controls()
-        if self._lcd is not None:
-            self._lcd.poll_updates()
-        if self._window is not None:
-            self._window.render()
 
     def poll_lcd_updates(self):
-        pass  # handled in poll_controls
+        super().poll_lcd_updates()
+        if self._window is not None:
+            self._window.render()
