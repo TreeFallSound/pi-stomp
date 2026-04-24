@@ -59,6 +59,67 @@ def _draw_tracked(draw, xy: tuple[int, int], text: str, font, fill: Color, track
 # ── TunerHeaderWidget ────────────────────────────────────────────────────────
 
 
+_ITEM_PAD = 1  # px of padding around each text bbox — absorbs anti-aliasing fringe
+
+# TODO: move this into uilib
+class _TextItem:
+    """One independent text label: tracks what was rendered and where.
+
+    render() is called from a full _draw pass (panel mount / full refresh) and
+    simply draws the text, recording the padded bbox for future updates.
+
+    update() is called from tick() and does a surgical clear-then-draw:
+    it draws bg over the union of old + new bboxes and redraws only the text,
+    then pushes just that region to the LCD via the widget's _focus/_unfocus.
+    The panel bg is NEVER cleared by the header widget — only by the panel mount.
+    """
+
+    def __init__(self, bg_color: Color) -> None:
+        self._bg = bg_color
+        self._text: str | None = None
+        self._bbox: Box | None = None
+
+    def _measure(self, font, text: str, x: int, y: int) -> Box:
+        try:
+            tb = font.getbbox(text)
+        except Exception:
+            tb = (0, 0, len(text) * 10, 20)
+        return Box(x + tb[0] - _ITEM_PAD, y + tb[1] - _ITEM_PAD,
+                   x + tb[2] + _ITEM_PAD, y + tb[3] + _ITEM_PAD)
+
+    def render(self, draw, font, color: Color, x: int, y: int,
+               text: str | None) -> None:
+        """Draw text into an already-obtained draw context; record bbox."""
+        if text:
+            draw.text((x, y), text, font=font, fill=color)
+            self._bbox = self._measure(font, text, x, y)
+        else:
+            self._bbox = None
+        self._text = text
+
+    def update(self, widget: Widget, font, color: Color, x: int, y: int,
+               text: str | None) -> None:
+        """Surgical update: clear old bbox, draw new text, push to LCD."""
+        if text == self._text:
+            return
+        new_bbox = self._measure(font, text, x, y) if text else None
+        if self._bbox and new_bbox:
+            dirty = self._bbox.union(new_bbox)
+        else:
+            dirty = self._bbox or new_bbox
+        self._text = text
+        self._bbox = new_bbox
+        if dirty is None:
+            return
+        image, draw, _ = widget._focus(dirty)
+        if image is None:
+            return
+        draw.rectangle(dirty.PIL_rect, fill=self._bg)
+        if text and new_bbox:
+            draw.text((x, y), text, font=font, fill=color)
+        widget._unfocus(dirty)
+
+
 class TunerHeaderWidget(Widget):
     """Note name (left); cents and Hz stacked right-aligned on the right."""
 
@@ -68,71 +129,118 @@ class TunerHeaderWidget(Widget):
         super().__init__(box=box, **kwargs)
         self._note_font = note_font
         self._info_font = info_font
-        self._note: str | None = None
-        self._cents: float | None = None
-        self._hz: float | None = None
+        bg = kwargs.get("bkgnd_color", (0, 0, 0))
+        self._note_item = _TextItem(bg)
+        self._cents_item = _TextItem(bg)
+        self._hz_item = _TextItem(bg)
+        self._cents_color: Color = _ACCENT_COLOR
+
+    # ── drawing ───────────────────────────────────────────────────────────────
+
+    def _draw_erase(self, image, draw, box) -> None:
+        pass  # panel bg is drawn once at mount; we never clear the full header
 
     def _draw(self, image, draw, real_box) -> None:
-        h = real_box.y1 - real_box.y0
-        mid_y = real_box.y0 + h // 2
+        """Full redraw — only happens at panel mount. Items record their bboxes."""
+        bx = self.box
+        if bx is None:
+            return
+        h = bx.height
+        mid_y = bx.y0 + h // 2
+        note = self._note_item._text
+        cents = self._cents_item._text   # already a formatted string or None
+        hz = self._hz_item._text
 
-        # Note — vertically centred in the full box height
-        if self._note:
+        if note:
             try:
-                nb = self._note_font.getbbox(self._note)
-                note_y = real_box.y0 + (h - (nb[3] - nb[1])) // 2 - nb[1]
+                nb = self._note_font.getbbox(note)
+                ny = bx.y0 + (h - (nb[3] - nb[1])) // 2 - nb[1]
             except Exception:
-                note_y = real_box.y0 + 2
-            draw.text(
-                (real_box.x0 + 8, note_y),
-                self._note,
-                font=self._note_font,
-                fill=self.fgnd_color,
-            )
+                ny = bx.y0 + 2
+            self._note_item.render(draw, self._note_font, self.fgnd_color,
+                                   bx.x0 + 8, ny, note)
 
-        # Cents — top half, right-aligned, triangle on right
-        if self._cents is not None:
-            arrow = "\u25b4" if self._cents >= 0 else "\u25be"
-            cents_text = f"{abs(self._cents):.1f} {arrow}"
+        if cents:
+            try:
+                cb = self._info_font.getbbox(cents)
+                tw, th = cb[2], cb[3] - cb[1]
+            except Exception:
+                tw, th = 60, 16
+            cy = bx.y0 + (h // 2 - th) // 2 + 4
+            # color was stored at tick time; retrieve it from the cached text
+            # by re-deriving cents value from the stored string is awkward, so
+            # we pass fgnd_color and rely on _zone_color being called in tick.
+            self._cents_item.render(draw, self._info_font,
+                                    self._cents_color, bx.x1 - tw - 8, cy, cents)
+
+        if hz:
+            try:
+                hb = self._info_font.getbbox(hz)
+                tw, th = hb[2], hb[3] - hb[1]
+            except Exception:
+                tw, th = 60, 16
+            hy = mid_y + (h // 2 - th) // 2 - 4
+            self._hz_item.render(draw, self._info_font, self.HZ_COLOR,
+                                 bx.x1 - tw - 8, hy, hz)
+
+    # ── tick ──────────────────────────────────────────────────────────────────
+
+    def tick(self, reading: TunerReading | None) -> None:
+        bx = self.box
+        if bx is None:
+            return
+        h = bx.height
+        mid_y = bx.y0 + h // 2
+
+        note = reading.note if reading else None
+        cents_val = round(reading.cents, 1) if reading else None
+        hz_val = round(reading.freq_hz, 1) if reading else None
+
+        # Note — left, vertically centred
+        if note:
+            try:
+                nb = self._note_font.getbbox(note)
+                ny = bx.y0 + (h - (nb[3] - nb[1])) // 2 - nb[1]
+            except Exception:
+                ny = bx.y0 + 2
+            self._note_item.update(self, self._note_font, self.fgnd_color,
+                                   bx.x0 + 8, ny, note)
+        else:
+            self._note_item.update(self, self._note_font, self.fgnd_color,
+                                   bx.x0 + 8, bx.y0, None)
+
+        # Cents — top-right
+        if cents_val is not None:
+            arrow = "\u25b4" if cents_val >= 0 else "\u25be"
+            cents_text = f"{abs(cents_val):.1f} {arrow}"
+            color = _zone_color(cents_val)
             try:
                 cb = self._info_font.getbbox(cents_text)
                 tw, th = cb[2], cb[3] - cb[1]
             except Exception:
                 tw, th = 60, 16
-            cents_y = real_box.y0 + (h // 2 - th) // 2 + 4
-            draw.text(
-                (real_box.x1 - tw - 8, cents_y),
-                cents_text,
-                font=self._info_font,
-                fill=_zone_color(self._cents),
-            )
+            cy = bx.y0 + (h // 2 - th) // 2 + 4
+            self._cents_color = color
+            self._cents_item.update(self, self._info_font, color,
+                                    bx.x1 - tw - 8, cy, cents_text)
+        else:
+            self._cents_item.update(self, self._info_font, self.fgnd_color,
+                                    bx.x0, bx.y0, None)
 
-        # Hz — bottom half, right-aligned, greyed
-        if self._hz is not None:
-            hz_text = f"{self._hz:.1f} hz"
+        # Hz — bottom-right
+        if hz_val is not None:
+            hz_text = f"{hz_val:.1f} hz"
             try:
                 hb = self._info_font.getbbox(hz_text)
                 tw, th = hb[2], hb[3] - hb[1]
             except Exception:
                 tw, th = 60, 16
-            hz_y = mid_y + (h // 2 - th) // 2 - 4
-            draw.text(
-                (real_box.x1 - tw - 8, hz_y),
-                hz_text,
-                font=self._info_font,
-                fill=self.HZ_COLOR,
-            )
-
-    def tick(self, reading: TunerReading | None) -> None:
-        note = reading.note if reading else None
-        cents = reading.cents if reading else None
-        hz = reading.freq_hz if reading else None
-        if note == self._note and cents == self._cents and hz == self._hz:
-            return
-        self._note = note
-        self._cents = cents
-        self._hz = hz
-        self.refresh()
+            hy = mid_y + (h // 2 - th) // 2 - 4
+            self._hz_item.update(self, self._info_font, self.HZ_COLOR,
+                                 bx.x1 - tw - 8, hy, hz_text)
+        else:
+            self._hz_item.update(self, self._info_font, self.HZ_COLOR,
+                                 bx.x0, bx.y0, None)
 
 
 # ── TunerHintWidget ──────────────────────────────────────────────────────────
