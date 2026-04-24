@@ -15,6 +15,7 @@ _W = 320  # display width
 
 # ── NoteWidget ──────────────────────────────────────────────────────────────
 
+
 class NoteWidget(Widget):
     """Big note name (e.g. 'A4') at the top of the tuner panel."""
 
@@ -41,6 +42,7 @@ class NoteWidget(Widget):
 
 # ── FreqWidget ───────────────────────────────────────────────────────────────
 
+
 class FreqWidget(Widget):
     """Frequency + cents readout at the bottom of the tuner panel."""
 
@@ -59,11 +61,7 @@ class FreqWidget(Widget):
             )
 
     def tick(self, reading: TunerReading | None) -> None:
-        text = (
-            f"{reading.freq_hz:.1f} Hz   {reading.cents:+.1f}\u00a2"
-            if reading is not None
-            else None
-        )
+        text = f"{reading.freq_hz:.1f} Hz   {reading.cents:+.1f}\u00a2" if reading is not None else None
         if text == self._text:
             return
         self._text = text
@@ -71,6 +69,7 @@ class FreqWidget(Widget):
 
 
 # ── StrobeWidget ─────────────────────────────────────────────────────────────
+
 
 class StrobeWidget(Widget):
     """Sparse strobe: 6 accent stripes scrolling horizontally.
@@ -82,7 +81,7 @@ class StrobeWidget(Widget):
     STRIPE_W = 8
     STRIPE_P = 53
     N_STRIPES = 6
-    IN_TUNE_THRESH = 2.0          # cents
+    IN_TUNE_THRESH = 2.0  # cents
     ACCENT_COLOR = (255, 180, 0)
     IN_TUNE_COLOR = (0, 200, 0)
     BG_COLOR = (20, 20, 20)
@@ -109,8 +108,8 @@ class StrobeWidget(Widget):
 
         if self._active:
             rx0, rx1 = real_box.x0, real_box.x1
-            y0 = real_box.y0 + 1        # inside top rule
-            y1 = real_box.y1 - 2        # inside bottom rule (PIL rect is inclusive)
+            y0 = real_box.y0 + 1  # inside top rule
+            y1 = real_box.y1 - 2  # inside bottom rule (PIL rect is inclusive)
             if y0 <= y1:
                 for i in range(self.N_STRIPES):
                     sx = (int(self._phase) + i * self.STRIPE_P) % _W
@@ -126,8 +125,7 @@ class StrobeWidget(Widget):
         if real_box.y1 >= bx.y1:
             draw.line([(rx0, bx.y1 - 1), (rx1, bx.y1 - 1)], fill=self.RULE_COLOR)
 
-    def _paint_overlap(self, draw, sx: int, sw: int,
-                       rx0: int, rx1: int, y0: int, y1: int) -> None:
+    def _paint_overlap(self, draw, sx: int, sw: int, rx0: int, rx1: int, y0: int, y1: int) -> None:
         """Paint the part of stripe [sx, sx+sw) (wrapping at _W) within [rx0, rx1)."""
         x0 = max(sx, rx0)
         x1 = min(sx + sw, rx1)
@@ -163,7 +161,7 @@ class StrobeWidget(Widget):
 
     def tick(self, cents: float | None) -> None:
         now = time.monotonic()
-        dt = min(now - self._last_tick, 0.5)   # cap dt to avoid jumps after pause
+        dt = min(now - self._last_tick, 0.5)  # cap dt to avoid jumps after pause
         self._last_tick = now
 
         if cents is None:
@@ -180,7 +178,7 @@ class StrobeWidget(Widget):
             return
 
         was_in_tune = self._in_tune
-        now_in_tune = abs(cents) < self.IN_TUNE_THRESH
+        now_in_tune = abs(cents) <= self.IN_TUNE_THRESH
 
         if now_in_tune != was_in_tune:
             self._in_tune = now_in_tune
@@ -210,16 +208,17 @@ class StrobeWidget(Widget):
         for i in range(self.N_STRIPES):
             old_sx = (old_phase_int + i * self.STRIPE_P) % _W
             if k > 0:
-                tail_x = old_sx                         # left edge of old stripe → now bg
+                tail_x = old_sx  # left edge of old stripe → now bg
                 lead_x = (old_sx + self.STRIPE_W) % _W  # right edge of new stripe
             else:
                 tail_x = (old_sx + self.STRIPE_W - ak) % _W  # right edge of old → now bg
-                lead_x = (old_sx - ak) % _W                   # left edge of new stripe
+                lead_x = (old_sx - ak) % _W  # left edge of new stripe
             self._refresh_col(tail_x, ak)
             self._refresh_col(lead_x, ak)
 
 
 # ── TunerPanel ───────────────────────────────────────────────────────────────
+
 
 class TunerPanel(Panel):
     STALE_SECS = 4.0
