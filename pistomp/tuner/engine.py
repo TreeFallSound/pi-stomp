@@ -11,7 +11,7 @@ from pistomp.tuner.ringbuffer import RingBuffer
 from pistomp.tuner.source import AudioSource
 from pistomp.tuner.yin import detect_pitch
 
-_NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+_NOTE_NAMES = ["C", "C\u266f", "D", "D\u266f", "E", "F", "F\u266f", "G", "G\u266f", "A", "A\u266f", "B"]
 _A4_HZ = 440.0
 _A4_MIDI = 69
 

@@ -565,6 +565,10 @@ class Modhandler(Handler):
                     break
 
     def preset_change(self, index):
+        if self._tuner_engine is not None:
+            self.toggle_tuner_enable()
+            return
+
         if not self.current:
             logging.error("Cannot change preset since current pedalboard is not set")
             return

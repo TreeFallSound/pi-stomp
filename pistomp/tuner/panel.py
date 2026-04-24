@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Callable
+from typing import Callable, Literal
 
 from PIL import ImageFont
 
@@ -13,59 +13,160 @@ from pistomp.tuner.engine import TunerEngine, TunerReading
 
 _W = 320  # display width
 
-# ── NoteWidget ──────────────────────────────────────────────────────────────
+# ── type aliases ─────────────────────────────────────────────────────────────
+
+Color = tuple[int, int, int]
+Zone = Literal["in_tune", "accent", "red"]
+
+# ── zone colour thresholds (shared by strobe and header) ─────────────────────
+
+_IN_TUNE_THRESH: float = 2.0  # cents — green
+_RED_THRESH: float = 20.0  # cents — red beyond this
+
+_IN_TUNE_COLOR: Color = (0, 200, 0)
+_ACCENT_COLOR: Color = (255, 180, 0)
+_RED_COLOR: Color = (210, 40, 40)
 
 
-class NoteWidget(Widget):
-    """Big note name (e.g. 'A4') at the top of the tuner panel."""
+def _zone_color(cents: float) -> Color:
+    if abs(cents) <= _IN_TUNE_THRESH:
+        return _IN_TUNE_COLOR
+    if abs(cents) <= _RED_THRESH:
+        return _ACCENT_COLOR
+    return _RED_COLOR
 
-    def __init__(self, box: Box, font, **kwargs) -> None:
+
+def _cents_zone(cents: float) -> Zone:
+    if abs(cents) <= _IN_TUNE_THRESH:
+        return "in_tune"
+    if abs(cents) <= _RED_THRESH:
+        return "accent"
+    return "red"
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+
+def _draw_tracked(draw, xy: tuple[int, int], text: str, font, fill: Color, tracking: int = 4) -> None:
+    """Draw text with extra inter-character spacing (wide tracking)."""
+    x, y = xy
+    for ch in text:
+        draw.text((x, y), ch, font=font, fill=fill)
+        bbox = font.getbbox(ch)
+        x += (bbox[2] - bbox[0]) + tracking
+
+
+# ── TunerHeaderWidget ────────────────────────────────────────────────────────
+
+
+class TunerHeaderWidget(Widget):
+    """Note name (left); cents and Hz stacked right-aligned on the right."""
+
+    HZ_COLOR: Color = (90, 90, 90)
+
+    def __init__(self, box: Box, note_font, info_font, **kwargs) -> None:
         super().__init__(box=box, **kwargs)
-        self._font = font
-        self._text: str | None = None
+        self._note_font = note_font
+        self._info_font = info_font
+        self._note: str | None = None
+        self._cents: float | None = None
+        self._hz: float | None = None
 
     def _draw(self, image, draw, real_box) -> None:
-        if self._text:
+        h = real_box.y1 - real_box.y0
+        mid_y = real_box.y0 + h // 2
+
+        # Note — vertically centred in the full box height
+        if self._note:
+            try:
+                nb = self._note_font.getbbox(self._note)
+                note_y = real_box.y0 + (h - (nb[3] - nb[1])) // 2 - nb[1]
+            except Exception:
+                note_y = real_box.y0 + 2
             draw.text(
-                (real_box.x0 + 8, real_box.y0 + 4),
-                self._text,
-                font=self._font,
+                (real_box.x0 + 8, note_y),
+                self._note,
+                font=self._note_font,
                 fill=self.fgnd_color,
             )
 
-    def tick(self, note: str | None) -> None:
-        if note == self._text:
-            return
-        self._text = note
-        self.refresh()
-
-
-# ── FreqWidget ───────────────────────────────────────────────────────────────
-
-
-class FreqWidget(Widget):
-    """Frequency + cents readout at the bottom of the tuner panel."""
-
-    def __init__(self, box: Box, font, **kwargs) -> None:
-        super().__init__(box=box, **kwargs)
-        self._font = font
-        self._text: str | None = None
-
-    def _draw(self, image, draw, real_box) -> None:
-        if self._text:
+        # Cents — top half, right-aligned, triangle on right
+        if self._cents is not None:
+            arrow = "\u25b4" if self._cents >= 0 else "\u25be"
+            cents_text = f"{abs(self._cents):.1f} {arrow}"
+            try:
+                cb = self._info_font.getbbox(cents_text)
+                tw, th = cb[2], cb[3] - cb[1]
+            except Exception:
+                tw, th = 60, 16
+            cents_y = real_box.y0 + (h // 2 - th) // 2 + 4
             draw.text(
-                (real_box.x0 + 8, real_box.y0 + 6),
-                self._text,
-                font=self._font,
-                fill=self.fgnd_color,
+                (real_box.x1 - tw - 8, cents_y),
+                cents_text,
+                font=self._info_font,
+                fill=_zone_color(self._cents),
+            )
+
+        # Hz — bottom half, right-aligned, greyed
+        if self._hz is not None:
+            hz_text = f"{self._hz:.1f} hz"
+            try:
+                hb = self._info_font.getbbox(hz_text)
+                tw, th = hb[2], hb[3] - hb[1]
+            except Exception:
+                tw, th = 60, 16
+            hz_y = mid_y + (h // 2 - th) // 2 - 4
+            draw.text(
+                (real_box.x1 - tw - 8, hz_y),
+                hz_text,
+                font=self._info_font,
+                fill=self.HZ_COLOR,
             )
 
     def tick(self, reading: TunerReading | None) -> None:
-        text = f"{reading.freq_hz:.1f} Hz   {reading.cents:+.1f}\u00a2" if reading is not None else None
-        if text == self._text:
+        note = reading.note if reading else None
+        cents = reading.cents if reading else None
+        hz = reading.freq_hz if reading else None
+        if note == self._note and cents == self._cents and hz == self._hz:
             return
-        self._text = text
+        self._note = note
+        self._cents = cents
+        self._hz = hz
         self.refresh()
+
+
+# ── TunerHintWidget ──────────────────────────────────────────────────────────
+
+
+class TunerHintWidget(Widget):
+    """Small uppercase wide-tracked exit prompt below the strobe."""
+
+    TEXT = "CLICK/TAP TO EXIT"
+    COLOR: Color = (80, 80, 80)
+    TRACKING = 3
+
+    def __init__(self, box: Box, font, **kwargs) -> None:
+        super().__init__(box=box, **kwargs)
+        self._font = font
+
+    def _draw(self, image, draw, real_box) -> None:
+        total_w = 0
+        for ch in self.TEXT:
+            try:
+                _, _, cw, _ = self._font.getbbox(ch)
+            except Exception:
+                cw = 8
+            total_w += cw + self.TRACKING
+        total_w = max(total_w - self.TRACKING, 0)
+
+        h = real_box.y1 - real_box.y0
+        try:
+            _, _, _, ch_h = self._font.getbbox("A")
+        except Exception:
+            ch_h = 10
+        x = real_box.x0 + (real_box.x1 - real_box.x0 - total_w) // 2
+        y = real_box.y0 + (h - ch_h) // 2 - 4
+        _draw_tracked(draw, (x, y), self.TEXT, self._font, self.COLOR, self.TRACKING)
 
 
 # ── StrobeWidget ─────────────────────────────────────────────────────────────
@@ -81,19 +182,16 @@ class StrobeWidget(Widget):
     STRIPE_W = 8
     STRIPE_P = 53
     N_STRIPES = 6
-    IN_TUNE_THRESH = 2.0  # cents
-    ACCENT_COLOR = (255, 180, 0)
-    IN_TUNE_COLOR = (0, 200, 0)
-    BG_COLOR = (20, 20, 20)
-    RULE_COLOR = (80, 80, 80)
+    BG_COLOR: Color = (20, 20, 20)
+    RULE_COLOR: Color = (80, 80, 80)
     VELOCITY_SCALE = 5.0
 
     def __init__(self, box: Box, **kwargs) -> None:
         kwargs.setdefault("bkgnd_color", StrobeWidget.BG_COLOR)
         super().__init__(box=box, **kwargs)
         self._phase: float = 0.0
-        self._in_tune = False
-        self._stripe_color = self.ACCENT_COLOR
+        self._zone: Zone = "accent"
+        self._stripe_color: Color = _ACCENT_COLOR
         self._last_tick = time.monotonic()
         self._active = False
 
@@ -103,7 +201,6 @@ class StrobeWidget(Widget):
         pass  # We handle erasing inside _draw
 
     def _draw(self, image, draw, real_box) -> None:
-        # Fill region with background
         draw.rectangle(real_box.PIL_rect, fill=self.BG_COLOR)
 
         if self._active:
@@ -115,7 +212,6 @@ class StrobeWidget(Widget):
                     sx = (int(self._phase) + i * self.STRIPE_P) % _W
                     self._paint_overlap(draw, sx, self.STRIPE_W, rx0, rx1, y0, y1)
 
-        # Rules — always redrawn when the column touches widget top/bottom
         bx = self.box
         if bx is None:
             return
@@ -167,8 +263,8 @@ class StrobeWidget(Widget):
         if cents is None:
             if self._active:
                 self._active = False
-                self._in_tune = False
-                self._stripe_color = self.ACCENT_COLOR
+                self._zone = "accent"
+                self._stripe_color = _ACCENT_COLOR
                 self.refresh()
             return
 
@@ -177,16 +273,14 @@ class StrobeWidget(Widget):
             self.refresh()
             return
 
-        was_in_tune = self._in_tune
-        now_in_tune = abs(cents) <= self.IN_TUNE_THRESH
-
-        if now_in_tune != was_in_tune:
-            self._in_tune = now_in_tune
-            self._stripe_color = self.IN_TUNE_COLOR if now_in_tune else self.ACCENT_COLOR
+        new_zone: Zone = _cents_zone(cents)
+        if new_zone != self._zone:
+            self._zone = new_zone
+            self._stripe_color = _zone_color(cents)
             self.refresh()
             return
 
-        if now_in_tune:
+        if self._zone == "in_tune":
             return  # Frozen — zero SPI writes
 
         # Velocity: STRIPE_P px/s at ±50¢ → K px/s per cent
@@ -200,7 +294,6 @@ class StrobeWidget(Widget):
             return
 
         if abs(k) >= self.STRIPE_W:
-            # Large jump (dt clamping missed): fall back to full repaint
             self.refresh()
             return
 
@@ -208,11 +301,11 @@ class StrobeWidget(Widget):
         for i in range(self.N_STRIPES):
             old_sx = (old_phase_int + i * self.STRIPE_P) % _W
             if k > 0:
-                tail_x = old_sx  # left edge of old stripe → now bg
-                lead_x = (old_sx + self.STRIPE_W) % _W  # right edge of new stripe
+                tail_x = old_sx
+                lead_x = (old_sx + self.STRIPE_W) % _W
             else:
-                tail_x = (old_sx + self.STRIPE_W - ak) % _W  # right edge of old → now bg
-                lead_x = (old_sx - ak) % _W  # left edge of new stripe
+                tail_x = (old_sx + self.STRIPE_W - ak) % _W
+                lead_x = (old_sx - ak) % _W
             self._refresh_col(tail_x, ak)
             self._refresh_col(lead_x, ak)
 
@@ -229,16 +322,28 @@ class TunerPanel(Panel):
         self._on_dismiss = on_dismiss
 
         try:
-            note_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 48)
-            freq_font = ImageFont.truetype("DejaVuSans.ttf", 20)
+            note_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 56)
+            info_font = ImageFont.truetype("DejaVuSans.ttf", 20)
+            hint_font = ImageFont.truetype("DejaVuSans.ttf", 11)
         except OSError:
             logging.warning("tuner: DejaVu fonts not found, using default")
             note_font = ImageFont.load_default()
-            freq_font = ImageFont.load_default()
+            info_font = ImageFont.load_default()
+            hint_font = ImageFont.load_default()
 
-        self._note = NoteWidget(box=Box.xywh(0, 0, _W, 60), font=note_font, parent=self)
-        self._strobe = StrobeWidget(box=Box.xywh(0, 70, _W, 100), parent=self)
-        self._freq = FreqWidget(box=Box.xywh(0, 180, _W, 50), font=freq_font, parent=self)
+        self._header = TunerHeaderWidget(
+            box=Box.xywh(0, 0, _W, 65),
+            note_font=note_font,
+            info_font=info_font,
+            parent=self,
+        )
+        self._strobe = StrobeWidget(box=Box.xywh(0, 68, _W, 135), parent=self)
+        self._hint = TunerHintWidget(
+            box=Box.xywh(0, 210, _W, 30),
+            font=hint_font,
+            parent=self,
+        )
+        self._hint_drawn = False
 
     def input_event(self, event) -> bool:
         if event in (InputEvent.CLICK, InputEvent.LONG_CLICK):
@@ -247,9 +352,11 @@ class TunerPanel(Panel):
         return False
 
     def tick(self) -> None:
+        if not self._hint_drawn:
+            self._hint.refresh()
+            self._hint_drawn = True
         reading = self._engine.get_reading()
         if reading is not None and time.monotonic() - reading.ts > self.STALE_SECS:
             reading = None
-        self._note.tick(reading.note if reading else None)
+        self._header.tick(reading)
         self._strobe.tick(reading.cents if reading else None)
-        self._freq.tick(reading)
