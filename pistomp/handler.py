@@ -21,6 +21,13 @@ class Handler:
         self.lcd = None
         pass
 
+    @property
+    def lcd_poll_divisor(self) -> int:
+        # Gate for poll_lcd_updates, in units of 10 ms main-loop ticks
+        # (20 → one flush every 200 ms). Subclasses may override to narrow
+        # it dynamically (e.g. when the tuner panel is visible).
+        return 20
+
     def noop(self):
         pass
 

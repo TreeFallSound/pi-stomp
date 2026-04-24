@@ -179,7 +179,7 @@ class StrobeWidget(Widget):
     background pixels are never touched after initial setup.
     """
 
-    STRIPE_W = 8
+    STRIPE_W = 4
     STRIPE_P = 53
     N_STRIPES = 6
     BG_COLOR: Color = (20, 20, 20)
@@ -193,7 +193,7 @@ class StrobeWidget(Widget):
         self._zone: Zone = "accent"
         self._stripe_color: Color = _ACCENT_COLOR
         self._last_tick = time.monotonic()
-        self._active = False
+        self._has_reading = False
 
     # ── drawing ──────────────────────────────────────────────────────────────
 
@@ -203,7 +203,7 @@ class StrobeWidget(Widget):
     def _draw(self, image, draw, real_box) -> None:
         draw.rectangle(real_box.PIL_rect, fill=self.BG_COLOR)
 
-        if self._active:
+        if self._has_reading:
             rx0, rx1 = real_box.x0, real_box.x1
             y0 = real_box.y0 + 1  # inside top rule
             y1 = real_box.y1 - 2  # inside bottom rule (PIL rect is inclusive)
@@ -253,6 +253,18 @@ class StrobeWidget(Widget):
             if wrap_w > 0:
                 self.refresh(Box(0, bx.y0, wrap_w, bx.y1))
 
+    def _refresh_stripes_at(self, phase_int: int) -> None:
+        """Mark the N stripe columns at the given phase as dirty.
+
+        Each column is STRIPE_W wide and full widget height. _draw will repaint
+        bg + (if _has_reading) the stripe in _stripe_color, so this works for
+        paint-on, paint-off, and colour-change transitions without touching
+        the gaps between stripes.
+        """
+        for i in range(self.N_STRIPES):
+            sx = (phase_int + i * self.STRIPE_P) % _W
+            self._refresh_col(sx, self.STRIPE_W)
+
     # ── tick ─────────────────────────────────────────────────────────────────
 
     def tick(self, cents: float | None) -> None:
@@ -261,23 +273,27 @@ class StrobeWidget(Widget):
         self._last_tick = now
 
         if cents is None:
-            if self._active:
-                self._active = False
+            if self._has_reading:
+                self._has_reading = False
                 self._zone = "accent"
                 self._stripe_color = _ACCENT_COLOR
-                self.refresh()
+                # Erase stripes at their last positions; bg + rules remain.
+                self._refresh_stripes_at(int(self._phase))
             return
 
-        if not self._active:
-            self._active = True
-            self.refresh()
+        if not self._has_reading:
+            self._has_reading = True
+            # Initial paint — bg and rules were drawn at panel mount; only
+            # the stripe columns need to light up.
+            self._refresh_stripes_at(int(self._phase))
             return
 
         new_zone: Zone = _cents_zone(cents)
         if new_zone != self._zone:
             self._zone = new_zone
             self._stripe_color = _zone_color(cents)
-            self.refresh()
+            # Colour change — stripes haven't moved, just repaint them.
+            self._refresh_stripes_at(int(self._phase))
             return
 
         if self._zone == "in_tune":
@@ -293,8 +309,12 @@ class StrobeWidget(Widget):
         if k == 0:
             return
 
+        # Large phase jump (≥ stripe width): old and new stripe positions
+        # don't overlap, so repaint both sets of columns in full. Still far
+        # cheaper than a full-widget refresh.
         if abs(k) >= self.STRIPE_W:
-            self.refresh()
+            self._refresh_stripes_at(old_phase_int)
+            self._refresh_stripes_at(int(self._phase))
             return
 
         ak = abs(k)
