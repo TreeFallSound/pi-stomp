@@ -110,13 +110,19 @@ class Modhandler(Handler):
         except Exception as e:
             logging.warning(f"Failed to initialize WebSocket bridge: {e}")
 
+        # Tuner state
+        self._tuner_engine = None
+        self._tuner_panel = None
+        self._tuner_source_factory = None
+
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
         self.callbacks = {"set_mod_tap_tempo": self.set_mod_tap_tempo,
                           "next_snapshot": self.preset_incr_and_change,
                           "previous_snapshot": self.preset_decr_and_change,
                           "toggle_bypass": self.system_toggle_bypass,
-                          "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable
+                          "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable,
+                          "toggle_tuner_enable": self.toggle_tuner_enable,
         }
 
     def __del__(self):
@@ -907,3 +913,22 @@ class Modhandler(Handler):
     def toggle_tap_tempo_enable(self, *argv):
         self.hardware.toggle_tap_tempo_enable(self.get_bpm())
         self.lcd.update_footswitches()
+
+    def set_tuner_source_factory(self, factory) -> None:
+        self._tuner_source_factory = factory
+
+    def toggle_tuner_enable(self, *argv) -> None:
+        if self._tuner_engine is None:
+            from pistomp.tuner import TunerEngine, TunerPanel, build_source
+            factory = self._tuner_source_factory or (lambda: build_source("jack"))
+            engine = TunerEngine(factory())
+            engine.start()
+            self._tuner_engine = engine
+            panel = TunerPanel(engine, on_dismiss=self.toggle_tuner_enable)
+            self._tuner_panel = panel
+            self.lcd.show_tuner_panel(panel)
+        else:
+            self.lcd.hide_tuner_panel()
+            self._tuner_engine.stop()
+            self._tuner_engine = None
+            self._tuner_panel = None

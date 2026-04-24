@@ -1,0 +1,83 @@
+import numpy as np
+import numpy.typing as npt
+
+
+def detect_pitch(
+    frame: npt.NDArray[np.float32],
+    sample_rate: int,
+    threshold: float = 0.10,
+    freq_min: float = 55.0,
+    freq_max: float = 1300.0,
+) -> float | None:
+    """YIN pitch detection. Returns Hz or None if no confident pitch found.
+
+    Implements: de Cheveigné & Kawahara (2002), J. Acoust. Soc. Am. 111(4).
+    """
+    N = len(frame)
+    half = N // 2
+
+    tau_min = max(2, int(sample_rate / freq_max))
+    tau_max = min(half - 1, int(sample_rate / freq_min) + 1)
+
+    if tau_min >= tau_max:
+        return None
+
+    # Step 1: difference function via FFT.
+    # d(τ) = Σⱼ(x[j] - x[j+τ])² = E₀ + trailing(τ) - 2·xcorr(τ)
+    # where E₀ = Σx[0:W]², trailing(τ) = Σx[τ:τ+W]², xcorr(τ) = Σx[j]·x[j+τ] for j∈[0,W)
+    x = frame.astype(np.float64)
+    W = half
+
+    x_sq_cs = np.empty(N + 1, dtype=np.float64)
+    x_sq_cs[0] = 0.0
+    np.cumsum(x * x, out=x_sq_cs[1:])
+    E0 = x_sq_cs[W]
+    tau_range = np.arange(tau_max + 1)
+    trailing = x_sq_cs[tau_range + W] - x_sq_cs[tau_range]
+
+    # xcorr via FFT; n_fft must be >= W + N to avoid circular aliasing
+    n_fft = 1 << (W + N - 1).bit_length()
+    a = np.zeros(n_fft, dtype=np.float64)
+    a[:W] = x[:W]
+    # irfft(rfft(x)*conj(rfft(a)))[τ] = Σⱼ x[j+τ]·a[j] — positive-lag correlation
+    xcorr = np.fft.irfft(np.fft.rfft(x, n=n_fft) * np.fft.rfft(a).conj())[:tau_max + 1]
+
+    diff = E0 + trailing - 2.0 * xcorr
+    diff[0] = 0.0
+
+    # Step 2: cumulative mean normalised difference (CMND), eq. 8 in the paper.
+    cumsum = np.cumsum(diff[1:tau_max + 1])
+    taus = np.arange(1, tau_max + 1, dtype=np.float64)
+    cmnd = np.ones(tau_max + 1, dtype=np.float64)
+    cmnd[1:tau_max + 1] = np.where(cumsum > 0.0, diff[1:tau_max + 1] * taus / cumsum, 1.0)
+
+    # Step 3: absolute threshold — first dip below threshold, walk to its bottom.
+    tau_est = -1
+    tau = tau_min
+    while tau < tau_max:
+        if cmnd[tau] < threshold:
+            while tau + 1 <= tau_max and cmnd[tau + 1] <= cmnd[tau]:
+                tau += 1
+            tau_est = tau
+            break
+        tau += 1
+
+    if tau_est < 1:
+        tau_est = int(np.argmin(cmnd[tau_min:tau_max + 1])) + tau_min
+
+    # Step 4: parabolic interpolation for sub-sample accuracy.
+    if tau_min < tau_est < tau_max:
+        s0, s1, s2 = cmnd[tau_est - 1], cmnd[tau_est], cmnd[tau_est + 1]
+        denom = 2.0 * (2.0 * s1 - s0 - s2)
+        if abs(denom) > 1e-10:
+            correction = (s0 - s2) / denom
+            tau_refined = tau_est + correction if abs(correction) < 1.0 else float(tau_est)
+        else:
+            tau_refined = float(tau_est)
+    else:
+        tau_refined = float(tau_est)
+
+    if tau_refined <= 0.0:
+        return None
+
+    return sample_rate / tau_refined
