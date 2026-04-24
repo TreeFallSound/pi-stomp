@@ -81,15 +81,22 @@ class WifiManager():
 
     def _get_wpa_status(self, status):
         try:
-            text_out = subprocess.check_output(['wpa_cli', '-i', self.iface_name, 'status']).strip().decode('utf-8')
-            for i in text_out.split('\n'):
-                if len(i) == 0:
-                    continue
-                (key, value) = i.split('=')
-                if key and value:
-                    status[key] = value
+            result = subprocess.run(
+                ['nmcli', '-t', '-f', 'GENERAL.STATE,GENERAL.CONNECTION,IP4.ADDRESS,802-11-WIRELESS.SSID',
+                 'device', 'show', self.iface_name],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n'):
+                    if ':' in line:
+                        key, value = line.split(':', 1)
+                        # Map nmcli fields to wpa_cli-like keys for compatibility
+                        key = key.strip().replace('GENERAL.', '').replace('802-11-WIRELESS.', '').replace('.', '_').lower()
+                        status[key] = value.strip()
         except Exception as e:
-            logging.error("WPA CLI fail:" + str(e))
+            logging.error("NetworkManager status fail:" + str(e))
 
     def _polling_thread(self):
         while True:
@@ -98,7 +105,7 @@ class WifiManager():
             new_status['wifi_connected'] = connected = self._is_wifi_connected()
             new_status['hotspot_active'] = hp_active = self._is_hotspot_active()
             if supported and (connected or hp_active):
-                self._get_wpa_status(new_status)  # TODO replace this with an NetworkManager equivalent status
+                self._get_wpa_status(new_status)
             if new_status != self.last_status:
                 logging.debug("Wifi status changed:" + str(new_status))
                 creds=()
