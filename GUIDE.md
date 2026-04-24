@@ -151,6 +151,7 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 - **Direct hardware access** - No HAL layer, direct SPI/GPIO/MIDI interaction
 - **Real-time constraints** - Never block in critical path, separate frequencies by priority
 - **Hardware reality drives architecture** - Embrace limitations (ADC polling, SPI timing)
+- **ADC endpoint clamping** - Ensure full range of inputs is not prevented by hysteresis
 
 ### Version Handling
 - **Explicit version routing** - Factory pattern with known version checks, not capability detection
