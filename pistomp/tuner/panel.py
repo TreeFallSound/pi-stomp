@@ -184,7 +184,7 @@ class StrobeWidget(Widget):
     N_STRIPES = 6
     BG_COLOR: Color = (20, 20, 20)
     RULE_COLOR: Color = (80, 80, 80)
-    VELOCITY_SCALE = 5.0
+    VELOCITY_SCALE = 10.0
 
     def __init__(self, box: Box, **kwargs) -> None:
         kwargs.setdefault("bkgnd_color", StrobeWidget.BG_COLOR)
