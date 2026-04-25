@@ -39,8 +39,8 @@ class TunerReading:
 class TunerEngine:
     FRAME_SIZE = 4096
     DSP_RATE_HZ = 20
-    MEDIAN_SIZE = 8
-    IIR_ALPHA = 0.2
+    IIR_ALPHA = 0.35
+    JUMP_CENTS = 600.0  # reject readings > this many cents from current estimate
 
     def __init__(
         self,
@@ -54,8 +54,7 @@ class TunerEngine:
         self._running = False
         self._worker: threading.Thread | None = None
         self._lock = threading.Lock()
-        self.latest: TunerReading | None = None
-        self._median_buf: list[float] = []
+        self._latest: TunerReading | None = None
         self._iir_freq: float | None = None
 
     def start(self) -> None:
@@ -66,10 +65,10 @@ class TunerEngine:
 
     def stop(self) -> None:
         self._running = False
+        self._source.stop()
         if self._worker is not None:
             self._worker.join(timeout=2.0)
             self._worker = None
-        self._source.stop()
 
     def _dsp_loop(self) -> None:
         interval = 1.0 / self.DSP_RATE_HZ
@@ -91,17 +90,17 @@ class TunerEngine:
         if freq is None:
             return
 
-        # median smoother
-        self._median_buf.append(freq)
-        if len(self._median_buf) > self.MEDIAN_SIZE:
-            self._median_buf.pop(0)
-        median_freq = sorted(self._median_buf)[len(self._median_buf) // 2]
+        # Reset (don't reject) on large jumps: IIR drift could otherwise trap the
+        # engine in a state where all valid readings are permanently blocked.
+        if self._iir_freq is not None:
+            if abs(1200.0 * math.log2(freq / self._iir_freq)) > self.JUMP_CENTS:
+                self._iir_freq = None
+                return
 
-        # IIR
         if self._iir_freq is None:
-            self._iir_freq = median_freq
+            self._iir_freq = freq
         else:
-            self._iir_freq = self.IIR_ALPHA * median_freq + (1.0 - self.IIR_ALPHA) * self._iir_freq
+            self._iir_freq = self.IIR_ALPHA * freq + (1.0 - self.IIR_ALPHA) * self._iir_freq
 
         try:
             note, cents, ideal = _freq_to_note(self._iir_freq)
@@ -117,8 +116,8 @@ class TunerEngine:
             ts=time.monotonic(),
         )
         with self._lock:
-            self.latest = reading
+            self._latest = reading
 
     def get_reading(self) -> TunerReading | None:
         with self._lock:
-            return self.latest
+            return self._latest
