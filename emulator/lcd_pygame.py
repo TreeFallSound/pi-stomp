@@ -31,6 +31,13 @@ class LcdPygame(LcdBase):
     # ILI9341 takes RGB565 on the wire; '1'/'L' are mono/8bpp for small OLEDs.
     _BPP_BY_MODE = {"1": 1, "L": 8, "RGB": 16, "RGBA": 16}
 
+    # time.sleep() on macOS has ~1 ms granularity, so sleeping for values
+    # smaller than this just burns wall-clock time waking up. Below the
+    # threshold we skip the sleep — pygame's own blit overhead already
+    # eats a few hundred µs per call which roughly approximates SPI cost
+    # at this scale.
+    _SLEEP_THRESHOLD_S = 0.001
+
     def __init__(self, width=320, height=240, spi_hz=24_000_000):
         self.width = width
         self.height = height
@@ -57,13 +64,16 @@ class LcdPygame(LcdBase):
         else:
             dest = (0, 0)
 
+        t0 = time.perf_counter()
         pg_surf = pygame.image.fromstring(image.tobytes(), image.size, image.mode)
         self.surface.blit(pg_surf, dest)
+        blit_elapsed = time.perf_counter() - t0
 
         bpp = self._BPP_BY_MODE.get(image.mode, 16)
         transfer_s = (image.size[0] * image.size[1] * bpp) / self.spi_hz
-        if transfer_s > 0:
-            time.sleep(transfer_s)
+        deficit = transfer_s - blit_elapsed
+        if deficit >= self._SLEEP_THRESHOLD_S:
+            time.sleep(deficit)
 
     def blit_scaled(self, dest_surface, dest_rect):
         """Scale the LCD surface to dest_rect and blit it onto dest_surface."""
