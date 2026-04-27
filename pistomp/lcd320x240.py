@@ -285,8 +285,8 @@ class Lcd(abstract_lcd.Lcd):
         self.pstack.push_panel(m)
         return m
 
-    def draw_message_dialog(self, text, title="Error"):
-        d = MessageDialog(self.pstack, text, title=title)
+    def draw_message_dialog(self, text, title="Error", width=200, height=90):
+        d = MessageDialog(self.pstack, text, title=title, width=width, height=height)
         self.pstack.push_panel(d)
 
     #
@@ -519,16 +519,10 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.refresh()
 
         if result.status == "conflicts":
-            self._draw_sync_conflicts_dialog(result.conflicts)
+            msg = "\n".join(result.conflicts) + "\n\nResolve via SSH"
+            self.draw_message_dialog(msg, title="Sync aborted: conflicts", width=280, height=160)
         else:
-            title = "Pedalboard Sync"
-            self.draw_message_dialog(result.message, title)
-
-    def _draw_sync_conflicts_dialog(self, conflicts):
-        basenames = [os.path.basename(f) for f in conflicts]
-        msg = "\n".join(basenames) + "\n\nResolve via SSH"
-        d = MessageDialog(self.pstack, msg, title="Sync aborted: conflicts", width=280, height=160)
-        self.pstack.push_panel(d)
+            self.draw_message_dialog(result.message, title="Pedalboard Sync", width=280, height=160)
 
     def draw_system_info_dialog(self, arg):
         msg="Software:{}\nBuild:{}\nSystemState:{}\nTemperature:{}\nThrottled:{}".format(

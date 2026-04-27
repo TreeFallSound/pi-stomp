@@ -69,7 +69,7 @@ class PedalboardSync:
             return SyncResult(status="error", message="Sync timeout")
         except Exception as e:
             logging.error("sync-pedalboards: %s", e)
-            return SyncResult(status="error", message="Sync error — see logs")
+            return SyncResult(status="error", message="Sync error — see logs: journalctl -u mod-ala-pi-stomp")
 
         return self._parse(result.returncode, result.stdout.strip())
 
@@ -89,4 +89,4 @@ class PedalboardSync:
             logging.warning("sync-pedalboards conflicts: %s", conflicts)
             return SyncResult(status="conflicts", conflicts=conflicts, message="Sync aborted: conflicts")
         logging.error("sync-pedalboards error (exit %d): %s", code, stdout)
-        return SyncResult(status="error", message="Sync error — see logs")
+        return SyncResult(status="error", message="Sync error — see logs: journalctl -u mod-ala-pi-stomp")
