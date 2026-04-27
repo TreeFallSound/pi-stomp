@@ -505,21 +505,29 @@ class Lcd(abstract_lcd.Lcd):
     def draw_pedalboard_mgmt_menu(self, arg):
         items = [("Save current pedalboard", self.handler.system_menu_save_current_pb, None),
                  ("Reload pedalboards", self.handler.system_menu_reload, None),
-                 ("Update sample pedalboards", self.update_sample_pedalboards, None),
+                 ("Sync pedalboards", self.sync_pedalboards, None),
                  ("Backup data", self.handler.user_backup_data, None),
                  ("Restore Backup data", self.handler.user_restore_data, None)]
         self.draw_selection_menu(items, "Pedalboard Management")
 
-    def update_sample_pedalboards(self, arg):
+    def sync_pedalboards(self, arg):
         self.pstack.pop_panel(None)
-        self.draw_info_message("updating...")
+        self.draw_info_message("syncing...")
         self.main_panel.refresh()
-        result = self.handler.system_menu_update_sample_pedalboards()
+        result = self.handler.system_menu_sync_pedalboards()
         self.draw_info_message("")
         self.main_panel.refresh()
 
-        # Show update stdout dialog
-        d = MessageDialog(self.pstack, str(result), title="Pedalboard Update", width=250, height=140)
+        if result.status == "conflicts":
+            self._draw_sync_conflicts_dialog(result.conflicts)
+        else:
+            title = "Pedalboard Sync"
+            self.draw_message_dialog(result.message, title)
+
+    def _draw_sync_conflicts_dialog(self, conflicts):
+        basenames = [os.path.basename(f) for f in conflicts]
+        msg = "\n".join(basenames) + "\n\nResolve via SSH"
+        d = MessageDialog(self.pstack, msg, title="Sync aborted: conflicts", width=280, height=160)
         self.pstack.push_panel(d)
 
     def draw_system_info_dialog(self, arg):

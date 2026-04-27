@@ -42,6 +42,7 @@ from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encodermidicontrol import EncoderMidiControl
 from pistomp.footswitch import Footswitch
 from pistomp.handler import Handler
+from pistomp.sync import PedalboardSync, SyncResult
 from pathlib import Path
 
 
@@ -765,15 +766,11 @@ class Modhandler(Handler):
         else:
             logging.debug("saved")
 
-    def system_menu_update_sample_pedalboards(self):
-        logging.debug("update_sample_pedalboards")
-        cmd = os.path.join(self.homedir, 'util', 'update-sample-pedalboards.sh')
-        try:
-            output = subprocess.check_output(['sudo', '-u', self.username, cmd])
-            return output.decode('utf-8')
-        except subprocess.CalledProcessError as e:
-            logging.error("update sample pedalboards:" + str(e.output))
-            return e.output.decode('utf-8')
+    def system_menu_sync_pedalboards(self) -> SyncResult:
+        logging.debug("sync_pedalboards")
+        pedalboards_dir = Path(self.data_dir) / ".pedalboards"
+        sync = PedalboardSync(pedalboards_dir=pedalboards_dir, homedir=self.homedir, username=self.username)
+        return sync.apply()
 
     def system_menu_reload(self, arg):
         logging.info("Exiting main process, systemctl should restart if enabled")
