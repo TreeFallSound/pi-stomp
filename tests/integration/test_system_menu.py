@@ -1,7 +1,10 @@
-"""System-menu actions: shutdown, reboot, reload, restart, save, backup."""
+"""System-menu actions: shutdown, reboot, reload, restart, save, backup, sync."""
 
+import subprocess
+from pathlib import Path
 from unittest.mock import patch
 
+from pistomp.sync import SyncResult
 from tests.types import SystemFixture
 
 
@@ -55,3 +58,54 @@ def test_backup_no_usb(modhandler_system: SystemFixture):
 
     mock_dialog.assert_called_once()
     assert "USB" in mock_dialog.call_args[0][0]
+
+
+# ---------------------------------------------------------------------------
+# system_menu_sync_pedalboards
+# ---------------------------------------------------------------------------
+
+def _run_sync(modhandler_system: SystemFixture, returncode: int, stdout: str) -> SyncResult:
+    handler = modhandler_system.handler
+    completed = subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr="")
+    with patch("subprocess.run", return_value=completed):
+        return handler.system_menu_sync_pedalboards()
+
+
+def test_sync_up_to_date(modhandler_system: SystemFixture):
+    result = _run_sync(modhandler_system, 0, "Already up to date")
+    assert result.status == "up_to_date"
+
+
+def test_sync_applied(modhandler_system: SystemFixture):
+    result = _run_sync(modhandler_system, 0, "2 update(s) applied")
+    assert result.status == "applied"
+    assert result.count == 2
+
+
+def test_sync_network_error(modhandler_system: SystemFixture):
+    result = _run_sync(modhandler_system, 2, "network: timeout")
+    assert result.status == "network_error"
+
+
+def test_sync_conflicts(modhandler_system: SystemFixture):
+    stdout = "Metal.pedalboard/config.yml\nConflicts: resolve via SSH ..."
+    result = _run_sync(modhandler_system, 3, stdout)
+    assert result.status == "conflicts"
+    assert result.conflicts == ["Metal.pedalboard/config.yml"]
+
+
+def test_sync_error(modhandler_system: SystemFixture):
+    result = _run_sync(modhandler_system, 1, "fatal: something broke")
+    assert result.status == "error"
+
+
+def test_sync_uses_data_dir(modhandler_system: SystemFixture):
+    """PedalboardSync is given data_dir/.pedalboards as the target directory."""
+    handler = modhandler_system.handler
+    completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="Already up to date", stderr="")
+    with patch("subprocess.run", return_value=completed) as mock_run:
+        handler.system_menu_sync_pedalboards()
+
+    cmd = mock_run.call_args[0][0]
+    expected_dir = str(Path(handler.data_dir) / ".pedalboards")
+    assert cmd[-1] == expected_dir

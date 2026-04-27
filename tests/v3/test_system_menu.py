@@ -2,6 +2,7 @@
 
 from unittest.mock import patch
 
+from pistomp.sync import SyncResult
 from tests.types import SystemFixture
 
 
@@ -19,3 +20,40 @@ def test_system_info_load(v3_system: SystemFixture):
     assert handler.eq_status is True
     assert handler.bypass_left is False
     assert handler.bypass_right is True
+
+
+# ---------------------------------------------------------------------------
+# sync_pedalboards LCD flow — each SyncResult status branch
+# ---------------------------------------------------------------------------
+
+def _sync_lcd(v3_system: SystemFixture, result: SyncResult):
+    """Patch system_menu_sync_pedalboards and drive the LCD flow."""
+    lcd = v3_system.handler.lcd
+    with patch.object(v3_system.handler, "system_menu_sync_pedalboards", return_value=result):
+        lcd.sync_pedalboards(None)
+
+
+def test_sync_lcd_up_to_date(v3_system: SystemFixture, snapshot):
+    _sync_lcd(v3_system, SyncResult(status="up_to_date", message="Up to date"))
+    snapshot()
+
+
+def test_sync_lcd_applied(v3_system: SystemFixture, snapshot):
+    _sync_lcd(v3_system, SyncResult(status="applied", count=3, message="3 update(s) applied"))
+    snapshot()
+
+
+def test_sync_lcd_network_error(v3_system: SystemFixture, snapshot):
+    _sync_lcd(v3_system, SyncResult(status="network_error", message="Sync failed: no network"))
+    snapshot()
+
+
+def test_sync_lcd_conflicts(v3_system: SystemFixture, snapshot):
+    conflicts = ["Metal.pedalboard/config.yml", "Jazz.pedalboard/config.yml (uncommitted edit)"]
+    _sync_lcd(v3_system, SyncResult(status="conflicts", conflicts=conflicts, message="Sync aborted: conflicts"))
+    snapshot()
+
+
+def test_sync_lcd_error(v3_system: SystemFixture, snapshot):
+    _sync_lcd(v3_system, SyncResult(status="error", message="Sync error — see logs: journalctl -u mod-ala-pi-stomp"))
+    snapshot()
