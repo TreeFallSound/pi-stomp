@@ -57,3 +57,27 @@ def test_sync_lcd_conflicts(v3_system: SystemFixture, snapshot):
 def test_sync_lcd_error(v3_system: SystemFixture, snapshot):
     _sync_lcd(v3_system, SyncResult(status="error", message="Sync error — see logs: journalctl -u mod-ala-pi-stomp"))
     snapshot()
+
+
+# ---------------------------------------------------------------------------
+# Notification icon visibility
+# ---------------------------------------------------------------------------
+
+
+def test_notification_icon_hidden_by_default(v3_system: SystemFixture, snapshot):
+    """Toolbar shows no notification icon when handler.notification is None."""
+    v3_system.handler.lcd.main_panel.refresh()
+    snapshot()
+
+
+def test_notification_icon_visible_when_set(v3_system: SystemFixture, snapshot):
+    """Toolbar shows notification icon after set_notification is called."""
+    v3_system.handler.set_notification("Remote mismatch: local commits not on origin.")
+    snapshot()
+
+
+def test_notification_clears_after_successful_sync(v3_system: SystemFixture, snapshot):
+    """Notification icon disappears after a successful sync."""
+    v3_system.handler.set_notification("stale error")
+    _sync_lcd(v3_system, SyncResult(status="up_to_date", message="Up to date"))
+    snapshot()

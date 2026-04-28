@@ -15,7 +15,6 @@
 
 
 class Handler:
-
     def __init__(self):
         self.homedir = None
         self.lcd = None
@@ -86,3 +85,6 @@ class Handler:
 
     def poll_wifi(self):
         raise NotImplementedError()
+
+    def init_pedalboards_remote(self, url: str) -> None:
+        pass

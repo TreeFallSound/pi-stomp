@@ -29,6 +29,7 @@ def mock_handler():
     handler.SystemState = "Running"
     handler.temperature = "45C"
     handler.throttled = "None"
+    handler.notification = None
     return handler
 
 

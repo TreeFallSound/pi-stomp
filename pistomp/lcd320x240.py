@@ -106,6 +106,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_splash = None
         self.w_info_msg = None
         self.w_parameter_dialogs = {}
+        self.w_notification = None
 
         # panels
         self.pstack = PanelStack(display, image_format='RGB', use_dimming=True)  # TODO use dimming without loosing FS's
@@ -178,6 +179,12 @@ class Lcd(abstract_lcd.Lcd):
     def draw_tools(self, wifi_type=None, eq_type=None, bypass_type=None, system_type=None):
         if self.w_wifi is not None:
             return
+        self.w_notification = ImageWidget(box=Box.xywh(180, 0, 20, 20),
+                                          image_path=os.path.join(self.imagedir, 'alert_orange.png'),
+                                          parent=self.main_panel, action=self._notification_action)
+        self.main_panel.add_sel_widget(self.w_notification)
+        if self.handler is None or self.handler.notification is None:
+            self.w_notification.hide(refresh=False)
         self.w_wifi = ImageWidget(box=Box.xywh(210, 0, 20, 20), image_path=os.path.join(self.imagedir,
                                   'wifi_gray.png'), parent=self.main_panel, action=self.wifi_menu.open)
         self.main_panel.add_sel_widget(self.w_wifi)
@@ -192,6 +199,18 @@ class Lcd(abstract_lcd.Lcd):
         self.w_wrench = ImageWidget(box=Box.xywh(296, 0, 20, 20), image_path=os.path.join(self.imagedir,
                              'wrench_silver.png'), parent=self.main_panel, action=self.draw_system_menu)
         self.main_panel.add_sel_widget(self.w_wrench)
+
+    def update_notification(self, msg: str | None) -> None:
+        if self.w_notification is None:
+            return
+        if msg:
+            self.w_notification.show()
+        else:
+            self.w_notification.hide()
+
+    def _notification_action(self, event, widget) -> None:
+        if event == InputEvent.CLICK and self.handler and self.handler.notification:
+            self.draw_message_dialog(self.handler.notification, title="Notice", width=280, height=160)
 
     def toggle_bypass(self, event, widget):
         if event == InputEvent.CLICK:
@@ -517,6 +536,9 @@ class Lcd(abstract_lcd.Lcd):
         result = self.handler.system_menu_sync_pedalboards()
         self.draw_info_message("")
         self.main_panel.refresh()
+
+        if result.status in ("up_to_date", "applied"):
+            self.handler.set_notification(None)
 
         if result.status == "conflicts":
             msg = "\n".join(result.conflicts) + "\n\nResolve via SSH"

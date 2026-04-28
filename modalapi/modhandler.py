@@ -84,6 +84,9 @@ class Modhandler(Handler):
         # Stores snapshot index from loading_end until pedalboard change is detected
         self.next_pedalboard_preset_index = None
 
+        self.notification: str | None = None
+        self.pedalboards_remote: str | None = None
+
         # Backup
         self.backup_dir = "/media/usb0/backups"
         self.backup_file = "pistomp_backup.zip"
@@ -431,6 +434,8 @@ class Modhandler(Handler):
         if config_file.exists():
             with open(config_file.as_posix(), 'r') as ymlfile:
                 cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
+            if cfg and 'pedalboards' in cfg:
+                logging.warning("'pedalboards' key in %s is ignored — set it in default_config.yml only", config_file)
         self.hardware.reinit(cfg)
 
         # Initialize the data and draw on LCD
@@ -766,10 +771,34 @@ class Modhandler(Handler):
         else:
             logging.debug("saved")
 
+    def init_pedalboards_remote(self, url: str) -> None:
+        self.pedalboards_remote = url
+        pedalboards_dir = Path(self.data_dir) / ".pedalboards"
+        sync = PedalboardSync(pedalboards_dir=pedalboards_dir, homedir=self.homedir, username=self.username)
+        result = sync.configure_remote(url)
+        logging.info("init_pedalboards_remote: %s", result.status)
+        if result.status in ("up_to_date", "applied"):
+            self.set_notification(None)
+        else:
+            self.set_notification(result.message)
+
+    def set_notification(self, msg: str | None) -> None:
+        self.notification = msg
+        if self.lcd is not None:
+            self.lcd.update_notification(msg)
+
     def system_menu_sync_pedalboards(self) -> SyncResult:
         logging.debug("sync_pedalboards")
         pedalboards_dir = Path(self.data_dir) / ".pedalboards"
         sync = PedalboardSync(pedalboards_dir=pedalboards_dir, homedir=self.homedir, username=self.username)
+        # If the repo is missing (e.g. user deleted it), re-run configure_remote if we have a URL
+        if self.pedalboards_remote and not (pedalboards_dir / ".git").exists():
+            result = sync.configure_remote(self.pedalboards_remote)
+            if result.status not in ("error", "remote_conflict"):
+                self.set_notification(None)
+            else:
+                self.set_notification(result.message)
+            return result
         return sync.apply()
 
     def system_menu_reload(self, arg):

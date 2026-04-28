@@ -151,3 +151,124 @@ def test_default_homedir_is_repo_root():
     assert (sync.pedalboards_dir.parent == Path.home()) or True  # path exists check
     # script path should end with util/sync-pedalboards.sh
     assert sync.script.endswith("util/sync-pedalboards.sh")
+
+
+# ---------------------------------------------------------------------------
+# configure_remote
+# ---------------------------------------------------------------------------
+
+
+def _sync_with_git_dir(tmp_path) -> PedalboardSync:
+    (tmp_path / ".git").mkdir()
+    return PedalboardSync(pedalboards_dir=tmp_path, homedir=Path("/fake/pi-stomp"))
+
+
+def test_configure_remote_no_git_dir_clones(tmp_path):
+    sync = PedalboardSync(pedalboards_dir=tmp_path / "new", homedir=Path("/fake/pi-stomp"))
+    with patch.object(sync, "_clone", return_value=_completed_result("cloned")) as mock_clone:
+        sync.configure_remote("https://example.com/pedalboards.git")
+    mock_clone.assert_called_once_with("https://example.com/pedalboards.git")
+
+
+def test_configure_remote_matching_url_syncs(tmp_path):
+    sync = _sync_with_git_dir(tmp_path)
+    with (
+        patch.object(sync, "_get_remote", return_value="https://example.com/pedalboards.git"),
+        patch.object(sync, "apply", return_value=_completed_result("up_to_date")) as mock_apply,
+    ):
+        sync.configure_remote("https://example.com/pedalboards.git")
+    mock_apply.assert_called_once()
+
+
+def test_configure_remote_different_url_no_local_commits_switches(tmp_path):
+    sync = _sync_with_git_dir(tmp_path)
+    with (
+        patch.object(sync, "_get_remote", return_value="https://old.example.com/pb.git"),
+        patch.object(sync, "_has_local_commits", return_value=False),
+        patch.object(sync, "_set_remote") as mock_set,
+        patch.object(sync, "apply", return_value=_completed_result("applied")) as mock_apply,
+    ):
+        sync.configure_remote("https://new.example.com/pb.git")
+    mock_set.assert_called_once_with("https://new.example.com/pb.git")
+    mock_apply.assert_called_once()
+
+
+def test_configure_remote_different_url_local_commits_blocked(tmp_path):
+    sync = _sync_with_git_dir(tmp_path)
+    with (
+        patch.object(sync, "_get_remote", return_value="https://old.example.com/pb.git"),
+        patch.object(sync, "_has_local_commits", return_value=True),
+        patch.object(sync, "_set_remote") as mock_set,
+    ):
+        result = sync.configure_remote("https://new.example.com/pb.git")
+    assert result.status == "remote_conflict"
+    mock_set.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _clone
+# ---------------------------------------------------------------------------
+
+
+def test_clone_nonempty_dir_refused(tmp_path):
+    (tmp_path / "some_file.txt").write_text("data")
+    sync = PedalboardSync(pedalboards_dir=tmp_path, homedir=Path("/fake/pi-stomp"))
+    result = sync._clone("https://example.com/pb.git")
+    assert result.status == "error"
+    assert "not empty" in result.message
+
+
+def test_clone_empty_dir_succeeds(tmp_path):
+    sync = PedalboardSync(pedalboards_dir=tmp_path, homedir=Path("/fake/pi-stomp"))
+    with patch("subprocess.run", return_value=_completed(0, "")):
+        result = sync._clone("https://example.com/pb.git")
+    assert result.status == "cloned"
+
+
+def test_clone_nonexistent_dir_succeeds(tmp_path):
+    sync = PedalboardSync(pedalboards_dir=tmp_path / "new", homedir=Path("/fake/pi-stomp"))
+    with patch("subprocess.run", return_value=_completed(0, "")):
+        result = sync._clone("https://example.com/pb.git")
+    assert result.status == "cloned"
+
+
+def test_clone_failure_returns_error(tmp_path):
+    sync = PedalboardSync(pedalboards_dir=tmp_path / "new", homedir=Path("/fake/pi-stomp"))
+    with patch("subprocess.run", return_value=_completed(1, "")):
+        result = sync._clone("https://example.com/pb.git")
+    assert result.status == "error"
+
+
+# ---------------------------------------------------------------------------
+# _has_local_commits
+# ---------------------------------------------------------------------------
+
+
+def test_has_local_commits_true(tmp_path):
+    sync = _sync_with_git_dir(tmp_path)
+    with patch("subprocess.run", return_value=_completed(0, "3")):
+        assert sync._has_local_commits() is True
+
+
+def test_has_local_commits_false(tmp_path):
+    sync = _sync_with_git_dir(tmp_path)
+    with patch("subprocess.run", return_value=_completed(0, "0")):
+        assert sync._has_local_commits() is False
+
+
+def test_has_local_commits_conservative_on_error(tmp_path):
+    sync = _sync_with_git_dir(tmp_path)
+    with patch("subprocess.run", side_effect=OSError("fail")):
+        assert sync._has_local_commits() is True
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+from pistomp.sync import SyncResult
+
+
+def _completed_result(status: str) -> SyncResult:
+    return SyncResult(status=status, message=status)  # type: ignore[arg-type]
