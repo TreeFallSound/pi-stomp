@@ -26,11 +26,11 @@ import pistomp.gpioswitch as gpioswitch
 import pistomp.hardware as hardware
 import pistomp.relay as Relay
 
-#import pistomp.lcdili9341 as Lcd  # pistompcore UI
-import pistomp.lcd320x240 as Lcd   # New UI
-#import pistomp.lcd128x64 as Lcd
-#import pistomp.lcd135x240 as Lcd
-#import pistomp.lcdsy7789 as Lcd
+# import pistomp.lcdili9341 as Lcd  # pistompcore UI
+import pistomp.lcd320x240 as Lcd  # New UI
+# import pistomp.lcd128x64 as Lcd
+# import pistomp.lcd135x240 as Lcd
+# import pistomp.lcdsy7789 as Lcd
 
 # Pins (Unless the hardware has been changed, these should not be altered)
 TOP_ENC_PIN_D = 17
@@ -70,7 +70,7 @@ class Pistompcore(hardware.Hardware):
 
         self.init_analog_controls()
 
-        #self.reinit(None)
+        # self.reinit(None)
 
     def init_lcd(self):
         self.mod.add_lcd(Lcd.Lcd(self.mod.homedir, self.mod, flip=True))
@@ -78,9 +78,11 @@ class Pistompcore(hardware.Hardware):
     def init_encoders(self):
         top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=self.mod.universal_encoder_select)
         self.encoders.append(top_enc)
-        enc_sw = gpioswitch.GpioSwitch(1, None, None, callback=self.mod.universal_encoder_sw,
-                                       longpress_callback=self.mod.universal_encoder_sw)
+        enc_sw = gpioswitch.GpioSwitch(
+            1, None, None, callback=self.mod.universal_encoder_sw, longpress_callback=self.mod.universal_encoder_sw
+        )
         self.encoder_switches.append(enc_sw)
+        # XXX: user-added encoders via config are not supported here yet (see v3).
 
     def init_relays(self):
         self.relay = Relay.Relay(RELAY_SET_PIN, RELAY_RESET_PIN)

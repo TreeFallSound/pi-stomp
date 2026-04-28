@@ -67,7 +67,8 @@ schema = {
                 "type": "integer"
               },
               "disable": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Disable this footswitch entirely or per-pedalboard (disabled=True)"
               },
               "gpio_input": {
                 "type": "integer"

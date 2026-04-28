@@ -197,7 +197,7 @@ class Testhost(Handler):
     def _disp_footswitches(self, line, data):
         disp = ""        
         for sw in self.hardware.footswitches:
-            if sw.enabled:
+            if sw.toggled:
                 disp += "ON  "
             else:
                 disp += "OFF "

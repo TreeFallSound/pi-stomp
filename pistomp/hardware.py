@@ -23,6 +23,7 @@ import common.util as Util
 from pistomp.analogcontrol import AnalogControl
 import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.footswitch as Footswitch
+import pistomp.gpioswitch as gpioswitch
 import pistomp.taptempo as taptempo
 
 from abc import abstractmethod
@@ -53,6 +54,7 @@ class Hardware:
         self.controllers = {}
         self.footswitches = []
         self.encoder_switches = []
+        self.encoder_switch_map: dict[int, gpioswitch.GpioSwitch] = {}
         self.indicators = []
         self.debounce_map = None
         self.ledstrip = None
@@ -111,8 +113,9 @@ class Hardware:
         # Global footswitch init (callbacks and groups)
         Footswitch.Footswitch.init(self.handler.callbacks)
 
-        # Footswitch configuration
+        # Apply defaults
         self.__init_footswitches(self.cfg)
+        self.__init_encoders(self.cfg)
 
         # Analog control configuration
         for ac in self.analog_controls:
@@ -125,6 +128,7 @@ class Hardware:
         if cfg is not None:
             self.__init_midi(cfg)
             self.__init_footswitches(cfg)
+            self.__init_encoders(cfg)
 
     @abstractmethod
     def init_analog_controls(self):
@@ -383,6 +387,12 @@ class Hardware:
                         fs.add_preset(callback=self.handler.preset_set_and_change, callback_arg=preset_value)
                         fs.set_display_label(str(preset_value))
 
+                # Suppress (per-pedalboard disable without removing the object)
+                if Util.DICT_GET(f, Token.DISABLE) is True:
+                    fs.disabled = True
+                    idx += 1
+                    continue
+
                 # LCD/LED attributes
                 if Token.COLOR in f:
                     fs.set_lcd_color(f[Token.COLOR])
@@ -392,3 +402,20 @@ class Hardware:
                     fs.set_longpress_groups(Util.DICT_GET(f, Token.LONGPRESS))
 
             idx += 1
+
+    def __init_encoders(self, cfg: dict | None) -> None:
+        if cfg is None or Token.HARDWARE not in cfg:
+            return
+        cfg_encs = Util.DICT_GET(cfg[Token.HARDWARE], Token.ENCODERS)
+        if not cfg_encs:
+            return
+        for enc_cfg in cfg_encs:
+            enc_id = Util.DICT_GET(enc_cfg, Token.ID)
+            if enc_id is None:
+                continue
+            sw = self.encoder_switch_map.get(enc_id)
+            if sw is None:
+                continue
+            if Token.LONGPRESS in enc_cfg:
+                lp_name = enc_cfg[Token.LONGPRESS]
+                sw.longpress_callback = self.handler.get_callback(lp_name) if lp_name else None
