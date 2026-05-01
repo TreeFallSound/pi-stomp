@@ -18,6 +18,7 @@
 # Copyright (C) 2017  Vilniaus Blokas UAB, https://blokas.io/pisound
 
 import os
+import re
 import threading
 import subprocess
 import logging
@@ -31,10 +32,11 @@ class WifiManager():
     # proper network management, but we aren't there. Alternatively, we could
     # monitor for hotplug events via dbus...
     #
+    HOTSPOT_PROFILE = 'pistomp-hotspot'
+
     def __init__(self, ifname = 'wlan0'):
         # Grab default wifi interface
         self.iface_name = ifname
-        self.connection_name = 'preconfigured' # Name given by Rpi imager
         self.ssid = None
         self.psk = None
         self.lock = threading.Lock()
@@ -110,7 +112,9 @@ class WifiManager():
                 logging.debug("Wifi status changed:" + str(new_status))
                 creds=()
                 if supported and connected:
-                    creds = self._acquire_creds()
+                    active_conn = new_status.get('connection')
+                    if active_conn:
+                        creds = self._acquire_creds(active_conn)
 
                 self.lock.acquire()
                 if supported and connected and creds and len(creds)==2:
@@ -151,18 +155,65 @@ class WifiManager():
         except:
             logging.debug('Wifi hotspot disabling failed')
 
-    def configure_wifi(self, ssid, password):
-        # This changes updates the config (ssid and psk) in the /etc/NetworkManager/system-connections file
-        # Bringing the connection up is expected to be done elsewhere (eg. disable_hotspot)
-        #
-        # TODO check credentials without connecting - problem is reusing wlan0 for hotspot, would prob need separate dev
-        # Can be done by making a test conn with a different profile, try to conn, disconnect if success, error if not.
-        # nmcli connection add type wifi ifname wlan0 con-name temp-test ssid "SSID" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "Password"
-        # nmcli connection up temp-test
-        # nmcli connection delete temp-test
+    def list_connections(self):
+        """Return list of dicts {name, ssid} for all wifi profiles, excluding the hotspot."""
         try:
-            result = subprocess.check_output([
-                'sudo', 'nmcli', 'connection', 'modify', self.connection_name,
+            result = subprocess.run(
+                ['nmcli', '-t', '-f', 'NAME,TYPE,802-11-WIRELESS.SSID', 'connection', 'show'],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            )
+            connections = []
+            for line in result.stdout.strip().split('\n'):
+                # nmcli terse mode escapes literal colons as \: — split on unescaped colons only
+                parts = [p.replace('\\:', ':') for p in re.split(r'(?<!\\):', line)]
+                if len(parts) >= 2 and parts[1] == '802-11-wireless':
+                    name = parts[0]
+                    ssid = parts[2] if len(parts) > 2 and parts[2] else name
+                    if name != self.HOTSPOT_PROFILE:
+                        connections.append({'name': name, 'ssid': ssid})
+            return connections
+        except Exception as e:
+            logging.error("Failed to list wifi connections: " + str(e))
+            return []
+
+    def add_connection(self, ssid, psk):
+        """Add a new wifi profile. Profile name is the SSID, suffixed if a duplicate exists."""
+        existing = {c['name'] for c in self.list_connections()}
+        name = ssid
+        counter = 2
+        while name in existing:
+            name = '%s (%d)' % (ssid, counter)
+            counter += 1
+        try:
+            subprocess.check_output([
+                'sudo', 'nmcli', 'connection', 'add',
+                'type', 'wifi', 'ifname', self.iface_name,
+                'con-name', name,
+                'ssid', ssid,
+                'wifi-sec.key-mgmt', 'wpa-psk',
+                'wifi-sec.psk', psk,
+                'connection.autoconnect', 'yes'
+            ], stderr=subprocess.STDOUT)
+            return None
+        except subprocess.CalledProcessError as exc:
+            return exc.output
+
+    def delete_connection(self, name):
+        """Delete a wifi profile by its NM connection name."""
+        try:
+            subprocess.check_output(
+                ['sudo', 'nmcli', 'connection', 'delete', name],
+                stderr=subprocess.STDOUT
+            )
+            return None
+        except subprocess.CalledProcessError as exc:
+            return exc.output
+
+    def configure_wifi(self, name, ssid, password):
+        """Update the SSID and PSK for an existing wifi profile."""
+        try:
+            subprocess.check_output([
+                'sudo', 'nmcli', 'connection', 'modify', name,
                 '802-11-wireless.ssid', ssid,
                 '802-11-wireless-security.psk', password
             ], stderr=subprocess.STDOUT)
@@ -170,19 +221,28 @@ class WifiManager():
         except subprocess.CalledProcessError as exc:
             return exc.output
 
-    def _acquire_creds(self):
+    def get_psk_for(self, name):
+        """Fetch the stored PSK for a specific wifi profile."""
         try:
-            # Run the nmcli command and capture the output
+            result = subprocess.run(
+                ['sudo', 'nmcli', '-s', '-g', '802-11-wireless-security.psk', 'connection', 'show', name],
+                stdout=subprocess.PIPE, text=True
+            )
+            return result.stdout.strip() or None
+        except Exception:
+            return None
+
+    def _acquire_creds(self, connection_name):
+        try:
             result = subprocess.run(
                 ['sudo', 'nmcli', '-s', '-g', '802-11-wireless.ssid,802-11-wireless-security.psk', 'connection',
-                 'show', self.connection_name],
+                 'show', connection_name],
                 stdout=subprocess.PIPE,
                 text=True
             )
             fields = result.stdout.split('\n')
             if len(fields) == 3:
                 return fields[:2]
-
         except:
             logging.debug('Failure running nmcli to get wifi name')
 

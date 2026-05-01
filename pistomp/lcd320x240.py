@@ -93,6 +93,8 @@ class Lcd(abstract_lcd.Lcd):
         self.w_wifi = None
         self.w_wifi_ssid = None
         self.w_wifi_pw = None
+        self._wifi_networks_menu = None
+        self._wifi_edit_profile = None
         self.w_eq = None
         self.w_power = None
         self.w_wrench = None
@@ -211,33 +213,43 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.refresh()
 
     def configure_wifi(self, event, button):
-        result = self.handler.configure_wifi_credentials(self.w_wifi_ssid.text, self.w_wifi_pw.text)
+        ssid = self.w_wifi_ssid.text
+        psk = self.w_wifi_pw.text
+        if self._wifi_edit_profile is None:
+            result = self.handler.wifi_manager.add_connection(ssid, psk)
+        else:
+            result = self.handler.wifi_manager.configure_wifi(self._wifi_edit_profile, ssid, psk)
 
-        # Show Error dialog if configure was not successful
         if result is not None:
             d = MessageDialog(self.pstack, result.decode("utf-8"), title="Error")
             self.pstack.push_panel(d)
         else:
             self.pstack.pop_panel(button.parent)
+            if self._wifi_edit_profile is None:
+                self.pstack.pop_panel(self._wifi_networks_menu)
+                self.draw_wifi_menu(None, None)
 
-    def draw_wifi_dialog(self, event):
-        ssid = self.handler.wifi_manager.get_ssid()
-        ssid = ssid if ssid else "None"
-        psk = self.handler.wifi_manager.get_psk()
-        psk = psk if psk else "None"
+    def _draw_wifi_dialog(self, conn):
+        # conn is None for "Add Network", or a dict {name, ssid} for "Edit"
+        if conn is None:
+            self._wifi_edit_profile = None
+            ssid = ''
+            psk = ''
+        else:
+            self._wifi_edit_profile = conn['name']
+            ssid = conn['ssid']
+            psk = self.handler.wifi_manager.get_psk_for(conn['name']) or ''
 
         d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
 
         self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 190, 0), text=ssid, prompt='SSID :', parent=d,
-                       outline=1, sel_width=3,
-                       outline_radius=5,
-                       align=WidgetAlign.NONE, name='cancel_btn',
+                       outline=1, sel_width=3, outline_radius=5,
+                       align=WidgetAlign.NONE, name='ssid_field',
                        edit_message='WiFi SSID')
         d.add_sel_widget(self.w_wifi_ssid)
         self.w_wifi_pw = TextWidget(box=Box.xywh(0, 30, 169, 0), text=psk, prompt='Passwd :', parent=d,
-                       outline=1,
-                       sel_width=3, outline_radius=5,
-                       align=WidgetAlign.NONE, name='cancel_btn',
+                       outline=1, sel_width=3, outline_radius=5,
+                       align=WidgetAlign.NONE, name='pw_field',
                        edit_message='Password')
         d.add_sel_widget(self.w_wifi_pw)
 
@@ -250,6 +262,21 @@ class Lcd(abstract_lcd.Lcd):
 
         self.pstack.push_panel(d)
         d.refresh()
+
+    def _draw_wifi_network_menu(self, conn):
+        items = [("Edit", self._draw_wifi_dialog, conn),
+                 ("Forget", self._forget_wifi_network, conn)]
+        self.draw_selection_menu(items, conn['name'], dismiss_option=True)
+
+    def _forget_wifi_network(self, conn):
+        result = self.handler.wifi_manager.delete_connection(conn['name'])
+        if result is not None:
+            d = MessageDialog(self.pstack, result.decode("utf-8"), title="Error")
+            self.pstack.push_panel(d)
+            return
+        self.pstack.pop_panel(None)  # pop network submenu
+        self.pstack.pop_panel(self._wifi_networks_menu)  # pop stale list
+        self.draw_wifi_menu(None, None)  # redraw fresh
 
     #
     # Title (Pedalboard and Preset)
@@ -573,10 +600,17 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_selection_menu(items, "Bank Select", auto_dismiss=True)
 
     def draw_wifi_menu(self, event, widget):
-        label = "Switch to Wifi" if util.DICT_GET(self.handler.wifi_status, 'hotspot_active') else "Switch to Hotspot"
-        items = [("Configure WiFi", self.draw_wifi_dialog, None),
-                 (label, self.toggle_hotspot, None)]
-        self.draw_selection_menu(items, "WiFi Menu", dismiss_option = True)
+        connections = self.handler.wifi_manager.list_connections()
+        active = util.DICT_GET(self.handler.wifi_status, 'connection')
+        hotspot_active = util.DICT_GET(self.handler.wifi_status, 'hotspot_active')
+        label = "Switch to Wifi" if hotspot_active else "Switch to Hotspot"
+        items = []
+        for conn in connections:
+            is_active = conn['name'] == active
+            items.append((conn['name'], self._draw_wifi_network_menu, conn, is_active))
+        items.append(("Add Network...", self._draw_wifi_dialog, None))
+        items.append((label, self.toggle_hotspot, None))
+        self._wifi_networks_menu = self.draw_selection_menu(items, "WiFi Networks", dismiss_option=True)
 
     def draw_audio_menu(self, event, widget):
         items = [("Output Volume", self.handler.system_menu_headphone_volume, None),
