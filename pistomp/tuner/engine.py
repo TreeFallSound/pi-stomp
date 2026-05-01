@@ -46,16 +46,16 @@ class TunerEngine:
     # Using nominal 48 kHz / 30 Hz gives tau_max ≈ 1601.
     _FREQ_MIN_NOMINAL = 30.0
     _SR_NOMINAL = 48000
-    FRAME_SIZE = YIN_WINDOW + int(_SR_NOMINAL / _FREQ_MIN_NOMINAL) + 2  # ≈ 7746
+    FRAME_SIZE = YIN_WINDOW + int(_SR_NOMINAL / _FREQ_MIN_NOMINAL) + 2
 
     # Ring buffer: smallest power of 2 strictly greater than FRAME_SIZE.
     _RING_CAPACITY = 1 << FRAME_SIZE.bit_length()  # 8192
 
     DSP_RATE_HZ = 20
     IIR_ALPHA = 0.35
-    SILENCE_RMS = 0.002       # ~-54 dBFS; below this we consider input silent
-    ONSET_RATIO = 4.0         # RMS jump factor that signals a new note being plucked (~12 dB)
-    ONSET_HOLDOFF_FRAMES = 2  # frames to skip after onset (rejects attack transient)
+    SILENCE_RMS = 0.002  # ~-54 dBFS; below this we consider input silent
+    ONSET_RATIO = 4.0  # RMS jump factor that signals a new note being plucked (~12 dB)
+    ONSET_HOLDOFF_FRAMES = 1  # frames to skip after onset (rejects attack transient)
 
     def __init__(
         self,
