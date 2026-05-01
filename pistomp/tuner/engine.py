@@ -41,7 +41,7 @@ class TunerEngine:
     DSP_RATE_HZ = 20
     IIR_ALPHA = 0.35
     JUMP_CENTS = 600.0  # reject readings > this many cents from current estimate
-    SILENCE_RMS = 0.01  # ~-40 dBFS; below this we consider input silent
+    SILENCE_RMS = 0.002  # ~-54 dBFS; below this we consider input silent
 
     def __init__(
         self,
