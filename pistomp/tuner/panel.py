@@ -130,9 +130,10 @@ class TunerOffsetBar(Widget):
 
     _CX: int = _W // 2  # 160
 
-    # Zone boundaries in pixels from centre, matching _IN_TUNE_THRESH / _RED_THRESH
-    _GREEN_PX: int = round(_IN_TUNE_THRESH * _CX / BAR_MAX_CENTS)  # ~6 px
-    _YELLOW_PX: int = round(_RED_THRESH * _CX / BAR_MAX_CENTS)  # ~64 px
+    # Zone boundaries in pixels from centre — computed with the same sqrt mapping
+    # as _cents_to_px so colours stay aligned with their cent thresholds.
+    _GREEN_PX: int = round(_CX * (_IN_TUNE_THRESH / BAR_MAX_CENTS) ** 0.5)   # ~32 px
+    _YELLOW_PX: int = round(_CX * (_RED_THRESH / BAR_MAX_CENTS) ** 0.5)      # ~101 px
 
     def __init__(self, box: Box, **kwargs) -> None:
         kwargs.setdefault("bkgnd_color", TunerOffsetBar.BG_COLOR)
@@ -178,8 +179,8 @@ class TunerOffsetBar(Widget):
     # ── tick ─────────────────────────────────────────────────────────────────
 
     def _cents_to_px(self, cents: float) -> int:
-        raw = cents * self._CX / self.BAR_MAX_CENTS
-        return int(max(-self._CX, min(self._CX, raw)))
+        abs_px = int(self._CX * (min(abs(cents), self.BAR_MAX_CENTS) / self.BAR_MAX_CENTS) ** 0.5)
+        return abs_px if cents >= 0.0 else -abs_px
 
     def tick(self, cents: float | None) -> None:
         new_px = self._cents_to_px(cents) if cents is not None else 0
