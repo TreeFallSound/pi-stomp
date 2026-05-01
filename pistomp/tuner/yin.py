@@ -6,7 +6,7 @@ def detect_pitch(
     frame: npt.NDArray[np.float32],
     sample_rate: int,
     threshold: float = 0.10,
-    freq_min: float = 55.0,
+    freq_min: float = 30.0,
     freq_max: float = 1300.0,
 ) -> float | None:
     """YIN pitch detection. Returns Hz or None if no confident pitch found.
