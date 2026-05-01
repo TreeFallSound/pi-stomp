@@ -37,19 +37,20 @@ class TunerReading:
 
 
 class TunerEngine:
-    FRAME_SIZE = 4096
+    FRAME_SIZE = 8192
     DSP_RATE_HZ = 20
     IIR_ALPHA = 0.35
     JUMP_CENTS = 600.0  # reject readings > this many cents from current estimate
+    SILENCE_RMS = 0.01  # ~-40 dBFS; below this we consider input silent
 
     def __init__(
         self,
         source: AudioSource,
-        freq_bounds: tuple[float, float] = (55.0, 1300.0),
+        freq_bounds: tuple[float, float] = (30.0, 1300.0),
     ) -> None:
         self._source = source
         self._freq_bounds = freq_bounds
-        self._ring = RingBuffer(16384)
+        self._ring = RingBuffer(32768)
         self._frame: npt.NDArray[np.float32] = np.zeros(self.FRAME_SIZE, dtype=np.float32)
         self._running = False
         self._worker: threading.Thread | None = None
@@ -82,6 +83,13 @@ class TunerEngine:
 
     def _process(self) -> None:
         if not self._ring.read_latest(self.FRAME_SIZE, self._frame):
+            return
+
+        rms = float(np.sqrt(np.mean(self._frame.astype(np.float64) ** 2)))
+        if rms < self.SILENCE_RMS:
+            self._iir_freq = None
+            with self._lock:
+                self._latest = None
             return
 
         sr = self._source.sample_rate
