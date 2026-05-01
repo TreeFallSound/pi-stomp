@@ -1,5 +1,13 @@
+from dataclasses import dataclass
+
 import numpy as np
 import numpy.typing as npt
+
+
+@dataclass(frozen=True)
+class PitchEstimate:
+    freq: float
+    yin_error: float  # CMND value at tau_est; 0 = perfect, approaching 1 = unreliable
 
 
 def detect_pitch(
@@ -9,8 +17,8 @@ def detect_pitch(
     freq_min: float = 30.0,
     freq_max: float = 1300.0,
     window: int | None = None,
-) -> float | None:
-    """YIN pitch detection. Returns Hz or None if no confident pitch found.
+) -> PitchEstimate | None:
+    """YIN pitch detection. Returns PitchEstimate or None if no confident pitch found.
 
     Implements: de Cheveigné & Kawahara (2002), J. Acoust. Soc. Am. 111(4).
 
@@ -56,6 +64,7 @@ def detect_pitch(
     cmnd[1:tau_max + 1] = np.where(cumsum > 0.0, diff[1:tau_max + 1] * taus / cumsum, 1.0)
 
     # Step 3: absolute threshold — first dip below threshold, walk to its bottom.
+    # No argmin fallback: a reading that doesn't pass the threshold is not published.
     tau_est = -1
     tau = tau_min
     while tau < tau_max:
@@ -67,7 +76,7 @@ def detect_pitch(
         tau += 1
 
     if tau_est < 1:
-        tau_est = int(np.argmin(cmnd[tau_min:tau_max + 1])) + tau_min
+        return None
 
     # Step 4: parabolic interpolation for sub-sample accuracy.
     if tau_min < tau_est < tau_max:
@@ -84,4 +93,4 @@ def detect_pitch(
     if tau_refined <= 0.0:
         return None
 
-    return sample_rate / tau_refined
+    return PitchEstimate(freq=sample_rate / tau_refined, yin_error=cmnd[tau_est])

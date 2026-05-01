@@ -40,21 +40,22 @@ class TunerEngine:
     # YIN_WINDOW is the primary quality knob: how many samples the correlation
     # window sees. More samples = more periods of the fundamental = better CMND
     # curve, at the cost of slower response to note changes.
-    YIN_WINDOW = 10240
+    YIN_WINDOW = 6144
 
     # Frame must hold YIN_WINDOW + tau_max samples. tau_max = sr / freq_min.
     # Using nominal 48 kHz / 30 Hz gives tau_max ≈ 1601.
     _FREQ_MIN_NOMINAL = 30.0
     _SR_NOMINAL = 48000
-    FRAME_SIZE = YIN_WINDOW + int(_SR_NOMINAL / _FREQ_MIN_NOMINAL) + 2  # ≈ 11842
+    FRAME_SIZE = YIN_WINDOW + int(_SR_NOMINAL / _FREQ_MIN_NOMINAL) + 2  # ≈ 7746
 
     # Ring buffer: smallest power of 2 strictly greater than FRAME_SIZE.
-    _RING_CAPACITY = 1 << FRAME_SIZE.bit_length()  # 16384
+    _RING_CAPACITY = 1 << FRAME_SIZE.bit_length()  # 8192
 
     DSP_RATE_HZ = 20
     IIR_ALPHA = 0.35
-    JUMP_CENTS = 600.0  # reject readings > this many cents from current estimate
-    SILENCE_RMS = 0.002  # ~-54 dBFS; below this we consider input silent
+    SILENCE_RMS = 0.002       # ~-54 dBFS; below this we consider input silent
+    ONSET_RATIO = 4.0         # RMS jump factor that signals a new note being plucked (~12 dB)
+    ONSET_HOLDOFF_FRAMES = 2  # frames to skip after onset (rejects attack transient)
 
     def __init__(
         self,
@@ -70,6 +71,8 @@ class TunerEngine:
         self._lock = threading.Lock()
         self._latest: TunerReading | None = None
         self._iir_freq: float | None = None
+        self._prev_rms: float = 0.0
+        self._onset_holdoff: int = 0
 
     def start(self) -> None:
         self._running = True
@@ -99,29 +102,38 @@ class TunerEngine:
             return
 
         rms = float(np.sqrt(np.mean(self._frame.astype(np.float64) ** 2)))
+
         if rms < self.SILENCE_RMS:
             self._iir_freq = None
+            self._onset_holdoff = 0
+            self._prev_rms = rms
             with self._lock:
                 self._latest = None
             return
 
-        sr = self._source.sample_rate
-        lo, hi = self._freq_bounds
-        freq = detect_pitch(self._frame, sr, freq_min=lo, freq_max=hi, window=self.YIN_WINDOW)
-        if freq is None:
+        # Amplitude onset: a sudden RMS jump means the player plucked a new note.
+        # Reset IIR immediately and skip ONSET_HOLDOFF_FRAMES to let the transient pass.
+        if rms > self._prev_rms * self.ONSET_RATIO:
+            self._iir_freq = None
+            self._onset_holdoff = self.ONSET_HOLDOFF_FRAMES
+            with self._lock:
+                self._latest = None
+        self._prev_rms = rms
+
+        if self._onset_holdoff > 0:
+            self._onset_holdoff -= 1
             return
 
-        # Reset (don't reject) on large jumps: IIR drift could otherwise trap the
-        # engine in a state where all valid readings are permanently blocked.
-        if self._iir_freq is not None:
-            if abs(1200.0 * math.log2(freq / self._iir_freq)) > self.JUMP_CENTS:
-                self._iir_freq = None
-                return
+        sr = self._source.sample_rate
+        lo, hi = self._freq_bounds
+        estimate = detect_pitch(self._frame, sr, freq_min=lo, freq_max=hi, window=self.YIN_WINDOW)
+        if estimate is None:
+            return
 
         if self._iir_freq is None:
-            self._iir_freq = freq
+            self._iir_freq = estimate.freq
         else:
-            self._iir_freq = self.IIR_ALPHA * freq + (1.0 - self.IIR_ALPHA) * self._iir_freq
+            self._iir_freq = self.IIR_ALPHA * estimate.freq + (1.0 - self.IIR_ALPHA) * self._iir_freq
 
         try:
             note, cents, ideal = _freq_to_note(self._iir_freq)

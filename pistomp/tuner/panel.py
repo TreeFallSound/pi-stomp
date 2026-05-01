@@ -1,4 +1,6 @@
+import statistics
 import time
+from collections import deque
 from typing import Callable, Literal
 
 from PIL import ImageFont
@@ -381,6 +383,7 @@ class TunerPanel(Panel):
             font=hint_font,
             parent=self,
         )
+        self._cents_history: deque[float] = deque(maxlen=3)
 
     def input_event(self, event) -> bool:
         if event in (InputEvent.CLICK, InputEvent.LONG_CLICK):
@@ -392,7 +395,14 @@ class TunerPanel(Panel):
         reading = self._engine.get_reading()
         if reading is not None and time.monotonic() - reading.ts > self.STALE_SECS:
             reading = None
-        cents = reading.cents if reading else None
+
+        if reading is not None:
+            self._cents_history.append(reading.cents)
+            cents = statistics.median(self._cents_history)
+        else:
+            self._cents_history.clear()
+            cents = None
+
         self._header.tick(reading)
         self._bar.tick(cents)
         self._strobe.tick(cents)
