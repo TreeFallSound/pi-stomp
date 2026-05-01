@@ -26,7 +26,7 @@ _RED_THRESH: float = 20.0
 _ZONE_COLORS: dict[Zone, Color] = {
     "in_tune": (0, 200, 0),
     "accent": (255, 180, 0),
-    "red":    (210, 40, 40),
+    "red": (210, 40, 40),
 }
 
 
@@ -42,90 +42,46 @@ def _zone_color(cents: float) -> Color:
     return _ZONE_COLORS[_zone(cents)]
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
-
-
-def _draw_tracked(draw, xy: tuple[int, int], text: str, font, fill: Color, tracking: int = 4) -> None:
-    """Draw text with extra inter-character spacing (wide tracking)."""
-    x, y = xy
-    for ch in text:
-        draw.text((x, y), ch, font=font, fill=fill)
-        bbox = font.getbbox(ch)
-        x += (bbox[2] - bbox[0]) + tracking
-
-
 # ── TunerHeaderWidget ────────────────────────────────────────────────────────
 
 
 class TunerHeaderWidget(Widget):
-    """Note name (left); cents and Hz stacked right-aligned on the right."""
+    """Centered note name only. Cents and Hz have moved to the offset bar."""
 
-    HZ_COLOR: Color = (90, 90, 90)
+    MUTED_COLOR: Color = (90, 90, 90)
 
-    def __init__(self, box: Box, note_font, info_font, **kwargs) -> None:
+    def __init__(self, box: Box, note_font, **kwargs) -> None:
         super().__init__(box=box, **kwargs)
         self._note_font = note_font
-        self._info_font = info_font
 
-        # Cache layout positions — font metrics don't change after construction.
-        h = box.height
         nb = note_font.getbbox("A4")
-        note_y = box.y0 + (h - (nb[3] - nb[1])) // 2 - nb[1]
-        cb = info_font.getbbox("0.0")
-        th = cb[3] - cb[1]
-        cents_y = box.y0 + (h // 2 - th) // 2 + 4
-        hz_y = box.y0 + h // 2 + (h // 2 - th) // 2 - 4
-        self._right_x = box.x1 - 8
-
-        bg = self.bkgnd_color
-        self._note_label = Label(box.x0 + 8, note_y, note_font, bg)
-        self._cents_label = Label(0, cents_y, info_font, bg)
-        self._hz_label = Label(0, hz_y, info_font, bg)
-        self._cents_color: Color = _ZONE_COLORS["accent"]
+        note_y = box.y0 + (box.height - (nb[3] - nb[1])) // 2 - nb[1]
+        self._note_label = Label(0, note_y, note_font, self.bkgnd_color)
 
     # ── drawing ───────────────────────────────────────────────────────────────
 
     def _draw_erase(self, image, draw, box) -> None:
-        pass  # panel bg drawn once at mount; we never clear the full header
+        pass
 
     def _draw(self, image, draw, real_box) -> None:
-        """Full redraw — only at panel mount. Re-renders labels at stored positions."""
         if self._note_label.text:
-            self._note_label.render(draw, self.fgnd_color, self._note_label.text)
-        if self._cents_label.text:
-            tw = self._info_font.getbbox(self._cents_label.text)[2]
-            self._cents_label.render(draw, self._cents_color, self._cents_label.text,
-                                     x=self._right_x - tw)
-        if self._hz_label.text:
-            tw = self._info_font.getbbox(self._hz_label.text)[2]
-            self._hz_label.render(draw, self.HZ_COLOR, self._hz_label.text,
-                                  x=self._right_x - tw)
+            self._note_label.render(
+                draw,
+                self._note_label._color or self.fgnd_color,
+                self._note_label.text,
+                x=self._note_label._x,
+            )
 
     # ── tick ──────────────────────────────────────────────────────────────────
 
+    def _centered_x(self, text: str) -> int:
+        bb = self._note_font.getbbox(text)
+        return (_W - (bb[2] - bb[0])) // 2 - bb[0]
+
     def tick(self, reading: TunerReading | None) -> None:
-        note = reading.note if reading else None
-        cents_val = round(reading.cents, 1) if reading else None
-        hz_val = round(reading.freq_hz, 1) if reading else None
-
-        self._note_label.update(self, self.fgnd_color, note)
-
-        if cents_val is not None:
-            arrow = "\u25b4" if cents_val >= 0 else "\u25be"
-            cents_text = f"{abs(cents_val):.1f} {arrow}"
-            color = _zone_color(cents_val)
-            self._cents_color = color
-            tw = self._info_font.getbbox(cents_text)[2]
-            self._cents_label.update(self, color, cents_text, x=self._right_x - tw)
-        else:
-            self._cents_label.update(self, self.fgnd_color, None)
-
-        if hz_val is not None:
-            hz_text = f"{hz_val:.1f} hz"
-            tw = self._info_font.getbbox(hz_text)[2]
-            self._hz_label.update(self, self.HZ_COLOR, hz_text, x=self._right_x - tw)
-        else:
-            self._hz_label.update(self, self.HZ_COLOR, None)
+        note = reading.note if reading else "--"
+        color = self.fgnd_color if reading else self.MUTED_COLOR
+        self._note_label.update(self, color, note, x=self._centered_x(note))
 
 
 # ── TunerHintWidget ──────────────────────────────────────────────────────────
@@ -149,7 +105,108 @@ class TunerHintWidget(Widget):
         ch_h = self._font.getbbox("A")[3]
         x = real_box.x0 + (real_box.x1 - real_box.x0 - total_w) // 2
         y = real_box.y0 + (h - ch_h) // 2 - 4
-        _draw_tracked(draw, (x, y), self.TEXT, self._font, self.COLOR, self.TRACKING)
+        cx = x
+        for ch in self.TEXT:
+            draw.text((cx, y), ch, font=self._font, fill=self.COLOR)
+            bbox = self._font.getbbox(ch)
+            cx += (bbox[2] - bbox[0]) + self.TRACKING
+
+
+# ── TunerOffsetBar ───────────────────────────────────────────────────────────
+
+
+class TunerOffsetBar(Widget):
+    """Full-width bar that fills from centre toward left (flat) or right (sharp).
+
+    The fill is colour-banded — green near centre, amber in the middle zone,
+    red toward the edges — at the same cent breakpoints as the strobe zones.
+    Only the moving edge is refreshed each tick.
+    """
+
+    BG_COLOR: Color = (20, 20, 20)
+    BAR_MAX_CENTS: float = 50.0
+
+    _CX: int = _W // 2  # 160
+
+    # Zone boundaries in pixels from centre, matching _IN_TUNE_THRESH / _RED_THRESH
+    _GREEN_PX: int = round(_IN_TUNE_THRESH * _CX / BAR_MAX_CENTS)  # ~6 px
+    _YELLOW_PX: int = round(_RED_THRESH * _CX / BAR_MAX_CENTS)  # ~64 px
+
+    def __init__(self, box: Box, **kwargs) -> None:
+        kwargs.setdefault("bkgnd_color", TunerOffsetBar.BG_COLOR)
+        super().__init__(box=box, **kwargs)
+        self._bar_px: int = 0  # signed; positive = right (sharp), negative = left (flat)
+
+    # ── drawing ──────────────────────────────────────────────────────────────
+
+    def _draw_erase(self, image, draw, box) -> None:
+        pass  # _draw handles its own background
+
+    def _draw(self, image, draw, real_box) -> None:
+        draw.rectangle(real_box.PIL_rect, fill=self.BG_COLOR)
+        self._paint_fill(draw, real_box, self._bar_px)
+
+    def _paint_fill(self, draw, real_box, bar_px: int) -> None:
+        if bar_px == 0:
+            return
+        cx = self._CX
+        abs_px = abs(bar_px)
+        sign = 1 if bar_px > 0 else -1
+        ry0 = real_box.y0
+        ry1 = real_box.y1 - 1
+        rx0 = real_box.x0
+        rx1 = real_box.x1
+
+        def seg(a: int, b: int, color: Color) -> None:
+            a, b = min(a, abs_px), min(b, abs_px)
+            if a >= b:
+                return
+            sx0 = (cx + a) if sign > 0 else (cx - b)
+            sx1 = (cx + b) if sign > 0 else (cx - a)
+            sx0 = max(sx0, rx0)
+            sx1 = min(sx1, rx1)
+            if sx0 >= sx1:
+                return
+            draw.rectangle([sx0, ry0, sx1 - 1, ry1], fill=color)
+
+        seg(0, self._GREEN_PX, _ZONE_COLORS["in_tune"])
+        seg(self._GREEN_PX, self._YELLOW_PX, _ZONE_COLORS["accent"])
+        seg(self._YELLOW_PX, cx, _ZONE_COLORS["red"])
+
+    # ── tick ─────────────────────────────────────────────────────────────────
+
+    def _cents_to_px(self, cents: float) -> int:
+        raw = cents * self._CX / self.BAR_MAX_CENTS
+        return int(max(-self._CX, min(self._CX, raw)))
+
+    def tick(self, cents: float | None) -> None:
+        new_px = self._cents_to_px(cents) if cents is not None else 0
+        old_px = self._bar_px
+        if new_px == old_px:
+            return
+        self._bar_px = new_px
+
+        bx = self.box
+        if bx is None:
+            return
+
+        # Direction change (or crossing zero): full redraw
+        same_dir = old_px == 0 or new_px == 0 or (old_px > 0) == (new_px > 0)
+        if not same_dir:
+            self.refresh()
+            return
+
+        # Same direction: surgical refresh of only the delta column range
+        cx = self._CX
+        abs_old = abs(old_px)
+        abs_new = abs(new_px)
+        active = new_px if new_px != 0 else old_px
+        sign = 1 if active > 0 else -1
+        lo = min(abs_old, abs_new)
+        hi = max(abs_old, abs_new)
+        x0 = (cx + lo) if sign > 0 else (cx - hi)
+        x1 = (cx + hi) if sign > 0 else (cx - lo)
+        self.refresh(Box(x0, bx.y0, x1, bx.y1))
 
 
 # ── StrobeWidget ─────────────────────────────────────────────────────────────
@@ -310,16 +367,15 @@ class TunerPanel(Panel):
         self._on_dismiss = on_dismiss
 
         note_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 56)
-        info_font = ImageFont.truetype("DejaVuSans.ttf", 20)
         hint_font = ImageFont.truetype("DejaVuSans.ttf", 11)
 
         self._header = TunerHeaderWidget(
             box=Box.xywh(0, 0, _W, 65),
             note_font=note_font,
-            info_font=info_font,
             parent=self,
         )
-        self._strobe = StrobeWidget(box=Box.xywh(0, 68, _W, 135), parent=self)
+        self._bar = TunerOffsetBar(box=Box.xywh(0, 65, _W, 13), parent=self)
+        self._strobe = StrobeWidget(box=Box.xywh(0, 81, _W, 129), parent=self)
         self._hint = TunerHintWidget(
             box=Box.xywh(0, 210, _W, 30),
             font=hint_font,
@@ -336,5 +392,7 @@ class TunerPanel(Panel):
         reading = self._engine.get_reading()
         if reading is not None and time.monotonic() - reading.ts > self.STALE_SECS:
             reading = None
+        cents = reading.cents if reading else None
         self._header.tick(reading)
-        self._strobe.tick(reading.cents if reading else None)
+        self._bar.tick(cents)
+        self._strobe.tick(cents)
