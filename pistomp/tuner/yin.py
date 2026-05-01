@@ -8,13 +8,17 @@ def detect_pitch(
     threshold: float = 0.10,
     freq_min: float = 30.0,
     freq_max: float = 1300.0,
+    window: int | None = None,
 ) -> float | None:
     """YIN pitch detection. Returns Hz or None if no confident pitch found.
 
     Implements: de Cheveigné & Kawahara (2002), J. Acoust. Soc. Am. 111(4).
+
+    window: explicit YIN correlation window W; defaults to len(frame)//2.
+            frame must be at least W + sample_rate/freq_min samples long.
     """
     N = len(frame)
-    half = N // 2
+    half = window if window is not None else N // 2
 
     tau_min = max(2, int(sample_rate / freq_max))
     tau_max = min(half - 1, int(sample_rate / freq_min) + 1)
