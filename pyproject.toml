@@ -19,9 +19,14 @@ classifiers = [
 dependencies = [
     "pyyaml>=6.0",
     "jsonschema>=4.0",
+    "JACK-Client>=0.5.5",
     "python-rtmidi>=1.4",
     "requests>=2.28",
+    "Pillow>=9.4",
+    "numpy>=1.24",
     "pyalsaaudio>=0.9; sys_platform == 'linux'",
+    "gpiozero>=2.0; sys_platform == 'linux'",
+    "websockets>=15.0.1",
 ]
 
 [project.optional-dependencies]
@@ -30,13 +35,20 @@ hardware = [
     "gfxhat>=0.0.1; sys_platform == 'linux'",
     "matplotlib>=3.5",
     "rpi-ws281x>=5.0; sys_platform == 'linux'",
+    "spidev>=3.0; sys_platform == 'linux'",
     "adafruit-circuitpython-neopixel>=6.3",
     "adafruit-circuitpython-rgb-display>=3.10",
     "adafruit-circuitpython-mcp3xxx>=1.4",
+    "lgpio>=0.2; sys_platform == 'linux'",
+    "rpi-lgpio>=0.4; sys_platform == 'linux'",
+    "spidev>=3.0; sys_platform == 'linux'",
 ]
 
 # Development dependencies
-dev = ["pytest>=7.0", "pytest-cov>=4.0", "black>=23.0", "ruff>=0.1.0"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1.0", "pyright>=1.1.408", "numpy>=2.4.1"]
+
+# Local emulator (macOS / Linux desktop, no Pi hardware required)
+emulator = ["pygame>=2.5"]
 
 [project.urls]
 Homepage = "https://treefallsound.com"
@@ -54,16 +66,22 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["modalapi", "pistomp", "uilib", "common"]
 
-[tool.black]
-line-length = 120
-target-version = ["py311"]
-
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+ignore = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+stubPath = "typings"
+pythonVersion = "3.11"
+
+[dependency-groups]
+dev = ["pyright>=1.1.408"]

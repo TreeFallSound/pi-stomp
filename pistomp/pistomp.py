@@ -21,8 +21,6 @@
 #
 # A new version with different controls should have a new separate subclass
 
-import gpiozero as GPIO
-
 from pathlib import Path
 import common.token as Token
 import common.util as Util
@@ -33,7 +31,6 @@ import pistomp.footswitch as Footswitch
 import pistomp.hardware as hardware
 import pistomp.relay as Relay
 
-import pistomp.lcdgfx as Lcd
 
 import sys
 import time
@@ -95,6 +92,7 @@ class Pistomp(hardware.Hardware):
         self.init_encoders()
 
     def init_lcd(self):
+        import pistomp.lcdgfx as Lcd
         self.mod.add_lcd(Lcd.Lcd(self.mod.homedir))
 
     def init_analog_controls(self):

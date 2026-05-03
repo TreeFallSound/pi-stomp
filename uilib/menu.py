@@ -23,11 +23,12 @@ class Menu(Dialog):
     """
     def __init__(self, items, font = None, max_width = None, max_height = None,
                  text_halign = TextHAlign.CENTRE, auto_dismiss = True, dismiss_option = False,
-                 default_item = None, **kwargs):
+                 default_item = None, on_close = None, **kwargs):
         self.max_height = max_height
         self.max_width = max_width
         self.items = items
         self.auto_dismiss = auto_dismiss
+        self._on_close = on_close
         if auto_dismiss is False or dismiss_option is True:
             # without auto_dismiss provide a back arrow to close menu
             self.items.append(('\u2b05', self._dismiss, None))
@@ -41,15 +42,24 @@ class Menu(Dialog):
         super(Menu,self).__init__(width = 0, height = 0, **kwargs)
 
         # Create item widgets
+        check_prefix = '\u2714 '
+        has_check_column = any(len(i) >= 4 and i[3] for i in items)
+        check_w = get_text_size(check_prefix, self.font, self.font_metrics)[0] if has_check_column else 0
+
         h = 0
         for i in items:
-            # item structure: 0:name, 1:action, 2:object, 3:selected item
+            # item structure: 0:name, 1:action, 2:object, 3:selected, 4:fgnd_color (optional)
             t = i[0]
-            if len(i) == 4 and i[3]:
-                t = '\u2714 ' + t   # Add checkmark to selected item
+            is_checked = len(i) >= 4 and i[3]
+            if is_checked:
+                t = check_prefix + t
             b = Box.xywh(0,h,self.box.width,self.item_h)
             w = TextWidget(box = b, text_halign = self.text_halign, font = self.font,
                            text = t, parent = self, action = self._item_action)
+            if has_check_column and not is_checked:
+                w.h_margin = check_w
+            if len(i) >= 5 and i[4] is not None:
+                w.fgnd_color = i[4]
             w.data = i
             self.add_sel_widget(w)
             if t == self.default_item:
@@ -62,6 +72,8 @@ class Menu(Dialog):
         stack = self._get_stack()
         if stack:
             stack.pop_panel(self)
+        if self._on_close is not None:
+            self._on_close()
 
     def _item_action(self, event, source):
         trace(self, "item action !", event, source)

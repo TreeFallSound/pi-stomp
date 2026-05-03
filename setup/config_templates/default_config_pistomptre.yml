@@ -23,6 +23,7 @@ hardware:
   # adc_input: <integer>          The analog input to which the switch is connected (required)
   # ledstrip_position: <integer>  The position of the corresponding LED (optional)
   # midi_CC: <integer>            The MIDI CC message to be sent when switch is clicked (optional)
+  # midi_port: <port_name>        Route MIDI to an external device port (optional, must match a port in external_midi)
   # longpress: <callback_name>    The name of a handler method to call when switch is long-pressed (optional)
   #                               longpress can be a list enclosed with []'s
   #
@@ -54,6 +55,7 @@ hardware:
   # id: <integer>                 The id and position on the screen (starting with 0 on the left)
   # type: <KNOB | EXPRESSION>     The control type, used to represent the control on the screen (optional)
   # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
+  # midi_port: <port_name>        Route MIDI to an external device port (optional, must match a port in external_midi)
   # autosync: <true | false>      Whether to send current value on pedalboard load (optional, default: false)
   #
   #analog_controllers:
@@ -69,6 +71,7 @@ hardware:
   # type: <KNOB | VOLUME>         The control type (default is KNOB, VOLUME controls output volume)
   # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
   #                               cannot be used along with type=VOLUME
+  # midi_port: <port_name>        Route MIDI to an external device port (optional, must match a port in external_midi)
   # longpress: <callback_name>    The name of a handler method to call when switch is long-pressed (optional)
   #
   encoders:
@@ -81,3 +84,28 @@ hardware:
     - id: 3
       type: VOLUME
 
+
+# Blend Mode Configuration (Pedalboard-specific)
+# This feature interpolates between snapshots based on analog input position.
+# IMPORTANT: This should be configured per-pedalboard in <pedalboard>.pedalboard/config.yml
+# Requires an expression pedal or encoder to be configured in analog_controllers above.
+#
+# Blend Mode: Smoothly interpolate between snapshots using analog input
+# Supports expression pedals and tweak encoders (Tweak1=ID 1, Tweak2=ID 2)
+#
+# blend_snapshots:
+#   - name: "Clean to Fuzz"           # Required: Snapshot name (created automatically)
+#     input_id: 0                     # Required: Expression pedal (0) or encoder (1, 2)
+#     interpolation: smooth           # Optional: linear (default), smooth, build, drop, snap, bloom
+#     stops:                          # Dict format: position -> snapshot name/index
+#       "0.0": "Clean"                # Snapshot by name (case-insensitive prefix match)
+#       "0.5": "Crunch"               # Or by index (0-based integer)
+#       "1.0": "Fuzz"                 # Min separation: 1/127 (0.0079)
+#   - name: "Volume Swell"
+#     input_id: 1                     # Tweak1 encoder
+#     stops: ["Quiet", "Loud"]        # List format: auto-spaced evenly [0.0, 1.0]
+#
+# Features:
+# - MIDI-bound parameters automatically excluded from interpolation (prevents conflicts)
+# - Pre-computed diff maps for optimized 10ms critical path
+# - MIDI-level de-duplication prevents redundant WebSocket traffic

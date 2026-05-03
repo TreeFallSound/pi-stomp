@@ -14,10 +14,27 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import functools
-import textwrap
 
 from uilib.panel import *
 from uilib.text import *
+
+
+def _pixel_wrap(text: str, font, max_px: int) -> str:
+    """Word-wrap text so each line fits within max_px when rendered in font."""
+    lines = []
+    for paragraph in text.split('\n'):
+        words = paragraph.split(' ')
+        line = ''
+        for word in words:
+            candidate = (line + ' ' + word).lstrip()
+            if font.getlength(candidate) <= max_px:
+                line = candidate
+            else:
+                if line:
+                    lines.append(line)
+                line = word
+        lines.append(line)
+    return '\n'.join(lines)
 
 class DialogDecorator(PanelDecorator):
     def __init__(self, panel, title, title_font, **kwargs):
@@ -47,7 +64,7 @@ class DialogDecorator(PanelDecorator):
         self.box = Box(pb.x0 - m, pb.y0 - self.th - m - tmargin,
                        pb.x1 + m, pb.y1 + m)
         trace(self, "new box=", self.box)
-        tbox = Box(o, o, 16 + self.box.width - o, self.th + o)
+        tbox = Box(o, o, self.box.width - o, self.th + o)
         self.title.set_box(tbox, refresh = False)
         self.title.show(refresh = False)
 
@@ -83,9 +100,8 @@ class MessageDialog(Dialog):
     def __init__(self, panelstack, message, title="Error", width=200, height=90):
         super(MessageDialog, self).__init__(width=width, height=height, title=title, auto_destroy=True)
 
-        chars_per_line = width // int(Config().get_font('default_title').getsize("a")[0])
-        chunks = textwrap.wrap(message, width=chars_per_line)
-        wrapped = '\n'.join(chunks)
+        text_font = Config().get_font('default')
+        wrapped = _pixel_wrap(message, text_font, width - 10)
 
         t = TextWidget(box=Box.xywh(5, 0, width-10, 50), text=wrapped, parent=self, outline=0, sel_width=0,
                        align=WidgetAlign.NONE)

@@ -13,12 +13,10 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import board
-import digitalio
 import logging
 import os
 import common.token as Token
-import modalapi.parameter as Parameter
+import common.parameter as Parameter
 import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
@@ -28,25 +26,40 @@ from uilib import *
 from uilib.lcd_ili9341 import *
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
+from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
+from pistomp.encoder_controller import EncoderController
+from blend.manager import BlendMode
+from pistomp.pedalboard_config_editor import PedalboardConfigEditor
 
-#import traceback
+# Parameter dialog auto-dismiss timeout (seconds)
+PARAMETER_DIALOG_TIMEOUT = 1.0
 
 class Lcd(abstract_lcd.Lcd):
 
-    def __init__(self, cwd, handler=None, flip=False):
+    def __init__(self, cwd, handler=None, flip=False, display=None, spi_speed_mhz=24):
         self.cwd = cwd
         self.imagedir = os.path.join(cwd, "images")
         Config(os.path.join(cwd, 'ui', 'config.json'))
         self.handler = handler
         self.flip = flip
+        self.spi_speed_mhz = spi_speed_mhz
 
-        # TODO would be good to decouple the actual LCD hardware.  This file should work for any 320x240 display
-        display = LcdIli9341(board.SPI(),
-                             digitalio.DigitalInOut(board.CE0),
-                             digitalio.DigitalInOut(board.D6),
-                             digitalio.DigitalInOut(board.D5),
-                             24000000,
-                             flip)
+        # Calculate optimal polling divisor based on LCD speed
+        # 24MHz: 78ms/frame → poll every 80ms (divisor=8)
+        # 48MHz: 39ms/frame → poll every 40ms (divisor=4)
+        # 56MHz: 34ms/frame → poll every 30ms (divisor=3)
+        frame_time_ms = (56.0 / spi_speed_mhz) * 33.6
+        self.poll_divisor = max(1, round(frame_time_ms / 10.0))
+
+        if display is None:
+            import board
+            import digitalio
+            display = LcdIli9341(board.SPI(),
+                                 digitalio.DigitalInOut(board.CE0),
+                                 digitalio.DigitalInOut(board.D6),
+                                 digitalio.DigitalInOut(board.D5),
+                                 spi_speed_mhz * 1_000_000,
+                                 flip)
 
         # Colors
         self.background = (0, 0, 0)
@@ -93,10 +106,14 @@ class Lcd(abstract_lcd.Lcd):
         self.w_wifi = None
         self.w_wifi_ssid = None
         self.w_wifi_pw = None
+        self._wifi_networks_menu = None
+        self._wifi_edit_profile = None
+        self.w_config_edit = None
         self.w_eq = None
         self.w_power = None
         self.w_wrench = None
         self.w_pedalboard = None
+        self.w_colon = None
         self.w_preset = None
         self.w_plugins = []
         self.w_footswitches = []
@@ -104,19 +121,22 @@ class Lcd(abstract_lcd.Lcd):
         self.w_splash = None
         self.w_info_msg = None
         self.w_parameter_dialogs = {}
+        self.w_notification = None
 
         # panels
         self.pstack = PanelStack(display, image_format='RGB', use_dimming=True)  # TODO use dimming without loosing FS's
         self.splash_panel = Panel(box=Box.xywh(0, 0, self.display_width, self.display_height))
-        self.pstack.push_panel(self.splash_panel)
+        self.pstack.push_panel(self.splash_panel, refresh=False)
         self.main_panel = Panel(box=Box.xywh(0, 0, self.display_width, 170))
         self.main_panel_pushed = False
         self.footswitch_panel = Panel(box=Box.xywh(0, 176, self.display_width, 64))
-        self.pstack.push_panel(self.footswitch_panel)
+        self.pstack.push_panel(self.footswitch_panel, refresh=False)
+        self._tuner_panel = None
 
         self.pedalboards = {}
 
-        self.splash_show(True)
+        if not display.has_system_splash:
+            self.splash_show(True)
 
     #
     # Navigation
@@ -162,10 +182,68 @@ class Lcd(abstract_lcd.Lcd):
         if not self.main_panel_pushed:
             self.pstack.push_panel(self.main_panel)
             self.main_panel_pushed = True
-        #self.main_panel.refresh()
+        else:
+            self.pstack.refresh()
 
     def poll_updates(self):
+        for d in self.w_parameter_dialogs.values():
+            d.tick()
+
         self.pstack.poll_updates()
+        if self._tuner_panel is not None and self.pstack.current == self._tuner_panel:
+            self._tuner_panel.tick()
+
+    def show_tuner_panel(self, panel) -> None:
+        self._tuner_panel = panel
+        self.pstack.push_panel(panel)
+        # push_panel composes the (still-blank) panel image onto the stack but
+        # doesn't draw the panel's children. Force a full redraw so bg, rules,
+        # header and hint are on screen before tick()'s partial refreshes start.
+        panel.refresh()
+
+    def hide_tuner_panel(self) -> None:
+        if self._tuner_panel is not None:
+            self.pstack.pop_panel(self._tuner_panel)
+            self._tuner_panel = None
+
+        if self.pstack.current == self.main_panel:
+            # Update control progress bars (analog controls and encoders)
+            for icon in self.w_controls:
+                if icon.object is None:
+                    continue
+
+                midi_value = None
+                if isinstance(icon.object, AnalogMidiControl):
+                    midi_value = as_midi_value(icon.object.last_read)
+                elif isinstance(icon.object, EncoderController):
+                    midi_value = icon.object.midi_value
+                elif isinstance(icon.object, BlendMode):
+                    input_ctrl = icon.object.input_controller.controlled_input
+                    if input_ctrl:
+                        if isinstance(input_ctrl, EncoderController):
+                            position = input_ctrl.midi_value / 127.0
+                        else:
+                            position = input_ctrl.last_read / 1023.0
+                        midi_value = int(position * 127)
+
+                        stops = icon.object.input_controller.stops
+                        closest_stop = min(stops, key=lambda s: abs(s.position - position))
+                        snapshot_name = self.handler.current.presets.get(closest_stop.snapshot_index, "")
+                        if snapshot_name and snapshot_name != icon.text:
+                            icon.set_text(snapshot_name)
+                    else:
+                        logging.warning("BlendMode icon has no associated input controller")
+
+                if midi_value is not None:
+                    progress = midi_value / 127.0
+                    if icon.progress != progress:
+                        icon.set_progress(progress)
+
+            # Tick text widgets (scrolling animation if needed)
+            if self.w_preset:
+                self.w_preset.tick()
+            if self.w_pedalboard:
+                self.w_pedalboard.tick()
 
     #
     # Toolbar
@@ -173,6 +251,15 @@ class Lcd(abstract_lcd.Lcd):
     def draw_tools(self, wifi_type=None, eq_type=None, bypass_type=None, system_type=None):
         if self.w_wifi is not None:
             return
+        self.w_notification = ImageWidget(box=Box.xywh(180, 0, 20, 20),
+                                          image_path=os.path.join(self.imagedir, 'alert_orange.png'),
+                                          parent=self.main_panel, action=self._notification_action)
+        self.main_panel.add_sel_widget(self.w_notification)
+        if self.handler is None or self.handler.notification is None:
+            self.w_notification.hide(refresh=False)
+        self.w_config_edit = ImageWidget(box=Box.xywh(200, 0, 20, 20), image_path=os.path.join(self.imagedir,
+                                  'edit_silver.png'), parent=self.main_panel, action=self.draw_config_editor)
+        self.main_panel.add_sel_widget(self.w_config_edit)
         self.w_wifi = ImageWidget(box=Box.xywh(210, 0, 20, 20), image_path=os.path.join(self.imagedir,
                                   'wifi_gray.png'), parent=self.main_panel, action=self.draw_wifi_menu)
         self.main_panel.add_sel_widget(self.w_wifi)
@@ -187,6 +274,18 @@ class Lcd(abstract_lcd.Lcd):
         self.w_wrench = ImageWidget(box=Box.xywh(296, 0, 20, 20), image_path=os.path.join(self.imagedir,
                              'wrench_silver.png'), parent=self.main_panel, action=self.draw_system_menu)
         self.main_panel.add_sel_widget(self.w_wrench)
+
+    def update_notification(self, msg: str | None) -> None:
+        if self.w_notification is None:
+            return
+        if msg:
+            self.w_notification.show()
+        else:
+            self.w_notification.hide()
+
+    def _notification_action(self, event, widget) -> None:
+        if event == InputEvent.CLICK and self.handler and self.handler.notification:
+            self.draw_message_dialog(self.handler.notification, title="Notice", width=280, height=160)
 
     def toggle_bypass(self, event, widget):
         if event == InputEvent.CLICK:
@@ -211,33 +310,43 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.refresh()
 
     def configure_wifi(self, event, button):
-        result = self.handler.configure_wifi_credentials(self.w_wifi_ssid.text, self.w_wifi_pw.text)
+        ssid = self.w_wifi_ssid.text
+        psk = self.w_wifi_pw.text
+        if self._wifi_edit_profile is None:
+            result = self.handler.wifi_manager.add_connection(ssid, psk)
+        else:
+            result = self.handler.wifi_manager.configure_wifi(self._wifi_edit_profile, ssid, psk)
 
-        # Show Error dialog if configure was not successful
         if result is not None:
             d = MessageDialog(self.pstack, result.decode("utf-8"), title="Error")
             self.pstack.push_panel(d)
         else:
             self.pstack.pop_panel(button.parent)
+            if self._wifi_edit_profile is None:
+                self.pstack.pop_panel(self._wifi_networks_menu)
+                self.draw_wifi_menu(None, None)
 
-    def draw_wifi_dialog(self, event):
-        ssid = self.handler.wifi_manager.get_ssid()
-        ssid = ssid if ssid else "None"
-        psk = self.handler.wifi_manager.get_psk()
-        psk = psk if psk else "None"
+    def _draw_wifi_dialog(self, conn):
+        # conn is None for "Add Network", or a dict {name, ssid} for "Edit"
+        if conn is None:
+            self._wifi_edit_profile = None
+            ssid = ''
+            psk = ''
+        else:
+            self._wifi_edit_profile = conn['name']
+            ssid = conn['ssid']
+            psk = self.handler.wifi_manager.get_psk_for(conn['name']) or ''
 
         d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
 
         self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 190, 0), text=ssid, prompt='SSID :', parent=d,
-                       outline=1, sel_width=3,
-                       outline_radius=5,
-                       align=WidgetAlign.NONE, name='cancel_btn',
+                       outline=1, sel_width=3, outline_radius=5,
+                       align=WidgetAlign.NONE, name='ssid_field',
                        edit_message='WiFi SSID')
         d.add_sel_widget(self.w_wifi_ssid)
         self.w_wifi_pw = TextWidget(box=Box.xywh(0, 30, 169, 0), text=psk, prompt='Passwd :', parent=d,
-                       outline=1,
-                       sel_width=3, outline_radius=5,
-                       align=WidgetAlign.NONE, name='cancel_btn',
+                       outline=1, sel_width=3, outline_radius=5,
+                       align=WidgetAlign.NONE, name='pw_field',
                        edit_message='Password')
         d.add_sel_widget(self.w_wifi_pw)
 
@@ -251,6 +360,21 @@ class Lcd(abstract_lcd.Lcd):
         self.pstack.push_panel(d)
         d.refresh()
 
+    def _draw_wifi_network_menu(self, conn):
+        items = [("Edit", self._draw_wifi_dialog, conn),
+                 ("Forget", self._forget_wifi_network, conn)]
+        self.draw_selection_menu(items, conn['name'], dismiss_option=True)
+
+    def _forget_wifi_network(self, conn):
+        result = self.handler.wifi_manager.delete_connection(conn['name'])
+        if result is not None:
+            d = MessageDialog(self.pstack, result.decode("utf-8"), title="Error")
+            self.pstack.push_panel(d)
+            return
+        self.pstack.pop_panel(None)  # pop network submenu
+        self.pstack.pop_panel(self._wifi_networks_menu)  # pop stale list
+        self.draw_wifi_menu(None, None)  # redraw fresh
+
     #
     # Title (Pedalboard and Preset)
     #
@@ -261,25 +385,55 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.refresh()
 
     def draw_pedalboard(self, pedalboard_name):
-        pedalboard_name += ":"
-        self.title_split = min(self.title_font.getmask(pedalboard_name).getbbox()[2], self.title_split_orig)
+        text_width = self.title_font.getmask(pedalboard_name).getbbox()[2]
+        spacing = 2  # Default sel_width for selectable widgets
+        min_box_width = text_width + (spacing * 2)
+        self.title_split = min(min_box_width, self.title_split_orig)
+
         if self.w_pedalboard is not None:
             self.w_pedalboard.set_text(pedalboard_name)
             self.w_pedalboard.set_box(box=Box.xywh(0, 20, self.title_split, 36), realign=True, refresh=True)
-            return
-        self.w_pedalboard = TextWidget(box=Box.xywh(0, 20, self.title_split, 36), text=pedalboard_name,
-                                       font=self.title_font, parent=self.main_panel, action=self.draw_pedalboard_menu)
-        self.main_panel.add_sel_widget(self.w_pedalboard)
+        else:
+            self.w_pedalboard = ScrollingText(
+                box=Box.xywh(0, 20, self.title_split, 36),
+                text=pedalboard_name,
+                font=self.title_font,
+                parent=self.main_panel,
+                action=self.draw_pedalboard_menu,
+                lcd_poll_divisor=self.poll_divisor,
+            )
+            self.main_panel.add_sel_widget(self.w_pedalboard)
+
+        colon_width = self.title_font.getmask(":").getbbox()[2]
+        colon_x = self.title_split + spacing
+        if self.w_colon is not None:
+            self.w_colon.set_box(box=Box.xywh(colon_x, 20, colon_width, 36), realign=True, refresh=True)
+        else:
+            self.w_colon = TextWidget(
+                box=Box.xywh(colon_x, 20, colon_width, 36),
+                text=":",
+                font=self.title_font,
+                h_margin=0,
+                parent=self.main_panel,
+            )
 
     def draw_preset(self, preset_name):
-        x = self.title_split + 4  # title_split gets set by draw_pedalboard
+        colon_width = self.title_font.getmask(":").getbbox()[2]
+        padding = 2  # Must match padding in draw_pedalboard
+        x = self.title_split + padding + colon_width + padding
         width = self.display_width - x
         if self.w_preset is not None:
             self.w_preset.set_text(preset_name)
             self.w_preset.set_box(box=Box.xywh(x, 20, width, 36), realign=True, refresh=True)
             return
-        self.w_preset = TextWidget(box=Box.xywh(x, 20, width, 36), text=preset_name, font=self.title_font,
-                                   parent=self.main_panel, action=self.draw_preset_menu)
+        self.w_preset = ScrollingText(
+            box=Box.xywh(x, 20, width, 36),
+            text=preset_name,
+            font=self.title_font,
+            parent=self.main_panel,
+            action=self.draw_preset_menu,
+            lcd_poll_divisor=self.poll_divisor,
+        )
         self.main_panel.add_sel_widget(self.w_preset)
 
     def draw_pedalboard_menu(self, event, widget):
@@ -305,21 +459,22 @@ class Lcd(abstract_lcd.Lcd):
             items.append((name, self.handler.preset_change, i))
         self.draw_selection_menu(items, "Snapshots", auto_dismiss=True, dismiss_option=True)
 
-    def draw_selection_menu(self, items, title="", auto_dismiss=False, dismiss_option=False):
-        # items is list of touples: (item_label, callback_method, callback_arg)
-        # The below assumes that the callback takes the menu item label as an argument
+    def draw_selection_menu(self, items, title="", auto_dismiss=False, dismiss_option=False,
+                            text_halign=TextHAlign.CENTRE, on_close=None):
+        # items is list of tuples: (item_label, callback_method, callback_arg[, selected[, fgnd_color]])
         def menu_action(event, params):
             callback = params[1]
             if callback is not None:
                 callback(params[2])
 
         m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=200,
-                 auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action)
+                 auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action,
+                 text_halign=text_halign, on_close=on_close)
         self.pstack.push_panel(m)
         return m
 
-    def draw_message_dialog(self, text, title="Error"):
-        d = MessageDialog(self.pstack, text, title=title)
+    def draw_message_dialog(self, text, title="Error", width=200, height=90):
+        d = MessageDialog(self.pstack, text, title=title, width=width, height=height)
         self.pstack.push_panel(d)
 
     #
@@ -443,10 +598,9 @@ class Lcd(abstract_lcd.Lcd):
                       ("Off", self.parameter_commit_enum, (parameter, 0), current_value==0)]
             d = self.draw_selection_menu(items, title, auto_dismiss=True)
         else:
-            taper = 2 if parameter.type == Parameter.Type.LOGARITHMIC else 1
-            d = Parameterdialog(self.pstack, parameter.name, current_value, parameter.minimum, parameter.maximum,
+            d = Parameterdialog(self.pstack, parameter,
                                 width=270, height=130, auto_destroy=True, title=title, timeout=timeout,
-                                action=self.parameter_commit, object=parameter, taper=taper)
+                                action=self.parameter_commit, object=parameter)
             self.pstack.push_panel(d)
 
         self.w_parameter_dialogs[parameter.name] = d
@@ -501,7 +655,7 @@ class Lcd(abstract_lcd.Lcd):
     def update_footswitch(self, footswitch):
         for wfs in self.w_footswitches:
             if wfs.object == footswitch:
-                wfs.toggle(footswitch.enabled == False)
+                wfs.toggle(footswitch.toggled == False)
                 label = footswitch.get_display_label()
                 if label:
                     wfs.label = label
@@ -528,6 +682,8 @@ class Lcd(abstract_lcd.Lcd):
     #
     def draw_system_menu(self, event, widget):
         items = [("System info", self.draw_system_info_dialog, None),
+                 ("Tuner", self._toggle_tuner_from_menu, None),
+                 ("LCD Speed >", self.draw_lcd_speed_menu, None),
                  ("System shutdown", self.handler.system_menu_shutdown, None),
                  ("System reboot",  self.handler.system_menu_reboot, None),
                  ("Restart sound engine", self.handler.system_menu_restart_sound, None),
@@ -535,25 +691,34 @@ class Lcd(abstract_lcd.Lcd):
                  ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None)]
         self.draw_selection_menu(items, "System Menu")
 
+    def _toggle_tuner_from_menu(self, arg):
+        self.pstack.pop_panel(None)  # dismiss the menu first
+        self.handler.toggle_tuner_enable()
+
     def draw_pedalboard_mgmt_menu(self, arg):
         items = [("Save current pedalboard", self.handler.system_menu_save_current_pb, None),
                  ("Reload pedalboards", self.handler.system_menu_reload, None),
-                 ("Update sample pedalboards", self.update_sample_pedalboards, None),
+                 ("Sync pedalboards", self.sync_pedalboards, None),
                  ("Backup data", self.handler.user_backup_data, None),
                  ("Restore Backup data", self.handler.user_restore_data, None)]
         self.draw_selection_menu(items, "Pedalboard Management")
 
-    def update_sample_pedalboards(self, arg):
+    def sync_pedalboards(self, arg):
         self.pstack.pop_panel(None)
-        self.draw_info_message("updating...")
+        self.draw_info_message("syncing...")
         self.main_panel.refresh()
-        result = self.handler.system_menu_update_sample_pedalboards()
+        result = self.handler.system_menu_sync_pedalboards()
         self.draw_info_message("")
         self.main_panel.refresh()
 
-        # Show update stdout dialog
-        d = MessageDialog(self.pstack, str(result), title="Pedalboard Update", width=250, height=140)
-        self.pstack.push_panel(d)
+        if result.status in ("up_to_date", "applied"):
+            self.handler.set_notification(None)
+
+        if result.status == "conflicts":
+            msg = "\n".join(result.conflicts) + "\n\nResolve via SSH"
+            self.draw_message_dialog(msg, title="Sync aborted: conflicts", width=280, height=160)
+        else:
+            self.draw_message_dialog(result.message, title="Pedalboard Sync", width=280, height=160)
 
     def draw_system_info_dialog(self, arg):
         msg="Software:{}\nBuild:{}\nSystemState:{}\nTemperature:{}\nThrottled:{}".format(
@@ -565,6 +730,22 @@ class Lcd(abstract_lcd.Lcd):
         d = MessageDialog(self.pstack, msg, title="System Info", width=300, height=130)
         self.pstack.push_panel(d)
 
+    def draw_lcd_speed_menu(self, event):
+        current_speed = self.spi_speed_mhz
+        items = [
+            ("24 MHz (safe)", self.handler.set_lcd_speed, 24, current_speed==24),
+            ("48 MHz (experimental)", self.handler.set_lcd_speed, 48, current_speed==48),
+            ("56 MHz (experimental)", self.handler.set_lcd_speed, 56, current_speed==56),
+            ("80 MHz (experimental)", self.handler.set_lcd_speed, 80, current_speed==80),
+        ]
+        self.draw_selection_menu(items, "LCD SPI Speed", auto_dismiss=False)
+
+    def show_lcd_speed_message(self, speed_mhz):
+        adc_speed = "240 kHz" if speed_mhz <= 24 else "1 MHz"
+        msg = f"LCD: {speed_mhz} MHz / ADC: {adc_speed}\n\nRestarting..."
+        d = MessageDialog(self.pstack, msg, title="SPI Speed", width=280, height=140)
+        self.pstack.push_panel(d)
+
     def draw_bank_menu(self, event):
         current_bank = self.handler.get_bank()
         items = [("None (All pedalboards)", self.handler.set_bank, None, current_bank==None)]
@@ -572,11 +753,22 @@ class Lcd(abstract_lcd.Lcd):
             items.append((k, self.handler.set_bank, k, k==current_bank))
         self.draw_selection_menu(items, "Bank Select", auto_dismiss=True)
 
+    def draw_config_editor(self, event, widget):
+        if event == InputEvent.CLICK:
+            PedalboardConfigEditor(self.handler, self.handler.hardware, self).open()
+
     def draw_wifi_menu(self, event, widget):
-        label = "Switch to Wifi" if util.DICT_GET(self.handler.wifi_status, 'hotspot_active') else "Switch to Hotspot"
-        items = [("Configure WiFi", self.draw_wifi_dialog, None),
-                 (label, self.toggle_hotspot, None)]
-        self.draw_selection_menu(items, "WiFi Menu", dismiss_option = True)
+        connections = self.handler.wifi_manager.list_connections()
+        active = util.DICT_GET(self.handler.wifi_status, 'connection')
+        hotspot_active = util.DICT_GET(self.handler.wifi_status, 'hotspot_active')
+        label = "Switch to Wifi" if hotspot_active else "Switch to Hotspot"
+        items = []
+        for conn in connections:
+            is_active = conn['name'] == active
+            items.append((conn['name'], self._draw_wifi_network_menu, conn, is_active))
+        items.append(("Add Network...", self._draw_wifi_dialog, None))
+        items.append((label, self.toggle_hotspot, None))
+        self._wifi_networks_menu = self.draw_selection_menu(items, "WiFi Networks", dismiss_option=True)
 
     def draw_audio_menu(self, event, widget):
         items = [("Output Volume", self.handler.system_menu_headphone_volume, None),
@@ -590,24 +782,36 @@ class Lcd(abstract_lcd.Lcd):
                  ("High Band Gain", self.handler.system_menu_eq5_gain, None)]
         self.draw_selection_menu(items, "Audio Menu") 
 
-    def draw_audio_parameter_dialog(self, name, symbol, value, min, max, commit_callback):
-        d = util.DICT_GET(self.w_parameter_dialogs, symbol)
+    def draw_audio_parameter_dialog(self, parameter, commit_callback):
+        d = util.DICT_GET(self.w_parameter_dialogs, parameter.name)
         if d is not None and d.parent is not None:
             return d
 
-        d = Parameterdialog(self.pstack, name, value, min, max,
-                            width=270, height=130, auto_destroy=True, title=name, timeout=2.2,
-                            action=commit_callback, object=symbol, taper=1)
-        self.w_parameter_dialogs[symbol] = d
+        d = Parameterdialog(self.pstack, parameter,
+                            width=270, height=130, auto_destroy=True, title=parameter.name,
+                            timeout=PARAMETER_DIALOG_TIMEOUT,
+                            action=commit_callback, object=parameter.symbol)
+        self.w_parameter_dialogs[parameter.name] = d
         self.pstack.push_panel(d)
         return d
+
+    def display_parameter_value(self, parameter: Parameter.Parameter, value: float) -> None:
+        d = self.draw_parameter_dialog(parameter, timeout=PARAMETER_DIALOG_TIMEOUT)
+        if d:
+            d.update_value(value)
 
     def draw_vu_calibration_dialog(self, symbol, value, commit_callback):
         if value is None:
             value = 512  # 1024 / 2
         name = "VU Calibration"
-        d = Parameterdialog(self.pstack, name, value, 502, 522,
-                            width=270, height=130, auto_destroy=False, title=name, timeout=2.2,
+        info = {
+            Token.NAME: name,
+            Token.SYMBOL: symbol,
+            Token.RANGES: {Token.MINIMUM: 0, Token.MAXIMUM: 1023}
+        }
+        param = Parameter.Parameter(info, value, None)
+        d = Parameterdialog(self.pstack, param,
+                            width=270, height=130, auto_destroy=False, title=name, timeout=PARAMETER_DIALOG_TIMEOUT,
                             action=commit_callback, object=symbol)
         self.pstack.push_panel(d)
         return d
@@ -622,13 +826,16 @@ class Lcd(abstract_lcd.Lcd):
         self.splash_panel.refresh()
 
     def cleanup(self):
-        self.pstack.pop_panel(None)  # current panel
-        self.pstack.pop_panel(self.footswitch_panel)
-        if self.main_panel_pushed:
+        if self.pstack.current is not None:
+            self.pstack.pop_panel(None)
+        if self.footswitch_panel in self.pstack.stack:
+            self.pstack.pop_panel(self.footswitch_panel)
+        if self.main_panel_pushed and self.main_panel in self.pstack.stack:
             self.pstack.pop_panel(self.main_panel)
-        self.w_splash.set_foreground(self.color_splash_down)
-        self.splash_panel.refresh()
-    
+        if self.w_splash is not None:
+            self.w_splash.set_foreground(self.color_splash_down)
+            self.splash_panel.refresh()
+
     def clear(self):
         pass
 
@@ -700,6 +907,7 @@ class Lcd(abstract_lcd.Lcd):
         # clean up previous control widgets
         for w in self.w_controls:
             w.destroy()
+        self.w_controls = []
 
         x = 0
         y = 56  # vertical position on screen
@@ -713,12 +921,28 @@ class Lcd(abstract_lcd.Lcd):
                     v = value
                     break
 
+            # Look up the actual control instance for progress bar tracking
+            analog_control = None
+            for ac in self.handler.hardware.analog_controls + self.handler.hardware.encoders:
+                if hasattr(ac, "id") and ac.id == i:
+                    analog_control = ac
+                    break
+
+            # Substitute BlendMode object if this control is the blend mode input
+            icon_object = analog_control
+            if (
+                analog_control is not None
+                and self.handler.active_blend_mode
+                and analog_control.id == self.handler.active_blend_mode.config.get("input_id", 0)
+            ):
+                icon_object = self.handler.active_blend_mode
+
             if k is None:
                 # Non-mapped control
                 name = "none"
                 control_type = Token.EXPRESSION if i == 0 else Token.KNOB  # HACK cuz we don't know type of unmapped
                 color = Category.get_category_color(None)
-                text_color =color
+                text_color = color
             else:
                 # Mapped control or Volume
                 control_type = util.DICT_GET(v, Token.TYPE)
@@ -728,22 +952,46 @@ class Lcd(abstract_lcd.Lcd):
                     color = self.default_plugin_color
                     text_color = color
                 else:
-                    n = k.split(":")[1]
-                    name = self.shorten_name(n, text_per_control)
-                    color = util.DICT_GET(v, Token.COLOR)
-                    if color is None:
-                        # color not specified for control in config file
-                        category = util.DICT_GET(v, Token.CATEGORY)
-                        text_color = Category.get_category_color(category)
+                    port_name = util.DICT_GET(v, 'port_name')
+                    if port_name:
+                        midi_cc = util.DICT_GET(v, 'midi_cc')
+                        name = f"{port_name}:{midi_cc}"
+                        name = self.shorten_name(name, text_per_control)
                         color = self.default_plugin_color
+                        text_color = (180, 180, 255)  # light blue = external routing
+                    else:
+                        name = self.shorten_name(k.split(":")[1], text_per_control)
+                        color = util.DICT_GET(v, Token.COLOR)
+                        if color is None:
+                            category = util.DICT_GET(v, Token.CATEGORY)
+                            text_color = Category.get_category_color(category)
+                            color = self.default_plugin_color
+
+            if isinstance(icon_object, BlendMode):
+                text_color = self.default_plugin_color
+                color = self.default_plugin_color
 
             if control_type == Token.KNOB:
-                w = Icon(box=Box.xywh(x, y, 0, 0), text=name, text_color=text_color, parent=self.main_panel, outline=0)
+                w = Icon(
+                    box=Box.xywh(x, y, width_per_control, 20),
+                    text=name,
+                    text_color=text_color,
+                    parent=self.main_panel,
+                    outline=0,
+                    object=icon_object,
+                )
                 w.set_foreground(color)
                 w.add_knob()
                 self.w_controls.append(w)
             elif control_type == Token.EXPRESSION:
-                w = Icon(box=Box.xywh(x, y, 0, 0), text=name, text_color=text_color, parent=self.main_panel, outline=0)
+                w = Icon(
+                    box=Box.xywh(x, y, width_per_control, 20),
+                    text=name,
+                    text_color=text_color,
+                    parent=self.main_panel,
+                    outline=0,
+                    object=icon_object,
+                )
                 w.set_foreground(color)
                 w.add_pedal()
                 self.w_controls.append(w)
@@ -774,7 +1022,8 @@ class Lcd(abstract_lcd.Lcd):
         text = ""
         for x in name.lower().replace('_', '').replace('/', '').replace(' ', ''):
             test = text + x
-            test_size = self.small_font.getsize(test)[0]
+            test_bbox = self.small_font.getbbox(test)
+            test_size = test_bbox[2] - test_bbox[0]
             if test_size >= width:
                 break
             text = test

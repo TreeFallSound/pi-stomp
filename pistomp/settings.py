@@ -55,4 +55,7 @@ class Settings:
         # Each set results in a file dump
         with open(self.file, 'w') as ymlfile:
             yaml.dump(self.data, ymlfile)
+        try:
             shutil.chown(self.file, user=USER, group=USER)
+        except LookupError:
+            pass

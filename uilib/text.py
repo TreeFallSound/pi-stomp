@@ -14,7 +14,8 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from math import log
-from PIL import ImageFont
+from typing import Optional
+from PIL import Image, ImageDraw, ImageFont
 
 from uilib.panel import *
 from uilib.misc import *
@@ -42,7 +43,8 @@ class LetterSelector(Widget):
         cs = self.charsets[mode]
         mw, mh = 0, 0
         for c in cs:
-            w, h = self.font.getsize(c)
+            bbox = self.font.getbbox(c)
+            w, h = bbox[2] - bbox[0], bbox[3]
             mw = max(mw,w)
             mh = max(mh,h)
         self.l_w = mw
@@ -128,7 +130,8 @@ class TextEditor(RoundedPanel):
         self.outline = 2
         self.curline = widget.text
         self.font = ImageFont.truetype("DejaVuSans.ttf", 18)
-        msg_w, msg_h = self.font.getsize(widget.edit_message)
+        bbox = self.font.getbbox(widget.edit_message)
+        msg_w, msg_h = bbox[2] - bbox[0], bbox[3]
         msg_box = Box.xywh(10, 10, msg_w, msg_h)
         self.msg = TextWidget(box = msg_box, text = widget.edit_message, font = self.font, parent = self)
         edit_box = Box.xywh(10,30,280,20)
@@ -229,6 +232,8 @@ class TextWidget(Widget):
         super(TextWidget,self)._adjust_box()
 
     def set_text(self, text):
+        if self.text == text:
+            return
         self.text = text
         self.text_size_valid = False
         self.refresh()
@@ -272,16 +277,152 @@ class TextWidget(Widget):
             draw.text((0, loc[1]), self.prompt, fill=self.fgnd_color, font=self.font)
         draw.text(loc, self.text, fill=self.fgnd_color, font=self.font)
 
+    def tick(self):
+        """Override in subclasses for animation."""
+        pass
+
     def input_event(self, event):
         if self.edit_message is not None:
             if event == InputEvent.CLICK or event == InputEvent.LONG_CLICK:
                 TextEditor(self)
                 return True
         super(TextWidget,self).input_event(event)
-        
+
 class Button(TextWidget):
     def __init__(self, **kwargs):
         self.outline_radius = self._get_arg(kwargs, 'outline_radius', 5)
         self.outline = self._get_arg(kwargs, 'outline', 1)
         self.sel_width = self._get_arg(kwargs, 'sel_width', 2)
         super(Button,self).__init__(**kwargs)
+
+
+class ScrollingText(TextWidget):
+    """TextWidget with horizontal ping-pong scrolling for overflow text."""
+
+    def __init__(self, pixels_per_second: float = 50.0, pause_start_sec: float = 2.0, pause_end_sec: float = 1.0, lcd_poll_divisor: int = 8, **kwargs):
+        super().__init__(**kwargs)
+        self.pixels_per_second: float = pixels_per_second
+        self.pause_start_sec: float = pause_start_sec
+        self.pause_end_sec: float = pause_end_sec
+
+        # Calculate duration of one tick in seconds (base loop sleep is 10ms = 0.01s)
+        self.tick_duration_sec: float = (10 * lcd_poll_divisor) / 1000.0
+
+        # Scrolling state
+        self.scroll_offset: int = 0
+        self._float_scroll_offset: float = 0.0
+        self.scroll_direction: int = 1  # 1 = scroll left, -1 = scroll right
+        self.pause_counter_sec: float = pause_start_sec
+
+        # Cached rendering
+        self.cached_text_image: Optional[Image.Image] = None
+        self.cached_text_width: int = 0
+
+    def _render_text_to_cache(self) -> None:
+        """Pre-render full text to a PIL Image for efficient scrolling."""
+        if self.text is None or len(self.text) == 0:
+            self.cached_text_image = None
+            self.cached_text_width = 0
+            return
+
+        tw, th = self._get_text_size()
+        self.cached_text_width = tw
+
+        self.cached_text_image = Image.new('RGB', (tw, th), self.bkgnd_color)
+        draw = ImageDraw.Draw(self.cached_text_image)
+        draw.text((0, 0), self.text, fill=self.fgnd_color, font=self.font)
+
+    def _should_scroll(self) -> bool:
+        if self.cached_text_image is None:
+            return False
+        h_margin, _ = self._get_margins()
+        available_width = self.box.width - h_margin - self.outline
+        return self.cached_text_width > available_width
+
+    def tick(self) -> None:
+        if self.cached_text_image is None:
+            self._render_text_to_cache()
+
+        if not self._should_scroll():
+            if self.scroll_offset != 0:
+                self.scroll_offset = 0
+                self._float_scroll_offset = 0.0
+                self.scroll_direction = 1
+                self.pause_counter_sec = self.pause_start_sec
+                self.refresh()
+            return
+
+        if self.pause_counter_sec > 0:
+            self.pause_counter_sec -= self.tick_duration_sec
+            return
+
+        h_margin, _ = self._get_margins()
+        available_width = self.box.width - 2 * h_margin - self.outline
+        max_offset = self.cached_text_width - available_width
+
+        old_offset = self.scroll_offset
+        move_amount = self.pixels_per_second * self.tick_duration_sec
+        self._float_scroll_offset += self.scroll_direction * move_amount
+        self.scroll_offset = int(self._float_scroll_offset)
+
+        if self.scroll_offset >= max_offset:
+            self.scroll_offset = max_offset
+            self._float_scroll_offset = float(max_offset)
+            self.scroll_direction = -1
+            self.pause_counter_sec = self.pause_end_sec
+        elif self.scroll_offset <= 0:
+            self.scroll_offset = 0
+            self._float_scroll_offset = 0.0
+            self.scroll_direction = 1
+            self.pause_counter_sec = self.pause_start_sec
+
+        if self.scroll_offset != old_offset:
+            self.refresh()
+
+    def _clear_cache_and_restart(self) -> None:
+        self.cached_text_image = None
+        self.scroll_offset = 0
+        self._float_scroll_offset = 0.0
+        self.scroll_direction = 1
+        self.pause_counter_sec = self.pause_start_sec
+
+    def set_text(self, text: str) -> None:
+        super().set_text(text)
+        self._clear_cache_and_restart()
+
+    def set_font(self, font: ImageFont.FreeTypeFont) -> None:
+        super().set_font(font)
+        self._clear_cache_and_restart()
+
+    def _draw(self, image: Image.Image, draw: ImageDraw.ImageDraw, real_box) -> None:
+        if self.cached_text_image is None:
+            self._render_text_to_cache()
+        if self.cached_text_image is None:
+            return
+
+        h_margin, v_margin = self._get_margins()
+        tw, th = self._get_text_size()
+        extra = self.outline
+        hroom = real_box.width - h_margin - extra
+        vroom = real_box.height - v_margin - extra
+
+        if hroom <= 0 or vroom <= 0:
+            return
+
+        if not self._should_scroll():
+            if self.text_halign == TextHAlign.LEFT:
+                hoffset = 0
+            elif self.text_halign == TextHAlign.RIGHT:
+                hoffset = hroom - tw
+            else:
+                hoffset = int((hroom - tw) / 2)
+            x_pos = real_box.x0 + h_margin + hoffset
+            y_pos = real_box.y0 + v_margin
+            crop_box = (0, 0, tw, th)
+            image.paste(self.cached_text_image.crop(crop_box), (x_pos, y_pos))
+        else:
+            x_pos = real_box.x0 + h_margin
+            y_pos = real_box.y0 + v_margin
+            crop_width = min(hroom, self.cached_text_width - self.scroll_offset)
+            crop_box = (self.scroll_offset, 0, self.scroll_offset + crop_width, th)
+            image.paste(self.cached_text_image.crop(crop_box), (x_pos, y_pos))

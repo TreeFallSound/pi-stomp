@@ -13,28 +13,98 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from enum import Enum
 import json
 import logging
+from typing import TypedDict
+from common.parameter import Parameter
+from rtmidi import MidiOut
+
+
+class RoutingDestination(Enum):
+    """Where MIDI messages are routed."""
+
+    VIRTUAL = "virtual"  # MIDI through virtual port
+    EXTERNAL = "external"  # External hardware device
+
+
+@dataclass(frozen=True)
+class RoutingInfo:
+    """Immutable routing information for a controller."""
+
+    destination: RoutingDestination
+    port_name: str | None = None  # Only for EXTERNAL destination
+
+    @classmethod
+    def virtual(cls) -> "RoutingInfo":
+        """Factory for virtual port routing."""
+        return cls(destination=RoutingDestination.VIRTUAL)
+
+    @classmethod
+    def external(cls, port_name: str) -> "RoutingInfo":
+        """Factory for external port routing."""
+        return cls(destination=RoutingDestination.EXTERNAL, port_name=port_name)
+
+
+class AnalogDisplayInfo(TypedDict, total=False):
+    """Display information for analog controls and encoders."""
+
+    type: str  # Token.KNOB, Token.EXPRESSION, Token.VOLUME
+    id: int  # Position on screen (0-based from left)
+    category: str | None  # Plugin category (for color coding) or None
+    port_name: str | None  # External port name if routed externally
+    midi_cc: int | None  # MIDI CC for external routing display
+
+
+class FootswitchDisplayInfo(TypedDict, total=False):
+    """Display information for footswitches."""
+
+    id: int
+    label: str | None
+    color: tuple[int, int, int] | None  # RGB
+    category: str | None
 
 
 class Controller:
+    def __init__(self, midi_channel: int, midi_CC: int | None):
+        self.midi_channel: int = midi_channel
+        self.midi_CC: int | None = midi_CC
+        self.parameter: Parameter | None = None
+        self.hardware_name: str | None = None
+        # type is not declared here — it conflicts with encoder.Encoder.type in EncoderController's MRO.
+        # Subclasses that carry type must declare it themselves.
+        self.midi_min: int = 0
+        self.midi_max: int = 127
+        self.midi_value: int = 0
+        self.midiout: MidiOut | None = None
 
-    def __init__(self, midi_channel, midi_CC):
-        self.midi_channel = midi_channel
-        self.midi_CC = midi_CC
-        self.minimum = None
-        self.maximum = None
-        self.parameter = None
-        self.hardware_name = None
-        #self.type = None  # this will conflict with encoder.type for EncoderMidiControl
-        self.midi_min = 0
-        self.midi_max = 127
-
-    def to_json(self):
+    def to_json(self) -> str:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
 
-    def set_value(self, value):
-        logging.error("Controller subclass hasn't overriden the set_value method")
+    def set_value(self, value: float) -> None:
+        logging.error(f"Controller subclass ({self.__class__.__name__}) hasn't overriden the set_value method")
 
+    def bind_to_parameter(self, parameter: Parameter) -> None:
+        self.parameter = parameter
+        self.set_value(parameter.value)
 
+    def get_routing_info(self) -> RoutingInfo:
+        """Get routing information for this controller."""
+        from modalapi.external_midi import ExternalMidiOut
+
+        if isinstance(self.midiout, ExternalMidiOut):
+            return RoutingInfo.external(self.midiout.port_name)
+        else:
+            return RoutingInfo.virtual()
+
+    def get_display_info(self) -> dict:
+        """Get display information. Supplement in subclasses."""
+        routing = self.get_routing_info()
+        info: dict = {}
+        if routing.destination == RoutingDestination.EXTERNAL:
+            info["port_name"] = routing.port_name
+            info["midi_cc"] = self.midi_CC
+        return info

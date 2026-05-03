@@ -20,7 +20,7 @@ import pistomp.analogVU as AnalogVU
 import common.token as Token
 import common.util as Util
 import pistomp.encoder as Encoder
-import pistomp.encodermidicontrol as EncoderMidiControl
+import pistomp.encoder_controller as EncoderController
 import pistomp.gpioswitch as gpioswitch
 import pistomp.hardware as hardware
 import pistomp.ledstrip as Ledstrip
@@ -61,7 +61,7 @@ class Pistomptre(hardware.Hardware):
     def __init__(self, cfg, handler, midiout, refresh_callback):
         super(Pistomptre, self).__init__(cfg, handler, midiout, refresh_callback)
         if Pistomptre.__single:
-            raise Pistomptre.__single
+            raise RuntimeError("Attempted to create multiple instances of singleton class Pistomptre", Pistomptre.__single)
         Pistomptre.__single = self
 
         self.handler = handler
@@ -88,33 +88,41 @@ class Pistomptre(hardware.Hardware):
         #self.reinit(None)  # TODO do we still need this?  Maybe after pb load?  mappings?
 
     def init_lcd(self):
-        self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler, flip=False))
+        # LCD SPI speed: 24 MHz (spec), 56 MHz tested stable (opt-in via system menu)
+        spi_speed = self.handler.settings.get_setting('lcd.spi_speed_mhz')
+        if spi_speed is None:
+            spi_speed = 24  # Default to spec
+        self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler, flip=False, spi_speed_mhz=spi_speed))
 
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
+    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc, midiout=None):
         enc_pins = Util.DICT_GET(ENC, id)
         if enc_pins is None:
-            logging.error("Cannot create encoder object for id:", id)
-            return
+            raise ValueError("Cannot create encoder object for id:", id)
 
         # map the id to the actual pins
         d_pin = Util.DICT_GET(enc_pins, 'D')
         clk_pin = Util.DICT_GET(enc_pins, 'CLK')
         sw_pin = Util.DICT_GET(enc_pins, 'SW')
 
+        if midiout is None:
+            midiout = self.midiout
+
         if type == Token.VOLUME:
-            enc = Encoder.Encoder(d_pin, clk_pin, callback=self.handler.system_menu_headphone_volume,
-                                  type=type, id=id)
+            enc = EncoderController.EncoderController(self.handler, d_pin=d_pin, clk_pin=clk_pin,
+                                                      midi_channel=midi_channel, midi_CC=None,
+                                                      midiout=midiout, type=type, id=id)
         else:
-            enc = EncoderMidiControl.EncoderMidiControl(self.handler, d_pin=d_pin, clk_pin=clk_pin,
-                                                        callback=callback,
-                                                        midi_channel=midi_channel, midi_CC=midi_cc,
-                                                        midiout=self.midiout, type=Token.KNOB, id=id)
+            enc = EncoderController.EncoderController(self.handler, d_pin=d_pin, clk_pin=clk_pin,
+                                                      midi_channel=midi_channel, midi_CC=midi_cc,
+                                                      midiout=midiout, type=Token.KNOB, id=id)
 
         if sw_pin is not None:
             longpress = self.handler.get_callback(longpress_callback)
             enc_sw = gpioswitch.GpioSwitch(sw_pin, None, None, callback=self.handler.universal_encoder_sw,
                                            longpress_callback=longpress)
             self.encoder_switches.append(enc_sw)
+            if id is not None:
+                self.encoder_switch_map[id] = enc_sw
 
         return enc
 

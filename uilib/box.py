@@ -105,9 +105,11 @@ class Box:
     @property
     def PIL_rect(self):
         """Return rectangle as a tuple with botright coords minus 1
-           to account for PIL/Pillow bug in "rectangle" primitives
+           to account for PIL/Pillow bug in "rectangle" primitives.
+           Clamp so x1 >= x0 and y1 >= y0 (Pillow 10+ rejects degenerate rects).
         """
-        return (self.box[0], self.box[1], self.box[2] - 1, self.box[3] - 1)
+        x0, y0, x1, y1 = self.box
+        return (x0, y0, max(x0, x1 - 1), max(y0, y1 - 1))
 
     @staticmethod
     def xywh(x,y,w,h):
@@ -168,6 +170,11 @@ class Box:
         x1 = min(self.box[2], box.box[2])
         y1 = min(self.box[3], box.box[3])
         return Box(x0,y0,x1,y1)
+
+    def union(self, other: "Box") -> "Box":
+        """Return the smallest Box that contains both self and other."""
+        return Box(min(self.x0, other.x0), min(self.y0, other.y0),
+                   max(self.x1, other.x1), max(self.y1, other.y1))
 
     def is_empty(self):
         return self.box[0] >= self.box[2] or self.box[1] >= self.box[3]

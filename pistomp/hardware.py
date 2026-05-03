@@ -15,20 +15,28 @@
 
 import logging
 import os
-import spidev
+from typing import Union
 import sys
 
 import common.token as Token
 import common.util as Util
-from pistomp.analogcontrol import AnalogControl
+import common.parameter as Parameter
+from common.parameter import TTL_PROPERTIES, TTL_INTEGER
 import pistomp.analogmidicontrol as AnalogMidiControl
+import pistomp.encoder as Encoder
+import pistomp.encoder_controller as EncoderController
 import pistomp.footswitch as Footswitch
+import pistomp.gpioswitch as gpioswitch
 import pistomp.taptempo as taptempo
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
+from modalapi.external_midi import ExternalMidiOut, ExternalMidiManager, EXTERNAL_INSTANCE_ID
+import pistomp.relay as Relay
+
+Controller = Union[AnalogMidiControl.AnalogMidiControl, EncoderController.EncoderController, Footswitch.Footswitch]
 
 
-class Hardware:
+class Hardware(ABC):
 
     def __init__(self, default_config, handler, midiout, refresh_callback):
         logging.info("Init hardware: " + type(self).__name__)
@@ -46,34 +54,38 @@ class Hardware:
         self.midi_channel = 0
 
         # Standard hardware objects (not required to exist)
-        self.relay = None
-        self.analog_controls: list[AnalogControl] = []
+        self.relay: Relay.Relay | None = None
+        self.analog_controls: list[AnalogMidiControl.AnalogMidiControl] = []
         self.encoders = []
-        self.controllers = {}
-        self.footswitches = []
+        self.controllers: dict[str, Controller] = {}
+        self.footswitches: list[Footswitch.Footswitch] = []
         self.encoder_switches = []
+        self.encoder_switch_map: dict[int, gpioswitch.GpioSwitch] = {}
         self.indicators = []
         self.debounce_map = None
         self.ledstrip = None
         self.taptempo = taptempo.TapTempo(None)
+        self.external_midi: ExternalMidiManager | None = None
 
-    def toggle_tap_tempo_enable(self, bpm=0):
+    def toggle_tap_tempo_enable(self, bpm: float = 0.0):
         if self.taptempo:
             self.taptempo.toggle_enable()
             if self.taptempo.is_enabled() and bpm > 0:
                 self.taptempo.set_bpm(bpm)
-                logging.debug("tap tempo mode enabled: %d", bpm)
+                logging.debug("tap tempo mode enabled: %f", bpm)
+
+    def _adc_speed(self):
+        # When the LCD is running at 24MHz (spec), use conservative 240kHz ADC (tested stable).
+        # Above 24MHz (experimental) we use 1MHz (MCP3008 max at 3.3V).
+        # Before we can roll out 1MHz by default we need hardware validation on v1/v2/v3.
+        lcd_mhz = self.handler.settings.get_setting('lcd.spi_speed_mhz') or 24
+        return 240_000 if lcd_mhz <= 24 else 1_000_000
 
     def init_spi(self):
+        import spidev
         self.spi = spidev.SpiDev()
         self.spi.open(0, 1)  # Bus 0, CE1
-        # TODO SPI bus is shared by ADC and LCD.  Ideally, they would use the same frequency.
-        # MCP3008 ADC has a max of 1MHz (higher makes it loose resolution)
-        # Color LCD needs to run at 24Mhz
-        # until we can get them on the same, we'll set ADC (the one set here) to be a slower multiple of the LCD
-        #self.spi.max_speed_hz = 24000000
-        #self.spi.max_speed_hz =  1000000
-        self.spi.max_speed_hz = 240000
+        self.spi.max_speed_hz = self._adc_speed()
 
     def poll_controls(self):
         # This is intended to be called periodically from main working loop to poll the instantiated controls
@@ -88,6 +100,15 @@ class Hardware:
             s.poll()
         if s:
             s.check_longpress_events()
+
+    def sync_analog_controls(self):
+        """Send current values of analog controls with autosync enabled via MIDI."""
+        for control in self.analog_controls:
+            if getattr(control, 'autosync', False) and hasattr(control, 'send_current_value'):
+                try:
+                    control.send_current_value()
+                except Exception as e:
+                    logging.warning(f"Failed to sync analog control {control.midi_CC}: {e}")
 
     def poll_indicators(self):
         for i in self.indicators:
@@ -110,44 +131,47 @@ class Hardware:
         # Global footswitch init (callbacks and groups)
         Footswitch.Footswitch.init(self.handler.callbacks)
 
-        # Footswitch configuration
+        # Apply defaults
         self.__init_footswitches(self.cfg)
+        self.__init_encoders(self.cfg)
 
-        # Analog control configuration
-        for ac in self.analog_controls:
-            try:
-                ac.initialize()
-            except Exception as e:
-                logging.warning(f"Failed to initialize analog control {ac}: {e}")
+        # External MIDI configuration
+        self.__init_external_midi(self.cfg)
+
+        # Encoder and analog controller configuration (update midiout for external routing)
+        self.__init_encoders_and_analog(self.cfg)
 
         # Pedalboard specific config
         if cfg is not None:
             self.__init_midi(cfg)
             self.__init_footswitches(cfg)
+            self.__init_external_midi(cfg)
+            self.__init_encoders_and_analog(cfg)
+            self.__init_encoders(cfg)
 
     @abstractmethod
     def init_analog_controls(self):
-        pass
+        ...
 
     @abstractmethod
     def init_encoders(self):
-        pass
+        ...
 
     @abstractmethod
     def init_footswitches(self):
-        pass
+        ...
 
     @abstractmethod
     def init_relays(self):
-        pass
+        ...
 
     @abstractmethod
     def cleanup(self):
-        pass
+        ...
 
     @abstractmethod
     def test(self):
-        pass
+        ...
 
     def run_test(self):
         # if test sentinel file exists execute hardware test
@@ -212,21 +236,34 @@ class Hardware:
             if taptempo:
                 taptempo.set_callback(self.handler.get_callback(tap_tempo_callback))
 
+            # Configure external MIDI routing if specified
+            midi_port = Util.DICT_GET(f, "midi_port")
+            if midi_port:
+                midi_port = self.__validate_midi_port(midi_port)
+
+            if midi_port:
+                midiout = ExternalMidiOut(self.external_midi, midi_port, midi_channel, self.midiout)
+                logging.info(f"Footswitch {idx} routing MIDI CC {midi_cc} to external port '{midi_port}'")
+            else:
+                midiout = self.midiout
+
+            fs: Footswitch.Footswitch | None = None
             if adc_input is not None:
                 fs = Footswitch.Footswitch(id if id else idx, gpio_output, pixel, midi_cc, midi_channel,
-                                           self.midiout, refresh_callback=self.refresh_callback,
+                                           midiout, refresh_callback=self.refresh_callback,
                                            adc_input=adc_input, spi=self.spi,
                                            taptempo = taptempo)
                 logging.debug("Created Footswitch on ADC input: %d, Midi Chan: %d, CC: %s" %
                               (adc_input, midi_channel, midi_cc))
             elif gpio_input is not None:
                 fs = Footswitch.Footswitch(id if id else idx, gpio_output, pixel, midi_cc, midi_channel,
-                                           self.midiout, refresh_callback=self.refresh_callback,
+                                           midiout, refresh_callback=self.refresh_callback,
                                            gpio_input=gpio_input,
                                            taptempo = taptempo)
                 logging.debug("Created Footswitch on GPIO input: %d, Midi Chan: %d, CC: %s" %
                               (gpio_input, midi_channel, midi_cc))
 
+            assert fs is not None, "No footswitch created for config: %s" % f
             self.footswitches.append(fs)
             idx += 1
 
@@ -260,17 +297,29 @@ class Hardware:
             if autosync is None:
                 autosync = False  # Default to False
 
+            # Configure external MIDI routing if specified
+            midi_port = Util.DICT_GET(c, "midi_port")
+            if midi_port:
+                midi_port = self.__validate_midi_port(midi_port)
+
+            if midi_port:
+                midiout = ExternalMidiOut(self.external_midi, midi_port, midi_channel, self.midiout)
+                logging.info(f"Analog control {id} routing MIDI CC {midi_cc} to external port '{midi_port}'")
+            else:
+                midiout = self.midiout
+
             control = AnalogMidiControl.AnalogMidiControl(self.spi, adc_input, threshold, midi_cc, midi_channel,
-                                                          self.midiout, control_type, id, c, autosync)
+                                                          midiout, control_type, id, c, autosync)
             self.analog_controls.append(control)
             key = format("%d:%d" % (midi_channel, midi_cc))
             self.controllers[key] = control
             logging.debug("Created AnalogMidiControl Input: %d, Midi Chan: %d, CC: %d" %
                           (adc_input, midi_channel, midi_cc))
 
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
-        # This should be implemented by hardware subclasses that support tweak encoders (Tre at least)
-        pass
+    @abstractmethod
+    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc, midiout=None) -> Encoder.Encoder | EncoderController.EncoderController:
+        ...
+
     def create_encoders(self, cfg):
         if cfg is None or (Token.HARDWARE not in cfg) or (Token.ENCODERS not in cfg[Token.HARDWARE]):
             return
@@ -292,10 +341,26 @@ class Hardware:
                 logging.error("Config file error.  Encoder specified without %s" % Token.ID)
                 continue
 
-            control = self.add_encoder(id, type, None, longpress_callback, midi_channel, midi_cc)
-            self.encoders.append(control)
+            # Configure external MIDI routing if specified
+            midi_port = Util.DICT_GET(c, "midi_port")
+            if midi_port:
+                midi_port = self.__validate_midi_port(midi_port)
+
+            if midi_port:
+                midiout = ExternalMidiOut(self.external_midi, midi_port, midi_channel, self.midiout)
+                logging.info(f"Encoder {id} routing MIDI CC {midi_cc} to external port '{midi_port}'")
+            else:
+                midiout = self.midiout
+
+            try:
+                control = self.add_encoder(id, type, None, longpress_callback, midi_channel, midi_cc, midiout=midiout)
+                self.encoders.append(control)
+            except Exception:
+                logging.exception("Failed to create encoder with config: %s" % c)
+                continue
 
             if midi_cc is not None:
+                assert not isinstance(control, Encoder.Encoder), "Encoder specified with MIDI CC must be of type EncoderController"
                 key = format("%d:%d" % (midi_channel, midi_cc))
                 self.controllers[key] = control
                 logging.debug("Created Encoder: %d, Midi Chan: %d, CC: %d" % (id, midi_channel, midi_cc))
@@ -310,6 +375,92 @@ class Hardware:
             pass
         return chan
 
+    def _create_external_parameter(self, controller, port_name, midi_channel, midi_cc):
+        name = f"{port_name}:{midi_cc}"
+        info = {
+            Token.NAME: name,
+            Token.SYMBOL: f"external_{port_name}_{midi_cc}",
+            Token.RANGES: {
+                Token.MINIMUM: 0,
+                Token.MAXIMUM: 127
+            },
+            TTL_PROPERTIES: [TTL_INTEGER]
+        }
+        val = getattr(controller, 'midi_value', 0)
+        return Parameter.Parameter(info, val, f"{midi_channel}:{midi_cc}", EXTERNAL_INSTANCE_ID)
+
+    def __validate_midi_port(self, port_name):
+        """Validate a midi_port name against external_midi config. Returns port_name or None."""
+        if port_name is None:
+            return None
+        if self.external_midi is None:
+            logging.error(
+                f"Control configured with midi_port '{port_name}' but external_midi not initialized. "
+                f"Falling back to virtual port."
+            )
+            return None
+        if port_name not in self.external_midi.port_configs:
+            available = list(self.external_midi.port_configs.keys()) if self.external_midi.port_configs else []
+            logging.error(
+                f"Control configured with midi_port '{port_name}' but port not found in external_midi config. "
+                f"Available ports: {available}. Falling back to virtual port."
+            )
+            return None
+        return port_name
+
+    def __init_encoders_and_analog(self, cfg):
+        """Update midiout for encoders and analog controllers based on config."""
+        if cfg is None:
+            return
+
+        midi_channel = self.get_real_midi_channel(cfg)
+
+        if Token.HARDWARE in cfg and Token.ENCODERS in cfg[Token.HARDWARE]:
+            cfg_encoders = cfg[Token.HARDWARE][Token.ENCODERS]
+            if cfg_encoders:
+                for enc_cfg in cfg_encoders:
+                    enc_id = Util.DICT_GET(enc_cfg, Token.ID)
+                    if enc_id is None:
+                        continue
+                    encoder = next((e for e in self.encoders if e.id == enc_id), None)
+                    if encoder is None:
+                        continue
+                    midi_port = Util.DICT_GET(enc_cfg, "midi_port")
+                    if midi_port:
+                        midi_port = self.__validate_midi_port(midi_port)
+                    midi_cc = Util.DICT_GET(enc_cfg, Token.MIDI_CC)
+                    if midi_cc is not None and hasattr(encoder, 'midi_CC'):
+                        encoder.midi_CC = midi_cc
+                    if midi_port:
+                        encoder.midiout = ExternalMidiOut(self.external_midi, midi_port, midi_channel, self.midiout)
+                        logging.debug(f"Encoder {enc_id} routing CC {midi_cc} to external port '{midi_port}'")
+                    else:
+                        encoder.midiout = self.midiout
+                        logging.debug(f"Encoder {enc_id} routing to virtual port")
+
+        if Token.HARDWARE in cfg and Token.ANALOG_CONTROLLERS in cfg[Token.HARDWARE]:
+            cfg_analog = cfg[Token.HARDWARE][Token.ANALOG_CONTROLLERS]
+            if cfg_analog:
+                for analog_cfg in cfg_analog:
+                    analog_id = Util.DICT_GET(analog_cfg, Token.ID)
+                    if analog_id is None:
+                        continue
+                    analog = next((a for a in self.analog_controls if a.id == analog_id), None)
+                    if analog is None:
+                        continue
+                    midi_port = Util.DICT_GET(analog_cfg, "midi_port")
+                    if midi_port:
+                        midi_port = self.__validate_midi_port(midi_port)
+                    midi_cc = Util.DICT_GET(analog_cfg, Token.MIDI_CC)
+                    if midi_cc is not None and hasattr(analog, 'midi_CC'):
+                        analog.midi_CC = midi_cc
+                    if midi_port:
+                        analog.midiout = ExternalMidiOut(self.external_midi, midi_port, midi_channel, self.midiout)
+                        logging.debug(f"Analog controller {analog_id} routing CC {midi_cc} to external port '{midi_port}'")
+                    else:
+                        analog.midiout = self.midiout
+                        logging.debug(f"Analog controller {analog_id} routing to virtual port")
+
     def __init_midi_default(self):
         self.__init_midi(self.cfg)
 
@@ -319,6 +470,16 @@ class Hardware:
         for ac in self.analog_controls:
             if isinstance(ac, AnalogMidiControl.AnalogMidiControl):
                 ac.set_midi_channel(self.midi_channel)
+
+    def __init_external_midi(self, cfg):
+        """Initialize/update external MIDI config (called for both default and pedalboard)."""
+        if self.external_midi is None:
+            return
+        if cfg is None or Token.HARDWARE not in cfg:
+            return
+        ext_cfg = cfg[Token.HARDWARE].get("external_midi")
+        if ext_cfg:
+            self.external_midi.update_config(ext_cfg)
 
     def __init_footswitches_default(self):
         for fs in self.footswitches:
@@ -382,6 +543,12 @@ class Hardware:
                         fs.add_preset(callback=self.handler.preset_set_and_change, callback_arg=preset_value)
                         fs.set_display_label(str(preset_value))
 
+                # Suppress (per-pedalboard disable without removing the object)
+                if Util.DICT_GET(f, Token.DISABLE) is True:
+                    fs.disabled = True
+                    idx += 1
+                    continue
+
                 # LCD/LED attributes
                 if Token.COLOR in f:
                     fs.set_lcd_color(f[Token.COLOR])
@@ -391,3 +558,20 @@ class Hardware:
                     fs.set_longpress_groups(Util.DICT_GET(f, Token.LONGPRESS))
 
             idx += 1
+
+    def __init_encoders(self, cfg: dict | None) -> None:
+        if cfg is None or Token.HARDWARE not in cfg:
+            return
+        cfg_encs = Util.DICT_GET(cfg[Token.HARDWARE], Token.ENCODERS)
+        if not cfg_encs:
+            return
+        for enc_cfg in cfg_encs:
+            enc_id = Util.DICT_GET(enc_cfg, Token.ID)
+            if enc_id is None:
+                continue
+            sw = self.encoder_switch_map.get(enc_id)
+            if sw is None:
+                continue
+            if Token.LONGPRESS in enc_cfg:
+                lp_name = enc_cfg[Token.LONGPRESS]
+                sw.longpress_callback = self.handler.get_callback(lp_name) if lp_name else None

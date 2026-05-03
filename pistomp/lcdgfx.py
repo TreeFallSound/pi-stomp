@@ -18,7 +18,7 @@ import common.util as util
 import os
 import pistomp.lcd as abstract_lcd
 
-from gfxhat import touch, lcd, backlight, fonts
+from typing import Any
 from PIL import Image, ImageFont, ImageDraw
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
@@ -27,13 +27,23 @@ from pistomp.footswitch import Footswitch  # TODO would like to avoid this modul
 class Lcd(abstract_lcd.Lcd):
     __single = None
 
-    def __init__(self, cwd):
+    def __init__(self, cwd, lcd=None, backlight=None, touch=None):
         if Lcd.__single:
             raise Lcd.__single
         Lcd.__single = self
 
-        # GFX properties
-        self.width, self.height = lcd.dimensions()
+        self._lcd: Any = lcd
+        self._backlight: Any = backlight
+        self._touch: Any = touch
+
+        if lcd is None:
+            from gfxhat import touch, lcd, backlight  # type: ignore[import-untyped]
+            self._lcd, self._backlight, self._touch = lcd, backlight, touch
+
+        # Polling divisor for main loop (monochrome LCD is fast)
+        self.poll_divisor = 3
+
+        self.width, self.height = self._lcd.dimensions()
         self.height -= 1  # TODO figure out why this is needed
         self.num_leds = 6
 
@@ -103,6 +113,9 @@ class Lcd(abstract_lcd.Lcd):
 
         self.supports_toolbar = False
 
+    def poll_updates(self):
+        pass  # lcdgfx pushes eagerly on every refresh call
+
     def clear_select(self):
         pass
 
@@ -125,8 +138,8 @@ class Lcd(abstract_lcd.Lcd):
         for x in range(0, self.width):
             for y in range(0, self.height):
                 pixel = self.splash.getpixel((x, y))
-                lcd.set_pixel(self.width - x - 1, self.height - y, pixel)
-        lcd.show()
+                self._lcd.set_pixel(self.width - x - 1, self.height - y, pixel)
+        self._lcd.show()
 
     def erase_zone(self, zone_idx):
         self.images[zone_idx].paste(0, (0, 0, self.width, self.zone_height[zone_idx]))
@@ -145,8 +158,8 @@ class Lcd(abstract_lcd.Lcd):
         for x in range(0, self.width):
             for y in range(0, self.zone_height[zone_idx]):
                 pixel = flipped.getpixel((x, y))
-                lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
-        lcd.show()
+                self._lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
+        self._lcd.show()
 
     def refresh_menu(self, highlight_range=None, scroll_offset=0):
         # Set Pixels
@@ -158,8 +171,8 @@ class Lcd(abstract_lcd.Lcd):
                     pixel = self.menu_image.getpixel((x, y_draw))
                     if highlight_range and (y_draw >= highlight_range[0]) and (y_draw <= highlight_range[1]):  # TODO LAME
                          pixel = not pixel
-                    lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
-        lcd.show()
+                    self._lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
+        self._lcd.show()
 
     def refresh_plugins(self):
         self.refresh_zone(2)
@@ -171,24 +184,24 @@ class Lcd(abstract_lcd.Lcd):
 
     def enable_backlight(self):
         for x in range(6):
-            backlight.set_pixel(x, 50, 100, 100)
-        backlight.show()
+            self._backlight.set_pixel(x, 50, 100, 100)
+        self._backlight.show()
 
     def cleanup(self):
-        backlight.set_all(0, 0, 0)
-        backlight.show()
-        lcd.clear()
-        lcd.show()
+        self._backlight.set_all(0, 0, 0)
+        self._backlight.show()
+        self._lcd.clear()
+        self._lcd.show()
         for i in range(0, self.num_leds):
-            touch.set_led(i, 0)
+            self._touch.set_led(i, 0)
 
     def clear(self):
         for x in range(6):
-            backlight.set_pixel(x, 0, 0, 0)
-            touch.set_led(x, 0)
-        backlight.show()
-        lcd.clear()
-        lcd.show()
+            self._backlight.set_pixel(x, 0, 0, 0)
+            self._touch.set_led(x, 0)
+        self._backlight.show()
+        self._lcd.clear()
+        self._lcd.show()
 
     def erase_all(self):
         for z in range(self.zones):
@@ -275,8 +288,9 @@ class Lcd(abstract_lcd.Lcd):
         self.erase_zone(0)
 
         #pedalboard = pedalboard.lower().capitalize()
-        pb_size  = self.title_font.getsize(pedalboard)[0]
-        font_height = self.title_font.getsize(pedalboard)[1]
+        pb_bbox = self.title_font.getbbox(pedalboard)
+        pb_size  = pb_bbox[2] - pb_bbox[0]
+        font_height = pb_bbox[3]
         y = -2  # negative pushes text to top of LCD
 
         # Pedalboard Name
@@ -293,8 +307,10 @@ class Lcd(abstract_lcd.Lcd):
 
             # Preset Name
             #preset = preset.lower().capitalize()
-            pre_size = self.title_font.getsize(preset)[0]
-            x = x + self.title_font.getsize(delimiter)[0]
+            pre_bbox = self.title_font.getbbox(preset)
+            pre_size = pre_bbox[2] - pre_bbox[0]
+            delim_bbox = self.title_font.getbbox(delimiter)
+            x = x + delim_bbox[2] - delim_bbox[0]
             x2 = x + pre_size
             y2 = font_height
             if invert_pre:
@@ -347,7 +363,7 @@ class Lcd(abstract_lcd.Lcd):
         self.erase_zone(4)
         self.erase_zone(6)
 
-        if plugin is not None:
+        if plugin is not None and plugin.lcd_xyz is not None:
             x = plugin.lcd_xyz[0]
             y = plugin.lcd_xyz[1]
             zone = plugin.lcd_xyz[2] - 1
@@ -460,15 +476,16 @@ class Lcd(abstract_lcd.Lcd):
             if x > xwrap:
                 zone += 2
                 x = 0
-                if y >= ymax:
-                    break  # Only display 2 rows, huge pedalboards won't fully render  # TODO make sure this works
+                if zone > 5:
+                    break  # Only display 2 rows, huge pedalboards won't fully render
         self.refresh_plugins()
 
     def shorten_name(self, name, width):
         text = ""
         for x in name.lower().replace('_', '').replace('/', '').replace(' ', ''):
             test = text + x
-            test_size = self.small_font.getsize(test)[0]
+            test_bbox = self.small_font.getbbox(test)
+            test_size = test_bbox[2] - test_bbox[0]
             if test_size >= width:
                 break
             text = test
