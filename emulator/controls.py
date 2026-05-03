@@ -105,7 +105,7 @@ class MockFootswitch(footswitch.Footswitch):
         if self.midiout and self.midi_CC is not None and _rtmidi_available:
             self.midiout.send_message(
                 [CONTROL_CHANGE | (self.midi_channel & 0x0F),
-                 self.midi_CC, 0 if self.enabled else 127])
+                 self.midi_CC, 127 if self.enabled else 0])
         self.refresh_callback(footswitch=self)
 
 

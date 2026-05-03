@@ -298,7 +298,7 @@ class Modhandler(Handler):
         # is ~4.3 ms of SPI, well inside the 10 ms budget; typical ticks
         # are sub-millisecond. Fall back to the default 200 ms gate
         # otherwise.
-        return 1 if self._tuner_panel is not None else 20
+        return 1 if self._tuner_panel is not None else self.lcd.poll_divisor
 
     def universal_encoder_select(self, direction):
         if self._lcd is not None:
