@@ -959,6 +959,8 @@ hardware = [
     { name = "spidev", marker = "sys_platform == 'linux'" },
 ]
 
+
+
 [package.dev-dependencies]
 dev = [
     { name = "numpy" },
@@ -969,7 +971,6 @@ dev = [
     { name = "ruff" },
     { name = "typing-extensions" },
 ]
-
 
 [package.metadata]
 requires-dist = [
