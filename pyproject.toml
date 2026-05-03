@@ -36,9 +36,6 @@ hardware = [
     "adafruit-circuitpython-mcp3xxx>=1.4",
 ]
 
-# Development dependencies
-dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1.0", "pyright>=1.1.408", "numpy>=2.4.1"]
-
 [project.urls]
 Homepage = "https://treefallsound.com"
 Documentation = "https://www.treefallsound.com/wiki/doku.php"
@@ -73,4 +70,12 @@ stubPath = "typings"
 pythonVersion = "3.11"
 
 [dependency-groups]
-dev = ["pyright>=1.1.408"]
+dev = [
+    "numpy>=2.4.1",
+    "pillow>=12.0.0",
+    "pyright>=1.1.408",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.1.0",
+    "typing-extensions>=4.15.0",
+]
