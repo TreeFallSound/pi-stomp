@@ -15,3 +15,4 @@ merge:
   - test/blend-mode
   - test/websocket-parameter-set
   - feat/bouquet
+  - chore/dev-deps-cleanup

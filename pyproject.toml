@@ -44,11 +44,19 @@ hardware = [
     "spidev>=3.0; sys_platform == 'linux'",
 ]
 
-# Development dependencies
-dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1.0", "pyright>=1.1.408", "numpy>=2.4.1"]
-
 # Local emulator (macOS / Linux desktop, no Pi hardware required)
 emulator = ["pygame>=2.5"]
+
+[dependency-groups]
+dev = [
+    "numpy>=2.4.1",
+    "pillow>=12.0.0",
+    "pyright>=1.1.408",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.1.0",
+    "typing-extensions>=4.15.0",
+]
 
 [project.urls]
 Homepage = "https://treefallsound.com"
@@ -83,5 +91,3 @@ venv = ".venv"
 stubPath = "typings"
 pythonVersion = "3.11"
 
-[dependency-groups]
-dev = ["pyright>=1.1.408"]
