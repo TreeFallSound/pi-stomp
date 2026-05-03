@@ -39,8 +39,9 @@ hardware = [
 
 [dependency-groups]
 dev = [
-    "numpy>=2.4.0",
+    "numpy>=2.4.1",
     "pillow>=12.0.0",
+    "pyright>=1.1.408",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "ruff>=0.1.0",
