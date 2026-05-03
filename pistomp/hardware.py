@@ -360,7 +360,7 @@ class Hardware(ABC):
                 continue
 
             if midi_cc is not None:
-                assert not isinstance(control, Encoder.Encoder), "Encoder specified with MIDI CC must be of type EncoderController"
+                assert isinstance(control, EncoderController.EncoderController), "Encoder specified with MIDI CC must be of type EncoderController"
                 key = format("%d:%d" % (midi_channel, midi_cc))
                 self.controllers[key] = control
                 logging.debug("Created Encoder: %d, Midi Chan: %d, CC: %d" % (id, midi_channel, midi_cc))

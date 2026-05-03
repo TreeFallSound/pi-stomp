@@ -13,10 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import adafruit_mcp3xxx.mcp3008 as MCP
-from adafruit_mcp3xxx.analog_in import AnalogIn
-
-from rtmidi.midiutil import open_midioutput
 from typing_extensions import override
 from typing import Any
 

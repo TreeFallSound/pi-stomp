@@ -251,13 +251,13 @@ class Lcd(abstract_lcd.Lcd):
     def draw_tools(self, wifi_type=None, eq_type=None, bypass_type=None, system_type=None):
         if self.w_wifi is not None:
             return
-        self.w_notification = ImageWidget(box=Box.xywh(180, 0, 20, 20),
+        self.w_notification = ImageWidget(box=Box.xywh(150, 0, 20, 20),
                                           image_path=os.path.join(self.imagedir, 'alert_orange.png'),
                                           parent=self.main_panel, action=self._notification_action)
         self.main_panel.add_sel_widget(self.w_notification)
         if self.handler is None or self.handler.notification is None:
             self.w_notification.hide(refresh=False)
-        self.w_config_edit = ImageWidget(box=Box.xywh(200, 0, 20, 20), image_path=os.path.join(self.imagedir,
+        self.w_config_edit = ImageWidget(box=Box.xywh(180, 0, 20, 20), image_path=os.path.join(self.imagedir,
                                   'edit_silver.png'), parent=self.main_panel, action=self.draw_config_editor)
         self.main_panel.add_sel_widget(self.w_config_edit)
         self.w_wifi = ImageWidget(box=Box.xywh(210, 0, 20, 20), image_path=os.path.join(self.imagedir,
@@ -966,6 +966,8 @@ class Lcd(abstract_lcd.Lcd):
                             category = util.DICT_GET(v, Token.CATEGORY)
                             text_color = Category.get_category_color(category)
                             color = self.default_plugin_color
+                        else:
+                            text_color = color
 
             if isinstance(icon_object, BlendMode):
                 text_color = self.default_plugin_color
