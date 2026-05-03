@@ -43,11 +43,10 @@ def test_adjust_binary_params_default_type_unchanged():
 def test_build_enriched_diff_map_excludes_midi_bound_param():
     lower = BlendStop(0.0, 0, {"/Fx": {"Vol": 0.0, "Bound": 0.0}})
     upper = BlendStop(1.0, 1, {"/Fx": {"Vol": 1.0, "Bound": 1.0}})
-    stops = [lower, upper]
     midi_bound = {("/Fx", "Bound")}
 
     result = BlendStop.build_enriched_diff_map(
-        lower, upper, stops, 0, lambda i, s: ParameterType.DEFAULT, midi_bound
+        lower, upper, lambda i, s: ParameterType.DEFAULT, midi_bound
     )
 
     assert "Vol" in result.get("/Fx", {})
@@ -57,60 +56,10 @@ def test_build_enriched_diff_map_excludes_midi_bound_param():
 def test_build_enriched_diff_map_removes_instance_when_all_params_excluded():
     lower = BlendStop(0.0, 0, {"/Fx": {"Bound": 0.0}})
     upper = BlendStop(1.0, 1, {"/Fx": {"Bound": 1.0}})
-    stops = [lower, upper]
     midi_bound = {("/Fx", "Bound")}
 
     result = BlendStop.build_enriched_diff_map(
-        lower, upper, stops, 0, lambda i, s: ParameterType.DEFAULT, midi_bound
+        lower, upper, lambda i, s: ParameterType.DEFAULT, midi_bound
     )
 
     assert "/Fx" not in result
-
-
-# ---------------------------------------------------------------------------
-# build_enriched_diff_map — neighbor value lookup
-# ---------------------------------------------------------------------------
-
-
-def test_build_enriched_diff_map_includes_prev_val_for_interior_segment():
-    stop0 = BlendStop(0.0, 0, {"/Fx": {"Vol": 0.1}})
-    stop1 = BlendStop(0.5, 1, {"/Fx": {"Vol": 0.5}})
-    stop2 = BlendStop(1.0, 2, {"/Fx": {"Vol": 0.9}})
-    stops = [stop0, stop1, stop2]
-
-    result = BlendStop.build_enriched_diff_map(
-        stop1, stop2, stops, 1, lambda i, s: ParameterType.DEFAULT, None
-    )
-
-    param = result["/Fx"]["Vol"]
-    assert param.prev_val == pytest.approx(0.1)  # stops[0]
-    assert param.next_val is None  # segment_idx=1, len(stops)-2=1 → not <
-
-
-def test_build_enriched_diff_map_includes_next_val_for_first_segment():
-    stop0 = BlendStop(0.0, 0, {"/Fx": {"Vol": 0.1}})
-    stop1 = BlendStop(0.5, 1, {"/Fx": {"Vol": 0.5}})
-    stop2 = BlendStop(1.0, 2, {"/Fx": {"Vol": 0.9}})
-    stops = [stop0, stop1, stop2]
-
-    result = BlendStop.build_enriched_diff_map(
-        stop0, stop1, stops, 0, lambda i, s: ParameterType.DEFAULT, None
-    )
-
-    param = result["/Fx"]["Vol"]
-    assert param.prev_val is None  # segment_idx=0, no previous
-    assert param.next_val == pytest.approx(0.9)  # stops[0+2] = stops[2]
-
-
-def test_build_enriched_diff_map_no_neighbors_for_two_stop_segment():
-    lower = BlendStop(0.0, 0, {"/Fx": {"Vol": 0.0}})
-    upper = BlendStop(1.0, 1, {"/Fx": {"Vol": 1.0}})
-    stops = [lower, upper]
-
-    result = BlendStop.build_enriched_diff_map(
-        lower, upper, stops, 0, lambda i, s: ParameterType.DEFAULT, None
-    )
-
-    param = result["/Fx"]["Vol"]
-    assert param.prev_val is None
-    assert param.next_val is None

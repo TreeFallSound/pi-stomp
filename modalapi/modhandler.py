@@ -43,6 +43,7 @@ from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.controller import RoutingDestination, RoutingInfo
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
+from pistomp.handler import Handler
 from pistomp.sync import PedalboardSync, SyncResult
 from pathlib import Path
 

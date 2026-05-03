@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import MagicMock
 
 from blend.input_controller import InputController
-from blend.interpolation import linear_interpolation
+from blend.easing import linear
 from blend.stop import BlendStop
 from blend.types import ParamData
 from modalapi.parameter import Type as ParameterType
@@ -17,20 +17,13 @@ def _make_stop(position: float) -> BlendStop:
 
 
 def _make_param_data(val_a: float, val_b: float) -> ParamData:
-    return ParamData(
-        val_a=val_a,
-        val_b=val_b,
-        prev_val=None,
-        next_val=None,
-        segment_range=1.0,
-        param_type=ParameterType.DEFAULT,
-    )
+    return ParamData(val_a=val_a, val_b=val_b, param_type=ParameterType.DEFAULT)
 
 
 def _make_controller(stops, diff_maps=None) -> InputController:
     if diff_maps is None:
         diff_maps = [{} for _ in range(len(stops) - 1)]
-    return InputController(linear_interpolation, stops, diff_maps, MagicMock())
+    return InputController(linear, stops, diff_maps, MagicMock())
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +75,7 @@ def interpolating_controller():
     diff_map = {"/Plugin": {"Param": param_data}}
     mock_setter = MagicMock()
     mock_setter.send_parameter.return_value = True
-    ic = InputController(linear_interpolation, stops, [diff_map], mock_setter)
+    ic = InputController(linear, stops, [diff_map], mock_setter)
     return ic, mock_setter
 
 
@@ -187,7 +180,7 @@ def test_sync_current_position_sends_constant_params():
     stop_b = BlendStop(1.0, 1, state)  # identical state → nothing in diff map
     mock_setter = MagicMock()
     mock_setter.send_parameter.return_value = True
-    ic = InputController(linear_interpolation, [stop_a, stop_b], [{}], mock_setter)
+    ic = InputController(linear, [stop_a, stop_b], [{}], mock_setter)
 
     control = _analog_control(1)
     ic.attach_to_input([control], [], 1)

@@ -5,7 +5,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from blend.manager import BlendMode
-from blend.types import BlendSnapshotConfig, ParamData
+from blend.types import BlendSnapshotConfig
 from modalapi.parameter import Type as ParameterType
 from tests.conftest import FakeWebSocketBridge
 
@@ -14,17 +14,6 @@ def _make_blend_mode(config: BlendSnapshotConfig) -> BlendMode:
     handler = MagicMock()
     handler.current.pedalboard.bundle = "/fake/bundle"
     return BlendMode(handler, config)
-
-
-def _make_param_data(val_a: float, val_b: float) -> ParamData:
-    return ParamData(
-        val_a=val_a,
-        val_b=val_b,
-        prev_val=None,
-        next_val=None,
-        segment_range=1.0,
-        param_type=ParameterType.DEFAULT,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -77,8 +66,7 @@ def test_validate_config_invalid_interpolation_raises():
 def test_validate_config_missing_interpolation_defaults_to_linear():
     bm = _make_blend_mode({"name": "T", "input_id": 1, "stops": []})
     func = bm._validate_config()
-    pd = _make_param_data(0.0, 1.0)
-    assert abs(func(0.5, pd) - 0.5) < 1e-9
+    assert abs(func(0.5) - 0.5) < 1e-9
 
 
 # ---------------------------------------------------------------------------

@@ -90,4 +90,3 @@ venvPath = "."
 venv = ".venv"
 stubPath = "typings"
 pythonVersion = "3.11"
-
