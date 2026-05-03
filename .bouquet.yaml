@@ -1,0 +1,11 @@
+target: release/current
+base: pistomp-v3
+merge:
+  - feat/*
+  - test/*
+  - fix/*
+  - refactor/*
+  - chore/*
+  - simplify/*
+  - "!feat/clip-indicator"
+  - "!feat/tuner"
