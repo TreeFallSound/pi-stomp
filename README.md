@@ -43,11 +43,3 @@ Package version incompatibilities are much more likely using this method.
 Run tests using `pytest` in the virtual environment. There is a Github Actions workflow that runs this in CI as well.
 
 If you are writing new snapshot tests, or experiencing unexpected snapshot assertion failures, try running `pytest --snapshot-update` and inspect the diff. Sometimes there are cross-platform differences; use PIL tweaks in `conftest.py` to align them.
-
-## `release/current` branch
-
-This fork integrates several in-flight feature branches into a single
-`release/current` branch for testers and early adopters. It's rebuilt
-periodically from `pistomp-v3` plus the leaves listed in `.bouquet.yaml`
-using [git-bouquet](https://github.com/sastraxi/git-bouquet) — one snapshot
-commit per rebuild, so `git log release/current` is the changelog.
