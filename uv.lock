@@ -821,13 +821,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "numpy" },
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
 emulator = [
     { name = "pygame" },
 ]
@@ -843,7 +836,13 @@ hardware = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "numpy" },
+    { name = "pillow" },
     { name = "pyright" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "typing-extensions" },
 ]
 
 [package.metadata]
@@ -855,24 +854,27 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4.0" },
     { name = "matplotlib", marker = "extra == 'hardware'", specifier = ">=3.5" },
     { name = "numpy", specifier = ">=1.24" },
-    { name = "numpy", marker = "extra == 'dev'", specifier = ">=2.4.1" },
     { name = "pillow", specifier = ">=9.4" },
     { name = "pyalsaaudio", marker = "sys_platform == 'linux'", specifier = ">=0.9" },
     { name = "pygame", marker = "extra == 'emulator'", specifier = ">=2.5" },
-    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.408" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "python-rtmidi", specifier = ">=1.4" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.28" },
     { name = "rpi-ws281x", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=5.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "spidev", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=3.0" },
 ]
-provides-extras = ["hardware", "dev", "emulator"]
+provides-extras = ["hardware", "emulator"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pyright", specifier = ">=1.1.408" }]
+dev = [
+    { name = "numpy", specifier = ">=2.4.1" },
+    { name = "pillow", specifier = ">=12.0.0" },
+    { name = "pyright", specifier = ">=1.1.408" },
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-cov", specifier = ">=7.0.0" },
+    { name = "ruff", specifier = ">=0.1.0" },
+    { name = "typing-extensions", specifier = ">=4.15.0" },
+]
 
 [[package]]
 name = "pillow"
