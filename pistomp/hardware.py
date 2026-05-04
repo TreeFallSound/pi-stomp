@@ -24,7 +24,7 @@ import common.parameter as Parameter
 from common.parameter import TTL_PROPERTIES, TTL_INTEGER
 import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.encoder as Encoder
-import pistomp.encodermidicontrol as EncoderMidiControl
+import pistomp.encoder_controller as EncoderController
 import pistomp.footswitch as Footswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.taptempo as taptempo
@@ -33,7 +33,7 @@ from abc import ABC, abstractmethod
 from modalapi.external_midi import ExternalMidiOut, ExternalMidiManager, EXTERNAL_INSTANCE_ID
 import pistomp.relay as Relay
 
-Controller = Union[AnalogMidiControl.AnalogMidiControl, EncoderMidiControl.EncoderMidiControl, Footswitch.Footswitch]
+Controller = Union[AnalogMidiControl.AnalogMidiControl, EncoderController.EncoderController, Footswitch.Footswitch]
 
 
 class Hardware(ABC):
@@ -317,7 +317,7 @@ class Hardware(ABC):
                           (adc_input, midi_channel, midi_cc))
 
     @abstractmethod
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc, midiout=None) -> Encoder.Encoder | EncoderMidiControl.EncoderMidiControl:
+    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc, midiout=None) -> Encoder.Encoder | EncoderController.EncoderController:
         # This should be implemented by hardware subclasses that support tweak encoders (Tre at least)
         ...
 
@@ -361,7 +361,7 @@ class Hardware(ABC):
                 continue
 
             if midi_cc is not None:
-                assert isinstance(control, EncoderMidiControl.EncoderMidiControl), "Encoder specified with MIDI CC must be of type EncoderMidiControl"
+                assert isinstance(control, EncoderController.EncoderController), "Encoder specified with MIDI CC must be of type EncoderController"
                 key = format("%d:%d" % (midi_channel, midi_cc))
                 self.controllers[key] = control
                 logging.debug("Created Encoder: %d, Midi Chan: %d, CC: %d" % (id, midi_channel, midi_cc))

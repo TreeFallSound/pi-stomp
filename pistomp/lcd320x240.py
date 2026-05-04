@@ -966,6 +966,8 @@ class Lcd(abstract_lcd.Lcd):
                             category = util.DICT_GET(v, Token.CATEGORY)
                             text_color = Category.get_category_color(category)
                             color = self.default_plugin_color
+                        else:
+                            text_color = color
 
             if isinstance(icon_object, BlendMode):
                 text_color = self.default_plugin_color
