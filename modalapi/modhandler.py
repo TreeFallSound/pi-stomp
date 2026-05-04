@@ -30,6 +30,7 @@ import common.util as util
 from common.parameter import Parameter, TTL_PROPERTIES, TTL_INTEGER
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
+import modalapi.external_midi as ExternalMidi
 from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 from pistomp.lcd320x240 import Lcd
 from pistomp.hardware import Controller, Hardware
@@ -135,10 +136,18 @@ class Modhandler(Handler):
         self.blend_modes: dict[str, Any] = {}  # {snapshot_name: BlendMode}
         self.active_blend_mode: Any | None = None  # Currently active blend mode
 
+        self.external_midi = None
+        try:
+            self.external_midi = ExternalMidi.ExternalMidiManager()
+        except Exception as e:
+            logging.warning(f"Failed to initialize external MIDI manager: {e}")
+
     def __del__(self):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
+        if self.external_midi is not None:
+            self.external_midi.close()
         if self.ws_bridge is not None:
             self.ws_bridge.stop()
 
@@ -147,6 +156,8 @@ class Modhandler(Handler):
             self._lcd.cleanup()
         if self._hardware is not None:
             self._hardware.cleanup()
+        if self.external_midi is not None:
+            self.external_midi.close()
         if self.ws_bridge is not None:
             self.ws_bridge.stop()
             logging.info("WebSocket bridge stopped")
@@ -162,22 +173,23 @@ class Modhandler(Handler):
             self.preset_index: int = 0  # Assumes pedalboard loads at snapshot 0 (default behavior)
             self.analog_controllers: dict[str, dict[str, Any]] = {}  # { type: (plugin_name, param_name) }
 
-    def _rest_get(self, url: str) -> Response | None:
+    def _rest_get(self, url: str, timeout: float = 5.0) -> Response | None:
         try:
-            return req.get(url)
+            return req.get(url, timeout=timeout)
         except Exception as e:
             logging.error("REST GET failed: %s %s" % (url, e))
             return None
 
-    def _rest_post(self, url: str, *, json=None, data=None) -> Response | None:
+    def _rest_post(self, url: str, *, json=None, data=None, timeout: float = 5.0) -> Response | None:
         try:
-            return req.post(url, json=json, data=data)
+            return req.post(url, json=json, data=data, timeout=timeout)
         except Exception as e:
             logging.error("REST POST failed: %s %s" % (url, e))
             return None
 
     def add_hardware(self, hardware):
         self._hardware = hardware
+        hardware.external_midi = self.external_midi
         self.bind_volume_encoder()
 
     def bind_volume_encoder(self):
@@ -296,7 +308,7 @@ class Modhandler(Handler):
         # Tick the LCD on every 10 ms main-loop pass (~100 fps) while the
         # tuner panel is mounted. Strobe's worst-case redraw at STRIPE_W=4
         # is ~4.3 ms of SPI, well inside the 10 ms budget; typical ticks
-        # are sub-millisecond. Fall back to the default 200 ms gate
+        # are sub-millisecond. Fall back to the adaptive LCD divisor
         # otherwise.
         return 1 if self._tuner_panel is not None else self.lcd.poll_divisor
 
@@ -542,6 +554,13 @@ class Modhandler(Handler):
 
         # Sync current state of analog controls (expression pedals, etc.)
         self.hardware.sync_analog_controls()
+
+        # Send external MIDI messages for this pedalboard
+        if self.external_midi is not None:
+            try:
+                self.external_midi.send_messages_for_pedalboard()
+            except Exception as e:
+                logging.warning(f"Failed to send external MIDI messages: {e}")
 
         # Initialize the data and draw on LCD
         self.bind_current_pedalboard()
