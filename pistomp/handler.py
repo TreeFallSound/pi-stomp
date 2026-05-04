@@ -15,7 +15,6 @@
 
 
 class Handler:
-
     def __init__(self):
         self.homedir = None
         self.lcd = None
@@ -93,3 +92,6 @@ class Handler:
 
     def poll_wifi(self):
         raise NotImplementedError()
+
+    def set_tuner_source_factory(self, factory) -> None:
+        pass

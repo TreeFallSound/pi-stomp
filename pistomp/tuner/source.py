@@ -130,10 +130,10 @@ class ToneSweepSource(_ToneBase):
         return self._center * math.pow(2.0, cents / 1200.0)
 
 
-def build_source(spec: str) -> AudioSource:
+def build_source(spec: str, capture_port: str = "system:capture_1") -> AudioSource:
     """Parse a source spec string ('jack' or 'tone:<hz>') and return an AudioSource."""
     if spec == "jack":
-        return JackSource()
+        return JackSource(capture_port)
     if spec.startswith("tone:"):
         hz = float(spec[5:])
         return ToneSource(hz)

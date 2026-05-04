@@ -6,9 +6,9 @@ from typing import Callable, Literal
 from PIL import ImageFont
 
 from uilib.box import Box
-from uilib.misc import InputEvent
 from uilib.panel import Panel
 from uilib.label import Label
+from uilib.text import Button
 from uilib.widget import Widget
 
 from pistomp.tuner.engine import TunerEngine, TunerReading
@@ -86,32 +86,10 @@ class TunerHeaderWidget(Widget):
         self._note_label.update(self, color, note, x=self._centered_x(note))
 
 
-# ── TunerHintWidget ──────────────────────────────────────────────────────────
-
-
-class TunerHintWidget(Widget):
-    """Small uppercase wide-tracked exit prompt below the strobe."""
-
-    TEXT = "CLICK/TAP TO EXIT"
-    COLOR: Color = (80, 80, 80)
-    TRACKING = 3
-
-    def __init__(self, box: Box, font, **kwargs) -> None:
-        super().__init__(box=box, **kwargs)
-        self._font = font
-
-    def _draw(self, image, draw, real_box) -> None:
-        total_w = sum(self._font.getbbox(ch)[2] + self.TRACKING for ch in self.TEXT)
-        total_w = max(total_w - self.TRACKING, 0)
-        h = real_box.y1 - real_box.y0
-        ch_h = self._font.getbbox("A")[3]
-        x = real_box.x0 + (real_box.x1 - real_box.x0 - total_w) // 2
-        y = real_box.y0 + (h - ch_h) // 2 - 4
-        cx = x
-        for ch in self.TEXT:
-            draw.text((cx, y), ch, font=self._font, fill=self.COLOR)
-            bbox = self._font.getbbox(ch)
-            cx += (bbox[2] - bbox[0]) + self.TRACKING
+_BTN_Y = 210
+_BTN_H = 30
+_BTN_W = _W // 3  # 106, 106, 108 across 320 px
+_BTN_MUTE_ACTIVE_COLOR: Color = (140, 50, 0)
 
 
 # ── TunerOffsetBar ───────────────────────────────────────────────────────────
@@ -364,13 +342,20 @@ class StrobeWidget(Widget):
 class TunerPanel(Panel):
     STALE_SECS = 4.0
 
-    def __init__(self, engine: TunerEngine, on_dismiss: Callable[[], None]) -> None:
+    def __init__(
+        self,
+        engine: TunerEngine,
+        on_dismiss: Callable[[], None],
+        on_mute_toggle: Callable[[], None],
+        on_input_toggle: Callable[[], None],
+        muted: bool = False,
+        input_port: int = 1,
+    ) -> None:
         super().__init__(box=Box.xywh(0, 0, _W, 240), auto_destroy=True)
         self._engine = engine
-        self._on_dismiss = on_dismiss
 
         note_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 56)
-        hint_font = ImageFont.truetype("DejaVuSans.ttf", 11)
+        btn_font = ImageFont.truetype("DejaVuSans.ttf", 13)
 
         self._header = TunerHeaderWidget(
             box=Box.xywh(0, 0, _W, 65),
@@ -379,18 +364,49 @@ class TunerPanel(Panel):
         )
         self._bar = TunerOffsetBar(box=Box.xywh(0, 65, _W, 13), parent=self)
         self._strobe = StrobeWidget(box=Box.xywh(0, 81, _W, 129), parent=self)
-        self._hint = TunerHintWidget(
-            box=Box.xywh(0, 210, _W, 30),
-            font=hint_font,
+
+        self._btn_close = Button(
+            box=Box.xywh(0, _BTN_Y, _BTN_W, _BTN_H),
+            text="Close",
+            font=btn_font,
+            outline_radius=4,
             parent=self,
+            action=lambda *_: on_dismiss(),
         )
+        self._btn_mute = Button(
+            box=Box.xywh(_BTN_W, _BTN_Y, _BTN_W, _BTN_H),
+            text="Mute",
+            font=btn_font,
+            outline_radius=4,
+            parent=self,
+            action=lambda *_: on_mute_toggle(),
+        )
+        self._btn_input = Button(
+            box=Box.xywh(_BTN_W * 2, _BTN_Y, _W - _BTN_W * 2, _BTN_H),
+            text=f"IN {input_port}",
+            font=btn_font,
+            outline_radius=4,
+            parent=self,
+            action=lambda *_: on_input_toggle(),
+        )
+        self.add_sel_widget(self._btn_close)
+        self.add_sel_widget(self._btn_mute)
+        self.add_sel_widget(self._btn_input)
+        self._apply_mute_style(muted)
         self._cents_history: deque[float] = deque(maxlen=3)
 
-    def input_event(self, event) -> bool:
-        if event in (InputEvent.CLICK, InputEvent.LONG_CLICK):
-            self._on_dismiss()
-            return True
-        return False
+    def set_engine(self, engine: TunerEngine) -> None:
+        self._engine = engine
+
+    def set_muted(self, muted: bool) -> None:
+        self._apply_mute_style(muted)
+        self._btn_mute.refresh()
+
+    def set_input_port(self, port: int) -> None:
+        self._btn_input.set_text(f"IN {port}")
+
+    def _apply_mute_style(self, muted: bool) -> None:
+        self._btn_mute.set_background(_BTN_MUTE_ACTIVE_COLOR if muted else (0, 0, 0))
 
     def tick(self) -> None:
         reading = self._engine.get_reading()
