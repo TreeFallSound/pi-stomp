@@ -6,6 +6,8 @@ from typing import Callable, Literal
 from PIL import ImageFont
 
 from uilib.box import Box
+from uilib.config import Config
+from uilib.misc import get_text_size
 from uilib.panel import Panel
 from uilib.label import Label
 from uilib.text import Button
@@ -86,9 +88,10 @@ class TunerHeaderWidget(Widget):
         self._note_label.update(self, color, note, x=self._centered_x(note))
 
 
-_BTN_Y = 210
-_BTN_H = 30
-_BTN_W = _W // 3  # 106, 106, 108 across 320 px
+_BTN_GAP = 2
+_BTN_H = 28
+_BTN_Y = 240 - _BTN_H - _BTN_GAP  # 2 px below
+_BTN_W = (_W - 4 * _BTN_GAP) // 3  # 104 px each, leaves 2 px between/outside
 _BTN_MUTE_ACTIVE_COLOR: Color = (140, 50, 0)
 
 
@@ -355,7 +358,9 @@ class TunerPanel(Panel):
         self._engine = engine
 
         note_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 56)
-        btn_font = ImageFont.truetype("DejaVuSans.ttf", 13)
+        btn_font = Config().get_font('default')
+        _, btn_text_h = get_text_size("Mute", btn_font)
+        btn_v_margin = max(0, (_BTN_H - btn_text_h) // 2)
 
         self._header = TunerHeaderWidget(
             box=Box.xywh(0, 0, _W, 65),
@@ -363,28 +368,31 @@ class TunerPanel(Panel):
             parent=self,
         )
         self._bar = TunerOffsetBar(box=Box.xywh(0, 65, _W, 13), parent=self)
-        self._strobe = StrobeWidget(box=Box.xywh(0, 81, _W, 129), parent=self)
+        self._strobe = StrobeWidget(box=Box.xywh(0, 81, _W, _BTN_Y - _BTN_GAP - 81), parent=self)
 
         self._btn_close = Button(
-            box=Box.xywh(0, _BTN_Y, _BTN_W, _BTN_H),
+            box=Box.xywh(_BTN_GAP, _BTN_Y, _BTN_W, _BTN_H),
             text="Close",
             font=btn_font,
+            v_margin=btn_v_margin,
             outline_radius=4,
             parent=self,
             action=lambda *_: on_dismiss(),
         )
         self._btn_mute = Button(
-            box=Box.xywh(_BTN_W, _BTN_Y, _BTN_W, _BTN_H),
+            box=Box.xywh(_BTN_GAP * 2 + _BTN_W, _BTN_Y, _BTN_W, _BTN_H),
             text="Mute",
             font=btn_font,
+            v_margin=btn_v_margin,
             outline_radius=4,
             parent=self,
             action=lambda *_: on_mute_toggle(),
         )
         self._btn_input = Button(
-            box=Box.xywh(_BTN_W * 2, _BTN_Y, _W - _BTN_W * 2, _BTN_H),
-            text=f"IN {input_port}",
+            box=Box.xywh(_BTN_GAP * 3 + _BTN_W * 2, _BTN_Y, _BTN_W, _BTN_H),
+            text=f"Input {input_port}",
             font=btn_font,
+            v_margin=btn_v_margin,
             outline_radius=4,
             parent=self,
             action=lambda *_: on_input_toggle(),
@@ -403,7 +411,7 @@ class TunerPanel(Panel):
         self._btn_mute.refresh()
 
     def set_input_port(self, port: int) -> None:
-        self._btn_input.set_text(f"IN {port}")
+        self._btn_input.set_text(f"Input {port}")
 
     def _apply_mute_style(self, muted: bool) -> None:
         self._btn_mute.set_background(_BTN_MUTE_ACTIVE_COLOR if muted else (0, 0, 0))
