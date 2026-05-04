@@ -663,7 +663,7 @@ class Modhandler(Handler):
                         Token.RANGES: {Token.MINIMUM: 0, Token.MAXIMUM: 127},
                         TTL_PROPERTIES: [TTL_INTEGER]
                     }
-                    controller.bind_to_parameter(Parameter(ext_info, controller.midi_value, None))
+                    controller.bind_to_parameter(Parameter(ext_info, controller.midi_value, None, EXTERNAL_INSTANCE_ID))
 
             key = f"{controller.midi_channel}:{controller.midi_CC}"
             display_info = controller.get_display_info()
