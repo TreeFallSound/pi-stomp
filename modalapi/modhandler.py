@@ -934,11 +934,10 @@ class Modhandler(Handler):
     def toggle_tuner_enable(self, *argv) -> None:
         if self._tuner_engine is None:
             from pistomp.tuner import TunerEngine, TunerPanel, build_source
+            factory = self._tuner_source_factory or (lambda port: build_source("jack", port))
             muted = bool(self.settings.get_setting(Token.TUNER_MUTE))
             input_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
-            capture_port = f"system:capture_{input_port}"
-            factory = self._tuner_source_factory or (lambda: build_source("jack", capture_port))
-            engine = TunerEngine(factory())
+            engine = TunerEngine(factory(f"system:capture_{input_port}"))
             engine.start()
             self._tuner_engine = engine
             if muted:
@@ -973,14 +972,13 @@ class Modhandler(Handler):
 
     def _toggle_tuner_input(self) -> None:
         from pistomp.tuner import TunerEngine, build_source
+        factory = self._tuner_source_factory or (lambda port: build_source("jack", port))
         current_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
         new_port = 2 if current_port == 1 else 1
+        engine = TunerEngine(factory(f"system:capture_{new_port}"))
+        engine.start()  # start before stopping old — if this raises, old engine keeps running
         self.settings.set_setting(Token.TUNER_INPUT, new_port)
         self._tuner_engine.stop()
-        capture_port = f"system:capture_{new_port}"
-        factory = self._tuner_source_factory or (lambda: build_source("jack", capture_port))
-        engine = TunerEngine(factory())
-        engine.start()
         self._tuner_engine = engine
         if self._tuner_panel is not None:
             self._tuner_panel.set_engine(engine)
