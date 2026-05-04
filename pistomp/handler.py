@@ -100,5 +100,8 @@ class Handler:
     def configure_wifi_credentials(self, ssid, password):
         raise NotImplementedError()
 
+    def set_tuner_source_factory(self, factory) -> None:
+        pass
+
     def init_pedalboards_remote(self, url: str) -> None:
         pass

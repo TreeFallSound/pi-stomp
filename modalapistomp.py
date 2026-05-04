@@ -239,16 +239,14 @@ def main():
 
     assert handler is not None
 
-    # Wire tuner source factory if the handler supports it
-    if hasattr(handler, "set_tuner_source_factory"):
-        _is_emulator = args.host[0] in ("emulator_v1", "emulator_v2", "emulator_v3")
-        if _is_emulator:
-            from pistomp.tuner.source import ToneSweepSource
-            handler.set_tuner_source_factory(ToneSweepSource)
-        else:
-            from pistomp.tuner.source import build_source
-            _tuner_spec = args.tuner_source or "jack"
-            handler.set_tuner_source_factory(lambda: build_source(_tuner_spec))
+    _is_emulator = args.host[0] in ("emulator_v1", "emulator_v2", "emulator_v3")
+    if _is_emulator:
+        from pistomp.tuner.source import ToneSweepSource
+        handler.set_tuner_source_factory(lambda _port: ToneSweepSource())
+    elif args.tuner_source:
+        from pistomp.tuner.source import build_source
+        _tuner_spec = args.tuner_source
+        handler.set_tuner_source_factory(lambda port: build_source(_tuner_spec, port))
 
     logging.info("Entering main loop. Press Control-C to exit.")
     period = 0
