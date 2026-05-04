@@ -14,6 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from pistomp.handler import Handler
+from pistomp.audiocard import Audiocard
 
 import json
 import logging
@@ -43,7 +44,7 @@ from pathlib import Path
 class Modhandler(Handler):
     __single = None
 
-    def __init__(self, audiocard, homedir):
+    def __init__(self, audiocard: Audiocard, homedir):
         logging.info("Init modhandler")
         if Modhandler.__single:
             raise RuntimeError("Attempt to create second Modhandler singleton", Modhandler.__single)
