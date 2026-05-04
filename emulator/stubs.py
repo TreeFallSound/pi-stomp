@@ -67,6 +67,9 @@ class VirtualAudiocard(Audiocard):
     def set_bypass_right(self, value):
         self._bypass_right = value
 
+    def set_output_muted(self, muted: bool) -> None:
+        pass
+
 
 class StubWifiManager:
     """No-op wifi manager; satisfies the WifiManager interface."""
