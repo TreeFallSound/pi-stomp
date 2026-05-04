@@ -193,8 +193,21 @@ class Lcd(abstract_lcd.Lcd):
         if self._tuner_panel is not None and self.pstack.current == self._tuner_panel:
             self._tuner_panel.tick()
 
-        # Update control progress bars (analog controls and encoders)
+    def show_tuner_panel(self, panel) -> None:
+        self._tuner_panel = panel
+        self.pstack.push_panel(panel)
+        # push_panel composes the (still-blank) panel image onto the stack but
+        # doesn't draw the panel's children. Force a full redraw so bg, rules,
+        # header and hint are on screen before tick()'s partial refreshes start.
+        panel.refresh()
+
+    def hide_tuner_panel(self) -> None:
+        if self._tuner_panel is not None:
+            self.pstack.pop_panel(self._tuner_panel)
+            self._tuner_panel = None
+
         if self.pstack.current == self.main_panel:
+            # Update control progress bars (analog controls and encoders)
             for icon in self.w_controls:
                 if icon.object is None:
                     continue
@@ -231,19 +244,6 @@ class Lcd(abstract_lcd.Lcd):
                 self.w_preset.tick()
             if self.w_pedalboard:
                 self.w_pedalboard.tick()
-
-    def show_tuner_panel(self, panel) -> None:
-        self._tuner_panel = panel
-        self.pstack.push_panel(panel)
-        # push_panel composes the (still-blank) panel image onto the stack but
-        # doesn't draw the panel's children. Force a full redraw so bg, rules,
-        # header and hint are on screen before tick()'s partial refreshes start.
-        panel.refresh()
-
-    def hide_tuner_panel(self) -> None:
-        if self._tuner_panel is not None:
-            self.pstack.pop_panel(self._tuner_panel)
-            self._tuner_panel = None
 
     #
     # Toolbar
@@ -966,8 +966,6 @@ class Lcd(abstract_lcd.Lcd):
                             category = util.DICT_GET(v, Token.CATEGORY)
                             text_color = Category.get_category_color(category)
                             color = self.default_plugin_color
-                        else:
-                            text_color = color
 
             if isinstance(icon_object, BlendMode):
                 text_color = self.default_plugin_color
