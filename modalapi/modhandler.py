@@ -45,7 +45,6 @@ from pistomp.controller import RoutingDestination, RoutingInfo
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
 from pistomp.handler import Handler
-from pistomp.audiocard import Audiocard
 from pistomp.sync import PedalboardSync, SyncResult
 from pathlib import Path
 
@@ -53,7 +52,7 @@ from pathlib import Path
 class Modhandler(Handler):
     __single = None
 
-    def __init__(self, audiocard: Audiocard, homedir, data_dir="/home/pistomp/data"):
+    def __init__(self, audiocard, homedir, data_dir="/home/pistomp/data"):
         self.wifi_manager = None
 
         logging.info("Init modhandler")
@@ -113,7 +112,6 @@ class Modhandler(Handler):
         self._tuner_engine = None
         self._tuner_panel = None
         self._tuner_source_factory = None
-        self._tuner_muted = False
 
         # WebSocket bridge for MOD-UI communication
         self.ws_bridge = AsyncWebSocketBridge(
@@ -1172,52 +1170,15 @@ class Modhandler(Handler):
     def toggle_tuner_enable(self, *argv) -> None:
         if self._tuner_engine is None:
             from pistomp.tuner import TunerEngine, TunerPanel, build_source
-            muted = bool(self.settings.get_setting(Token.TUNER_MUTE))
-            input_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
-            factory = self._tuner_source_factory or (lambda port: build_source("jack", port))
-            engine = TunerEngine(factory(f"system:capture_{input_port}"))
+            factory = self._tuner_source_factory or (lambda: build_source("jack"))
+            engine = TunerEngine(factory())
             engine.start()
             self._tuner_engine = engine
-            if muted:
-                self.audiocard.set_output_muted(True)
-                self._tuner_muted = True
-            panel = TunerPanel(
-                engine,
-                on_dismiss=self.toggle_tuner_enable,
-                on_mute_toggle=self._toggle_tuner_mute,
-                on_input_toggle=self._toggle_tuner_input,
-                muted=muted,
-                input_port=input_port,
-            )
+            panel = TunerPanel(engine, on_dismiss=self.toggle_tuner_enable)
             self._tuner_panel = panel
             self.lcd.show_tuner_panel(panel)
         else:
-            if self._tuner_muted:
-                self.audiocard.set_output_muted(False)
-                self._tuner_muted = False
             self.lcd.hide_tuner_panel()
             self._tuner_engine.stop()
             self._tuner_engine = None
             self._tuner_panel = None
-
-    def _toggle_tuner_mute(self) -> None:
-        new_muted = not self._tuner_muted
-        self.audiocard.set_output_muted(new_muted)
-        self._tuner_muted = new_muted
-        self.settings.set_setting(Token.TUNER_MUTE, new_muted)
-        if self._tuner_panel is not None:
-            self._tuner_panel.set_muted(new_muted)
-
-    def _toggle_tuner_input(self) -> None:
-        from pistomp.tuner import TunerEngine, build_source
-        factory = self._tuner_source_factory or (lambda port: build_source("jack", port))
-        current_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
-        new_port = 2 if current_port == 1 else 1
-        engine = TunerEngine(factory(f"system:capture_{new_port}"))
-        engine.start()  # start before stopping old — if this raises, old engine keeps running
-        self.settings.set_setting(Token.TUNER_INPUT, new_port)
-        self._tuner_engine.stop()
-        self._tuner_engine = engine
-        if self._tuner_panel is not None:
-            self._tuner_panel.set_engine(engine)
-            self._tuner_panel.set_input_port(new_port)
