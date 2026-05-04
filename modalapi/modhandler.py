@@ -849,13 +849,13 @@ class Modhandler(Handler):
                 self.lcd.enc_step_widget(d, direction)
 
     def encoder_value_changed(self, param: Parameter, new_value: float, routing_info: RoutingInfo) -> None:
+        if param.instance_id is None:
+            self.audio_parameter_commit(param.symbol, new_value)
+            return
         self.lcd.display_parameter_value(param, new_value)
         if routing_info.destination == RoutingDestination.EXTERNAL:
             return
-        if param.instance_id is None:
-            self.audio_parameter_commit(param.symbol, new_value)
-        else:
-            self.parameter_value_commit(param, new_value)
+        self.parameter_value_commit(param, new_value)
 
     #
     # System Menu
