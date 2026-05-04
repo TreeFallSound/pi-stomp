@@ -13,6 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from pistomp.handler import Handler
+from pistomp.audiocard import Audiocard
+
 import json
 import logging
 import os
@@ -44,7 +47,6 @@ from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.controller import RoutingDestination, RoutingInfo
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
-from pistomp.handler import Handler
 from pistomp.sync import PedalboardSync, SyncResult
 from pathlib import Path
 
@@ -52,8 +54,9 @@ from pathlib import Path
 class Modhandler(Handler):
     __single = None
 
-    def __init__(self, audiocard, homedir, data_dir="/home/pistomp/data"):
+    def __init__(self, audiocard: Audiocard, homedir, data_dir="/home/pistomp/data"):
         self.wifi_manager = None
+
 
         logging.info("Init modhandler")
         if Modhandler.__single:
@@ -112,6 +115,7 @@ class Modhandler(Handler):
         self._tuner_engine = None
         self._tuner_panel = None
         self._tuner_source_factory = None
+        self._tuner_muted = False
 
         # WebSocket bridge for MOD-UI communication
         self.ws_bridge = AsyncWebSocketBridge(
@@ -132,15 +136,16 @@ class Modhandler(Handler):
                           "toggle_tuner_enable": self.toggle_tuner_enable,
         }
 
-        # Blend mode manager - multiple blend snapshots per pedalboard
-        self.blend_modes: dict[str, Any] = {}  # {snapshot_name: BlendMode}
-        self.active_blend_mode: Any | None = None  # Currently active blend mode
-
+        # External MIDI device synchronization
         self.external_midi = None
         try:
             self.external_midi = ExternalMidi.ExternalMidiManager()
         except Exception as e:
             logging.warning(f"Failed to initialize external MIDI manager: {e}")
+
+        # Blend mode manager - multiple blend snapshots per pedalboard
+        self.blend_modes: dict[str, Any] = {}  # {snapshot_name: BlendMode}
+        self.active_blend_mode: Any | None = None  # Currently active blend mode
 
     def __del__(self):
         logging.info("Handler cleanup")
@@ -173,16 +178,16 @@ class Modhandler(Handler):
             self.preset_index: int = 0  # Assumes pedalboard loads at snapshot 0 (default behavior)
             self.analog_controllers: dict[str, dict[str, Any]] = {}  # { type: (plugin_name, param_name) }
 
-    def _rest_get(self, url: str, timeout: float = 5.0) -> Response | None:
+    def _rest_get(self, url: str) -> Response | None:
         try:
-            return req.get(url, timeout=timeout)
+            return req.get(url)
         except Exception as e:
             logging.error("REST GET failed: %s %s" % (url, e))
             return None
 
-    def _rest_post(self, url: str, *, json=None, data=None, timeout: float = 5.0) -> Response | None:
+    def _rest_post(self, url: str, *, json=None, data=None) -> Response | None:
         try:
-            return req.post(url, json=json, data=data, timeout=timeout)
+            return req.post(url, json=json, data=data)
         except Exception as e:
             logging.error("REST POST failed: %s %s" % (url, e))
             return None
@@ -308,9 +313,9 @@ class Modhandler(Handler):
         # Tick the LCD on every 10 ms main-loop pass (~100 fps) while the
         # tuner panel is mounted. Strobe's worst-case redraw at STRIPE_W=4
         # is ~4.3 ms of SPI, well inside the 10 ms budget; typical ticks
-        # are sub-millisecond. Fall back to the adaptive LCD divisor
+        # are sub-millisecond. Fall back to the default 200 ms gate
         # otherwise.
-        return 1 if self._tuner_panel is not None else self.lcd.poll_divisor
+        return 1 if self._tuner_panel is not None else 20
 
     def universal_encoder_select(self, direction):
         if self._lcd is not None:
@@ -350,6 +355,8 @@ class Modhandler(Handler):
             logging.info(f"Activating blend mode '{new_snapshot_name}'")
             self.active_blend_mode = self.blend_modes[new_snapshot_name]
             try:
+                # Check for snapshot changes immediately before activating
+                # to ensure we have the latest stop data (user may have just saved a snapshot)
                 self.active_blend_mode.check_for_snapshot_changes()
                 self.active_blend_mode.activate()
                 self.lcd.draw_analog_assignments(self.current.analog_controllers)
@@ -526,6 +533,10 @@ class Modhandler(Handler):
         return read_pedalboard_bundle(self.last_json_monitor.path)
 
     def set_current_pedalboard(self, pedalboard):
+        # Redraw analog assignments to revert any BlendMode icon substitution
+        if self.current and self.current.analog_controllers:
+            self.lcd.draw_analog_assignments(self.current.analog_controllers)
+
         # Cleanup all previous blend modes if active
         for blend_mode in self.blend_modes.values():
             blend_mode.cleanup()
@@ -555,19 +566,20 @@ class Modhandler(Handler):
         # Sync current state of analog controls (expression pedals, etc.)
         self.hardware.sync_analog_controls()
 
-        # Send external MIDI messages for this pedalboard
-        if self.external_midi is not None:
-            try:
-                self.external_midi.send_messages_for_pedalboard()
-            except Exception as e:
-                logging.warning(f"Failed to send external MIDI messages: {e}")
-
         # Initialize the data and draw on LCD
         self.bind_current_pedalboard()
         self.bind_volume_encoder()
         self.load_current_presets()
         self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
         self.lcd.draw_main_panel()
+
+        # Send external MIDI messages for this pedalboard
+        # Config was already updated by hardware.reinit(cfg) above
+        if self.external_midi is not None:
+            try:
+                self.external_midi.send_messages_for_pedalboard()
+            except Exception as e:
+                logging.warning(f"Failed to send external MIDI messages: {e}")
 
         # Prepare blend modes if configured (snapshot-based activation)
         try:
@@ -849,7 +861,7 @@ class Modhandler(Handler):
     def parameter_value_commit(self, param, value):
         param.value = value
 
-        # Audio parameter (volume, EQ, etc.) - no REST update needed
+        # Audio parameter (volume, EQ, etc.) - no WebSocket update needed
         if param.instance_id is None:
             self.audio_parameter_commit(param.symbol, value)
             return
@@ -1170,15 +1182,52 @@ class Modhandler(Handler):
     def toggle_tuner_enable(self, *argv) -> None:
         if self._tuner_engine is None:
             from pistomp.tuner import TunerEngine, TunerPanel, build_source
-            factory = self._tuner_source_factory or (lambda: build_source("jack"))
-            engine = TunerEngine(factory())
+            factory = self._tuner_source_factory or (lambda port: build_source("jack", port))
+            muted = bool(self.settings.get_setting(Token.TUNER_MUTE))
+            input_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
+            engine = TunerEngine(factory(f"system:capture_{input_port}"))
             engine.start()
             self._tuner_engine = engine
-            panel = TunerPanel(engine, on_dismiss=self.toggle_tuner_enable)
+            if muted:
+                self.audiocard.set_output_muted(True)
+                self._tuner_muted = True
+            panel = TunerPanel(
+                engine,
+                on_dismiss=self.toggle_tuner_enable,
+                on_mute_toggle=self._toggle_tuner_mute,
+                on_input_toggle=self._toggle_tuner_input,
+                muted=muted,
+                input_port=input_port,
+            )
             self._tuner_panel = panel
             self.lcd.show_tuner_panel(panel)
         else:
+            if self._tuner_muted:
+                self.audiocard.set_output_muted(False)
+                self._tuner_muted = False
             self.lcd.hide_tuner_panel()
             self._tuner_engine.stop()
             self._tuner_engine = None
             self._tuner_panel = None
+
+    def _toggle_tuner_mute(self) -> None:
+        new_muted = not self._tuner_muted
+        self.audiocard.set_output_muted(new_muted)
+        self._tuner_muted = new_muted
+        self.settings.set_setting(Token.TUNER_MUTE, new_muted)
+        if self._tuner_panel is not None:
+            self._tuner_panel.set_muted(new_muted)
+
+    def _toggle_tuner_input(self) -> None:
+        from pistomp.tuner import TunerEngine, build_source
+        factory = self._tuner_source_factory or (lambda port: build_source("jack", port))
+        current_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
+        new_port = 2 if current_port == 1 else 1
+        engine = TunerEngine(factory(f"system:capture_{new_port}"))
+        engine.start()  # start before stopping old — if this raises, old engine keeps running
+        self.settings.set_setting(Token.TUNER_INPUT, new_port)
+        self._tuner_engine.stop()
+        self._tuner_engine = engine
+        if self._tuner_panel is not None:
+            self._tuner_panel.set_engine(engine)
+            self._tuner_panel.set_input_port(new_port)

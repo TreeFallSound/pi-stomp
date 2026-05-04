@@ -84,6 +84,48 @@ hardware:
     - id: 3
       type: VOLUME
 
+  # external_midi:
+  # External MIDI device synchronization - sends messages when pedalboards load
+  # Can be overridden per-pedalboard by creating <pedalboard>.pedalboard/config.yml
+  #
+  # enabled: <boolean>              Enable/disable external MIDI (default: false)
+  # send_delay_ms: <integer>        Delay between consecutive messages in milliseconds (default: 10)
+  #
+  # ports:                          Define external MIDI devices
+  #   <port_name>:
+  #     auto_detect: [<patterns>]   List of glob patterns to match port names (case-insensitive)
+  #     port_index: <integer>       Manual port index (overrides auto_detect)
+  #
+  # messages:                       MIDI messages to send for each port on pedalboard load
+  #   <port_name>:
+  #     - [0xSS, 0xDD, ...]         List of MIDI messages (hex bytes)
+  #
+  # Example configuration:
+  #
+  # external_midi:
+  #   enabled: true
+  #   send_delay_ms: 10
+  #   ports:
+  #     c4:
+  #       auto_detect: ["*C4*", "*Source Audio*"]
+  #     hx_stomp:
+  #       auto_detect: ["*HX Stomp*"]
+  #   messages:
+  #     c4:
+  #       - [0xB0, 0x66, 0x00]      # CC 102 = 0 (bypass)
+  #     hx_stomp:
+  #       - [0xC0, 0x00]            # Program Change 0
+  #
+  # MIDI message formats:
+  #   Program Change: [0xCn, program]        where n = channel (0-F)
+  #   Control Change: [0xBn, cc, value]      where n = channel (0-F)
+  #
+  # Per-pedalboard override example (<pedalboard>.pedalboard/config.yml):
+  #   hardware:
+  #     external_midi:
+  #       messages:
+  #         c4:
+  #           - [0xC0, 0x05]        # Program Change 5 for this pedalboard only
 
 # Blend Mode Configuration (Pedalboard-specific)
 # This feature interpolates between snapshots based on analog input position.
@@ -96,7 +138,7 @@ hardware:
 # blend_snapshots:
 #   - name: "Clean to Fuzz"           # Required: Snapshot name (created automatically)
 #     input_id: 0                     # Required: Expression pedal (0) or encoder (1, 2)
-#     interpolation: smooth           # Optional: linear (default), smooth, build, drop, snap, bloom
+#     interpolation: ease_out_quad    # Optional: linear (default), hermite, catmull_rom, ease_*
 #     stops:                          # Dict format: position -> snapshot name/index
 #       "0.0": "Clean"                # Snapshot by name (case-insensitive prefix match)
 #       "0.5": "Crunch"               # Or by index (0-based integer)
@@ -109,3 +151,4 @@ hardware:
 # - MIDI-bound parameters automatically excluded from interpolation (prevents conflicts)
 # - Pre-computed diff maps for optimized 10ms critical path
 # - MIDI-level de-duplication prevents redundant WebSocket traffic
+# - Splines (hermite/catmull_rom) use neighbor context for smooth curves
