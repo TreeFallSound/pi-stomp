@@ -355,6 +355,19 @@ class WifiManager():
         except subprocess.TimeoutExpired:
             return b'connection timed out'
 
+    def disconnect(self, name: str) -> Optional[bytes]:
+        """Bring down a saved profile without forgetting it."""
+        try:
+            subprocess.check_output(
+                ['sudo', 'nmcli', 'connection', 'down', name],
+                stderr=subprocess.STDOUT, timeout=20
+            )
+            return None
+        except subprocess.CalledProcessError as exc:
+            return exc.output
+        except subprocess.TimeoutExpired:
+            return b'disconnect timed out'
+
     def connect_saved(self, name: str) -> Optional[bytes]:
         """Activate an existing saved profile."""
         try:

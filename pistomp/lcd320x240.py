@@ -258,12 +258,17 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_selection_menu(items, "Snapshots", auto_dismiss=True, dismiss_option=True)
 
     def draw_selection_menu(self, items, title="", auto_dismiss=False, dismiss_option=False):
-        # items is list of touples: (item_label, callback_method, callback_arg)
-        # The below assumes that the callback takes the menu item label as an argument
+        # items is a list of tuples: (label, callback, arg) or (label, callback, arg, is_active)
+        # or (label, callback, arg, is_active, long_callback) where long_callback is called
+        # instead of callback on a long press.
         def menu_action(event, params):
+            if event == InputEvent.LONG_CLICK and len(params) >= 5 and params[4] is not None:
+                params[4](params[2])
+                return
             callback = params[1]
-            if callback is not None:
-                callback(params[2])
+            if callback is None:
+                return
+            callback(params[2])
 
         m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=200,
                  auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action)

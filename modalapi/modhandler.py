@@ -374,6 +374,7 @@ class Modhandler(Handler):
         self.load_current_presets()
         self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
         self.lcd.draw_main_panel()
+        self.lcd.update_wifi(self.wifi_status)
 
     def bind_current_pedalboard(self):
         # "current" being the pedalboard mod-host says is current
