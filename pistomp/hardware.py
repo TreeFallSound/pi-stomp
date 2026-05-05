@@ -148,6 +148,7 @@ class Hardware(ABC):
             self.__init_footswitches(cfg)
             self.__init_external_midi(cfg)
             self.__init_encoders_and_analog(cfg)
+            self.__init_encoders(cfg)
 
     @abstractmethod
     def init_analog_controls(self):
