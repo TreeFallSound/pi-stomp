@@ -16,6 +16,7 @@
 from uilib.dialog import *
 from uilib.config import *
 
+
 class Menu(Dialog):
     """A pop-up menu panel with lines of text to select
            items   : iterable of tuples whose first element is the text to display

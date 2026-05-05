@@ -221,6 +221,10 @@ class TextWidget(Widget):
             return
         h_margin, v_margin = self._get_margins()
         tw, th = self._get_text_size()
+        # For height, always use at least a full line height so empty-text
+        # widgets don't collapse to near-zero.
+        ascent, descent = self.font_metrics
+        th = max(th, ascent + descent)
         # Add outline to account for PIL rectangles being "inset"
         extra = self.outline
         trace(self, "margins=", h_margin, v_margin, "text_size=", tw, th)
@@ -247,6 +251,8 @@ class TextWidget(Widget):
         self.text_size_valid = False
         self.refresh()
 
+    SPLIT_SEP = '\u001F'  # if present in text exactly once, render as left + right halves
+
     def _draw(self, image, draw, real_box):
         # Draw text
         #
@@ -255,12 +261,29 @@ class TextWidget(Widget):
         # ContainerWidget subclass ? For now assume it fits ...
         #
         h_margin, v_margin = self._get_margins()
-        tw, th = self._get_text_size()
         extra = self.outline
         hroom = real_box.width - h_margin - extra
         vroom = real_box.height - v_margin - extra
         if hroom < 0 or vroom < 0:
             return
+
+        if self.SPLIT_SEP in self.text:
+            parts = self.text.split(self.SPLIT_SEP)
+            if len(parts) != 2:
+                raise ValueError("TextWidget split text must contain exactly one separator")
+            left, right = parts
+            lw, lh = get_text_size(left, self.font, self.font_metrics)
+            rw, rh = get_text_size(right, self.font, self.font_metrics)
+            th = max(lh, rh)
+            if th > vroom:
+                th = vroom
+            y = real_box.y0 + v_margin
+            draw.text((real_box.x0 + h_margin, y), left, fill=self.fgnd_color, font=self.font)
+            draw.text((real_box.x0 + real_box.width - h_margin - extra - rw, y),
+                      right, fill=self.fgnd_color, font=self.font)
+            return
+
+        tw, th = self._get_text_size()
         if tw > hroom:
             tw = hroom
         if th > vroom:

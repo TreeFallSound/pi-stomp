@@ -88,7 +88,6 @@ class Modhandler(Handler):
         self.current: Modhandler.Current | None = None
         self._lcd: Lcd | None = None
         self._hardware: Hardware | None = None
-        self.volume_parameter = None
 
         self.notification: str | None = None
         self.pedalboards_remote: str | None = None
@@ -198,9 +197,7 @@ class Modhandler(Handler):
         self.bind_volume_encoder()
 
     def bind_volume_encoder(self):
-        if self._hardware is None:
-            return
-        for enc in self._hardware.encoders:
+        for enc in self.hardware.encoders:
             if enc.type == Token.VOLUME and isinstance(enc, EncoderController):
                 value = self.audiocard.get_volume_parameter(self.audiocard.MASTER)
                 info = {
@@ -572,6 +569,7 @@ class Modhandler(Handler):
         self.load_current_presets()
         self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
         self.lcd.draw_main_panel()
+        self.lcd.update_wifi(self.wifi_status)
 
         # Send external MIDI messages for this pedalboard
         # Config was already updated by hardware.reinit(cfg) above
@@ -1088,9 +1086,6 @@ class Modhandler(Handler):
             self.wifi_manager.disable_hotspot()
         else:
             self.wifi_manager.enable_hotspot()
-
-    def configure_wifi_credentials(self, ssid, password):
-        return self.wifi_manager.configure_wifi(ssid, password)
 
     def _create_audio_parameter(self, name, symbol, min_val, max_val):
         value = self.audiocard.get_volume_parameter(symbol)

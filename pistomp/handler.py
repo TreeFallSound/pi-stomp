@@ -97,9 +97,6 @@ class Handler:
     def system_toggle_hotspot(self, **kw):
         raise NotImplementedError()
 
-    def configure_wifi_credentials(self, ssid, password):
-        raise NotImplementedError()
-
     def set_tuner_source_factory(self, factory) -> None:
         pass
 

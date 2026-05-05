@@ -17,6 +17,7 @@ import logging
 import os
 import common.token as Token
 import common.parameter as Parameter
+from ui.wifi_menu import WifiMenu
 import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
@@ -104,10 +105,6 @@ class Lcd(abstract_lcd.Lcd):
 
         # widgets
         self.w_wifi = None
-        self.w_wifi_ssid = None
-        self.w_wifi_pw = None
-        self._wifi_networks_menu = None
-        self._wifi_edit_profile = None
         self.w_config_edit = None
         self.w_eq = None
         self.w_power = None
@@ -134,6 +131,8 @@ class Lcd(abstract_lcd.Lcd):
         self._tuner_panel = None
 
         self.pedalboards = {}
+
+        self.wifi_menu = WifiMenu(self)
 
         if not display.has_system_splash:
             self.splash_show(True)
@@ -261,7 +260,7 @@ class Lcd(abstract_lcd.Lcd):
                                   'edit_silver.png'), parent=self.main_panel, action=self.draw_config_editor)
         self.main_panel.add_sel_widget(self.w_config_edit)
         self.w_wifi = ImageWidget(box=Box.xywh(210, 0, 20, 20), image_path=os.path.join(self.imagedir,
-                                  'wifi_gray.png'), parent=self.main_panel, action=self.draw_wifi_menu)
+                                  'wifi_gray.png'), parent=self.main_panel, action=self.wifi_menu.open)
         self.main_panel.add_sel_widget(self.w_wifi)
         if self.w_eq is not None:
             return
@@ -300,80 +299,6 @@ class Lcd(abstract_lcd.Lcd):
                  ("Left & Right",  self.handler.change_bypass_preference, Token.LEFT_RIGHT,
                   pref == Token.LEFT_RIGHT or pref == None)]
         self.draw_selection_menu(items, "Bypass Preference", auto_dismiss=True)
-
-    def toggle_hotspot(self, arg1):
-        self.pstack.pop_panel(None)
-        self.draw_info_message("connecting...")
-        self.main_panel.refresh()
-        self.handler.system_toggle_hotspot()
-        self.draw_info_message("")
-        self.main_panel.refresh()
-
-    def configure_wifi(self, event, button):
-        ssid = self.w_wifi_ssid.text
-        psk = self.w_wifi_pw.text
-        if self._wifi_edit_profile is None:
-            result = self.handler.wifi_manager.add_connection(ssid, psk)
-        else:
-            result = self.handler.wifi_manager.configure_wifi(self._wifi_edit_profile, ssid, psk)
-
-        if result is not None:
-            d = MessageDialog(self.pstack, result.decode("utf-8"), title="Error")
-            self.pstack.push_panel(d)
-        else:
-            self.pstack.pop_panel(button.parent)
-            if self._wifi_edit_profile is None:
-                self.pstack.pop_panel(self._wifi_networks_menu)
-                self.draw_wifi_menu(None, None)
-
-    def _draw_wifi_dialog(self, conn):
-        # conn is None for "Add Network", or a dict {name, ssid} for "Edit"
-        if conn is None:
-            self._wifi_edit_profile = None
-            ssid = ''
-            psk = ''
-        else:
-            self._wifi_edit_profile = conn['name']
-            ssid = conn['ssid']
-            psk = self.handler.wifi_manager.get_psk_for(conn['name']) or ''
-
-        d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
-
-        self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 190, 0), text=ssid, prompt='SSID :', parent=d,
-                       outline=1, sel_width=3, outline_radius=5,
-                       align=WidgetAlign.NONE, name='ssid_field',
-                       edit_message='WiFi SSID')
-        d.add_sel_widget(self.w_wifi_ssid)
-        self.w_wifi_pw = TextWidget(box=Box.xywh(0, 30, 169, 0), text=psk, prompt='Passwd :', parent=d,
-                       outline=1, sel_width=3, outline_radius=5,
-                       align=WidgetAlign.NONE, name='pw_field',
-                       edit_message='Password')
-        d.add_sel_widget(self.w_wifi_pw)
-
-        b = TextWidget(box=Box.xywh(0, 90, 0, 0), text='Cancel', parent=d, outline=1, sel_width=3, outline_radius=5,
-                       action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn')
-        d.add_sel_widget(b)
-        b = TextWidget(box=Box.xywh(80, 90, 0, 0), text='Ok', parent=d, outline=1, sel_width=3, outline_radius=5,
-                       action=self.configure_wifi, align=WidgetAlign.NONE, name='ok_btn')
-        d.add_sel_widget(b)
-
-        self.pstack.push_panel(d)
-        d.refresh()
-
-    def _draw_wifi_network_menu(self, conn):
-        items = [("Edit", self._draw_wifi_dialog, conn),
-                 ("Forget", self._forget_wifi_network, conn)]
-        self.draw_selection_menu(items, conn['name'], dismiss_option=True)
-
-    def _forget_wifi_network(self, conn):
-        result = self.handler.wifi_manager.delete_connection(conn['name'])
-        if result is not None:
-            d = MessageDialog(self.pstack, result.decode("utf-8"), title="Error")
-            self.pstack.push_panel(d)
-            return
-        self.pstack.pop_panel(None)  # pop network submenu
-        self.pstack.pop_panel(self._wifi_networks_menu)  # pop stale list
-        self.draw_wifi_menu(None, None)  # redraw fresh
 
     #
     # Title (Pedalboard and Preset)
@@ -462,10 +387,15 @@ class Lcd(abstract_lcd.Lcd):
     def draw_selection_menu(self, items, title="", auto_dismiss=False, dismiss_option=False,
                             text_halign=TextHAlign.CENTRE, on_close=None):
         # items is list of tuples: (item_label, callback_method, callback_arg[, selected[, fgnd_color]])
+        # FIXME: fgnd_color and longpress_callback_method are clashing currently
         def menu_action(event, params):
+            if event == InputEvent.LONG_CLICK and len(params) >= 5 and params[4] is not None:
+                params[4](params[2])
+                return
             callback = params[1]
-            if callback is not None:
-                callback(params[2])
+            if callback is None:
+                return
+            callback(params[2])
 
         m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=200,
                  auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action,
@@ -756,19 +686,6 @@ class Lcd(abstract_lcd.Lcd):
     def draw_config_editor(self, event, widget):
         if event == InputEvent.CLICK:
             PedalboardConfigEditor(self.handler, self.handler.hardware, self).open()
-
-    def draw_wifi_menu(self, event, widget):
-        connections = self.handler.wifi_manager.list_connections()
-        active = util.DICT_GET(self.handler.wifi_status, 'connection')
-        hotspot_active = util.DICT_GET(self.handler.wifi_status, 'hotspot_active')
-        label = "Switch to Wifi" if hotspot_active else "Switch to Hotspot"
-        items = []
-        for conn in connections:
-            is_active = conn['name'] == active
-            items.append((conn['name'], self._draw_wifi_network_menu, conn, is_active))
-        items.append(("Add Network...", self._draw_wifi_dialog, None))
-        items.append((label, self.toggle_hotspot, None))
-        self._wifi_networks_menu = self.draw_selection_menu(items, "WiFi Networks", dismiss_option=True)
 
     def draw_audio_menu(self, event, widget):
         items = [("Output Volume", self.handler.system_menu_headphone_volume, None),
