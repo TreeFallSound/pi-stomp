@@ -51,12 +51,12 @@ class _WifiHost(Protocol):
 SIGNAL_FILLED = '\u25ae'   # ▮
 SIGNAL_EMPTY = '\u25af'    # ▯
 ACTIVE_GLYPH = '\u2714'    # ✔
+SAVED_GLYPH  = '\u2022'    # •
 HOTSPOT_ON = '\u25cf'      # ●
 HOTSPOT_OFF = '\u25cb'     # ○
 SEP = '\u00b7'             # ·
 SPLIT = TextWidget.SPLIT_SEP  # left/right alignment marker for menu rows
 
-IN_RANGE_NEARBY_CAP = 5
 OUT_OF_RANGE_CAP = 2
 
 
@@ -155,9 +155,9 @@ class WifiMenu:
             self.lcd.draw_info_message("", refresh=True)
         scanned_ssids = {n['ssid'] for n in scanned}
 
-        rows, extras = self._build_rows(scanned, saved_by_ssid, scanned_ssids, active_name)
+        rows, extras, nearby = self._build_rows(scanned, saved_by_ssid, scanned_ssids, active_name)
         title = self._title(wifi_status, active_name, scanned)
-        items = self._build_items(rows, extras, hotspot_active)
+        items = self._build_items(rows, extras, nearby, hotspot_active)
         self._root_menu = self.lcd.draw_selection_menu(items, title, dismiss_option=True)
 
     def toggle_hotspot(self, _: object = None) -> None:
@@ -172,12 +172,13 @@ class WifiMenu:
                     scanned: list[ScannedNetwork],
                     saved_by_ssid: dict[str, list[SavedConnection]],
                     scanned_ssids: set[str],
-                    active_name: Optional[str]) -> tuple[list[Row], list[Row]]:
-        """Returns (visible_rows, extras_for_more_submenu)."""
+                    active_name: Optional[str]) -> tuple[list[Row], list[Row], list[Row]]:
+        """Returns (visible_rows, extras_for_more_submenu, nearby_unsaved)."""
         rows: list[Row] = []
+        nearby: list[Row] = []
 
-        # In-range networks: scan results, with active connection promoted to top.
-        in_range: list[Row] = []
+        # Split in-range scan results into saved (shown in main list) and
+        # unsaved (shown in "Other networks nearby..." submenu).
         for net in scanned:
             profiles = saved_by_ssid.get(net['ssid'], [])
             saved_profile = self._pick_profile(profiles, active_name)
@@ -190,10 +191,12 @@ class WifiMenu:
                 'active': saved_profile is not None and saved_profile['name'] == active_name,
             }
             self._maybe_disambiguate(row, profiles)
-            in_range.append(row)
-        in_range.sort(key=lambda r: (not r['active'], -(r['signal'] or 0)))
-        cap = IN_RANGE_NEARBY_CAP + (1 if any(r['active'] for r in in_range) else 0)
-        rows.extend(in_range[:cap])
+            if saved_profile is not None:
+                rows.append(row)
+            else:
+                nearby.append(row)
+        rows.sort(key=lambda r: (not r['active'], -(r['signal'] or 0)))
+        nearby.sort(key=lambda r: -(r['signal'] or 0))
 
         # Saved profiles not visible in scan, sorted by recency.
         out_of_range: list[Row] = []
@@ -219,13 +222,15 @@ class WifiMenu:
             extras = out_of_range[OUT_OF_RANGE_CAP:]
         else:
             rows.extend(out_of_range)
-        return rows, extras
+        return rows, extras, nearby
 
-    def _build_items(self, rows: list[Row], extras: list[Row],
+    def _build_items(self, rows: list[Row], extras: list[Row], nearby: list[Row],
                      hotspot_active: bool) -> list[MenuItem]:
         items: list[MenuItem] = [(self._row_label(r), self._on_network_tap, r, None, self._on_network_long_tap) for r in rows]
         if extras:
             items.append(("More saved...", self._open_more_saved, extras))
+        if nearby:
+            items.append(("Nearby networks...", self._open_nearby_menu, nearby))
         items.append(("Join other network...", self._open_join_dialog, None))
         items.append((
             "Hotspot Mode" + SPLIT + (HOTSPOT_ON if hotspot_active else HOTSPOT_OFF),
@@ -247,16 +252,15 @@ class WifiMenu:
 
     def _row_label(self, row: Row) -> str:
         ssid = row['ssid']
-        active_marker = (ACTIVE_GLYPH + ' ') if row.get('active') else ''
-        disambiguator = row.get('disambiguator')
-        left = active_marker + ssid + (('  ' + disambiguator) if disambiguator else '')
-        signal = row.get('signal')
-        if signal is not None:
-            right = signal_bars(signal)
+        if row.get('active'):
+            prefix = ACTIVE_GLYPH + ' '
         elif row.get('saved'):
-            right = '(saved)'
+            prefix = SAVED_GLYPH + ' '
         else:
-            right = ''
+            prefix = ''
+        disambiguator = row.get('disambiguator')
+        left = prefix + ssid + (('  ' + disambiguator) if disambiguator else '')
+        right = signal_bars(row['signal']) if row.get('signal') is not None else ''
         return left + SPLIT + right
 
     @staticmethod
@@ -316,6 +320,10 @@ class WifiMenu:
         items.append(("Replace password", self._open_replace_psk_dialog, row))
         items.append(("Forget", self._forget, row))
         self.lcd.draw_selection_menu(items, row['ssid'], dismiss_option=True)
+
+    def _open_nearby_menu(self, nearby: list[Row]) -> None:
+        items: list[MenuItem] = [(self._row_label(r), self._on_network_tap, r) for r in nearby]
+        self.lcd.draw_selection_menu(items, "Nearby Networks", dismiss_option=True)
 
     def _open_more_saved(self, extras: list[Row]) -> None:
         items: list[MenuItem] = [(self._row_label(r), self._on_network_tap, r, None, self._on_network_long_tap) for r in extras]
