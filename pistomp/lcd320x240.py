@@ -17,8 +17,10 @@ import board
 import digitalio
 import logging
 import os
+import time
 import common.token as Token
 import modalapi.parameter as Parameter
+from modalapi.wifi import parse_nmcli_error
 import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
@@ -91,10 +93,7 @@ class Lcd(abstract_lcd.Lcd):
 
         # widgets
         self.w_wifi = None
-        self.w_wifi_ssid = None
-        self.w_wifi_pw = None
         self._wifi_networks_menu = None
-        self._wifi_edit_profile = None
         self.w_eq = None
         self.w_power = None
         self.w_wrench = None
@@ -204,79 +203,280 @@ class Lcd(abstract_lcd.Lcd):
                   pref == Token.LEFT_RIGHT or pref == None)]
         self.draw_selection_menu(items, "Bypass Preference", auto_dismiss=True)
 
+    # ----- WiFi menu -----
+
+    _SIGNAL_FILLED = '\u25ae'  # ▮
+    _SIGNAL_EMPTY = '\u25af'   # ▯
+    _ACTIVE_GLYPH = '\u2714'   # ✔
+    _IN_RANGE_NEARBY_CAP = 5
+    _OUT_OF_RANGE_CAP = 2
+
+    @staticmethod
+    def _signal_bars(signal):
+        levels = max(1, min(4, (signal + 12) // 25))
+        return Lcd._SIGNAL_FILLED * levels + Lcd._SIGNAL_EMPTY * (4 - levels)
+
+    @staticmethod
+    def _format_age(ts):
+        if not ts:
+            return None
+        age = max(0, int(time.time()) - int(ts))
+        if age < 60:
+            return "now"
+        if age < 3600:
+            return "%dm ago" % (age // 60)
+        if age < 86400:
+            return "%dh ago" % (age // 3600)
+        return "%dd ago" % (age // 86400)
+
+    def _network_label(self, row):
+        ssid = row['ssid']
+        active_marker = (self._ACTIVE_GLYPH + ' ') if row.get('active') else ''
+        if row.get('signal') is not None:
+            suffix = '  ' + self._signal_bars(row['signal'])
+        elif row.get('saved'):
+            suffix = '  (saved)'
+        else:
+            suffix = ''
+        if row.get('disambiguator'):
+            suffix += '  ' + row['disambiguator']
+        return active_marker + ssid + suffix
+
     def toggle_hotspot(self, arg1):
         self.pstack.pop_panel(None)
-        self.draw_info_message("connecting...")
-        self.main_panel.refresh()
+        self.draw_info_message("connecting...", refresh=True)
         self.handler.system_toggle_hotspot()
-        self.draw_info_message("")
-        self.main_panel.refresh()
+        self.draw_info_message("", refresh=True)
 
-    def configure_wifi(self, event, button):
-        ssid = self.w_wifi_ssid.text
-        psk = self.w_wifi_pw.text
-        if self._wifi_edit_profile is None:
-            result = self.handler.wifi_manager.add_connection(ssid, psk)
+    def draw_wifi_menu(self, event, widget):
+        wifi_status = self.handler.wifi_status or {}
+        supported = util.DICT_GET(wifi_status, 'wifi_supported')
+        hotspot_active = util.DICT_GET(wifi_status, 'hotspot_active')
+        active_name = util.DICT_GET(wifi_status, 'connection')
+
+        saved = self.handler.wifi_manager.list_connections()
+        saved_by_ssid = {}
+        for c in saved:
+            saved_by_ssid.setdefault(c['ssid'], []).append(c)
+
+        scanned = []
+        if supported and not hotspot_active:
+            self.draw_info_message("scanning...", refresh=True)
+            scanned = self.handler.wifi_manager.scan_networks()
+            self.draw_info_message("", refresh=True)
+        scanned_ssids = {n['ssid'] for n in scanned}
+
+        title = self._wifi_menu_title(wifi_status, active_name, saved_by_ssid, scanned)
+
+        rows = []
+        # In-range networks first (scanned), promoting active to top.
+        in_range = []
+        for net in scanned:
+            profiles = saved_by_ssid.get(net['ssid'], [])
+            saved_profile = self._pick_profile(profiles, active_name)
+            row = {
+                'ssid': net['ssid'],
+                'signal': net['signal'],
+                'security': net['security'],
+                'saved': bool(saved_profile),
+                'profile': saved_profile,
+                'active': bool(saved_profile) and saved_profile['name'] == active_name,
+            }
+            self._maybe_disambiguate(row, profiles)
+            in_range.append(row)
+        in_range.sort(key=lambda r: (not r['active'], -r['signal']))
+        in_range = in_range[:self._IN_RANGE_NEARBY_CAP + (1 if any(r['active'] for r in in_range) else 0)]
+        rows.extend(in_range)
+
+        # Saved profiles not visible in scan.
+        out_of_range = []
+        for ssid, profiles in saved_by_ssid.items():
+            if ssid in scanned_ssids:
+                continue
+            for profile in profiles:
+                row = {
+                    'ssid': ssid,
+                    'signal': None,
+                    'security': None,
+                    'saved': True,
+                    'profile': profile,
+                    'active': profile['name'] == active_name,
+                }
+                self._maybe_disambiguate(row, profiles)
+                out_of_range.append(row)
+        out_of_range.sort(key=lambda r: -(r['profile']['timestamp'] or 0))
+        if len(out_of_range) > self._OUT_OF_RANGE_CAP:
+            shown = out_of_range[:self._OUT_OF_RANGE_CAP]
+            extras = out_of_range[self._OUT_OF_RANGE_CAP:]
         else:
-            result = self.handler.wifi_manager.configure_wifi(self._wifi_edit_profile, ssid, psk)
+            shown = out_of_range
+            extras = []
+        rows.extend(shown)
 
-        if result is not None:
-            d = MessageDialog(self.pstack, result.decode("utf-8"), title="Error")
-            self.pstack.push_panel(d)
+        items = [(self._network_label(row), self._on_network_tap, row) for row in rows]
+        if extras:
+            items.append(("More saved...", self._draw_more_saved, extras))
+        items.append(("Join other network...", self._draw_join_dialog, None))
+        hotspot_label = ("Hotspot Mode  \u25cf" if hotspot_active else "Hotspot Mode  \u25cb")
+        items.append((hotspot_label, self.toggle_hotspot, None))
+
+        self._wifi_networks_menu = self.draw_selection_menu(items, title, dismiss_option=True)
+
+    def _wifi_menu_title(self, wifi_status, active_name, saved_by_ssid, scanned):
+        if util.DICT_GET(wifi_status, 'hotspot_active'):
+            return "WiFi \u00b7 Hotspot"
+        if active_name:
+            ssid = util.DICT_GET(wifi_status, 'ssid') or active_name
+            for net in scanned:
+                if net['in_use'] or net['ssid'] == ssid:
+                    return "WiFi \u00b7 %s %s" % (ssid, self._signal_bars(net['signal']))
+            return "WiFi \u00b7 %s" % ssid
+        return "WiFi \u00b7 Disconnected"
+
+    def _pick_profile(self, profiles, active_name):
+        if not profiles:
+            return None
+        for p in profiles:
+            if p['name'] == active_name:
+                return p
+        return max(profiles, key=lambda p: p['timestamp'] or 0)
+
+    def _maybe_disambiguate(self, row, profiles):
+        if row.get('saved') and len(profiles) > 1 and row.get('profile'):
+            age = self._format_age(row['profile'].get('timestamp'))
+            if age:
+                row['disambiguator'] = "\u00b7 " + age
+
+    def _on_network_tap(self, row):
+        if row.get('saved'):
+            self._draw_saved_network_menu(row)
+        elif self._is_open_network(row.get('security')):
+            self._connect_with_feedback(
+                lambda: self.handler.wifi_manager.connect_scanned(row['ssid']),
+                row['ssid'])
         else:
-            self.pstack.pop_panel(button.parent)
-            if self._wifi_edit_profile is None:
-                self.pstack.pop_panel(self._wifi_networks_menu)
-                self.draw_wifi_menu(None, None)
+            self._prompt_password(row['ssid'],
+                lambda psk: self._connect_with_feedback(
+                    lambda: self.handler.wifi_manager.connect_scanned(row['ssid'], psk),
+                    row['ssid']))
 
-    def _draw_wifi_dialog(self, conn):
-        # conn is None for "Add Network", or a dict {name, ssid} for "Edit"
-        if conn is None:
-            self._wifi_edit_profile = None
-            ssid = ''
-            psk = ''
-        else:
-            self._wifi_edit_profile = conn['name']
-            ssid = conn['ssid']
-            psk = self.handler.wifi_manager.get_psk_for(conn['name']) or ''
+    @staticmethod
+    def _is_open_network(security):
+        if not security or security == '--':
+            return True
+        return False
 
-        d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
+    def _draw_saved_network_menu(self, row):
+        profile = row['profile']
+        items = []
+        if row.get('signal') is not None and not row.get('active'):
+            items.append(("Connect", self._connect_saved, row))
+        items.append(("Replace password", self._draw_replace_psk_dialog, row))
+        items.append(("Forget", self._forget_wifi_network, row))
+        self.draw_selection_menu(items, row['ssid'], dismiss_option=True)
 
-        self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 190, 0), text=ssid, prompt='SSID :', parent=d,
-                       outline=1, sel_width=3, outline_radius=5,
-                       align=WidgetAlign.NONE, name='ssid_field',
-                       edit_message='WiFi SSID')
-        d.add_sel_widget(self.w_wifi_ssid)
-        self.w_wifi_pw = TextWidget(box=Box.xywh(0, 30, 169, 0), text=psk, prompt='Passwd :', parent=d,
-                       outline=1, sel_width=3, outline_radius=5,
-                       align=WidgetAlign.NONE, name='pw_field',
-                       edit_message='Password')
-        d.add_sel_widget(self.w_wifi_pw)
+    def _draw_more_saved(self, extras):
+        items = [(self._network_label(row), self._on_network_tap, row) for row in extras]
+        self.draw_selection_menu(items, "Saved Networks", dismiss_option=True)
 
-        b = TextWidget(box=Box.xywh(0, 90, 0, 0), text='Cancel', parent=d, outline=1, sel_width=3, outline_radius=5,
-                       action=lambda x, y: self.pstack.pop_panel(d), align=WidgetAlign.NONE, name='cancel_btn')
-        d.add_sel_widget(b)
-        b = TextWidget(box=Box.xywh(80, 90, 0, 0), text='Ok', parent=d, outline=1, sel_width=3, outline_radius=5,
-                       action=self.configure_wifi, align=WidgetAlign.NONE, name='ok_btn')
-        d.add_sel_widget(b)
+    def _connect_saved(self, row):
+        profile = row['profile']
+        self._connect_with_feedback(
+            lambda: self.handler.wifi_manager.connect_saved(profile['name']),
+            row['ssid'])
 
+    def _connect_with_feedback(self, connect_fn, ssid):
+        self.pstack.pop_panel(None)
+        self.draw_info_message("connecting to %s..." % ssid, refresh=True)
+        err = connect_fn()
+        self.draw_info_message("", refresh=True)
+        if err is None:
+            self.draw_info_message("connected: %s" % ssid, refresh=True)
+            return
+        d = MessageDialog(self.pstack, parse_nmcli_error(err), title="Couldn't connect")
+        self.pstack.push_panel(d)
+
+    def _prompt_password(self, ssid, on_submit):
+        d = Dialog(width=240, height=110, auto_destroy=True, title='Password for %s' % ssid)
+        pw = TextWidget(box=Box.xywh(0, 0, 200, 0), text='', prompt='Passwd :', parent=d,
+                        outline=1, sel_width=3, outline_radius=5,
+                        align=WidgetAlign.NONE, name='pw_field',
+                        edit_message='Password')
+        d.add_sel_widget(pw)
+        cancel = TextWidget(box=Box.xywh(0, 60, 0, 0), text='Cancel', parent=d,
+                            outline=1, sel_width=3, outline_radius=5,
+                            action=lambda x, y: self.pstack.pop_panel(d),
+                            align=WidgetAlign.NONE, name='cancel_btn')
+        d.add_sel_widget(cancel)
+
+        def submit(event, button):
+            psk = pw.text
+            if not psk:
+                return
+            self.pstack.pop_panel(d)
+            on_submit(psk)
+
+        ok = TextWidget(box=Box.xywh(80, 60, 0, 0), text='Ok', parent=d,
+                        outline=1, sel_width=3, outline_radius=5,
+                        action=submit, align=WidgetAlign.NONE, name='ok_btn')
+        d.add_sel_widget(ok)
         self.pstack.push_panel(d)
         d.refresh()
 
-    def _draw_wifi_network_menu(self, conn):
-        items = [("Edit", self._draw_wifi_dialog, conn),
-                 ("Forget", self._forget_wifi_network, conn)]
-        self.draw_selection_menu(items, conn['name'], dismiss_option=True)
+    def _draw_replace_psk_dialog(self, row):
+        profile = row['profile']
+        self._prompt_password(row['ssid'],
+            lambda psk: self._connect_with_feedback(
+                lambda: self.handler.wifi_manager.replace_psk(profile['name'], psk),
+                row['ssid']))
 
-    def _forget_wifi_network(self, conn):
-        result = self.handler.wifi_manager.delete_connection(conn['name'])
+    def _draw_join_dialog(self, _):
+        d = Dialog(width=240, height=120, auto_destroy=True, title='Join other network')
+        ssid_widget = TextWidget(box=Box.xywh(0, 0, 190, 0), text='', prompt='SSID :', parent=d,
+                                 outline=1, sel_width=3, outline_radius=5,
+                                 align=WidgetAlign.NONE, name='ssid_field',
+                                 edit_message='WiFi SSID')
+        d.add_sel_widget(ssid_widget)
+        pw_widget = TextWidget(box=Box.xywh(0, 30, 169, 0), text='', prompt='Passwd :', parent=d,
+                               outline=1, sel_width=3, outline_radius=5,
+                               align=WidgetAlign.NONE, name='pw_field',
+                               edit_message='Password')
+        d.add_sel_widget(pw_widget)
+
+        cancel = TextWidget(box=Box.xywh(0, 90, 0, 0), text='Cancel', parent=d,
+                            outline=1, sel_width=3, outline_radius=5,
+                            action=lambda x, y: self.pstack.pop_panel(d),
+                            align=WidgetAlign.NONE, name='cancel_btn')
+        d.add_sel_widget(cancel)
+
+        def submit(event, button):
+            ssid = ssid_widget.text
+            psk = pw_widget.text
+            if not ssid:
+                return
+            self.pstack.pop_panel(d)
+            self._connect_with_feedback(
+                lambda: self.handler.wifi_manager.connect_scanned(ssid, psk or None),
+                ssid)
+
+        ok = TextWidget(box=Box.xywh(80, 90, 0, 0), text='Ok', parent=d,
+                        outline=1, sel_width=3, outline_radius=5,
+                        action=submit, align=WidgetAlign.NONE, name='ok_btn')
+        d.add_sel_widget(ok)
+        self.pstack.push_panel(d)
+        d.refresh()
+
+    def _forget_wifi_network(self, row):
+        profile = row['profile']
+        result = self.handler.wifi_manager.delete_connection(profile['name'])
         if result is not None:
-            d = MessageDialog(self.pstack, result.decode("utf-8"), title="Error")
+            d = MessageDialog(self.pstack, parse_nmcli_error(result), title="Error")
             self.pstack.push_panel(d)
             return
-        self.pstack.pop_panel(None)  # pop network submenu
-        self.pstack.pop_panel(self._wifi_networks_menu)  # pop stale list
-        self.draw_wifi_menu(None, None)  # redraw fresh
+        self.pstack.pop_panel(None)  # pop submenu
+        if self._wifi_networks_menu is not None:
+            self.pstack.pop_panel(self._wifi_networks_menu)
+        self.draw_wifi_menu(None, None)
 
     #
     # Title (Pedalboard and Preset)
