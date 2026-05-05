@@ -206,45 +206,6 @@ class Lcd(abstract_lcd.Lcd):
             self.pstack.pop_panel(self._tuner_panel)
             self._tuner_panel = None
 
-        if self.pstack.current == self.main_panel:
-            # Update control progress bars (analog controls and encoders)
-            for icon in self.w_controls:
-                if icon.object is None:
-                    continue
-
-                midi_value = None
-                if isinstance(icon.object, AnalogMidiControl):
-                    midi_value = as_midi_value(icon.object.last_read)
-                elif isinstance(icon.object, EncoderController):
-                    midi_value = icon.object.midi_value
-                elif isinstance(icon.object, BlendMode):
-                    input_ctrl = icon.object.input_controller.controlled_input
-                    if input_ctrl:
-                        if isinstance(input_ctrl, EncoderController):
-                            position = input_ctrl.midi_value / 127.0
-                        else:
-                            position = input_ctrl.last_read / 1023.0
-                        midi_value = int(position * 127)
-
-                        stops = icon.object.input_controller.stops
-                        closest_stop = min(stops, key=lambda s: abs(s.position - position))
-                        snapshot_name = self.handler.current.presets.get(closest_stop.snapshot_index, "")
-                        if snapshot_name and snapshot_name != icon.text:
-                            icon.set_text(snapshot_name)
-                    else:
-                        logging.warning("BlendMode icon has no associated input controller")
-
-                if midi_value is not None:
-                    progress = midi_value / 127.0
-                    if icon.progress != progress:
-                        icon.set_progress(progress)
-
-            # Tick text widgets (scrolling animation if needed)
-            if self.w_preset:
-                self.w_preset.tick()
-            if self.w_pedalboard:
-                self.w_pedalboard.tick()
-
     #
     # Toolbar
     #
