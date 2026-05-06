@@ -16,7 +16,7 @@
 import time
 from typing import TYPE_CHECKING, Callable, NotRequired, Optional, Protocol, TypedDict, cast
 
-from PIL import ImageFont
+from PIL import Image as _Image, ImageDraw as _ImageDraw, ImageFont
 
 import common.util as util
 from modalapi.wifi import (
@@ -28,10 +28,13 @@ from modalapi.wifi import (
 )
 from uilib import (
     Box,
+    Config,
     Dialog,
+    FontWithGlyphs,
     InputEvent,
     LetterSelector,
     MessageDialog,
+    PillGlyph,
     RoundedPanel,
     TextWidget,
     WidgetAlign,
@@ -57,7 +60,7 @@ SIGNAL_FILLED = '\u25ae'   # ▮
 SIGNAL_EMPTY = '\u25af'    # ▯
 ACTIVE_GLYPH = '\u2714'    # ✔
 SAVED_GLYPH  = '\u2022'    # •
-PUBLIC_GLYPH = '\u24de'    # Ⓟ — open/public network badge
+PUBLIC_GLYPH = '\ue001'    # PUA sentinel — rendered as pill badge by FontWithGlyphs
 HOTSPOT_ON = '\u25cf'      # ●
 HOTSPOT_OFF = '\u25cb'     # ○
 SEP = '\u00b7'             # ·
@@ -149,6 +152,12 @@ def format_age(ts: Optional[int]) -> Optional[str]:
 
 def is_open_network(security: Optional[str]) -> bool:
     return not security or security == '--'
+
+
+def _make_badge_font() -> FontWithGlyphs:
+    base = Config().get_font('default')
+    assert base is not None, "default font not configured"
+    return FontWithGlyphs(base, {PUBLIC_GLYPH: PillGlyph('P')})
 
 
 class WifiMenu:
@@ -301,13 +310,9 @@ class WifiMenu:
         else:
             prefix = ''
         disambiguator = row.get('disambiguator')
-        left = prefix + ssid + (('  ' + disambiguator) if disambiguator else '')
-        right_parts = []
-        if not row.get('saved') and is_open_network(row.get('security')):
-            right_parts.append(PUBLIC_GLYPH)
-        if row.get('signal') is not None:
-            right_parts.append(signal_bars(row['signal']))
-        right = ' '.join(right_parts)
+        badge = (' ' + PUBLIC_GLYPH) if (not row.get('saved') and is_open_network(row.get('security'))) else ''
+        left = prefix + ssid + (('  ' + disambiguator) if disambiguator else '') + badge
+        right = signal_bars(row['signal']) if row.get('signal') is not None else ''
         return left + SPLIT + right
 
     @staticmethod
@@ -355,7 +360,7 @@ class WifiMenu:
         """
         ssid = row['ssid']
 
-        def attempt(psk: Optional[str]) -> None:
+        def attempt(psk: Optional[str], is_retry: bool = False) -> None:
             self._mark_disconnected()
             self.lcd.draw_info_message("connecting to %s..." % ssid, refresh=True)
             err = self._wifi_manager.connect_scanned(ssid, psk)
@@ -364,8 +369,8 @@ class WifiMenu:
                 self._pstack.pop_panel(None)   # dismiss nearby submenu on success
                 return
             reason = parse_nmcli_error(err)
-            if psk is not None and ('auth failed' in reason or 'wrong password' in reason):
-                self._open_password_prompt(ssid, attempt)   # re-prompt; stay in nearby
+            if psk is not None and not is_retry and ('auth failed' in reason or 'wrong password' in reason):
+                self._open_password_prompt(ssid, lambda psk: attempt(psk, is_retry=True))
             else:
                 self._pstack.push_panel(
                     MessageDialog(self._pstack, reason, title="Couldn't connect"))
@@ -390,7 +395,8 @@ class WifiMenu:
 
     def _open_nearby_menu(self, nearby: list[Row]) -> None:
         items: list[MenuItem] = [(self._row_label(r), self._on_network_tap, r) for r in nearby]
-        self.lcd.draw_selection_menu(items, "Nearby Networks", dismiss_option=True)
+        self.lcd.draw_selection_menu(items, "Nearby Networks", dismiss_option=True,
+                                     font=_make_badge_font())
 
     def _connect_saved(self, row: Row) -> None:
         profile = row['profile']
