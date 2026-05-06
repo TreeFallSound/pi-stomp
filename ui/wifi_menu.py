@@ -163,14 +163,16 @@ def _make_badge_font() -> FontWithGlyphs:
 class WifiMenu:
     """The wifi panel: scan, join, edit and forget networks; toggle hotspot.
 
-    Owned by Lcd, which exposes the panel stack and a few shared affordances
-    (`draw_selection_menu`, `draw_info_message`). The menu is opened via `open()`,
+    Owned by Lcd, which exposes the panel stack and `draw_selection_menu`.
+    The menu is opened via `open()`,
     typically wired to the toolbar wifi icon.
     """
 
     def __init__(self, lcd: 'Lcd') -> None:
         self.lcd: 'Lcd' = lcd
         self._root_menu: Optional['Menu'] = None
+        self._cached_scanned: list[ScannedNetwork] = []
+        self._cached_saved_by_ssid: dict[str, list[SavedConnection]] = {}
 
     @property
     def _host(self) -> _WifiHost:
@@ -193,15 +195,13 @@ class WifiMenu:
     # ----- entry points -----
 
     def open(self, event: object = None, widget: object = None) -> None:
-        wifi_status = self._wifi_status
         # If wifi_supported is missing the host hasn't seen a poll yet — assume
         # supported so we don't render a stale "Disconnected" surface during
         # the cold-start window.
-        supported = util.DICT_GET(wifi_status, 'wifi_supported')
+        supported = util.DICT_GET(self._wifi_status, 'wifi_supported')
         if supported is None:
             supported = True
-        hotspot_active = bool(util.DICT_GET(wifi_status, 'hotspot_active'))
-        active_name = util.DICT_GET(wifi_status, 'connection')
+        hotspot_active = bool(util.DICT_GET(self._wifi_status, 'hotspot_active'))
 
         saved_by_ssid: dict[str, list[SavedConnection]] = {}
         for c in self._wifi_manager.list_connections():
@@ -209,21 +209,42 @@ class WifiMenu:
 
         scanned: list[ScannedNetwork] = []
         if supported and not hotspot_active:
-            self.lcd.draw_info_message("scanning...", refresh=True)
             scanned = self._wifi_manager.scan_networks()
-            self.lcd.draw_info_message("", refresh=True)
-        scanned_ssids = {n['ssid'] for n in scanned}
 
+        self._cached_scanned = scanned
+        self._cached_saved_by_ssid = saved_by_ssid
+        self._render_root_menu()
+
+    def _render_root_menu(self) -> None:
+        wifi_status = self._wifi_status
+        hotspot_active = bool(util.DICT_GET(wifi_status, 'hotspot_active'))
+        active_name = util.DICT_GET(wifi_status, 'connection')
+        scanned = self._cached_scanned
+        saved_by_ssid = self._cached_saved_by_ssid
+        scanned_ssids = {n['ssid'] for n in scanned}
         rows, nearby = self._build_rows(scanned, saved_by_ssid, scanned_ssids, active_name)
         title = self._title(wifi_status, active_name, scanned)
         items = self._build_items(rows, nearby, hotspot_active)
         self._root_menu = self.lcd.draw_selection_menu(items, title, dismiss_option=True)
 
+    def notify_status_change(self) -> None:
+        """Called by the handler after wifi_status is updated.
+
+        Rebuilds the root menu in place so hotspot/active indicators stay
+        current. No-op if the wifi menu isn't the top panel (don't disrupt
+        password prompts, submenus, or unrelated UI).
+        """
+        if self._root_menu is None or self._pstack.current is not self._root_menu:
+            return
+        old = self._root_menu
+        self._root_menu = None
+        self._pstack.pop_panel(old)
+        self._render_root_menu()
+
     def toggle_hotspot(self, _: object = None) -> None:
         self._pstack.pop_panel(None)
-        self.lcd.draw_info_message("connecting...", refresh=True)
+        self._mark_disconnected(also_hotspot=True)
         self._host.system_toggle_hotspot()
-        self.lcd.draw_info_message("", refresh=True)
 
     # ----- list assembly -----
 
@@ -352,28 +373,18 @@ class WifiMenu:
         self._connect_scanned_flow(row)
 
     def _connect_scanned_flow(self, row: Row) -> None:
-        """Connect to a scanned (unsaved) network, keeping the nearby submenu open.
-
-        On auth failure for a secured network, re-opens the passphrase prompt so
-        the user can retry without being ejected back to the root menu.
-        On success, dismisses the nearby submenu.
-        """
+        """Connect to a scanned (unsaved) network. One attempt — if it fails,
+        show the error. The user can re-try via the menu."""
         ssid = row['ssid']
 
-        def attempt(psk: Optional[str], is_retry: bool = False) -> None:
+        def attempt(psk: Optional[str]) -> None:
             self._mark_disconnected()
-            self.lcd.draw_info_message("connecting to %s..." % ssid, refresh=True)
             err = self._wifi_manager.connect_scanned(ssid, psk)
-            self.lcd.draw_info_message("", refresh=True)
             if err is None:
                 self._pstack.pop_panel(None)   # dismiss nearby submenu on success
                 return
-            reason = parse_nmcli_error(err)
-            if psk is not None and not is_retry and ('auth failed' in reason or 'wrong password' in reason):
-                self._open_password_prompt(ssid, lambda psk: attempt(psk, is_retry=True))
-            else:
-                self._pstack.push_panel(
-                    MessageDialog(self._pstack, reason, title="Couldn't connect"))
+            self._pstack.push_panel(
+                MessageDialog(self._pstack, parse_nmcli_error(err), title="Couldn't connect"))
 
         if is_open_network(row.get('security')):
             attempt(None)
@@ -401,44 +412,26 @@ class WifiMenu:
     def _connect_saved(self, row: Row) -> None:
         profile = row['profile']
         assert profile is not None
-        name = profile['name']
-        ssid = row['ssid']
         self._pstack.pop_panel(None)
         self._mark_disconnected()
-        self.lcd.draw_info_message("connecting to %s..." % ssid, refresh=True)
-        err = self._wifi_manager.connect_saved(name)
-        self.lcd.draw_info_message("", refresh=True)
+        err = self._wifi_manager.connect_saved(profile['name'])
         if err is None:
             return
-        # macOS-style: if the saved PSK is wrong, prompt for a new one and
-        # retry via replace_psk (which validates by reactivating).
-        reason = parse_nmcli_error(err)
-        if 'auth failed' in reason or 'wrong password' in reason:
-            def _on_new_psk(psk: str) -> None:
-                # Passphrase editor already popped itself; don't pop again.
-                self._mark_disconnected()
-                self.lcd.draw_info_message("connecting to %s..." % ssid, refresh=True)
-                err2 = self._wifi_manager.replace_psk(name, psk)
-                self.lcd.draw_info_message("", refresh=True)
-                if err2 is None:
-                    return
-                self._pstack.push_panel(MessageDialog(
-                    self._pstack,
-                    parse_nmcli_error(err2) + "\n(saved password unchanged)",
-                    title="Couldn't connect"))
-            self._open_password_prompt(ssid, _on_new_psk)
-            return
         self._pstack.push_panel(
-            MessageDialog(self._pstack, reason, title="Couldn't connect"))
+            MessageDialog(self._pstack, parse_nmcli_error(err), title="Couldn't connect"))
 
-    def _mark_disconnected(self) -> None:
+    def _mark_disconnected(self, also_hotspot: bool = False) -> None:
         """Immediately dim the WiFi toolbar icon to show we are no longer connected.
 
         The background polling thread will eventually push the authoritative status,
         but callers should not leave the icon silver while a blocking operation runs.
+        Pass also_hotspot=True when toggling hotspot mode so the icon goes gray
+        rather than staying orange.
         """
         status: WifiStatus = {**self._wifi_status,
                                'wifi_connected': False, 'connection': None, 'ssid': None}
+        if also_hotspot:
+            status['hotspot_active'] = False
         self._host.wifi_status = status
         self.lcd.update_wifi(status)
 
@@ -456,9 +449,7 @@ class WifiMenu:
     def _connect_with_feedback(self, connect_fn: ConnectFn, ssid: str) -> None:
         self._pstack.pop_panel(None)
         self._mark_disconnected()
-        self.lcd.draw_info_message("connecting to %s..." % ssid, refresh=True)
         err = connect_fn()
-        self.lcd.draw_info_message("", refresh=True)
         if err is None:
             return
         self._pstack.push_panel(
