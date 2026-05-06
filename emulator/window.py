@@ -123,6 +123,7 @@ class EmulatorWindow:
         self.ctrl_x = self.lcd_disp_w + 10
 
         self.screen = pygame.display.set_mode((self.win_w, self.win_h))
+        pygame.key.set_repeat(300, 50)
         version_label = getattr(hardware, 'VERSION_LABEL', '')
         title = "pi-Stomp Emulator (%s)" % version_label if version_label else "pi-Stomp Emulator"
         pygame.display.set_caption(title)

@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+import queue
+import threading
 import time
 
 import pygame
@@ -22,9 +24,9 @@ from uilib.panel import LcdBase
 class LcdPygame(LcdBase):
     """LCD implementation that renders into a pygame Surface.
 
-    Simulates SPI transfer latency so partial zone refreshes stay snappy
-    but full-screen redraws feel sluggish the way they do on the device.
-    Default matches the ILI9341 wiring in lcdili9341.py (24 MHz, RGB565).
+    SPI transfers run on a background worker thread so the main thread
+    (pygame event polling + encoder handling) stays responsive during long
+    transfers, which block for a simulated amount of time on the SPI thread.
     """
 
     # Bits per pixel when clocked over SPI. PIL 'RGB' is 24bpp in memory but
@@ -43,12 +45,25 @@ class LcdPygame(LcdBase):
         self.height = height
         self.spi_hz = spi_hz
         self.surface = pygame.Surface((width, height))
+        self._lock = threading.Lock()
+        self._queue = queue.SimpleQueue()
+        self._worker = threading.Thread(target=self._spi_worker, daemon=True)
+        self._worker.start()
+
+    def _spi_worker(self):
+        while True:
+            pg_surf, dest, transfer_s, t0 = self._queue.get()
+            with self._lock:
+                self.surface.blit(pg_surf, dest)
+            deficit = transfer_s - (time.perf_counter() - t0)
+            if deficit >= self._SLEEP_THRESHOLD_S:
+                time.sleep(deficit)
 
     def dimensions(self):
         return (self.width, self.height)
 
     def default_format(self):
-        return 'RGB'
+        return "RGB"
 
     def update(self, image, box=None):
         img_w, img_h = image.size
@@ -64,18 +79,15 @@ class LcdPygame(LcdBase):
         else:
             dest = (0, 0)
 
-        t0 = time.perf_counter()
+        # Convert PIL→pygame on the main thread so the PIL image can be
+        # freed immediately; the worker only receives the finished Surface.
         pg_surf = pygame.image.fromstring(image.tobytes(), image.size, image.mode)
-        self.surface.blit(pg_surf, dest)
-        blit_elapsed = time.perf_counter() - t0
-
         bpp = self._BPP_BY_MODE.get(image.mode, 16)
         transfer_s = (image.size[0] * image.size[1] * bpp) / self.spi_hz
-        deficit = transfer_s - blit_elapsed
-        if deficit >= self._SLEEP_THRESHOLD_S:
-            time.sleep(deficit)
+        self._queue.put((pg_surf, dest, transfer_s, time.perf_counter()))
 
     def blit_scaled(self, dest_surface, dest_rect):
         """Scale the LCD surface to dest_rect and blit it onto dest_surface."""
-        scaled = pygame.transform.scale(self.surface, (dest_rect.width, dest_rect.height))
+        with self._lock:
+            scaled = pygame.transform.scale(self.surface, (dest_rect.width, dest_rect.height))
         dest_surface.blit(scaled, dest_rect.topleft)

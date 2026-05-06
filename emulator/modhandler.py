@@ -97,18 +97,17 @@ class EmulatorModhandler(Modhandler):
         return None
 
     # -------------------------------------------------------------------------
-    # Window integration — drain events every tick for input responsiveness,
-    # but couple LCD flush + window repaint to poll_lcd_updates so the
-    # emulator refresh rate matches the main loop's gating (200 ms on the
-    # device) instead of running at ~100 fps.
+    # Window integration — drain events and repaint every poll_controls tick
+    # (10 ms) to match the real device where lcd.update() is synchronous and
+    # each widget refresh is immediately visible.  poll_lcd_updates is still
+    # called for the lcd_needs_update full-screen path (panel transitions).
     # -------------------------------------------------------------------------
 
     def poll_controls(self):
         if self._window is not None:
             self._window.process_events()
+            self._window.render()
         super().poll_controls()
 
     def poll_lcd_updates(self):
         super().poll_lcd_updates()
-        if self._window is not None:
-            self._window.render()
