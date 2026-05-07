@@ -16,7 +16,7 @@
 import logging
 import os
 import common.token as Token
-import common.parameter as Parameter
+import modalapi.parameter as Parameter
 from ui.wifi_menu import WifiMenu
 import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
@@ -385,9 +385,10 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_selection_menu(items, "Snapshots", auto_dismiss=True, dismiss_option=True)
 
     def draw_selection_menu(self, items, title="", auto_dismiss=False, dismiss_option=False,
-                            text_halign=TextHAlign.CENTRE, on_close=None):
-        # items is list of tuples: (item_label, callback_method, callback_arg[, selected[, fgnd_color]])
-        # FIXME: fgnd_color and longpress_callback_method are clashing currently
+                            text_halign=TextHAlign.CENTRE, on_close=None, font=None):
+        # items is a list of tuples: (label, callback, arg) or (label, callback, arg, is_active)
+        # or (label, callback, arg, is_active, long_callback) where long_callback is called
+        # instead of callback on a long press.
         def menu_action(event, params):
             if event == InputEvent.LONG_CLICK and len(params) >= 5 and params[4] is not None:
                 params[4](params[2])
@@ -397,9 +398,10 @@ class Lcd(abstract_lcd.Lcd):
                 return
             callback(params[2])
 
+        extra = {} if font is None else {'font': font}
         m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=200,
                  auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action,
-                 text_halign=text_halign, on_close=on_close)
+                 text_halign=text_halign, on_close=on_close, **extra)
         self.pstack.push_panel(m)
         return m
 
@@ -686,6 +688,7 @@ class Lcd(abstract_lcd.Lcd):
     def draw_config_editor(self, event, widget):
         if event == InputEvent.CLICK:
             PedalboardConfigEditor(self.handler, self.handler.hardware, self).open()
+
 
     def draw_audio_menu(self, event, widget):
         items = [("Output Volume", self.handler.system_menu_headphone_volume, None),
