@@ -18,7 +18,7 @@ import digitalio
 import logging
 import os
 import common.token as Token
-import modalapi.parameter as Parameter
+import common.parameter as Parameter
 import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
