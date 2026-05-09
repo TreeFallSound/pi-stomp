@@ -910,6 +910,8 @@ dev = [
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "ruff", specifier = ">=0.1.0" },
     { name = "typing-extensions", specifier = ">=4.15.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "spidev", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=3.0" },
 ]
 
 [[package]]
