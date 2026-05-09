@@ -15,8 +15,8 @@
 
 from pistomp.handler import Handler
 
-class Generichost(Handler):
 
+class Generichost(Handler):
     def __init__(self, homedir=None):
         self.homedir = homedir
         self.hardware = None
@@ -27,3 +27,6 @@ class Generichost(Handler):
     def poll_controls(self):
         if self.hardware:
             self.hardware.poll_controls()
+
+    def poll_system_info(self):
+        pass
