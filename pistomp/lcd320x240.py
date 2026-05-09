@@ -774,7 +774,8 @@ class Lcd(abstract_lcd.Lcd):
         text = ""
         for x in name.lower().replace('_', '').replace('/', '').replace(' ', ''):
             test = text + x
-            test_size = self.small_font.getsize(test)[0]
+            test_bbox = self.small_font.getbbox(test)
+            test_size = test_bbox[2] - test_bbox[0]
             if test_size >= width:
                 break
             text = test
