@@ -23,6 +23,7 @@ dependencies = [
     "requests>=2.28",
     "Pillow>=9.4",
     "pyalsaaudio>=0.9; sys_platform == 'linux'",
+    "gpiozero>=2.0; sys_platform == 'linux'",
 ]
 
 [project.optional-dependencies]
@@ -34,6 +35,9 @@ hardware = [
     "adafruit-circuitpython-neopixel>=6.3",
     "adafruit-circuitpython-rgb-display>=3.10",
     "adafruit-circuitpython-mcp3xxx>=1.4",
+    "lgpio>=0.2; sys_platform == 'linux'",
+    "rpi-lgpio>=0.4; sys_platform == 'linux'",
+    "spidev>=3.0; sys_platform == 'linux'",
 ]
 
 [dependency-groups]
