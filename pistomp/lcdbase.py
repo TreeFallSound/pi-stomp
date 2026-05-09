@@ -111,8 +111,9 @@ class Lcdbase(abstract_lcd.Lcd):
             self.zone_y[i] = y_offset
 
     def base_draw_title(self, draw, font, pedalboard, preset, invert_pb, invert_pre, highlight_only=False):
-        pb_size  = font.getsize(pedalboard)[0]
-        font_height = font.getsize(pedalboard)[1]
+        pb_bbox = font.getbbox(pedalboard)
+        pb_size  = pb_bbox[2] - pb_bbox[0]
+        font_height = pb_bbox[3]
         x0 = self.left
         y = self.top  # negative pushes text to top of LCD
         highlight_color = self.highlight
@@ -134,8 +135,10 @@ class Lcdbase(abstract_lcd.Lcd):
             draw.text((x, y), delimiter, self.foreground, font)
 
             # Preset Name
-            pre_size = font.getsize(preset)[0]
-            x = x + font.getsize(delimiter)[0]
+            pre_bbox = font.getbbox(preset)
+            pre_size = pre_bbox[2] - pre_bbox[0]
+            delim_bbox = font.getbbox(delimiter)
+            x = x + delim_bbox[2] - delim_bbox[0]
             x2 = x + pre_size
             y2 = font_height
             if invert_pre:
@@ -210,7 +213,8 @@ class Lcdbase(abstract_lcd.Lcd):
         text = ""
         for x in name.lower().replace('_', '').replace('/', '').replace(' ', ''):
             test = text + x
-            test_size = self.small_font.getsize(test)[0]
+            test_bbox = self.small_font.getbbox(test)
+            test_size = test_bbox[2] - test_bbox[0]
             if test_size >= width:
                 break
             text = test
