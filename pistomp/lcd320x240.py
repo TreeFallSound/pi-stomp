@@ -16,7 +16,7 @@
 import logging
 import os
 import common.token as Token
-import modalapi.parameter as Parameter
+import common.parameter as Parameter
 from ui.wifi_menu import WifiMenu
 import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
@@ -30,7 +30,6 @@ from pistomp.footswitch import Footswitch  # TODO would like to avoid this modul
 from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
 from pistomp.encoder_controller import EncoderController
 from blend.manager import BlendMode
-from pistomp.pedalboard_config_editor import PedalboardConfigEditor
 
 # Parameter dialog auto-dismiss timeout (seconds)
 PARAMETER_DIALOG_TIMEOUT = 1.0
@@ -105,7 +104,6 @@ class Lcd(abstract_lcd.Lcd):
 
         # widgets
         self.w_wifi = None
-        self.w_config_edit = None
         self.w_eq = None
         self.w_power = None
         self.w_wrench = None
@@ -181,8 +179,7 @@ class Lcd(abstract_lcd.Lcd):
         if not self.main_panel_pushed:
             self.pstack.push_panel(self.main_panel)
             self.main_panel_pushed = True
-        else:
-            self.pstack.refresh()
+        #self.main_panel.refresh()
 
     def poll_updates(self):
         for d in self.w_parameter_dialogs.values():
@@ -191,6 +188,19 @@ class Lcd(abstract_lcd.Lcd):
         self.pstack.poll_updates()
         if self._tuner_panel is not None and self.pstack.current == self._tuner_panel:
             self._tuner_panel.tick()
+
+    def show_tuner_panel(self, panel) -> None:
+        self._tuner_panel = panel
+        self.pstack.push_panel(panel)
+        # push_panel composes the (still-blank) panel image onto the stack but
+        # doesn't draw the panel's children. Force a full redraw so bg, rules,
+        # header and hint are on screen before tick()'s partial refreshes start.
+        panel.refresh()
+
+    def hide_tuner_panel(self) -> None:
+        if self._tuner_panel is not None:
+            self.pstack.pop_panel(self._tuner_panel)
+            self._tuner_panel = None
 
         if self.pstack.current == self.main_panel:
             # Update control progress bars (analog controls and encoders)
@@ -231,34 +241,18 @@ class Lcd(abstract_lcd.Lcd):
             if self.w_pedalboard:
                 self.w_pedalboard.tick()
 
-    def show_tuner_panel(self, panel) -> None:
-        self._tuner_panel = panel
-        self.pstack.push_panel(panel)
-        # push_panel composes the (still-blank) panel image onto the stack but
-        # doesn't draw the panel's children. Force a full redraw so bg, rules,
-        # header and hint are on screen before tick()'s partial refreshes start.
-        panel.refresh()
-
-    def hide_tuner_panel(self) -> None:
-        if self._tuner_panel is not None:
-            self.pstack.pop_panel(self._tuner_panel)
-            self._tuner_panel = None
-
     #
     # Toolbar
     #
     def draw_tools(self, wifi_type=None, eq_type=None, bypass_type=None, system_type=None):
         if self.w_wifi is not None:
             return
-        self.w_notification = ImageWidget(box=Box.xywh(150, 0, 20, 20),
+        self.w_notification = ImageWidget(box=Box.xywh(180, 0, 20, 20),
                                           image_path=os.path.join(self.imagedir, 'alert_orange.png'),
                                           parent=self.main_panel, action=self._notification_action)
         self.main_panel.add_sel_widget(self.w_notification)
         if self.handler is None or self.handler.notification is None:
             self.w_notification.hide(refresh=False)
-        self.w_config_edit = ImageWidget(box=Box.xywh(180, 0, 20, 20), image_path=os.path.join(self.imagedir,
-                                  'edit_silver.png'), parent=self.main_panel, action=self.draw_config_editor)
-        self.main_panel.add_sel_widget(self.w_config_edit)
         self.w_wifi = ImageWidget(box=Box.xywh(210, 0, 20, 20), image_path=os.path.join(self.imagedir,
                                   'wifi_gray.png'), parent=self.main_panel, action=self.wifi_menu.open)
         self.main_panel.add_sel_widget(self.w_wifi)
@@ -385,7 +379,7 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_selection_menu(items, "Snapshots", auto_dismiss=True, dismiss_option=True)
 
     def draw_selection_menu(self, items, title="", auto_dismiss=False, dismiss_option=False,
-                            text_halign=TextHAlign.CENTRE, on_close=None, font=None):
+                            font=None):
         # items is a list of tuples: (label, callback, arg) or (label, callback, arg, is_active)
         # or (label, callback, arg, is_active, long_callback) where long_callback is called
         # instead of callback on a long press.
@@ -400,8 +394,7 @@ class Lcd(abstract_lcd.Lcd):
 
         extra = {} if font is None else {'font': font}
         m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=200,
-                 auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action,
-                 text_halign=text_halign, on_close=on_close, **extra)
+                 auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action, **extra)
         self.pstack.push_panel(m)
         return m
 
@@ -684,11 +677,6 @@ class Lcd(abstract_lcd.Lcd):
         for k,v in self.handler.get_banks().items():
             items.append((k, self.handler.set_bank, k, k==current_bank))
         self.draw_selection_menu(items, "Bank Select", auto_dismiss=True)
-
-    def draw_config_editor(self, event, widget):
-        if event == InputEvent.CLICK:
-            PedalboardConfigEditor(self.handler, self.handler.hardware, self).open()
-
 
     def draw_audio_menu(self, event, widget):
         items = [("Output Volume", self.handler.system_menu_headphone_volume, None),
