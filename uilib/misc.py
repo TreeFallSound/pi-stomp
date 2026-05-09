@@ -61,12 +61,12 @@ def get_text_size(text_string, font, metrics = None):
     if metrics is not None:
         ascent, descent = metrics
     else:
-        ascent, descent = font.getgmetrics()
+        ascent, descent = font.getmetrics()
 
 #    text_width = font.getmask(text_string).getbbox()[2]
 #    text_height = font.getmask(text_string).getbbox()[3] + descent
     bbox = font.getbbox(text_string)
-    text_width = bbox[2]
+    text_width = bbox[2] - bbox[0]
     text_height = bbox[3] + descent
 
     return (text_width, text_height)
