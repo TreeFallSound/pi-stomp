@@ -306,7 +306,8 @@ class Modhandler(Handler):
             self.temperature = "unknown"
 
     def poll_lcd_updates(self):
-        self.lcd.poll_updates()
+        if self._lcd is not None:
+            self._lcd.poll_updates()
 
     @property
     def lcd_poll_divisor(self) -> int:
