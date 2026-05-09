@@ -504,6 +504,7 @@ class Modhandler(Handler):
         if index < 0 or index >= len(self.current.presets):
             self.lcd.draw_message_dialog("Snapshot id %d does not exist for this pedalboard" % index)
             return
+
         self.lcd.draw_info_message("Loading...")
         url = (self.root_uri + "snapshot/load?id=%d" % index)
         # req.get(self.root_uri + "reset")
