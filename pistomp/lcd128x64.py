@@ -247,8 +247,9 @@ class Lcd(ABC):
         self.erase_zone(0)
 
         #pedalboard = pedalboard.lower().capitalize()
-        pb_size  = self.title_font.getsize(pedalboard)[0]
-        font_height = self.title_font.getsize(pedalboard)[1]
+        pb_bbox = self.title_font.getbbox(pedalboard)
+        pb_size  = pb_bbox[2] - pb_bbox[0]
+        font_height = pb_bbox[3]
         y = -2  # negative pushes text to top of LCD
 
         # Pedalboard Name
@@ -265,8 +266,10 @@ class Lcd(ABC):
 
             # Preset Name
             #preset = preset.lower().capitalize()
-            pre_size = self.title_font.getsize(preset)[0]
-            x = x + self.title_font.getsize(delimiter)[0]
+            pre_bbox = self.title_font.getbbox(preset)
+            pre_size = pre_bbox[2] - pre_bbox[0]
+            delim_bbox = self.title_font.getbbox(delimiter)
+            x = x + delim_bbox[2] - delim_bbox[0]
             x2 = x + pre_size
             y2 = font_height
             if invert_pre:
@@ -438,7 +441,8 @@ class Lcd(ABC):
         text = ""
         for x in name.lower().replace('_', '').replace('/', '').replace(' ', ''):
             test = text + x
-            test_size = self.small_font.getsize(test)[0]
+            test_bbox = self.small_font.getbbox(test)
+            test_size = test_bbox[2] - test_bbox[0]
             if test_size >= width:
                 break
             text = test
