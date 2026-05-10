@@ -851,6 +851,7 @@ source = { editable = "." }
 dependencies = [
     { name = "gpiozero", marker = "sys_platform == 'linux'" },
     { name = "jsonschema" },
+    { name = "pillow" },
     { name = "pyalsaaudio", marker = "sys_platform == 'linux'" },
     { name = "python-rtmidi" },
     { name = "pyyaml" },
@@ -892,6 +893,7 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4.0" },
     { name = "lgpio", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=0.2" },
     { name = "matplotlib", marker = "extra == 'hardware'", specifier = ">=3.5" },
+    { name = "pillow", specifier = ">=9.4" },
     { name = "pyalsaaudio", marker = "sys_platform == 'linux'", specifier = ">=0.9" },
     { name = "python-rtmidi", specifier = ">=1.4" },
     { name = "pyyaml", specifier = ">=6.0" },
@@ -899,6 +901,7 @@ requires-dist = [
     { name = "rpi-lgpio", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=0.4" },
     { name = "rpi-ws281x", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=5.0" },
     { name = "spidev", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=3.0" },
+    { name = "websockets", specifier = ">=15.0.1" },
 ]
 provides-extras = ["hardware"]
 
