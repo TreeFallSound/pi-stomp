@@ -477,7 +477,7 @@ poll_controls()
 
 **MOD API**:
 - `modalapi/pedalboard.py` - LILV parser
-- `modalapi/parameter.py` - Parameter representation
+- `common/parameter.py` - Parameter representation & formatting
 - `modalapi/plugin.py` - Plugin representation
 
 **Config & State**:

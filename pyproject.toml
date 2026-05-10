@@ -33,23 +33,13 @@ hardware = [
     "gfxhat>=0.0.1; sys_platform == 'linux'",
     "matplotlib>=3.5",
     "rpi-ws281x>=5.0; sys_platform == 'linux'",
+    "spidev>=3.0; sys_platform == 'linux'",
     "adafruit-circuitpython-neopixel>=6.3",
     "adafruit-circuitpython-rgb-display>=3.10",
     "adafruit-circuitpython-mcp3xxx>=1.4",
     "lgpio>=0.2; sys_platform == 'linux'",
     "rpi-lgpio>=0.4; sys_platform == 'linux'",
     "spidev>=3.0; sys_platform == 'linux'",
-]
-
-[dependency-groups]
-dev = [
-    "numpy>=2.4.1",
-    "pillow>=12.0.0",
-    "pyright>=1.1.408",
-    "pytest>=9.0.2",
-    "pytest-cov>=7.0.0",
-    "ruff>=0.1.0",
-    "typing-extensions>=4.15.0",
 ]
 
 [project.urls]
@@ -68,16 +58,30 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["modalapi", "pistomp", "uilib", "common"]
 
-[tool.black]
-line-length = 120
-target-version = ["py311"]
-
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+ignore = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+stubPath = "typings"
+pythonVersion = "3.11"
+
+[dependency-groups]
+dev = [
+    "numpy>=2.4.1",
+    "pillow>=12.0.0",
+    "pyright>=1.1.408",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.1.0",
+    "typing-extensions>=4.15.0",
+]

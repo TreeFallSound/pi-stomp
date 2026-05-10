@@ -18,7 +18,7 @@ import digitalio
 import logging
 import os
 import common.token as Token
-import modalapi.parameter as Parameter
+import common.parameter as Parameter
 import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
@@ -108,15 +108,16 @@ class Lcd(abstract_lcd.Lcd):
         # panels
         self.pstack = PanelStack(display, image_format='RGB', use_dimming=True)  # TODO use dimming without loosing FS's
         self.splash_panel = Panel(box=Box.xywh(0, 0, self.display_width, self.display_height))
-        self.pstack.push_panel(self.splash_panel)
+        self.pstack.push_panel(self.splash_panel, refresh=False)
         self.main_panel = Panel(box=Box.xywh(0, 0, self.display_width, 170))
         self.main_panel_pushed = False
         self.footswitch_panel = Panel(box=Box.xywh(0, 176, self.display_width, 64))
-        self.pstack.push_panel(self.footswitch_panel)
+        self.pstack.push_panel(self.footswitch_panel, refresh=False)
 
         self.pedalboards = {}
 
-        self.splash_show(True)
+        if not display.has_system_splash:
+            self.splash_show(True)
 
     #
     # Navigation
@@ -626,9 +627,10 @@ class Lcd(abstract_lcd.Lcd):
         self.pstack.pop_panel(self.footswitch_panel)
         if self.main_panel_pushed:
             self.pstack.pop_panel(self.main_panel)
-        self.w_splash.set_foreground(self.color_splash_down)
-        self.splash_panel.refresh()
-    
+        if self.w_splash is not None:
+            self.w_splash.set_foreground(self.color_splash_down)
+            self.splash_panel.refresh()
+
     def clear(self):
         pass
 
