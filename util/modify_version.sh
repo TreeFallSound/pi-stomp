@@ -41,8 +41,8 @@ cp $default_hwfile $hwfile
 if awk "BEGIN {exit !($1 >= 3.0 )}"; then
     cp $pistomp_tre_config_file $config_file
     sudo sed -i 's/-p [0-9]\+/-p 128/' $jackdrc_file
-    if ! git -C "$pb_dir" checkout master; then
-      echo "Git checkout failed"
+    if ! git -C "$pb_dir" checkout master 2>/dev/null && ! git -C "$pb_dir" checkout main 2>/dev/null; then
+      echo "Git checkout failed (tried master and main)"
       exit 1
     fi
 elif awk "BEGIN {exit !($1 >= 2.0 )}"; then

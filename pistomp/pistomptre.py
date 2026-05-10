@@ -61,7 +61,7 @@ class Pistomptre(hardware.Hardware):
     def __init__(self, cfg, handler, midiout, refresh_callback):
         super(Pistomptre, self).__init__(cfg, handler, midiout, refresh_callback)
         if Pistomptre.__single:
-            raise Pistomptre.__single
+            raise RuntimeError("Attempted to create multiple instances of singleton class Pistomptre", Pistomptre.__single)
         Pistomptre.__single = self
 
         self.handler = handler
@@ -93,8 +93,7 @@ class Pistomptre(hardware.Hardware):
     def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
         enc_pins = Util.DICT_GET(ENC, id)
         if enc_pins is None:
-            logging.error("Cannot create encoder object for id:", id)
-            return
+            raise ValueError("Cannot create encoder object for id:", id)
 
         # map the id to the actual pins
         d_pin = Util.DICT_GET(enc_pins, 'D')
