@@ -110,7 +110,7 @@ encoders:
   - id: 1
     midi_CC: 70  # Rotation
     longpress: previous_snapshot
-    shortpress: universal_encoder_sw  # Default if omitted
+    # shortpress omitted — defaults to the built-in encoder click handler
 
   - id: 2
     midi_CC: 71
