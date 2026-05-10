@@ -15,39 +15,53 @@
 
 import adafruit_rgb_display.ili9341 as ili9341
 
-from uilib.panel import *
+from uilib.panel import LcdBase, Box
+from functools import cached_property
 import logging
 import threading
+import os
+
+INIT_STAMP = "/run/lcd.init"
+
 
 class LcdIli9341(LcdBase):
     # XXX
     # TODO: Turn "flip" into all 90deg angle combinations
-    def __init__(self, spi, cs_pin, dc_pin, reset_pin, baudrate, flip = True):
-        self.disp = ili9341.ILI9341(
-            spi,
-            cs=cs_pin,
-            dc=dc_pin,
-            rst=reset_pin,
-            baudrate=baudrate
-        )
+    def __init__(self, spi, cs_pin, dc_pin, reset_pin, baudrate, flip=True):
+        rst = reset_pin if not self.has_system_splash else None
+
+        self.disp = ili9341.ILI9341(spi, cs=cs_pin, dc=dc_pin, rst=rst, baudrate=baudrate)
 
         # Use this to assure we don't have multiple threads trying to change the screen
         # All methods which do change the screen (eg. dist. calls) should acquire/release
         self.lock = threading.Lock()
 
-        # Clear the display
-        self.clear()
+        if not self.has_system_splash:
+            self.clear()
+            self._set_stamp()
 
         # Test full screen image
         self.width = self.disp.height
         self.height = self.disp.width
         self.flip = flip
 
+    @cached_property
+    def has_system_splash(self):
+        """Does the OS provide a splash screen?"""
+        return os.path.exists(INIT_STAMP)
+
+    def _set_stamp(self):
+        try:
+            with open(INIT_STAMP, "w") as _f:
+                pass
+        except Exception:
+            pass
+
     def dimensions(self):
         return (self.width, self.height)
 
     def default_format(self):
-        return 'RGB'
+        return "RGB"
 
     def clear(self):
         self.lock.acquire()
@@ -67,7 +81,7 @@ class LcdIli9341(LcdBase):
         #
         img_width, img_height = image.size
         if box is None:
-            box = Box(0,0,img_width,img_height)
+            box = Box(0, 0, img_width, img_height)
 
         # Check if we need to crop the image to the LCD size
         x1, y1, x2, y2 = box.rect
@@ -76,7 +90,7 @@ class LcdIli9341(LcdBase):
         if y2 > self.height:
             y2 = self.height
         if x1 != 0 or y1 != 0 or x2 != img_width or y2 != img_width:
-            image = image.crop((x1,y1,x2,y2))
+            image = image.crop((x1, y1, x2, y2))
             if self.flip:
                 x = self.height - y2
                 y = x1
