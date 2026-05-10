@@ -58,33 +58,10 @@ uv run pytest --snapshot-update  # accept new LCD snapshots as baselines
 uv run pytest --cov=pistomp --cov=modalapi --cov=common --cov=uilib --cov-report=term-missing
 ```
 
-### Test layout
-
-```
-tests/
-  conftest.py          # hardware shims, FakeLcd, snapshot fixture
-  test_footswitch.py   # pure Footswitch logic
-  test_lcd320x240.py   # isolated LCD component snapshots
-  v3/
-    conftest.py        # v3_system fixture, make_plugin / make_parameter factories
-    test_startup.py    # boot smoke + basic navigation
-    test_pedalboards.py
-    test_presets.py
-    test_plugins.py    # binding, bypass toggle, parameter editing
-    test_system_menu.py
-    test_audio.py      # bypass, EQ, audio params
-    test_wifi.py
-    test_polling.py
-    test_tap_tempo.py
-```
-
-No file exceeds 500 lines; add new test files rather than extending existing ones when a
-group grows too large.
-
 ### Snapshot fixture
 
-Every test file that renders the LCD gets a `snapshot` fixture automatically scoped
-to the test's file path and function name — no manual string needed:
+By using the  `snapshot` fixture, we can assert that the image rendered to the LCD
+does not change unexpectedly.
 
 ```python
 def test_my_flow(v3_system, snapshot):
@@ -94,16 +71,7 @@ def test_my_flow(v3_system, snapshot):
     snapshot("label")    # same label → asserts screen returned to that earlier state
 ```
 
-The fixture grabs `fake_lcd.frames[-1]` automatically; never pass the image explicitly.
 Regenerate baselines after intentional UI changes with `--snapshot-update`.
-
-### Design principle
-
-**Fixtures absorb everything a test always does the same way** — hardware setup,
-HTTP mocking, singleton reset, LCD wiring. What remains in the test body should be
-only the interaction sequence and assertions that vary between tests.  Keep test
-bodies as short as possible so diffs are reviewable: every line in a PR diff should
-be load-bearing.
 
 ### Adding coverage for a new hardware version
 
@@ -114,10 +82,13 @@ be load-bearing.
    define version-specific variants in the new `conftest.py`.
 
 ## On-device Testing
+```bash
 curl -X POST http://localhost:80/pedalboard/load_bundle/ \
   -d 'bundlepath=/home/pistomp/data/.pedalboards/AmpBud.pedalboard'
+```
 
 # List pedalboards
+```bash
 curl -s http://localhost:80/pedalboard/list | python3 -m json.tool
 ```
 
