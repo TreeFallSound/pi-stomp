@@ -23,6 +23,7 @@ dependencies = [
     "requests>=2.28",
     "Pillow>=9.4",
     "pyalsaaudio>=0.9; sys_platform == 'linux'",
+    "websockets>=15.0.1",
     "gpiozero>=2.0; sys_platform == 'linux'",
 ]
 

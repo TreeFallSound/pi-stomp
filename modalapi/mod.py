@@ -25,7 +25,7 @@ import common.token as Token
 import common.util as util
 import pistomp.switchstate as switchstate
 import modalapi.pedalboard as Pedalboard
-import modalapi.parameter as Parameter
+import common.parameter as Parameter
 import modalapi.wifi as Wifi
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -672,6 +672,7 @@ class Mod(Handler):
     def preset_change(self):
         index = self.selected_preset_index
         logging.info("preset change: %d" % index)
+
         self.lcd.draw_info_message("Loading...")
         url = (self.root_uri + "snapshot/load?id=%d" % index)
         # req.get(self.root_uri + "reset")
