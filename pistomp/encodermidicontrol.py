@@ -14,6 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from rtmidi.midiconstants import CONTROL_CHANGE
+from typing import Any
 
 import common.util as util
 import pistomp.controller as controller
@@ -35,7 +36,7 @@ class EncoderMidiControl(encoder.Encoder, controller.Controller):
         self.midiout = midiout
 
         self.value = 0       # the user view of the value
-        self.cfg = {}
+        self.cfg: dict[str, Any] = {}
         self.midi_value = 0  # the midi equivalent value
         self.per_click = 8   # resolution (midi values per click)
 
