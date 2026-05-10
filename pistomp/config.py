@@ -15,7 +15,6 @@
 
 import logging
 import os
-import sys
 
 import yaml
 from jsonschema import validate
@@ -131,6 +130,9 @@ schema = {
               },
               "type": {
                 "enum": ["KNOB", "EXPRESSION"]
+              },
+              "autosync": {
+                "type": "boolean"
               }
             },
             "required": [

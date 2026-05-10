@@ -1,0 +1,16 @@
+from typing import Any, Sequence
+
+class NeoPixel:
+    def __init__(
+        self,
+        pin: Any,
+        n: int,
+        *,
+        brightness: float = 1.0,
+        auto_write: bool = True,
+        pixel_order: Any = None,
+    ) -> None: ...
+    def __setitem__(self, index: int, val: tuple[int, int, int] | tuple[int, int, int, int]) -> None: ...
+    def __getitem__(self, index: int) -> tuple[int, int, int]: ...
+    def fill(self, color: tuple[int, int, int]) -> None: ...
+    def show(self) -> None: ...
