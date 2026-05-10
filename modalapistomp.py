@@ -89,6 +89,9 @@ def main():
         print("Log level now set to: %s" % logging.getLevelName(log_level))
         logging.getLogger().setLevel(log_level)
 
+    # Disable websockets library debug logging (too noisy)
+    logging.getLogger('websockets').setLevel(logging.WARNING)
+
     # Current Working Dir
     cwd = os.path.dirname(os.path.realpath(__file__))
 

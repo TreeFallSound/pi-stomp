@@ -246,7 +246,7 @@ class PanelStack(ContainerWidget):
     def _get_stack(self):
         return self
 
-    def push_panel(self, panel):
+    def push_panel(self, panel, refresh=True):
         assert panel not in self.stack
         assert isinstance(panel, Panel)
 
@@ -257,7 +257,8 @@ class PanelStack(ContainerWidget):
         # Input target
         self.current = panel
         panel.show(refresh = False)
-        self.refresh()
+        if refresh:
+            self.refresh()
 
     def pop_panel(self, panel):
         # panel == None is a special case meaning just pop the current panel

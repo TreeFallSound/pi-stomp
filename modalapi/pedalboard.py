@@ -24,7 +24,7 @@ import urllib.parse
 
 import common.token as Token
 import common.util as util
-import modalapi.parameter as Parameter
+import common.parameter as Parameter
 import modalapi.plugin as Plugin
 
 class Pedalboard:

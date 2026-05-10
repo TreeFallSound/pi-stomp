@@ -34,6 +34,9 @@ sudo /usr/bin/pip3 install python-rtmidi
 # Requests
 sudo /usr/bin/pip3 install requests
 
+# WebSockets
+sudo /usr/bin/pip3 install websockets
+
 #GFXHat
 sudo /usr/bin/pip3 install gfxhat
 
