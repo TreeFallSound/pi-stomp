@@ -717,6 +717,7 @@ class Mod(Handler):
     def preset_change(self):
         index = self.selected_preset_index
         logging.info("preset change: %d" % index)
+
         self.lcd.draw_info_message("Loading...")
         url = (self.root_uri + "snapshot/load?id=%d" % index)
         # req.get(self.root_uri + "reset")

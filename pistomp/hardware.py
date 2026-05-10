@@ -15,6 +15,7 @@
 
 import logging
 import os
+from typing import Union
 import spidev
 import sys
 
@@ -23,14 +24,18 @@ import common.util as Util
 import common.parameter as Parameter
 from common.parameter import TTL_PROPERTIES, TTL_INTEGER
 import pistomp.analogmidicontrol as AnalogMidiControl
+import pistomp.encoder as Encoder
+import pistomp.encodermidicontrol as EncoderMidiControl
 import pistomp.footswitch as Footswitch
 import pistomp.taptempo as taptempo
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from modalapi.external_midi import ExternalMidiOut, ExternalMidiManager, EXTERNAL_INSTANCE_ID
 
+Controller = Union[AnalogMidiControl.AnalogMidiControl, EncoderMidiControl.EncoderMidiControl, Footswitch.Footswitch]
 
-class Hardware:
+
+class Hardware(ABC):
 
     def __init__(self, default_config, handler, midiout, refresh_callback):
         logging.info("Init hardware: " + type(self).__name__)
@@ -51,8 +56,8 @@ class Hardware:
         self.relay = None
         self.analog_controls = []
         self.encoders = []
-        self.controllers = {}
-        self.footswitches = []
+        self.controllers: dict[str, Controller] = {}
+        self.footswitches: list[Footswitch.Footswitch] = []
         self.encoder_switches = []
         self.indicators = []
         self.debounce_map = None
@@ -60,12 +65,12 @@ class Hardware:
         self.taptempo = taptempo.TapTempo(None)
         self.external_midi: ExternalMidiManager | None = None
 
-    def toggle_tap_tempo_enable(self, bpm=0):
+    def toggle_tap_tempo_enable(self, bpm: float = 0.0):
         if self.taptempo:
             self.taptempo.toggle_enable()
             if self.taptempo.is_enabled() and bpm > 0:
                 self.taptempo.set_bpm(bpm)
-                logging.debug("tap tempo mode enabled: %d", bpm)
+                logging.debug("tap tempo mode enabled: %f", bpm)
 
     def init_spi(self):
         self.spi = spidev.SpiDev()
@@ -140,27 +145,27 @@ class Hardware:
 
     @abstractmethod
     def init_analog_controls(self):
-        pass
+        ...
 
     @abstractmethod
     def init_encoders(self):
-        pass
+        ...
 
     @abstractmethod
     def init_footswitches(self):
-        pass
+        ...
 
     @abstractmethod
     def init_relays(self):
-        pass
+        ...
 
     @abstractmethod
     def cleanup(self):
-        pass
+        ...
 
     @abstractmethod
     def test(self):
-        pass
+        ...
 
     def run_test(self):
         # if test sentinel file exists execute hardware test
@@ -236,6 +241,7 @@ class Hardware:
             else:
                 midiout = self.midiout
 
+            fs: Footswitch.Footswitch | None = None
             if adc_input is not None:
                 fs = Footswitch.Footswitch(id if id else idx, gpio_output, pixel, midi_cc, midi_channel,
                                            midiout, refresh_callback=self.refresh_callback,
@@ -251,6 +257,7 @@ class Hardware:
                 logging.debug("Created Footswitch on GPIO input: %d, Midi Chan: %d, CC: %s" %
                               (gpio_input, midi_channel, midi_cc))
 
+            assert fs is not None, "No footswitch created for config: %s" % f
             self.footswitches.append(fs)
             idx += 1
 
@@ -303,9 +310,10 @@ class Hardware:
             logging.debug("Created AnalogMidiControl Input: %d, Midi Chan: %d, CC: %d" %
                           (adc_input, midi_channel, midi_cc))
 
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc, shortpress_config=None, midiout=None):
+    @abstractmethod
+    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc, shortpress_config=None, midiout=None) -> Encoder.Encoder | EncoderMidiControl.EncoderMidiControl:
         # This should be implemented by hardware subclasses that support tweak encoders (Tre at least)
-        pass
+        ...
 
     def create_encoders(self, cfg):
         if cfg is None or (Token.HARDWARE not in cfg) or (Token.ENCODERS not in cfg[Token.HARDWARE]):
@@ -339,10 +347,15 @@ class Hardware:
             else:
                 midiout = self.midiout
 
-            control = self.add_encoder(id, type, None, longpress_callback, midi_channel, midi_cc, midiout=midiout)
-            self.encoders.append(control)
+            try:
+                control = self.add_encoder(id, type, None, longpress_callback, midi_channel, midi_cc, midiout=midiout)
+                self.encoders.append(control)
+            except Exception:
+                logging.exception("Failed to create encoder with config: %s" % c)
+                continue
 
             if midi_cc is not None:
+                assert isinstance(control, EncoderMidiControl.EncoderMidiControl), "Encoder specified with MIDI CC must be of type EncoderMidiControl"
                 key = format("%d:%d" % (midi_channel, midi_cc))
                 self.controllers[key] = control
                 logging.debug("Created Encoder: %d, Midi Chan: %d, CC: %d" % (id, midi_channel, midi_cc))

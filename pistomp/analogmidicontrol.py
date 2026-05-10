@@ -13,10 +13,10 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import adafruit_mcp3xxx.mcp3008 as MCP
-from adafruit_mcp3xxx.analog_in import AnalogIn
+from typing_extensions import override
+from typing import Any
 
-from rtmidi.midiutil import open_midioutput
+
 from rtmidi.midiconstants import CONTROL_CHANGE
 
 import common.util as util
@@ -44,7 +44,7 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
         self.id = id
         self.last_read = 0  # this keeps track of the last potentiometer value
         self.value = None
-        self.cfg = cfg
+        self.cfg: dict[str, Any] = cfg
         self.value_change_callback = value_change_callback
 
     def set_midi_channel(self, midi_channel):
