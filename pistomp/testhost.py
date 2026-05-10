@@ -13,23 +13,21 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import sys
-import os
 import time
 import curses
 import logging
-import common.util as util
 
 import numpy as np
 
 # TODO this is just a temporary fix for those who do a git pull on an install which didn't previously include alsaaudio
 import importlib
+
 alsa_available = importlib.util.find_spec("alsaaudio")
 if alsa_available:
     import alsaaudio as alsa
 
 from pistomp.handler import Handler
-from pistomp.hardware import Hardware
+
 
 class CursesLogHandler(logging.Handler):
     def __init__(self, screen):
@@ -49,9 +47,9 @@ class CursesLogHandler(logging.Handler):
             raise
         except:
             raise
-        
-class Testhost(Handler):
 
+
+class Testhost(Handler):
     LOG_HEIGHT = 8
     VU_GREEN = 1
     VU_YELLOW = 2
@@ -62,7 +60,7 @@ class Testhost(Handler):
         self.log_handler = None
         self.win = None
         self.log_win = None
-        curses.setupterm(term='xterm')
+        curses.setupterm(term="xterm")
         self.stdscr = curses.initscr()
         curses.start_color()
         curses.use_default_colors()
@@ -75,7 +73,7 @@ class Testhost(Handler):
         self.stdscr.refresh()
         try:
             curses.curs_set(0)
-        except:
+        except Exception:
             pass
         self.maxy, self.maxx = self.stdscr.getmaxyx()
         self.win = curses.newwin(self.maxy - self.LOG_HEIGHT - 1, 0, 0, 0)
@@ -92,11 +90,11 @@ class Testhost(Handler):
         log_win.idlok(True)
         log_win.keypad(True)
         log_win.leaveok(True)
-        log_win.setscrreg(1, self.LOG_HEIGHT-2)
+        log_win.setscrreg(1, self.LOG_HEIGHT - 2)
         log_win.move(1, 1)
         self.log_handler = CursesLogHandler(log_win)
-        formatter = logging.Formatter(' %(asctime) -25s - %(name) -15s - %(levelname) -10s - %(message)s')
-        formatterDisplay = logging.Formatter('  %(asctime)-8s|%(name)-12s|%(levelname)-6s|%(message)-s', '%H:%M:%S')
+        _formatter = logging.Formatter(" %(asctime) -25s - %(name) -15s - %(levelname) -10s - %(message)s")
+        formatterDisplay = logging.Formatter("  %(asctime)-8s|%(name)-12s|%(levelname)-6s|%(message)-s", "%H:%M:%S")
         self.log_handler.setFormatter(formatterDisplay)
         logger = logging.getLogger()
         logger.addHandler(self.log_handler)
@@ -141,13 +139,13 @@ class Testhost(Handler):
         self.input_gain = self.audiocard.get_volume_parameter(self.audiocard.CAPTURE_VOLUME)
         self.master_vol = self.audiocard.get_volume_parameter(self.audiocard.MASTER)
 
-    def __init__(self, audiocard = None, homedir = None):
+    def __init__(self, audiocard=None, homedir=None):
         self.hardware = None
         self.homedir = homedir
         self.audiocard = audiocard
         self.stdscr = None
         self.encval = 0
-        self.encsw = '--'
+        self.encsw = "--"
         self.enclast = 0
         self.dirty = False
         self.audio_in = None
@@ -184,7 +182,7 @@ class Testhost(Handler):
         self.cleanup()
 
     def _update_line(self, l, *args):
-        self.win.move(l,1)
+        self.win.move(l, 1)
         self.win.clrtoeol()
         self.win.addstr(l, 1, *args)
 
@@ -195,7 +193,7 @@ class Testhost(Handler):
         self.win.attrset(0)
 
     def _disp_footswitches(self, line, data):
-        disp = ""        
+        disp = ""
         for sw in self.hardware.footswitches:
             if sw.enabled:
                 disp += "ON  "
@@ -213,21 +211,21 @@ class Testhost(Handler):
             self._update_line(line, disp)
 
     def _disp_encoder(self, line, data):
-        disp = str(self.encval) + ' ' + str(self.encsw)
+        disp = str(self.encval) + " " + str(self.encsw)
         self._update_line(line, disp)
-            
+
     def _disp_capture_volume(self, line, data):
-        disp = 'Capture volume: ' + str(self.input_gain) + 'dB [C]/[c]'
+        disp = "Capture volume: " + str(self.input_gain) + "dB [C]/[c]"
         self._update_line(line, disp)
 
     def _disp_master_volume(self, line, data):
-        disp = 'Headphone volume: ' + str(self.master_vol) + 'dB [M]/[m]/[b]eep'
+        disp = "Headphone volume: " + str(self.master_vol) + "dB [M]/[m]/[b]eep"
         self._update_line(line, disp)
 
     def _disp_vu(self, line, data):
         label, channel = data
-        self.win.hline(line, 1, ' ', self.maxx - 2)
-        self.win.addstr(line, 1, label + '  |')
+        self.win.hline(line, 1, " ", self.maxx - 2)
+        self.win.addstr(line, 1, label + "  |")
         if channel == 0:
             peak = self.lpeak
         else:
@@ -237,16 +235,16 @@ class Testhost(Handler):
         # probably need some log here..
         self.win.attrset(curses.color_pair(self.VU_GREEN))
         self.win.hline(line, 5, curses.ACS_BLOCK, min(peak, 10))
-        if (peak > 10):
+        if peak > 10:
             self.win.attrset(curses.color_pair(self.VU_YELLOW))
             self.win.hline(line, 15, curses.ACS_BLOCK, min(peak - 10, 15))
-        if (peak > 15):
+        if peak > 15:
             self.win.attrset(curses.color_pair(self.VU_RED))
             self.win.hline(line, 20, curses.ACS_BLOCK, min(peak - 15, 20))
         self.win.attrset(0)
-        self.win.addch(line, 25, '|')
+        self.win.addch(line, 25, "|")
 
-    def _add_line(self, func, args = None):
+    def _add_line(self, func, args=None):
         l = len(self.lines)
         self.lines.append((func, args))
         return l
@@ -259,20 +257,20 @@ class Testhost(Handler):
         self.win.clear()
         self.win.box()
 
-        self.lines = [ (None, None) ]
+        self.lines = [(None, None)]
         if len(self.hardware.footswitches) > 0:
-            self._add_title('Foot switches')
+            self._add_title("Foot switches")
             self._add_line(self._disp_footswitches)
         if len(self.hardware.analog_controls) > 0:
-            self._add_title('Analog controls')
+            self._add_title("Analog controls")
             self._add_line(self._disp_analogcontrols)
-        self._add_title('Encoder')
+        self._add_title("Encoder")
         self._add_line(self._disp_encoder)
         if self.audiocard is not None:
-            self._add_title('Audio')
+            self._add_title("Audio")
             self._add_line(self._disp_capture_volume)
-            self.vu_left = self._add_line(self._disp_vu, ('L', 0))
-            self.vu_right = self._add_line(self._disp_vu, ('R', 1))
+            self.vu_left = self._add_line(self._disp_vu, ("L", 0))
+            self.vu_right = self._add_line(self._disp_vu, ("R", 1))
             self._add_line(self._disp_master_volume)
 
     def refresh(self):
@@ -297,7 +295,7 @@ class Testhost(Handler):
         self.enclast = time.monotonic_ns()
         self.dirty = True
 
-    def update_lcd_fs(self, footswitch=None, bypass_change = False):
+    def update_lcd_fs(self, footswitch=None, bypass_change=False):
         self.dirty = True
 
     def add_hardware(self, hardware):
@@ -314,7 +312,7 @@ class Testhost(Handler):
     def _key_input_gain(self, key):
         if self.audiocard is None:
             return
-        if key == ord('C'):
+        if key == ord("C"):
             chg = 0.25
         else:
             chg = -0.25
@@ -325,7 +323,7 @@ class Testhost(Handler):
     def _key_master_vol(self, key):
         if self.audiocard is None:
             return
-        if key == ord('M'):
+        if key == ord("M"):
             chg = 0.25
         else:
             chg = -0.25
@@ -336,9 +334,9 @@ class Testhost(Handler):
     def _key_beep(self, key):
         if self.audiocard is None:
             return
-        fs = 44100   # sampling freq
-        f = 440.0    # sound freq (middle A)
-        t = 1.0      # duration (1s)
+        fs = 44100  # sampling freq
+        f = 440.0  # sound freq (middle A)
+        t = 1.0  # duration (1s)
         samples = np.arange(t * fs) / fs
         signal = np.sin(2 * np.pi * f * samples)
         signal *= 32767
@@ -357,21 +355,22 @@ class Testhost(Handler):
         self.win.clear()
         self.log_win.mvwin(self.maxy - self.LOG_HEIGHT - 1, 0)
         self.log_win.resize(self.LOG_HEIGHT, self.maxx)
-        self.log_win.setscrreg(1, self.LOG_HEIGHT-2)
+        self.log_win.setscrreg(1, self.LOG_HEIGHT - 2)
         self.log_win.clear()
         self.log_win.refresh()
         logging.info("Window resized")
         self.dirty = True
 
     def _handle_key(self, key):
-        key_map = { ord('q') : self._key_quit,
-                    ord('C') : self._key_input_gain,
-                    ord('c') : self._key_input_gain,
-                    ord('M') : self._key_master_vol,
-                    ord('m') : self._key_master_vol,
-                    ord('b') : self._key_beep,
-                    curses.KEY_RESIZE: self._resize,
-                    }
+        key_map = {
+            ord("q"): self._key_quit,
+            ord("C"): self._key_input_gain,
+            ord("c"): self._key_input_gain,
+            ord("M"): self._key_master_vol,
+            ord("m"): self._key_master_vol,
+            ord("b"): self._key_beep,
+            curses.KEY_RESIZE: self._resize,
+        }
         if key in key_map:
             key_map[key](key)
 
@@ -382,7 +381,7 @@ class Testhost(Handler):
         if self.hardware is not None:
             self.hardware.poll_controls()
             if self.enclast > 0 and (time.monotonic_ns() - self.enclast) > 1000000000:
-                self.encsw = '--'
+                self.encsw = "--"
                 self.dirty = True
                 self.enclast = 0
             for ctrl in self.hardware.analog_controls:
@@ -391,7 +390,7 @@ class Testhost(Handler):
                     self.dirty = True
 
         if alsa_available and self.audiocard is not None:
-            l,data = self.audio_in.read()
+            l, data = self.audio_in.read()
             if l > 0:
                 npd = np.frombuffer(data, dtype=np.int16)
                 d_left = npd[0::2]
@@ -421,4 +420,7 @@ class Testhost(Handler):
             self.lcd.poll_updates()
 
     def poll_modui_changes(self):
+        pass
+
+    def poll_system_info(self):
         pass

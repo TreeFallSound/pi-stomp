@@ -22,8 +22,8 @@ import sys
 # Set up logging with format that works well with systemd journal
 logging.basicConfig(
     level=logging.INFO,  # Default level, will be overridden by CLI arg
-    format='%(levelname)s:%(name)s:%(message)s',
-    stream=sys.stderr
+    format="%(levelname)s:%(name)s:%(message)s",
+    stream=sys.stderr,
 )
 
 import argparse
@@ -45,16 +45,32 @@ def main():
 
     # Command line parsing
     parser = argparse.ArgumentParser()
-    parser.add_argument("--log", "-l", nargs='+', help="Provide logging level. Example --log debug'", default="info",
-                        choices=['debug', 'info', 'warning', 'error', 'critical'])
-    parser.add_argument("--host", nargs='+', help="Plugin host to use. Example --host mod'", default=['mod'],
-                        choices=['mod', 'mod1', 'generic', 'test'])
+    parser.add_argument(
+        "--log",
+        "-l",
+        nargs="+",
+        help="Provide logging level. Example --log debug'",
+        default="info",
+        choices=["debug", "info", "warning", "error", "critical"],
+    )
+    parser.add_argument(
+        "--host",
+        nargs="+",
+        help="Plugin host to use. Example --host mod'",
+        default=["mod"],
+        choices=["mod", "mod1", "generic", "test"],
+    )
 
     args = parser.parse_args()
 
     # Handle Log Level - override the default INFO level set at startup
-    level_config = {'debug': logging.DEBUG, 'info': logging.INFO, 'warning': logging.WARNING, 'error': logging.ERROR,
-                    'critical': logging.CRITICAL}
+    level_config = {
+        "debug": logging.DEBUG,
+        "info": logging.INFO,
+        "warning": logging.WARNING,
+        "error": logging.ERROR,
+        "critical": logging.CRITICAL,
+    }
     log = args.log[0]
     log_level = level_config[log] if log in level_config else None
     if log_level:
@@ -70,7 +86,7 @@ def main():
     # Audio Card Config - doing this early so audio passes ASAP
     factory = Audiocardfactory.Audiocardfactory(cwd)
     audiocard = factory.create()
-    audiocard.restore() 
+    audiocard.restore()
 
     # MIDI initialization
     # Prompts user for MIDI input port, unless a valid port number or name
@@ -78,8 +94,8 @@ def main():
     # API backend defaults to ALSA on Linux.
     # TODO discover and use the thru port (seems to be 14:0 on my system)
     # shouldn't need to aconnect, just send msgs directly to the thru port
-    port = 0 # TODO get this (the Midi Through port) programmatically
-    #port = sys.argv[1] if len(sys.argv) > 1 else None
+    port = 0  # TODO get this (the Midi Through port) programmatically
+    # port = sys.argv[1] if len(sys.argv) > 1 else None
     try:
         midiout, port_name = open_midioutput(port)
     except (EOFError, KeyboardInterrupt):
@@ -93,8 +109,7 @@ def main():
     # Hardware object uses cfg to know how to initialize the hardware elements
     cfg = config.load_default_cfg()
 
-    if args.host[0] == 'mod':
-
+    if args.host[0] == "mod":
         # Create singleton Mod handler
         handlerfactory = Handlerfactory.Handlerfactory()
         handler = handlerfactory.create(cfg, audiocard, cwd)
@@ -122,7 +137,7 @@ def main():
         # Load system info.  This can take a few seconds
         handler.system_info_load()
 
-    elif args.host[0] == 'generic':
+    elif args.host[0] == "generic":
         # No specific plugin host specified, so use a generic handler
         # Encoders and LCD not mapped without specific purpose
         # Just initialize the control hardware (footswitches, analog controls, etc.) for use as MIDI controls
@@ -131,7 +146,7 @@ def main():
         hw = factory.create(cfg, handler, midiout)
         handler.add_hardware(hw)
 
-    elif args.host[0] == 'test':
+    elif args.host[0] == "test":
         handler = Testhost.Testhost(audiocard, homedir=cwd)
         try:
             factory = Hardwarefactory.Hardwarefactory()
@@ -140,6 +155,7 @@ def main():
         except:
             raise
 
+    assert handler is not None
     logging.info("Entering main loop. Press Control-C to exit.")
     period = 0
     try:
@@ -161,12 +177,12 @@ def main():
                 handler.poll_modui_changes()
             if period % 200 == 0:
                 handler.poll_wifi()
-            if period > 6000: # every 60 seconds (when sleep = 0.01)
+            if period > 6000:  # every 60 seconds (when sleep = 0.01)
                 handler.poll_system_info()
                 period = 0
 
     except KeyboardInterrupt:
-        logging.info('keyboard interrupt')
+        logging.info("keyboard interrupt")
     finally:
         logging.info("Exit.")
         midiout.close_port()
@@ -175,5 +191,5 @@ def main():
         logging.info("Completed cleanup")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
