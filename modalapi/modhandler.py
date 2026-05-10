@@ -101,8 +101,7 @@ class Modhandler(Handler):
                           "next_snapshot": self.preset_incr_and_change,
                           "previous_snapshot": self.preset_decr_and_change,
                           "toggle_bypass": self.system_toggle_bypass,
-                          "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable,
-                          "universal_encoder_sw": self.universal_encoder_sw
+                          "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable
         }
 
         # External MIDI device synchronization
