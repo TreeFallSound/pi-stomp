@@ -140,6 +140,10 @@ class FakeLcd:
     def update_bypass(self, enabled: bool, latched: bool):
         pass
 
+    @property
+    def has_system_splash(self) -> bool:
+        return False
+
 
 @pytest.fixture
 def fake_lcd():
