@@ -834,6 +834,8 @@ class Modhandler(Handler):
         return util.DICT_GET(self.callbacks, callback_name)
 
     def set_mod_tap_tempo(self, bpm):
+        if bpm is None:
+            return
         url = self.root_uri + "set_bpm"
         resp = self._rest_post(url, json={"value": bpm})
         if resp is None or resp.status_code != 200:
