@@ -40,6 +40,7 @@ import pistomp.generichost as Generichost
 import pistomp.testhost as Testhost
 import pistomp.handlerfactory as Handlerfactory
 import pistomp.hardwarefactory as Hardwarefactory
+from pistomp.tuner.source import build_source
 
 EMULATOR_HOSTS = ("emulator_v1", "emulator_v2", "emulator_v3")
 
@@ -176,14 +177,9 @@ def main():
 
     assert handler is not None
 
-    _is_emulator = args.host[0] in ("emulator_v1", "emulator_v2", "emulator_v3")
-    if _is_emulator:
-        from pistomp.tuner.source import ToneSweepSource
-        handler.set_tuner_source_factory(lambda _port: ToneSweepSource())
-    elif args.tuner_source:
-        from pistomp.tuner.source import build_source
-        _tuner_spec = args.tuner_source
-        handler.set_tuner_source_factory(lambda port: build_source(_tuner_spec, port))
+    if not is_emulator and args.tuner_source:
+        tuner_spec = args.tuner_source
+        handler.set_tuner_source_factory(lambda port: build_source(tuner_spec, port))
 
     logging.info("Entering main loop. Press Control-C to exit.")
     period = 0
