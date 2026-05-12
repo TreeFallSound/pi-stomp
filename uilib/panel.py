@@ -170,6 +170,10 @@ class LcdBase(ABC):
     def has_system_splash(self) -> bool:
         return False
 
+    @property
+    def has_system_splash(self) -> bool:
+        return False
+
 class PanelStack(ContainerWidget):
     def __init__(self, lcd, box = None, image_format = None, use_dimming = True):
         # XXX This implementation currently assumes box is at (0,0) in the LCD
