@@ -26,6 +26,7 @@ import logging
 import os
 
 from modalapi.mod import Mod
+from modalapi.websocket_bridge import AsyncWebSocketBridge
 from emulator.stubs import VirtualAudiocard, StubWifiManager
 
 
@@ -46,6 +47,14 @@ class EmulatorMod(Mod):
 
         self.root_uri = "http://127.0.0.1:18181/"
         self._window = None
+
+        # Replace the :80 bridge created by super().__init__() with the emulator port
+        self.ws_bridge.stop()
+        self.ws_bridge = AsyncWebSocketBridge(
+            ws_url='ws://127.0.0.1:18181/websocket',
+            backpressure_threshold=8192
+        )
+        self.ws_bridge.start()
 
     def set_window(self, window):
         self._window = window
