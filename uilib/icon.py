@@ -72,26 +72,22 @@ class Icon(TextWidget):
         self.lines.append(l)
 
 
-    def _draw(self, image, draw, real_box):
-        # Draw shapes and text
-        # The loc calculation lines are a copy/paste from TextWidget._draw()
-        #
+    def _draw(self, ctx, frame):
         h_margin, v_margin = self._get_margins()
         extra = self.outline
-        hroom = real_box.width - h_margin - extra
-        vroom = real_box.height - v_margin - extra
+        hroom = frame.width - h_margin - extra
+        vroom = frame.height - v_margin - extra
         if hroom < 0 or vroom < 0:
             return
 
         h_margin = 1
-        loc = (real_box.x0 + h_margin, real_box.y0 + v_margin)
+        loc = (frame.x0 + h_margin, frame.y0 + v_margin)
 
-        # Draw features
         for e in self.ellipses:
-            draw.ellipse(xy=e['xy'], fill=e['fill'], outline=e['outline'], width=e['height'])
+            ctx.draw.ellipse(xy=e['xy'], fill=e['fill'], outline=e['outline'], width=e['height'])
 
         for l in self.lines:
-            draw.line(xy=l['xy'], fill=l['fill'], width=l['height'])
+            ctx.draw.line(xy=l['xy'], fill=l['fill'], width=l['height'])
 
-        draw.text((loc[0] + self.height + h_margin, loc[1]), self.text, fill=self.text_color, font=self.font)
+        ctx.draw.text((loc[0] + self.height + h_margin, loc[1]), self.text, fill=self.text_color, font=self.font)
 
