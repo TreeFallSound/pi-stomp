@@ -10,6 +10,8 @@ from unittest.mock import MagicMock
 import pytest
 from PIL import Image, ImageFont
 
+from uilib.panel import LcdBase
+
 PROJECT_ROOT = Path(__file__).parent.parent
 _TESTS_DIR = Path(__file__).parent
 _SNAPSHOT_DIR = _TESTS_DIR / "snapshots"
@@ -165,7 +167,7 @@ def fake_ws_bridge():
 # ---------------------------------------------------------------------------
 
 
-class FakeLcd:
+class FakeLcd(LcdBase):
     def __init__(self):
         self.frames: list[Image.Image] = []
 

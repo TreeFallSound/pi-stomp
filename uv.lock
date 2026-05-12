@@ -900,8 +900,8 @@ requires-dist = [
     { name = "requests", specifier = ">=2.28" },
     { name = "rpi-lgpio", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=0.4" },
     { name = "rpi-ws281x", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=5.0" },
-    { name = "websockets", specifier = ">=15.0.1" },
     { name = "spidev", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=3.0" },
+    { name = "websockets", specifier = ">=15.0.1" },
 ]
 provides-extras = ["hardware"]
 
