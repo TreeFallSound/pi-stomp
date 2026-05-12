@@ -104,7 +104,7 @@ class MessageDialog(Dialog):
         wrapped = _pixel_wrap(message, text_font, width - 10)
 
         t = TextWidget(box=Box.xywh(5, 0, width-10, 50), text=wrapped, parent=self, outline=0, sel_width=0,
-                       align=WidgetAlign.NONE)
+                       align=WidgetAlign.NONE, text_halign=TextHAlign.LEFT)
         self.add_widget(t)
         b = TextWidget(box=Box.xywh(int((width/2)-20), height-30, 0, 0), text='Ok', parent=self, outline=1,
                        sel_width=3, outline_radius=5, action=lambda x, y: panelstack.pop_panel(self),
