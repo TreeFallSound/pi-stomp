@@ -51,6 +51,7 @@ def _build_stack(hw_class: Any, cfg_path: Path, fake_lcd, tmp_path) -> Generator
         patch("modalapi.wifi.WifiManager"),
         patch("subprocess.check_output", return_value=b"SystemState=running"),
         patch("pistomp.lcd320x240.LcdIli9341", return_value=fake_lcd),
+        patch("modalapi.modhandler.AsyncWebSocketBridge"),
     ):
         def get_side_effect(url, **kwargs):
             resp = MagicMock()
