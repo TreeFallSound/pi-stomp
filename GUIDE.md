@@ -48,14 +48,47 @@ sshfs pistomp@pistomp.local:/home/pistomp <LOCAL_DIR> -o defer_permissions -o vo
 - **Pedalboards**: `/home/pistomp/data/.pedalboards/`
 - **Service**: `/lib/systemd/system/mod-ala-pi-stomp.service`
 
-## Testing Changes
+## Automated Tests
+
+### Running tests
 
 ```bash
-# Test pedalboard switch via API
+uv run pytest                    # run all tests
+uv run pytest --snapshot-update  # accept new LCD snapshots as baselines
+uv run pytest --cov=pistomp --cov=modalapi --cov=common --cov=uilib --cov-report=term-missing
+```
+
+### Snapshot fixture
+
+By using the  `snapshot` fixture, we can assert that the image rendered to the LCD
+does not change unexpectedly.
+
+```python
+def test_my_flow(v3_system, snapshot):
+    # ... drive interactions ...
+    snapshot()           # auto-numbered: snapshots/v3/test_my_file/test_my_flow/0.png
+    snapshot("label")    # named:         snapshots/v3/test_my_file/test_my_flow/label.png
+    snapshot("label")    # same label → asserts screen returned to that earlier state
+```
+
+Regenerate baselines after intentional UI changes with `--snapshot-update`.
+
+### Adding coverage for a new hardware version
+
+1. Add `tests/v1/conftest.py` (or `v2/`) with a fixture analogous to `v3_system`
+   using the correct handler (`mod.py`) and hardware class.
+2. Mirror the `v3/` file structure — one file per concern, under 500 lines each.
+3. Reuse `make_plugin`, `make_parameter`, and `get_urls` from the root conftest or
+   define version-specific variants in the new `conftest.py`.
+
+## On-device Testing
+```bash
 curl -X POST http://localhost:80/pedalboard/load_bundle/ \
   -d 'bundlepath=/home/pistomp/data/.pedalboards/AmpBud.pedalboard'
+```
 
 # List pedalboards
+```bash
 curl -s http://localhost:80/pedalboard/list | python3 -m json.tool
 ```
 
