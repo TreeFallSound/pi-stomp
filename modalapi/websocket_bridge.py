@@ -23,6 +23,7 @@ async WebSocket communication with mod-ui.
 import asyncio
 import logging
 import queue
+import sys
 import threading
 from typing import Optional
 
@@ -213,7 +214,7 @@ class AsyncWebSocketBridge:
             return
 
         self._worker.running = False
-        if self._thread:
+        if self._thread and not sys.is_finalizing():
             self._thread.join(timeout=2.0)
         logging.info(f"WebSocket worker stopped (sent={self._worker.messages_sent})")
 
