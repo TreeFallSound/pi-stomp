@@ -44,7 +44,7 @@ from pathlib import Path
 class Modhandler(Handler):
     __single = None
 
-    def __init__(self, audiocard, homedir):
+    def __init__(self, audiocard, homedir, data_dir="/home/pistomp/data"):
         logging.info("Init modhandler")
         if Modhandler.__single:
             raise RuntimeError("Attempt to create second Modhandler singleton", Modhandler.__single)
@@ -79,7 +79,7 @@ class Modhandler(Handler):
         # Backup
         self.backup_dir = "/media/usb0/backups"
         self.backup_file = "pistomp_backup.zip"
-        self.data_dir = "/home/pistomp/data"
+        self.data_dir = data_dir
 
         # Banks
         self.banks_file = os.path.join(self.data_dir, "banks.json")
@@ -855,6 +855,8 @@ class Modhandler(Handler):
         return util.DICT_GET(self.callbacks, callback_name)
 
     def set_mod_tap_tempo(self, bpm):
+        if bpm is None:
+            return
         url = self.root_uri + "set_bpm"
         resp = self._rest_post(url, json={"value": bpm})
         if resp is None or resp.status_code != 200:

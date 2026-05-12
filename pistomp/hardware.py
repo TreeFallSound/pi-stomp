@@ -30,6 +30,7 @@ import pistomp.taptempo as taptempo
 
 from abc import ABC, abstractmethod
 from modalapi.external_midi import ExternalMidiManager
+import pistomp.relay as Relay
 
 Controller = Union[AnalogMidiControl.AnalogMidiControl, EncoderMidiControl.EncoderMidiControl, Footswitch.Footswitch]
 
@@ -52,7 +53,7 @@ class Hardware(ABC):
         self.midi_channel = 0
 
         # Standard hardware objects (not required to exist)
-        self.relay = None
+        self.relay: Relay.Relay | None = None
         self.analog_controls: list[AnalogControl] = []
         self.encoders = []
         self.controllers: dict[str, Controller] = {}
