@@ -94,8 +94,13 @@ class ContainerWidget(Widget):
         if local_clip.is_empty():
             return
 
-        local_ctx = PaintContext(self.image, self.draw, local_clip)
         local_frame = self.box.norm()
+        if self.outline_radius is not None:
+            r = self.outline_radius
+            safe = Box(r, r, local_frame.width - r, local_frame.height - r)
+            if not safe.contains(local_clip):
+                local_clip = local_frame
+        local_ctx = PaintContext(self.image, self.draw, local_clip)
         self._draw_erase(local_ctx, local_frame)
         self._draw(local_ctx, local_frame)
         for c in self.children:
@@ -121,8 +126,7 @@ class ContainerWidget(Widget):
         """Bubble a dirty region (in our local coords) up to our parent container."""
         if not self.visible or self.parent is None:
             return
-        # Translate local_clip into parent's local coords: offset by self.box topleft
-        parent_clip = local_clip.offset(self.box)
+        parent_clip = local_clip.deoffset(self.offset).offset(self.box)
         self.parent._propagate_dirty(parent_clip)
 
     def scroll(self, offset):

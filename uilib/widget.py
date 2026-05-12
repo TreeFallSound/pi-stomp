@@ -440,10 +440,8 @@ class Widget:
         if erase_box.is_empty():
             return
         if self.outline_radius is not None and erase_box == frame:
-            # Full-frame erase: preserve rounded corners by using the round shape.
             ctx.draw.rounded_rectangle(frame.PIL_rect, self.outline_radius, self.bkgnd_color, None, 0)
         else:
-            # Partial erase: plain rect so only the dirty region is touched.
             ctx.draw.rectangle(erase_box.PIL_rect, self.bkgnd_color, None, 0)
 
     def _draw_outline(self, ctx: PaintContext, frame: Box):

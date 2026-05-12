@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from PIL import Image, ImageDraw
 
 from uilib.box import Box
@@ -31,5 +31,3 @@ class PaintContext:
     draw: ImageDraw.ImageDraw
     clip: Box
 
-    def with_clip(self, new_clip: Box) -> "PaintContext":
-        return replace(self, clip=self.clip.intersection(new_clip))
