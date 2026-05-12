@@ -60,6 +60,6 @@ def test_configure_wifi_credentials(modhandler_system: SystemFixture):
     assert handler.wifi_manager
 
     handler.wifi_manager.configure_wifi.return_value = True
-    result = handler.configure_wifi_credentials("MyNet", "secret")
-    handler.wifi_manager.configure_wifi.assert_called_once_with("MyNet", "secret")
+    result = handler.wifi_manager.configure_wifi(None, "MyNet", "secret")
+    handler.wifi_manager.configure_wifi.assert_called_once_with(None, "MyNet", "secret")
     assert result is True

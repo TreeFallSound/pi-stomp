@@ -106,8 +106,9 @@ def test_wifi_menu_snapshot(lcd, snapshot):
     instance, _ = lcd
     instance.handler.wifi_status = {"hotspot_active": False}
     setup_main_ui(instance)
-    instance.draw_wifi_menu(None, None)
-    snapshot()
+    instance.wifi_menu.open(None, None)
+    snapshot("wifi_menu")
+
 
 
 def test_system_menu_snapshot(lcd, snapshot):
