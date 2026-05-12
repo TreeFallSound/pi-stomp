@@ -38,6 +38,7 @@ from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundl
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encodermidicontrol import EncoderMidiControl
 from pistomp.footswitch import Footswitch
+from pistomp.handler import Handler
 from pathlib import Path
 
 
