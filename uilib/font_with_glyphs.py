@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from functools import lru_cache
 from typing import Generator, Protocol, runtime_checkable
 
 from PIL import Image, ImageDraw, ImageFont
@@ -39,15 +40,80 @@ class PillGlyph:
         return self._text_w + 8 + 2  # +2 for 1px breathing on each side
 
     def draw(self, draw: ImageDraw.ImageDraw, x: int, y: int, font_height: int, color) -> None:
-        bw = self.width(font_height) - 2  # pill body excludes breathing pixels
-        bx = x + 1                        # 1px left breathing
+        draw._image.paste(self._render(font_height, int(color)), (x, y))  # type: ignore[attr-defined]
+
+    @lru_cache(maxsize=16)
+    def _render(self, font_height: int, color: int) -> Image.Image:
+        cell_w = self.width(font_height)
+        img = Image.new('L', (cell_w, font_height), 0)
+        d = ImageDraw.Draw(img)
+        bw = cell_w - 2
+        bx = 1
         bh = self._text_h + 4
-        by = y + max(0, (font_height - bh) // 2)
-        draw.rounded_rectangle([bx, by, bx + bw - 1, by + bh - 1],
-                                radius=2, fill=color, outline=None)
+        by = max(0, (font_height - bh) // 2)
+        d.rounded_rectangle([bx, by, bx + bw - 1, by + bh - 1],
+                            radius=2, fill=color, outline=None)
         tx = bx + (bw - self._text_w) // 2 - int(self._text_bb[0])
         ty = by + 2 - int(self._text_bb[1])
-        draw.text((tx, ty), self._label, fill=0, font=self._font)
+        d.text((tx, ty), self._label, fill=0, font=self._font)
+        return img
+
+
+class SignalBarsGlyph:
+    """Cellphone-style signal strength: slices of a right triangle. Bar 0 is
+    a triangle (left edge zero-height); bars 1..n are trapezoids whose tops
+    follow a single continuous hypotenuse spanning the full glyph width
+    (gaps included). Bars [0:level] are filled; the rest are outlined.
+    Rendered via 4x supersampling for anti-aliased edges."""
+
+    SCALE: int = 4
+
+    def __init__(self, level: int, bar_count: int = 4,
+                 bar_w: int = 5, gap: int = 2) -> None:
+        self._level = max(0, min(bar_count, level))
+        self._bar_count = bar_count
+        self._bar_w = bar_w
+        self._gap = gap
+
+    def width(self, font_height: int) -> int:
+        return self._bar_count * self._bar_w + (self._bar_count - 1) * self._gap + 2
+
+    def draw(self, draw: ImageDraw.ImageDraw, x: int, y: int,
+             font_height: int, color) -> None:
+        draw._image.paste(self._render(font_height, int(color)), (x, y))  # type: ignore[attr-defined]
+
+    @lru_cache(maxsize=32)
+    def _render(self, font_height: int, color: int) -> Image.Image:
+        s = self.SCALE
+        cell_w = self.width(font_height)
+        cell_h = font_height
+        big = Image.new('L', (cell_w * s, cell_h * s), 0)
+        bd = ImageDraw.Draw(big)
+
+        max_h = max(4, font_height - 4) * s
+        baseline = (font_height - 2) * s
+        bw = self._bar_w * s
+        gap = self._gap * s
+        span = (self._bar_count - 1) * (bw + gap) + bw - 1  # leftmost to rightmost pixel
+
+        for i in range(self._bar_count):
+            bx_left = s + i * (bw + gap)
+            bx_right = bx_left + bw - 1
+            h_left = int(round(max_h * (bx_left - s) / span))
+            h_right = int(round(max_h * (bx_right - s) / span))
+            poly = [
+                (bx_left, baseline),
+                (bx_right, baseline),
+                (bx_right, baseline - h_right),
+                (bx_left, baseline - h_left),
+            ]
+            if i < self._level:
+                bd.polygon(poly, fill=color)
+            else:
+                # Half-intensity in the L-mask → renders dim against the fgnd.
+                bd.polygon(poly, outline=color // 2, width=s)
+
+        return big.resize((cell_w, cell_h), Image.LANCZOS)
 
 
 class FontWithGlyphs:

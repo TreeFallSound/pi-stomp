@@ -139,6 +139,18 @@ def test_saved_wrong_psk_shows_error(v3_system, wifi_state, snapshot):
     wm_mock.replace_psk.assert_not_called()
 
 
+def test_open_network_badge_in_nearby_list(v3_system, wifi_state, snapshot):
+    """Unsaved open networks render the public-network pill badge in the nearby submenu."""
+    nets = [
+        make_scanned("FreeWifi", signal=80, security="--"),
+        make_scanned("Secured", signal=50, security="WPA2"),
+    ]
+    wifi_state(scanned=nets, saved=[])
+    _wm, lcd = _open(v3_system)
+    _click(lcd)          # enter "Nearby networks..."
+    snapshot("nearby_with_open_badge")
+
+
 # ---------------------------------------------------------------------------
 # 5.7  test_open_network_connect
 # ---------------------------------------------------------------------------

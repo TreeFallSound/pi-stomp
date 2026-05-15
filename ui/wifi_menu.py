@@ -36,6 +36,7 @@ from uilib import (
     MessageDialog,
     PillGlyph,
     RoundedPanel,
+    SignalBarsGlyph,
     TextWidget,
     WidgetAlign,
 )
@@ -56,11 +57,10 @@ class _WifiHost(Protocol):
     def system_toggle_hotspot(self) -> Optional[bytes]: ...
 
 
-SIGNAL_FILLED = '\u25ae'   # ▮
-SIGNAL_EMPTY = '\u25af'    # ▯
 ACTIVE_GLYPH = '\u2714'    # ✔
 SAVED_GLYPH  = '\u2022'    # •
 PUBLIC_GLYPH = '\ue001'    # PUA sentinel — rendered as pill badge by FontWithGlyphs
+SIGNAL_GLYPHS = ['\ue010', '\ue011', '\ue012', '\ue013', '\ue014']  # 0..4 bars
 HOTSPOT_ON = '\u25cf'      # ●
 HOTSPOT_OFF = '\u25cb'     # ○
 SEP = '\u00b7'             # ·
@@ -134,7 +134,7 @@ class _PassphraseEditor(RoundedPanel):
 
 def signal_bars(signal: int) -> str:
     levels = max(1, min(4, (signal + 12) // 25))
-    return SIGNAL_FILLED * levels + SIGNAL_EMPTY * (4 - levels)
+    return SIGNAL_GLYPHS[levels]
 
 
 def format_age(ts: Optional[int]) -> Optional[str]:
@@ -157,7 +157,10 @@ def is_open_network(security: Optional[str]) -> bool:
 def _make_badge_font() -> FontWithGlyphs:
     base = Config().get_font('default')
     assert base is not None, "default font not configured"
-    return FontWithGlyphs(base, {PUBLIC_GLYPH: PillGlyph('P')})
+    glyphs: dict[str, object] = {PUBLIC_GLYPH: PillGlyph('P')}
+    for level, ch in enumerate(SIGNAL_GLYPHS):
+        glyphs[ch] = SignalBarsGlyph(level)
+    return FontWithGlyphs(base, glyphs)  # type: ignore[arg-type]
 
 
 class WifiMenu:
@@ -223,7 +226,8 @@ class WifiMenu:
         rows, nearby = self._build_rows(scanned, saved_by_ssid, scanned_ssids, active_name)
         title = self._title(wifi_status, active_name, scanned)
         items = self._build_items(rows, nearby, hotspot_active)
-        self._root_menu = self.lcd.draw_selection_menu(items, title, dismiss_option=True)
+        self._root_menu = self.lcd.draw_selection_menu(items, title, dismiss_option=True,
+                                                       font=_make_badge_font())
 
     def notify_status_change(self) -> None:
         """Called by the handler after wifi_status is updated.

@@ -277,8 +277,10 @@ class TextWidget(Widget):
             if th > vroom:
                 th = vroom
             y = real_box.y0 + v_margin
-            draw.text((real_box.x0 + h_margin, y), left, fill=self.fgnd_color, font=self.font)
-            draw.text((real_box.x0 + real_box.width - h_margin - extra - rw, y),
+            # Extra padding for split rows so the right half doesn't hug the edge.
+            split_pad = 3
+            draw.text((real_box.x0 + h_margin + split_pad, y), left, fill=self.fgnd_color, font=self.font)
+            draw.text((real_box.x0 + real_box.width - h_margin - extra - split_pad - rw, y),
                       right, fill=self.fgnd_color, font=self.font)
             return
 
