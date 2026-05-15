@@ -485,10 +485,10 @@ class Mod(Handler):
         elif isinstance(msg, PluginBypassMessage):
             if self.current is not None:
                 for plugin in self.current.pedalboard.plugins:
-                    if plugin.instance_id == msg.instance:
+                    if plugin.instance_id.lstrip("/") == msg.instance.lstrip("/"):
                         logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
                         plugin.set_bypass(msg.bypassed)
-                        self.lcd.draw_plugins(self.current.pedalboard.plugins)
+                        self.lcd.refresh_plugins()
                         break
 
     def poll_modui_changes(self):

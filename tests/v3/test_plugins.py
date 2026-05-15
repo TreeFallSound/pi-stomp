@@ -113,12 +113,14 @@ def test_v3_toggle_plugin_bypass_no_footswitch_sends_websocket(v3_system: System
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
+    snapshot("active")
 
-    handler.toggle_plugin_bypass(MagicMock(), plugin)
+    widget = next(w for w in handler.lcd.w_plugins if w.object is plugin)
+    handler.toggle_plugin_bypass(widget, plugin)
 
     assert ws_bridge.sent_values_for("fuzz", ":bypass") == [1.0]
     assert plugin.is_bypassed()
-    snapshot()
+    snapshot("bypassed")
 
 
 def test_v3_preset_change_plugin_update(v3_system: SystemFixture, make_plugin, snapshot):
@@ -209,3 +211,67 @@ def test_v3_parameter_midi_change(v3_system: SystemFixture, make_parameter, snap
     param = make_parameter("Gain", "delay", value=0.5)
     handler.parameter_midi_change(param, 1)
     snapshot()
+
+
+# ---------------------------------------------------------------------------
+# Plugin bypass sync (inbound websocket events from mod-ui)
+# ---------------------------------------------------------------------------
+
+
+def test_v3_handle_bypass_event_updates_plugin(v3_system: SystemFixture, make_plugin, snapshot):
+    """Inbound param_set :bypass from mod-ui updates plugin state and redraws LCD."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+    plugin = make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=False)
+    handler.current.pedalboard.plugins = [plugin]
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    ws_bridge.inject("param_set /graph/fuzz :bypass 1.0")
+    handler.poll_modui_changes()
+
+    assert plugin.is_bypassed()
+    snapshot()
+
+
+def test_v3_bypass_echo_is_idempotent(v3_system: SystemFixture, make_plugin, snapshot):
+    """After toggle_plugin_bypass, the mod-ui echo doesn't corrupt state or LCD."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+    plugin = make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=False)
+    handler.current.pedalboard.plugins = [plugin]
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+    snapshot("before")
+
+    widget = next(w for w in handler.lcd.w_plugins if w.object is plugin)
+    handler.toggle_plugin_bypass(widget, plugin)
+    assert plugin.is_bypassed()
+    snapshot("after_toggle")
+
+    ws_bridge.inject("param_set /graph/fuzz :bypass 1.0")
+    handler.poll_modui_changes()
+
+    assert plugin.is_bypassed()
+    snapshot("after_echo")
+
+
+def test_v3_bypass_event_unknown_plugin_is_ignored(v3_system: SystemFixture, make_plugin):
+    """Bypass event for an unknown instance ID doesn't raise or corrupt state."""
+    handler = v3_system.handler
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+    plugin = make_plugin("fuzz", bypassed=False)
+    handler.current.pedalboard.plugins = [plugin]
+
+    ws_bridge.inject("param_set /graph/not_a_real_plugin :bypass 1.0")
+    handler.poll_modui_changes()
+
+    assert not plugin.is_bypassed()
