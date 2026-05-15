@@ -79,15 +79,8 @@ def _split_terse(line: str) -> list[str]:
 
 class WifiManager():
 
-    # For now hard wire wifi interface to avoid spending time scrubbing sysfs
-    #
-    # our hotspot scripts are also hard wired to this name. Long run we could make
-    # it a config option or similar... or better plumb the whole thing with a
-    # proper network management, but we aren't there. Alternatively, we could
-    # monitor for hotplug events via dbus...
-    #
-    HOTSPOT_PROFILE: str = 'pistomp-hotspot'
-
+    # Hard-wire wifi interface to avoid scrubbing sysfs; the hotspot scripts
+    # are likewise hard-wired.
     def __init__(self, ifname: str = 'wlan0') -> None:
         self.iface_name: str = ifname
         self.ssid: Optional[str] = None
