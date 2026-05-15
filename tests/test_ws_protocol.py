@@ -1,7 +1,5 @@
 """Unit tests for ws_protocol.parse_message."""
 
-import pytest
-
 from modalapi.ws_protocol import (
     AddHwPortMessage,
     LoadingEndMessage,
