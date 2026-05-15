@@ -45,14 +45,13 @@ class PillGlyph:
     @lru_cache(maxsize=16)
     def _render(self, font_height: int, color: int) -> Image.Image:
         cell_w = self.width(font_height)
-        img = Image.new('L', (cell_w, font_height), 0)
+        img = Image.new("L", (cell_w, font_height), 0)
         d = ImageDraw.Draw(img)
         bw = cell_w - 2
         bx = 1
         bh = self._text_h + 4
         by = max(0, (font_height - bh) // 2)
-        d.rounded_rectangle([bx, by, bx + bw - 1, by + bh - 1],
-                            radius=2, fill=color, outline=None)
+        d.rounded_rectangle([bx, by, bx + bw - 1, by + bh - 1], radius=2, fill=color, outline=None)
         tx = bx + (bw - self._text_w) // 2 - int(self._text_bb[0])
         ty = by + 2 - int(self._text_bb[1])
         d.text((tx, ty), self._label, fill=0, font=self._font)
@@ -68,8 +67,7 @@ class SignalBarsGlyph:
 
     SCALE: int = 4
 
-    def __init__(self, level: int, bar_count: int = 4,
-                 bar_w: int = 5, gap: int = 2) -> None:
+    def __init__(self, level: int, bar_count: int = 4, bar_w: int = 5, gap: int = 2) -> None:
         self._level = max(0, min(bar_count, level))
         self._bar_count = bar_count
         self._bar_w = bar_w
@@ -78,8 +76,7 @@ class SignalBarsGlyph:
     def width(self, font_height: int) -> int:
         return self._bar_count * self._bar_w + (self._bar_count - 1) * self._gap + 2
 
-    def draw(self, draw: ImageDraw.ImageDraw, x: int, y: int,
-             font_height: int, color) -> None:
+    def draw(self, draw: ImageDraw.ImageDraw, x: int, y: int, font_height: int, color) -> None:
         draw._image.paste(self._render(font_height, int(color)), (x, y))  # type: ignore[attr-defined]
 
     @lru_cache(maxsize=32)
@@ -87,7 +84,7 @@ class SignalBarsGlyph:
         s = self.SCALE
         cell_w = self.width(font_height)
         cell_h = font_height
-        big = Image.new('L', (cell_w * s, cell_h * s), 0)
+        big = Image.new("L", (cell_w * s, cell_h * s), 0)
         bd = ImageDraw.Draw(big)
 
         max_h = max(4, font_height - 4) * s
@@ -113,7 +110,7 @@ class SignalBarsGlyph:
                 # Half-intensity in the L-mask → renders dim against the fgnd.
                 bd.polygon(poly, outline=color // 2, width=s)
 
-        return big.resize((cell_w, cell_h), Image.LANCZOS)
+        return big.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
 
 
 class FontWithGlyphs:
@@ -158,11 +155,11 @@ class FontWithGlyphs:
                 max_bottom = max(max_bottom, int(bb[3]))
         return (0, min_top, total_w, max_bottom)
 
-    def getmask2(self, text: str, mode: str = '', **kwargs) -> tuple:
+    def getmask2(self, text: str, mode: str = "", **kwargs) -> tuple:
         if not any(c in text for c in self._glyphs):
             return self._base.getmask2(text, mode, **kwargs)
 
-        img = Image.new('L', (max(self._measure_width(text), 1), self._font_height), 0)
+        img = Image.new("L", (max(self._measure_width(text), 1), self._font_height), 0)
         draw = ImageDraw.Draw(img)
         x = 0
         for segment, glyph in self._iter_segments(text):
@@ -182,15 +179,15 @@ class FontWithGlyphs:
 
     # --- helpers ---
 
-    def _iter_segments(self, text: str) -> Generator[tuple[str, 'Glyph | None'], None, None]:
+    def _iter_segments(self, text: str) -> Generator[tuple[str, "Glyph | None"], None, None]:
         """Yield (segment_str, glyph_or_None) pairs for each run in text."""
-        buf = ''
+        buf = ""
         for ch in text:
             glyph = self._glyphs.get(ch)
             if glyph is not None:
                 if buf:
                     yield buf, None
-                    buf = ''
+                    buf = ""
                 yield ch, glyph
             else:
                 buf += ch
