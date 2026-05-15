@@ -154,9 +154,9 @@ def is_open_network(security: Optional[str]) -> bool:
     return not security or security == '--'
 
 
-def _make_badge_font() -> FontWithGlyphs:
-    base = Config().get_font('default')
-    assert base is not None, "default font not configured"
+def _make_badge_font(base_name: str = 'default') -> FontWithGlyphs:
+    base = Config().get_font(base_name)
+    assert base is not None, f"{base_name} font not configured"
     glyphs: dict[str, object] = {PUBLIC_GLYPH: PillGlyph('P')}
     for level, ch in enumerate(SIGNAL_GLYPHS):
         glyphs[ch] = SignalBarsGlyph(level)
@@ -226,8 +226,9 @@ class WifiMenu:
         rows, nearby = self._build_rows(scanned, saved_by_ssid, scanned_ssids, active_name)
         title = self._title(wifi_status, active_name, scanned)
         items = self._build_items(rows, nearby, hotspot_active)
-        self._root_menu = self.lcd.draw_selection_menu(items, title, dismiss_option=True,
-                                                       font=_make_badge_font())
+        self._root_menu = self.lcd.draw_selection_menu(
+            items, title, dismiss_option=True,
+            font=_make_badge_font())
 
     def notify_status_change(self) -> None:
         """Called by the handler after wifi_status is updated.
@@ -328,9 +329,6 @@ class WifiMenu:
             return "WiFi " + SEP + " Hotspot"
         if active_name:
             ssid = util.DICT_GET(wifi_status, 'ssid') or active_name
-            for net in scanned:
-                if net['in_use'] or net['ssid'] == ssid:
-                    return "WiFi %s %s %s" % (SEP, ssid, signal_bars(net['signal']))
             return "WiFi %s %s" % (SEP, ssid)
         return "WiFi " + SEP + " Disconnected"
 

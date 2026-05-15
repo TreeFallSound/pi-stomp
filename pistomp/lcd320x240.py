@@ -259,7 +259,7 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_selection_menu(items, "Snapshots", auto_dismiss=True, dismiss_option=True)
 
     def draw_selection_menu(self, items, title="", auto_dismiss=False, dismiss_option=False,
-                            font=None):
+                            font=None, title_font=None):
         # items is a list of tuples: (label, callback, arg) or (label, callback, arg, is_active)
         # or (label, callback, arg, is_active, long_callback) where long_callback is called
         # instead of callback on a long press.
@@ -272,7 +272,11 @@ class Lcd(abstract_lcd.Lcd):
                 return
             callback(params[2])
 
-        extra = {} if font is None else {'font': font}
+        extra = {}
+        if font is not None:
+            extra['font'] = font
+        if title_font is not None:
+            extra['title_font'] = title_font
         m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=200,
                  auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action, **extra)
         self.pstack.push_panel(m)
