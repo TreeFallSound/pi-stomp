@@ -53,7 +53,7 @@ class _WifiHost(Protocol):
     wifi_manager: WifiManager
     wifi_status: Optional[WifiStatus]
 
-    def system_toggle_hotspot(self) -> None: ...
+    def system_toggle_hotspot(self) -> Optional[bytes]: ...
 
 
 SIGNAL_FILLED = '\u25ae'   # ▮
@@ -195,25 +195,23 @@ class WifiMenu:
     # ----- entry points -----
 
     def open(self, event: object = None, widget: object = None) -> None:
-        # If wifi_supported is missing the host hasn't seen a poll yet — assume
-        # supported so we don't render a stale "Disconnected" surface during
-        # the cold-start window.
+        self._refresh_cache()
+        self._render_root_menu()
+
+    def _refresh_cache(self) -> None:
+        # wifi_supported missing == cold start; assume supported to avoid
+        # flashing "Disconnected" before the first poll lands.
         supported = util.DICT_GET(self._wifi_status, 'wifi_supported')
         if supported is None:
             supported = True
-        hotspot_active = bool(util.DICT_GET(self._wifi_status, 'hotspot_active'))
 
         saved_by_ssid: dict[str, list[SavedConnection]] = {}
         for c in self._wifi_manager.list_connections():
             saved_by_ssid.setdefault(c['ssid'], []).append(c)
 
-        scanned: list[ScannedNetwork] = []
-        if supported and not hotspot_active:
-            scanned = self._wifi_manager.scan_networks()
-
+        scanned: list[ScannedNetwork] = self._wifi_manager.scan_networks() if supported else []
         self._cached_scanned = scanned
         self._cached_saved_by_ssid = saved_by_ssid
-        self._render_root_menu()
 
     def _render_root_menu(self) -> None:
         wifi_status = self._wifi_status
@@ -239,12 +237,22 @@ class WifiMenu:
         old = self._root_menu
         self._root_menu = None
         self._pstack.pop_panel(old)
+        self._refresh_cache()
         self._render_root_menu()
 
     def toggle_hotspot(self, _: object = None) -> None:
+        # Read intent before _mark_disconnected clobbers hotspot_active.
+        was_active = bool(util.DICT_GET(self._wifi_status, 'hotspot_active'))
         self._pstack.pop_panel(None)
         self._mark_disconnected(also_hotspot=True)
-        self._host.system_toggle_hotspot()
+        if was_active:
+            err = self._wifi_manager.disable_hotspot()
+        else:
+            self._wifi_manager.enable_hotspot()
+            err = None
+        if err is not None:
+            self._pstack.push_panel(
+                MessageDialog(self._pstack, parse_nmcli_error(err), title="Couldn't reconnect"))
 
     # ----- list assembly -----
 

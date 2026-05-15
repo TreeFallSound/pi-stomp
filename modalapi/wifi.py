@@ -208,19 +208,29 @@ class WifiManager():
         except Exception:
             logging.debug('Wifi hotspot enabling failed')
 
-    def disable_hotspot(self) -> None:
+    def disable_hotspot(self) -> Optional[bytes]:
+        """Stop the hotspot and reactivate the most-recent saved profile.
+        NM doesn't reliably autoconnect after AP teardown. Returns None on
+        success or when no saved profile exists; nmcli stderr otherwise."""
         try:
-            subprocess.check_output(['sudo', 'systemctl', 'disable', '--now', 'wifi-hotspot']).strip().decode('utf-8')
+            subprocess.check_output(['sudo', 'systemctl', 'disable', '--now', 'wifi-hotspot'])
         except Exception:
             logging.debug('Wifi hotspot disabling failed')
 
-    def list_connections(self) -> list[SavedConnection]:
-        """Return all saved wifi profiles, excluding the hotspot.
+        saved = self.list_connections()
+        if not saved:
+            return None
+        most_recent = max(saved, key=lambda c: c['timestamp'] or 0)
+        return self.connect_saved(most_recent['name'], wait=False)
 
-        timestamp is the unix-seconds of last successful activation (0 if never)."""
+    def list_connections(self) -> list[SavedConnection]:
+        """Return saved wifi client profiles. Filter by mode=ap so both images'
+        hotspot profile names (`pistomp-hotspot`, `Hotspot`) are excluded."""
         try:
             result = subprocess.run(
-                ['nmcli', '-t', '-f', 'NAME,TYPE,TIMESTAMP,802-11-WIRELESS.SSID', 'connection', 'show'],
+                ['nmcli', '-t', '-f',
+                 'NAME,TYPE,TIMESTAMP,802-11-WIRELESS.SSID,802-11-WIRELESS.MODE',
+                 'connection', 'show'],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
             )
             connections: list[SavedConnection] = []
@@ -229,9 +239,10 @@ class WifiManager():
                     continue
                 parts = _split_terse(line)
                 if len(parts) >= 2 and parts[1] == '802-11-wireless':
-                    name = parts[0]
-                    if name == self.HOTSPOT_PROFILE:
+                    mode = parts[4] if len(parts) > 4 else ''
+                    if mode == 'ap':
                         continue
+                    name = parts[0]
                     try:
                         timestamp = int(parts[2]) if len(parts) > 2 and parts[2] else 0
                     except ValueError:
@@ -368,13 +379,17 @@ class WifiManager():
         except subprocess.TimeoutExpired:
             return b'disconnect timed out'
 
-    def connect_saved(self, name: str) -> Optional[bytes]:
-        """Activate an existing saved profile."""
+    def connect_saved(self, name: str, wait: bool = True) -> Optional[bytes]:
+        """Activate an existing saved profile. With wait=False, fire-and-forget
+        via `nmcli --wait 0`: NM keeps trying in the background; only the
+        request-validity error is surfaced."""
+        cmd = ['sudo', 'nmcli']
+        if not wait:
+            cmd += ['--wait', '0']
+        cmd += ['connection', 'up', name]
         try:
-            subprocess.check_output(
-                ['sudo', 'nmcli', 'connection', 'up', name],
-                stderr=subprocess.STDOUT, timeout=45
-            )
+            subprocess.check_output(cmd, stderr=subprocess.STDOUT,
+                                    timeout=45 if wait else 10)
             return None
         except subprocess.CalledProcessError as exc:
             return exc.output

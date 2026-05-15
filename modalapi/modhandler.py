@@ -768,9 +768,9 @@ class Modhandler(Handler):
 
     def system_toggle_hotspot(self, **kwargs):
         if util.DICT_GET(self.wifi_status, 'hotspot_active'):
-            self.wifi_manager.disable_hotspot()
-        else:
-            self.wifi_manager.enable_hotspot()
+            return self.wifi_manager.disable_hotspot()
+        self.wifi_manager.enable_hotspot()
+        return None
 
     def audio_parameter_change(self, direction, name, symbol, value, min, max, commit_callback):
         if symbol is not None:

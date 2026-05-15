@@ -322,6 +322,58 @@ def test_hotspot_active_indicator(v3_system, wifi_state, snapshot):
 
 
 # ---------------------------------------------------------------------------
+# Hotspot → WiFi recovery (multi-wifi feedback fix)
+# ---------------------------------------------------------------------------
+
+def test_open_in_hotspot_still_scans(v3_system, wifi_state):
+    """While hotspot is active, opening the menu still triggers a scan.
+
+    Without this, the cached scan stays empty across the hotspot toggle and
+    'Nearby networks...' disappears from the menu.
+    """
+    wifi_state(scanned=[make_scanned("Home", signal=70)], saved=[], hotspot=True)
+    wm_mock = v3_system.handler.wifi_manager
+    _open(v3_system)
+    assert wm_mock.scan_networks.called, "scan_networks must be called even when hotspot is active"
+
+
+def test_notify_status_change_refetches_after_hotspot_off(v3_system, wifi_state):
+    """When hotspot toggles off, notify_status_change must refetch scan + saved,
+    not just re-render from stale cache."""
+    wm_mock = v3_system.handler.wifi_manager
+    wifi_state(scanned=[], saved=[], hotspot=True)
+    wm, _lcd = _open(v3_system)
+    scan_calls_after_open = wm_mock.scan_networks.call_count
+    list_calls_after_open = wm_mock.list_connections.call_count
+
+    # Hotspot transitions off; new networks visible.
+    wifi_state(scanned=[make_scanned("Home", signal=70)],
+               saved=[make_saved("Home")], hotspot=False)
+    wm.notify_status_change()
+
+    assert wm_mock.scan_networks.call_count > scan_calls_after_open, \
+        "notify_status_change must re-invoke scan_networks"
+    assert wm_mock.list_connections.call_count > list_calls_after_open, \
+        "notify_status_change must re-invoke list_connections"
+
+
+def test_toggle_hotspot_off_shows_error_dialog_when_reconnect_fails(v3_system, wifi_state):
+    """If the orchestrated disable+reconnect fails, surface a MessageDialog."""
+    wifi_state(scanned=[], saved=[make_saved("Home")], hotspot=True)
+    wm_mock = v3_system.handler.wifi_manager
+    wm_mock.disable_hotspot.return_value = b"no network with ssid 'Home'"
+
+    _wm, lcd = _open(v3_system)
+    # Root: [Home (saved), Join other network..., Hotspot Mode, dismiss]
+    lcd.enc_step(1)   # Home → Join
+    lcd.enc_step(1)   # Join → Hotspot Mode
+    _click(lcd)
+
+    assert isinstance(lcd.pstack.current, MessageDialog), \
+        f"expected MessageDialog, got {type(lcd.pstack.current).__name__}"
+
+
+# ---------------------------------------------------------------------------
 # 5.16  test_wifi_unsupported
 # ---------------------------------------------------------------------------
 
