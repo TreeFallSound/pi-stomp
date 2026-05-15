@@ -175,22 +175,22 @@ def test_truebypass_bare():
 
 def test_plugin_bypass_on():
     msg = parse_message("param_set /graph/CollisionDrive :bypass 1.0")
-    assert msg == PluginBypassMessage(instance="/CollisionDrive", bypassed=True)
+    assert msg == PluginBypassMessage(instance="CollisionDrive", bypassed=True)
 
 
 def test_plugin_bypass_off():
     msg = parse_message("param_set /graph/CollisionDrive :bypass 0.0")
-    assert msg == PluginBypassMessage(instance="/CollisionDrive", bypassed=False)
+    assert msg == PluginBypassMessage(instance="CollisionDrive", bypassed=False)
 
 
 def test_plugin_bypass_nested_instance():
     msg = parse_message("param_set /graph/xfade :bypass 1.0")
-    assert msg == PluginBypassMessage(instance="/xfade", bypassed=True)
+    assert msg == PluginBypassMessage(instance="xfade", bypassed=True)
 
 
 def test_plugin_bypass_nonzero_is_true():
     msg = parse_message("param_set /graph/Reverb :bypass 0.5")
-    assert msg == PluginBypassMessage(instance="/Reverb", bypassed=True)
+    assert msg == PluginBypassMessage(instance="Reverb", bypassed=True)
 
 
 def test_param_set_non_bypass_is_unknown():

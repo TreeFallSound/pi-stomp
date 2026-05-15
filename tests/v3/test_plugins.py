@@ -259,7 +259,7 @@ def test_v3_bypass_echo_is_idempotent(v3_system: SystemFixture, make_plugin, sna
     handler.poll_modui_changes()
 
     assert plugin.is_bypassed()
-    snapshot("after_echo")
+    snapshot("after_toggle")  # reuse the same baseline — echo must not change the LCD
 
 
 def test_v3_bypass_event_unknown_plugin_is_ignored(v3_system: SystemFixture, make_plugin):

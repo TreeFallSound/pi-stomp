@@ -134,13 +134,11 @@ class FakeWebSocketBridge:
     def stop(self) -> None:
         pass
 
-    def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
-        self.sent.append(f"param_set /graph/{instance_id.lstrip('/')}/{symbol} {value}")
-        return True
+    def send_parameter(self, instance_id: str, symbol: str, value: float) -> None:
+        self.sent.append(f"param_set /graph/{instance_id}/{symbol} {value}")
 
-    def send_bpm(self, bpm: float) -> bool:
+    def send_bpm(self, bpm: float) -> None:
         self.sent.append(f"transport-bpm {bpm}")
-        return True
 
     def clear_queue(self) -> int:
         return 0
@@ -153,7 +151,7 @@ class FakeWebSocketBridge:
         self._inbox.append(raw)
 
     def sent_values_for(self, instance_id: str, symbol: str) -> list[float]:
-        prefix = f"param_set /graph/{instance_id.lstrip('/')}/{symbol} "
+        prefix = f"param_set /graph/{instance_id}/{symbol} "
         return [float(m[len(prefix):]) for m in self.sent if m.startswith(prefix)]
 
 

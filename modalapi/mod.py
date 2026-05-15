@@ -485,7 +485,7 @@ class Mod(Handler):
         elif isinstance(msg, PluginBypassMessage):
             if self.current is not None:
                 for plugin in self.current.pedalboard.plugins:
-                    if plugin.instance_id.lstrip("/") == msg.instance.lstrip("/"):
+                    if plugin.instance_id == msg.instance:
                         logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
                         plugin.set_bypass(msg.bypassed)
                         self.lcd.refresh_plugins()
@@ -493,13 +493,11 @@ class Mod(Handler):
 
     def poll_modui_changes(self):
         """Poll for changes from MOD-UI: websockets and file watching"""
-        if self.ws_bridge is not None:
-            messages = self.ws_bridge.get_received_messages()
-            for msg in messages:
-                try:
-                    self._handle_ws_message(parse_message(msg))
-                except Exception as e:
-                    logging.error(f"Error handling WebSocket message '{msg}': {e}")
+        for msg in self.ws_bridge.get_received_messages():
+            try:
+                self._handle_ws_message(parse_message(msg))
+            except Exception as e:
+                logging.error(f"Error handling WebSocket message '{msg}': {e}")
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():

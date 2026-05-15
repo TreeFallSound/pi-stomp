@@ -84,7 +84,7 @@ class TrueBypassMessage:
 class PluginBypassMessage:
     """Plugin bypass state changed (received as param_set ... :bypass ...)."""
 
-    instance: str  # e.g. "/CollisionDrive"
+    instance: str  # canonical bare form, e.g. "CollisionDrive"
     bypassed: bool
 
 
@@ -175,7 +175,7 @@ def parse_message(raw_message: str) -> WebSocketMessage:
 
             # Format: param_set /graph/{instance} :bypass {value}
             case ["param_set", path, rest] if rest.startswith(":bypass "):
-                instance = path.removeprefix("/graph")
+                instance = path.removeprefix("/graph/")
                 value_str = rest.split(" ", 1)[1]
                 return PluginBypassMessage(instance=instance, bypassed=float(value_str) != 0.0)
 
