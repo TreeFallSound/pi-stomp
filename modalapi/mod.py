@@ -28,7 +28,7 @@ import modalapi.pedalboard as Pedalboard
 import common.parameter as Parameter
 import modalapi.wifi as Wifi
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -481,6 +481,15 @@ class Mod(Handler):
 
                 self.current.preset_index = msg.snapshot_id
                 self.update_lcd_title()
+
+        elif isinstance(msg, PluginBypassMessage):
+            if self.current is not None:
+                for plugin in self.current.pedalboard.plugins:
+                    if plugin.instance_id == msg.instance:
+                        logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
+                        plugin.set_bypass(msg.bypassed)
+                        self.lcd.draw_plugins(self.current.pedalboard.plugins)
+                        break
 
     def poll_modui_changes(self):
         """Poll for changes from MOD-UI: websockets and file watching"""
