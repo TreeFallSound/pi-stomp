@@ -180,6 +180,23 @@ class WifiManager():
             if self.stop.wait(5.0):
                 break
 
+    def refresh_status(self) -> WifiStatus:
+        """Synchronously read current status and update last_status.
+
+        Used to bypass the 5s polling cadence when we need a fresh snapshot
+        right now — e.g. opening the wifi menu just after a reconnect.
+        """
+        new_status: WifiStatus = {}
+        supported = new_status['wifi_supported'] = self._is_wifi_supported()
+        connected = new_status['wifi_connected'] = self._is_wifi_connected()
+        hp_active = new_status['hotspot_active'] = self._is_hotspot_active()
+        if supported and (connected or hp_active):
+            self._get_wpa_status(new_status)
+        with self.lock:
+            self.last_status = new_status
+            self.changed = True
+        return new_status
+
     # External API
     def poll(self) -> Optional[WifiStatus]:
         if self.changed:
@@ -197,7 +214,8 @@ class WifiManager():
 
     def enable_hotspot(self) -> None:
         try:
-            subprocess.check_output(['sudo', 'systemctl', 'enable', '--now', 'wifi-hotspot']).strip().decode('utf-8')
+            subprocess.check_output(['sudo', 'systemctl', 'enable', '--now', 'wifi-hotspot'],
+                                    timeout=60).strip().decode('utf-8')
         except Exception:
             logging.debug('Wifi hotspot enabling failed')
 
@@ -206,7 +224,8 @@ class WifiManager():
         NM doesn't reliably autoconnect after AP teardown. Returns None on
         success or when no saved profile exists; nmcli stderr otherwise."""
         try:
-            subprocess.check_output(['sudo', 'systemctl', 'disable', '--now', 'wifi-hotspot'])
+            subprocess.check_output(['sudo', 'systemctl', 'disable', '--now', 'wifi-hotspot'],
+                                    timeout=60)
         except Exception:
             logging.debug('Wifi hotspot disabling failed')
 

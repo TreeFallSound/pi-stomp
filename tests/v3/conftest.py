@@ -42,11 +42,13 @@ def wifi_state(v3_system):
         wm = v3_system.handler.wifi_manager
         wm.scan_networks.return_value = list(scanned)
         wm.list_connections.return_value = list(saved)
-        v3_system.handler.wifi_status = {
+        status = {
             "wifi_supported": supported,
             "wifi_connected": active is not None,
             "hotspot_active": hotspot,
             "ssid": active,
             "connection": active,
         }
+        v3_system.handler.wifi_status = status
+        wm.refresh_status.return_value = status
     return _set

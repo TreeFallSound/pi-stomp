@@ -10,16 +10,20 @@ def test_wifi_menu_navigation(v3_system, snapshot):
     instance = v3_system.handler._lcd
     mock_wifi = MagicMock()
     v3_system.handler.wifi_manager = mock_wifi
-    v3_system.handler.wifi_status = {"wifi_supported": True, "hotspot_active": False}
+    status = {"wifi_supported": True, "hotspot_active": False}
+    v3_system.handler.wifi_status = status
+    mock_wifi.refresh_status.return_value = status
     mock_wifi.list_connections.return_value = []
     mock_wifi.scan_networks.return_value = [
         {"ssid": "NetA", "signal": 80, "security": "wpa2"},
         {"ssid": "NetB", "signal": 40, "security": "wpa2"}
     ]
-    
+
     # Act: Open menu
     wifi_menu = WifiMenu(instance)
+    wifi_menu._spawn = lambda target: target()
     wifi_menu.open()
+    wifi_menu.poll()
 
     # Assert initial menu ("Nearby networks..." selected)
     snapshot("initial_menu")

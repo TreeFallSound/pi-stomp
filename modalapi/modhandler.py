@@ -164,12 +164,14 @@ class Modhandler(Handler):
 
     def poll_wifi(self):
         wifi_update = self.wifi_manager.poll()
+        wifi_menu = getattr(self.lcd, 'wifi_menu', None)
         if wifi_update is not None:
             self.wifi_status = wifi_update
             self.lcd.update_wifi(self.wifi_status)
-            wifi_menu = getattr(self.lcd, 'wifi_menu', None)
             if wifi_menu is not None:
                 wifi_menu.notify_status_change()
+        if wifi_menu is not None:
+            wifi_menu.poll()
 
     def poll_system_info(self):
         # Get the system state from the systemd service

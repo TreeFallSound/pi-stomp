@@ -19,10 +19,16 @@ from uilib.misc import InputEvent
 # ---------------------------------------------------------------------------
 
 def _open(v3_system) -> tuple[WifiMenu, object]:
-    """Create a fresh WifiMenu, open it, and return (menu, lcd)."""
+    """Create a fresh WifiMenu, open it, and return (menu, lcd).
+
+    Forces background work (scan, hotspot toggle) to run inline so tests
+    can assert against fully-rendered state without polling.
+    """
     lcd = v3_system.handler._lcd
     wm = WifiMenu(lcd)
+    wm._spawn = lambda target: target()
     wm.open()
+    wm.poll()  # drain the inline-scanned result so the rebuilt menu is visible
     return wm, lcd
 
 
@@ -375,11 +381,12 @@ def test_toggle_hotspot_off_shows_error_dialog_when_reconnect_fails(v3_system, w
     wm_mock = v3_system.handler.wifi_manager
     wm_mock.disable_hotspot.return_value = b"no network with ssid 'Home'"
 
-    _wm, lcd = _open(v3_system)
+    wm, lcd = _open(v3_system)
     # Root: [Home (saved), Join other network..., Hotspot Mode, dismiss]
     lcd.enc_step(1)   # Home → Join
     lcd.enc_step(1)   # Join → Hotspot Mode
     _click(lcd)
+    wm.poll()  # drain queued toggle error → MessageDialog
 
     assert isinstance(lcd.pstack.current, MessageDialog), \
         f"expected MessageDialog, got {type(lcd.pstack.current).__name__}"
