@@ -12,23 +12,23 @@ from tests.v3.conftest import make_saved, make_scanned
 from ui.wifi_menu import WifiMenu, _PassphraseEditor
 from uilib.dialog import Dialog, MessageDialog
 from uilib.misc import InputEvent
+from pistomp.lcd320x240 import Lcd
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _open(v3_system) -> tuple[WifiMenu, object]:
+
+def _open(v3_system) -> tuple[WifiMenu, Lcd]:
     """Create a fresh WifiMenu, open it, and return (menu, lcd).
 
-    Forces background work (scan, hotspot toggle) to run inline so tests
-    can assert against fully-rendered state without polling.
+    The wifi_state fixture installs an inline CommandQueue shim, so
+    submit/submit_scan callbacks fire synchronously.
     """
     lcd = v3_system.handler._lcd
     wm = WifiMenu(lcd)
-    wm._spawn = lambda target: target()
     wm.open()
-    wm.poll()  # drain the inline-scanned result so the rebuilt menu is visible
     return wm, lcd
 
 
@@ -40,8 +40,8 @@ def _type_password(lcd, password: str) -> None:
     editor = lcd.pstack.current
     assert isinstance(editor, _PassphraseEditor)
     editor._curline = password
-    editor._edit.set_text(password + '\u2588')
-    lcd.enc_step(1)   # selector: Cancel → OK
+    editor._edit.set_text(password + "\u2588")
+    lcd.enc_step(1)  # selector: Cancel → OK
 
 
 def _click(lcd) -> None:
@@ -56,6 +56,7 @@ def _long_click(lcd) -> None:
 # 5.1  test_empty_scan
 # ---------------------------------------------------------------------------
 
+
 def test_empty_scan(v3_system, wifi_state, snapshot):
     """Root menu renders cleanly with no networks and no saved profiles."""
     wifi_state(scanned=[], saved=[])
@@ -67,24 +68,26 @@ def test_empty_scan(v3_system, wifi_state, snapshot):
 # 5.2  test_signal_bar_levels
 # ---------------------------------------------------------------------------
 
+
 def test_signal_bar_levels(v3_system, wifi_state, snapshot):
     """Lock down bar rendering across the nmcli 0-100 quality range."""
     nets = [
-        make_scanned("Low",    signal=15),
-        make_scanned("Fair",   signal=40),
-        make_scanned("Good",   signal=65),
+        make_scanned("Low", signal=15),
+        make_scanned("Fair", signal=40),
+        make_scanned("Good", signal=65),
         make_scanned("Strong", signal=90),
     ]
     wifi_state(scanned=nets, saved=[])
     _open(v3_system)
     snapshot("root_signal_levels")
-    _click(v3_system.handler._lcd)       # enter "Nearby networks..."
+    _click(v3_system.handler._lcd)  # enter "Nearby networks..."
     snapshot("nearby_signal_levels")
 
 
 # ---------------------------------------------------------------------------
 # 5.3  test_duplicate_ssids_dedup
 # ---------------------------------------------------------------------------
+
 
 def test_duplicate_ssids_dedup(v3_system, wifi_state, snapshot):
     """scan_networks deduplicates by SSID; the menu shows one row per SSID."""
@@ -97,13 +100,14 @@ def test_duplicate_ssids_dedup(v3_system, wifi_state, snapshot):
     wifi_state(scanned=nets, saved=[])
     _open(v3_system)
     lcd = v3_system.handler._lcd
-    _click(lcd)          # enter "Nearby networks..."
+    _click(lcd)  # enter "Nearby networks..."
     snapshot("nearby_dedup")
 
 
 # ---------------------------------------------------------------------------
 # 5.4  test_saved_in_range_active
 # ---------------------------------------------------------------------------
+
 
 def test_saved_in_range_active(v3_system, wifi_state, snapshot):
     """Connected network sorts first with ✔; others follow by signal."""
@@ -125,6 +129,7 @@ def test_saved_in_range_active(v3_system, wifi_state, snapshot):
 # 5.5  test_saved_wrong_psk_shows_error
 # ---------------------------------------------------------------------------
 
+
 def test_saved_wrong_psk_shows_error(v3_system, wifi_state, snapshot):
     """Saved network with stale PSK: one attempt then show the error.
 
@@ -138,7 +143,7 @@ def test_saved_wrong_psk_shows_error(v3_system, wifi_state, snapshot):
     wm_mock.connect_saved.return_value = b"secrets were required, but none were provided"
 
     _wm, lcd = _open(v3_system)
-    _click(lcd)                              # tap Home → auth fails → error dialog
+    _click(lcd)  # tap Home → auth fails → error dialog
     snapshot("saved_auth_failed_dialog")
 
     assert isinstance(lcd.pstack.current, MessageDialog)
@@ -153,13 +158,14 @@ def test_open_network_badge_in_nearby_list(v3_system, wifi_state, snapshot):
     ]
     wifi_state(scanned=nets, saved=[])
     _wm, lcd = _open(v3_system)
-    _click(lcd)          # enter "Nearby networks..."
+    _click(lcd)  # enter "Nearby networks..."
     snapshot("nearby_with_open_badge")
 
 
 # ---------------------------------------------------------------------------
 # 5.7  test_open_network_connect
 # ---------------------------------------------------------------------------
+
 
 def test_open_network_connect(v3_system, wifi_state, snapshot):
     """Tapping an open network skips the password dialog."""
@@ -170,8 +176,8 @@ def test_open_network_connect(v3_system, wifi_state, snapshot):
     wm_mock.connect_scanned.return_value = None
 
     _wm, lcd = _open(v3_system)
-    _click(lcd)          # enter "Nearby networks..."
-    _click(lcd)          # tap FreeWifi → direct connect (no dialog)
+    _click(lcd)  # enter "Nearby networks..."
+    _click(lcd)  # tap FreeWifi → direct connect (no dialog)
     snapshot("connected_open")
 
     wm_mock.connect_scanned.assert_called_once_with("FreeWifi", None)
@@ -181,18 +187,19 @@ def test_open_network_connect(v3_system, wifi_state, snapshot):
 # 5.8  test_empty_psk_submit_blocked  (bug 2.2)
 # ---------------------------------------------------------------------------
 
+
 def test_empty_psk_submit_blocked(v3_system, wifi_state, snapshot):
     """Empty PSK submit does nothing — dialog stays open."""
     nets = [make_scanned("Secured", signal=70)]
     wifi_state(scanned=nets, saved=[])
 
     _wm, lcd = _open(v3_system)
-    _click(lcd)          # enter "Nearby networks..."
-    _click(lcd)          # tap Secured → password dialog
+    _click(lcd)  # enter "Nearby networks..."
+    _click(lcd)  # tap Secured → password dialog
 
     # Selector starts at Cancel; move to OK then submit without typing anything
-    lcd.enc_step(1)      # Cancel → OK
-    _click(lcd)          # submit with empty _curline → should no-op
+    lcd.enc_step(1)  # Cancel → OK
+    _click(lcd)  # submit with empty _curline → should no-op
 
     snapshot("empty_psk_ok_pressed")
 
@@ -204,13 +211,17 @@ def test_empty_psk_submit_blocked(v3_system, wifi_state, snapshot):
 # 5.9  test_error_dialogs_each_kind
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("stderr,label", [
-    (b"secrets were required, but none were provided", "auth_failed"),
-    (b"ip-config-unavailable",                         "dhcp_timeout"),
-    (b"connection timed out",                          "timed_out"),
-    (b"no network with ssid 'Net'",                    "not_found"),
-    (b"not authorized to control networking",          "permission_denied"),
-])
+
+@pytest.mark.parametrize(
+    "stderr,label",
+    [
+        (b"secrets were required, but none were provided", "auth_failed"),
+        (b"ip-config-unavailable", "dhcp_timeout"),
+        (b"connection timed out", "timed_out"),
+        (b"no network with ssid 'Net'", "not_found"),
+        (b"not authorized to control networking", "permission_denied"),
+    ],
+)
 def test_error_dialogs_each_kind(v3_system, wifi_state, snapshot, stderr, label):
     """Every connect failure (including auth) shows a MessageDialog — no retry."""
     nets = [make_scanned("Net", signal=70)]
@@ -220,10 +231,10 @@ def test_error_dialogs_each_kind(v3_system, wifi_state, snapshot, stderr, label)
     wm_mock.connect_scanned.return_value = stderr
 
     _wm, lcd = _open(v3_system)
-    _click(lcd)                              # enter "Nearby networks..."
-    _click(lcd)                              # tap Net → passphrase editor
+    _click(lcd)  # enter "Nearby networks..."
+    _click(lcd)  # tap Net → passphrase editor
     _type_password(lcd, "somepassword")
-    _click(lcd)                              # submit → error dialog
+    _click(lcd)  # submit → error dialog
     snapshot(f"error_{label}")
 
     assert isinstance(lcd.pstack.current, MessageDialog)
@@ -232,6 +243,7 @@ def test_error_dialogs_each_kind(v3_system, wifi_state, snapshot, stderr, label)
 # ---------------------------------------------------------------------------
 # 5.10  test_more_saved_submenu
 # ---------------------------------------------------------------------------
+
 
 def test_many_saved_all_at_root(v3_system, wifi_state, snapshot):
     """All saved networks appear at root regardless of count — no overflow submenu."""
@@ -251,6 +263,7 @@ def test_many_saved_all_at_root(v3_system, wifi_state, snapshot):
 # 5.11  test_multiple_profiles_same_ssid  (bug 2.5 lock-down)
 # ---------------------------------------------------------------------------
 
+
 def test_multiple_profiles_same_ssid(v3_system, wifi_state, snapshot):
     """Lock down: only the most-recent profile per SSID is shown (current behaviour)."""
     ts = int(time.time())
@@ -267,6 +280,7 @@ def test_multiple_profiles_same_ssid(v3_system, wifi_state, snapshot):
 # 5.12  test_long_press_active_submenu
 # ---------------------------------------------------------------------------
 
+
 def test_long_press_active_submenu(v3_system, wifi_state, snapshot):
     """Long-press on an active saved network opens [Disconnect, Replace password, Forget]."""
     saved = [make_saved("Home")]
@@ -275,13 +289,14 @@ def test_long_press_active_submenu(v3_system, wifi_state, snapshot):
 
     _open(v3_system)
     lcd = v3_system.handler._lcd
-    _long_click(lcd)     # long-press Home
+    _long_click(lcd)  # long-press Home
     snapshot("active_actions_submenu")
 
 
 # ---------------------------------------------------------------------------
 # 5.13  test_forget_then_reload
 # ---------------------------------------------------------------------------
+
 
 def test_forget_then_reload(v3_system, wifi_state, snapshot):
     """Forgetting a network removes it and the menu reloads without it."""
@@ -293,18 +308,20 @@ def test_forget_then_reload(v3_system, wifi_state, snapshot):
     wm_mock.delete_connection.return_value = None
 
     _wm, lcd = _open(v3_system)
-    _long_click(lcd)     # long-press Home → [Replace password, Forget, ↩]
-    lcd.enc_step(1)      # → Forget
+    _long_click(lcd)  # long-press Home → [Replace password, Forget, ↩]
+    lcd.enc_step(1)  # → Forget
     # Update mocks before clicking so the reload sees an empty list
     wm_mock.list_connections.return_value = []
+    wm_mock.get_cached_saved.return_value = []
     wm_mock.scan_networks.return_value = []
-    _click(lcd)          # forget → reload
+    _click(lcd)  # forget → reload
     snapshot("root_after_forget")
 
 
 # ---------------------------------------------------------------------------
 # 5.14  test_replace_password_flow
 # ---------------------------------------------------------------------------
+
 
 def test_replace_password_flow(v3_system, wifi_state, snapshot):
     """Explicit 'Replace password' path from the active network submenu."""
@@ -316,9 +333,9 @@ def test_replace_password_flow(v3_system, wifi_state, snapshot):
     wm_mock.replace_psk.return_value = None
 
     _wm, lcd = _open(v3_system)
-    _click(lcd)          # tap active Home → [Disconnect, Replace password, Forget, ↩]
-    lcd.enc_step(1)      # → Replace password
-    _click(lcd)          # → password dialog
+    _click(lcd)  # tap active Home → [Disconnect, Replace password, Forget, ↩]
+    lcd.enc_step(1)  # → Replace password
+    _click(lcd)  # → password dialog
     snapshot("replace_psk_dialog")
 
     _type_password(lcd, "freshpassword")
@@ -332,6 +349,7 @@ def test_replace_password_flow(v3_system, wifi_state, snapshot):
 # 5.15  test_hotspot_active_indicator
 # ---------------------------------------------------------------------------
 
+
 def test_hotspot_active_indicator(v3_system, wifi_state, snapshot):
     """Hotspot mode on shows the ● indicator."""
     wifi_state(hotspot=True)
@@ -342,6 +360,7 @@ def test_hotspot_active_indicator(v3_system, wifi_state, snapshot):
 # ---------------------------------------------------------------------------
 # Hotspot → WiFi recovery (multi-wifi feedback fix)
 # ---------------------------------------------------------------------------
+
 
 def test_open_in_hotspot_still_scans(v3_system, wifi_state):
     """While hotspot is active, opening the menu still triggers a scan.
@@ -355,24 +374,21 @@ def test_open_in_hotspot_still_scans(v3_system, wifi_state):
     assert wm_mock.scan_networks.called, "scan_networks must be called even when hotspot is active"
 
 
-def test_notify_status_change_refetches_after_hotspot_off(v3_system, wifi_state):
-    """When hotspot toggles off, notify_status_change must refetch scan + saved,
-    not just re-render from stale cache."""
+def test_notify_status_change_rescans_after_hotspot_off(v3_system, wifi_state):
+    """When hotspot toggles off, notify_status_change must submit a fresh scan.
+
+    Saved-profile cache is owned by the polling thread, so the menu reads it
+    from WifiManager rather than refetching directly here.
+    """
     wm_mock = v3_system.handler.wifi_manager
     wifi_state(scanned=[], saved=[], hotspot=True)
     wm, _lcd = _open(v3_system)
     scan_calls_after_open = wm_mock.scan_networks.call_count
-    list_calls_after_open = wm_mock.list_connections.call_count
 
-    # Hotspot transitions off; new networks visible.
-    wifi_state(scanned=[make_scanned("Home", signal=70)],
-               saved=[make_saved("Home")], hotspot=False)
+    wifi_state(scanned=[make_scanned("Home", signal=70)], saved=[make_saved("Home")], hotspot=False)
     wm.notify_status_change()
 
-    assert wm_mock.scan_networks.call_count > scan_calls_after_open, \
-        "notify_status_change must re-invoke scan_networks"
-    assert wm_mock.list_connections.call_count > list_calls_after_open, \
-        "notify_status_change must re-invoke list_connections"
+    assert wm_mock.scan_networks.call_count > scan_calls_after_open, "notify_status_change must trigger a fresh scan"
 
 
 def test_toggle_hotspot_off_shows_error_dialog_when_reconnect_fails(v3_system, wifi_state):
@@ -383,18 +399,19 @@ def test_toggle_hotspot_off_shows_error_dialog_when_reconnect_fails(v3_system, w
 
     wm, lcd = _open(v3_system)
     # Root: [Home (saved), Join other network..., Hotspot Mode, dismiss]
-    lcd.enc_step(1)   # Home → Join
-    lcd.enc_step(1)   # Join → Hotspot Mode
+    lcd.enc_step(1)  # Home → Join
+    lcd.enc_step(1)  # Join → Hotspot Mode
     _click(lcd)
-    wm.poll()  # drain queued toggle error → MessageDialog
 
-    assert isinstance(lcd.pstack.current, MessageDialog), \
+    assert isinstance(lcd.pstack.current, MessageDialog), (
         f"expected MessageDialog, got {type(lcd.pstack.current).__name__}"
+    )
 
 
 # ---------------------------------------------------------------------------
 # 5.16  test_wifi_unsupported
 # ---------------------------------------------------------------------------
+
 
 def test_wifi_unsupported(v3_system, wifi_state, snapshot):
     """Graceful rendering when WiFi hardware is absent."""
@@ -407,6 +424,7 @@ def test_wifi_unsupported(v3_system, wifi_state, snapshot):
 # 5.17  test_disconnect_active
 # ---------------------------------------------------------------------------
 
+
 def test_disconnect_active(v3_system, wifi_state, snapshot):
     """Disconnect removes the ✔ from the connected network."""
     saved = [make_saved("Home")]
@@ -417,14 +435,15 @@ def test_disconnect_active(v3_system, wifi_state, snapshot):
     wm_mock.disconnect.return_value = None
 
     _wm, lcd = _open(v3_system)
-    _click(lcd)          # tap active Home → [Disconnect, Replace password, Forget, ↩]
-    _click(lcd)          # tap Disconnect
+    _click(lcd)  # tap active Home → [Disconnect, Replace password, Forget, ↩]
+    _click(lcd)  # tap Disconnect
     snapshot("root_after_disconnect")
 
 
 # ---------------------------------------------------------------------------
 # 5.18  test_password_special_chars
 # ---------------------------------------------------------------------------
+
 
 def test_password_special_chars(v3_system, wifi_state, snapshot):
     """Special characters in a password are passed verbatim to connect_scanned."""
@@ -435,8 +454,8 @@ def test_password_special_chars(v3_system, wifi_state, snapshot):
     wm_mock.connect_scanned.return_value = None
 
     _wm, lcd = _open(v3_system)
-    _click(lcd)          # enter "Nearby networks..."
-    _click(lcd)          # tap Secured → password dialog
+    _click(lcd)  # enter "Nearby networks..."
+    _click(lcd)  # tap Secured → password dialog
     snapshot("psk_special_chars_dialog")
 
     special = 'a"b\\c d'
@@ -450,21 +469,23 @@ def test_password_special_chars(v3_system, wifi_state, snapshot):
 # 5.19  test_dialog_cancel_returns_to_menu
 # ---------------------------------------------------------------------------
 
+
 def test_dialog_cancel_returns_to_menu(v3_system, wifi_state, snapshot):
     """Cancelling the password dialog returns to the nearby submenu."""
     nets = [make_scanned("Secured", signal=70)]
     wifi_state(scanned=nets, saved=[])
 
     _wm, lcd = _open(v3_system)
-    _click(lcd)          # enter "Nearby networks..."
-    _click(lcd)          # tap Secured → passphrase editor (selector starts at Cancel)
-    _click(lcd)          # click Cancel → close editor
+    _click(lcd)  # enter "Nearby networks..."
+    _click(lcd)  # tap Secured → passphrase editor (selector starts at Cancel)
+    _click(lcd)  # click Cancel → close editor
     snapshot("nearby_after_cancel")
 
 
 # ---------------------------------------------------------------------------
 # 5.20  test_join_other_empty_ssid_blocked
 # ---------------------------------------------------------------------------
+
 
 def test_join_other_empty_ssid_blocked(v3_system, wifi_state, snapshot):
     """'Join other network' with empty SSID stays open — nothing happens."""
@@ -473,13 +494,13 @@ def test_join_other_empty_ssid_blocked(v3_system, wifi_state, snapshot):
     _wm, lcd = _open(v3_system)
     # Root menu: [Join other network..., Hotspot Mode, ↩]
     # "Join other network..." is the first item when there are no networks
-    _click(lcd)          # open "Join other network..." dialog
+    _click(lcd)  # open "Join other network..." dialog
 
     # Navigate to OK without typing anything
-    lcd.enc_step(1)      # ssid → passwd
-    lcd.enc_step(1)      # passwd → cancel
-    lcd.enc_step(1)      # cancel → ok
-    _click(lcd)          # submit with empty SSID → no-op
+    lcd.enc_step(1)  # ssid → passwd
+    lcd.enc_step(1)  # passwd → cancel
+    lcd.enc_step(1)  # cancel → ok
+    _click(lcd)  # submit with empty SSID → no-op
 
     snapshot("join_empty_ssid")
 

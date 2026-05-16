@@ -17,6 +17,7 @@ import board
 import digitalio
 import logging
 import os
+from typing import Optional
 import common.token as Token
 import common.parameter as Parameter
 from ui.wifi_menu import WifiMenu
@@ -92,6 +93,8 @@ class Lcd(abstract_lcd.Lcd):
 
         # widgets
         self.w_wifi = None
+        self._wifi_img_path: Optional[str] = None
+        self.wifi_menu: Optional[WifiMenu] = None
         self.w_eq = None
         self.w_power = None
         self.w_wrench = None
@@ -599,13 +602,20 @@ class Lcd(abstract_lcd.Lcd):
 
     # Toolbar
     def update_wifi(self, wifi_status):
-        if util.DICT_GET(wifi_status, 'hotspot_active'):
+        if self.w_wifi is None:
+            return
+        if self.handler.wifi_manager.queue.pending_op_count() > 0:
+            img = "wifi_processing.png"
+        elif util.DICT_GET(wifi_status, 'hotspot_active'):
             img = "wifi_orange.png"
         elif util.DICT_GET(wifi_status, 'wifi_connected'):
             img = "wifi_silver.png"
         else:
             img = "wifi_gray.png"
         image_path = os.path.join(self.imagedir, img)
+        if image_path == self._wifi_img_path:
+            return
+        self._wifi_img_path = image_path
         self.w_wifi.replace_img(image_path)
 
     def update_eq(self, eq_status):

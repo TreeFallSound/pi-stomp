@@ -37,11 +37,28 @@ def wifi_state(v3_system):
     """Configure wifi_manager mock and wifi_status in one call.
 
     active is the connection *name* (matches SavedConnection.name).
+
+    Also installs an inline CommandQueue shim: submit/submit_scan run the
+    command synchronously and invoke the callback immediately, so tests
+    don't need to drive a poll loop.
     """
     def _set(scanned=(), saved=(), active=None, hotspot=False, supported=True):
         wm = v3_system.handler.wifi_manager
         wm.scan_networks.return_value = list(scanned)
         wm.list_connections.return_value = list(saved)
+        wm.get_cached_saved.return_value = list(saved)
+
+        def _run_inline(cmd, on_done):
+            try:
+                result = cmd.run(wm)
+            except Exception as e:
+                result = e
+            on_done(result)
+            return True
+        wm.queue.submit.side_effect = _run_inline
+        wm.queue.submit_scan.side_effect = _run_inline
+        wm.queue.pending_op_count.return_value = 0
+
         status = {
             "wifi_supported": supported,
             "wifi_connected": active is not None,
@@ -50,5 +67,5 @@ def wifi_state(v3_system):
             "connection": active,
         }
         v3_system.handler.wifi_status = status
-        wm.refresh_status.return_value = status
+        wm.get_cached_status.return_value = status
     return _set

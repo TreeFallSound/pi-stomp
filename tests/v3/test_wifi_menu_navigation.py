@@ -1,29 +1,22 @@
 
-from unittest.mock import MagicMock
 import pytest
 from ui.wifi_menu import WifiMenu
 from uilib.misc import InputEvent
 
-@pytest.mark.usefixtures("v3_system")
-def test_wifi_menu_navigation(v3_system, snapshot):
-    # Setup
-    instance = v3_system.handler._lcd
-    mock_wifi = MagicMock()
-    v3_system.handler.wifi_manager = mock_wifi
-    status = {"wifi_supported": True, "hotspot_active": False}
-    v3_system.handler.wifi_status = status
-    mock_wifi.refresh_status.return_value = status
-    mock_wifi.list_connections.return_value = []
-    mock_wifi.scan_networks.return_value = [
-        {"ssid": "NetA", "signal": 80, "security": "wpa2"},
-        {"ssid": "NetB", "signal": 40, "security": "wpa2"}
-    ]
 
-    # Act: Open menu
+@pytest.mark.usefixtures("v3_system")
+def test_wifi_menu_navigation(v3_system, wifi_state, snapshot):
+    instance = v3_system.handler._lcd
+    wifi_state(
+        scanned=[
+            {"ssid": "NetA", "signal": 80, "security": "wpa2", "in_use": False},
+            {"ssid": "NetB", "signal": 40, "security": "wpa2", "in_use": False},
+        ],
+        saved=[],
+    )
+
     wifi_menu = WifiMenu(instance)
-    wifi_menu._spawn = lambda target: target()
     wifi_menu.open()
-    wifi_menu.poll()
 
     # Assert initial menu ("Nearby networks..." selected)
     snapshot("initial_menu")

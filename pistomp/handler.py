@@ -86,6 +86,3 @@ class Handler:
 
     def poll_wifi(self):
         raise NotImplementedError()
-
-    def system_toggle_hotspot(self, **kw):
-        raise NotImplementedError()
