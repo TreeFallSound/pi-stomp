@@ -105,6 +105,102 @@ def test_disable_hotspot_uses_nmcli_wait_zero(wm):
         f"expected --wait 0, got: {args}"
 
 
+# ---------------------------------------------------------------------------
+# poll() — bridges the polling thread to on_status_change on the main thread
+# ---------------------------------------------------------------------------
+
+def test_poll_fires_callback_only_when_changed_flag_set():
+    """poll() invokes on_status_change with the cached snapshot when changed=True,
+    then clears the flag. Subsequent polls with no new updates are no-ops."""
+    calls: list = []
+    with patch.object(WifiManager, "_polling_thread", lambda self: None):
+        wm = WifiManager(ifname="wlan0", on_status_change=calls.append)
+
+    snapshot = {"wifi_supported": True, "wifi_connected": True, "hotspot_active": False}
+    with wm.lock:
+        wm.last_status = snapshot
+        wm.changed = True
+
+    wm.poll()
+    assert calls == [snapshot]
+    assert wm.changed is False
+
+    # Second poll with no new change: callback must not fire again.
+    wm.poll()
+    assert calls == [snapshot]
+
+
+def test_poll_noop_when_callback_unset():
+    """poll() must not raise when on_status_change is None, even with changed=True."""
+    with patch.object(WifiManager, "_polling_thread", lambda self: None):
+        wm = WifiManager(ifname="wlan0", on_status_change=None)
+    with wm.lock:
+        wm.last_status = {"wifi_connected": True}
+        wm.changed = True
+
+    wm.poll()
+    assert wm.changed is False
+
+
+# ---------------------------------------------------------------------------
+# _polling_thread — refreshes _cached_saved alongside last_status
+# ---------------------------------------------------------------------------
+
+def test_polling_thread_iteration_refreshes_status_and_saved():
+    """One iteration of the polling-thread body updates both last_status and
+    _cached_saved under the lock, and sets `changed` when status differs."""
+    saved = [{"name": "Home", "ssid": "Home", "timestamp": 1700000000}]
+
+    with patch.object(WifiManager, "_polling_thread", lambda self: None):
+        wm = WifiManager(ifname="wlan0")
+
+    # Stop the loop after a single pass.
+    original_wait = wm.stop.wait
+    def stop_after_first(_timeout):
+        wm.stop.set()
+        return original_wait(0)
+
+    with (
+        patch.object(wm, "_is_wifi_supported", return_value=True),
+        patch.object(wm, "_is_wifi_connected", return_value=True),
+        patch.object(wm, "_is_hotspot_active", return_value=False),
+        patch.object(wm, "_get_wpa_status",
+                     side_effect=lambda s: s.update(ssid="Home", ip4_address="10.0.0.2")),
+        patch.object(wm, "list_connections", return_value=saved),
+        patch.object(wm.stop, "wait", side_effect=stop_after_first),
+    ):
+        WifiManager._polling_thread(wm)
+
+    assert wm._cached_saved == saved
+    assert wm.last_status.get("wifi_connected") is True
+    assert wm.last_status.get("ssid") == "Home"
+    assert wm.last_status.get("ip4_address") == "10.0.0.2"
+    assert wm.changed is True
+
+
+def test_polling_thread_skips_saved_when_wifi_unsupported():
+    """When wifi isn't supported, the polling thread must not call
+    list_connections (no nmcli on the box) and _cached_saved stays empty."""
+    with patch.object(WifiManager, "_polling_thread", lambda self: None):
+        wm = WifiManager(ifname="wlan0")
+
+    def stop_after_first(_timeout):
+        wm.stop.set()
+        return True
+
+    with (
+        patch.object(wm, "_is_wifi_supported", return_value=False),
+        patch.object(wm, "_is_wifi_connected", return_value=False),
+        patch.object(wm, "_is_hotspot_active", return_value=False),
+        patch.object(wm, "list_connections") as list_conns,
+        patch.object(wm.stop, "wait", side_effect=stop_after_first),
+    ):
+        WifiManager._polling_thread(wm)
+        list_conns.assert_not_called()
+
+    assert wm._cached_saved == []
+
+
 def test_disable_hotspot_returns_error_when_reconnect_fails(wm):
     """If `nmcli connection up <saved>` fails, propagate the stderr bytes."""
     saved = [{"name": "Home", "ssid": "Home", "timestamp": 1700000000}]

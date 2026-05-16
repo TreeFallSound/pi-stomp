@@ -374,6 +374,44 @@ def test_open_in_hotspot_still_scans(v3_system, wifi_state):
     assert wm_mock.scan_networks.called, "scan_networks must be called even when hotspot is active"
 
 
+def test_notify_status_change_leaves_passphrase_dialog_open(v3_system, wifi_state):
+    """An async status update arriving while the PSK editor is on top must NOT
+    pop the editor or rebuild the root from under it."""
+    nets = [make_scanned("Secured", signal=70)]
+    wifi_state(scanned=nets, saved=[])
+
+    wm, lcd = _open(v3_system)
+    _click(lcd)  # enter "Nearby networks..."
+    _click(lcd)  # tap Secured → password dialog
+    assert isinstance(lcd.pstack.current, _PassphraseEditor)
+
+    # Simulate polling-thread delivery while the modal is up.
+    wifi_state(scanned=nets, saved=[make_saved("Secured")], active="Secured")
+    wm.notify_status_change()
+
+    assert isinstance(lcd.pstack.current, _PassphraseEditor), "notify_status_change must not disrupt an open modal"
+
+
+def test_notify_status_change_leaves_error_dialog_open(v3_system, wifi_state):
+    """Same guard for a MessageDialog sitting on top after a failed connect."""
+    nets = [make_scanned("Net", signal=70)]
+    wifi_state(scanned=nets, saved=[])
+    v3_system.handler.wifi_manager.connect_scanned.return_value = b"connection timed out"
+
+    wm, lcd = _open(v3_system)
+    _click(lcd)  # enter "Nearby networks..."
+    _click(lcd)  # tap Net → passphrase editor
+    _type_password(lcd, "somepassword")
+    _click(lcd)  # submit → error dialog
+    assert isinstance(lcd.pstack.current, MessageDialog)
+
+    wm.notify_status_change()
+
+    assert isinstance(lcd.pstack.current, MessageDialog), (
+        "notify_status_change must not pop a MessageDialog out from under the user"
+    )
+
+
 def test_notify_status_change_rescans_after_hotspot_off(v3_system, wifi_state):
     """When hotspot toggles off, notify_status_change must submit a fresh scan.
 
