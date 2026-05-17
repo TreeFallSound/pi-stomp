@@ -169,9 +169,6 @@ def test_update_wifi_idle_icon_selection(lcd, mock_handler, status, expected):
     instance, _ = lcd
     mock_handler.wifi_manager.queue.pending_op_count.return_value = 0
     instance.draw_tools()  # creates w_wifi
-    # Start from a known different path so stop() triggers a replace_img.
-    import os
-    instance.w_wifi.stop(os.path.join(instance.imagedir, "wifi_processing_1.png"))
     with patch.object(instance.w_wifi, "replace_img") as mock_replace:
         instance.update_wifi(status)
     mock_replace.assert_called_once()
@@ -183,13 +180,66 @@ def test_update_wifi_idle_icon_selection(lcd, mock_handler, status, expected):
     {"wifi_connected": False, "hotspot_active": True},
     {"wifi_connected": False, "hotspot_active": False},
 ])
-def test_update_wifi_pending_plays_animation(lcd, mock_handler, status):
-    """When ops are pending, the widget animates regardless of status."""
+def test_update_wifi_pending_shows_frame(lcd, mock_handler, status):
+    """When ops are pending, the widget shows a preloaded animation frame."""
     instance, _ = lcd
     mock_handler.wifi_manager.queue.pending_op_count.return_value = 1
     instance.draw_tools()
-    instance.update_wifi(status)
-    assert instance.w_wifi.is_playing
+    with patch.object(instance.w_wifi, "replace_img") as mock_replace:
+        instance.update_wifi(status)
+    mock_replace.assert_called_once()
+    # Argument must be one of the preloaded PIL.Image frames, not a path.
+    assert mock_replace.call_args[0][0] in instance._wifi_frames
+
+
+def test_update_wifi_pending_cycles_frames(lcd, mock_handler):
+    """Consecutive pending updates advance through frames at ticks_per_frame cadence and wrap."""
+    instance, _ = lcd
+    mock_handler.wifi_manager.queue.pending_op_count.return_value = 1
+    instance.draw_tools()
+    status = {"wifi_connected": True, "hotspot_active": False}
+    seen = []
+    n_frames = len(instance._wifi_frames)
+    # Drive 2*n_frames frame-advances so we see at least one wrap.
+    for _ in range(n_frames * 2 * instance._wifi_ticks_per_frame):
+        with patch.object(instance.w_wifi, "replace_img") as mock_replace:
+            instance.update_wifi(status)
+        seen.append(mock_replace.call_args[0][0])
+    # The visited frames should cycle through every preloaded frame.
+    visited = {instance._wifi_frames.index(f) for f in seen}
+    assert visited == set(range(n_frames))
+
+
+def test_update_wifi_pending_to_idle_resets_animation(lcd, mock_handler):
+    """Leaving the pending state resets frame counters and shows the resolved idle image."""
+    instance, _ = lcd
+    instance.draw_tools()
+    status = {"wifi_connected": True, "hotspot_active": False}
+    # Drive the animation forward a few frames.
+    mock_handler.wifi_manager.queue.pending_op_count.return_value = 1
+    for _ in range(instance._wifi_ticks_per_frame * 2):
+        instance.update_wifi(status)
+    assert instance._wifi_frame_idx != 0 or instance._wifi_tick_count != 0
+    # Now clear pending.
+    mock_handler.wifi_manager.queue.pending_op_count.return_value = 0
+    with patch.object(instance.w_wifi, "replace_img") as mock_replace:
+        instance.update_wifi(status)
+    mock_replace.assert_called_once()
+    assert mock_replace.call_args[0][0].endswith("wifi_silver.png")
+    assert instance._wifi_frame_idx == 0
+    assert instance._wifi_tick_count == 0
+
+
+def test_wifi_frames_are_preloaded(lcd):
+    """Frames are decoded once at draw_tools time, not opened on every update."""
+    instance, _ = lcd
+    instance.draw_tools()
+    assert len(instance._wifi_frames) == 3
+    from PIL import Image as PILImage
+    for f in instance._wifi_frames:
+        assert isinstance(f, PILImage.Image)
+        # .load() populates the .im attribute; absence means lazy/closed.
+        assert f.im is not None
 
 
 def test_update_wifi_noop_when_path_unchanged(lcd, mock_handler):

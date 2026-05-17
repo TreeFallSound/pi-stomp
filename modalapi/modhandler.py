@@ -237,7 +237,6 @@ class Modhandler(Handler):
     def poll_lcd_updates(self):
         if self._lcd is not None:
             self._lcd.update_wifi(self.wifi_status)
-            self._lcd.tick_wifi()
             self._lcd.poll_updates()
 
     def universal_encoder_select(self, direction):

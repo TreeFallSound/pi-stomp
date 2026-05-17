@@ -21,7 +21,6 @@ from uilib.container import *
 from uilib.panel import *
 from uilib.text import *
 from uilib.image import *
-from uilib.animated_image import *
 from uilib.menu import *
 from uilib.dialog import *
 from uilib.config import *

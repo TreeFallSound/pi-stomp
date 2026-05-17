@@ -20,11 +20,19 @@ from PIL import Image
 class ImageWidget(Widget):
     """A simple widget with an image"""
 
-    def __init__(self, image_path, **kwargs):
+    image: Image.Image
+    _image_path: str | None
+
+    def __init__(self, image: str | Image.Image, **kwargs):
         self._init_attrs(Widget.INH_ATTRS, kwargs)
         super(ImageWidget, self).__init__(**kwargs)
-        self._image_path = image_path
-        self.image = Image.open(image_path)
+
+        if isinstance(image, str):
+            self._image_path = image
+            self.image = Image.open(self._image_path)
+        else:
+            self._image_path = None
+            self.image = image
 
     def _draw(self, image, draw, real_box):
         # XXX TODO Centre and crop it ? For now just centre. XXX Assume box > image size,
@@ -38,10 +46,16 @@ class ImageWidget(Widget):
         mask = self.image if self.image.mode == "RGBA" else None
         image.paste(self.image, loc, mask)
 
-    def replace_img(self, image_path):
+    def replace_img(self, image: str | Image.Image):
         # XXX Note that the new image must be the same size as the original
-        if image_path == self._image_path:
-            return
-        self._image_path = image_path
-        self.image = Image.open(image_path)
+        if isinstance(image, str):
+            if image == self._image_path:
+                return
+            self._image_path = image
+            self.image = Image.open(image)
+        else:
+            if self.image is image:
+                return
+            self._image_path = None
+            self.image = image
         self.refresh()
