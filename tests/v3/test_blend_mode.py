@@ -35,11 +35,11 @@ def test_blend_prepare_creates_segment_diff_map(blend_system: SystemFixture):
     assert len(blend_mode.segment_diff_maps) == 1
 
     diff = blend_mode.segment_diff_maps[0]
-    assert "/BigMuff" in diff
-    assert "Tone" in diff["/BigMuff"]
-    assert "Level" in diff["/BigMuff"]
+    assert "BigMuff" in diff
+    assert "Tone" in diff["BigMuff"]
+    assert "Level" in diff["BigMuff"]
     # :bypass is identical across stops, so it must NOT be in the diff map
-    assert ":bypass" not in diff.get("/BigMuff", {})
+    assert ":bypass" not in diff.get("BigMuff", {})
 
 
 def test_blend_auto_activates_on_blend_snapshot(blend_system: SystemFixture):
@@ -74,13 +74,13 @@ def test_blend_activate_sends_initial_params(blend_system: SystemFixture):
     blend_mode.activate()
 
     # At position 0 all differing params should equal the Clean stop values
-    tone_values = test_ws.sent_values_for("/BigMuff", "Tone")
-    level_values = test_ws.sent_values_for("/BigMuff", "Level")
+    tone_values = test_ws.sent_values_for("BigMuff", "Tone")
+    level_values = test_ws.sent_values_for("BigMuff", "Level")
     assert tone_values and abs(tone_values[-1] - 0.2) < 1e-6
     assert level_values and abs(level_values[-1] - 0.5) < 1e-6
 
     # :bypass is constant (0.0) — sent via the constant path in sync_current_position
-    bypass_values = test_ws.sent_values_for("/BigMuff", ":bypass")
+    bypass_values = test_ws.sent_values_for("BigMuff", ":bypass")
     assert bypass_values and abs(bypass_values[-1] - 0.0) < 1e-6
 
 
@@ -96,8 +96,8 @@ def test_blend_full_sweep_reaches_lead_stop(blend_system: SystemFixture):
 
     handler.active_blend_mode.input_controller.handle_value_change(127, enc)
 
-    tone_values = test_ws.sent_values_for("/BigMuff", "Tone")
-    level_values = test_ws.sent_values_for("/BigMuff", "Level")
+    tone_values = test_ws.sent_values_for("BigMuff", "Tone")
+    level_values = test_ws.sent_values_for("BigMuff", "Level")
     assert tone_values and abs(tone_values[-1] - 0.8) < 1e-6
     assert level_values and abs(level_values[-1] - 0.9) < 1e-6
 
@@ -219,7 +219,7 @@ def test_snapshots_file_change_triggers_reprepare(blend_system: SystemFixture):
     # blend mode re-prepares in-place — same object, updated diff maps
     assert "Blend" in handler.blend_modes
     diff = handler.blend_modes["Blend"].segment_diff_maps[0]
-    assert abs(diff["/BigMuff"]["Tone"].val_b - 0.95) < 1e-6
+    assert abs(diff["BigMuff"]["Tone"].val_b - 0.95) < 1e-6
 
 
 # ---------------------------------------------------------------------------
@@ -259,8 +259,8 @@ def test_blend_halfway_produces_interpolated_values(blend_system: SystemFixture)
     assert handler.active_blend_mode
     handler.active_blend_mode.input_controller.handle_value_change(64, enc)
 
-    tone_values = test_ws.sent_values_for("/BigMuff", "Tone")
-    level_values = test_ws.sent_values_for("/BigMuff", "Level")
+    tone_values = test_ws.sent_values_for("BigMuff", "Tone")
+    level_values = test_ws.sent_values_for("BigMuff", "Level")
 
     # linear: val_a + (val_b - val_a) * (64/127)
     expected_tone = 0.2 + (0.8 - 0.2) * (64 / 127)
@@ -289,7 +289,7 @@ def test_blend_resumes_at_encoder_position_on_activate(blend_system: SystemFixtu
     test_ws.inject("pedal_snapshot 2 Blend")
     handler.poll_modui_changes()
 
-    tone_values = test_ws.sent_values_for("/BigMuff", "Tone")
+    tone_values = test_ws.sent_values_for("BigMuff", "Tone")
     expected_tone = 0.2 + (0.8 - 0.2) * (64 / 127)
     assert tone_values and abs(tone_values[-1] - expected_tone) < 1e-5
 
@@ -319,7 +319,7 @@ def test_edited_stop_values_take_effect_in_next_sweep(blend_system: SystemFixtur
     enc.midi_value = 127
     handler.active_blend_mode.input_controller.handle_value_change(127, enc)
 
-    tone_values = test_ws.sent_values_for("/BigMuff", "Tone")
+    tone_values = test_ws.sent_values_for("BigMuff", "Tone")
     assert tone_values and abs(tone_values[-1] - 0.95) < 1e-6
 
 
@@ -398,11 +398,11 @@ def test_switching_between_blend_modes_applies_correct_initial_values(
     mock_get.side_effect = get_side_effect
 
     big_muff = make_plugin(
-        "/BigMuff",
+        "BigMuff",
         category="Distortion",
         parameters={
-            "Tone": make_parameter("Tone", "/BigMuff", value=0.2),
-            "Level": make_parameter("Level", "/BigMuff", value=0.5),
+            "Tone": make_parameter("Tone", "BigMuff", value=0.2),
+            "Level": make_parameter("Level", "BigMuff", value=0.5),
         },
     )
     pb = handler.pedalboards["/path/to/rig.pedalboard"]
@@ -431,8 +431,8 @@ def test_switching_between_blend_modes_applies_correct_initial_values(
     assert handler.active_blend_mode.config.get("name") == "Blend B"
 
     # At 100%, Blend B sends Crunch values, not Lead values
-    tone_values = test_ws.sent_values_for("/BigMuff", "Tone")
-    level_values = test_ws.sent_values_for("/BigMuff", "Level")
+    tone_values = test_ws.sent_values_for("BigMuff", "Tone")
+    level_values = test_ws.sent_values_for("BigMuff", "Level")
     assert tone_values and abs(tone_values[-1] - 0.5) < 1e-6
     assert level_values and abs(level_values[-1] - 0.7) < 1e-6
 
@@ -443,8 +443,8 @@ def test_switching_between_blend_modes_applies_correct_initial_values(
     test_ws.sent.clear()
     handler.active_blend_mode.input_controller.handle_value_change(64, enc)
 
-    tone_values = test_ws.sent_values_for("/BigMuff", "Tone")
-    level_values = test_ws.sent_values_for("/BigMuff", "Level")
+    tone_values = test_ws.sent_values_for("BigMuff", "Tone")
+    level_values = test_ws.sent_values_for("BigMuff", "Level")
     expected_tone = 0.2 + (0.5 - 0.2) * (64 / 127)  # Clean→Crunch at 50%
     expected_level = 0.5 + (0.7 - 0.5) * (64 / 127)
     assert tone_values and abs(tone_values[-1] - expected_tone) < 1e-5
@@ -486,6 +486,6 @@ def test_midi_bound_param_excluded_from_blend_sweep(blend_system: SystemFixture)
     blend_mode.input_controller.handle_value_change(127, enc)
 
     # Tone is MIDI-bound → excluded from diff map → must not appear in sent messages
-    assert test_ws.sent_values_for("/BigMuff", "Tone") == []
+    assert test_ws.sent_values_for("BigMuff", "Tone") == []
     # Level is unbound → still interpolated and sent
-    assert test_ws.sent_values_for("/BigMuff", "Level") != []
+    assert test_ws.sent_values_for("BigMuff", "Level") != []

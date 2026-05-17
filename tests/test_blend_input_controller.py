@@ -72,7 +72,7 @@ def test_find_segment_clamps_above_one(two_stop_controller):
 def interpolating_controller():
     stops = [_make_stop(0.0), _make_stop(1.0)]
     param_data = _make_param_data(0.0, 1.0)
-    diff_map = {"/Plugin": {"Param": param_data}}
+    diff_map = {"Plugin": {"Param": param_data}}
     mock_setter = MagicMock()
     mock_setter.send_parameter.return_value = True
     ic = InputController(linear, stops, [diff_map], mock_setter)
@@ -175,7 +175,7 @@ def test_sync_current_position_warns_when_no_input_attached(caplog):
 
 
 def test_sync_current_position_sends_constant_params():
-    state = {"/Fx": {"Const": 0.75}}
+    state = {"Fx": {"Const": 0.75}}
     stop_a = BlendStop(0.0, 0, state)
     stop_b = BlendStop(1.0, 1, state)  # identical state → nothing in diff map
     mock_setter = MagicMock()
@@ -187,6 +187,6 @@ def test_sync_current_position_sends_constant_params():
     ic._get_normalized_position = lambda control: 0.5
     ic.sync_current_position()
 
-    mock_setter.send_parameter.assert_called_once_with("/Fx", "Const", 0.75)
+    mock_setter.send_parameter.assert_called_once_with("Fx", "Const", 0.75)
 
 

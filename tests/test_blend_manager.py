@@ -148,12 +148,12 @@ def test_get_parameter_type_returns_param_type_when_found():
     mock_param = MagicMock()
     mock_param.type = ParameterType.TOGGLED
     mock_plugin = MagicMock()
-    mock_plugin.instance_id = "/Fx"
+    mock_plugin.instance_id = "Fx"
     mock_plugin.parameters = {"Switch": mock_param}
 
     assert bm.handler.current
     bm.handler.current.pedalboard.plugins = [mock_plugin]
-    assert bm._get_parameter_type("/Fx", "Switch") == ParameterType.TOGGLED
+    assert bm._get_parameter_type("Fx", "Switch") == ParameterType.TOGGLED
 
 
 def test_get_parameter_type_returns_default_when_not_found():
@@ -161,7 +161,7 @@ def test_get_parameter_type_returns_default_when_not_found():
 
     assert bm.handler.current
     bm.handler.current.pedalboard.plugins = []
-    assert bm._get_parameter_type("/Unknown", "Vol") == ParameterType.DEFAULT
+    assert bm._get_parameter_type("Unknown", "Vol") == ParameterType.DEFAULT
 
 
 # ---------------------------------------------------------------------------

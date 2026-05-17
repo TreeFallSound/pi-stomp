@@ -211,6 +211,15 @@ class Modhandler(Handler):
                 volume_param.unit_symbol = "dB"
                 enc.bind_to_parameter(volume_param)
                 self.volume_parameter = volume_param
+
+                def volume_change_callback(new_value, encoder):
+                    self.audiocard.set_volume_parameter(self.audiocard.MASTER, new_value)
+                    encoder.parameter.value = new_value
+                    d = self.lcd.draw_audio_parameter_dialog(encoder.parameter, self.audio_parameter_commit)
+                    if d is not None:
+                        d.update_value(new_value)
+
+                enc.value_change_callback = volume_change_callback
                 logging.info(f"Bound volume encoder to audio parameter: {volume_param.name}")
                 break
 
@@ -892,9 +901,6 @@ class Modhandler(Handler):
                 self.lcd.enc_step_widget(d, direction)
 
     def encoder_value_changed(self, param: Parameter, new_value: float, routing_info: RoutingInfo) -> None:
-        if param.instance_id is None:
-            self.audio_parameter_commit(param.symbol, new_value)
-            return
         self.lcd.display_parameter_value(param, new_value)
         if routing_info.destination == RoutingDestination.EXTERNAL:
             return

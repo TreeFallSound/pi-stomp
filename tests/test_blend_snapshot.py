@@ -95,21 +95,25 @@ def test_resolve_by_name_not_found_raises():
 
 def test_parse_snapshot_data_extracts_ports():
     state = SnapshotManager.parse_snapshot_data(_SNAPSHOTS, 0)
-    assert "/BigMuff" in state
-    assert state["/BigMuff"]["Tone"] == pytest.approx(0.2)
-    assert state["/BigMuff"]["Level"] == pytest.approx(0.5)
+    assert "BigMuff" in state
+    assert state["BigMuff"]["Tone"] == pytest.approx(0.2)
+    assert state["BigMuff"]["Level"] == pytest.approx(0.5)
 
 
 def test_parse_snapshot_data_maps_bypassed_to_bypass_param():
     # Lead snapshot has bypassed=True → :bypass = 1.0
     state = SnapshotManager.parse_snapshot_data(_SNAPSHOTS, 1)
-    assert state["/BigMuff"][":bypass"] == pytest.approx(1.0)
+    assert state["BigMuff"][":bypass"] == pytest.approx(1.0)
 
 
-def test_parse_snapshot_data_adds_leading_slash_to_instance_id():
+def test_parse_snapshot_data_uses_canonical_instance_id():
+    """Snapshot state keys must be canonical (no leading slash) so they match
+    Plugin.instance_id and route cleanly through websocket_bridge.send_parameter."""
     state = SnapshotManager.parse_snapshot_data(_SNAPSHOTS, 0)
-    assert "/BigMuff" in state
-    assert "BigMuff" not in state
+    assert "BigMuff" in state
+    assert "/BigMuff" not in state
+    for key in state:
+        assert not key.startswith("/"), f"snapshot key {key!r} leaked a leading slash"
 
 
 # ---------------------------------------------------------------------------

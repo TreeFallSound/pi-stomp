@@ -83,7 +83,7 @@ class SnapshotManager:
 
         # Iterate through plugins in snapshot
         for plugin_symbol, plugin_data in snapshot_data.items():
-            instance_id = SnapshotManager.map_key_to_instance(plugin_symbol)
+            instance_id = plugin_symbol
 
             # Extract parameter values from ports
             ports = plugin_data.get("ports", {})
@@ -101,16 +101,6 @@ class SnapshotManager:
 
         logging.debug(f"Parsed snapshot {snapshot_index}: {len(state)} plugins")
         return state
-
-    @staticmethod
-    def map_instance_to_key(instance_id: str) -> str:
-        """Convert instance_id to snapshot key by stripping leading '/'."""
-        return instance_id.lstrip("/")
-
-    @staticmethod
-    def map_key_to_instance(key: str) -> str:
-        """Convert snapshot key to instance_id by adding leading '/'."""
-        return f"/{key}"
 
     @staticmethod
     def sync_blend_snapshots(
