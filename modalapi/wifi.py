@@ -573,7 +573,7 @@ class WifiManager:
     def scan_networks(self) -> list[ScannedNetwork]:
         """Return visible nearby networks, deduplicated by SSID (strongest wins), sorted by signal desc."""
         stdout, err = _nmcli(
-            ["dev", "wifi", "list", "--rescan", "auto", "ifname", self.iface_name],
+            ["dev", "wifi", "list", "--rescan", "yes", "ifname", self.iface_name],
             terse_fields=["IN-USE", "SSID", "SIGNAL", "SECURITY"],
             timeout=15,
         )
