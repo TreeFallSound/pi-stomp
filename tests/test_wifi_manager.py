@@ -325,9 +325,10 @@ def test_connect_scanned_open_omits_security_fields(wm):
 
     assert err is None
     add = next(c for c in calls if "add" in c)
+    # nmcli treats wifi-sec.key-mgmt=none as WEP, breaking association with
+    # genuinely open APs. The wifi-sec section must be omitted entirely.
     assert "wifi-sec.psk" not in add
-    if "wifi-sec.key-mgmt" in add:
-        assert "wpa-psk" not in add and "sae" not in add
+    assert "wifi-sec.key-mgmt" not in add
 
 
 def test_connect_scanned_wpa3_uses_sae(wm):

@@ -642,11 +642,13 @@ class WifiManager:
             name,
             "ssid",
             ssid,
-            "wifi-sec.key-mgmt",
-            km,
             "connection.autoconnect",
             "yes",
         ]
+        # nmcli treats wifi-sec.key-mgmt=none as WEP. For a genuinely open AP,
+        # the wifi-sec section must be omitted entirely.
+        if km != KeyMgmt.NONE:
+            add_args += ["wifi-sec.key-mgmt", km]
         if km in (KeyMgmt.WPA_PSK, KeyMgmt.SAE) and psk:
             add_args += ["wifi-sec.psk", psk]
         _, err = _nmcli(add_args, sudo=True, timeout=20)
