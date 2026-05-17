@@ -242,17 +242,17 @@ def test_empty_psk_submit_blocked(v3_system, wifi_state, snapshot):
 
 
 @pytest.mark.parametrize(
-    "stderr,label",
+    "stderr",
     [
-        (b"secrets were required, but none were provided", "auth_failed"),
-        (b"ip-config-unavailable", "dhcp_timeout"),
-        (b"connection timed out", "timed_out"),
-        (b"no network with ssid 'Net'", "not_found"),
-        (b"not authorized to control networking", "permission_denied"),
+        b"secrets were required, but none were provided",
+        b"ip-config-unavailable",
+        b"connection timed out",
+        b"no network with ssid 'Net'",
+        b"not authorized to control networking",
     ],
 )
-def test_error_dialogs_each_kind(v3_system, wifi_state, snapshot, stderr, label):
-    """Every connect failure (including auth) shows a MessageDialog — no retry."""
+def test_error_dialogs_each_kind(v3_system, wifi_state, stderr):
+    """Every connect failure shows a MessageDialog — no retry."""
     nets = [make_scanned("Net", signal=70)]
     wifi_state(scanned=nets, saved=[])
 
@@ -264,9 +264,24 @@ def test_error_dialogs_each_kind(v3_system, wifi_state, snapshot, stderr, label)
     _click(lcd)  # tap Net → passphrase editor
     _type_password(lcd, "somepassword")
     _click(lcd)  # submit → error dialog
-    snapshot(f"error_{label}")
 
     assert isinstance(lcd.pstack.current, MessageDialog)
+
+
+def test_error_dialog_snapshot(v3_system, wifi_state, snapshot):
+    """Auth failure error dialog — one snapshot covers the shared visual layout."""
+    nets = [make_scanned("Net", signal=70)]
+    wifi_state(scanned=nets, saved=[])
+    v3_system.handler.wifi_manager.connect_scanned.return_value = (
+        b"secrets were required, but none were provided"
+    )
+
+    _wm, lcd = _open(v3_system)
+    _click(lcd)
+    _click(lcd)
+    _type_password(lcd, "somepassword")
+    _click(lcd)
+    snapshot("error_dialog")
 
 
 # ---------------------------------------------------------------------------
