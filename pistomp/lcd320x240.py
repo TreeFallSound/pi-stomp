@@ -93,7 +93,6 @@ class Lcd(abstract_lcd.Lcd):
 
         # widgets
         self.w_wifi = None
-        self._wifi_img_path: Optional[str] = None
         self.wifi_menu: Optional[WifiMenu] = None
         self.w_eq = None
         self.w_power = None
@@ -178,8 +177,14 @@ class Lcd(abstract_lcd.Lcd):
     def draw_tools(self, wifi_type=None, eq_type=None, bypass_type=None, system_type=None):
         if self.w_wifi is not None:
             return
-        self.w_wifi = ImageWidget(box=Box.xywh(210, 0, 20, 20), image_path=os.path.join(self.imagedir,
-                                  'wifi_gray.png'), parent=self.main_panel, action=self.wifi_menu.open)
+        self.w_wifi = AnimatedImageWidget(
+            box=Box.xywh(210, 0, 20, 20),
+            static_path=os.path.join(self.imagedir, 'wifi_gray.png'),
+            frame_paths=[os.path.join(self.imagedir, f'wifi_processing_{i}.png') for i in range(1, 4)],
+            ticks_per_frame=4,
+            parent=self.main_panel,
+            action=self.wifi_menu.open,
+        )
         self.main_panel.add_sel_widget(self.w_wifi)
         if self.w_eq is not None:
             return
@@ -605,18 +610,23 @@ class Lcd(abstract_lcd.Lcd):
         if self.w_wifi is None:
             return
         if self.handler.wifi_manager.queue.pending_op_count() > 0:
-            img = "wifi_processing.png"
-        elif util.DICT_GET(wifi_status, 'hotspot_active'):
+            if not self.w_wifi.is_playing:
+                self.w_wifi.play()
+        else:
+            self.w_wifi.stop(self._resolved_wifi_png(wifi_status))
+
+    def _resolved_wifi_png(self, wifi_status):
+        if util.DICT_GET(wifi_status, 'hotspot_active'):
             img = "wifi_orange.png"
         elif util.DICT_GET(wifi_status, 'wifi_connected'):
             img = "wifi_silver.png"
         else:
             img = "wifi_gray.png"
-        image_path = os.path.join(self.imagedir, img)
-        if image_path == self._wifi_img_path:
-            return
-        self._wifi_img_path = image_path
-        self.w_wifi.replace_img(image_path)
+        return os.path.join(self.imagedir, img)
+
+    def tick_wifi(self):
+        if self.w_wifi is not None:
+            self.w_wifi.tick()
 
     def update_eq(self, eq_status):
         pass
