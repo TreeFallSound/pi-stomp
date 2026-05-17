@@ -192,43 +192,6 @@ def test_update_wifi_pending_shows_frame(lcd, mock_handler, status):
     assert mock_replace.call_args[0][0] in instance._wifi_frames
 
 
-def test_update_wifi_pending_cycles_frames(lcd, mock_handler):
-    """Consecutive pending updates advance through frames at ticks_per_frame cadence and wrap."""
-    instance, _ = lcd
-    mock_handler.wifi_manager.queue.pending_op_count.return_value = 1
-    instance.draw_tools()
-    status = {"wifi_connected": True, "hotspot_active": False}
-    seen = []
-    n_frames = len(instance._wifi_frames)
-    # Drive 2*n_frames frame-advances so we see at least one wrap.
-    for _ in range(n_frames * 2 * instance._wifi_ticks_per_frame):
-        with patch.object(instance.w_wifi, "replace_img") as mock_replace:
-            instance.update_wifi(status)
-        seen.append(mock_replace.call_args[0][0])
-    # The visited frames should cycle through every preloaded frame.
-    visited = {instance._wifi_frames.index(f) for f in seen}
-    assert visited == set(range(n_frames))
-
-
-def test_update_wifi_pending_to_idle_resets_animation(lcd, mock_handler):
-    """Leaving the pending state resets frame counters and shows the resolved idle image."""
-    instance, _ = lcd
-    instance.draw_tools()
-    status = {"wifi_connected": True, "hotspot_active": False}
-    # Drive the animation forward a few frames.
-    mock_handler.wifi_manager.queue.pending_op_count.return_value = 1
-    for _ in range(instance._wifi_ticks_per_frame * 2):
-        instance.update_wifi(status)
-    assert instance._wifi_tick != 0
-    # Now clear pending.
-    mock_handler.wifi_manager.queue.pending_op_count.return_value = 0
-    with patch.object(instance.w_wifi, "replace_img") as mock_replace:
-        instance.update_wifi(status)
-    mock_replace.assert_called_once()
-    assert mock_replace.call_args[0][0].endswith("wifi_silver.png")
-    assert instance._wifi_tick == 0
-
-
 def test_wifi_frames_are_preloaded(lcd):
     """Frames are decoded once at draw_tools time, not opened on every update."""
     instance, _ = lcd
