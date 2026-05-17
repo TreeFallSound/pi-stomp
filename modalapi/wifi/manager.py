@@ -15,7 +15,6 @@
 
 import logging
 import os
-import subprocess
 import threading
 from typing import Callable, Optional
 
@@ -26,8 +25,8 @@ from .types import SavedConnection, ScannedNetwork, WifiStatus
 
 
 class WifiManager:
-    # Hard-wire wifi interface to avoid scrubbing sysfs; the hotspot scripts
-    # are likewise hard-wired.
+    # Hard-wired wifi interface to avoid scrubbing sysfs.
+    # Hotspot state is read from / mutates via NetworkManager directly.
     def __init__(self, ifname: str = "wlan0", on_status_change: Optional[Callable[[WifiStatus], None]] = None) -> None:
         self.iface_name: str = ifname
         self.lock: threading.Lock = threading.Lock()
@@ -69,22 +68,8 @@ class WifiManager:
         except Exception:
             return False
 
-    def _is_hotspot_active(self) -> bool:
-        # `systemctl is-active` exits non-zero when inactive, so don't treat non-zero as failure.
-        try:
-            result = subprocess.run(
-                ["systemctl", "is-active", "wifi-hotspot"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=5,
-            )
-            return result.stdout.strip() == "active"
-        except Exception:
-            return False
-
     def _get_wpa_status(self, status: WifiStatus) -> None:
-        # `device show` rejects per-setting fields; fetch SSID via `connection show` below.
+        # `device show` rejects per-setting fields; fetch SSID/mode via `connection show` below.
         stdout, err = nmcli(
             ["device", "show", self.iface_name],
             terse_fields=["GENERAL.STATE", "GENERAL.CONNECTION", "IP4.ADDRESS"],
@@ -104,17 +89,21 @@ class WifiManager:
                 break
         connection = status.get("connection")
         if connection:
-            ssid, _ = ops.wifi_profile_ssid_mode(connection)
+            ssid, mode = ops.wifi_profile_ssid_mode(connection)
             if ssid:
                 status["ssid"] = ssid
+            status["hotspot_active"] = mode == "ap"
 
     def _polling_thread(self) -> None:
         while True:
             new_status: WifiStatus = {}
             supported = new_status["wifi_supported"] = self._is_wifi_supported()
             connected = new_status["wifi_connected"] = self._is_wifi_connected()
-            hp_active = new_status["hotspot_active"] = self._is_hotspot_active()
-            if supported and (connected or hp_active):
+            # Default false; _get_wpa_status flips it when the active wlan0
+            # connection has mode=ap. operstate is "up" in both client and AP
+            # modes, so `connected` covers both cases.
+            new_status["hotspot_active"] = False
+            if supported and connected:
                 self._get_wpa_status(new_status)
 
             saved = ops.list_connections() if supported else []
@@ -170,7 +159,7 @@ class WifiManager:
         return ops.get_psk_for(name)
 
     def enable_hotspot(self) -> Optional[bytes]:
-        return ops.enable_hotspot()
+        return ops.enable_hotspot(self.iface_name)
 
     def disable_hotspot(self) -> Optional[bytes]:
-        return ops.disable_hotspot()
+        return ops.disable_hotspot(self.iface_name)

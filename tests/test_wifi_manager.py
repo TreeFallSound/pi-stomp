@@ -1,11 +1,11 @@
 # pyright: reportAttributeAccessIssue=false
-"""Unit tests for WifiManager — orchestration around nmcli / systemctl.
+"""Unit tests for WifiManager — orchestration around nmcli.
 
 These tests mock `subprocess` and don't construct a polling thread; they
-exercise the manager API directly.
+exercise the manager API directly. Hotspot mode is driven directly via
+nmcli.
 """
 
-import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,6 +24,7 @@ def wm() -> WifiManager:
 # ---------------------------------------------------------------------------
 # list_connections — filter AP-mode profiles regardless of name
 # ---------------------------------------------------------------------------
+
 
 def test_list_connections_filters_ap_mode_profile(wm):
     """Hotspot profiles (mode=ap) are excluded even when named differently.
@@ -61,9 +62,21 @@ def test_list_connections_bulk_call_uses_only_valid_columns(wm):
     """Regression: NM 1.42+ rejects per-setting fields like 802-11-wireless.ssid
     in bulk `connection show -f`. Only the list-column names are valid."""
     BULK_VALID = {
-        "NAME", "UUID", "TYPE", "TIMESTAMP", "TIMESTAMP-REAL", "AUTOCONNECT",
-        "AUTOCONNECT-PRIORITY", "READONLY", "DBUS-PATH", "ACTIVE", "DEVICE",
-        "STATE", "ACTIVE-PATH", "SLAVE", "FILENAME",
+        "NAME",
+        "UUID",
+        "TYPE",
+        "TIMESTAMP",
+        "TIMESTAMP-REAL",
+        "AUTOCONNECT",
+        "AUTOCONNECT-PRIORITY",
+        "READONLY",
+        "DBUS-PATH",
+        "ACTIVE",
+        "DEVICE",
+        "STATE",
+        "ACTIVE-PATH",
+        "SLAVE",
+        "FILENAME",
     }
     calls: list[list[str]] = []
 
@@ -82,50 +95,70 @@ def test_list_connections_bulk_call_uses_only_valid_columns(wm):
 
 
 # ---------------------------------------------------------------------------
-# disable_hotspot — synchronous orchestration: stop service + reconnect
+# disable_hotspot — nmcli orchestration: down AP + reconnect saved
 # ---------------------------------------------------------------------------
 
-def _collect_calls(co_calls, run_calls):
-    """Merge check_output and subprocess.run argv lists in call order."""
-    return co_calls + run_calls
+
+def _hotspot_run(run_calls, *, hotspot_name="pistomp-hotspot"):
+    """side_effect for subprocess.run that:
+    - returns an AP-mode profile from `connection show` listing
+    - reports mode=ap for that profile's per-uuid lookup
+    - returns success for every other nmcli call
+    """
+    bulk = f"{hotspot_name}:uuid-hs:802-11-wireless:0\n"
+
+    def _eff(cmd, **kw):
+        run_calls.append(list(cmd))
+        # Per-uuid mode lookup
+        if "show" in cmd and "uuid-hs" in cmd:
+            return MagicMock(stdout="802-11-wireless.ssid:pistomp\n802-11-wireless.mode:ap\n", stderr="", returncode=0)
+        # Bulk list (`nmcli -t -f NAME,UUID,TYPE connection show`)
+        if "connection" in cmd and "show" in cmd and "-f" in cmd:
+            f_idx = cmd.index("-f")
+            fields = cmd[f_idx + 1]
+            if "NAME" in fields and "TYPE" in fields and "TIMESTAMP" not in fields:
+                return MagicMock(stdout=bulk, stderr="", returncode=0)
+        return MagicMock(stdout="", stderr="", returncode=0)
+
+    return _eff
 
 
 def test_disable_hotspot_returns_none_on_clean_reconnect(wm):
-    """Happy path: systemctl stops, most-recent saved profile activates."""
+    """Happy path: AP profile is brought down, most-recent saved profile activates."""
     saved = [
         {"name": "Cafe", "ssid": "Cafe", "timestamp": 1699000000},
         {"name": "Home", "ssid": "Home", "timestamp": 1700000000},  # most recent
     ]
-    co_calls: list[list[str]] = []
     run_calls: list[list[str]] = []
     with (
         patch.object(ops, "list_connections", return_value=saved),
-        patch("subprocess.check_output", side_effect=lambda c, **kw: co_calls.append(list(c)) or b""),
-        patch("subprocess.run", side_effect=lambda c, **kw: run_calls.append(list(c)) or MagicMock(stdout="", stderr="", returncode=0)),
+        patch("subprocess.run", side_effect=_hotspot_run(run_calls)),
     ):
         err = wm.disable_hotspot()
 
     assert err is None
-    assert any("systemctl" in args and "wifi-hotspot" in args for args in co_calls)
-    assert any(
-        "nmcli" in args and "up" in args and "Home" in args for args in run_calls
-    ), f"expected nmcli connection up Home, got: {run_calls}"
+    # AP brought down explicitly via nmcli (no systemctl).
+    assert any("connection" in c and "down" in c and "pistomp-hotspot" in c for c in run_calls), (
+        f"expected nmcli connection down pistomp-hotspot, got: {run_calls}"
+    )
+    assert not any("systemctl" in c for c in run_calls), "disable_hotspot must not call systemctl"
+    assert any("connection" in c and "up" in c and "Home" in c for c in run_calls), (
+        f"expected nmcli connection up Home, got: {run_calls}"
+    )
 
 
 def test_disable_hotspot_returns_none_when_no_saved_profile(wm):
-    """No saved profile → stop service silently, no reconnect attempt."""
-    co_calls: list[list[str]] = []
+    """No saved client profile → bring AP down silently, no reconnect attempt."""
     run_calls: list[list[str]] = []
     with (
         patch("modalapi.wifi.ops.list_connections", return_value=[]),
-        patch("subprocess.check_output", side_effect=lambda c, **kw: co_calls.append(list(c)) or b""),
-        patch("subprocess.run", side_effect=lambda c, **kw: run_calls.append(list(c)) or MagicMock(stdout="", stderr="", returncode=0)),
+        patch("subprocess.run", side_effect=_hotspot_run(run_calls)),
     ):
         err = wm.disable_hotspot()
 
     assert err is None
-    assert any("systemctl" in args for args in co_calls)
-    assert not any("nmcli" in args and "up" in args for args in run_calls)
+    assert any("connection" in c and "down" in c and "pistomp-hotspot" in c for c in run_calls)
+    assert not any("connection" in c and "up" in c for c in run_calls), "no saved profile → no `connection up` call"
 
 
 def test_disable_hotspot_uses_nmcli_wait_zero(wm):
@@ -134,21 +167,76 @@ def test_disable_hotspot_uses_nmcli_wait_zero(wm):
     run_calls: list[list[str]] = []
     with (
         patch.object(ops, "list_connections", return_value=saved),
-        patch("subprocess.check_output", return_value=b""),
-        patch("subprocess.run", side_effect=lambda c, **kw: run_calls.append(list(c)) or MagicMock(stdout="", stderr="", returncode=0)),
+        patch("subprocess.run", side_effect=_hotspot_run(run_calls)),
     ):
         wm.disable_hotspot()
 
     up_calls = [c for c in run_calls if "up" in c and "Home" in c]
     assert up_calls, f"expected an nmcli connection up call, got: {run_calls}"
     args = up_calls[0]
-    assert "--wait" in args and args[args.index("--wait") + 1] == "0", \
-        f"expected --wait 0, got: {args}"
+    assert "--wait" in args and args[args.index("--wait") + 1] == "0", f"expected --wait 0, got: {args}"
+
+
+def test_disable_hotspot_when_no_ap_profile_exists(wm):
+    """If no AP-mode profile is found, skip the `down` call and just try to
+    reactivate the most-recent saved client profile."""
+    saved = [{"name": "Home", "ssid": "Home", "timestamp": 1700000000}]
+    run_calls: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        run_calls.append(list(cmd))
+        # Empty connection-show listing → no hotspot profile found.
+        return MagicMock(stdout="", stderr="", returncode=0)
+
+    with (
+        patch.object(ops, "list_connections", return_value=saved),
+        patch("subprocess.run", side_effect=fake_run),
+    ):
+        err = wm.disable_hotspot()
+
+    assert err is None
+    assert not any("down" in c for c in run_calls), "no AP profile → no `connection down` call"
+    assert any("up" in c and "Home" in c for c in run_calls)
+
+
+def test_enable_hotspot_creates_profile_when_missing(wm):
+    """If no AP-mode profile exists, enable_hotspot creates `pistomp-hotspot`
+    with WPA-PSK + shared IPv4, then activates it. No systemctl."""
+    run_calls: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        run_calls.append(list(cmd))
+        # Bulk listing returns no profiles → triggers creation path.
+        return MagicMock(stdout="", stderr="", returncode=0)
+
+    with patch("subprocess.run", side_effect=fake_run):
+        err = wm.enable_hotspot()
+
+    assert err is None
+    assert not any("systemctl" in c for c in run_calls)
+    add = next((c for c in run_calls if "add" in c and "pistomp-hotspot" in c), None)
+    assert add is not None, f"expected `connection add pistomp-hotspot`, got: {run_calls}"
+    assert "ap" in add and "ipv4.method" in add and "shared" in add
+    assert "wifi-sec.psk" in add and "pistompwifi" in add
+    up = next((c for c in run_calls if "up" in c and "pistomp-hotspot" in c), None)
+    assert up is not None, f"expected `connection up pistomp-hotspot`, got: {run_calls}"
+
+
+def test_enable_hotspot_reuses_existing_ap_profile(wm):
+    """If an AP-mode profile already exists (any name), don't recreate it."""
+    run_calls: list[list[str]] = []
+    with patch("subprocess.run", side_effect=_hotspot_run(run_calls, hotspot_name="Hotspot")):
+        err = wm.enable_hotspot()
+
+    assert err is None
+    assert not any("add" in c for c in run_calls), f"existing AP profile must be reused, not recreated: {run_calls}"
+    assert any("up" in c and "Hotspot" in c for c in run_calls)
 
 
 # ---------------------------------------------------------------------------
 # poll() — bridges the polling thread to on_status_change on the main thread
 # ---------------------------------------------------------------------------
+
 
 def test_poll_fires_callback_only_when_changed_flag_set():
     """poll() invokes on_status_change with the cached snapshot when changed=True,
@@ -187,6 +275,7 @@ def test_poll_noop_when_callback_unset():
 # _polling_thread — refreshes _cached_saved alongside last_status
 # ---------------------------------------------------------------------------
 
+
 def test_polling_thread_iteration_refreshes_status_and_saved():
     """One iteration of the polling-thread body updates both last_status and
     _cached_saved under the lock, and sets `changed` when status differs."""
@@ -197,6 +286,7 @@ def test_polling_thread_iteration_refreshes_status_and_saved():
 
     # Stop the loop after a single pass.
     original_wait = wm.stop.wait
+
     def stop_after_first(_timeout):
         wm.stop.set()
         return original_wait(0)
@@ -204,9 +294,11 @@ def test_polling_thread_iteration_refreshes_status_and_saved():
     with (
         patch.object(wm, "_is_wifi_supported", return_value=True),
         patch.object(wm, "_is_wifi_connected", return_value=True),
-        patch.object(wm, "_is_hotspot_active", return_value=False),
-        patch.object(wm, "_get_wpa_status",
-                     side_effect=lambda s: s.update(ssid="Home", ip4_address="10.0.0.2")),
+        patch.object(
+            wm,
+            "_get_wpa_status",
+            side_effect=lambda s: s.update(ssid="Home", ip4_address="10.0.0.2", hotspot_active=False),
+        ),
         patch.object(ops, "list_connections", return_value=saved),
         patch.object(wm.stop, "wait", side_effect=stop_after_first),
     ):
@@ -216,6 +308,7 @@ def test_polling_thread_iteration_refreshes_status_and_saved():
     assert wm.last_status.get("wifi_connected") is True
     assert wm.last_status.get("ssid") == "Home"
     assert wm.last_status.get("ip4_address") == "10.0.0.2"
+    assert wm.last_status.get("hotspot_active") is False
     assert wm.changed is True
 
 
@@ -232,7 +325,6 @@ def test_polling_thread_skips_saved_when_wifi_unsupported():
     with (
         patch.object(wm, "_is_wifi_supported", return_value=False),
         patch.object(wm, "_is_wifi_connected", return_value=False),
-        patch.object(wm, "_is_hotspot_active", return_value=False),
         patch.object(ops, "list_connections") as list_conns,
         patch.object(wm.stop, "wait", side_effect=stop_after_first),
     ):
@@ -243,15 +335,24 @@ def test_polling_thread_skips_saved_when_wifi_unsupported():
 
 
 def test_disable_hotspot_returns_error_when_reconnect_fails(wm):
-    """If `nmcli connection up <saved>` fails, propagate the stderr bytes."""
+    """If `nmcli connection up <saved>` fails, propagate the stderr bytes.
+
+    The AP-`down` call must still succeed for this path to be reached, so we
+    differentiate by argv: succeed on `down`/`show`, fail on `up`."""
     saved = [{"name": "Home", "ssid": "Home", "timestamp": 1700000000}]
 
     def fake_run(cmd, **kw):
-        return MagicMock(stdout="", stderr="no network with ssid 'Home'", returncode=1)
+        # AP profile lookup → return a hotspot row + AP mode.
+        if "show" in cmd and "uuid-hs" in cmd:
+            return MagicMock(stdout="802-11-wireless.ssid:pistomp\n802-11-wireless.mode:ap\n", stderr="", returncode=0)
+        if "connection" in cmd and "show" in cmd and "-f" in cmd:
+            return MagicMock(stdout="pistomp-hotspot:uuid-hs:802-11-wireless:0\n", stderr="", returncode=0)
+        if "up" in cmd and "Home" in cmd:
+            return MagicMock(stdout="", stderr="no network with ssid 'Home'", returncode=1)
+        return MagicMock(stdout="", stderr="", returncode=0)
 
     with (
         patch.object(ops, "list_connections", return_value=saved),
-        patch("subprocess.check_output", return_value=b""),
         patch("subprocess.run", side_effect=fake_run),
     ):
         err = wm.disable_hotspot()
@@ -263,17 +364,21 @@ def test_disable_hotspot_returns_error_when_reconnect_fails(wm):
 # KeyMgmt — mapping from `nmcli dev wifi list` SECURITY column
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("security,expected", [
-    ("", KeyMgmt.NONE),
-    ("--", KeyMgmt.NONE),
-    ("WPA2", KeyMgmt.WPA_PSK),
-    ("WPA1 WPA2", KeyMgmt.WPA_PSK),
-    ("WPA2 802.1X", KeyMgmt.WPA_EAP),  # enterprise wins over PSK keyword
-    ("WPA3", KeyMgmt.SAE),
-    ("WPA2 WPA3", KeyMgmt.SAE),  # presence of SAE means it's available
-    ("SAE", KeyMgmt.SAE),
-    ("802.1X", KeyMgmt.WPA_EAP),
-])
+
+@pytest.mark.parametrize(
+    "security,expected",
+    [
+        ("", KeyMgmt.NONE),
+        ("--", KeyMgmt.NONE),
+        ("WPA2", KeyMgmt.WPA_PSK),
+        ("WPA1 WPA2", KeyMgmt.WPA_PSK),
+        ("WPA2 802.1X", KeyMgmt.WPA_EAP),  # enterprise wins over PSK keyword
+        ("WPA3", KeyMgmt.SAE),
+        ("WPA2 WPA3", KeyMgmt.SAE),  # presence of SAE means it's available
+        ("SAE", KeyMgmt.SAE),
+        ("802.1X", KeyMgmt.WPA_EAP),
+    ],
+)
 def test_keymgmt_from_scan_security(security, expected):
     assert KeyMgmt.from_scan_security(security) is expected
 
@@ -294,11 +399,14 @@ def test_keymgmt_is_str_compatible():
 # connect_scanned — explicit key-mgmt, scoped failure cleanup
 # ---------------------------------------------------------------------------
 
+
 def _ok_run(calls):
     """side_effect for subprocess.run that records argv and returns success."""
+
     def _eff(cmd, **kw):
         calls.append(list(cmd))
         return MagicMock(stdout="", stderr="", returncode=0)
+
     return _eff
 
 
@@ -386,6 +494,7 @@ def test_connect_scanned_rejects_enterprise(wm):
 # connect_saved — idempotent when already activated
 # ---------------------------------------------------------------------------
 
+
 def test_connect_saved_skips_nmcli_when_already_activated(wm):
     """Tapping a saved row that's already active must not invoke `nmcli
     connection up` (which would tear down and re-cycle, ~14s on real NM)."""
@@ -399,8 +508,7 @@ def test_connect_saved_skips_nmcli_when_already_activated(wm):
         err = wm.connect_saved("preconfigured")
 
     assert err is None
-    assert not any("up" in c for c in calls), \
-        f"expected no `nmcli connection up`, got: {calls}"
+    assert not any("up" in c for c in calls), f"expected no `nmcli connection up`, got: {calls}"
 
 
 def test_connect_saved_runs_when_not_activated(wm):
@@ -448,5 +556,6 @@ def test_replace_psk_uses_reconnect(wm):
         err = wm.replace_psk("Home", "newpw")
 
     assert err is None
-    assert any("up" in c and "Home" in c for c in calls), \
+    assert any("up" in c and "Home" in c for c in calls), (
         f"replace_psk must trigger `connection up` to cycle the new PSK; got: {calls}"
+    )
