@@ -9,7 +9,7 @@ import time
 import pytest
 
 from tests.v3.conftest import make_saved, make_scanned
-from ui.wifi_menu import WifiMenu, _PassphraseEditor
+from ui.wifi_menu import Row, WifiMenu, _PassphraseEditor
 from uilib.dialog import Dialog, MessageDialog
 from uilib.misc import InputEvent
 from pistomp.lcd320x240 import Lcd
@@ -180,7 +180,7 @@ def test_open_network_connect(v3_system, wifi_state, snapshot):
     _click(lcd)  # tap FreeWifi → direct connect (no dialog)
     snapshot("connected_open")
 
-    wm_mock.connect_scanned.assert_called_once_with("FreeWifi", None)
+    wm_mock.connect_scanned.assert_called_once_with("FreeWifi", "--", None)
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +265,8 @@ def test_many_saved_all_at_root(v3_system, wifi_state, snapshot):
 
 
 def test_multiple_profiles_same_ssid(v3_system, wifi_state, snapshot):
-    """Lock down: only the most-recent profile per SSID is shown (current behaviour)."""
+    """When several saved profiles share an SSID, rows surface the profile name
+    so users can distinguish them (e.g. OEM `preconfigured` vs user-added)."""
     ts = int(time.time())
     saved = [
         make_saved("Home", name="Home_v1", timestamp=ts - 7200),
@@ -273,7 +274,37 @@ def test_multiple_profiles_same_ssid(v3_system, wifi_state, snapshot):
     ]
     wifi_state(scanned=[], saved=saved)
     _open(v3_system)
-    snapshot("root_one_profile_visible")
+    snapshot("root_disambiguated_by_name")
+
+
+def test_multiple_profiles_same_ssid_name_without_ssid():
+    """If a profile name doesn't contain the SSID (e.g. the OEM 'preconfigured'),
+    append the SSID in parens for clarity."""
+    from ui.wifi_menu import WifiMenu
+    ts = int(time.time())
+    profiles = [
+        make_saved("BELL592", name="preconfigured", timestamp=ts - 1000),
+        make_saved("BELL592", name="BELL592", timestamp=ts),
+    ]
+    rows = []
+    for p in profiles:
+        row: Row = {"ssid": "BELL592", "signal": None, "security": None,
+                    "saved": True, "profile": p, "active": False}
+        WifiMenu._maybe_disambiguate(row, profiles)
+        rows.append(row)
+
+    assert rows[0].get("display_name") == "preconfigured (BELL592)"
+    assert rows[1].get("display_name") == "BELL592"
+
+
+def test_disambiguate_skipped_when_single_profile():
+    """Single saved profile for an SSID: no disambiguator (show plain SSID)."""
+    from ui.wifi_menu import WifiMenu
+    profile = make_saved("Home", name="anything", timestamp=1)
+    row: Row = {"ssid": "Home", "signal": None, "security": None,
+                "saved": True, "profile": profile, "active": False}
+    WifiMenu._maybe_disambiguate(row, [profile])
+    assert "display_name" not in row
 
 
 # ---------------------------------------------------------------------------
@@ -500,7 +531,7 @@ def test_password_special_chars(v3_system, wifi_state, snapshot):
     _type_password(lcd, special)
     _click(lcd)
 
-    wm_mock.connect_scanned.assert_called_once_with("Secured", special)  # psk passed positionally
+    wm_mock.connect_scanned.assert_called_once_with("Secured", "WPA2", special)  # (ssid, security, psk)
 
 
 # ---------------------------------------------------------------------------

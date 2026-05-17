@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from modalapi.wifi import WifiManager
+from modalapi.wifi import KeyMgmt, WifiManager
 
 
 @pytest.fixture
@@ -29,20 +29,55 @@ def test_list_connections_filters_ap_mode_profile(wm):
 
     Covers both images: arch (`pistomp-hotspot`) and pi-gen (`Hotspot`).
     """
-    # Terse nmcli output with the new field set: NAME,TYPE,TIMESTAMP,SSID,MODE
-    stdout = (
-        "Home:802-11-wireless:1700000000:Home:infrastructure\n"
-        "pistomp-hotspot:802-11-wireless:0:pistomp:ap\n"
-        "Hotspot:802-11-wireless:0:pistomp:ap\n"
-        "Cafe:802-11-wireless:1699000000:Cafe:infrastructure\n"
-        "eth0:802-3-ethernet:1700000000::\n"
+    bulk_stdout = (
+        "Home:uuid-home:802-11-wireless:1700000000\n"
+        "pistomp-hotspot:uuid-pshot:802-11-wireless:0\n"
+        "Hotspot:uuid-hshot:802-11-wireless:0\n"
+        "Cafe:uuid-cafe:802-11-wireless:1699000000\n"
+        "eth0:uuid-eth:802-3-ethernet:1700000000\n"
     )
-    result = MagicMock(stdout=stdout, returncode=0)
-    with patch("subprocess.run", return_value=result):
+    per_uuid = {
+        "uuid-home": "802-11-wireless.ssid:Home\n802-11-wireless.mode:infrastructure\n",
+        "uuid-pshot": "802-11-wireless.ssid:pistomp\n802-11-wireless.mode:ap\n",
+        "uuid-hshot": "802-11-wireless.ssid:pistomp\n802-11-wireless.mode:ap\n",
+        "uuid-cafe": "802-11-wireless.ssid:Cafe\n802-11-wireless.mode:infrastructure\n",
+    }
+
+    def fake_run(cmd, **kw):
+        if "show" in cmd and len(cmd) == 6:  # bulk: nmcli -t -f ... connection show
+            return MagicMock(stdout=bulk_stdout, stderr="", returncode=0)
+        uuid = cmd[-1]
+        return MagicMock(stdout=per_uuid.get(uuid, ""), stderr="", returncode=0)
+
+    with patch("subprocess.run", side_effect=fake_run):
         conns = wm.list_connections()
 
     ssids = [c["ssid"] for c in conns]
     assert ssids == ["Home", "Cafe"]
+
+
+def test_list_connections_bulk_call_uses_only_valid_columns(wm):
+    """Regression: NM 1.42+ rejects per-setting fields like 802-11-wireless.ssid
+    in bulk `connection show -f`. Only the list-column names are valid."""
+    BULK_VALID = {
+        "NAME", "UUID", "TYPE", "TIMESTAMP", "TIMESTAMP-REAL", "AUTOCONNECT",
+        "AUTOCONNECT-PRIORITY", "READONLY", "DBUS-PATH", "ACTIVE", "DEVICE",
+        "STATE", "ACTIVE-PATH", "SLAVE", "FILENAME",
+    }
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        calls.append(list(cmd))
+        return MagicMock(stdout="", stderr="", returncode=0)
+
+    with patch("subprocess.run", side_effect=fake_run):
+        wm.list_connections()
+
+    bulk = next(c for c in calls if "connection" in c and "show" in c and len(c) == 6)
+    f_idx = bulk.index("-f")
+    fields = bulk[f_idx + 1].split(",")
+    invalid = [f for f in fields if f not in BULK_VALID]
+    assert not invalid, f"bulk `connection show -f` rejects these fields: {invalid}"
 
 
 # ---------------------------------------------------------------------------
@@ -218,3 +253,213 @@ def test_disable_hotspot_returns_error_when_reconnect_fails(wm):
         err = wm.disable_hotspot()
 
     assert err == b"no network with ssid 'Home'"
+
+
+# ---------------------------------------------------------------------------
+# KeyMgmt — mapping from `nmcli dev wifi list` SECURITY column
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("security,expected", [
+    ("", KeyMgmt.NONE),
+    ("--", KeyMgmt.NONE),
+    ("WPA2", KeyMgmt.WPA_PSK),
+    ("WPA1 WPA2", KeyMgmt.WPA_PSK),
+    ("WPA2 802.1X", KeyMgmt.WPA_EAP),  # enterprise wins over PSK keyword
+    ("WPA3", KeyMgmt.SAE),
+    ("WPA2 WPA3", KeyMgmt.SAE),  # presence of SAE means it's available
+    ("SAE", KeyMgmt.SAE),
+    ("802.1X", KeyMgmt.WPA_EAP),
+])
+def test_keymgmt_from_scan_security(security, expected):
+    assert KeyMgmt.from_scan_security(security) is expected
+
+
+@pytest.mark.parametrize("security", ["WEP", "garbage", "OWE"])
+def test_keymgmt_from_scan_security_unsupported(security):
+    with pytest.raises(ValueError):
+        KeyMgmt.from_scan_security(security)
+
+
+def test_keymgmt_is_str_compatible():
+    """str-Enum: instances must drop into subprocess args as their value string."""
+    assert KeyMgmt.WPA_PSK == "wpa-psk"
+    assert ["wifi-sec.key-mgmt", KeyMgmt.SAE][1] == "sae"
+
+
+# ---------------------------------------------------------------------------
+# connect_scanned — explicit key-mgmt, scoped failure cleanup
+# ---------------------------------------------------------------------------
+
+def test_connect_scanned_wpa2_passes_explicit_key_mgmt(wm):
+    calls: list[list[str]] = []
+
+    def fake_check_output(cmd, **kw):
+        calls.append(list(cmd))
+        return b""
+
+    with (
+        patch.object(wm, "list_connections", return_value=[]),
+        patch("subprocess.check_output", side_effect=fake_check_output),
+    ):
+        err = wm.connect_scanned("BELL592", "WPA2", "secret")
+
+    assert err is None
+    add = next(c for c in calls if "add" in c)
+    assert "wifi-sec.key-mgmt" in add and "wpa-psk" in add
+    assert "wifi-sec.psk" in add and "secret" in add
+
+
+def test_connect_scanned_open_omits_security_fields(wm):
+    calls: list[list[str]] = []
+
+    def fake_check_output(cmd, **kw):
+        calls.append(list(cmd))
+        return b""
+
+    with (
+        patch.object(wm, "list_connections", return_value=[]),
+        patch("subprocess.check_output", side_effect=fake_check_output),
+    ):
+        err = wm.connect_scanned("Cafe", "", None)
+
+    assert err is None
+    add = next(c for c in calls if "add" in c)
+    assert "wifi-sec.psk" not in add
+    # key-mgmt=none is acceptable; what matters is no psk leaks in
+    if "wifi-sec.key-mgmt" in add:
+        assert "wpa-psk" not in add and "sae" not in add
+
+
+def test_connect_scanned_wpa3_uses_sae(wm):
+    calls: list[list[str]] = []
+
+    with (
+        patch.object(wm, "list_connections", return_value=[]),
+        patch("subprocess.check_output", side_effect=lambda c, **kw: calls.append(list(c)) or b""),
+    ):
+        wm.connect_scanned("Net3", "WPA3", "secret")
+
+    add = next(c for c in calls if "add" in c)
+    assert "sae" in add
+
+
+def test_connect_scanned_deletes_only_freshly_added_profile_on_failure(wm):
+    """If `connection up` fails, we delete the profile *we just added* — not
+    any pre-existing sibling profile that happens to share the SSID."""
+    calls: list[list[str]] = []
+
+    def fake_check_output(cmd, **kw):
+        calls.append(list(cmd))
+        if "up" in cmd:
+            raise subprocess.CalledProcessError(1, cmd, output=b"auth failed")
+        return b""
+
+    # `preconfigured` already exists with SSID BELL592 — must not be touched.
+    saved = [{"name": "preconfigured", "ssid": "BELL592", "timestamp": 1}]
+    with (
+        patch.object(wm, "list_connections", return_value=saved),
+        patch("subprocess.check_output", side_effect=fake_check_output),
+    ):
+        err = wm.connect_scanned("BELL592", "WPA2", "wrongpw")
+
+    assert err == b"auth failed"
+    delete_calls = [c for c in calls if "delete" in c]
+    assert len(delete_calls) == 1
+    # We deleted the profile we just created — never the pre-existing `preconfigured`.
+    deleted_name = delete_calls[0][-1]
+    assert deleted_name == "BELL592"
+    assert "preconfigured" not in delete_calls[0]
+
+
+def test_connect_scanned_requires_psk_for_secured_network(wm):
+    with patch.object(wm, "list_connections", return_value=[]):
+        err = wm.connect_scanned("BELL592", "WPA2", None)
+    assert err is not None and b"password" in err
+
+
+def test_connect_scanned_rejects_enterprise(wm):
+    with patch.object(wm, "list_connections", return_value=[]):
+        err = wm.connect_scanned("CorpNet", "WPA2 802.1X", "x")
+    assert err is not None and b"enterprise" in err.lower()
+
+
+# ---------------------------------------------------------------------------
+# connect_saved — idempotent when already activated
+# ---------------------------------------------------------------------------
+
+def test_connect_saved_skips_nmcli_when_already_activated(wm):
+    """Tapping a saved row that's already active must not invoke `nmcli
+    connection up` (which would tear down and re-cycle, ~14s on real NM)."""
+    co_calls: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        return MagicMock(stdout="GENERAL.STATE:activated\n", stderr="", returncode=0)
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("subprocess.check_output", side_effect=lambda c, **kw: co_calls.append(list(c)) or b""),
+    ):
+        err = wm.connect_saved("preconfigured")
+
+    assert err is None
+    assert not any("up" in c for c in co_calls), \
+        f"expected no `nmcli connection up`, got: {co_calls}"
+
+
+def test_connect_saved_runs_when_not_activated(wm):
+    co_calls: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        # Inactive profile: nmcli returns empty GENERAL.STATE
+        return MagicMock(stdout="GENERAL.STATE:\n", stderr="", returncode=0)
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("subprocess.check_output", side_effect=lambda c, **kw: co_calls.append(list(c)) or b""),
+    ):
+        err = wm.connect_saved("Home")
+
+    assert err is None
+    assert any("up" in c and "Home" in c for c in co_calls)
+
+
+def test_connect_saved_reconnect_bypasses_idempotency_check(wm):
+    """replace_psk path: even if the profile is already activated, the caller
+    can demand a cycle so a freshly-modified setting (PSK) takes effect."""
+    co_calls: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        return MagicMock(stdout="GENERAL.STATE:activated\n", stderr="", returncode=0)
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("subprocess.check_output", side_effect=lambda c, **kw: co_calls.append(list(c)) or b""),
+    ):
+        wm.connect_saved("Home", reconnect=True)
+
+    assert any("up" in c and "Home" in c for c in co_calls)
+
+
+def test_replace_psk_uses_reconnect(wm):
+    """After modifying a PSK we must cycle the active link, not skip-via-idempotency."""
+    calls: list[list[str]] = []
+
+    def fake_check_output(cmd, **kw):
+        calls.append(list(cmd))
+        return b""
+
+    def fake_run(cmd, **kw):
+        # get_psk_for (returncode irrelevant for our assertions) + _is_profile_activated
+        if "show" in cmd and "-g" in cmd:
+            return MagicMock(stdout="oldpw\n", returncode=0)
+        return MagicMock(stdout="GENERAL.STATE:activated\n", stderr="", returncode=0)
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("subprocess.check_output", side_effect=fake_check_output),
+    ):
+        err = wm.replace_psk("Home", "newpw")
+
+    assert err is None
+    assert any("up" in c and "Home" in c for c in calls), \
+        f"replace_psk must trigger `connection up` to cycle the new PSK; got: {calls}"

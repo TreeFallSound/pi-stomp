@@ -25,7 +25,34 @@ import subprocess
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import Enum
 from typing import Callable, Generic, Optional, TypedDict, TypeVar
+
+
+class KeyMgmt(str, Enum):
+    """nmcli `802-11-wireless-security.key-mgmt` values. Subclasses `str` so
+    instances drop straight into subprocess arg lists."""
+
+    WPA_PSK = "wpa-psk"
+    SAE = "sae"
+    WPA_EAP = "wpa-eap"
+    NONE = "none"
+
+    @classmethod
+    def from_scan_security(cls, security: str) -> "KeyMgmt":
+        """Map an `nmcli dev wifi list` SECURITY token to a key-mgmt value.
+
+        Raises ValueError for security types we don't support (WEP, unknown)."""
+        s = (security or "").upper().strip()
+        if not s or s == "--":
+            return cls.NONE
+        if "SAE" in s or "WPA3" in s:
+            return cls.SAE
+        if "802.1X" in s or "EAP" in s:
+            return cls.WPA_EAP
+        if "WPA" in s or "PSK" in s:
+            return cls.WPA_PSK
+        raise ValueError(f"unsupported wifi security: {security!r}")
 
 
 class SavedConnection(TypedDict):
@@ -116,10 +143,11 @@ class ConnectSavedCmd(Command["WifiManager", Optional[bytes]]):
 @dataclass
 class ConnectScannedCmd(Command["WifiManager", Optional[bytes]]):
     ssid: str
+    security: str
     psk: Optional[str]
 
     def run(self, wm: "WifiManager") -> Optional[bytes]:
-        return wm.connect_scanned(self.ssid, self.psk)
+        return wm.connect_scanned(self.ssid, self.security, self.psk)
 
     def key(self) -> str:
         return f"connect:{self.ssid}"
@@ -318,13 +346,16 @@ class WifiManager:
             return False
 
     def _get_wpa_status(self, status: WifiStatus) -> None:
+        # `nmcli device show` rejects per-setting fields like 802-11-wireless.ssid;
+        # those are only valid on `connection show <id>`. Fetch the SSID separately
+        # once we know which profile is active.
         try:
             result = subprocess.run(
                 [
                     "nmcli",
                     "-t",
                     "-f",
-                    "GENERAL.STATE,GENERAL.CONNECTION,IP4.ADDRESS,802-11-WIRELESS.SSID",
+                    "GENERAL.STATE,GENERAL.CONNECTION,IP4.ADDRESS",
                     "device",
                     "show",
                     self.iface_name,
@@ -350,8 +381,11 @@ class WifiManager:
                 status["connection"] = value
             elif key == "IP4.ADDRESS" or key.startswith("IP4.ADDRESS["):
                 status["ip4_address"] = value
-            elif key == "802-11-WIRELESS.SSID":
-                status["ssid"] = value
+        connection = status.get("connection")
+        if connection and connection != "--":
+            ssid, _ = self._wifi_profile_ssid_mode(connection)
+            if ssid:
+                status["ssid"] = ssid
 
     def _polling_thread(self) -> None:
         while True:
@@ -388,10 +422,6 @@ class WifiManager:
         if update is not None and self.on_status_change is not None:
             self.on_status_change(update)
 
-    def get_cached_status(self) -> WifiStatus:
-        with self.lock:
-            return self.last_status
-
     def get_cached_saved(self) -> list[SavedConnection]:
         with self.lock:
             return list(self._cached_saved)
@@ -419,48 +449,80 @@ class WifiManager:
         most_recent = max(saved, key=lambda c: c["timestamp"] or 0)
         return self.connect_saved(most_recent["name"], wait=False)
 
+    # nmcli's bulk `connection show` only accepts these column names with `-f`.
+    # Per-setting property fields (e.g. 802-11-wireless.ssid) are valid only on
+    # `connection show <uuid>`, so we read those separately per-profile.
+    _BULK_CONN_FIELDS = ("NAME", "UUID", "TYPE", "TIMESTAMP")
+
     def list_connections(self) -> list[SavedConnection]:
         """Return saved wifi client profiles. Filter by mode=ap so both images'
         hotspot profile names (`pistomp-hotspot`, `Hotspot`) are excluded."""
+        try:
+            result = subprocess.run(
+                ["nmcli", "-t", "-f", ",".join(self._BULK_CONN_FIELDS), "connection", "show"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            if result.returncode != 0:
+                logging.error("nmcli connection show failed: " + result.stderr.strip())
+                return []
+            connections: list[SavedConnection] = []
+            for line in result.stdout.strip().split("\n"):
+                if not line:
+                    continue
+                parts = _split_terse(line)
+                if len(parts) < 4 or parts[2] != "802-11-wireless":
+                    continue
+                name, uuid = parts[0], parts[1]
+                try:
+                    timestamp = int(parts[3]) if parts[3] else 0
+                except ValueError:
+                    timestamp = 0
+                ssid, mode = self._wifi_profile_ssid_mode(uuid)
+                if mode == "ap":
+                    continue
+                connections.append(SavedConnection(name=name, ssid=ssid or name, timestamp=timestamp))
+            return connections
+        except Exception as e:
+            logging.error("Failed to list wifi connections: " + str(e))
+            return []
+
+    def _wifi_profile_ssid_mode(self, uuid: str) -> tuple[str, str]:
+        """Read SSID and mode for a single wifi profile. Returns ('', '') on error."""
         try:
             result = subprocess.run(
                 [
                     "nmcli",
                     "-t",
                     "-f",
-                    "NAME,TYPE,TIMESTAMP,802-11-WIRELESS.SSID,802-11-WIRELESS.MODE",
+                    "802-11-wireless.ssid,802-11-wireless.mode",
                     "connection",
                     "show",
+                    uuid,
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            connections: list[SavedConnection] = []
-            for line in result.stdout.strip().split("\n"):
-                if not line:
-                    continue
-                parts = _split_terse(line)
-                if len(parts) >= 2 and parts[1] == "802-11-wireless":
-                    mode = parts[4] if len(parts) > 4 else ""
-                    if mode == "ap":
-                        continue
-                    name = parts[0]
-                    try:
-                        timestamp = int(parts[2]) if len(parts) > 2 and parts[2] else 0
-                    except ValueError:
-                        timestamp = 0
-                    ssid = parts[3] if len(parts) > 3 and parts[3] else name
-                    connections.append(SavedConnection(name=name, ssid=ssid, timestamp=timestamp))
-            return connections
         except Exception as e:
-            logging.error("Failed to list wifi connections: " + str(e))
-            return []
+            logging.error("nmcli connection show %s failed: %s" % (uuid, e))
+            return "", ""
+        if result.returncode != 0:
+            return "", ""
+        ssid = mode = ""
+        for line in result.stdout.split("\n"):
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            if key == "802-11-wireless.ssid":
+                ssid = value
+            elif key == "802-11-wireless.mode":
+                mode = value
+        return ssid, mode
 
     def scan_networks(self) -> list[ScannedNetwork]:
-        """Return nearby networks, deduplicated by SSID (strongest wins), sorted by signal desc.
-
-        Hidden SSIDs are filtered out."""
+        """Return visible nearby networks, deduplicated by SSID (strongest wins), sorted by signal desc."""
         try:
             result = subprocess.run(
                 [
@@ -508,50 +570,15 @@ class WifiManager:
                 existing["in_use"] = True
         return sorted(best.values(), key=lambda n: n["signal"], reverse=True)
 
-    def _resolve_unique_name(self, desired: str, exclude: Optional[str] = None) -> str:
-        """Pick a profile name based on `desired`, suffixing (2)/(3)/... if it collides.
-
-        `exclude` is the existing name of a profile being modified (so it doesn't collide with itself)."""
+    def _resolve_unique_name(self, desired: str) -> str:
+        """Pick a profile name based on `desired`, suffixing (2)/(3)/... on collision."""
         existing = {c["name"] for c in self.list_connections()}
-        if exclude is not None:
-            existing.discard(exclude)
         name = desired
         counter = 2
         while name in existing:
             name = "%s (%d)" % (desired, counter)
             counter += 1
         return name
-
-    def add_connection(self, ssid: str, psk: str) -> Optional[bytes]:
-        """Add a new wifi profile. Profile name is the SSID, suffixed if a duplicate exists."""
-        name = self._resolve_unique_name(ssid)
-        try:
-            subprocess.check_output(
-                [
-                    "sudo",
-                    "nmcli",
-                    "connection",
-                    "add",
-                    "type",
-                    "wifi",
-                    "ifname",
-                    self.iface_name,
-                    "con-name",
-                    name,
-                    "ssid",
-                    ssid,
-                    "wifi-sec.key-mgmt",
-                    "wpa-psk",
-                    "wifi-sec.psk",
-                    psk,
-                    "connection.autoconnect",
-                    "yes",
-                ],
-                stderr=subprocess.STDOUT,
-            )
-            return None
-        except subprocess.CalledProcessError as exc:
-            return exc.output
 
     def delete_connection(self, name: str) -> Optional[bytes]:
         """Delete a wifi profile by its NM connection name."""
@@ -561,47 +588,66 @@ class WifiManager:
         except subprocess.CalledProcessError as exc:
             return exc.output
 
-    def configure_wifi(self, name: str, ssid: str, password: str) -> Optional[bytes]:
-        """Update the SSID and PSK for an existing wifi profile.
+    def connect_scanned(self, ssid: str, security: str, psk: Optional[str] = None) -> Optional[bytes]:
+        """Create a profile for an SSID and activate it. `security` is the SECURITY
+        column from `nmcli dev wifi list` (or, for the Join dialog, an SSID-less
+        caller's best guess: "WPA2" if a psk was entered, "" for open).
 
-        Auto-syncs connection.id to the new SSID (with collision suffix), so the display
-        label can never drift from the SSID."""
-        new_name = self._resolve_unique_name(ssid, exclude=name)
+        On failure the freshly-created profile is deleted so this doubles as a
+        credential test — without ever touching an unrelated pre-existing profile
+        with the same SSID (e.g. the OEM "preconfigured" entry)."""
+        try:
+            km = KeyMgmt.from_scan_security(security)
+        except ValueError as e:
+            return str(e).encode()
+        if km == KeyMgmt.WPA_EAP:
+            return b"enterprise (802.1X) wifi is not supported"
+        if km in (KeyMgmt.WPA_PSK, KeyMgmt.SAE) and not psk:
+            return b"password required"
+
+        name = self._resolve_unique_name(ssid)
+        add_cmd = [
+            "sudo",
+            "nmcli",
+            "connection",
+            "add",
+            "type",
+            "wifi",
+            "ifname",
+            self.iface_name,
+            "con-name",
+            name,
+            "ssid",
+            ssid,
+            "wifi-sec.key-mgmt",
+            km,
+            "connection.autoconnect",
+            "yes",
+        ]
+        if km in (KeyMgmt.WPA_PSK, KeyMgmt.SAE) and psk:
+            add_cmd += ["wifi-sec.psk", psk]
+        try:
+            subprocess.check_output(add_cmd, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as exc:
+            return exc.output
+
         try:
             subprocess.check_output(
-                [
-                    "sudo",
-                    "nmcli",
-                    "connection",
-                    "modify",
-                    name,
-                    "connection.id",
-                    new_name,
-                    "802-11-wireless.ssid",
-                    ssid,
-                    "802-11-wireless-security.psk",
-                    password,
-                ],
+                ["sudo", "nmcli", "connection", "up", name],
                 stderr=subprocess.STDOUT,
+                timeout=45,
             )
             return None
-        except subprocess.CalledProcessError as exc:
-            return exc.output
-
-    def connect_scanned(self, ssid: str, psk: Optional[str] = None) -> Optional[bytes]:
-        """Join a network discovered via scan. Creates a profile and activates it atomically.
-
-        On failure nmcli cleans up the partial profile, so this doubles as a credential test."""
-        cmd = ["sudo", "nmcli", "dev", "wifi", "connect", ssid, "ifname", self.iface_name]
-        if psk:
-            cmd += ["password", psk]
-        try:
-            subprocess.check_output(cmd, stderr=subprocess.STDOUT, timeout=45)
-            return None
-        except subprocess.CalledProcessError as exc:
-            return exc.output
-        except subprocess.TimeoutExpired:
-            return b"connection timed out"
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            err = exc.output if isinstance(exc, subprocess.CalledProcessError) else b"connection timed out"
+            try:
+                subprocess.check_output(
+                    ["sudo", "nmcli", "connection", "delete", name],
+                    stderr=subprocess.STDOUT,
+                )
+            except subprocess.CalledProcessError as del_exc:
+                logging.error("failed to delete partial profile %s: %s" % (name, del_exc.output))
+            return err
 
     def disconnect(self, name: str) -> Optional[bytes]:
         """Bring down a saved profile without forgetting it."""
@@ -613,10 +659,13 @@ class WifiManager:
         except subprocess.TimeoutExpired:
             return b"disconnect timed out"
 
-    def connect_saved(self, name: str, wait: bool = True) -> Optional[bytes]:
+    def connect_saved(self, name: str, wait: bool = True, reconnect: bool = False) -> Optional[bytes]:
         """Activate an existing saved profile. With wait=False, fire-and-forget
         via `nmcli --wait 0`: NM keeps trying in the background; only the
-        request-validity error is surfaced."""
+        request-validity error is surfaced. If the profile is already activated,
+        only re-connects if reconnect=True."""
+        if not reconnect and self._is_profile_activated(name):
+            return None
         cmd = ["sudo", "nmcli"]
         if not wait:
             cmd += ["--wait", "0"]
@@ -628,6 +677,24 @@ class WifiManager:
             return exc.output
         except subprocess.TimeoutExpired:
             return b"connection timed out"
+
+    def _is_profile_activated(self, name: str) -> bool:
+        try:
+            result = subprocess.run(
+                ["nmcli", "-t", "-f", "GENERAL.STATE", "connection", "show", name],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=5,
+            )
+        except Exception:
+            return False
+        if result.returncode != 0:
+            return False
+        for line in result.stdout.split("\n"):
+            if line.startswith("GENERAL.STATE:"):
+                return line.split(":", 1)[1].strip() == "activated"
+        return False
 
     def replace_psk(self, name: str, psk: str) -> Optional[bytes]:
         """Update the PSK on a saved profile and validate by activating it.
@@ -642,7 +709,7 @@ class WifiManager:
         except subprocess.CalledProcessError as exc:
             return exc.output
 
-        err = self.connect_saved(name)
+        err = self.connect_saved(name, reconnect=True)
         if err is not None and old_psk is not None:
             try:
                 subprocess.check_output(

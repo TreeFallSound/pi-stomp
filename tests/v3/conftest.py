@@ -67,5 +67,4 @@ def wifi_state(v3_system):
             "connection": active,
         }
         v3_system.handler.wifi_status = status
-        wm.get_cached_status.return_value = status
     return _set

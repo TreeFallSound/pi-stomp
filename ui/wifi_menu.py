@@ -13,7 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import time
 from typing import TYPE_CHECKING, Callable, NotRequired, Optional, Protocol, TypedDict, cast
 
 from PIL import ImageFont
@@ -79,7 +78,9 @@ class Row(TypedDict):
     saved: bool
     profile: Optional[SavedConnection]
     active: bool
-    disambiguator: NotRequired[str]
+    # Override label when this SSID has multiple saved profiles (e.g. OEM
+    # "preconfigured" alongside a user-created profile). Otherwise the SSID is shown.
+    display_name: NotRequired[str]
 
 
 PasswordCallback = Callable[[str], None]
@@ -136,19 +137,6 @@ class _PassphraseEditor(RoundedPanel):
 def signal_bars(signal: int) -> str:
     levels = max(1, min(4, (signal + 12) // 25))
     return SIGNAL_GLYPHS[levels]
-
-
-def format_age(ts: Optional[int]) -> Optional[str]:
-    if not ts:
-        return None
-    age = max(0, int(time.time()) - int(ts))
-    if age < 60:
-        return "now"
-    if age < 3600:
-        return "%dm ago" % (age // 60)
-    if age < 86400:
-        return "%dh ago" % (age // 3600)
-    return "%dd ago" % (age // 86400)
 
 
 def is_open_network(security: Optional[str]) -> bool:
@@ -328,11 +316,10 @@ class WifiMenu:
         return "WiFi " + SEP + " Disconnected"
 
     def _row_label(self, row: Row) -> str:
-        ssid = row['ssid']
-        disambiguator = row.get('disambiguator')
+        label = row.get('display_name') or row['ssid']
         badge = (' ' + PUBLIC_GLYPH) if (not row.get('saved') and is_open_network(row.get('security'))) else ''
         active_mark = (' ' + ACTIVE_GLYPH) if row.get('active') else ''
-        left = ssid + (('  ' + disambiguator) if disambiguator else '') + badge + active_mark
+        left = label + badge + active_mark
         right = signal_bars(row['signal']) if row.get('signal') is not None else ''
         return left + SPLIT + right
 
@@ -348,11 +335,18 @@ class WifiMenu:
 
     @staticmethod
     def _maybe_disambiguate(row: Row, profiles: list[SavedConnection]) -> None:
+        """When several saved profiles share an SSID (e.g. OEM `preconfigured`
+        plus a user-added entry), surface the profile name so the rows are
+        distinguishable. If the name doesn't already contain the SSID, suffix it."""
         profile = row.get('profile')
-        if row.get('saved') and len(profiles) > 1 and profile is not None:
-            age = format_age(profile.get('timestamp'))
-            if age:
-                row['disambiguator'] = SEP + ' ' + age
+        if not (row.get('saved') and len(profiles) > 1 and profile is not None):
+            return
+        name = profile['name']
+        ssid = row['ssid']
+        if ssid and ssid.lower() in name.lower():
+            row['display_name'] = name
+        else:
+            row['display_name'] = '%s (%s)' % (name, ssid) if ssid else name
 
     # ----- per-network actions -----
 
@@ -380,7 +374,8 @@ class WifiMenu:
         def attempt(psk: Optional[str]) -> None:
             self._pstack.pop_panel(None)
             self._wifi_manager.queue.submit(
-                ConnectScannedCmd(ssid=ssid, psk=psk), self._on_op_done)
+                ConnectScannedCmd(ssid=ssid, security=row.get('security') or '', psk=psk),
+                self._on_op_done)
 
         if is_open_network(row.get('security')):
             attempt(None)
@@ -497,8 +492,12 @@ class WifiMenu:
             if not ssid:
                 return
             self._pstack.pop_panel(d)
+            # Join dialog has no scan context: infer security from psk presence.
+            # "WPA2" → wpa-psk; "" → open. Users on WPA3-only / enterprise networks
+            # need to use the scan flow instead.
+            security = 'WPA2' if psk else ''
             self._wifi_manager.queue.submit(
-                ConnectScannedCmd(ssid=ssid, psk=psk or None),
+                ConnectScannedCmd(ssid=ssid, security=security, psk=psk or None),
                 self._on_op_done)
 
         ok = TextWidget(box=Box.xywh(80, 90, 0, 0), text='Ok', parent=d,
