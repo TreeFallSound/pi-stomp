@@ -478,11 +478,14 @@ class WifiMenu:
     def _forget(self, row: Row) -> None:
         profile = row['profile']
         assert profile is not None
+        was_active = bool(row.get('active'))
+        forgotten_ssid = row['ssid']
         self._wifi_manager.queue.submit(
-            ForgetCmd(name=profile['name'], ssid=row['ssid']),
-            self._on_forget_done)
+            ForgetCmd(name=profile['name'], ssid=forgotten_ssid),
+            lambda err: self._on_forget_done(err, was_active, forgotten_ssid))
 
-    def _on_forget_done(self, err: Optional[bytes]) -> None:
+    def _on_forget_done(self, err: Optional[bytes],
+                        was_active: bool, forgotten_ssid: str) -> None:
         if isinstance(err, Exception):
             err = str(err).encode('utf-8')
         if err is not None:
@@ -493,7 +496,28 @@ class WifiMenu:
         if self._root_menu is not None:
             self._pstack.pop_panel(self._root_menu)
             self._root_menu = None
+        if was_active:
+            fallback = self._pick_fallback_saved(forgotten_ssid)
+            if fallback is not None:
+                self._wifi_manager.queue.submit(
+                    ConnectSavedCmd(name=fallback['profile']['name'], ssid=fallback['ssid']),
+                    self._on_op_done)
         self.open()
+
+    def _pick_fallback_saved(self, exclude_ssid: str) -> Optional[Row]:
+        """Strongest saved+in-range network other than `exclude_ssid`.
+
+        Uses the cached scan as the reachability check — out-of-range saved
+        profiles have no signal entry and are skipped."""
+        saved_by_ssid = self._saved_by_ssid
+        scanned_ssids = {n['ssid'] for n in self._cached_scanned}
+        rows, _ = self._build_rows(self._cached_scanned, saved_by_ssid,
+                                   scanned_ssids, active_name=None)
+        for r in rows:
+            if r['ssid'] == exclude_ssid or r['signal'] is None or r['profile'] is None:
+                continue
+            return r
+        return None
 
     # ----- dialogs -----
 

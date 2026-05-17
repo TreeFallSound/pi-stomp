@@ -358,6 +358,86 @@ def test_long_press_active_submenu(v3_system, wifi_state, snapshot):
 # ---------------------------------------------------------------------------
 
 
+def test_forget_active_falls_back_to_best_saved(v3_system, wifi_state, snapshot):
+    """Saga: forget the active network → auto-connect to strongest saved+in-range fallback."""
+    saved = [make_saved("Home"), make_saved("Cafe")]
+    scanned = [
+        make_scanned("Home", signal=80, in_use=True),
+        make_scanned("Cafe", signal=60),
+    ]
+    wifi_state(scanned=scanned, saved=saved, active="Home")
+    wm_mock = v3_system.handler.wifi_manager
+    wm_mock.delete_connection.return_value = None
+    wm_mock.connect_saved.return_value = None
+
+    _wm, lcd = _open(v3_system)
+    snapshot("root_before_forget")
+    _click(lcd)  # Home is selected and active → submenu [Disconnect, Replace password, Forget, ↩]
+    lcd.enc_step(1)  # Disconnect → Replace password
+    lcd.enc_step(1)  # → Forget
+    # Post-forget state: Home gone, Cafe now active (the fallback connected to it).
+    wm_mock.list_connections.return_value = [make_saved("Cafe")]
+    wm_mock.get_cached_saved.return_value = [make_saved("Cafe")]
+    wm_mock.scan_networks.return_value = [make_scanned("Cafe", signal=60, in_use=True)]
+    v3_system.handler.wifi_status = {
+        "wifi_supported": True, "wifi_connected": True, "hotspot_active": False,
+        "ssid": "Cafe", "connection": "Cafe",
+    }
+    _click(lcd)  # confirm Forget
+    snapshot("root_after_fallback")
+
+    # ConnectSavedCmd must have been submitted for the strongest fallback (Cafe).
+    cmds = [call.args[0] for call in wm_mock.queue.submit.call_args_list]
+    connect_calls = [c for c in cmds if type(c).__name__ == "ConnectSavedCmd"]
+    assert connect_calls, "Forget on active network must auto-connect to a fallback"
+    assert connect_calls[0].ssid == "Cafe"
+
+
+def test_forget_active_no_fallback_when_only_out_of_range(v3_system, wifi_state):
+    """If the only other saved profile is out of range, no auto-connect."""
+    saved = [make_saved("Home"), make_saved("Faraway")]
+    scanned = [make_scanned("Home", signal=80, in_use=True)]  # Faraway not visible
+    wifi_state(scanned=scanned, saved=saved, active="Home")
+    wm_mock = v3_system.handler.wifi_manager
+    wm_mock.delete_connection.return_value = None
+
+    _wm, lcd = _open(v3_system)
+    _click(lcd)  # Home submenu
+    lcd.enc_step(1)
+    lcd.enc_step(1)  # → Forget
+    wm_mock.list_connections.return_value = [make_saved("Faraway")]
+    wm_mock.get_cached_saved.return_value = [make_saved("Faraway")]
+    wm_mock.scan_networks.return_value = []
+    _click(lcd)
+
+    cmds = [call.args[0] for call in wm_mock.queue.submit.call_args_list]
+    assert not [c for c in cmds if type(c).__name__ == "ConnectSavedCmd"]
+
+
+def test_forget_inactive_does_not_auto_connect(v3_system, wifi_state):
+    """Forgetting a non-active saved profile must not trigger any auto-connect."""
+    saved = [make_saved("Home"), make_saved("Cafe")]
+    scanned = [
+        make_scanned("Home", signal=80, in_use=True),
+        make_scanned("Cafe", signal=60),
+    ]
+    wifi_state(scanned=scanned, saved=saved, active="Home")
+    wm_mock = v3_system.handler.wifi_manager
+    wm_mock.delete_connection.return_value = None
+
+    _wm, lcd = _open(v3_system)
+    lcd.enc_step(1)  # Home → Cafe (inactive)
+    _long_click(lcd)  # Cafe submenu [Replace password, Forget, ↩]
+    lcd.enc_step(1)  # → Forget
+    wm_mock.list_connections.return_value = [make_saved("Home")]
+    wm_mock.get_cached_saved.return_value = [make_saved("Home")]
+    wm_mock.scan_networks.return_value = scanned
+    _click(lcd)
+
+    cmds = [call.args[0] for call in wm_mock.queue.submit.call_args_list]
+    assert not [c for c in cmds if type(c).__name__ == "ConnectSavedCmd"]
+
+
 def test_forget_then_reload(v3_system, wifi_state, snapshot):
     """Forgetting a network removes it and the menu reloads without it."""
     saved = [make_saved("Home")]
