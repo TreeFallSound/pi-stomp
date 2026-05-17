@@ -115,7 +115,8 @@ def delete_connection(name: str) -> Optional[bytes]:
 
 
 def connect_scanned(iface_name: str, ssid: str, security: str, psk: Optional[str] = None) -> Optional[bytes]:
-    """Create a profile for an SSID and activate it; on failure the new profile is deleted."""
+    """Create a profile for an SSID and activate it; on failure the new profile is deleted.
+    Stops the hotspot service first if it's active, so the AP doesn't fight the new client connection."""
     try:
         km = KeyMgmt.from_scan_security(security)
     except ValueError as e:
@@ -124,6 +125,10 @@ def connect_scanned(iface_name: str, ssid: str, security: str, psk: Optional[str
         return b"enterprise (802.1X) wifi is not supported"
     if km in (KeyMgmt.WPA_PSK, KeyMgmt.SAE) and not psk:
         return b"password required"
+
+    err = stop_hotspot_service()
+    if err is not None:
+        logging.warning("stop_hotspot_service before connect_scanned failed: %s", err.decode("utf-8", "replace"))
 
     name = resolve_unique_name(ssid)
     add_args = [
@@ -170,9 +175,13 @@ def is_profile_activated(name: str) -> bool:
 
 
 def connect_saved(name: str, wait: bool = True, reconnect: bool = False) -> Optional[bytes]:
-    """Activate a saved profile; with wait=False, NM keeps retrying in the background."""
+    """Activate a saved profile; with wait=False, NM keeps retrying in the background.
+    Stops the hotspot service first if it's active, so the AP doesn't fight the client connection."""
     if not reconnect and is_profile_activated(name):
         return None
+    err = stop_hotspot_service()
+    if err is not None:
+        logging.warning("stop_hotspot_service before connect_saved failed: %s", err.decode("utf-8", "replace"))
     args = ["--wait", "0", "connection", "up", name] if not wait else ["connection", "up", name]
     _, err = nmcli(args, sudo=True, timeout=45 if wait else 10)
     return err
@@ -217,6 +226,22 @@ def replace_psk(name: str, psk: str) -> Optional[bytes]:
     return err
 
 
+def stop_hotspot_service() -> Optional[bytes]:
+    """Stop and disable the wifi-hotspot service without any recovery/reconnect logic.
+    Idempotent: succeeds when the service is already inactive/disabled."""
+    try:
+        subprocess.check_output(
+            ["sudo", "systemctl", "disable", "--now", "wifi-hotspot"],
+            stderr=subprocess.STDOUT,
+            timeout=60,
+        )
+        return None
+    except subprocess.CalledProcessError as exc:
+        return exc.output
+    except subprocess.TimeoutExpired:
+        return b"hotspot disable timed out"
+
+
 def enable_hotspot() -> Optional[bytes]:
     try:
         subprocess.check_output(
@@ -235,16 +260,9 @@ def disable_hotspot() -> Optional[bytes]:
     """Stop the hotspot and reactivate the most-recent saved profile.
     NM doesn't reliably autoconnect after AP teardown. Returns None on
     success or when no saved profile exists; nmcli stderr otherwise."""
-    try:
-        subprocess.check_output(
-            ["sudo", "systemctl", "disable", "--now", "wifi-hotspot"],
-            stderr=subprocess.STDOUT,
-            timeout=60,
-        )
-    except subprocess.CalledProcessError as exc:
-        return exc.output
-    except subprocess.TimeoutExpired:
-        return b"hotspot disable timed out"
+    err = stop_hotspot_service()
+    if err is not None:
+        return err
 
     saved = list_connections()
     if not saved:
