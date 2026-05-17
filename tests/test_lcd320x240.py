@@ -219,15 +219,14 @@ def test_update_wifi_pending_to_idle_resets_animation(lcd, mock_handler):
     mock_handler.wifi_manager.queue.pending_op_count.return_value = 1
     for _ in range(instance._wifi_ticks_per_frame * 2):
         instance.update_wifi(status)
-    assert instance._wifi_frame_idx != 0 or instance._wifi_tick_count != 0
+    assert instance._wifi_tick != 0
     # Now clear pending.
     mock_handler.wifi_manager.queue.pending_op_count.return_value = 0
     with patch.object(instance.w_wifi, "replace_img") as mock_replace:
         instance.update_wifi(status)
     mock_replace.assert_called_once()
     assert mock_replace.call_args[0][0].endswith("wifi_silver.png")
-    assert instance._wifi_frame_idx == 0
-    assert instance._wifi_tick_count == 0
+    assert instance._wifi_tick == 0
 
 
 def test_wifi_frames_are_preloaded(lcd):

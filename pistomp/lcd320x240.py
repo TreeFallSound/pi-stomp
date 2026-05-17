@@ -93,9 +93,13 @@ class Lcd(abstract_lcd.Lcd):
 
         # widgets
         self.w_wifi = None
-        self._wifi_frames: list[Image.Image] = []
-        self._wifi_frame_idx = 0
-        self._wifi_tick_count = 0
+        self._wifi_frames: list[Image.Image] = [
+            Image.open(os.path.join(self.imagedir, f'wifi_processing_{i}.png'))
+            for i in range(1, 4)
+        ]
+        for frame in self._wifi_frames:
+            frame.load()
+        self._wifi_tick = 0
         self._wifi_ticks_per_frame = 2
         self.wifi_menu: Optional[WifiMenu] = None
         self.w_eq = None
@@ -181,11 +185,6 @@ class Lcd(abstract_lcd.Lcd):
     def draw_tools(self, wifi_type=None, eq_type=None, bypass_type=None, system_type=None):
         if self.w_wifi is not None:
             return
-        self._wifi_frames = []
-        for i in range(1, 4):
-            frame = Image.open(os.path.join(self.imagedir, f'wifi_processing_{i}.png'))
-            frame.load()  # force decode now so animation never blocks on disk I/O
-            self._wifi_frames.append(frame)
         self.w_wifi = ImageWidget(
             box=Box.xywh(210, 0, 20, 20),
             image=os.path.join(self.imagedir, 'wifi_gray.png'),
@@ -617,14 +616,12 @@ class Lcd(abstract_lcd.Lcd):
         if self.w_wifi is None:
             return
         if self.handler.wifi_manager.queue.pending_op_count() > 0:
-            self._wifi_tick_count += 1
-            if self._wifi_tick_count >= self._wifi_ticks_per_frame:
-                self._wifi_tick_count = 0
-                self._wifi_frame_idx = (self._wifi_frame_idx + 1) % len(self._wifi_frames)
-            self.w_wifi.replace_img(self._wifi_frames[self._wifi_frame_idx])
+            period = self._wifi_ticks_per_frame * len(self._wifi_frames)
+            self._wifi_tick = (self._wifi_tick + 1) % period
+            idx = self._wifi_tick // self._wifi_ticks_per_frame
+            self.w_wifi.replace_img(self._wifi_frames[idx])
         else:
-            self._wifi_frame_idx = 0
-            self._wifi_tick_count = 0
+            self._wifi_tick = 0
             self.w_wifi.replace_img(self._resolved_wifi_png(wifi_status))
 
     def _resolved_wifi_png(self, wifi_status):
