@@ -11,14 +11,14 @@ from modalapi.wifi import Command, CommandQueue
 
 @dataclass
 class _Ctx:
-    """Stand-in context. Counts calls; records call order."""
+    """Stand-in for WifiManager. Counts calls; records call order."""
     lock: threading.Lock = field(default_factory=threading.Lock)
     started: list = field(default_factory=list)
     finished: list = field(default_factory=list)
 
 
 @dataclass
-class SleepCmd(Command[_Ctx, str]):
+class SleepCmd(Command[str]):
     name: str
     delay: float = 0.05
 
@@ -35,7 +35,7 @@ class SleepCmd(Command[_Ctx, str]):
 
 
 @dataclass
-class BoomCmd(Command[_Ctx, None]):
+class BoomCmd(Command[None]):
     def run(self, ctx: _Ctx) -> None:
         raise RuntimeError("boom")
 
@@ -103,7 +103,6 @@ def test_pending_op_count(queue, ctx):
     results: list = []
     queue.submit(SleepCmd("A", delay=0.1), results.append)
     queue.submit(SleepCmd("B", delay=0.1), results.append)
-    # At least one is queued or in-flight before any completes.
     time.sleep(0.01)
     assert queue.pending_op_count() >= 1
     _drain(queue, results, 2)

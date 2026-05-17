@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from modalapi.wifi import KeyMgmt, WifiManager
+from modalapi.wifi import ops
 
 
 @pytest.fixture
@@ -98,7 +99,7 @@ def test_disable_hotspot_returns_none_on_clean_reconnect(wm):
     co_calls: list[list[str]] = []
     run_calls: list[list[str]] = []
     with (
-        patch.object(wm, "list_connections", return_value=saved),
+        patch.object(ops, "list_connections", return_value=saved),
         patch("subprocess.check_output", side_effect=lambda c, **kw: co_calls.append(list(c)) or b""),
         patch("subprocess.run", side_effect=lambda c, **kw: run_calls.append(list(c)) or MagicMock(stdout="", stderr="", returncode=0)),
     ):
@@ -116,7 +117,7 @@ def test_disable_hotspot_returns_none_when_no_saved_profile(wm):
     co_calls: list[list[str]] = []
     run_calls: list[list[str]] = []
     with (
-        patch.object(wm, "list_connections", return_value=[]),
+        patch("modalapi.wifi.ops.list_connections", return_value=[]),
         patch("subprocess.check_output", side_effect=lambda c, **kw: co_calls.append(list(c)) or b""),
         patch("subprocess.run", side_effect=lambda c, **kw: run_calls.append(list(c)) or MagicMock(stdout="", stderr="", returncode=0)),
     ):
@@ -132,7 +133,7 @@ def test_disable_hotspot_uses_nmcli_wait_zero(wm):
     saved = [{"name": "Home", "ssid": "Home", "timestamp": 1700000000}]
     run_calls: list[list[str]] = []
     with (
-        patch.object(wm, "list_connections", return_value=saved),
+        patch.object(ops, "list_connections", return_value=saved),
         patch("subprocess.check_output", return_value=b""),
         patch("subprocess.run", side_effect=lambda c, **kw: run_calls.append(list(c)) or MagicMock(stdout="", stderr="", returncode=0)),
     ):
@@ -206,7 +207,7 @@ def test_polling_thread_iteration_refreshes_status_and_saved():
         patch.object(wm, "_is_hotspot_active", return_value=False),
         patch.object(wm, "_get_wpa_status",
                      side_effect=lambda s: s.update(ssid="Home", ip4_address="10.0.0.2")),
-        patch.object(wm, "list_connections", return_value=saved),
+        patch.object(ops, "list_connections", return_value=saved),
         patch.object(wm.stop, "wait", side_effect=stop_after_first),
     ):
         WifiManager._polling_thread(wm)
@@ -232,7 +233,7 @@ def test_polling_thread_skips_saved_when_wifi_unsupported():
         patch.object(wm, "_is_wifi_supported", return_value=False),
         patch.object(wm, "_is_wifi_connected", return_value=False),
         patch.object(wm, "_is_hotspot_active", return_value=False),
-        patch.object(wm, "list_connections") as list_conns,
+        patch.object(ops, "list_connections") as list_conns,
         patch.object(wm.stop, "wait", side_effect=stop_after_first),
     ):
         WifiManager._polling_thread(wm)
@@ -249,7 +250,7 @@ def test_disable_hotspot_returns_error_when_reconnect_fails(wm):
         return MagicMock(stdout="", stderr="no network with ssid 'Home'", returncode=1)
 
     with (
-        patch.object(wm, "list_connections", return_value=saved),
+        patch.object(ops, "list_connections", return_value=saved),
         patch("subprocess.check_output", return_value=b""),
         patch("subprocess.run", side_effect=fake_run),
     ):
