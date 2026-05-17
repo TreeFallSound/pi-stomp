@@ -181,7 +181,7 @@ class Lcd(abstract_lcd.Lcd):
             box=Box.xywh(210, 0, 20, 20),
             static_path=os.path.join(self.imagedir, 'wifi_gray.png'),
             frame_paths=[os.path.join(self.imagedir, f'wifi_processing_{i}.png') for i in range(1, 4)],
-            ticks_per_frame=4,
+            ticks_per_frame=2,
             parent=self.main_panel,
             action=self.wifi_menu.open,
         )
