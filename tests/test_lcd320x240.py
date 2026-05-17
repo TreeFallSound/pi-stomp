@@ -107,8 +107,9 @@ def test_wifi_menu_snapshot(lcd, snapshot):
     instance, _ = lcd
     instance.handler.wifi_status = {"hotspot_active": False}
     setup_main_ui(instance)
-    instance.draw_wifi_menu(None, None)
-    snapshot()
+    instance.wifi_menu.open(None, None)
+    snapshot("wifi_menu")
+
 
 
 def test_system_menu_snapshot(lcd, snapshot):
@@ -128,6 +129,8 @@ def test_parameter_dialog_snapshot(lcd, snapshot):
         minimum=0.0,
         maximum=1.0,
         type=MockObject(value=0),
+        get_taper=lambda: 1,
+        format=lambda v: f"{v:.2f}",
     )
     instance.draw_parameter_dialog(mock_param)
     snapshot()
@@ -157,6 +160,64 @@ def test_update_footswitch_on_snapshot(lcd, snapshot):
     mock_fs.toggled = True  # pyright: ignore[reportAttributeAccessIssue]
     instance.update_footswitch(mock_fs)
     snapshot()
+
+
+@pytest.mark.parametrize("status,expected", [
+    ({"wifi_connected": False, "hotspot_active": True},  "wifi_orange.png"),
+    ({"wifi_connected": True,  "hotspot_active": False}, "wifi_silver.png"),
+    ({"wifi_connected": False, "hotspot_active": False}, "wifi_gray.png"),
+])
+def test_update_wifi_idle_icon_selection(lcd, mock_handler, status, expected):
+    """When no ops pending, icon resolves to hotspot/connected/disconnected."""
+    instance, _ = lcd
+    mock_handler.wifi_manager.queue.pending_op_count.return_value = 0
+    instance.draw_tools()  # creates w_wifi
+    with patch.object(instance.w_wifi, "replace_img") as mock_replace:
+        instance.update_wifi(status)
+    mock_replace.assert_called_once()
+    assert mock_replace.call_args[0][0].endswith(expected)
+
+
+@pytest.mark.parametrize("status", [
+    {"wifi_connected": True,  "hotspot_active": False},
+    {"wifi_connected": False, "hotspot_active": True},
+    {"wifi_connected": False, "hotspot_active": False},
+])
+def test_update_wifi_pending_shows_frame(lcd, mock_handler, status):
+    """When ops are pending, the widget shows a preloaded animation frame."""
+    instance, _ = lcd
+    mock_handler.wifi_manager.queue.pending_op_count.return_value = 1
+    instance.draw_tools()
+    with patch.object(instance.w_wifi, "replace_img") as mock_replace:
+        instance.update_wifi(status)
+    mock_replace.assert_called_once()
+    # Argument must be one of the preloaded PIL.Image frames, not a path.
+    assert mock_replace.call_args[0][0] in instance._wifi_frames
+
+
+def test_wifi_frames_are_preloaded(lcd):
+    """Frames are decoded once at draw_tools time, not opened on every update."""
+    instance, _ = lcd
+    instance.draw_tools()
+    assert len(instance._wifi_frames) == 3
+    from PIL import Image as PILImage
+    for f in instance._wifi_frames:
+        assert isinstance(f, PILImage.Image)
+        # .load() populates the .im attribute; absence means lazy/closed.
+        assert f.im is not None
+
+
+def test_update_wifi_noop_when_path_unchanged(lcd, mock_handler):
+    """Repeated update_wifi calls with same status don't re-blit the icon."""
+    instance, _ = lcd
+    mock_handler.wifi_manager.queue.pending_op_count.return_value = 0
+    instance.draw_tools()
+    status = {"wifi_connected": True, "hotspot_active": False}
+    instance.update_wifi(status)  # first call sets path
+    with patch.object(instance.w_wifi, "refresh") as mock_refresh:
+        instance.update_wifi(status)
+        instance.update_wifi(status)
+    mock_refresh.assert_not_called()
 
 
 def test_tap_tempo_snapshot(lcd, snapshot):

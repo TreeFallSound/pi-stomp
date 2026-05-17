@@ -55,8 +55,8 @@ class LetterSelector(Widget):
             self.l_count -= 1
         self.l_half = self.l_count // 2
 
-    def _draw(self, image, draw, real_box):
-        loc = (real_box.x0 + self.l_w // 2, real_box.y0 + self.l_h // 2)
+    def _draw(self, ctx, frame):
+        loc = (frame.x0 + self.l_w // 2, frame.y0 + self.l_h // 2)
         cs = self.charsets[self.mode]
         for i in range(self.l_idx - self.l_half, self.l_idx + self.l_half):
             ci = i % len(cs)
@@ -69,13 +69,13 @@ class LetterSelector(Widget):
             if i != self.l_idx:
                 a = log(abs(self.l_idx - i) + 1) + 1
                 color = (int(color[0]/a),int(color[1]/a),int(color[2]/a))
-            draw.text(loc, cs[ci], fill = color, font = self.font, anchor = 'mm')
+            ctx.draw.text(loc, cs[ci], fill=color, font=self.font, anchor='mm')
             loc = (loc[0] + self.l_w, loc[1])
 
-    def _draw_selection(self, image, draw, real_box):
-        l = real_box.x0 + self.l_w * self.l_half
-        b = Box(l, real_box.y0, l + self.l_w, real_box.y1)
-        draw.rounded_rectangle(b.PIL_rect, self.l_w//4, None, self.sel_color, 1)
+    def _draw_selection(self, ctx, frame):
+        l = frame.x0 + self.l_w * self.l_half
+        b = Box(l, frame.y0, l + self.l_w, frame.y1)
+        ctx.draw.rounded_rectangle(b.PIL_rect, self.l_w//4, None, self.sel_color, 1)
 
 
     def input_event(self, event):
@@ -253,17 +253,11 @@ class TextWidget(Widget):
 
     SPLIT_SEP = '\u001F'  # if present in text exactly once, render as left + right halves
 
-    def _draw(self, image, draw, real_box):
-        # Draw text
-        #
-        # XXX TODO: Handle cropping etc... (using continuation characters ?)
-        # Should we use a local image & support scroll ? basically make this a
-        # ContainerWidget subclass ? For now assume it fits ...
-        #
+    def _draw(self, ctx, frame):
         h_margin, v_margin = self._get_margins()
         extra = self.outline
-        hroom = real_box.width - h_margin - extra
-        vroom = real_box.height - v_margin - extra
+        hroom = frame.width - h_margin - extra
+        vroom = frame.height - v_margin - extra
         if hroom < 0 or vroom < 0:
             return
 
@@ -277,10 +271,12 @@ class TextWidget(Widget):
             th = max(lh, rh)
             if th > vroom:
                 th = vroom
-            y = real_box.y0 + v_margin
-            draw.text((real_box.x0 + h_margin, y), left, fill=self.fgnd_color, font=self.font)
-            draw.text((real_box.x0 + real_box.width - h_margin - extra - rw, y),
-                      right, fill=self.fgnd_color, font=self.font)
+            y = frame.y0 + v_margin
+            # Extra padding for split rows so the right half doesn't hug the edge.
+            split_pad = 3
+            ctx.draw.text((frame.x0 + h_margin + split_pad, y), left, fill=self.fgnd_color, font=self.font)
+            ctx.draw.text((frame.x0 + frame.width - h_margin - extra - split_pad - rw, y),
+                          right, fill=self.fgnd_color, font=self.font)
             return
 
         tw, th = self._get_text_size()
@@ -294,11 +290,10 @@ class TextWidget(Widget):
             hoffset = hroom - tw
         else:
             hoffset = int((hroom - tw) / 2)
-        loc = (real_box.x0 + h_margin + hoffset, real_box.y0 + v_margin)
+        loc = (frame.x0 + h_margin + hoffset, frame.y0 + v_margin)
         if self.prompt is not None:
-            #draw.text((loc[0] - self.prompt_offset, loc[1]), self.prompt, fill=self.fgnd_color, font=self.font)
-            draw.text((0, loc[1]), self.prompt, fill=self.fgnd_color, font=self.font)
-        draw.text(loc, self.text, fill=self.fgnd_color, font=self.font)
+            ctx.draw.text((0, loc[1]), self.prompt, fill=self.fgnd_color, font=self.font)
+        ctx.draw.text(loc, self.text, fill=self.fgnd_color, font=self.font)
 
     def tick(self):
         """Override in subclasses for animation."""
@@ -417,7 +412,7 @@ class ScrollingText(TextWidget):
         super().set_font(font)
         self._clear_cache_and_restart()
 
-    def _draw(self, image: Image.Image, draw: ImageDraw.ImageDraw, real_box) -> None:
+    def _draw(self, ctx, frame) -> None:
         if self.cached_text_image is None:
             self._render_text_to_cache()
         if self.cached_text_image is None:
@@ -426,8 +421,8 @@ class ScrollingText(TextWidget):
         h_margin, v_margin = self._get_margins()
         tw, th = self._get_text_size()
         extra = self.outline
-        hroom = real_box.width - h_margin - extra
-        vroom = real_box.height - v_margin - extra
+        hroom = frame.width - h_margin - extra
+        vroom = frame.height - v_margin - extra
 
         if hroom <= 0 or vroom <= 0:
             return
@@ -439,13 +434,13 @@ class ScrollingText(TextWidget):
                 hoffset = hroom - tw
             else:
                 hoffset = int((hroom - tw) / 2)
-            x_pos = real_box.x0 + h_margin + hoffset
-            y_pos = real_box.y0 + v_margin
+            x_pos = frame.x0 + h_margin + hoffset
+            y_pos = frame.y0 + v_margin
             crop_box = (0, 0, tw, th)
-            image.paste(self.cached_text_image.crop(crop_box), (x_pos, y_pos))
+            ctx.image.paste(self.cached_text_image.crop(crop_box), (x_pos, y_pos))
         else:
-            x_pos = real_box.x0 + h_margin
-            y_pos = real_box.y0 + v_margin
+            x_pos = frame.x0 + h_margin
+            y_pos = frame.y0 + v_margin
             crop_width = min(hroom, self.cached_text_width - self.scroll_offset)
             crop_box = (self.scroll_offset, 0, self.scroll_offset + crop_width, th)
-            image.paste(self.cached_text_image.crop(crop_box), (x_pos, y_pos))
+            ctx.image.paste(self.cached_text_image.crop(crop_box), (x_pos, y_pos))

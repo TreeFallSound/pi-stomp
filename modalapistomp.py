@@ -40,17 +40,9 @@ import pistomp.generichost as Generichost
 import pistomp.testhost as Testhost
 import pistomp.handlerfactory as Handlerfactory
 import pistomp.hardwarefactory as Hardwarefactory
+from pistomp.tuner.source import build_source
 
-EMULATOR_CONFIG_TEMPLATE = os.path.join(
-    os.path.dirname(os.path.realpath(__file__)), "setup", "config_templates", "default_config_pistomptre.yml"
-)
-EMULATOR_V2_CONFIG_TEMPLATE = os.path.join(
-    os.path.dirname(os.path.realpath(__file__)), "setup", "config_templates", "default_config_pistompcore.yml"
-)
-EMULATOR_V1_CONFIG_TEMPLATE = os.path.join(
-    os.path.dirname(os.path.realpath(__file__)), "setup", "config_templates", "default_config_pistomp.yml"
-)
-
+EMULATOR_HOSTS = ("emulator_v1", "emulator_v2", "emulator_v3")
 
 def main():
     sys.settrace
@@ -107,7 +99,9 @@ def main():
     cfg: dict[str, Any] | None = None
     audiocard: Audiocard | None = None
 
-    if args.host[0] not in ("emulator_v1", "emulator_v2", "emulator_v3"):
+    is_emulator = args.host[0] in EMULATOR_HOSTS
+
+    if not is_emulator:
         # Audio Card Config - doing this early so audio passes ASAP
         factory = Audiocardfactory.Audiocardfactory(cwd)
         audiocard = factory.create()
@@ -182,71 +176,15 @@ def main():
         except:
             raise
 
-    elif args.host[0] in ("emulator_v1", "emulator_v2", "emulator_v3"):
-        import pygame
-        import pygame._freetype as _freetype
-        from emulator.window import EmulatorWindow
-
-        _emu_version = args.host[0]  # "emulator_v1" / "emulator_v2" / "emulator_v3"
-
-        if _emu_version == "emulator_v1":
-            from emulator.hardware_v1 import EmulatorHardwareV1 as _EmuHW
-            from emulator.mod import EmulatorMod as _EmuHandler
-            _emu_cfg_template = EMULATOR_V1_CONFIG_TEMPLATE
-        elif _emu_version == "emulator_v2":
-            from emulator.hardware_v2 import EmulatorHardwareV2 as _EmuHW
-            from emulator.modhandler import EmulatorModhandler as _EmuHandler
-            _emu_cfg_template = EMULATOR_V2_CONFIG_TEMPLATE
-        else:  # emulator_v3
-            from emulator.hardware_v3 import EmulatorHardwareV3 as _EmuHW
-            from emulator.modhandler import EmulatorModhandler as _EmuHandler
-            _emu_cfg_template = EMULATOR_CONFIG_TEMPLATE
-
-        pygame.init()
-        _freetype.init()
-
-        port = 0
-        try:
-            midiout, port_name = open_midioutput(port)
-        except Exception:
-            logging.warning("MIDI output unavailable in emulator mode - continuing without MIDI")
-            midiout = None
-        cfg = config.load_cfg_from_file(_emu_cfg_template)
-
-        if _emu_version != "emulator_v1":
-            import pistomp.settings as Settings_module
-            emu_cfg_dir = os.path.join(os.path.expanduser("~"), ".pistomp_emulator", "config")
-            os.makedirs(emu_cfg_dir, exist_ok=True)
-            Settings_module.DATA_DIR = emu_cfg_dir
-
-        handler = _EmuHandler(cwd)
-        hw = _EmuHW(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
-        handler.add_hardware(hw)
-
-        window = EmulatorWindow(hw)
-        handler.set_window(window)
-
-        handler.load_banks()
-        handler.load_pedalboards()
-
-        current_bundle = handler.get_current_pedalboard_bundle_path()
-        if current_bundle and current_bundle in handler.pedalboards:
-            handler.set_current_pedalboard(handler.pedalboards[current_bundle])
-        else:
-            handler.pedalboard_change()
-
-        handler.system_info_load()
+    elif is_emulator:
+        from emulator.bootstrap import bootstrap_emulator
+        handler, midiout = bootstrap_emulator(args.host[0], cwd)
 
     assert handler is not None
 
-    _is_emulator = args.host[0] in ("emulator_v1", "emulator_v2", "emulator_v3")
-    if _is_emulator:
-        from pistomp.tuner.source import ToneSweepSource
-        handler.set_tuner_source_factory(lambda _port: ToneSweepSource())
-    elif args.tuner_source:
-        from pistomp.tuner.source import build_source
-        _tuner_spec = args.tuner_source
-        handler.set_tuner_source_factory(lambda port: build_source(_tuner_spec, port))
+    if not is_emulator and args.tuner_source:
+        tuner_spec = args.tuner_source
+        handler.set_tuner_source_factory(lambda port: build_source(tuner_spec, port))
 
     logging.info("Entering main loop. Press Control-C to exit.")
     period = 0
@@ -263,6 +201,7 @@ def main():
             period += 1
             if period % 2 == 0:
                 handler.poll_indicators()
+            # LCD polling frequency adapts to SPI speed (24MHz→80ms, 48MHz→40ms, 56MHz→30ms)
             if period % handler.lcd_poll_divisor == 0:
                 handler.poll_lcd_updates()
             if period % 100 == 0:

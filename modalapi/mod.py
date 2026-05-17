@@ -28,9 +28,11 @@ import pistomp.switchstate as switchstate
 import modalapi.pedalboard as Pedalboard
 import common.parameter as Parameter
 import modalapi.wifi as Wifi
+import modalapi.external_midi as ExternalMidi
+
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -146,7 +148,7 @@ class Mod(Handler):
 
         self.data_dir = "/home/pistomp/data"
         self.last_json_monitor = FileChangeMonitor(os.path.join(self.data_dir, "last.json"))
-        self.wifi_manager = Wifi.WifiManager()
+        self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
 
         # WebSocket bridge for MOD-UI communication
         self.ws_bridge = AsyncWebSocketBridge(
@@ -155,6 +157,13 @@ class Mod(Handler):
         )
         self.ws_bridge.start()
         logging.info("WebSocket bridge started")
+
+        # External MIDI device synchronization
+        self.external_midi = None
+        try:
+            self.external_midi = ExternalMidi.ExternalMidiManager()
+        except Exception as e:
+            logging.warning(f"Failed to initialize external MIDI manager: {e}")
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
@@ -173,6 +182,8 @@ class Mod(Handler):
             del self.wifi_manager
         if self.ws_bridge is not None:
             self.ws_bridge.stop()
+        if self.external_midi is not None:
+            self.external_midi.close()
 
     def cleanup(self):
         if self.lcd is not None:
@@ -180,6 +191,8 @@ class Mod(Handler):
         if self.ws_bridge is not None:
             self.ws_bridge.stop()
             logging.info("WebSocket bridge stopped")
+        if self.external_midi is not None:
+            self.external_midi.close()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -206,6 +219,7 @@ class Mod(Handler):
 
     def add_hardware(self, hardware):
         self.hardware = hardware
+        hardware.external_midi = self.external_midi
 
     def add_lcd(self, lcd):
         self.lcd = lcd
@@ -458,10 +472,12 @@ class Mod(Handler):
             self.hardware.poll_controls()
 
     def poll_wifi(self):
-        wifi_update = self.wifi_manager.poll()
-        if wifi_update is not None:
-            self.wifi_status = wifi_update
-            self.lcd.update_wifi(self.wifi_status)
+        self.wifi_manager.poll()
+
+    def _on_wifi_status_change(self, status):
+        self.wifi_status = status
+        if self.lcd is not None:
+            self.lcd.update_wifi(status)
             if self.current_menu == MenuType.MENU_INFO:
                 self.system_info_update_wifi()
 
@@ -488,15 +504,22 @@ class Mod(Handler):
                 self.current.preset_index = msg.snapshot_id
                 self.update_lcd_title()
 
+        elif isinstance(msg, PluginBypassMessage):
+            if self.current is not None:
+                for plugin in self.current.pedalboard.plugins:
+                    if plugin.instance_id == msg.instance:
+                        logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
+                        plugin.set_bypass(msg.bypassed)
+                        self.lcd.refresh_plugins()
+                        break
+
     def poll_modui_changes(self):
         """Poll for changes from MOD-UI: websockets and file watching"""
-        if self.ws_bridge is not None:
-            messages = self.ws_bridge.get_received_messages()
-            for msg in messages:
-                try:
-                    self._handle_ws_message(parse_message(msg))
-                except Exception as e:
-                    logging.error(f"Error handling WebSocket message '{msg}': {e}")
+        for msg in self.ws_bridge.get_received_messages():
+            try:
+                self._handle_ws_message(parse_message(msg))
+            except Exception as e:
+                logging.error(f"Error handling WebSocket message '{msg}': {e}")
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
@@ -590,9 +613,6 @@ class Mod(Handler):
         self.load_current_presets()
         self.update_lcd()
 
-        # Sync current state of analog controls (expression pedals, etc.)
-        self.hardware.sync_analog_controls()
-
         # Prepare blend modes if configured (snapshot-based activation)
         try:
             blend_configs = cfg.get('blend_snapshots', []) if cfg else []
@@ -613,7 +633,6 @@ class Mod(Handler):
                     continue
 
                 blend_mode = BlendMode(self, blend_cfg)
-                blend_mode.prepare()
                 self.blend_modes[snapshot_name] = blend_mode
                 logging.info(f"Prepared blend mode: '{snapshot_name}'")
 
@@ -626,10 +645,29 @@ class Mod(Handler):
                     logging.info(f"Auto-switching to first blend snapshot: '{first_snapshot_name}' (index {first_snapshot_idx})")
                     self.preset_change(first_snapshot_idx)
 
+                    # Activate the first blend mode
+                    self.active_blend_mode = self.blend_modes[first_snapshot_name]
+                    self.active_blend_mode.initialize()
+                    logging.info(f"Activated blend mode: '{first_snapshot_name}'")
+
+                # Redraw analog assignments to use BlendMode object for expression pedal
+                self.lcd.draw_analog_assignments(self.current.analog_controllers)
+
         except Exception as e:
             logging.error(f"Failed to prepare blend modes: {e}")
             self.blend_modes = {}
             self.active_blend_mode = None
+
+        # Send external MIDI messages for this pedalboard
+        # Config was already updated by hardware.reinit(cfg) above
+        if self.external_midi is not None:
+            try:
+                self.external_midi.send_messages_for_pedalboard()
+            except Exception as e:
+                logging.warning(f"Failed to send external MIDI messages: {e}")
+
+        # Sync current state of analog controls (expression pedals, etc.)
+        self.hardware.sync_analog_controls()
 
         # Selection info
         self.selectable_items.clear()
@@ -986,7 +1024,7 @@ class Mod(Handler):
             self.menu_items[key] = {Token.NAME: self.wifi_status[key], Token.ACTION: None}
             if self.wifi_status[key]:
                 hotspot_active = True
-        key = 'ip_address'
+        key = 'ip4_address'
         if key in self.wifi_status:
             self.menu_items["ip_addr"] = {Token.NAME: self.wifi_status[key], Token.ACTION: None}
         else:

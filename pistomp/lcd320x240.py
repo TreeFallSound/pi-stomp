@@ -15,13 +15,14 @@
 
 import logging
 import os
+from typing import Optional
 import common.token as Token
 import common.parameter as Parameter
 from ui.wifi_menu import WifiMenu
 import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
-from PIL import ImageColor
+from PIL import Image, ImageColor
 
 from uilib import *
 from uilib.lcd_ili9341 import *
@@ -51,6 +52,7 @@ class Lcd(abstract_lcd.Lcd):
         frame_time_ms = (56.0 / spi_speed_mhz) * 33.6
         self.poll_divisor = max(1, round(frame_time_ms / 10.0))
 
+        # TODO would be good to decouple the actual LCD hardware.  This file should work for any 320x240 display
         if display is None:
             import board
             import digitalio
@@ -104,6 +106,15 @@ class Lcd(abstract_lcd.Lcd):
 
         # widgets
         self.w_wifi = None
+        self._wifi_frames: list[Image.Image] = [
+            Image.open(os.path.join(self.imagedir, f'wifi_processing_{i}.png'))
+            for i in range(1, 4)
+        ]
+        for frame in self._wifi_frames:
+            frame.load()
+        self._wifi_tick = 0
+        self._wifi_ticks_per_frame = 2
+        self.wifi_menu: Optional[WifiMenu] = None
         self.w_eq = None
         self.w_power = None
         self.w_wrench = None
@@ -248,23 +259,27 @@ class Lcd(abstract_lcd.Lcd):
         if self.w_wifi is not None:
             return
         self.w_notification = ImageWidget(box=Box.xywh(180, 0, 20, 20),
-                                          image_path=os.path.join(self.imagedir, 'alert_orange.png'),
+                                          image=os.path.join(self.imagedir, 'alert_orange.png'),
                                           parent=self.main_panel, action=self._notification_action)
         self.main_panel.add_sel_widget(self.w_notification)
         if self.handler is None or self.handler.notification is None:
             self.w_notification.hide(refresh=False)
-        self.w_wifi = ImageWidget(box=Box.xywh(210, 0, 20, 20), image_path=os.path.join(self.imagedir,
-                                  'wifi_gray.png'), parent=self.main_panel, action=self.wifi_menu.open)
+        self.w_wifi = ImageWidget(
+            box=Box.xywh(210, 0, 20, 20),
+            image=os.path.join(self.imagedir, 'wifi_gray.png'),
+            parent=self.main_panel,
+            action=self.wifi_menu.open,
+        )
         self.main_panel.add_sel_widget(self.w_wifi)
         if self.w_eq is not None:
             return
-        self.w_eq = ImageWidget(box=Box.xywh(240, 0, 20, 20), image_path=os.path.join(self.imagedir,
+        self.w_eq = ImageWidget(box=Box.xywh(240, 0, 20, 20), image=os.path.join(self.imagedir,
                                   'eq_blue.png'), parent=self.main_panel, action=self.draw_audio_menu)
         self.main_panel.add_sel_widget(self.w_eq)
-        self.w_power = ImageWidget(box=Box.xywh(270, 0, 20, 20), image_path=os.path.join(self.imagedir,
+        self.w_power = ImageWidget(box=Box.xywh(270, 0, 20, 20), image=os.path.join(self.imagedir,
                                    'power_gray.png'), parent=self.main_panel, action=self.toggle_bypass)
         self.main_panel.add_sel_widget(self.w_power)
-        self.w_wrench = ImageWidget(box=Box.xywh(296, 0, 20, 20), image_path=os.path.join(self.imagedir,
+        self.w_wrench = ImageWidget(box=Box.xywh(296, 0, 20, 20), image=os.path.join(self.imagedir,
                              'wrench_silver.png'), parent=self.main_panel, action=self.draw_system_menu)
         self.main_panel.add_sel_widget(self.w_wrench)
 
@@ -379,7 +394,7 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_selection_menu(items, "Snapshots", auto_dismiss=True, dismiss_option=True)
 
     def draw_selection_menu(self, items, title="", auto_dismiss=False, dismiss_option=False,
-                            font=None):
+                            font=None, title_font=None, default_item=None):
         # items is a list of tuples: (label, callback, arg) or (label, callback, arg, is_active)
         # or (label, callback, arg, is_active, long_callback) where long_callback is called
         # instead of callback on a long press.
@@ -392,8 +407,12 @@ class Lcd(abstract_lcd.Lcd):
                 return
             callback(params[2])
 
-        extra = {} if font is None else {'font': font}
-        m = Menu(title=title, items=items, auto_destroy=True, default_item=None, max_width=180, max_height=200,
+        extra = {}
+        if font is not None:
+            extra['font'] = font
+        if title_font is not None:
+            extra['title_font'] = title_font
+        m = Menu(title=title, items=items, auto_destroy=True, default_item=default_item, max_width=180, max_height=200,
                  auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action, **extra)
         self.pstack.push_panel(m)
         return m
@@ -755,14 +774,25 @@ class Lcd(abstract_lcd.Lcd):
 
     # Toolbar
     def update_wifi(self, wifi_status):
+        if self.w_wifi is None:
+            return
+        if self.handler.wifi_manager.queue.pending_op_count() > 0:
+            period = self._wifi_ticks_per_frame * len(self._wifi_frames)
+            self._wifi_tick = (self._wifi_tick + 1) % period
+            idx = self._wifi_tick // self._wifi_ticks_per_frame
+            self.w_wifi.replace_img(self._wifi_frames[idx])
+        else:
+            self._wifi_tick = 0
+            self.w_wifi.replace_img(self._resolved_wifi_png(wifi_status))
+
+    def _resolved_wifi_png(self, wifi_status):
         if util.DICT_GET(wifi_status, 'hotspot_active'):
             img = "wifi_orange.png"
         elif util.DICT_GET(wifi_status, 'wifi_connected'):
             img = "wifi_silver.png"
         else:
             img = "wifi_gray.png"
-        image_path = os.path.join(self.imagedir, img)
-        self.w_wifi.replace_img(image_path)
+        return os.path.join(self.imagedir, img)
 
     def update_eq(self, eq_status):
         pass

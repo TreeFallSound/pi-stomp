@@ -13,7 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from pistomp.handler import Handler
 from pistomp.audiocard import Audiocard
 
 import json
@@ -40,13 +39,14 @@ from pistomp.hardware import Controller, Hardware
 import pistomp.settings as Settings
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.controller import RoutingDestination, RoutingInfo
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
+from pistomp.handler import Handler
 from pistomp.sync import PedalboardSync, SyncResult
 from pathlib import Path
 
@@ -55,9 +55,6 @@ class Modhandler(Handler):
     __single = None
 
     def __init__(self, audiocard: Audiocard, homedir, data_dir="/home/pistomp/data"):
-        self.wifi_manager = None
-
-
         logging.info("Init modhandler")
         if Modhandler.__single:
             raise RuntimeError("Attempt to create second Modhandler singleton", Modhandler.__single)
@@ -88,12 +85,13 @@ class Modhandler(Handler):
         self.current: Modhandler.Current | None = None
         self._lcd: Lcd | None = None
         self._hardware: Hardware | None = None
-
-        self.notification: str | None = None
-        self.pedalboards_remote: str | None = None
+        self.volume_parameter = None
 
         # Stores snapshot index from loading_end until pedalboard change is detected
         self.next_pedalboard_preset_index = None
+
+        self.notification: str | None = None
+        self.pedalboards_remote: str | None = None
 
         # Backup
         self.backup_dir = "/media/usb0/backups"
@@ -108,13 +106,7 @@ class Modhandler(Handler):
         self.last_json_monitor = FileChangeMonitor(os.path.join(self.data_dir, "last.json"))
         self.banks_monitor = FileChangeMonitor(self.banks_file)
 
-        self.wifi_manager = Wifi.WifiManager()
-
-        # Tuner state
-        self._tuner_engine = None
-        self._tuner_panel = None
-        self._tuner_source_factory = None
-        self._tuner_muted = False
+        self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
 
         # WebSocket bridge for MOD-UI communication
         self.ws_bridge = AsyncWebSocketBridge(
@@ -124,6 +116,12 @@ class Modhandler(Handler):
         self.ws_bridge.start()
         logging.info("WebSocket bridge started")
 
+        # Tuner state
+        self._tuner_engine = None
+        self._tuner_panel = None
+        self._tuner_source_factory = None
+        self._tuner_muted = False
+
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
         self.callbacks = {"set_mod_tap_tempo": self.set_mod_tap_tempo,
@@ -131,9 +129,12 @@ class Modhandler(Handler):
                           "previous_snapshot": self.preset_decr_and_change,
                           "toggle_bypass": self.system_toggle_bypass,
                           "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable,
-                          "universal_encoder_sw": self.universal_encoder_sw,
                           "toggle_tuner_enable": self.toggle_tuner_enable,
         }
+
+        # Blend mode manager - multiple blend snapshots per pedalboard
+        self.blend_modes: dict[str, Any] = {}  # {snapshot_name: BlendMode}
+        self.active_blend_mode: Any | None = None  # Currently active blend mode
 
         # External MIDI device synchronization
         self.external_midi = None
@@ -142,29 +143,25 @@ class Modhandler(Handler):
         except Exception as e:
             logging.warning(f"Failed to initialize external MIDI manager: {e}")
 
-        # Blend mode manager - multiple blend snapshots per pedalboard
-        self.blend_modes: dict[str, Any] = {}  # {snapshot_name: BlendMode}
-        self.active_blend_mode: Any | None = None  # Currently active blend mode
-
     def __del__(self):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
+        # ws_bridge.stop() lives in cleanup(), not here — join() in __del__ blows up
+        # during interpreter shutdown on Py 3.14. Daemon thread dies with the process.
         if self.external_midi is not None:
             self.external_midi.close()
-        if self.ws_bridge is not None:
-            self.ws_bridge.stop()
 
     def cleanup(self):
         if self._lcd is not None:
             self._lcd.cleanup()
         if self._hardware is not None:
             self._hardware.cleanup()
-        if self.external_midi is not None:
-            self.external_midi.close()
         if self.ws_bridge is not None:
             self.ws_bridge.stop()
             logging.info("WebSocket bridge stopped")
+        if self.external_midi is not None:
+            self.external_midi.close()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -197,6 +194,8 @@ class Modhandler(Handler):
         self.bind_volume_encoder()
 
     def bind_volume_encoder(self):
+        if self.hardware is None:
+            return
         for enc in self.hardware.encoders:
             if enc.type == Token.VOLUME and isinstance(enc, EncoderController):
                 value = self.audiocard.get_volume_parameter(self.audiocard.MASTER)
@@ -237,13 +236,16 @@ class Modhandler(Handler):
             self.hardware.poll_indicators()
 
     def poll_wifi(self):
-        wifi_update = self.wifi_manager.poll()
-        if wifi_update is not None:
-            self.wifi_status = wifi_update
-            self.lcd.update_wifi(self.wifi_status)
-            wifi_menu = getattr(self.lcd, 'wifi_menu', None)
-            if wifi_menu is not None:
-                wifi_menu.notify_status_change()
+        self.wifi_manager.poll()
+        if self._lcd is not None and self.lcd.wifi_menu is not None:
+            self.lcd.wifi_menu.tick()
+
+    def _on_wifi_status_change(self, status):
+        self.wifi_status = status
+        if self._lcd is not None:
+            self.lcd.update_wifi(status)
+            if self.lcd.wifi_menu is not None:
+                self.lcd.wifi_menu.notify_status_change()
 
     def poll_system_info(self):
         # Get the system state from the systemd service
@@ -307,6 +309,7 @@ class Modhandler(Handler):
 
     def poll_lcd_updates(self):
         if self._lcd is not None:
+            self._lcd.update_wifi(self.wifi_status)
             self._lcd.poll_updates()
 
     @property
@@ -314,9 +317,9 @@ class Modhandler(Handler):
         # Tick the LCD on every 10 ms main-loop pass (~100 fps) while the
         # tuner panel is mounted. Strobe's worst-case redraw at STRIPE_W=4
         # is ~4.3 ms of SPI, well inside the 10 ms budget; typical ticks
-        # are sub-millisecond. Otherwise fall back to the LCD's
-        # SPI-speed-tuned divisor so control visualizations stay smooth.
-        return 1 if self._tuner_panel is not None else self.lcd.poll_divisor
+        # are sub-millisecond. Fall back to the default 200 ms gate
+        # otherwise.
+        return 1 if self._tuner_panel is not None else 20
 
     def universal_encoder_select(self, direction):
         if self._lcd is not None:
@@ -404,15 +407,22 @@ class Modhandler(Handler):
                 self._handle_blend_mode_snapshot_change(msg.snapshot_id)
                 self.lcd.draw_title()
 
+        elif isinstance(msg, PluginBypassMessage):
+            if self.current is not None:
+                for plugin in self.current.pedalboard.plugins:
+                    if plugin.instance_id == msg.instance:
+                        logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
+                        plugin.set_bypass(msg.bypassed)
+                        self.lcd.refresh_plugins()
+                        break
+
     def poll_modui_changes(self):
         """Poll for changes from MOD-UI: websockets and file watching"""
-        if self.ws_bridge is not None:
-            messages = self.ws_bridge.get_received_messages()
-            for msg in messages:
-                try:
-                    self._handle_ws_message(parse_message(msg))
-                except Exception as e:
-                    logging.error(f"Error handling WebSocket message '{msg}': {e}")
+        for msg in self.ws_bridge.get_received_messages():
+            try:
+                self._handle_ws_message(parse_message(msg))
+            except Exception as e:
+                logging.error(f"Error handling WebSocket message '{msg}': {e}")
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
@@ -534,15 +544,15 @@ class Modhandler(Handler):
         return read_pedalboard_bundle(self.last_json_monitor.path)
 
     def set_current_pedalboard(self, pedalboard):
-        # Redraw analog assignments to revert any BlendMode icon substitution
-        if self.current and self.current.analog_controllers:
-            self.lcd.draw_analog_assignments(self.current.analog_controllers)
-
         # Cleanup all previous blend modes if active
         for blend_mode in self.blend_modes.values():
             blend_mode.cleanup()
         self.blend_modes = {}
         self.active_blend_mode = None
+
+        # Redraw analog assignments to revert any BlendMode icon substitution
+        if self.current and self.current.analog_controllers:
+            self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
         # Delete previous "current"
         del self.current
@@ -574,14 +584,6 @@ class Modhandler(Handler):
         self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
         self.lcd.draw_main_panel()
         self.lcd.update_wifi(self.wifi_status)
-
-        # Send external MIDI messages for this pedalboard
-        # Config was already updated by hardware.reinit(cfg) above
-        if self.external_midi is not None:
-            try:
-                self.external_midi.send_messages_for_pedalboard()
-            except Exception as e:
-                logging.warning(f"Failed to send external MIDI messages: {e}")
 
         # Prepare blend modes if configured (snapshot-based activation)
         try:
@@ -621,6 +623,14 @@ class Modhandler(Handler):
             logging.error(f"Failed to prepare blend modes: {e}")
             self.blend_modes = {}
             self.active_blend_mode = None
+
+        # Send external MIDI messages for this pedalboard
+        # Config was already updated by hardware.reinit(cfg) above
+        if self.external_midi is not None:
+            try:
+                self.external_midi.send_messages_for_pedalboard()
+            except Exception as e:
+                logging.warning(f"Failed to send external MIDI messages: {e}")
 
     def bind_current_pedalboard(self):
         # "current" being the pedalboard mod-host says is current
@@ -863,14 +873,14 @@ class Modhandler(Handler):
     def parameter_value_commit(self, param, value):
         param.value = value
 
-        # Audio parameter (volume, EQ, etc.) - no WebSocket update needed
+        # Audio parameter (volume, EQ, etc.) - no REST update needed
         if param.instance_id is None:
             self.audio_parameter_commit(param.symbol, value)
             return
 
-        # External MIDI parameters are local-only (visual feedback), no WebSocket update needed
+        # External MIDI parameters are local-only (visual feedback), no host update needed
         if param.instance_id == EXTERNAL_INSTANCE_ID:
-            logging.debug("Skipping WebSocket update for external parameter: %s" % param.symbol)
+            logging.debug("Skipping host update for external parameter: %s" % param.symbol)
             return
 
         self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
@@ -1090,6 +1100,9 @@ class Modhandler(Handler):
             self.wifi_manager.disable_hotspot()
         else:
             self.wifi_manager.enable_hotspot()
+
+    def configure_wifi_credentials(self, ssid, password):
+        return self.wifi_manager.configure_wifi(ssid, password)
 
     def _create_audio_parameter(self, name, symbol, min_val, max_val):
         value = self.audiocard.get_volume_parameter(symbol)
