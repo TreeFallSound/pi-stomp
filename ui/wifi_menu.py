@@ -162,6 +162,7 @@ class WifiMenu:
     def __init__(self, lcd: 'Lcd') -> None:
         self.lcd: 'Lcd' = lcd
         self._root_menu: Optional['Menu'] = None
+        self._nearby_menu: Optional['Menu'] = None
         self._cached_scanned: list[ScannedNetwork] = []
 
     @property
@@ -195,44 +196,77 @@ class WifiMenu:
         self._render_root_menu()
         self._wifi_manager.queue.submit_scan(ScanCmd(), self._on_scan)
 
+    def tick(self) -> None:
+        """Handler poll hook. Kicks a rescan while any wifi menu is open
+        so the nearby cache stays warm. Deduped if a scan is in flight."""
+        current = self._pstack.current
+        if current is self._root_menu or current is self._nearby_menu:
+            self._wifi_manager.queue.submit_scan(ScanCmd(), self._on_scan)
+
     def _on_scan(self, networks: list[ScannedNetwork]) -> None:
         if isinstance(networks, Exception):
             return
+        # nmcli intermittently returns [] during transient states. Don't
+        # clobber a populated cache with empty — flash-empties the UI.
+        if not networks and self._cached_scanned:
+            return
         self._cached_scanned = networks
-        if self._root_menu is not None and self._pstack.current is self._root_menu:
-            old = self._root_menu
-            self._root_menu = None
+        if self._nearby_menu is not None and self._pstack.current is self._nearby_menu:
+            keep = self._current_label(self._nearby_menu)
+            old = self._nearby_menu
+            self._nearby_menu = None
             self._pstack.pop_panel(old)
-            self._render_root_menu()
+            self._render_nearby_menu(default_label=keep)
 
-    def _render_root_menu(self) -> None:
+    def _render_root_menu(self, default_label: Optional[str] = None) -> None:
         wifi_status = self._wifi_status
         hotspot_active = bool(util.DICT_GET(wifi_status, 'hotspot_active'))
+        supported = util.DICT_GET(wifi_status, 'wifi_supported') is not False
         active_name = util.DICT_GET(wifi_status, 'connection')
         scanned = self._cached_scanned
         saved_by_ssid = self._saved_by_ssid
         scanned_ssids = {n['ssid'] for n in scanned}
-        rows, nearby = self._build_rows(scanned, saved_by_ssid, scanned_ssids, active_name)
-        title = self._title(wifi_status, active_name, scanned)
-        items = self._build_items(rows, nearby, hotspot_active)
+        rows, _ = self._build_rows(scanned, saved_by_ssid, scanned_ssids, active_name)
+        title = self._title(wifi_status, active_name)
+        items = self._build_items(rows, hotspot_active, supported)
         self._root_menu = self.lcd.draw_selection_menu(
             items, title, dismiss_option=True,
-            font=_make_badge_font())
+            font=_make_badge_font(), default_item=default_label)
+
+    def _render_nearby_menu(self, default_label: Optional[str] = None) -> None:
+        scanned = self._cached_scanned
+        saved_by_ssid = self._saved_by_ssid
+        scanned_ssids = {n['ssid'] for n in scanned}
+        active_name = util.DICT_GET(self._wifi_status, 'connection')
+        _, nearby = self._build_rows(scanned, saved_by_ssid, scanned_ssids, active_name)
+        if nearby:
+            items: list[MenuItem] = [(self._row_label(r), self._on_network_tap, r) for r in nearby]
+        else:
+            items = [("Scanning...", None, None)]
+        self._nearby_menu = self.lcd.draw_selection_menu(
+            items, "Nearby Networks", dismiss_option=True,
+            font=_make_badge_font(), default_item=default_label)
 
     def notify_status_change(self) -> None:
-        """Called by the handler after wifi_status is updated.
-
-        Rebuilds the root menu in place so hotspot/active indicators stay
-        current. No-op if the wifi menu isn't the top panel (don't disrupt
-        password prompts, submenus, or unrelated UI).
-        """
+        """Handler hook after wifi_status changes. Rebuilds the root menu
+        in place, preserving cursor; no-op if root isn't the top panel."""
         if self._root_menu is None or self._pstack.current is not self._root_menu:
             return
+        keep = self._current_label(self._root_menu)
         old = self._root_menu
         self._root_menu = None
         self._pstack.pop_panel(old)
-        self._render_root_menu()
-        self._wifi_manager.queue.submit_scan(ScanCmd(), self._on_scan)
+        self._render_root_menu(default_label=keep)
+
+    @staticmethod
+    def _current_label(menu: 'Menu') -> Optional[str]:
+        sel = getattr(menu, 'sel', None)
+        if sel is None:
+            return None
+        try:
+            return menu.sel_list[sel].data[0]
+        except (IndexError, AttributeError):
+            return None
 
     def toggle_hotspot(self, _: object = None) -> None:
         was_active = bool(util.DICT_GET(self._wifi_status, 'hotspot_active'))
@@ -253,10 +287,12 @@ class WifiMenu:
                     saved_by_ssid: dict[str, list[SavedConnection]],
                     scanned_ssids: set[str],
                     active_name: Optional[str]) -> tuple[list[Row], list[Row]]:
-        """Returns (visible_rows, nearby_unsaved)."""
+        """Returns (saved_rows_for_root, nearby_unsaved_for_submenu).
+
+        Saved-in-range pick up signal/security from scan results; saved-out-of-range
+        stay bar-less. Nearby submenu excludes any saved+active network."""
         rows: list[Row] = []
         nearby: list[Row] = []
-
         for net in scanned:
             profiles = saved_by_ssid.get(net['ssid'], [])
             saved_profile = self._pick_profile(profiles, active_name)
@@ -295,19 +331,17 @@ class WifiMenu:
         rows.extend(out_of_range)
         return rows, nearby
 
-    def _build_items(self, rows: list[Row], nearby: list[Row],
-                     hotspot_active: bool) -> list[MenuItem]:
+    def _build_items(self, rows: list[Row], hotspot_active: bool, supported: bool = True) -> list[MenuItem]:
         items: list[MenuItem] = [(self._row_label(r), self._on_network_tap, r, None, self._on_network_long_tap) for r in rows]
-        if nearby:
-            items.append(("Nearby networks...", self._open_nearby_menu, nearby))
+        if supported and not hotspot_active:
+            items.append(("Nearby networks...", self._open_nearby_menu, None))
         items.append(("Join other network...", self._open_join_dialog, None))
         hotspot_label = "Disable Hotspot Mode" if hotspot_active else "Switch to Hotspot Mode"
         items.append((hotspot_label, self.toggle_hotspot, None))
         return items
 
     def _title(self, wifi_status: WifiStatus,
-               active_name: Optional[str],
-               scanned: list[ScannedNetwork]) -> str:
+               active_name: Optional[str]) -> str:
         if util.DICT_GET(wifi_status, 'hotspot_active'):
             return "WiFi " + SEP + " Hotspot"
         if active_name:
@@ -395,10 +429,9 @@ class WifiMenu:
         items.append(("Forget", self._forget, row))
         self.lcd.draw_selection_menu(items, row['ssid'], dismiss_option=True)
 
-    def _open_nearby_menu(self, nearby: list[Row]) -> None:
-        items: list[MenuItem] = [(self._row_label(r), self._on_network_tap, r) for r in nearby]
-        self.lcd.draw_selection_menu(items, "Nearby Networks", dismiss_option=True,
-                                     font=_make_badge_font())
+    def _open_nearby_menu(self, _: object = None) -> None:
+        self._render_nearby_menu()
+        self._wifi_manager.queue.submit_scan(ScanCmd(), self._on_scan)
 
     def _on_op_done(self, err: Optional[bytes]) -> None:
         if isinstance(err, Exception):

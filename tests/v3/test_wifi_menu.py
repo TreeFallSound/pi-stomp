@@ -64,6 +64,35 @@ def test_empty_scan(v3_system, wifi_state, snapshot):
     snapshot("root_empty")
 
 
+def test_nearby_loading_then_populated(v3_system, wifi_state, snapshot):
+    """Saga: open wifi → tap Nearby networks (empty / 'Scanning...') → scan returns → list populates."""
+    wifi_state(scanned=[], saved=[])
+    wm_mock = v3_system.handler.wifi_manager
+
+    # Defer scan callbacks instead of firing inline.
+    pending: list = []
+    def _defer(cmd, on_done):
+        pending.append((cmd, on_done))
+        return True
+    wm_mock.queue.submit_scan.side_effect = _defer
+
+    wm, lcd = _open(v3_system)
+    snapshot("root_before_scan")
+
+    # Tap "Nearby networks..." (first menu item).
+    _click(lcd)
+    snapshot("nearby_scanning")
+
+    # Scan returns with two networks.
+    wm_mock.scan_networks.return_value = [
+        make_scanned("Alpha", signal=80),
+        make_scanned("Bravo", signal=40),
+    ]
+    for cmd, on_done in pending:
+        on_done(cmd.run(wm_mock))
+    snapshot("nearby_populated")
+
+
 # ---------------------------------------------------------------------------
 # 5.2  test_signal_bar_levels
 # ---------------------------------------------------------------------------
@@ -443,21 +472,16 @@ def test_notify_status_change_leaves_error_dialog_open(v3_system, wifi_state):
     )
 
 
-def test_notify_status_change_rescans_after_hotspot_off(v3_system, wifi_state):
-    """When hotspot toggles off, notify_status_change must submit a fresh scan.
-
-    Saved-profile cache is owned by the polling thread, so the menu reads it
-    from WifiManager rather than refetching directly here.
-    """
+def test_tick_rescans_while_root_open(v3_system, wifi_state):
+    """tick() submits a scan when the wifi root menu is the top panel."""
     wm_mock = v3_system.handler.wifi_manager
-    wifi_state(scanned=[], saved=[], hotspot=True)
+    wifi_state(scanned=[], saved=[make_saved("Home")], hotspot=False)
     wm, _lcd = _open(v3_system)
     scan_calls_after_open = wm_mock.scan_networks.call_count
 
-    wifi_state(scanned=[make_scanned("Home", signal=70)], saved=[make_saved("Home")], hotspot=False)
-    wm.notify_status_change()
+    wm.tick()
 
-    assert wm_mock.scan_networks.call_count > scan_calls_after_open, "notify_status_change must trigger a fresh scan"
+    assert wm_mock.scan_networks.call_count > scan_calls_after_open, "tick must trigger a fresh scan"
 
 
 def test_toggle_hotspot_off_shows_error_dialog_when_reconnect_fails(v3_system, wifi_state):

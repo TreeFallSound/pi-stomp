@@ -164,6 +164,8 @@ class Modhandler(Handler):
 
     def poll_wifi(self):
         self.wifi_manager.poll()
+        if self._lcd is not None and self.lcd.wifi_menu is not None:
+            self.lcd.wifi_menu.tick()
 
     def _on_wifi_status_change(self, status):
         self.wifi_status = status

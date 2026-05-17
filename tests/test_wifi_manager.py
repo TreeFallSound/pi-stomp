@@ -84,58 +84,63 @@ def test_list_connections_bulk_call_uses_only_valid_columns(wm):
 # disable_hotspot — synchronous orchestration: stop service + reconnect
 # ---------------------------------------------------------------------------
 
+def _collect_calls(co_calls, run_calls):
+    """Merge check_output and subprocess.run argv lists in call order."""
+    return co_calls + run_calls
+
+
 def test_disable_hotspot_returns_none_on_clean_reconnect(wm):
     """Happy path: systemctl stops, most-recent saved profile activates."""
     saved = [
         {"name": "Cafe", "ssid": "Cafe", "timestamp": 1699000000},
         {"name": "Home", "ssid": "Home", "timestamp": 1700000000},  # most recent
     ]
+    co_calls: list[list[str]] = []
+    run_calls: list[list[str]] = []
     with (
         patch.object(wm, "list_connections", return_value=saved),
-        patch("subprocess.check_output") as co,
+        patch("subprocess.check_output", side_effect=lambda c, **kw: co_calls.append(list(c)) or b""),
+        patch("subprocess.run", side_effect=lambda c, **kw: run_calls.append(list(c)) or MagicMock(stdout="", stderr="", returncode=0)),
     ):
-        co.return_value = b""
         err = wm.disable_hotspot()
 
     assert err is None
-    # First call: systemctl disable --now wifi-hotspot
-    # Second call: nmcli connection up Home
-    calls = [c.args[0] for c in co.call_args_list]
-    assert any("systemctl" in args and "wifi-hotspot" in args for args in calls)
+    assert any("systemctl" in args and "wifi-hotspot" in args for args in co_calls)
     assert any(
-        "nmcli" in args and "up" in args and "Home" in args for args in calls
-    ), f"expected nmcli connection up Home, got: {calls}"
+        "nmcli" in args and "up" in args and "Home" in args for args in run_calls
+    ), f"expected nmcli connection up Home, got: {run_calls}"
 
 
 def test_disable_hotspot_returns_none_when_no_saved_profile(wm):
     """No saved profile → stop service silently, no reconnect attempt."""
+    co_calls: list[list[str]] = []
+    run_calls: list[list[str]] = []
     with (
         patch.object(wm, "list_connections", return_value=[]),
-        patch("subprocess.check_output") as co,
+        patch("subprocess.check_output", side_effect=lambda c, **kw: co_calls.append(list(c)) or b""),
+        patch("subprocess.run", side_effect=lambda c, **kw: run_calls.append(list(c)) or MagicMock(stdout="", stderr="", returncode=0)),
     ):
-        co.return_value = b""
         err = wm.disable_hotspot()
 
     assert err is None
-    calls = [c.args[0] for c in co.call_args_list]
-    # systemctl must have been called; nmcli connection up must NOT.
-    assert any("systemctl" in args for args in calls)
-    assert not any("nmcli" in args and "up" in args for args in calls)
+    assert any("systemctl" in args for args in co_calls)
+    assert not any("nmcli" in args and "up" in args for args in run_calls)
 
 
 def test_disable_hotspot_uses_nmcli_wait_zero(wm):
     """Reconnect must be fire-and-forget — UI shouldn't block on DHCP."""
     saved = [{"name": "Home", "ssid": "Home", "timestamp": 1700000000}]
+    run_calls: list[list[str]] = []
     with (
         patch.object(wm, "list_connections", return_value=saved),
-        patch("subprocess.check_output") as co,
+        patch("subprocess.check_output", return_value=b""),
+        patch("subprocess.run", side_effect=lambda c, **kw: run_calls.append(list(c)) or MagicMock(stdout="", stderr="", returncode=0)),
     ):
-        co.return_value = b""
         wm.disable_hotspot()
 
-    nmcli_calls = [c.args[0] for c in co.call_args_list if "nmcli" in c.args[0]]
-    assert nmcli_calls, "expected an nmcli call"
-    args = nmcli_calls[0]
+    up_calls = [c for c in run_calls if "up" in c and "Home" in c]
+    assert up_calls, f"expected an nmcli connection up call, got: {run_calls}"
+    args = up_calls[0]
     assert "--wait" in args and args[args.index("--wait") + 1] == "0", \
         f"expected --wait 0, got: {args}"
 
@@ -240,15 +245,13 @@ def test_disable_hotspot_returns_error_when_reconnect_fails(wm):
     """If `nmcli connection up <saved>` fails, propagate the stderr bytes."""
     saved = [{"name": "Home", "ssid": "Home", "timestamp": 1700000000}]
 
-    def fake_check_output(cmd, **kwargs):
-        if "systemctl" in cmd:
-            return b""
-        # nmcli connection up — fail
-        raise subprocess.CalledProcessError(1, cmd, output=b"no network with ssid 'Home'")
+    def fake_run(cmd, **kw):
+        return MagicMock(stdout="", stderr="no network with ssid 'Home'", returncode=1)
 
     with (
         patch.object(wm, "list_connections", return_value=saved),
-        patch("subprocess.check_output", side_effect=fake_check_output),
+        patch("subprocess.check_output", return_value=b""),
+        patch("subprocess.run", side_effect=fake_run),
     ):
         err = wm.disable_hotspot()
 
@@ -290,16 +293,19 @@ def test_keymgmt_is_str_compatible():
 # connect_scanned — explicit key-mgmt, scoped failure cleanup
 # ---------------------------------------------------------------------------
 
+def _ok_run(calls):
+    """side_effect for subprocess.run that records argv and returns success."""
+    def _eff(cmd, **kw):
+        calls.append(list(cmd))
+        return MagicMock(stdout="", stderr="", returncode=0)
+    return _eff
+
+
 def test_connect_scanned_wpa2_passes_explicit_key_mgmt(wm):
     calls: list[list[str]] = []
-
-    def fake_check_output(cmd, **kw):
-        calls.append(list(cmd))
-        return b""
-
     with (
         patch.object(wm, "list_connections", return_value=[]),
-        patch("subprocess.check_output", side_effect=fake_check_output),
+        patch("subprocess.run", side_effect=_ok_run(calls)),
     ):
         err = wm.connect_scanned("BELL592", "WPA2", "secret")
 
@@ -311,31 +317,24 @@ def test_connect_scanned_wpa2_passes_explicit_key_mgmt(wm):
 
 def test_connect_scanned_open_omits_security_fields(wm):
     calls: list[list[str]] = []
-
-    def fake_check_output(cmd, **kw):
-        calls.append(list(cmd))
-        return b""
-
     with (
         patch.object(wm, "list_connections", return_value=[]),
-        patch("subprocess.check_output", side_effect=fake_check_output),
+        patch("subprocess.run", side_effect=_ok_run(calls)),
     ):
         err = wm.connect_scanned("Cafe", "", None)
 
     assert err is None
     add = next(c for c in calls if "add" in c)
     assert "wifi-sec.psk" not in add
-    # key-mgmt=none is acceptable; what matters is no psk leaks in
     if "wifi-sec.key-mgmt" in add:
         assert "wpa-psk" not in add and "sae" not in add
 
 
 def test_connect_scanned_wpa3_uses_sae(wm):
     calls: list[list[str]] = []
-
     with (
         patch.object(wm, "list_connections", return_value=[]),
-        patch("subprocess.check_output", side_effect=lambda c, **kw: calls.append(list(c)) or b""),
+        patch("subprocess.run", side_effect=_ok_run(calls)),
     ):
         wm.connect_scanned("Net3", "WPA3", "secret")
 
@@ -348,24 +347,22 @@ def test_connect_scanned_deletes_only_freshly_added_profile_on_failure(wm):
     any pre-existing sibling profile that happens to share the SSID."""
     calls: list[list[str]] = []
 
-    def fake_check_output(cmd, **kw):
+    def fake_run(cmd, **kw):
         calls.append(list(cmd))
         if "up" in cmd:
-            raise subprocess.CalledProcessError(1, cmd, output=b"auth failed")
-        return b""
+            return MagicMock(stdout="", stderr="auth failed", returncode=1)
+        return MagicMock(stdout="", stderr="", returncode=0)
 
-    # `preconfigured` already exists with SSID BELL592 — must not be touched.
     saved = [{"name": "preconfigured", "ssid": "BELL592", "timestamp": 1}]
     with (
         patch.object(wm, "list_connections", return_value=saved),
-        patch("subprocess.check_output", side_effect=fake_check_output),
+        patch("subprocess.run", side_effect=fake_run),
     ):
         err = wm.connect_scanned("BELL592", "WPA2", "wrongpw")
 
     assert err == b"auth failed"
     delete_calls = [c for c in calls if "delete" in c]
     assert len(delete_calls) == 1
-    # We deleted the profile we just created — never the pre-existing `preconfigured`.
     deleted_name = delete_calls[0][-1]
     assert deleted_name == "BELL592"
     assert "preconfigured" not in delete_calls[0]
@@ -390,74 +387,62 @@ def test_connect_scanned_rejects_enterprise(wm):
 def test_connect_saved_skips_nmcli_when_already_activated(wm):
     """Tapping a saved row that's already active must not invoke `nmcli
     connection up` (which would tear down and re-cycle, ~14s on real NM)."""
-    co_calls: list[list[str]] = []
+    calls: list[list[str]] = []
 
     def fake_run(cmd, **kw):
+        calls.append(list(cmd))
         return MagicMock(stdout="GENERAL.STATE:activated\n", stderr="", returncode=0)
 
-    with (
-        patch("subprocess.run", side_effect=fake_run),
-        patch("subprocess.check_output", side_effect=lambda c, **kw: co_calls.append(list(c)) or b""),
-    ):
+    with patch("subprocess.run", side_effect=fake_run):
         err = wm.connect_saved("preconfigured")
 
     assert err is None
-    assert not any("up" in c for c in co_calls), \
-        f"expected no `nmcli connection up`, got: {co_calls}"
+    assert not any("up" in c for c in calls), \
+        f"expected no `nmcli connection up`, got: {calls}"
 
 
 def test_connect_saved_runs_when_not_activated(wm):
-    co_calls: list[list[str]] = []
+    calls: list[list[str]] = []
 
     def fake_run(cmd, **kw):
-        # Inactive profile: nmcli returns empty GENERAL.STATE
+        calls.append(list(cmd))
+        # _is_profile_activated: empty state. Then `connection up`: success.
         return MagicMock(stdout="GENERAL.STATE:\n", stderr="", returncode=0)
 
-    with (
-        patch("subprocess.run", side_effect=fake_run),
-        patch("subprocess.check_output", side_effect=lambda c, **kw: co_calls.append(list(c)) or b""),
-    ):
+    with patch("subprocess.run", side_effect=fake_run):
         err = wm.connect_saved("Home")
 
     assert err is None
-    assert any("up" in c and "Home" in c for c in co_calls)
+    assert any("up" in c and "Home" in c for c in calls)
 
 
 def test_connect_saved_reconnect_bypasses_idempotency_check(wm):
     """replace_psk path: even if the profile is already activated, the caller
     can demand a cycle so a freshly-modified setting (PSK) takes effect."""
-    co_calls: list[list[str]] = []
+    calls: list[list[str]] = []
 
     def fake_run(cmd, **kw):
+        calls.append(list(cmd))
         return MagicMock(stdout="GENERAL.STATE:activated\n", stderr="", returncode=0)
 
-    with (
-        patch("subprocess.run", side_effect=fake_run),
-        patch("subprocess.check_output", side_effect=lambda c, **kw: co_calls.append(list(c)) or b""),
-    ):
+    with patch("subprocess.run", side_effect=fake_run):
         wm.connect_saved("Home", reconnect=True)
 
-    assert any("up" in c and "Home" in c for c in co_calls)
+    assert any("up" in c and "Home" in c for c in calls)
 
 
 def test_replace_psk_uses_reconnect(wm):
     """After modifying a PSK we must cycle the active link, not skip-via-idempotency."""
     calls: list[list[str]] = []
 
-    def fake_check_output(cmd, **kw):
-        calls.append(list(cmd))
-        return b""
-
     def fake_run(cmd, **kw):
-        # get_psk_for (returncode irrelevant for our assertions) + _is_profile_activated
-        if "show" in cmd and "-g" in cmd:
-            return MagicMock(stdout="oldpw\n", returncode=0)
+        calls.append(list(cmd))
+        # get_psk_for: returns old psk; _is_profile_activated: activated; everything else: ok
+        if "802-11-wireless-security.psk" in cmd and "-s" in cmd:
+            return MagicMock(stdout="802-11-wireless-security.psk:oldpw\n", stderr="", returncode=0)
         return MagicMock(stdout="GENERAL.STATE:activated\n", stderr="", returncode=0)
 
-    with (
-        patch("subprocess.run", side_effect=fake_run),
-        patch("subprocess.check_output", side_effect=fake_check_output),
-    ):
+    with patch("subprocess.run", side_effect=fake_run):
         err = wm.replace_psk("Home", "newpw")
 
     assert err is None
