@@ -412,7 +412,7 @@ class ScrollingText(TextWidget):
         super().set_font(font)
         self._clear_cache_and_restart()
 
-    def _draw(self, image: Image.Image, draw: ImageDraw.ImageDraw, real_box) -> None:
+    def _draw(self, ctx, frame) -> None:
         if self.cached_text_image is None:
             self._render_text_to_cache()
         if self.cached_text_image is None:
@@ -421,8 +421,8 @@ class ScrollingText(TextWidget):
         h_margin, v_margin = self._get_margins()
         tw, th = self._get_text_size()
         extra = self.outline
-        hroom = real_box.width - h_margin - extra
-        vroom = real_box.height - v_margin - extra
+        hroom = frame.width - h_margin - extra
+        vroom = frame.height - v_margin - extra
 
         if hroom <= 0 or vroom <= 0:
             return
@@ -434,13 +434,13 @@ class ScrollingText(TextWidget):
                 hoffset = hroom - tw
             else:
                 hoffset = int((hroom - tw) / 2)
-            x_pos = real_box.x0 + h_margin + hoffset
-            y_pos = real_box.y0 + v_margin
+            x_pos = frame.x0 + h_margin + hoffset
+            y_pos = frame.y0 + v_margin
             crop_box = (0, 0, tw, th)
-            image.paste(self.cached_text_image.crop(crop_box), (x_pos, y_pos))
+            ctx.image.paste(self.cached_text_image.crop(crop_box), (x_pos, y_pos))
         else:
-            x_pos = real_box.x0 + h_margin
-            y_pos = real_box.y0 + v_margin
+            x_pos = frame.x0 + h_margin
+            y_pos = frame.y0 + v_margin
             crop_width = min(hroom, self.cached_text_width - self.scroll_offset)
             crop_box = (self.scroll_offset, 0, self.scroll_offset + crop_width, th)
-            image.paste(self.cached_text_image.crop(crop_box), (x_pos, y_pos))
+            ctx.image.paste(self.cached_text_image.crop(crop_box), (x_pos, y_pos))

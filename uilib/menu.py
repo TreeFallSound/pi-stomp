@@ -39,6 +39,7 @@ class Menu(Dialog):
         self.item_h = 0
         self.text_halign = text_halign
         self.default_item = default_item
+        self._scroll_y = 0
         super(Menu,self).__init__(width = 0, height = 0, **kwargs)
 
         # Create item widgets
@@ -58,6 +59,18 @@ class Menu(Dialog):
             h = h + self.item_h
 
         self.refresh()
+
+    def _scroll_into_view(self, box):
+        if self.max_height is None or self.item_h == 0:
+            return False
+        if box.y0 >= 0 and box.y1 <= self.max_height:
+            return False
+        delta = box.y0 if box.y0 < 0 else box.y1 - self.max_height
+        self._scroll_y += delta
+        for w in self.children:
+            w.box = Box(w.box.x0, w.box.y0 - delta, w.box.x1, w.box.y1 - delta)
+        self.refresh()
+        return True
 
     def _dismiss(self, arg=None):
         stack = self._get_stack()
