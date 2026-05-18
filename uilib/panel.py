@@ -14,15 +14,9 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from abc import ABC
-from pathlib import Path
-
-from PIL import ImageDraw, Image
-
-from uilib.box import Box
-from uilib.container import ContainerWidget
-from uilib.misc import InputEvent, trace
+from uilib.container import *
 from uilib.paint import PaintContext
-from uilib.widget import Widget
+from pathlib import Path
 
 #
 # Note about coordinates:

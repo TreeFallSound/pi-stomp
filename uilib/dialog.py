@@ -15,13 +15,8 @@
 
 import functools
 
-from PIL import ImageDraw
-
-from uilib.box import Box
-from uilib.config import Config
-from uilib.misc import trace
-from uilib.panel import Panel, PanelDecorator
-from uilib.text import TextWidget, TextHAlign, WidgetAlign, get_text_size
+from uilib.panel import *
+from uilib.text import *
 
 
 def _pixel_wrap(text: str, font, max_px: int) -> str:
