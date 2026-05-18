@@ -13,9 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from enum import Flag
-from uilib.misc import *
-from uilib.box import *
+from uilib.box import Box
+from uilib.misc import InputEvent, WidgetAlign, trace
 
 # This is the root of all evil: the Widget class, parent of all things
 # displayed on the screen.
@@ -32,7 +31,7 @@ from uilib.box import *
 #
 # A widget visibility is controlled by its hide() and show() method. A widget
 # can only be made visible if it's bounding box has been established (non-None)
-# 
+#
 # This means that the order in which you create the widget hierarchy matters,
 # for example, if you create a widget C child of B, and later attach B to A,
 # while you have A -> B -> C hierarchy, C will only inherit from B not from A
@@ -68,20 +67,22 @@ from uilib.box import *
 #   harder to properly define.
 #
 
+
 class Widget:
     """Base Widget class, base of all UI element"""
 
     # Inherited attributes with defaults
-    INH_ATTRS = { 'bkgnd_color': (0,0,0),
-                  'fgnd_color' : (255,255,255),
-                  'sel_color'  : (255,255,0),
-                  'sel_width'  : 2,
-                  'sel_radius' : None
+    INH_ATTRS = {
+        "bkgnd_color": (0, 0, 0),
+        "fgnd_color": (255, 255, 255),
+        "sel_color": (255, 255, 0),
+        "sel_width": 2,
+        "sel_radius": None,
     }
 
-    def __init__(self, box, align = None, parent = None, visible = True, object=None, **kwargs):
+    def __init__(self, box: Box, align=None, parent=None, visible=True, object=None, **kwargs):
         """box    : Box object relative to parent
-           parent : parent widget
+        parent : parent widget
         """
         assert box is None or isinstance(box, Box)
         assert parent is None or isinstance(parent, Widget)
@@ -105,18 +106,18 @@ class Widget:
         self.selectable = False
 
         # Non-inherited attributes
-        self.label = self._get_arg(kwargs, 'label', None)
-        self.outline = self._get_arg(kwargs, 'outline', 0)
-        self.outline_radius = self._get_arg(kwargs, 'outline_radius', None)
-        self.outline_color = self._get_arg(kwargs, 'outline_color', None)
-        self.action = self._get_arg(kwargs, 'action', None)
+        self.label = self._get_arg(kwargs, "label", None)
+        self.outline = self._get_arg(kwargs, "outline", 0)
+        self.outline_radius = self._get_arg(kwargs, "outline_radius", None)
+        self.outline_color = self._get_arg(kwargs, "outline_color", None)
+        self.action = self._get_arg(kwargs, "action", None)
 
         # Inheritable attributes
         #
         # XXX REPLACE INH_ATTRS with Config() defaults
         self._init_attrs(Widget.INH_ATTRS, kwargs)
 
-        trace(self, "Widget.__init__: vis=",self.visible,"parent=",parent)
+        trace(self, "Widget.__init__: vis=", self.visible, "parent=", parent)
 
         # Finally attach to parent if requested
         if parent is not None:
@@ -134,7 +135,7 @@ class Widget:
 
     def _init_attrs(self, defaults, args):
         # This might be called before those were initialized:
-        if not hasattr(self, 'default_attrs'):
+        if not hasattr(self, "default_attrs"):
             self.default_attrs = {}
             self.explicit_attrs = {}
 
@@ -155,9 +156,7 @@ class Widget:
                 val = self.explicit_attrs[k]
             else:
                 # Does the parent have one ? Use it, otherwise use default
-                if (self.parent is not None and
-                    hasattr(self.parent, k) and
-                    getattr(self.parent, k) is not None):
+                if self.parent is not None and hasattr(self.parent, k) and getattr(self.parent, k) is not None:
                     val = getattr(self.parent, k)
                 else:
                     val = self.default_attrs[k]
@@ -249,7 +248,7 @@ class Widget:
         if self.visible:
             self.parent._compose(widget, orig_box, real_box.offset(self.box))
 
-    def set_outline(self, width, color = None):
+    def set_outline(self, width, color=None):
         self.outline = width
         self.outline_color = color
 
@@ -272,27 +271,27 @@ class Widget:
     def set_action(self, action):
         self.action = action
 
-    def show(self, refresh = True):
+    def show(self, refresh=True):
         """Make a widget visible"""
         if not self.visible:
             trace(self, "show ! refresh=", refresh)
-            assert(self.box != None)
-            assert(self.parent != None)
+            assert self.box is not None
+            assert self.parent is not None
             self.visible = True
-            if self.parent != None:
+            if self.parent is not None:
                 self._setup_act_attrs()
                 self._setup()
         if refresh:
             self.refresh()
 
-    def hide(self, refresh = True):
+    def hide(self, refresh=True):
         """Make a widget invisible"""
         if self.visible:
             self.visible = False
             if refresh:
                 self.parent.refresh()
 
-    def set_box(self, box, realign = False, refresh = True):
+    def set_box(self, box, realign=False, refresh=True):
         """Change/set a widget box"""
         old_visible = self.visible
         if box is None:
@@ -325,7 +324,7 @@ class Widget:
 
     def detach(self):
         """Detach a widget from the parent"""
-        trace(self, "Widget detach, parent=",self.parent)
+        trace(self, "Widget detach, parent=", self.parent)
         if self.parent is not None:
             self.parent.children.remove(self)
             self.parent._notify_detach(self)
@@ -368,15 +367,14 @@ class Widget:
         while len(self.children) > 0:
             self.children[0].detach()
         self.detach()
-        
+
     def _notify_detach(self, widget):
         if self.parent:
             self.parent.notify_detach(widget)
 
-    def refresh(self, box = None):
-        """Refresh widget (and children)
-        """
-        trace(self, "Widget.refresh: vis=",self.visible,"parent=", self.parent)
+    def refresh(self, box: Box | None = None):
+        """Refresh widget (and children)"""
+        trace(self, "Widget.refresh: vis=", self.visible, "parent=", self.parent)
         if self.parent is None or not self.visible:
             return
         if box is None:
@@ -388,7 +386,7 @@ class Widget:
             self._do_draw(image, draw, real_box)
             self.parent._unfocus(box)
 
-    def scroll_into_view(self):        
+    def scroll_into_view(self):
         """Scroll parent if necessary to ensure this object is into view. Only works
            on a visible object attached to a parent
         """
