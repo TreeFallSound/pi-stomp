@@ -13,30 +13,38 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from uilib.widget import *
-from uilib.paint import PaintContext
+from typing_extensions import override
 from PIL import Image, ImageDraw
+
+from uilib.box import Box
+from uilib.misc import trace
+from uilib.paint import PaintContext
+from uilib.widget import Widget
+
 
 class ContainerWidget(Widget):
     """A Widget container with an Image backing store, Children are drawn inside
-       the container.
-       A container also supports scrolling its content.
+    the container.
+    A container also supports scrolling its content.
     """
+
     # Inherited attributes with defaults
-    INH_ATTRS = { 'image_format' : 'RGB' }
+    INH_ATTRS = {"image_format": "RGB"}
+
+    mask: Image.Image | None
 
     def __init__(self, box, **kwargs):
         # Non-inherited attributes
-        self.mask_format = self._get_arg(kwargs, 'mask_format', None)
+        self.mask_format = self._get_arg(kwargs, "mask_format", None)
 
         # Inheritable attributes
         self._init_attrs(ContainerWidget.INH_ATTRS, kwargs)
 
-        self.image = None
-        self.old_box = None
+        self.image: Image.Image | None = None
+        self.old_box: Box | None = None
         self.offset = (0, 0)
 
-        super(ContainerWidget,self).__init__(box = box, **kwargs)
+        super(ContainerWidget, self).__init__(box=box, **kwargs)
 
         # A container doesn't need a parent to be setup so ensure that happens
         self._setup_act_attrs()
@@ -130,13 +138,12 @@ class ContainerWidget(Widget):
         self.parent._propagate_dirty(parent_clip)
 
     def scroll(self, offset):
-        print(offset)
         self.offset = offset
         # XXX Optimize ? at least optionally for things like menus, use a local blit
         # of the backing store instead of a full refresh to work around slow text
         # drawing speed with Pillow on 64bit ?
         self.refresh()
-    
+
     def __adj_off_step(self, off, step):
         aoff = abs(off)
         s = (aoff + (step - 1)) // step
@@ -145,30 +152,29 @@ class ContainerWidget(Widget):
         else:
             return -s * step
 
-    def _scroll_into_view(self, box):
-        b0 = box
+    def _scroll_delta(self, box: Box, movex: int, movey: int, orig_box: Box):
+        """
+        Translate overflow on each axis into a scroll adjustment.
+        Default policy: page-snap to the moving box's own dimensions, and
+        reset y to 0 when the requested box originates at the container top.
+        """
+        dx = self.__adj_off_step(movex, box.width) if movex else 0
+        dy = self.__adj_off_step(movey, box.height) if movey else 0
+        if orig_box.y0 == 0:
+            dy = -self.offset[1]
+        return dx, dy
+
+    def _scroll_into_view(self, box: Box):
+        orig_box = box
         box = box.deoffset(self.offset)
-        x0,y0,x1,y1 = box.rect
-        ox,oy = self.offset
-        brx,bry = self.box.width, self.box.height
-        movex,movey = 0,0
-        if x0 < 0:
-            movex = x0
-        if y0 < 0:
-            movey = y0
-        if x1 > brx:
-            movex = x1 - brx
-        if y1 > bry:
-            movey = y1 - bry
-        if movex != 0 or movey != 0:
-            ox += self.__adj_off_step(movex, box.width)
-            oy += self.__adj_off_step(movey, box.height)
-            if b0.y0 == 0:
-                # XXX hack to allow scrolling to reset to original location when box.y0 is 0 (container top)
-                # TODO would prefer a better way
-                self.scroll((ox, 0))
-            else:
-                self.scroll((ox, oy))
-            return True
-        return False
+        x0, y0, x1, y1 = box.rect
+        brx, bry = self.box.width, self.box.height
+        movex = x0 if x0 < 0 else (x1 - brx if x1 > brx else 0)
+        movey = y0 if y0 < 0 else (y1 - bry if y1 > bry else 0)
+        if not (movex or movey):
+            return False
+        dx, dy = self._scroll_delta(box, movex, movey, orig_box)
+        ox, oy = self.offset
+        self.scroll((ox + dx, oy + dy))
+        return True
 

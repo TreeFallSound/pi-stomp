@@ -14,8 +14,9 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from enum import Flag
-from uilib.misc import *
-from uilib.box import *
+
+from uilib.box import Box
+from uilib.misc import InputEvent, WidgetAlign, trace
 from uilib.paint import PaintContext
 
 # This is the root of all evil: the Widget class, parent of all things
