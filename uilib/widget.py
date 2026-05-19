@@ -406,7 +406,9 @@ class Widget:
             return
         if clip.is_empty():
             return
-        ctx = PaintContext(container.image, container.draw, clip)
+        stack = self._get_stack()
+        pool = stack.pool if stack else None
+        ctx = PaintContext(container.image, container.draw, clip, pool)
         self._do_draw(ctx, frame)
         container._propagate_dirty(clip)
 

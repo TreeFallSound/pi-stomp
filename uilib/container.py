@@ -76,7 +76,8 @@ class ContainerWidget(Widget):
         if not self.image:
             return
         local_clip = self.box.norm()
-        ctx = PaintContext(self.image, self.draw, local_clip)
+        stack = self._get_stack()
+        ctx = PaintContext(self.image, self.draw, local_clip, stack.pool if stack else None)
         local_frame = self.box.norm()
         self._draw_erase(ctx, local_frame)
         self._draw(ctx, local_frame)
@@ -96,7 +97,7 @@ class ContainerWidget(Widget):
             # 1. Update our own backing store (only the dirty region)
             local_clip = pctx.clip.deoffset(pframe.topleft)
             local_frame = self.box.norm()
-            local_ctx = PaintContext(self.image, self.draw, local_clip)
+            local_ctx = PaintContext(self.image, self.draw, local_clip, pctx.pool)
             self._draw_erase(local_ctx, local_frame)
             self._draw(local_ctx, local_frame)
             for c in self.children:

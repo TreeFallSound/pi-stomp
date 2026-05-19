@@ -10,7 +10,7 @@ import pytest
 from PIL import Image, ImageDraw
 
 from uilib.box import Box
-from uilib.paint import PaintContext
+from uilib.paint import PaintContext, BufferPool
 from uilib.container import ContainerWidget
 from uilib.widget import Widget
 
@@ -18,6 +18,7 @@ from uilib.widget import Widget
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _container(w=100, h=100, outline_radius=None, **kwargs):
     box = Box(0, 0, w, h)
@@ -40,6 +41,7 @@ def _painted_colors(image):
 # Box.contains
 # ---------------------------------------------------------------------------
 
+
 class TestBoxContains:
     def test_identical_boxes(self):
         b = Box(10, 10, 50, 50)
@@ -52,7 +54,7 @@ class TestBoxContains:
 
     def test_touching_edge_is_contained(self):
         outer = Box(0, 0, 100, 100)
-        edge = Box(0, 0, 100, 50)   # shares top/left/right edge
+        edge = Box(0, 0, 100, 50)  # shares top/left/right edge
         assert outer.contains(edge)
 
     def test_partial_overlap_is_not_contained(self):
@@ -67,13 +69,14 @@ class TestBoxContains:
 
     def test_empty_box_contained(self):
         outer = Box(0, 0, 100, 100)
-        empty = Box(50, 50, 50, 50)   # zero-area
+        empty = Box(50, 50, 50, 50)  # zero-area
         assert outer.contains(empty)
 
 
 # ---------------------------------------------------------------------------
 # Widget._draw_erase
 # ---------------------------------------------------------------------------
+
 
 class TestDrawErase:
     """_draw_erase erases with a plain rect when the dirty region fits in the
@@ -96,8 +99,8 @@ class TestDrawErase:
 
     def test_no_radius_erases_only_clip(self):
         frame = Box(0, 0, 100, 100)
-        clip  = Box(10, 10, 50, 50)
-        img   = self._erase_and_read(clip, frame, outline_radius=None)
+        clip = Box(10, 10, 50, 50)
+        img = self._erase_and_read(clip, frame, outline_radius=None)
         # Clipped region is black
         assert img.getpixel((20, 20)) == (0, 0, 0)
         # Outside clip stays white
@@ -106,12 +109,12 @@ class TestDrawErase:
     def test_radius_safe_interior_erases_only_clip(self):
         """Dirty region inside the safe interior → plain rect erase."""
         frame = Box(0, 0, 100, 100)
-        r     = 10
+        r = 10
         # clip well inside the safe zone (r..100-r on each axis)
-        clip  = Box(20, 20, 80, 80)
-        img   = self._erase_and_read(clip, frame, outline_radius=r)
-        assert img.getpixel((50, 50)) == (0, 0, 0)   # inside clip → erased
-        assert img.getpixel((5, 5))   == (255, 255, 255)  # corner → untouched
+        clip = Box(20, 20, 80, 80)
+        img = self._erase_and_read(clip, frame, outline_radius=r)
+        assert img.getpixel((50, 50)) == (0, 0, 0)  # inside clip → erased
+        assert img.getpixel((5, 5)) == (255, 255, 255)  # corner → untouched
 
     def test_radius_partial_clip_erases_only_intersection(self):
         """Partial clip on a rounded widget → plain rect erase of the intersection.
@@ -119,9 +122,9 @@ class TestDrawErase:
         not _draw_erase's.  A leaf widget with outline_radius still gets a rect
         erase when the clip is smaller than the frame."""
         frame = Box(0, 0, 100, 100)
-        r     = 10
-        clip  = Box(0, 0, 20, 20)
-        img   = self._erase_and_read(clip, frame, outline_radius=r)
+        r = 10
+        clip = Box(0, 0, 20, 20)
+        img = self._erase_and_read(clip, frame, outline_radius=r)
         # Only the clipped region is erased
         assert img.getpixel((10, 10)) == (0, 0, 0)
         # Centre untouched — no full-frame expansion at this level
@@ -130,17 +133,18 @@ class TestDrawErase:
     def test_radius_full_frame_uses_rounded_rectangle(self):
         """When clip == frame, always use rounded_rectangle (corners preserved)."""
         frame = Box(0, 0, 100, 100)
-        r     = 10
-        img   = self._erase_and_read(frame, frame, outline_radius=r)
+        r = 10
+        img = self._erase_and_read(frame, frame, outline_radius=r)
         # Centre erased
         assert img.getpixel((50, 50)) == (0, 0, 0)
         # Absolute corner pixels NOT erased (rounded rect leaves them)
-        assert img.getpixel((0, 0))   == (255, 255, 255)
+        assert img.getpixel((0, 0)) == (255, 255, 255)
 
 
 # ---------------------------------------------------------------------------
 # ContainerWidget._do_draw clip expansion
 # ---------------------------------------------------------------------------
+
 
 class TestContainerClipExpansion:
     """When a rounded container's dirty clip touches a corner, _do_draw must
@@ -153,10 +157,10 @@ class TestContainerClipExpansion:
     def test_no_radius_no_expansion(self):
         c = _container(outline_radius=None)
         # Paint a sentinel pixel in the top-left corner of the container image
-        c.image.putpixel((5, 5), (255, 0, 0))
+        c.image.putpixel((5, 5), (255, 0, 0))  # pyright: ignore[reportOptionalMemberAccess]
 
         # Dirty clip covers only the bottom-right area — does not include (5,5)
-        clip  = Box(50, 50, 100, 100)
+        clip = Box(50, 50, 100, 100)
         frame = Box(0, 0, 100, 100)
         parent_img = Image.new("RGB", (100, 100), (128, 128, 128))
         parent_draw = ImageDraw.Draw(parent_img)
@@ -164,7 +168,7 @@ class TestContainerClipExpansion:
 
         c._do_draw(ctx, frame)
         # The sentinel pixel in container image should be unchanged (no expansion)
-        assert c.image.getpixel((5, 5)) == (255, 0, 0)
+        assert c.image.getpixel((5, 5)) == (255, 0, 0)  # pyright: ignore[reportOptionalMemberAccess]
 
     def test_radius_corner_clip_does_not_expand(self):
         """A clip touching a corner does NOT expand. Framework-level clipping
@@ -174,18 +178,19 @@ class TestContainerClipExpansion:
 
         # Add a child widget that tracks whether it was drawn
         drawn_frames = []
+
         class TrackingWidget(Widget):
             def _draw(self, ctx, frame):
                 drawn_frames.append(frame.copy())
 
-        child_box = Box(5, 5, 40, 20)   # in top-left — inside corner region
+        child_box = Box(5, 5, 40, 20)  # in top-left — inside corner region
         child = TrackingWidget(box=child_box)
         child.attach(c)
         child.bkgnd_color = (0, 0, 0)
         child.fgnd_color = (255, 255, 255)
 
         # Dirty clip covers only the bottom-right, away from the child
-        clip  = Box(60, 60, 100, 100)
+        clip = Box(60, 60, 100, 100)
         frame = Box(0, 0, 100, 100)
         parent_img = Image.new("RGB", (100, 100))
         ctx = PaintContext(parent_img, ImageDraw.Draw(parent_img), clip)
@@ -194,12 +199,14 @@ class TestContainerClipExpansion:
 
         # Child must NOT have been drawn (no expansion)
         assert len(drawn_frames) == 0
+
     def test_radius_safe_interior_clip_does_not_expand(self):
         """A clip fully inside the safe interior should NOT trigger expansion."""
         r = 10
         c = _container(w=100, h=100, outline_radius=r)
 
         drawn_frames = []
+
         class TrackingWidget(Widget):
             def _draw(self, ctx, frame):
                 drawn_frames.append(frame.copy())
@@ -211,7 +218,7 @@ class TestContainerClipExpansion:
         child.fgnd_color = (255, 255, 255)
 
         # Dirty clip is fully in the safe interior (r..100-r)
-        clip  = Box(20, 20, 80, 80)
+        clip = Box(20, 20, 80, 80)
         frame = Box(0, 0, 100, 100)
         parent_img = Image.new("RGB", (100, 100))
         ctx = PaintContext(parent_img, ImageDraw.Draw(parent_img), clip)
@@ -223,8 +230,70 @@ class TestContainerClipExpansion:
 
 
 # ---------------------------------------------------------------------------
-# ContainerWidget._propagate_dirty scroll offset
+# BufferPool
 # ---------------------------------------------------------------------------
+
+
+class TestBufferPool:
+    def test_best_fit_allocation(self):
+        pool = BufferPool((320, 240))
+
+        # 1. First allocation
+        img1 = pool.acquire((100, 100))
+        assert img1.size == (100, 100)
+        pool.release(img1)
+
+        # 2. Exact match reuse
+        img2 = pool.acquire((100, 100))
+        assert img2 is img1
+        pool.release(img2)
+
+        # 3. New allocation for larger request
+        img3 = pool.acquire((150, 150))
+        assert img3.size == (150, 150)
+        assert img3 is not img1
+        pool.release(img3)
+
+        # 4. Best fit reuse: img1(100x100) and img3(150x150) are free.
+        # Request for 120x120 should take img3.
+        img4 = pool.acquire((120, 120))
+        assert img4 is img3
+        pool.release(img4)
+
+        # Request for 80x80 should take img1.
+        img5 = pool.acquire((80, 80))
+        assert img5 is img1
+        pool.release(img5)
+
+    def test_max_size_cap(self):
+        pool = BufferPool((100, 100))
+        img = pool.acquire((200, 200))
+        assert img.size == (100, 100)
+
+    def test_pool_lifecycle_and_nesting(self):
+        """Verify that pool size is bounded by nesting depth, not operation count."""
+        pool = BufferPool((320, 240))
+        img = Image.new("RGBA", (320, 240))
+        draw = ImageDraw.Draw(img)
+
+        # Force slow path with a small clip
+        ctx = PaintContext(img, draw, Box(0, 0, 5, 5), pool)
+
+        # 1. Serial draws (should reuse same buffer)
+        for _ in range(100):
+            with ctx.painting(Box(0, 0, 100, 100)):
+                pass
+        assert len(pool._free) == 1
+
+        # 2. Nested draws (should grow to depth)
+        with ctx.painting(Box(0, 0, 100, 100)) as (ctx2, _):
+            # Inner clip must also be 'slow path' relative to ctx2.clip
+            # ctx2.clip is (0,0,5,5) re-anchored.
+            with ctx2.painting(Box(0, 0, 100, 100)):
+                assert len(pool._free) == 0  # 2 are currently active
+            assert len(pool._free) == 1  # Inner released
+        assert len(pool._free) == 2  # Both released
+
 
 class TestPropagateDirtyScrollOffset:
     """_propagate_dirty must account for self.offset (scroll) when translating
@@ -241,7 +310,7 @@ class TestPropagateDirtyScrollOffset:
 
         parent = CapturingParent(box=Box(0, 0, 200, 200))
         c = _container(w=100, h=100)
-        c.box = Box(20, 30, 120, 130)   # container positioned at (20,30)
+        c.box = Box(20, 30, 120, 130)  # container positioned at (20,30)
         c.parent = parent
 
         local_clip = Box(10, 10, 50, 50)
@@ -265,7 +334,7 @@ class TestPropagateDirtyScrollOffset:
         c = _container(w=100, h=100)
         c.box = Box(20, 30, 120, 130)
         c.parent = parent
-        c.offset = (5, 10)   # scrolled: content shifted by (5,10)
+        c.offset = (5, 10)  # scrolled: content shifted by (5,10)
 
         local_clip = Box(10, 10, 50, 50)
         c._propagate_dirty(local_clip)
