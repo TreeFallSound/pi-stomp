@@ -13,12 +13,14 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing import Tuple
+from typing import TYPE_CHECKING, Tuple
 from uilib.misc import *
 from uilib.box import *
-from uilib.container import ContainerWidget
 from uilib.paint import PaintContext
-from uilib.panel import PanelStack
+
+if TYPE_CHECKING:
+    from uilib.container import ContainerWidget
+    from uilib.panel import PanelStack
 
 # This is the root of all evil: the Widget class, parent of all things
 # displayed on the screen.
@@ -228,7 +230,7 @@ class Widget:
     # box is established early and thus rely on the stack bounding box. When a
     # panel is popped off the stack, it still keeps its reference to said stack
 
-    def _build_paint_target(self, dirty: Box) -> Tuple[ContainerWidget, Box, Box] | Tuple[None, None, None]:
+    def _build_paint_target(self, dirty: Box) -> Tuple["ContainerWidget", Box, Box] | Tuple[None, None, None]:
         """Walk up to the nearest ContainerWidget, accumulating frame offset.
 
         Returns (container, frame, clip) where:
@@ -237,6 +239,8 @@ class Widget:
           clip      : dirty translated into container-local coords, clipped to container bounds
         Returns (None, None, None) if no visible ContainerWidget ancestor found.
         """
+        from uilib.container import ContainerWidget
+
         off_x, off_y = 0, 0
         curr = self
         while curr is not None:
