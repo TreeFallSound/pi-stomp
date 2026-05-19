@@ -304,6 +304,85 @@ class TestDoDrawBlit:
 
 
 # ---------------------------------------------------------------------------
+# 5b. Scroll-by-blit: scrolling back over already-painted children
+#     must not re-invoke child _draw — neither in scroll() nor in the
+#     subsequent do_draw on a parent surface.  do_draw on a virtual
+#     container is pure cache-blit.
+# ---------------------------------------------------------------------------
+
+
+class TestScrollByBlitNoRebuild:
+    def _paint_all_and_spy(self, c, items):
+        """Paint every item into the cache, then install per-item _draw spies
+        and return the counters dict.  After this, all items are _painted and
+        not _dirty, so subsequent paints would be redundant."""
+        c.refresh()                            # paints items 0..2
+        c.scroll((0, (N_ITEMS - VIEWPORT_H // ITEM_H) * ITEM_H))  # paints items 3..5
+        c.scroll((0, 0))                       # back to top; everything cached
+
+        # Sanity: every item must be painted and clean before the spy goes in.
+        for w, _ in items:
+            assert w._painted and not w._dirty
+
+        counts = {i: 0 for i in range(len(items))}
+        for i, (w, _) in enumerate(items):
+            orig = w._draw
+
+            def make_spy(orig, idx):
+                def _spy(ctx):
+                    counts[idx] += 1
+                    orig(ctx)
+                return _spy
+
+            w._draw = make_spy(orig, i)
+
+        return counts
+
+    def test_scroll_over_painted_children_does_no_child_draw(self):
+        """scroll() to a region whose children are all cached+clean must not
+        invoke any child _draw."""
+        c = _virtual_container()
+        items = _attach_items(c)
+        counts = self._paint_all_and_spy(c, items)
+
+        c.scroll((0, VIEWPORT_H))  # items 3..5 — all already painted+clean
+
+        assert all(v == 0 for v in counts.values()), (
+            f"expected zero child redraws on scroll-over-painted, got {counts}"
+        )
+
+    def test_do_draw_after_scroll_is_pure_blit(self):
+        """After scroll, do_draw on a parent surface must be a pure cache blit:
+        no child _draw invocations.  Pixels must still match the cached state."""
+        from uilib.paint import BufferPool
+
+        c = _virtual_container()
+        items = _attach_items(c)
+        counts = self._paint_all_and_spy(c, items)
+
+        # Scroll to a previously-painted region, then have a "parent" composite us.
+        c.scroll((0, VIEWPORT_H))
+        parent_img = Image.new("RGB", (VIEWPORT_W, VIEWPORT_H), (128, 128, 128))
+        pool = BufferPool((VIEWPORT_W, VIEWPORT_H))
+        ctx = PaintContext(
+            parent_img,
+            ImageDraw.Draw(parent_img),
+            Box.xywh(0, 0, VIEWPORT_W, VIEWPORT_H),
+            pool,
+        )
+        c.do_draw(ctx, Box.xywh(0, 0, VIEWPORT_W, VIEWPORT_H))
+
+        assert all(v == 0 for v in counts.values()), (
+            f"do_draw on virtual must not invoke child _draw; got {counts}"
+        )
+
+        # Item 3 (first visible row after scroll) should appear at the top.
+        _, item3_color = items[VIEWPORT_H // ITEM_H]
+        top_pixel = parent_img.getpixel((VIEWPORT_W // 2, ITEM_H // 2))
+        assert top_pixel[:3] == item3_color[:3]
+
+
+# ---------------------------------------------------------------------------
 # 6. Pixel-level blit: scroll shows the right slice
 # ---------------------------------------------------------------------------
 
