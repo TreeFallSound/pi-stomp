@@ -28,6 +28,10 @@ class ContainerWidget(Widget):
     def __init__(self, box, **kwargs):
         # Non-inherited attributes
         self.mask_format = self._get_arg(kwargs, 'mask_format', None)
+        self.virtual = self._get_arg(kwargs, 'virtual', False)
+        self._content_height = self._get_arg(kwargs, 'content_height', None)
+        kwargs.pop('virtual', None)
+        kwargs.pop('content_height', None)
 
         # Inheritable attributes
         self._init_attrs(ContainerWidget.INH_ATTRS, kwargs)
@@ -47,11 +51,12 @@ class ContainerWidget(Widget):
         super(ContainerWidget,self)._setup()
 
         w = self.box.width
-        h = self.box.height
+        h = self._content_height if (self.virtual and self._content_height) else self.box.height
 
         # Check if we are already setup for this box
         if (self.image != None and self.old_box != None and
-            self.old_box.width == w and self.old_box.height == h):
+            self.old_box.width == w and self.old_box.height == self.box.height and
+            self.image.height == h):
             return
 
         trace(self, "container setup, box=", self.box, "old_box=", self.old_box)
@@ -65,6 +70,15 @@ class ContainerWidget(Widget):
             self.mask = Image.new(self.mask_format, (w, h))
         else:
             self.mask = None
+
+    def _viewport(self) -> Box:
+        """Visible region in content (image) coords."""
+        ox, oy = self.offset
+        return Box.xywh(ox, oy, self.box.width, self.box.height)
+
+    def _content_bounds(self) -> Box:
+        """Full backing image bounds — used as clip ceiling for children."""
+        return Box(0, 0, self.image.width, self.image.height)
         
     def _visible_box(self, box):
         if box is None:
@@ -79,20 +93,39 @@ class ContainerWidget(Widget):
         trace(self, "ContainerWidget.refresh: vis=", self.visible, "parent=", self.parent)
         if not self.image:
             return
-        local_clip = self.box.norm()
-        local_frame = self.box.norm()
         stack = self._get_stack()
         pool = stack.pool if stack else _NAIVE_POOL
-        ctx = PaintContext(self.image, self.draw, local_clip, pool, frame=local_frame)
-        self._draw_erase(ctx)
-        self._draw(ctx)
-        for c in self.children:
-            if c.visible:
-                c.do_draw(ctx, c.box.offset(local_frame))
-        self._draw_outline(ctx)
-        self._draw_selection(ctx)
-        if self.visible and self.parent is not None:
-            self.propagate_dirty(local_clip)
+        if self.virtual:
+            viewport = self._viewport()
+            local_frame = self._content_bounds()
+            ctx = PaintContext(self.image, self.draw, local_frame, pool, frame=local_frame)
+            self._draw_erase(ctx)
+            self._draw(ctx)
+            for c in self.children:
+                if c.visible:
+                    if viewport.intersects(c.box):
+                        c.do_draw(ctx, c.box)
+                        c._painted = True
+                        c._dirty = False
+                    else:
+                        c._dirty = True
+            self._draw_outline(ctx)
+            self._draw_selection(ctx)
+            if self.visible and self.parent is not None:
+                self.propagate_dirty(viewport)
+        else:
+            local_clip = self.box.norm()
+            local_frame = self.box.norm()
+            ctx = PaintContext(self.image, self.draw, local_clip, pool, frame=local_frame)
+            self._draw_erase(ctx)
+            self._draw(ctx)
+            for c in self.children:
+                if c.visible:
+                    c.do_draw(ctx, c.box.offset(local_frame))
+            self._draw_outline(ctx)
+            self._draw_selection(ctx)
+            if self.visible and self.parent is not None:
+                self.propagate_dirty(local_clip)
 
     def do_draw(self, ctx: PaintContext, frame: Box):
         """Draw this container's pixels into a parent's PaintContext.
@@ -119,10 +152,10 @@ class ContainerWidget(Widget):
 
             # 2. Blit our backing store into pctx.image (which might be a temp)
             # We only need to blit the local_clip portion.
-            src_box = local_clip
-            # local_clip is relative to self.image (0,0)
-            # pctx.image is aligned with pframe.
-            # So local_clip.topleft in pctx.image coords is pframe.x0 + local_clip.x0, etc.
+            # For virtual (tall) containers, local_clip is in viewport coords, so we must
+            # shift by self.offset to address the correct slice of the tall image.
+            src_box = local_clip.offset(self.offset)
+            # dst stays at the viewport position within pctx.image.
             dst_topleft = (pframe.x0 + local_clip.x0, pframe.y0 + local_clip.y0)
 
             sub = self.image.crop(src_box.rect)
@@ -144,12 +177,25 @@ class ContainerWidget(Widget):
         self.parent.propagate_dirty(parent_clip)
 
     def scroll(self, offset):
-        print(offset)
         self.offset = offset
-        # XXX Optimize ? at least optionally for things like menus, use a local blit
-        # of the backing store instead of a full refresh to work around slow text
-        # drawing speed with Pillow on 64bit ?
-        self.refresh()
+        if not self.virtual:
+            self.refresh()
+            return
+        if not self.image:
+            return
+        viewport = self._viewport()
+        stack = self._get_stack()
+        pool = stack.pool if stack else _NAIVE_POOL
+        content_frame = self._content_bounds()
+        ctx = PaintContext(self.image, self.draw, content_frame, pool, frame=content_frame)
+        for c in self.children:
+            if c.visible and viewport.intersects(c.box):
+                if not c._painted or c._dirty:
+                    c.do_draw(ctx, c.box)
+                    c._painted = True
+                    c._dirty = False
+        if self.visible and self.parent is not None:
+            self.propagate_dirty(viewport)
     
     def __adj_off_step(self, off, step):
         aoff = abs(off)

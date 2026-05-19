@@ -108,6 +108,8 @@ class Widget:
         self.object = object
         self.selected = False
         self.selectable = False
+        self._painted = False
+        self._dirty = False
 
         # Non-inherited attributes
         self.label = self._get_arg(kwargs, 'label', None)
@@ -257,7 +259,7 @@ class Widget:
                 frame = Box.xywh(off_x, off_y, self.box.width, self.box.height)
                 # clip = the dirty region re-anchored to the same container coords
                 clip = dirty.offset((off_x - self.box.x0, off_y - self.box.y0))
-                return (parent, frame, clip.intersection(parent.box.norm()))
+                return (parent, frame, clip.intersection(parent._content_bounds()))
                 
             curr = parent
             
@@ -401,10 +403,15 @@ class Widget:
             return
         if clip.is_empty():
             return
+        if container.virtual and not container._viewport().intersects(frame):
+            self._dirty = True
+            return
         stack = self._get_stack()
         pool = stack.pool if stack else _NAIVE_POOL
         ctx = PaintContext(container.image, container.draw, clip, pool)
         self.do_draw(ctx, frame)
+        self._painted = True
+        self._dirty = False
         container.propagate_dirty(clip)
 
     def scroll_into_view(self):        
