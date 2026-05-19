@@ -138,17 +138,21 @@ class ContainerWidget(Widget):
         with ctx.painting(frame) as pctx:
             pframe = pctx.frame
             assert pframe is not None
-            # 1. Update our own backing store (only the dirty region)
+            # 1. Update our own backing store (only the dirty region).
+            #    Skip for virtual containers — their backing image is maintained
+            #    incrementally by refresh()/scroll() and a partial-clip redraw
+            #    here would produce a local_frame/local_clip mismatch.
             local_clip = pctx.clip.deoffset(pframe.topleft)
             local_frame = self.box.norm()
-            local_ctx = PaintContext(self.image, self.draw, local_clip, pctx.pool, frame=local_frame)
-            self._draw_erase(local_ctx)
-            self._draw(local_ctx)
-            for c in self.children:
-                if c.visible:
-                    c.do_draw(local_ctx, c.box.offset(local_frame))
-            self._draw_outline(local_ctx)
-            self._draw_selection(local_ctx)
+            if not self.virtual:
+                local_ctx = PaintContext(self.image, self.draw, local_clip, pctx.pool, frame=local_frame)
+                self._draw_erase(local_ctx)
+                self._draw(local_ctx)
+                for c in self.children:
+                    if c.visible:
+                        c.do_draw(local_ctx, c.box.offset(local_frame))
+                self._draw_outline(local_ctx)
+                self._draw_selection(local_ctx)
 
             # 2. Blit our backing store into pctx.image (which might be a temp)
             # We only need to blit the local_clip portion.
@@ -160,7 +164,10 @@ class ContainerWidget(Widget):
 
             sub = self.image.crop(src_box.rect)
             if self.mask is not None:
-                sub_mask = self.mask.crop(src_box.rect)
+                # Mask describes the viewport shape, so sample at local_clip coords
+                # (viewport-relative), not src_box coords (content coords).
+                # In the non-virtual case offset=(0,0) so src_box==local_clip anyway.
+                sub_mask = self.mask.crop(local_clip.rect)
             else:
                 sub_mask = None
 

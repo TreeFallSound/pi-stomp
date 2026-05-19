@@ -270,7 +270,9 @@ class Widget:
         self.outline_color = color
 
     def set_selected(self, selected):
-        self.selected = selected
+        if self.selected is not selected:
+            self.selected = selected
+            self._dirty = True
         if selected:
             if self.scroll_into_view():
                 # Don't refresh if scroll has made it happen

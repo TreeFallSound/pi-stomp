@@ -99,8 +99,6 @@ class Menu(Dialog):
             trace(self, "item <",t,"> tw=", tw, "th=", th)
             tw = tw + h_margin * 2
             th = th + v_margin * 2
-            #if tw > w:
-            #    w = tw
             if h == 0:
                 self.item_h = th
                 h = th * len(self.items)
@@ -109,7 +107,9 @@ class Menu(Dialog):
         if mw is not None and w > mw:
             w = 240
         if mh is not None and h > mh:
+            # Content taller than viewport: enable JIT paint with a tall backing image
+            self.virtual = True
+            self._content_height = h
             h = mh
-        print("-> adjusted w,h:", w, h)
         self.box = Box.xywh(0,0,w,h)
         super(Menu,self)._adjust_box()
