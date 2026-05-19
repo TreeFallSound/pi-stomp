@@ -478,7 +478,7 @@ class Lcd(abstract_lcd.Lcd):
                 x = self.get_footswitch_pitch() * fs_id
                 self.footswitch_slots[fs_id] = label
                 color = self.get_plugin_color(plugin)
-                p = FootswitchWidget(Box.xywh(x, y, 60, 60), self.small_font,
+                p = FootswitchWidget(Box.xywh(x, y, self.footswitch_width, self.footswitch_height), self.small_font,
                              label, color, plugin.is_bypassed(), parent=self.footswitch_panel, object=c)
                 self.w_footswitches.append(p)
                 self.footswitch_panel.add_widget(p)
