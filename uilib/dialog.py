@@ -51,12 +51,11 @@ class DialogDecorator(PanelDecorator):
         self.title.set_box(tbox, refresh = False)
         self.title.show(refresh = False)
 
-    def _draw(self, ctx, frame):
-        trace(self, "DialogDecorator draw, frame=", frame, "self.box=", self.box)
-        line_xy = (frame.x0, frame.y0 + self.th + 1,
-                   frame.x1 - self.outline, frame.y0 + self.th + 1)
+    def _draw(self, ctx):
+        trace(self, "DialogDecorator draw, self.box=", self.box)
+        y = self.th + 1
         # The +2 here is magic ... need to figure out what's up, otherwise we get only 1 pixel
-        ctx.draw.line(line_xy, fill=self.fgnd_color, width=self.outline + 2)
+        ctx.draw_line(((0, y), (ctx.width - self.outline, y)), fill=self.fgnd_color, width=self.outline + 2)
 
 class Dialog(Panel):
     def __init__(self, width, height, title, title_font = None, **kwargs):

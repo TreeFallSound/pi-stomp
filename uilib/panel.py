@@ -148,10 +148,10 @@ class RoundedPanel(Panel):
         mdraw = ImageDraw.Draw(self.mask)
         mdraw.rounded_rectangle(self.box.norm().PIL_rect, radius, 1, None, 0)
 
-    def _draw_outline(self, ctx: PaintContext, frame: Box):
+    def _draw_outline(self, ctx: PaintContext):
         if self.outline != 0:
             color = self.outline_color if self.outline_color is not None else self.fgnd_color
-            ctx.draw.rounded_rectangle(frame.PIL_rect, self.radius, None, color, self.outline)
+            ctx.draw_rectangle(ctx.bounds, None, color, self.outline, radius=self.radius)
 
 class LcdBase:
     def dimensions(self):
@@ -205,13 +205,14 @@ class PanelStack(ContainerWidget):
             self.refresh()
 
     def refresh(self):
-        self._propagate_dirty(self.box.norm())
+        self.propagate_dirty(self.box.norm())
         self.lcd_needs_update = False
 
-    def _propagate_dirty(self, clip: Box):
+    def propagate_dirty(self, clip: Box):
         """Recompose the dirty clip region from all stacked panels, then push to LCD."""
-        erase_ctx = PaintContext(self.image, self.draw, clip, self.pool)
-        self._draw_erase(erase_ctx, clip)
+        # PanelStack acts as its own framing here: erase against clip-as-frame.
+        erase_ctx = PaintContext(self.image, self.draw, clip, self.pool, frame=clip)
+        self._draw_erase(erase_ctx)
 
         for p in self.stack:
             if self.dimmer is not None:
@@ -221,16 +222,16 @@ class PanelStack(ContainerWidget):
                 inter = clip.intersection(d.box)
                 if not inter.is_empty():
                     ctx = PaintContext(self.image, self.draw, inter, self.pool)
-                    d._do_draw(ctx, d.box)
+                    d.do_draw(ctx, d.box)
             inter = clip.intersection(p.box)
             if not inter.is_empty():
                 ctx = PaintContext(self.image, self.draw, inter, self.pool)
-                p._do_draw(ctx, p.box)
+                p.do_draw(ctx, p.box)
 
         trace(self, "updating lcd with image", self.image, "box=", clip)
         self.lcd.update(self.image, clip)
 
-    def _do_draw(self, ctx: PaintContext, frame: Box):
+    def do_draw(self, ctx: PaintContext, frame: Box):
         assert False
         
     def _get_stack(self):

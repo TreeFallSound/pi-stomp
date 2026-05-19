@@ -30,35 +30,43 @@ class FootswitchWidget(Widget):
         self.foreground = (255, 255, 255)
         self.color_plugin_bypassed = (80, 80, 80)
 
-    def _draw(self, ctx, frame):
-        self.xy1 = (frame.x0, frame.y0)
-        self.xy2 = (frame.x0 + 60, frame.y0 + 40)  # TODO should these offsets be here?
+    # Visual constants (in pixels).
+    CAP_INSET_X = 10        # horizontal inset of the cap ellipse from each side
+    CAP_HEIGHT = 16         # height of each cap ellipse
+    CAP_STACK_OFFSET = 6    # how much the top cap sits above the bottom cap
+    CAP_BOTTOM_MARGIN = 18  # gap between bottom of cap and bottom of cap area
+    HALO_INSET = 2          # halo inset from frame edges
+    HALO_TOP = 10           # halo top relative to frame top
 
-        # halo
+    def _draw(self, ctx):
+        w, h = ctx.width, ctx.height
+
         self._draw_halo(ctx)
 
+        # Cap is a stack of two ellipses near the top of the frame, leaving
+        # room below for the label.
+        cap_x0 = self.CAP_INSET_X
+        cap_x1 = w - self.CAP_INSET_X
+        cap_bottom_y = h - self.CAP_BOTTOM_MARGIN - self.CAP_HEIGHT
+        cap_top_y = cap_bottom_y - self.CAP_STACK_OFFSET
+
         # cap bottom
-        fx1 = self.xy1[0] + 10
-        fy1 = self.xy2[1] - 34
-        fx2 = self.xy2[0] - 10
-        fy2 = fy1 + 16
-        ctx.draw.ellipse(((fx1, fy1), (fx2, fy2)), fill=self.background, outline="gray", width=2)
-
+        ctx.draw_ellipse(Box(cap_x0, cap_bottom_y, cap_x1, cap_bottom_y + self.CAP_HEIGHT),
+                         fill=self.background, outline="gray", width=2)
         # cap top
-        fy1 -= 6
-        fy2 -= 6
-        ctx.draw.ellipse(((fx1, fy1), (fx2, fy2)), fill=self.background, outline="gray", width=2)
+        ctx.draw_ellipse(Box(cap_x0, cap_top_y, cap_x1, cap_top_y + self.CAP_HEIGHT),
+                         fill=self.background, outline="gray", width=2)
 
-        # label
-        ctx.draw.text((self.xy1[0], self.xy2[1]), self.label, self.foreground, self.font)
+        # label sits at the bottom of the frame
+        ctx.draw_text((0, h), self.label, self.foreground, self.font)
 
     def _draw_halo(self, ctx):
-        hx1 = self.xy1[0] + 2
-        hy1 = self.xy1[1] + 10
-        hx2 = self.xy2[0] - 2
-        hy2 = self.xy2[1] - 2
         color = self.color_plugin_bypassed if self.is_bypassed else self.color
-        ctx.draw.ellipse(((hx1, hy1), (hx2, hy2)), fill=None, outline=color, width=self.footswitch_ring_width)
+        ctx.draw_ellipse(
+            Box(self.HALO_INSET, self.HALO_TOP,
+                ctx.width - self.HALO_INSET, ctx.height - self.HALO_INSET),
+            fill=None, outline=color, width=self.footswitch_ring_width,
+        )
 
     def toggle(self, is_bypassed):
         self.is_bypassed = is_bypassed

@@ -81,8 +81,8 @@ class Lcd(abstract_lcd.Lcd):
         self.plugin_width = 78
         self.plugin_height = 29
         self.plugin_label_length = 7
-        self.footswitch_height = 60
-        self.footswitch_width = 56
+        self.footswitch_height = 40
+        self.footswitch_width = 60
         # space between footswitch icons where index is the footswitch count
         #                                0    1    2    3    4   5   6   7
         self.footswitch_pitch_options = [120, 120, 120, 128, 86, 65, 65, 65]

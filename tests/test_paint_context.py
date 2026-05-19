@@ -2,8 +2,8 @@
 Unit tests for paint-context drawing logic:
   - Box.contains
   - Widget._draw_erase (safe-interior vs full-frame erase)
-  - ContainerWidget._do_draw clip expansion for rounded containers
-  - ContainerWidget._propagate_dirty scroll-offset translation
+  - ContainerWidget.do_draw clip expansion for rounded containers
+  - ContainerWidget.propagate_dirty scroll-offset translation
 """
 
 import pytest
@@ -88,13 +88,13 @@ class TestDrawErase:
         region.  Returns the image so the caller can inspect pixels."""
         img = Image.new("RGB", (100, 100), (255, 255, 255))
         draw = ImageDraw.Draw(img)
-        ctx = PaintContext(img, draw, clip)
+        ctx = PaintContext(img, draw, clip, frame=frame)
 
         w = Widget(box=frame)
         w.outline_radius = outline_radius
         w.bkgnd_color = (0, 0, 0)
 
-        w._draw_erase(ctx, frame)
+        w._draw_erase(ctx)
         return img
 
     def test_no_radius_erases_only_clip(self):
@@ -118,7 +118,7 @@ class TestDrawErase:
 
     def test_radius_partial_clip_erases_only_intersection(self):
         """Partial clip on a rounded widget → plain rect erase of the intersection.
-        Full-frame expansion for rounded shapes is ContainerWidget._do_draw's job,
+        Full-frame expansion for rounded shapes is ContainerWidget.do_draw's job,
         not _draw_erase's.  A leaf widget with outline_radius still gets a rect
         erase when the clip is smaller than the frame."""
         frame = Box(0, 0, 100, 100)
@@ -142,12 +142,12 @@ class TestDrawErase:
 
 
 # ---------------------------------------------------------------------------
-# ContainerWidget._do_draw clip expansion
+# ContainerWidget.do_draw clip expansion
 # ---------------------------------------------------------------------------
 
 
 class TestContainerClipExpansion:
-    """When a rounded container's dirty clip touches a corner, _do_draw must
+    """When a rounded container's dirty clip touches a corner, do_draw must
     expand the clip to the full frame so that both erase and child-draws are
     consistent (no content left erased-but-not-redrawn)."""
 
@@ -166,7 +166,7 @@ class TestContainerClipExpansion:
         parent_draw = ImageDraw.Draw(parent_img)
         ctx = PaintContext(parent_img, parent_draw, clip)
 
-        c._do_draw(ctx, frame)
+        c.do_draw(ctx, frame)
         # The sentinel pixel in container image should be unchanged (no expansion)
         assert c.image.getpixel((5, 5)) == (255, 0, 0)  # pyright: ignore[reportOptionalMemberAccess]
 
@@ -180,8 +180,8 @@ class TestContainerClipExpansion:
         drawn_frames = []
 
         class TrackingWidget(Widget):
-            def _draw(self, ctx, frame):
-                drawn_frames.append(frame.copy())
+            def _draw(self, ctx):
+                drawn_frames.append(ctx.frame.copy())
 
         child_box = Box(5, 5, 40, 20)  # in top-left — inside corner region
         child = TrackingWidget(box=child_box)
@@ -195,7 +195,7 @@ class TestContainerClipExpansion:
         parent_img = Image.new("RGB", (100, 100))
         ctx = PaintContext(parent_img, ImageDraw.Draw(parent_img), clip)
 
-        c._do_draw(ctx, frame)
+        c.do_draw(ctx, frame)
 
         # Child must NOT have been drawn (no expansion)
         assert len(drawn_frames) == 0
@@ -208,8 +208,8 @@ class TestContainerClipExpansion:
         drawn_frames = []
 
         class TrackingWidget(Widget):
-            def _draw(self, ctx, frame):
-                drawn_frames.append(frame.copy())
+            def _draw(self, ctx):
+                drawn_frames.append(ctx.frame.copy())
 
         # Child is in top-left corner region
         child = TrackingWidget(box=Box(2, 2, 8, 8))
@@ -223,7 +223,7 @@ class TestContainerClipExpansion:
         parent_img = Image.new("RGB", (100, 100))
         ctx = PaintContext(parent_img, ImageDraw.Draw(parent_img), clip)
 
-        c._do_draw(ctx, frame)
+        c.do_draw(ctx, frame)
 
         # Child frame doesn't intersect clip → not drawn
         assert len(drawn_frames) == 0
@@ -286,7 +286,7 @@ class TestBufferPool:
         assert len(pool._free) == 1
 
         # 2. Nested draws (should grow to depth)
-        with ctx.painting(Box(0, 0, 100, 100)) as (ctx2, _):
+        with ctx.painting(Box(0, 0, 100, 100)) as ctx2:
             # Inner clip must also be 'slow path' relative to ctx2.clip
             # ctx2.clip is (0,0,5,5) re-anchored.
             with ctx2.painting(Box(0, 0, 100, 100)):
@@ -296,7 +296,7 @@ class TestBufferPool:
 
 
 class TestPropagateDirtyScrollOffset:
-    """_propagate_dirty must account for self.offset (scroll) when translating
+    """propagate_dirty must account for self.offset (scroll) when translating
     a local dirty region into parent coordinates."""
 
     def test_no_scroll_translates_by_box_position(self):
@@ -305,7 +305,7 @@ class TestPropagateDirtyScrollOffset:
         received = []
 
         class CapturingParent(Widget):
-            def _propagate_dirty(self, clip):
+            def propagate_dirty(self, clip):
                 received.append(clip)
 
         parent = CapturingParent(box=Box(0, 0, 200, 200))
@@ -314,7 +314,7 @@ class TestPropagateDirtyScrollOffset:
         c.parent = parent
 
         local_clip = Box(10, 10, 50, 50)
-        c._propagate_dirty(local_clip)
+        c.propagate_dirty(local_clip)
 
         assert len(received) == 1
         result = received[0]
@@ -327,7 +327,7 @@ class TestPropagateDirtyScrollOffset:
         received = []
 
         class CapturingParent(Widget):
-            def _propagate_dirty(self, clip):
+            def propagate_dirty(self, clip):
                 received.append(clip)
 
         parent = CapturingParent(box=Box(0, 0, 200, 200))
@@ -337,9 +337,113 @@ class TestPropagateDirtyScrollOffset:
         c.offset = (5, 10)  # scrolled: content shifted by (5,10)
 
         local_clip = Box(10, 10, 50, 50)
-        c._propagate_dirty(local_clip)
+        c.propagate_dirty(local_clip)
 
         assert len(received) == 1
         result = received[0]
         # deoffset(5,10) → (5,0,45,40), then offset by (20,30) → (25,30,65,70)
         assert result == Box(25, 30, 65, 70)
+
+
+# ---------------------------------------------------------------------------
+# Relative-coordinate API contract
+# ---------------------------------------------------------------------------
+
+
+class _RelDrawWidget(Widget):
+    """Test widget that draws via the relative-coord PaintContext API.
+
+    Fills its own background, draws a 1-pixel marker at relative (0,0), and a
+    single-pixel rectangle at the opposite corner. Any frame translation bug
+    surfaces as a marker landing at the wrong absolute coordinate.
+    """
+
+    def _draw(self, ctx):
+        ctx.fill((255, 255, 255))
+        ctx.draw_rectangle(Box(0, 0, 1, 1), fill=(255, 0, 0))
+        ctx.draw_rectangle(Box(ctx.width - 1, ctx.height - 1, ctx.width, ctx.height),
+                           fill=(0, 255, 0))
+
+
+class TestRelativeCoords:
+    """The wrappers must translate (0,0) → frame.topleft for any frame placement."""
+
+    @pytest.mark.parametrize("frame", [
+        Box(0, 0, 20, 20),       # at origin
+        Box(50, 30, 70, 50),     # offset into image
+        Box(99, 99, 119, 119),   # straddling beyond image (rest clipped naturally)
+    ])
+    def test_origin_marker_lands_at_frame_topleft(self, frame):
+        img = Image.new("RGB", (200, 200), (0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        ctx = PaintContext(img, draw, Box(0, 0, 200, 200))
+
+        w = _RelDrawWidget(box=frame)
+        w.bkgnd_color = (0, 0, 0)
+        w.fgnd_color = (255, 255, 255)
+        w.do_draw(ctx, frame)
+
+        # (0,0) marker lands at frame.topleft.
+        assert img.getpixel(frame.topleft) == (255, 0, 0)
+        # (width-1, height-1) marker lands at frame's botright minus 1.
+        far = (frame.x1 - 1, frame.y1 - 1)
+        if 0 <= far[0] < 200 and 0 <= far[1] < 200:
+            assert img.getpixel(far) == (0, 255, 0)
+        # Pixel just outside top-left is still untouched.
+        if frame.x0 > 0:
+            assert img.getpixel((frame.x0 - 1, frame.y0)) == (0, 0, 0)
+
+
+# ---------------------------------------------------------------------------
+# Slow-path scissor containment
+# ---------------------------------------------------------------------------
+
+
+class _SloppyWidget(Widget):
+    """Intentionally draws well outside its own frame to test the slow-path
+    scissor. A correctly-clipping PaintContext must discard any pixels that
+    fall outside clip ∩ frame."""
+
+    def _draw(self, ctx):
+        # Try to bleed 10px past every edge.
+        ctx.draw_rectangle(
+            Box(-10, -10, ctx.width + 10, ctx.height + 10),
+            fill=(255, 0, 0),
+        )
+
+
+class TestSloppyDrawContainment:
+    """A widget that paints outside its frame must NOT leak onto the parent
+    surface beyond clip ∩ frame when the slow path is engaged."""
+
+    def test_slow_path_scissors_oversized_draw(self):
+        from uilib.paint import BufferPool
+
+        img = Image.new("RGBA", (200, 200), (0, 0, 0, 255))
+        draw = ImageDraw.Draw(img)
+
+        # Force slow path: clip is a strict sub-rect of frame.
+        frame = Box(50, 50, 150, 150)
+        clip = Box(60, 60, 140, 140)
+        pool = BufferPool((200, 200))
+        ctx = PaintContext(img, draw, clip, pool)
+
+        w = _SloppyWidget(box=frame)
+        w.bkgnd_color = (0, 0, 0, 0)  # transparent erase so we see leaks clearly
+        w.fgnd_color = (255, 255, 255)
+        w.do_draw(ctx, frame)
+
+        # Inside clip: should be red (widget drew there).
+        assert img.getpixel((100, 100))[:3] == (255, 0, 0)
+
+        # Outside clip but inside frame: widget *tried* to paint here via the
+        # oversized rect, but the slow-path scissor must have dropped it.
+        # frame extends [50,150)×[50,150); clip is [60,140)×[60,140).
+        # Pixel (55, 100) is inside frame, outside clip.
+        assert img.getpixel((55, 100))[:3] == (0, 0, 0)
+        assert img.getpixel((145, 100))[:3] == (0, 0, 0)
+        assert img.getpixel((100, 55))[:3] == (0, 0, 0)
+
+        # Well outside frame: definitely untouched.
+        assert img.getpixel((10, 10))[:3] == (0, 0, 0)
+        assert img.getpixel((190, 190))[:3] == (0, 0, 0)

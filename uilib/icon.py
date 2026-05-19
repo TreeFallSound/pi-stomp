@@ -35,9 +35,10 @@ class Icon(TextWidget):
         self.text_color = text_color if text_color is not None else self.fgnd_color
 
     def add_knob(self):
-        loc = (self.box.x0, self.box.y0 + 2)  # TODO use box directly, replace height with box height
+        # Widget-relative coords from (0, 0).
+        loc = (0, 2)
         e = {
-            'xy': ((loc[0], loc[1]), (loc[0] + self.height, loc[1] + self.height)),
+            'box': Box(loc[0], loc[1], loc[0] + self.height, loc[1] + self.height),
             'fill': self.bkgnd_color,
             'outline': self.fgnd_color,
             'height' : self.outline_width
@@ -54,7 +55,7 @@ class Icon(TextWidget):
         self.lines.append(l)
 
     def add_pedal(self):
-        loc = (self.box.x0, self.box.y0 - 1)  # TODO use box directly, replace height with box height
+        loc = (0, -1)
         l = {
             'xy': ((loc[0], loc[1] + self.height),
                    (loc[0] + self.height, loc[1] + int(self.height / 3))),
@@ -72,22 +73,22 @@ class Icon(TextWidget):
         self.lines.append(l)
 
 
-    def _draw(self, ctx, frame):
+    def _draw(self, ctx):
         h_margin, v_margin = self._get_margins()
         extra = self.outline
-        hroom = frame.width - h_margin - extra
-        vroom = frame.height - v_margin - extra
+        hroom = ctx.width - h_margin - extra
+        vroom = ctx.height - v_margin - extra
         if hroom < 0 or vroom < 0:
             return
 
         h_margin = 1
-        loc = (frame.x0 + h_margin, frame.y0 + v_margin)
+        loc = (h_margin, v_margin)
 
         for e in self.ellipses:
-            ctx.draw.ellipse(xy=e['xy'], fill=e['fill'], outline=e['outline'], width=e['height'])
+            ctx.draw_ellipse(e['box'], fill=e['fill'], outline=e['outline'], width=e['height'])
 
         for l in self.lines:
-            ctx.draw.line(xy=l['xy'], fill=l['fill'], width=l['height'])
+            ctx.draw_line(l['xy'], fill=l['fill'], width=l['height'])
 
-        ctx.draw.text((loc[0] + self.height + h_margin, loc[1]), self.text, fill=self.text_color, font=self.font)
+        ctx.draw_text((loc[0] + self.height + h_margin, loc[1]), self.text, fill=self.text_color, font=self.font)
 

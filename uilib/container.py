@@ -80,21 +80,21 @@ class ContainerWidget(Widget):
         if not self.image:
             return
         local_clip = self.box.norm()
+        local_frame = self.box.norm()
         stack = self._get_stack()
         pool = stack.pool if stack else _NAIVE_POOL
-        ctx = PaintContext(self.image, self.draw, local_clip, pool)
-        local_frame = self.box.norm()
-        self._draw_erase(ctx, local_frame)
-        self._draw(ctx, local_frame)
+        ctx = PaintContext(self.image, self.draw, local_clip, pool, frame=local_frame)
+        self._draw_erase(ctx)
+        self._draw(ctx)
         for c in self.children:
             if c.visible:
-                c._do_draw(ctx, c.box.offset(local_frame))
-        self._draw_outline(ctx, local_frame)
-        self._draw_selection(ctx, local_frame)
+                c.do_draw(ctx, c.box.offset(local_frame))
+        self._draw_outline(ctx)
+        self._draw_selection(ctx)
         if self.visible and self.parent is not None:
-            self._propagate_dirty(local_clip)
+            self.propagate_dirty(local_clip)
 
-    def _do_draw(self, ctx: PaintContext, frame: Box):
+    def do_draw(self, ctx: PaintContext, frame: Box):
         """Draw this container's pixels into a parent's PaintContext.
 
         It first updates its internal backing store for the dirty region, then blits
@@ -102,18 +102,20 @@ class ContainerWidget(Widget):
         and potential buffer allocation to the framework's painting() context."""
         # Note: We still draw into self.image as a backing store.
         # Framework painting() handles the clip/temp-buffer/composite back to ctx.image.
-        with ctx.painting(frame) as (pctx, pframe):
+        with ctx.painting(frame) as pctx:
+            pframe = pctx.frame
+            assert pframe is not None
             # 1. Update our own backing store (only the dirty region)
             local_clip = pctx.clip.deoffset(pframe.topleft)
             local_frame = self.box.norm()
-            local_ctx = PaintContext(self.image, self.draw, local_clip, pctx.pool)
-            self._draw_erase(local_ctx, local_frame)
-            self._draw(local_ctx, local_frame)
+            local_ctx = PaintContext(self.image, self.draw, local_clip, pctx.pool, frame=local_frame)
+            self._draw_erase(local_ctx)
+            self._draw(local_ctx)
             for c in self.children:
                 if c.visible:
-                    c._do_draw(local_ctx, c.box.offset(local_frame))
-            self._draw_outline(local_ctx, local_frame)
-            self._draw_selection(local_ctx, local_frame)
+                    c.do_draw(local_ctx, c.box.offset(local_frame))
+            self._draw_outline(local_ctx)
+            self._draw_selection(local_ctx)
 
             # 2. Blit our backing store into pctx.image (which might be a temp)
             # We only need to blit the local_clip portion.
@@ -122,24 +124,24 @@ class ContainerWidget(Widget):
             # pctx.image is aligned with pframe.
             # So local_clip.topleft in pctx.image coords is pframe.x0 + local_clip.x0, etc.
             dst_topleft = (pframe.x0 + local_clip.x0, pframe.y0 + local_clip.y0)
-            
+
             sub = self.image.crop(src_box.rect)
             if self.mask is not None:
                 sub_mask = self.mask.crop(src_box.rect)
             else:
                 sub_mask = None
-                
+
             if self.has_alpha and pctx.image.mode == 'RGBA':
                 pctx.image.alpha_composite(sub, dst_topleft)
             else:
                 pctx.image.paste(sub, dst_topleft, sub_mask)
 
-    def _propagate_dirty(self, local_clip: Box):
+    def propagate_dirty(self, local_clip: Box):
         """Bubble a dirty region (in our local coords) up to our parent container."""
         if not self.visible or self.parent is None:
             return
         parent_clip = local_clip.deoffset(self.offset).offset(self.box)
-        self.parent._propagate_dirty(parent_clip)
+        self.parent.propagate_dirty(parent_clip)
 
     def scroll(self, offset):
         print(offset)

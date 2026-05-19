@@ -23,12 +23,11 @@ class ImageWidget(Widget):
         super(ImageWidget,self).__init__(**kwargs)
         self.image = Image.open(image_path)
 
-    def _draw(self, ctx, frame):
+    def _draw(self, ctx):
         width, height = self.image.size
-        offx = int((frame.width - width) / 2)
-        offy = int((frame.height - height) / 2)
-        loc = frame.offset((offx, offy)).topleft
-        ctx.image.paste(self.image, loc)
+        offx = int((ctx.width - width) / 2)
+        offy = int((ctx.height - height) / 2)
+        ctx.paste(self.image, (offx, offy))
 
     def replace_img(self, image_path):
         # XXX Note that the new image must be the same size as the original

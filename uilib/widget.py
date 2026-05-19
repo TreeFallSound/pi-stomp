@@ -404,8 +404,8 @@ class Widget:
         stack = self._get_stack()
         pool = stack.pool if stack else _NAIVE_POOL
         ctx = PaintContext(container.image, container.draw, clip, pool)
-        self._do_draw(ctx, frame)
-        container._propagate_dirty(clip)
+        self.do_draw(ctx, frame)
+        container.propagate_dirty(clip)
 
     def scroll_into_view(self):        
         """Scroll parent if necessary to ensure this object is into view. Only works
@@ -420,20 +420,24 @@ class Widget:
             return self.parent._scroll_into_view(box.offset(self.box))
         return False
 
-    def _do_draw(self, ctx: PaintContext, frame: Box):
+    def do_draw(self, ctx: PaintContext, frame: Box):
         """Draw self and children. frame is self's rect in ctx.image coords."""
         if ctx.clip.intersection(frame).is_empty():
             return
-        with ctx.painting(frame) as (pctx, pframe):
-            self._draw_erase(pctx, pframe)
-            self._draw(pctx, pframe)
+        with ctx.painting(frame) as pctx:
+            assert pctx.frame is not None
+            self._draw_erase(pctx)
+            self._draw(pctx)
+            child_origin = pctx.frame.topleft
             for c in self.children:
                 if c.visible:
-                    c._do_draw(pctx, c.box.offset(pframe))
-            self._draw_outline(pctx, pframe)
-            self._draw_selection(pctx, pframe)
+                    c.do_draw(pctx, c.box.offset(child_origin))
+            self._draw_outline(pctx)
+            self._draw_selection(pctx)
 
-    def _draw_erase(self, ctx: PaintContext, frame: Box):
+    def _draw_erase(self, ctx: PaintContext):
+        frame = ctx.frame
+        assert frame is not None
         erase_box = ctx.clip.intersection(frame)
         if erase_box.is_empty():
             return
@@ -442,25 +446,21 @@ class Widget:
         else:
             ctx.draw.rectangle(erase_box.PIL_rect, self.bkgnd_color, None, 0)
 
-    def _draw_outline(self, ctx: PaintContext, frame: Box):
+    def _draw_outline(self, ctx: PaintContext):
         if self.outline != 0:
             color = self.outline_color if self.outline_color is not None else self.fgnd_color
-            if self.outline_radius is None:
-                ctx.draw.rectangle(frame.PIL_rect, None, color, self.outline)
-            else:
-                ctx.draw.rounded_rectangle(frame.PIL_rect, self.outline_radius, None, color, self.outline)
+            ctx.draw_rectangle(ctx.bounds, None, color, self.outline, radius=self.outline_radius)
 
-    def _draw_selection(self, ctx: PaintContext, frame: Box):
+    def _draw_selection(self, ctx: PaintContext):
         if self.selected:
             radius = self.sel_radius
             if radius is None:
                 radius = self.outline_radius
-            if radius is None or radius == 0:
-                ctx.draw.rectangle(frame.PIL_rect, None, self.sel_color, self.sel_width)
-            else:
-                ctx.draw.rounded_rectangle(frame.PIL_rect, radius, None, self.sel_color, self.sel_width)
+            if radius == 0:
+                radius = None
+            ctx.draw_rectangle(ctx.bounds, None, self.sel_color, self.sel_width, radius=radius)
 
-    def _draw(self, ctx: PaintContext, frame: Box):
+    def _draw(self, ctx: PaintContext):
         pass
 
     def input_event(self, event):
