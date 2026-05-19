@@ -13,10 +13,12 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from enum import Flag
+from typing import Tuple
 from uilib.misc import *
 from uilib.box import *
+from uilib.container import ContainerWidget
 from uilib.paint import PaintContext
+from uilib.panel import PanelStack
 
 # This is the root of all evil: the Widget class, parent of all things
 # displayed on the screen.
@@ -226,7 +228,7 @@ class Widget:
     # box is established early and thus rely on the stack bounding box. When a
     # panel is popped off the stack, it still keeps its reference to said stack
 
-    def _build_paint_target(self, dirty):
+    def _build_paint_target(self, dirty: Box) -> Tuple[ContainerWidget, Box, Box] | Tuple[None, None, None]:
         """Walk up to the nearest ContainerWidget, accumulating frame offset.
 
         Returns (container, frame, clip) where:
@@ -235,38 +237,27 @@ class Widget:
           clip      : dirty translated into container-local coords, clipped to container bounds
         Returns (None, None, None) if no visible ContainerWidget ancestor found.
         """
-        from uilib.container import ContainerWidget
-        offset = self.box.topleft
-        node = self.parent
-        while node is not None:
-            if not node.visible:
+        off_x, off_y = 0, 0
+        curr = self
+        while curr is not None:
+            if not curr.visible:
                 return None, None, None
-            if isinstance(node, ContainerWidget):
-                frame = self.box.offset(
-                    (offset[0] - self.box.x0, offset[1] - self.box.y0)
-                )
-                # frame in container-local coords = self.box shifted by accumulated parent offsets
-                # Rebuild: walk again collecting offsets cleanly
-                break
-            offset = (offset[0] + node.box.x0, offset[1] + node.box.y0)
-            node = node.parent
-        else:
-            return None, None, None
-
-        # Re-walk to get proper frame: self.box offset by sum of non-container ancestors
-        frame_x, frame_y = 0, 0
-        cur = self
-        while cur.parent is not node:
-            frame_x += cur.box.x0
-            frame_y += cur.box.y0
-            cur = cur.parent
-        frame_x += cur.box.x0
-        frame_y += cur.box.y0
-        frame = Box(frame_x, frame_y, frame_x + self.box.width, frame_y + self.box.height)
-
-        clip = dirty.offset((frame_x - self.box.x0, frame_y - self.box.y0))
-        clip = clip.intersection(node.box.norm())
-        return node, frame, clip
+            
+            off_x += curr.box.x0
+            off_y += curr.box.y0
+            
+            parent = curr.parent
+            if isinstance(parent, ContainerWidget):
+                # We found our backing image owner.
+                # frame = where we are in container local coords
+                frame = Box.xywh(off_x, off_y, self.box.width, self.box.height)
+                # clip = the dirty region re-anchored to the same container coords
+                clip = dirty.offset((off_x - self.box.x0, off_y - self.box.y0))
+                return (parent, frame, clip.intersection(parent.box.norm()))
+                
+            curr = parent
+            
+        return (None, None, None)
 
     def set_outline(self, width, color = None):
         self.outline = width
@@ -477,7 +468,7 @@ class Widget:
             return True
         return False
 
-    def _get_stack(self):
+    def _get_stack(self) -> PanelStack | None:
         """Helper to return the top-level panel stack. Useful for creating pop-up dialogs
            such as text editing helpers
         """

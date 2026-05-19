@@ -72,12 +72,17 @@ class ContainerWidget(Widget):
         return box.intersects(self.box.norm())
 
     def refresh(self):
+        """Redraw the container's backing image and notify the parent of the change.
+
+        This constructs a local PaintContext for the container, redraws self and all children
+        into the internal image, and then bubbles the updated region up the widget tree."""
         trace(self, "ContainerWidget.refresh: vis=", self.visible, "parent=", self.parent)
         if not self.image:
             return
         local_clip = self.box.norm()
         stack = self._get_stack()
-        ctx = PaintContext(self.image, self.draw, local_clip, stack.pool if stack else None)
+        pool = stack.pool if stack else None
+        ctx = PaintContext(self.image, self.draw, local_clip, pool)
         local_frame = self.box.norm()
         self._draw_erase(ctx, local_frame)
         self._draw(ctx, local_frame)
@@ -90,7 +95,11 @@ class ContainerWidget(Widget):
             self._propagate_dirty(local_clip)
 
     def _do_draw(self, ctx: PaintContext, frame: Box):
-        """Draw this container into the parent surface at frame."""
+        """Draw this container's pixels into a parent's PaintContext.
+
+        It first updates its internal backing store for the dirty region, then blits
+        the relevant slice into the parent surface, delegating coordinate management
+        and potential buffer allocation to the framework's painting() context."""
         # Note: We still draw into self.image as a backing store.
         # Framework painting() handles the clip/temp-buffer/composite back to ctx.image.
         with ctx.painting(frame) as (pctx, pframe):
@@ -174,4 +183,3 @@ class ContainerWidget(Widget):
                 self.scroll((ox, oy))
             return True
         return False
-
