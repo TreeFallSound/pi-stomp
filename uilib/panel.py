@@ -15,7 +15,6 @@
 
 from uilib.container import *
 from uilib.paint import PaintContext, BufferPool
-from pathlib import Path
 
 #
 # Note about coordinates:
@@ -193,7 +192,7 @@ class PanelStack(ContainerWidget):
         else:
             self.dimmer = None
 
-        self.pool = BufferPool((box.width, box.height))
+        self.pool = BufferPool(box.size)
             
         # We don't have a parent, establish all the defaults
         self._setup_act_attrs()

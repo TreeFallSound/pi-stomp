@@ -14,11 +14,31 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from dataclasses import dataclass
-from typing import Generator, Optional, Tuple
+from typing import Generator, Tuple, Protocol
 from contextlib import contextmanager
 from PIL import Image, ImageDraw
 
 from uilib.box import Box
+
+
+class BufferManager(Protocol):
+    """Protocol for providing RGBA buffers."""
+
+    def acquire(self, size: Tuple[int, int]) -> Image.Image: ...
+    def release(self, buf: Image.Image) -> None: ...
+
+
+class NaiveBufferPool:
+    """Naive implementation that always allocates a new image."""
+
+    def acquire(self, size: Tuple[int, int]) -> Image.Image:
+        return Image.new("RGBA", size, (0, 0, 0, 0))
+
+    def release(self, buf: Image.Image) -> None:
+        pass
+
+
+_NAIVE_POOL = NaiveBufferPool()
 
 
 class BufferPool:
@@ -28,6 +48,7 @@ class BufferPool:
     contains a slow-path child). Each acquire returns a buffer of at
     least the requested size; the buffer is cleared on acquire and
     returned to the pool on release. No allocation after warm-up."""
+
     def __init__(self, max_size: Tuple[int, int]):
         self.max_size = max_size
         self._free: list[Image.Image] = []
@@ -37,7 +58,7 @@ class BufferPool:
         #    on both dimensions.
         best_idx = -1
         best_area = -1
-        
+
         for i, img in enumerate(self._free):
             if img.size[0] >= size[0] and img.size[1] >= size[1]:
                 area = img.size[0] * img.size[1]
@@ -50,10 +71,9 @@ class BufferPool:
         else:
             # 2. No suitable buffer found. Allocate exactly what's needed,
             #    capped by max_size.
-            alloc_size = (min(size[0], self.max_size[0]), 
-                          min(size[1], self.max_size[1]))
+            alloc_size = (min(size[0], self.max_size[0]), min(size[1], self.max_size[1]))
             img = Image.new("RGBA", alloc_size, (0, 0, 0, 0))
-        
+
         # Clear the region we will use
         img.paste((0, 0, 0, 0), (0, 0, size[0], size[1]))
         return img
@@ -69,19 +89,20 @@ class PaintContext:
     image : target surface being drawn into
     draw  : cached ImageDraw for image
     clip  : dirty rect in image-coordinate space
-    pool  : optional buffer pool for slow-path clipping
+    pool  : buffer pool for slow-path clipping (defaults to a naive impl)
     """
+
     image: Image.Image
     draw: ImageDraw.ImageDraw
     clip: Box
-    pool: Optional[BufferPool] = None
+    pool: BufferManager = _NAIVE_POOL
 
     @contextmanager
-    def painting(self, frame: Box) -> Generator[Tuple['PaintContext', Box], None, None]:
+    def painting(self, frame: Box) -> Generator[Tuple["PaintContext", Box], None, None]:
         """Yield (paint_ctx, paint_frame) suitable for painting `frame`.
 
         Fast path  (clip ⊇ frame): yields (self, frame). __exit__ is a no-op.
-        Slow path  (clip ∩ frame is sub-region): yields a temp-backed ctx 
+        Slow path  (clip ∩ frame is sub-region): yields a temp-backed ctx
                    sized exactly to the intersection, with origin re-anchored.
                    __exit__ composites temp into self.image.
         """
@@ -96,28 +117,24 @@ class PaintContext:
             return
 
         # Slow path: allocate only what we can actually see
-        if self.pool is None:
-            temp = Image.new("RGBA", visible.size, (0, 0, 0, 0))
-        else:
-            temp = self.pool.acquire(visible.size)
+        temp = self.pool.acquire(visible.size)
 
         try:
             temp_draw = ImageDraw.Draw(temp)
             # Re-anchor: we want the widget to draw at 'frame' relative to 'visible.topleft'
-            # So if visible is at (10, 10) and frame is at (0, 0), the widget 
+            # So if visible is at (10, 10) and frame is at (0, 0), the widget
             # should draw at (-10, -10) in the temp buffer.
             offset = visible.topleft
             pframe = frame.deoffset(offset)
             pclip = Box(0, 0, visible.width, visible.height)
             pctx = PaintContext(temp, temp_draw, pclip, self.pool)
-            
+
             yield pctx, pframe
 
             # Composite result back to self.image
-            if self.image.mode == 'RGBA':
+            if self.image.mode == "RGBA":
                 self.image.alpha_composite(temp, visible.topleft)
             else:
                 self.image.paste(temp, visible.topleft, temp)
         finally:
-            if self.pool is not None:
-                self.pool.release(temp)
+            self.pool.release(temp)
