@@ -14,7 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from uilib.widget import *
-from uilib.paint import PaintContext
+from uilib.paint import PaintContext, _NAIVE_POOL
 from PIL import Image, ImageDraw
 
 class ContainerWidget(Widget):
@@ -81,7 +81,7 @@ class ContainerWidget(Widget):
             return
         local_clip = self.box.norm()
         stack = self._get_stack()
-        pool = stack.pool if stack else None
+        pool = stack.pool if stack else _NAIVE_POOL
         ctx = PaintContext(self.image, self.draw, local_clip, pool)
         local_frame = self.box.norm()
         self._draw_erase(ctx, local_frame)

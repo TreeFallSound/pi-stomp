@@ -16,7 +16,7 @@
 from typing import TYPE_CHECKING, Tuple
 from uilib.misc import *
 from uilib.box import *
-from uilib.paint import PaintContext
+from uilib.paint import PaintContext, _NAIVE_POOL
 
 if TYPE_CHECKING:
     from uilib.container import ContainerWidget
@@ -402,7 +402,7 @@ class Widget:
         if clip.is_empty():
             return
         stack = self._get_stack()
-        pool = stack.pool if stack else None
+        pool = stack.pool if stack else _NAIVE_POOL
         ctx = PaintContext(container.image, container.draw, clip, pool)
         self._do_draw(ctx, frame)
         container._propagate_dirty(clip)

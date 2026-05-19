@@ -210,7 +210,7 @@ class PanelStack(ContainerWidget):
 
     def _propagate_dirty(self, clip: Box):
         """Recompose the dirty clip region from all stacked panels, then push to LCD."""
-        erase_ctx = PaintContext(self.image, self.draw, clip)
+        erase_ctx = PaintContext(self.image, self.draw, clip, self.pool)
         self._draw_erase(erase_ctx, clip)
 
         for p in self.stack:
@@ -220,11 +220,11 @@ class PanelStack(ContainerWidget):
             if d is not None:
                 inter = clip.intersection(d.box)
                 if not inter.is_empty():
-                    ctx = PaintContext(self.image, self.draw, inter)
+                    ctx = PaintContext(self.image, self.draw, inter, self.pool)
                     d._do_draw(ctx, d.box)
             inter = clip.intersection(p.box)
             if not inter.is_empty():
-                ctx = PaintContext(self.image, self.draw, inter)
+                ctx = PaintContext(self.image, self.draw, inter, self.pool)
                 p._do_draw(ctx, p.box)
 
         trace(self, "updating lcd with image", self.image, "box=", clip)

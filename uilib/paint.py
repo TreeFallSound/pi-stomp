@@ -131,10 +131,15 @@ class PaintContext:
 
             yield pctx, pframe
 
-            # Composite result back to self.image
+            # Composite result back to self.image. The pool may have handed us
+            # a buffer larger than `visible.size`; only the top-left
+            # (visible.width, visible.height) region was cleared and painted,
+            # so restrict the composite source to that region.
+            src_box = (0, 0, visible.width, visible.height)
             if self.image.mode == "RGBA":
-                self.image.alpha_composite(temp, visible.topleft)
+                self.image.alpha_composite(temp, visible.topleft, src_box)
             else:
-                self.image.paste(temp, visible.topleft, temp)
+                sub = temp.crop(src_box)
+                self.image.paste(sub, visible.topleft, sub)
         finally:
             self.pool.release(temp)
