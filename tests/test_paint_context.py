@@ -166,8 +166,9 @@ class TestContainerClipExpansion:
         # The sentinel pixel in container image should be unchanged (no expansion)
         assert c.image.getpixel((5, 5)) == (255, 0, 0)
 
-    def test_radius_corner_clip_expands_to_full_frame(self):
-        """A clip touching a corner should expand so all children get redrawn."""
+    def test_radius_corner_clip_does_not_expand(self):
+        """A clip touching a corner does NOT expand. Framework-level clipping
+        via temp buffers handles consistency; we don't need the expansion hack."""
         r = 10
         c = _container(w=100, h=100, outline_radius=r)
 
@@ -191,9 +192,8 @@ class TestContainerClipExpansion:
 
         c._do_draw(ctx, frame)
 
-        # Child must have been drawn (clip was expanded to cover it)
-        assert len(drawn_frames) == 1
-
+        # Child must NOT have been drawn (no expansion)
+        assert len(drawn_frames) == 0
     def test_radius_safe_interior_clip_does_not_expand(self):
         """A clip fully inside the safe interior should NOT trigger expansion."""
         r = 10

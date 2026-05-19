@@ -14,7 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from uilib.container import *
-from uilib.paint import PaintContext
+from uilib.paint import PaintContext, BufferPool
 from pathlib import Path
 
 #
@@ -192,6 +192,8 @@ class PanelStack(ContainerWidget):
             self.dimmer = Image.new('RGBA', size, (0,0,0,64))
         else:
             self.dimmer = None
+
+        self.pool = BufferPool((box.width, box.height))
             
         # We don't have a parent, establish all the defaults
         self._setup_act_attrs()

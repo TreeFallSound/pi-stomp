@@ -427,13 +427,14 @@ class Widget:
         """Draw self and children. frame is self's rect in ctx.image coords."""
         if ctx.clip.intersection(frame).is_empty():
             return
-        self._draw_erase(ctx, frame)
-        self._draw(ctx, frame)
-        for c in self.children:
-            if c.visible:
-                c._do_draw(ctx, c.box.offset(frame))
-        self._draw_outline(ctx, frame)
-        self._draw_selection(ctx, frame)
+        with ctx.painting(frame) as (pctx, pframe):
+            self._draw_erase(pctx, pframe)
+            self._draw(pctx, pframe)
+            for c in self.children:
+                if c.visible:
+                    c._do_draw(pctx, c.box.offset(pframe))
+            self._draw_outline(pctx, pframe)
+            self._draw_selection(pctx, pframe)
 
     def _draw_erase(self, ctx: PaintContext, frame: Box):
         erase_box = ctx.clip.intersection(frame)

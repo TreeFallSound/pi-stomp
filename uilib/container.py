@@ -90,37 +90,39 @@ class ContainerWidget(Widget):
 
     def _do_draw(self, ctx: PaintContext, frame: Box):
         """Draw this container into the parent surface at frame."""
-        local_clip = ctx.clip.deoffset(frame).intersection(self.box.norm())
-        if local_clip.is_empty():
-            return
+        # Note: We still draw into self.image as a backing store.
+        # Framework painting() handles the clip/temp-buffer/composite back to ctx.image.
+        with ctx.painting(frame) as (pctx, pframe):
+            # 1. Update our own backing store (only the dirty region)
+            local_clip = pctx.clip.deoffset(pframe.topleft)
+            local_frame = self.box.norm()
+            local_ctx = PaintContext(self.image, self.draw, local_clip)
+            self._draw_erase(local_ctx, local_frame)
+            self._draw(local_ctx, local_frame)
+            for c in self.children:
+                if c.visible:
+                    c._do_draw(local_ctx, c.box.offset(local_frame))
+            self._draw_outline(local_ctx, local_frame)
+            self._draw_selection(local_ctx, local_frame)
 
-        local_frame = self.box.norm()
-        if self.outline_radius is not None:
-            r = self.outline_radius
-            safe = Box(r, r, local_frame.width - r, local_frame.height - r)
-            if not safe.contains(local_clip):
-                local_clip = local_frame
-        local_ctx = PaintContext(self.image, self.draw, local_clip)
-        self._draw_erase(local_ctx, local_frame)
-        self._draw(local_ctx, local_frame)
-        for c in self.children:
-            if c.visible:
-                c._do_draw(local_ctx, c.box.offset(local_frame))
-        self._draw_outline(local_ctx, local_frame)
-        self._draw_selection(local_ctx, local_frame)
-
-        # Blit dirty region into parent surface
-        src_box = local_clip
-        dst_topleft = local_clip.offset(frame).topleft
-        sub = self.image.crop(src_box.rect)
-        if self.mask is not None:
-            sub_mask = self.mask.crop(src_box.rect)
-        else:
-            sub_mask = None
-        if self.has_alpha and ctx.image.mode == 'RGBA':
-            ctx.image.alpha_composite(sub, dst_topleft, src_box.rect)
-        else:
-            ctx.image.paste(sub, dst_topleft, sub_mask)
+            # 2. Blit our backing store into pctx.image (which might be a temp)
+            # We only need to blit the local_clip portion.
+            src_box = local_clip
+            # local_clip is relative to self.image (0,0)
+            # pctx.image is aligned with pframe.
+            # So local_clip.topleft in pctx.image coords is pframe.x0 + local_clip.x0, etc.
+            dst_topleft = (pframe.x0 + local_clip.x0, pframe.y0 + local_clip.y0)
+            
+            sub = self.image.crop(src_box.rect)
+            if self.mask is not None:
+                sub_mask = self.mask.crop(src_box.rect)
+            else:
+                sub_mask = None
+                
+            if self.has_alpha and pctx.image.mode == 'RGBA':
+                pctx.image.alpha_composite(sub, dst_topleft)
+            else:
+                pctx.image.paste(sub, dst_topleft, sub_mask)
 
     def _propagate_dirty(self, local_clip: Box):
         """Bubble a dirty region (in our local coords) up to our parent container."""

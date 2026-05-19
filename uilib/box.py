@@ -63,6 +63,11 @@ class Box:
        self.y1 = self.y0 + int(value)
 
     @property
+    def size(self):
+        """Return width and height as a tuple"""
+        return (self.width, self.height)
+
+    @property
     def topleft(self):
         x0,y0,x1,y1 = self.box
         return (x0,y0)
