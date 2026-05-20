@@ -419,8 +419,24 @@ class Widget:
             return
         stack = self._get_stack()
         pool = stack.pool if stack else _NAIVE_POOL
-        ctx = PaintContext(container.image, container.draw, clip, pool)
-        self.do_draw(ctx, frame)
+        # Render into a frame-sized temp buffer so any unintentional draw bleed
+        # (notably PIL's ImageDraw.text, which ignores clips) is naturally
+        # truncated at the widget's frame. Drawing straight into container.image
+        # would let anti-aliased glyph edges past frame.right double-composite
+        # on subsequent refreshes — see PAINT_CLIPPING_PLAN.md.
+        from PIL import ImageDraw
+        temp = pool.acquire(frame.size)
+        temp_draw = ImageDraw.Draw(temp)
+        local_frame = Box(0, 0, frame.width, frame.height)
+        temp_ctx = PaintContext(temp, temp_draw, local_frame, pool, frame=local_frame)
+        self.do_draw(temp_ctx, local_frame)
+        src_box = (0, 0, frame.width, frame.height)
+        if container.image.mode == "RGBA":
+            container.image.alpha_composite(temp, frame.topleft, src_box)
+        else:
+            sub = temp.crop(src_box)
+            container.image.paste(sub, frame.topleft, sub)
+        pool.release(temp)
         self._painted = True
         self._dirty = False
         container.propagate_dirty(clip)
