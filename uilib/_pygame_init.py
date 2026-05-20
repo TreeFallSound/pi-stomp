@@ -28,11 +28,29 @@ def init(headless: bool = True):
 
     pygame.init()
     _freetype.init()
+    _apply_css_color_overrides(pygame)
     _initialized = True
+
+
+# Pillow colours
+_CSS_OVERRIDES = {
+    "gray": (128, 128, 128, 255),
+    "grey": (128, 128, 128, 255),
+    "green": (0, 128, 0, 255),
+    "purple": (128, 0, 128, 255),
+    "maroon": (128, 0, 0, 255),
+}
+
+
+def _apply_css_color_overrides(pygame):
+    table = pygame.color.THECOLORS
+    for name, rgba in _CSS_OVERRIDES.items():
+        table[name] = rgba
 
 
 def freetype():
     """Return the pygame._freetype module, initializing if needed."""
     init()
     import pygame._freetype as _freetype
+
     return _freetype
