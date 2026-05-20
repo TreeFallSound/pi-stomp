@@ -7,25 +7,20 @@ Contracts verified:
   3. Push-up pixel parity — cached blit produces identical pixels to a full rebuild
 """
 
-import pytest
-from PIL import Image, ImageDraw
+import pygame
 
 from uilib.box import Box
-from uilib.paint import PaintContext, BufferPool
+from uilib.paint import PaintContext
 from uilib.container import ContainerWidget
 from uilib.widget import Widget
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 W, H = 100, 60
 
 
 class _ColorWidget(Widget):
     def __init__(self, color, **kwargs):
-        self.color = color
+        self.color: tuple[int, int, int] = color
         super().__init__(**kwargs)
 
     def _draw(self, ctx):
@@ -37,12 +32,16 @@ def _container(w=W, h=H):
 
 
 def _render(container, w=W, h=H):
-    """Blit container into a fresh image and return it."""
-    img = Image.new("RGB", (w, h), (128, 128, 128))
-    pool = BufferPool((w, h))
-    ctx = PaintContext(img, ImageDraw.Draw(img), Box.xywh(0, 0, w, h), pool)
+    """Blit container into a fresh surface and return it."""
+    surf = pygame.Surface((w, h))
+    surf.fill((128, 128, 128))
+    ctx = PaintContext(surf, Box.xywh(0, 0, w, h))
     container.do_draw(ctx, Box.xywh(0, 0, w, h))
-    return img
+    return surf
+
+
+def _bytes(surf):
+    return pygame.image.tobytes(surf, "RGB")
 
 
 # ---------------------------------------------------------------------------
@@ -81,17 +80,15 @@ class TestFlagTransitions:
         assert c._cache_valid is False
 
     def test_false_after_setup_realloc(self):
-        """_setup() resets the flag when a new image is allocated."""
+        """_setup() resets the flag when a new surface is allocated."""
         c = _container(W, H)
         c.refresh()
         assert c._cache_valid is True
-        # Trigger reallocation by changing the box size
         c.set_box(Box.xywh(0, 0, W + 10, H + 10), refresh=False)
         c._setup()
         assert c._cache_valid is False
 
     def test_invalidation_bubbles_to_ancestor(self):
-        """attach() on an inner container should bubble up to outer."""
         outer = _container()
         inner = ContainerWidget(box=Box.xywh(0, 0, W, H), parent=outer)
         outer.refresh()
@@ -104,8 +101,6 @@ class TestFlagTransitions:
         assert outer._cache_valid is False
 
     def test_invalidation_stops_at_panelstack(self):
-        """PanelStack._skip_cache_push=True; its own _cache_valid follows the normal
-        bubble but PanelStack has no parent so the chain terminates there."""
         from uilib.panel import PanelStack
         from tests.conftest import FakeLcd
 
@@ -113,15 +108,12 @@ class TestFlagTransitions:
         stack = PanelStack(lcd)
         assert stack._skip_cache_push is True
 
-        # Attach a child container; invalidation must reach stack but no further
-        # (stack has no parent, so there is nothing above it to corrupt).
         child = ContainerWidget(box=Box.xywh(0, 0, 50, 50), parent=stack)
         child.refresh()
         assert child._cache_valid is True
 
         _ColorWidget(color=(0, 0, 255), box=Box.xywh(0, 0, 10, 10), parent=child)
         assert child._cache_valid is False
-        # stack itself gets invalidated too (it's a ContainerWidget)
         assert stack._cache_valid is False
 
 
@@ -132,7 +124,6 @@ class TestFlagTransitions:
 
 class TestCacheHitSkipsRebuild:
     def _spy_container(self):
-        """Return (container, [leaf_widgets], draw_counts_dict)."""
         c = _container()
         COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]
         leaves = []
@@ -145,41 +136,41 @@ class TestCacheHitSkipsRebuild:
         counts = {i: 0 for i in range(len(leaves))}
         for i, w in enumerate(leaves):
             orig = w._draw
+
             def make_spy(orig, idx):
                 def _spy(ctx):
                     counts[idx] += 1
                     orig(ctx)
+
                 return _spy
+
             w._draw = make_spy(orig, i)
 
         return c, leaves, counts
 
     def test_full_clip_no_child_draw(self):
         c, _, counts = self._spy_container()
-        _render(c)  # full clip
+        _render(c)
         assert all(v == 0 for v in counts.values()), (
             f"Expected no child _draw calls on cache hit (full clip), got {counts}"
         )
 
     def test_partial_clip_no_child_draw(self):
         c, _, counts = self._spy_container()
-        img = Image.new("RGB", (W, H), (128, 128, 128))
-        pool = BufferPool((W, H))
+        surf = pygame.Surface((W, H))
+        surf.fill((128, 128, 128))
         partial_clip = Box.xywh(0, 0, W // 2, H)
-        ctx = PaintContext(img, ImageDraw.Draw(img), partial_clip, pool)
+        ctx = PaintContext(surface=surf, clip=partial_clip)
         c.do_draw(ctx, Box.xywh(0, 0, W, H))
         assert all(v == 0 for v in counts.values()), (
             f"Expected no child _draw calls on cache hit (partial clip), got {counts}"
         )
 
     def test_cache_miss_does_invoke_child_draw(self):
-        """Sanity check: if cache is invalid, children must be redrawn."""
         c, _, counts = self._spy_container()
-        c._cache_valid = False  # force miss
+        c._cache_valid = False
         _render(c)
-        assert all(v == 1 for v in counts.values()), (
-            f"Expected one _draw per child on cache miss, got {counts}"
-        )
+        assert all(v == 1 for v in counts.values()), f"Expected one _draw per child on cache miss, got {counts}"
 
 
 # ---------------------------------------------------------------------------
@@ -188,28 +179,19 @@ class TestCacheHitSkipsRebuild:
 
 
 class TestPushUpPixelParity:
-    """The pixels produced by a cache-blit must match those from a full rebuild,
-    both after initial render and after a leaf update pushed up via propagate_dirty."""
-
     def test_initial_render_blit_equals_rebuild(self):
-        """After refresh(), a cache-blit and a forced rebuild must be identical."""
         c = _container()
         _ColorWidget(color=(200, 100, 50), box=Box.xywh(0, 0, 50, 30), parent=c)
         _ColorWidget(color=(50, 150, 200), box=Box.xywh(50, 30, 50, 30), parent=c)
         c.refresh()
 
-        cached = _render(c)           # cache hit → pure blit
+        cached = _render(c)
         c._cache_valid = False
-        rebuilt = _render(c)          # cache miss → full rebuild
+        rebuilt = _render(c)
 
-        assert cached.tobytes() == rebuilt.tobytes(), (
-            "Cache blit diverged from rebuild on initial render"
-        )
+        assert _bytes(cached) == _bytes(rebuilt), "Cache blit diverged from rebuild on initial render"
 
     def test_leaf_color_change_push_up_parity(self):
-        """After a leaf widget changes color and calls refresh(), the push-up
-        should update the parent cache so a blit produces the same result as
-        a full rebuild."""
         outer = _container()
         inner = ContainerWidget(box=Box.xywh(0, 0, W, H), parent=outer)
         leaf = _ColorWidget(color=(255, 0, 0), box=Box.xywh(10, 10, 40, 20), parent=inner)
@@ -217,36 +199,27 @@ class TestPushUpPixelParity:
         outer.refresh()
         assert outer._cache_valid is True
 
-        # Change leaf and trigger push-up
         leaf.color = (0, 0, 255)
         leaf.refresh()
 
-        # Optimized path: outer._cache_valid is still True; do_draw blits outer.image
         assert outer._cache_valid is True, (
-            "Push-up must not invalidate the outer cache; it updates outer.image in place"
+            "Push-up must not invalidate the outer cache; it updates outer.surface in place"
         )
         optimized = _render(outer)
 
-        # Baseline path: force rebuild of everything
         outer._cache_valid = False
         inner._cache_valid = False
         rebuilt = _render(outer)
 
-        assert optimized.tobytes() == rebuilt.tobytes(), (
-            "Push-up result diverged from full rebuild after leaf color change"
-        )
+        assert _bytes(optimized) == _bytes(rebuilt), "Push-up result diverged from full rebuild after leaf color change"
 
     def test_leaf_hide_push_up_parity(self):
-        """Hiding a leaf triggers parent.refresh() which re-renders the container.
-        The resulting outer cache should match a forced rebuild."""
         outer = _container()
         inner = ContainerWidget(box=Box.xywh(0, 0, W, H), parent=outer)
         leaf = _ColorWidget(color=(0, 200, 0), box=Box.xywh(5, 5, 30, 20), parent=inner)
         _ColorWidget(color=(200, 0, 0), box=Box.xywh(40, 5, 30, 20), parent=inner)
 
         outer.refresh()
-
-        # hide() calls parent.refresh() → inner.refresh() → propagate_dirty into outer
         leaf.hide()
 
         optimized = _render(outer)
@@ -255,13 +228,9 @@ class TestPushUpPixelParity:
         inner._cache_valid = False
         rebuilt = _render(outer)
 
-        assert optimized.tobytes() == rebuilt.tobytes(), (
-            "Push-up result diverged from full rebuild after leaf hide"
-        )
+        assert _bytes(optimized) == _bytes(rebuilt), "Push-up result diverged from full rebuild after leaf hide"
 
     def test_partial_scroll_push_up_parity(self):
-        """A virtual child's scroll() pushes up into the outer cache.
-        The blitted result must match a forced rebuild."""
         outer = _container()
         virtual = ContainerWidget(
             box=Box.xywh(0, 0, W, H),
@@ -270,15 +239,21 @@ class TestPushUpPixelParity:
             parent=outer,
         )
         ITEM_H = H // 3
-        COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255),
-                  (255, 255, 0), (0, 255, 255), (255, 0, 255),
-                  (128, 128, 0), (0, 128, 128), (128, 0, 128)]
+        COLORS = [
+            (255, 0, 0),
+            (0, 255, 0),
+            (0, 0, 255),
+            (255, 255, 0),
+            (0, 255, 255),
+            (255, 0, 255),
+            (128, 128, 0),
+            (0, 128, 128),
+            (128, 0, 128),
+        ]
         for i, color in enumerate(COLORS):
             _ColorWidget(color=color, box=Box.xywh(0, i * ITEM_H, W, ITEM_H), parent=virtual)
 
         outer.refresh()
-
-        # Scroll virtual child; scroll() calls propagate_dirty → push-up into outer
         virtual.scroll((0, H))
 
         optimized = _render(outer)
@@ -286,6 +261,6 @@ class TestPushUpPixelParity:
         outer._cache_valid = False
         rebuilt = _render(outer)
 
-        assert optimized.tobytes() == rebuilt.tobytes(), (
+        assert _bytes(optimized) == _bytes(rebuilt), (
             "Push-up result diverged from full rebuild after virtual child scroll"
         )
