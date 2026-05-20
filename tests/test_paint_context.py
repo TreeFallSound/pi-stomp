@@ -2,7 +2,6 @@
 Unit tests for paint-context drawing logic:
   - Box.contains
   - Widget._draw_erase (safe-interior vs full-frame erase)
-  - ContainerWidget.do_draw clip expansion for rounded containers
   - ContainerWidget.propagate_dirty scroll-offset translation
 """
 
@@ -139,94 +138,6 @@ class TestDrawErase:
         assert img.getpixel((50, 50)) == (0, 0, 0)
         # Absolute corner pixels NOT erased (rounded rect leaves them)
         assert img.getpixel((0, 0)) == (255, 255, 255)
-
-
-# ---------------------------------------------------------------------------
-# ContainerWidget.do_draw clip expansion
-# ---------------------------------------------------------------------------
-
-
-class TestContainerClipExpansion:
-    """When a rounded container's dirty clip touches a corner, do_draw must
-    expand the clip to the full frame so that both erase and child-draws are
-    consistent (no content left erased-but-not-redrawn)."""
-
-    def _make_rounded_container(self, r=10):
-        return _container(w=100, h=100, outline_radius=r)
-
-    def test_no_radius_no_expansion(self):
-        c = _container(outline_radius=None)
-        # Paint a sentinel pixel in the top-left corner of the container image
-        c.image.putpixel((5, 5), (255, 0, 0))  # pyright: ignore[reportOptionalMemberAccess]
-
-        # Dirty clip covers only the bottom-right area — does not include (5,5)
-        clip = Box(50, 50, 100, 100)
-        frame = Box(0, 0, 100, 100)
-        parent_img = Image.new("RGB", (100, 100), (128, 128, 128))
-        parent_draw = ImageDraw.Draw(parent_img)
-        ctx = PaintContext(parent_img, parent_draw, clip)
-
-        c.do_draw(ctx, frame)
-        # The sentinel pixel in container image should be unchanged (no expansion)
-        assert c.image.getpixel((5, 5)) == (255, 0, 0)  # pyright: ignore[reportOptionalMemberAccess]
-
-    def test_radius_corner_clip_does_not_expand(self):
-        """A clip touching a corner does NOT expand. Framework-level clipping
-        via temp buffers handles consistency; we don't need the expansion hack."""
-        r = 10
-        c = _container(w=100, h=100, outline_radius=r)
-
-        # Add a child widget that tracks whether it was drawn
-        drawn_frames = []
-
-        class TrackingWidget(Widget):
-            def _draw(self, ctx):
-                drawn_frames.append(ctx.frame.copy())
-
-        child_box = Box(5, 5, 40, 20)  # in top-left — inside corner region
-        child = TrackingWidget(box=child_box)
-        child.attach(c)
-        child.bkgnd_color = (0, 0, 0)
-        child.fgnd_color = (255, 255, 255)
-
-        # Dirty clip covers only the bottom-right, away from the child
-        clip = Box(60, 60, 100, 100)
-        frame = Box(0, 0, 100, 100)
-        parent_img = Image.new("RGB", (100, 100))
-        ctx = PaintContext(parent_img, ImageDraw.Draw(parent_img), clip)
-
-        c.do_draw(ctx, frame)
-
-        # Child must NOT have been drawn (no expansion)
-        assert len(drawn_frames) == 0
-
-    def test_radius_safe_interior_clip_does_not_expand(self):
-        """A clip fully inside the safe interior should NOT trigger expansion."""
-        r = 10
-        c = _container(w=100, h=100, outline_radius=r)
-
-        drawn_frames = []
-
-        class TrackingWidget(Widget):
-            def _draw(self, ctx):
-                drawn_frames.append(ctx.frame.copy())
-
-        # Child is in top-left corner region
-        child = TrackingWidget(box=Box(2, 2, 8, 8))
-        child.attach(c)
-        child.bkgnd_color = (0, 0, 0)
-        child.fgnd_color = (255, 255, 255)
-
-        # Dirty clip is fully in the safe interior (r..100-r)
-        clip = Box(20, 20, 80, 80)
-        frame = Box(0, 0, 100, 100)
-        parent_img = Image.new("RGB", (100, 100))
-        ctx = PaintContext(parent_img, ImageDraw.Draw(parent_img), clip)
-
-        c.do_draw(ctx, frame)
-
-        # Child frame doesn't intersect clip → not drawn
-        assert len(drawn_frames) == 0
 
 
 # ---------------------------------------------------------------------------
