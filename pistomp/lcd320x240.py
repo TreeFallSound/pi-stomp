@@ -229,13 +229,21 @@ class Lcd(abstract_lcd.Lcd):
 
         d = Dialog(width=240, height=120, auto_destroy=True, title='Configure WiFi')
 
-        self.w_wifi_ssid = TextWidget(box=Box.xywh(0, 0, 190, 0), text=ssid, prompt='SSID :', parent=d,
+        font = Config().get_font('default')
+        ssid_w = get_text_size('SSID :', font)[0]
+        pw_w = get_text_size('Passwd :', font)[0]
+
+        _ = TextWidget(box=Box.xywh(0, 0, ssid_w, 0), text='SSID :', parent=d,
+                       h_margin=0, v_margin=3, align=WidgetAlign.NONE)
+        self.w_wifi_ssid = TextWidget(box=Box.xywh(ssid_w, 0, 190, 0), text=ssid, parent=d,
                        outline=1, sel_width=3,
                        outline_radius=5,
                        align=WidgetAlign.NONE, name='cancel_btn',
                        edit_message='WiFi SSID')
         d.add_sel_widget(self.w_wifi_ssid)
-        self.w_wifi_pw = TextWidget(box=Box.xywh(0, 30, 169, 0), text=psk, prompt='Passwd :', parent=d,
+        _ = TextWidget(box=Box.xywh(0, 30, pw_w, 0), text='Passwd :', parent=d,
+                       h_margin=0, v_margin=3, align=WidgetAlign.NONE)
+        self.w_wifi_pw = TextWidget(box=Box.xywh(pw_w, 30, 169, 0), text=psk, parent=d,
                        outline=1,
                        sel_width=3, outline_radius=5,
                        align=WidgetAlign.NONE, name='cancel_btn',

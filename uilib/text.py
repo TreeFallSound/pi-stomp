@@ -169,10 +169,9 @@ class TextEditor(RoundedPanel):
 # XXX TODO: Add alignment features
 class TextWidget(Widget):
     """A simple widget with a text string"""
-    def __init__(self, box, text='', prompt=None, font = None, edit_message = None, h_margin = None, v_margin = None,
+    def __init__(self, box, text='', font = None, edit_message = None, h_margin = None, v_margin = None,
                  text_halign = None, **kwargs):
         self.text = text
-        self.prompt = prompt
         if font == None:
             font = Config().get_font('default')
         self.font = font
@@ -182,13 +181,6 @@ class TextWidget(Widget):
         self.text_halign = text_halign
         self.font_metrics = font.getmetrics()
         self.text_size_valid = False
-        # TODO Kindof a hack
-        self.prompt_offset = 0
-        if self.prompt is not None:
-            w, h = get_text_size(self.prompt, self.font, self.font_metrics)
-            box.x0 += w
-            box.x1 += w
-            self.prompt_offset = w
         super(TextWidget,self).__init__(box, **kwargs)
 
     def _get_text_size(self):
@@ -265,11 +257,6 @@ class TextWidget(Widget):
         else:
             hoffset = int((hroom - tw) / 2)
         loc = (h_margin + hoffset, v_margin)
-        if self.prompt is not None:
-            # Prompt is drawn at image x=0 (container origin), to the LEFT of our frame.
-            # See __init__: box.x0 was shifted right by prompt_offset; drawing at
-            # widget-relative x=-prompt_offset puts the prompt back at image x=0.
-            ctx.draw_text((-self.prompt_offset, loc[1]), self.prompt, fill=self.fgnd_color, font=self.font)
         ctx.draw_text(loc, self.text, fill=self.fgnd_color, font=self.font)
 
     def input_event(self, event):
