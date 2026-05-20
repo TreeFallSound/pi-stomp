@@ -34,7 +34,7 @@ class Menu(Dialog):
         if font is None:
             font = Config().get_font('default')
         self.font = font
-        self.font_metrics = font.getmetrics()
+        self.font_metrics = None
         self.item_h = 0
         self.text_halign = text_halign
         self.default_item = default_item

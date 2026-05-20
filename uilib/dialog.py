@@ -57,33 +57,25 @@ class DialogDecorator(PanelDecorator):
         # The +2 here is magic ... need to figure out what's up, otherwise we get only 1 pixel
         ctx.draw_line(((0, y), (ctx.width - self.outline, y)), fill=self.fgnd_color, width=self.outline + 2)
 
-class Dialog(Panel):
-    def __init__(self, width, height, title, title_font = None, **kwargs):
+class Dialog(RoundedPanel):
+    """A pop-up dialog with a title decorator. Rounded corners come from the
+    backing surface's own alpha channel (pygame border_radius)."""
+
+    def __init__(self, width, height, title, title_font=None, **kwargs):
         box = Box.xywh(0, 0, width, height)
-        # Fixed radius for now
         radius = 10
-        if title_font == None:
+        if title_font is None:
             title_font = Config().get_font('default_title')
-        deco = functools.partial(DialogDecorator, title = title, title_font = title_font, outline_radius = radius)
-        if 'mask_format' not in kwargs:
-            kwargs['mask_format'] = '1'
-        super(Dialog,self).__init__(box = box, align = WidgetAlign.CENTRE, radius = radius,
-                                    decorator = deco, **kwargs)
-        # Setup mask
-        mdraw = ImageDraw.Draw(self.mask)
-        # Base is a rounded rectangle
-        b = self.box.norm()
-        mdraw.rounded_rectangle(b.PIL_rect, radius, 1, None, 0)
-        # Fill up the top corners
-        b.height = int(b.height / 2)
-        mdraw.rectangle(b.PIL_rect, 1, None, 0)
+        deco = functools.partial(DialogDecorator, title=title, title_font=title_font, outline_radius=radius)
+        super(Dialog, self).__init__(box=box, align=WidgetAlign.CENTRE, radius=radius,
+                                     decorator=deco, **kwargs)
 
 class MessageDialog(Dialog):
     def __init__(self, panelstack, message, title="Error", width=200, height=90):
         super(MessageDialog, self).__init__(width=width, height=height, title=title, auto_destroy=True)
 
-        bbox = Config().get_font('default_title').getbbox("a")
-        chars_per_line = width // int(bbox[2] - bbox[0])
+        char_w = Config().get_font('default_title').get_rect("a").width
+        chars_per_line = width // max(1, int(char_w))
         chunks = textwrap.wrap(message, width=chars_per_line)
         wrapped = '\n'.join(chunks)
 

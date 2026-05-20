@@ -14,97 +14,62 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from dataclasses import dataclass, replace
-from typing import Generator, Optional, Tuple, Protocol
+from typing import Generator, Optional, Sequence, Tuple, Union
 from contextlib import contextmanager
-from PIL import Image, ImageDraw
+
+from uilib._pygame_init import init as _pg_init
+
+_pg_init()
+
+import pygame
+import pygame._freetype as _freetype
+import pygame.gfxdraw as gfxdraw
 
 from uilib.box import Box
 
 
-class BufferManager(Protocol):
-    """Protocol for providing RGBA buffers."""
-
-    def acquire(self, size: Tuple[int, int]) -> Image.Image: ...
-    def release(self, buf: Image.Image) -> None: ...
-
-
-class NaiveBufferPool:
-    """Naive implementation that always allocates a new image."""
-
-    def acquire(self, size: Tuple[int, int]) -> Image.Image:
-        return Image.new("RGBA", size, (0, 0, 0, 0))
-
-    def release(self, buf: Image.Image) -> None:
-        pass
+# Color spec accepted by uilib's PaintContext primitives.
+ColorLike = Union[pygame.Color, str, int, Tuple[int, int, int], Tuple[int, int, int, int], Sequence[int]]
+Point = Tuple[int, int]
+PointSeq = Sequence[Point]
+FlatCoords = Sequence[int]
 
 
-_NAIVE_POOL = NaiveBufferPool()
+def _color(c: ColorLike) -> pygame.Color:
+    """Coerce a non-None color spec to a pygame.Color."""
+    if isinstance(c, pygame.Color):
+        return c
+    if isinstance(c, str):
+        return pygame.Color(c)
+    return pygame.Color(*c) if not isinstance(c, int) else pygame.Color(c)
 
 
-class BufferPool:
-    """Stack of reusable RGBA buffers sized up to (max_w, max_h).
+def _ipt(p: Sequence[int]) -> Point:
+    return (int(p[0]), int(p[1]))
 
-    Used as a stack to support reentrant slow paths (slow-path widget
-    contains a slow-path child). Each acquire returns a buffer of at
-    least the requested size; the buffer is cleared on acquire and
-    returned to the pool on release. No allocation after warm-up."""
 
-    def __init__(self, max_size: Tuple[int, int]):
-        self.max_size = max_size
-        self._free: list[Image.Image] = []
-
-    def acquire(self, size: Tuple[int, int]) -> Image.Image:
-        # 1. Look for the best existing buffer: smallest one that's at least as big as 'size'
-        #    on both dimensions.
-        best_idx = -1
-        best_area = -1
-
-        for i, img in enumerate(self._free):
-            if img.size[0] >= size[0] and img.size[1] >= size[1]:
-                area = img.size[0] * img.size[1]
-                if best_idx == -1 or area < best_area:
-                    best_idx = i
-                    best_area = area
-
-        if best_idx != -1:
-            img = self._free.pop(best_idx)
-        else:
-            # 2. No suitable buffer found. Allocate exactly what's needed,
-            #    capped by max_size.
-            alloc_size = (min(size[0], self.max_size[0]), min(size[1], self.max_size[1]))
-            img = Image.new("RGBA", alloc_size, (0, 0, 0, 0))
-
-        # Clear the region we will use
-        img.paste((0, 0, 0, 0), (0, 0, size[0], size[1]))
-        return img
-
-    def release(self, buf: Image.Image) -> None:
-        self._free.append(buf)
+def _pg_rect(box: Box) -> pygame.Rect:
+    return pygame.Rect(int(box.x0), int(box.y0), max(0, int(box.width)), max(0, int(box.height)))
 
 
 @dataclass(frozen=True)
 class PaintContext:
     """Immutable paint state passed down the widget tree.
 
-    image : target surface being drawn into
-    draw  : cached ImageDraw for image
-    clip  : dirty rect in image-coordinate space
-    pool  : buffer pool for slow-path clipping (defaults to a naive impl)
-    frame : the current widget's rect in image-coordinate space; widget-relative
-            drawing methods translate (0,0) → frame.topleft. None on root
-            contexts before painting() has been entered.
+    surface : pygame.Surface being drawn into
+    clip    : dirty rect in surface-coordinate space
+    frame   : the current widget's rect in surface-coordinate space; widget-relative
+              drawing methods translate (0,0) → frame.topleft. None on root
+              contexts before painting() has been entered.
     """
 
-    image: Image.Image
-    draw: ImageDraw.ImageDraw
+    surface: pygame.Surface
     clip: Box
-    pool: BufferManager = _NAIVE_POOL
     frame: Optional[Box] = None
 
     # --- Widget-relative geometry helpers ---
 
     def _f(self) -> Box:
-        """Return frame, asserting it has been set (drawing requires it)."""
         assert self.frame is not None, "PaintContext drawing requires a frame; enter via painting()"
         return self.frame
 
@@ -124,110 +89,150 @@ class PaintContext:
 
     @property
     def dirty_bounds(self) -> Box:
-        """Widget-relative dirty rect: bounds ∩ (clip in widget coords).
-
-        On the fast path this equals `bounds` whenever the clip fully covers
-        the frame. On the slow path the clip is the temp's own bounds and the
-        frame is re-anchored, so this still resolves to the widget-visible
-        sub-rect."""
+        """Widget-relative dirty rect: bounds ∩ (clip in widget coords)."""
         f = self._f()
         return self.bounds.intersection(self.clip.deoffset(f.topleft))
 
-    def _abs_xy(self, xy):
+    def _abs_xy(self, xy: Sequence[int]) -> Point:
         ox, oy = self._f().topleft
-        return (xy[0] + ox, xy[1] + oy)
+        return (int(xy[0]) + ox, int(xy[1]) + oy)
 
     def _abs_box(self, box: Box) -> Box:
         return box.offset(self._f().topleft)
 
-    def _abs_points(self, xy):
-        """Translate a sequence of points (2-tuples) or a flat coord tuple."""
+    def _abs_points(self, xy: Union[PointSeq, FlatCoords]) -> Sequence[Point]:
         ox, oy = self._f().topleft
         if len(xy) == 0:
-            return xy
-        if isinstance(xy[0], (tuple, list)):
-            return [(p[0] + ox, p[1] + oy) for p in xy]
-        out = []
+            return []
+        first = xy[0]
+        if isinstance(first, (tuple, list)):
+            return [(int(p[0]) + ox, int(p[1]) + oy) for p in xy]  # type: ignore[index]
+        out: list[Point] = []
         for i in range(0, len(xy), 2):
-            out.append(xy[i] + ox)
-            out.append(xy[i + 1] + oy)
-        return tuple(out)
+            out.append((int(xy[i]) + ox, int(xy[i + 1]) + oy))  # type: ignore[arg-type]
+        return out
 
     # --- Widget-relative drawing primitives ---
 
-    def fill(self, color):
-        """Fill the widget's frame with `color`."""
-        self.draw.rectangle(self._f().PIL_rect, color, None, 0)
+    def fill(self, color: ColorLike) -> None:
+        self.surface.fill(_color(color), _pg_rect(self._abs_box(self.bounds)))
 
-    def draw_rectangle(self, box: Box, fill=None, outline=None, width=0, radius=None):
-        ab = self._abs_box(box)
-        if radius is None:
-            self.draw.rectangle(ab.PIL_rect, fill, outline, width)
-        else:
-            self.draw.rounded_rectangle(ab.PIL_rect, radius, fill, outline, width)
+    def draw_rectangle(
+        self,
+        box: Box,
+        fill: Optional[ColorLike] = None,
+        outline: Optional[ColorLike] = None,
+        width: int = 0,
+        radius: Optional[int] = None,
+    ) -> None:
+        rect = _pg_rect(self._abs_box(box))
+        if rect.width <= 0 or rect.height <= 0:
+            return
+        border_radius = int(radius) if radius is not None else 0
+        if fill is not None:
+            pygame.draw.rect(self.surface, _color(fill), rect, 0, border_radius=border_radius)
+        if outline is not None and int(width) > 0:
+            pygame.draw.rect(self.surface, _color(outline), rect, int(width), border_radius=border_radius)
 
-    def draw_ellipse(self, box: Box, fill=None, outline=None, width=0):
-        ab = self._abs_box(box)
-        self.draw.ellipse(ab.rect, fill=fill, outline=outline, width=width)
+    def draw_ellipse(
+        self, box: Box, fill: Optional[ColorLike] = None, outline: Optional[ColorLike] = None, width: int = 0
+    ) -> None:
+        """Draw a non-AA ellipse matching PIL's ImageDraw.ellipse aesthetic.
 
-    def draw_line(self, xy, fill=None, width=0):
-        self.draw.line(self._abs_points(xy), fill=fill, width=width)
+        gfxdraw.filled_ellipse for the fill (closest coverage to PIL),
+        pygame.draw.ellipse with width for the outline (PIL-equivalent jaggy
+        stroke; handles thick widths natively). AA versions blend edges to
+        semi-transparent gray which clashes with the design language."""
+        rect = _pg_rect(self._abs_box(box))
+        if rect.width <= 0 or rect.height <= 0:
+            return
+        if fill is not None:
+            cx = rect.x + rect.width // 2
+            cy = rect.y + rect.height // 2
+            rx = max(0, rect.width // 2 - 1)
+            ry = max(0, rect.height // 2 - 1)
+            gfxdraw.filled_ellipse(self.surface, cx, cy, rx, ry, _color(fill))
+        if outline is not None and int(width) > 0:
+            pygame.draw.ellipse(self.surface, _color(outline), rect, int(width))
 
-    def draw_text(self, pos, text, fill=None, font=None, anchor=None):
-        self.draw.text(self._abs_xy(pos), text, fill=fill, font=font, anchor=anchor)
+    def draw_line(self, xy: Union[PointSeq, FlatCoords], fill: Optional[ColorLike] = None, width: int = 0) -> None:
+        if fill is None:
+            return
+        color = _color(fill)
+        w = max(1, int(width))
+        pts = self._abs_points(xy)
+        if len(pts) == 2:
+            pygame.draw.line(self.surface, color, _ipt(pts[0]), _ipt(pts[1]), w)
+        elif len(pts) > 2:
+            pygame.draw.lines(self.surface, color, False, [_ipt(p) for p in pts], w)
 
-    def paste(self, src, pos, mask=None):
-        self.image.paste(src, self._abs_xy(pos), mask)
+    def draw_text(
+        self,
+        pos: Sequence[int],
+        text: str,
+        fill: Optional[ColorLike] = None,
+        font: Optional[_freetype.Font] = None,
+        anchor: Optional[str] = None,
+    ) -> None:
+        """Draw text using a pygame._freetype Font.
 
-    def alpha_composite(self, src, pos=(0, 0), src_box=None):
+        Default anchor matches PIL's `la` (left, ascender): `pos` is the
+        top-left of the line box (ascender line), not of the visible glyph
+        bbox. This keeps text vertical alignment consistent regardless of
+        which characters appear (with/without ascenders or descenders).
+        Also supports anchor='mm' (middle/middle of the glyph bbox).
+        """
+        if not text or font is None or fill is None:
+            return
+        color = _color(fill)
+        x, y = self._abs_xy(pos)
+        if anchor == "mm":
+            rect = font.get_rect(text)
+            font.render_to(
+                self.surface,
+                (int(x - rect.width // 2), int(y - rect.height // 2)),
+                text,
+                fgcolor=color,
+            )
+            return
+        # PIL 'la' equivalent: draw with baseline = y + ascender, in origin mode.
+        ascender = int(font.get_sized_ascender())
+        prev_origin = font.origin
+        font.origin = True
+        try:
+            font.render_to(self.surface, (int(x), int(y) + ascender), text, fgcolor=color)
+        finally:
+            font.origin = prev_origin
+
+    def paste(self, src: pygame.Surface, pos: Sequence[int], mask: Optional[pygame.Surface] = None) -> None:
+        """Blit a surface onto self.surface at widget-relative coords."""
+        self.surface.blit(src, _ipt(self._abs_xy(pos)))
+
+    def alpha_composite(
+        self, src: pygame.Surface, pos: Sequence[int] = (0, 0), src_box: Optional[Tuple[int, int, int, int]] = None
+    ) -> None:
+        """SRCALPHA blit. Retained for API parity; equivalent to a normal blit
+        when src has per-pixel alpha (pygame handles compositing automatically)."""
+        dst = _ipt(self._abs_xy(pos))
         if src_box is None:
-            self.image.alpha_composite(src, self._abs_xy(pos))
+            self.surface.blit(src, dst)
         else:
-            self.image.alpha_composite(src, self._abs_xy(pos), src_box)
+            self.surface.blit(src, dst, area=pygame.Rect(*src_box))
 
     @contextmanager
     def painting(self, frame: Box) -> Generator["PaintContext", None, None]:
-        """Yield a PaintContext suitable for painting `frame`.
+        """Yield a PaintContext scoped to `frame`.
 
-        Fast path  (clip ⊇ frame): yields self with frame set. __exit__ is a no-op.
-        Slow path  (clip ∩ frame is sub-region): yields a temp-backed ctx
-                   sized exactly to the intersection, with origin re-anchored.
-                   __exit__ composites temp into self.image.
+        Sets an SDL clip rectangle = clip ∩ frame so primitives that draw past
+        the widget's frame are silently dropped. Pops the previous clip on exit.
         """
-        if self.clip.contains(frame):
-            yield replace(self, frame=frame)
-            return
-
         visible = self.clip.intersection(frame)
         if visible.is_empty():
-            # This should have been caught by the caller, but handle it gracefully
-            yield replace(self, frame=frame)
+            yield replace(self, frame=frame, clip=visible)
             return
-
-        # Slow path: allocate only what we can actually see
-        temp = self.pool.acquire(visible.size)
-
+        old_clip = self.surface.get_clip()
+        self.surface.set_clip(_pg_rect(visible))
         try:
-            temp_draw = ImageDraw.Draw(temp)
-            # Re-anchor: we want the widget to draw at 'frame' relative to 'visible.topleft'
-            # So if visible is at (10, 10) and frame is at (0, 0), the widget
-            # should draw at (-10, -10) in the temp buffer.
-            offset = visible.topleft
-            pframe = frame.deoffset(offset)
-            pclip = Box(0, 0, visible.width, visible.height)
-            pctx = PaintContext(temp, temp_draw, pclip, self.pool, frame=pframe)
-
-            yield pctx
-
-            # Composite result back to self.image. The pool may have handed us
-            # a buffer larger than `visible.size`; only the top-left
-            # (visible.width, visible.height) region was cleared and painted,
-            # so restrict the composite source to that region.
-            src_box = (0, 0, visible.width, visible.height)
-            if self.image.mode == "RGBA":
-                self.image.alpha_composite(temp, visible.topleft, src_box)
-            else:
-                sub = temp.crop(src_box)
-                self.image.paste(sub, visible.topleft, sub)
+            yield replace(self, frame=frame, clip=visible)
         finally:
-            self.pool.release(temp)
+            self.surface.set_clip(old_clip)

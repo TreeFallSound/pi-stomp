@@ -56,19 +56,16 @@ def trace(obj, *args):
         print(str(type(obj)), n, args)
 
 # Utility function (from stack overflow). TODO: Move to a TextUtils
-def get_text_size(text_string, font, metrics = None):
-    # https://stackoverflow.com/a/46220683/9263761
-    if metrics is not None:
-        ascent, descent = metrics
-    else:
-        ascent, descent = font.getmetrics()
+def get_text_size(text_string, font, metrics=None):
+    """Return (width, height) of `text_string` rendered with `font`.
 
-#    text_width = font.getmask(text_string).getbbox()[2]
-#    text_height = font.getmask(text_string).getbbox()[3] + descent
-    bbox = font.getbbox(text_string)
-    text_width = bbox[2] - bbox[0]
-    text_height = bbox[3] + descent
-
-    return (text_width, text_height)
+    Width is the actual glyph width for the given text. Height is the font's
+    line height (ascender + descender), so a widget sized for one string
+    stays sized correctly when the text changes — matches the PIL behavior
+    where `getmetrics()`-derived descent was added regardless of the text."""
+    if not text_string:
+        return (0, font.get_sized_height())
+    width = font.get_rect(text_string).width
+    return (width, font.get_sized_height())
 
         

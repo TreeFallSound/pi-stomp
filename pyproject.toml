@@ -25,7 +25,7 @@ dependencies = [
     "pyalsaaudio>=0.9; sys_platform == 'linux'",
     "websockets>=15.0.1",
     "gpiozero>=2.0; sys_platform == 'linux'",
-    "pygame>=2.6.1",
+    "pygame-ce>=2.5.7",
 ]
 
 [project.optional-dependencies]

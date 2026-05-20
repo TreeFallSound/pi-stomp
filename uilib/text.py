@@ -14,8 +14,8 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from math import log
-from PIL import ImageFont
 
+from uilib._pygame_init import freetype as _get_freetype
 from uilib.panel import *
 from uilib.misc import *
 from uilib.config import *
@@ -42,10 +42,9 @@ class LetterSelector(Widget):
         cs = self.charsets[mode]
         mw, mh = 0, 0
         for c in cs:
-            bbox = self.font.getbbox(c)
-            w, h = bbox[2] - bbox[0], bbox[3]
-            mw = max(mw,w)
-            mh = max(mh,h)
+            rect = self.font.get_rect(c)
+            mw = max(mw, rect.width)
+            mh = max(mh, rect.height)
         self.l_w = mw
         self.l_h = mh
         self.l_idx %= len(cs)
@@ -128,9 +127,11 @@ class TextEditor(RoundedPanel):
         self.set_outline(2, (255,255,255))
         self.outline = 2
         self.curline = widget.text
-        self.font = ImageFont.truetype("DejaVuSans.ttf", 18)
-        bbox = self.font.getbbox(widget.edit_message)
-        msg_w, msg_h = bbox[2] - bbox[0], bbox[3]
+        from pathlib import Path
+        _fonts = Path(__file__).resolve().parent.parent / "fonts"
+        self.font = _get_freetype().Font(str(_fonts / "DejaVuSans.ttf"), 18)
+        rect = self.font.get_rect(widget.edit_message)
+        msg_w, msg_h = rect.width, rect.height
         msg_box = Box.xywh(10, 10, msg_w, msg_h)
         self.msg = TextWidget(box = msg_box, text = widget.edit_message, font = self.font, parent = self)
         edit_box = Box.xywh(10,30,280,20)
@@ -179,7 +180,7 @@ class TextWidget(Widget):
         self.h_margin = h_margin
         self.v_margin = v_margin
         self.text_halign = text_halign
-        self.font_metrics = font.getmetrics()
+        self.font_metrics = None  # legacy field, pygame.freetype encodes size in get_rect
         self.text_size_valid = False
         super(TextWidget,self).__init__(box, **kwargs)
 
@@ -234,7 +235,7 @@ class TextWidget(Widget):
 
     def set_font(self, font):
         self.font = font
-        self.font_metrics = font.getmetrics()
+        self.font_metrics = None
         self.text_size_valid = False
         self.refresh()
 

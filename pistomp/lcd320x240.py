@@ -22,9 +22,10 @@ import common.parameter as Parameter
 import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
-from PIL import ImageColor
+import pygame
 
 from uilib import *
+from uilib._pygame_init import freetype as _get_freetype
 from uilib.lcd_ili9341 import *
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
@@ -70,10 +71,13 @@ class Lcd(abstract_lcd.Lcd):
         }
 
         # TODO get fonts from config.json
-        self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 26)
-        self.splash_font = ImageFont.truetype('DejaVuSans.ttf', 48)
-        self.small_font = ImageFont.truetype("DejaVuSans.ttf", 20)
-        self.tiny_font = ImageFont.truetype("DejaVuSans.ttf", 16)
+        from pathlib import Path
+        _fonts_dir = Path(__file__).resolve().parent.parent / "fonts"
+        _ft = _get_freetype()
+        self.title_font = _ft.Font(str(_fonts_dir / "DejaVuSans-Bold.ttf"), 26)
+        self.splash_font = _ft.Font(str(_fonts_dir / "DejaVuSans.ttf"), 48)
+        self.small_font = _ft.Font(str(_fonts_dir / "DejaVuSans.ttf"), 20)
+        self.tiny_font = _ft.Font(str(_fonts_dir / "DejaVuSans.ttf"), 16)
         self.title_split_orig = 190
         self.title_split = self.title_split_orig
         self.display_width = 320
@@ -271,7 +275,7 @@ class Lcd(abstract_lcd.Lcd):
 
     def draw_pedalboard(self, pedalboard_name):
         pedalboard_name += ":"
-        self.title_split = min(self.title_font.getmask(pedalboard_name).getbbox()[2], self.title_split_orig)
+        self.title_split = min(self.title_font.get_rect(pedalboard_name).width, self.title_split_orig)
         if self.w_pedalboard is not None:
             self.w_pedalboard.set_text(pedalboard_name)
             self.w_pedalboard.set_box(box=Box.xywh(0, 20, self.title_split, 36), realign=True, refresh=True)
@@ -403,8 +407,9 @@ class Lcd(abstract_lcd.Lcd):
         if color is None:
             return self.foreground
         try:
-            return ImageColor.getrgb(color)
-        except ValueError:
+            c = pygame.Color(color)
+            return (c.r, c.g, c.b)
+        except (ValueError, TypeError):
             logging.error("Cannot convert color name: %s" % color)
             return self.foreground
 
@@ -786,9 +791,7 @@ class Lcd(abstract_lcd.Lcd):
         text = ""
         for x in name.lower().replace('_', '').replace('/', '').replace(' ', ''):
             test = text + x
-            test_bbox = self.small_font.getbbox(test)
-            test_size = test_bbox[2] - test_bbox[0]
-            if test_size >= width:
+            if self.small_font.get_rect(test).width >= width:
                 break
             text = test
         return text

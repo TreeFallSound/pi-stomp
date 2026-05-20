@@ -14,7 +14,12 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import json
-from PIL import ImageFont
+import os
+from pathlib import Path
+
+from uilib._pygame_init import freetype as _get_freetype
+
+_FONTS_DIR = Path(__file__).resolve().parent.parent / "fonts"
 
 class Config():
     _instance = None
@@ -36,21 +41,26 @@ class Config():
 
     def _set_defaults(self):
         if 'default' not in self.fonts:
-            add_font('default', 'DejaVuSans.ttf', 16)
+            self.add_font('default', 'DejaVuSans.ttf', 16)
         if 'default_title' not in self.fonts:
-            add_font('default_title', 'DejaVuSans-Bold.ttf', 16)
+            self.add_font('default_title', 'DejaVuSans-Bold.ttf', 16)
         if 'default_fgnd' not in self.colors:
-            add_color('default_fgnd', (255, 255, 255))
+            self.add_color('default_fgnd', (255, 255, 255))
         if 'default_bkgnd' not in self.colors:
-            add_color('default_bkgnd', (0, 0, 0))
+            self.add_color('default_bkgnd', (0, 0, 0))
         if 'default_title_fgnd' not in self.colors:
-            add_color('default_title_fgnd', (255, 191, 63))
+            self.add_color('default_title_fgnd', (255, 191, 63))
         if 'default_title_bkgnd' not in self.colors:
-            add_color('default_title_bkgnd', (63, 63, 63))
+            self.add_color('default_title_bkgnd', (63, 63, 63))
 
     def add_font(self, label, file_name, size):
-        f = ImageFont.truetype(file_name, size)
-        # XXX Add some error handling
+        # Resolve bare filenames against the bundled fonts directory.
+        path = file_name
+        if not os.path.isabs(file_name) and not os.path.exists(file_name):
+            candidate = _FONTS_DIR / file_name
+            if candidate.exists():
+                path = str(candidate)
+        f = _get_freetype().Font(path, size)
         self.fonts[label] = f
 
     def get_font(self, label):

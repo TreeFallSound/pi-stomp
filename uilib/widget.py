@@ -13,10 +13,10 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing import TYPE_CHECKING, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
 from uilib.misc import *
 from uilib.box import *
-from uilib.paint import PaintContext, _NAIVE_POOL
+from uilib.paint import PaintContext
 
 if TYPE_CHECKING:
     from uilib.container import ContainerWidget
@@ -401,7 +401,12 @@ class Widget:
             self.parent.notify_detach(widget)
 
     def refresh(self, box=None):
-        """Refresh widget (and children)"""
+        """Refresh widget (and children).
+
+        SDL clipping (set in PaintContext.painting) keeps any out-of-frame
+        primitives from leaking past the widget's frame, so we draw straight
+        into the container's surface — no temp buffer.
+        """
         trace(self, "Widget.refresh: vis=", self.visible, "parent=", self.parent)
         if self.parent is None or not self.visible:
             return
@@ -417,26 +422,8 @@ class Widget:
         if container.virtual and not container._viewport().intersects(frame):
             self._dirty = True
             return
-        stack = self._get_stack()
-        pool = stack.pool if stack else _NAIVE_POOL
-        # Render into a frame-sized temp buffer so any unintentional draw bleed
-        # (notably PIL's ImageDraw.text, which ignores clips) is naturally
-        # truncated at the widget's frame. Drawing straight into container.image
-        # would let anti-aliased glyph edges past frame.right double-composite
-        # on subsequent refreshes — see PAINT_CLIPPING_PLAN.md.
-        from PIL import ImageDraw
-        temp = pool.acquire(frame.size)
-        temp_draw = ImageDraw.Draw(temp)
-        local_frame = Box(0, 0, frame.width, frame.height)
-        temp_ctx = PaintContext(temp, temp_draw, local_frame, pool, frame=local_frame)
-        self.do_draw(temp_ctx, local_frame)
-        src_box = (0, 0, frame.width, frame.height)
-        if container.image.mode == "RGBA":
-            container.image.alpha_composite(temp, frame.topleft, src_box)
-        else:
-            sub = temp.crop(src_box)
-            container.image.paste(sub, frame.topleft, sub)
-        pool.release(temp)
+        ctx = PaintContext(container.surface, clip, frame=frame)
+        self.do_draw(ctx, frame)
         self._painted = True
         self._dirty = False
         container.propagate_dirty(clip)
