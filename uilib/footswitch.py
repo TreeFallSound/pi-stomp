@@ -61,7 +61,10 @@ class FootswitchWidget(Widget):
         ctx.draw_text((0, h), self.label, self.foreground, self.font)
 
     def _draw_halo(self, ctx):
-        color = self.color_plugin_bypassed if self.is_bypassed else self.color
+        # When an unbound footswitch toggles active, self.color is None. PIL's
+        # ImageDraw silently fell back to its default ink (white); pygame skips
+        # the draw entirely. Fall back to foreground to preserve the look.
+        color = self.color_plugin_bypassed if self.is_bypassed else (self.color or self.foreground)
         ctx.draw_ellipse(
             Box(self.HALO_INSET, self.HALO_TOP,
                 ctx.width - self.HALO_INSET, ctx.height - self.HALO_INSET),

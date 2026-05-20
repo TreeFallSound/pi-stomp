@@ -144,6 +144,9 @@ class PaintContext:
         stroke; handles thick widths natively). AA versions blend edges to
         semi-transparent gray which clashes with the design language."""
         rect = _pg_rect(self._abs_box(box))
+        # XXX: adding 1 to width/height gave us parity with Pillow...
+        rect.width += 1
+        rect.height += 1
         if rect.width <= 0 or rect.height <= 0:
             return
         if fill is not None:
