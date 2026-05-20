@@ -59,14 +59,16 @@ def trace(obj, *args):
 def get_text_size(text_string, font, metrics=None):
     """Return (width, height) of `text_string` rendered with `font`.
 
-    Width is the metric advance width — sum of per-glyph advance_x —
-    matching PIL's ImageFont.getbbox(text)[2]-[0] exactly. Earlier we returned
-    the tight ink width (`rect.x + rect.width`) which is 1-2px smaller, and
-    caused centered widgets to compute hoffset 1px right of where PIL
-    placed them. See PYGAME_SWAP_PLAN.md.
+    Width matches PIL's `font.getbbox(text)[2] - getbbox(text)[0]` exactly:
+        bbox_left  = min(0, min_glyph_ink_left_in_pen_coords)
+        bbox_right = max(pen_after_last_glyph, max_glyph_ink_right_in_pen_coords)
+        width      = bbox_right - bbox_left
+    Neither pygame's `rect.x + rect.width` nor `sum(advance_x)` alone matches
+    PIL — the former undercounts when ink overhangs past the advance (e.g. 'j'
+    LSB<0, '█' max_x>advance), the latter overcounts in the same cases.
 
-    Height = ascender + font_descender + per-text glyph_descent overflow,
-    matching PIL's `bbox[3] + descent` for the text.
+    Height = font ascender + font descender + per-text glyph descent overflow
+    (for descender glyphs like g/p/y), matching PIL's `bbox[3] + descent`.
     """
     asc = int(font.get_sized_ascender())
     desc = abs(int(font.get_sized_descender()))
@@ -74,20 +76,40 @@ def get_text_size(text_string, font, metrics=None):
     if not text_string:
         return (0, line_height)
     # pygame.freetype.Font.get_metrics returns per-glyph
-    # (min_x, max_x, min_y, max_y, advance_x, advance_y); negative values
-    # come back as 32-bit unsigned, so wrap them.
-    advance_sum = 0.0
+    # (min_x, max_x, min_y, max_y, advance_x, advance_y). Negative values come
+    # back as 32-bit unsigned ints — wrap them.
+    def _signed(v):
+        return v - 0x100000000 if v >= 0x80000000 else v
+
+    pen = 0.0
+    ink_left = 0.0
+    ink_right = 0.0
+    has_any = False
     glyph_desc = 0
     for m in font.get_metrics(text_string):
         if m is None:
             continue
-        advance_sum += m[4]
-        min_y = m[2]
-        if min_y >= 0x80000000:
-            min_y -= 0x100000000
+        min_x = _signed(m[0])
+        max_x = _signed(m[1])
+        min_y = _signed(m[2])
+        adv_x = m[4]
+        l = pen + min_x
+        r = pen + max_x
+        if not has_any:
+            ink_left, ink_right, has_any = l, r, True
+        else:
+            if l < ink_left:
+                ink_left = l
+            if r > ink_right:
+                ink_right = r
+        pen += adv_x
         if min_y < 0 and -min_y > glyph_desc:
             glyph_desc = -min_y
-    width = int(round(advance_sum))
+    if not has_any:
+        return (0, line_height)
+    right_edge = max(ink_right, pen)
+    left_edge = min(0.0, ink_left)
+    width = int(round(right_edge - left_edge))
     return (width, line_height + glyph_desc)
 
         

@@ -275,13 +275,14 @@ class Lcd(abstract_lcd.Lcd):
 
     def draw_pedalboard(self, pedalboard_name):
         pedalboard_name += ":"
-        _r = self.title_font.get_rect(pedalboard_name)
-        self.title_split = min(_r.x + _r.width, self.title_split_orig)
+        _tw, _ = get_text_size(pedalboard_name, self.title_font)
+        self.title_split = min(_tw, self.title_split_orig)
+        box_w = self.title_split + 4
         if self.w_pedalboard is not None:
             self.w_pedalboard.set_text(pedalboard_name)
-            self.w_pedalboard.set_box(box=Box.xywh(0, 20, self.title_split, 36), realign=True, refresh=True)
+            self.w_pedalboard.set_box(box=Box.xywh(0, 20, box_w, 36), realign=True, refresh=True)
             return
-        self.w_pedalboard = TextWidget(box=Box.xywh(0, 20, self.title_split, 36), text=pedalboard_name,
+        self.w_pedalboard = TextWidget(box=Box.xywh(0, 20, box_w, 36), text=pedalboard_name,
                                        font=self.title_font, parent=self.main_panel, action=self.draw_pedalboard_menu)
         self.main_panel.add_sel_widget(self.w_pedalboard)
 
@@ -756,12 +757,12 @@ class Lcd(abstract_lcd.Lcd):
                         text_color = color
 
             if control_type == Token.KNOB:
-                w = Icon(box=Box.xywh(x, y, 0, 0), text=name, text_color=text_color, parent=self.main_panel, outline=0)
+                w = Icon(box=Box.xywh(x, y, width_per_control, 18), text=name, text_color=text_color, parent=self.main_panel, outline=0)
                 w.set_foreground(color)
                 w.add_knob()
                 self.w_controls.append(w)
             elif control_type == Token.EXPRESSION:
-                w = Icon(box=Box.xywh(x, y, 0, 0), text=name, text_color=text_color, parent=self.main_panel, outline=0)
+                w = Icon(box=Box.xywh(x, y, width_per_control, 18), text=name, text_color=text_color, parent=self.main_panel, outline=0)
                 w.set_foreground(color)
                 w.add_pedal()
                 self.w_controls.append(w)
@@ -792,7 +793,8 @@ class Lcd(abstract_lcd.Lcd):
         text = ""
         for x in name.lower().replace('_', '').replace('/', '').replace(' ', ''):
             test = text + x
-            if self.small_font.get_rect(test).width >= width:
+            tw, _ = get_text_size(test, self.small_font)
+            if tw >= width:
                 break
             text = test
         return text

@@ -41,10 +41,20 @@ class LetterSelector(Widget):
         self.mode = mode
         cs = self.charsets[mode]
         mw, mh = 0, 0
+        # PIL bbox[3] = asc + max(0, -glyph_min_y). PIL's original code used
+        # `font.getbbox(c)[3]` as the per-char height, which equals this.
+        # pygame's rect.height alone is 3px too short for non-descender glyphs
+        # at 18pt — it would put loc.y 1-2px above where PIL placed it.
+        asc = int(self.font.get_sized_ascender())
         for c in cs:
-            rect = self.font.get_rect(c)
-            mw = max(mw, rect.width)
-            mh = max(mh, rect.height)
+            cw, _ = get_text_size(c, self.font)
+            mw = max(mw, cw)
+            m = self.font.get_metrics(c)[0]
+            min_y = m[2]
+            if min_y >= 0x80000000:
+                min_y -= 0x100000000
+            ch = asc + max(0, -min_y)
+            mh = max(mh, ch)
         self.l_w = mw
         self.l_h = mh
         self.l_idx %= len(cs)
@@ -130,8 +140,7 @@ class TextEditor(RoundedPanel):
         from pathlib import Path
         _fonts = Path(__file__).resolve().parent.parent / "fonts"
         self.font = _get_freetype().Font(str(_fonts / "DejaVuSans.ttf"), 18)
-        rect = self.font.get_rect(widget.edit_message)
-        msg_w, msg_h = rect.width, rect.height
+        msg_w, msg_h = get_text_size(widget.edit_message, self.font)
         msg_box = Box.xywh(10, 10, msg_w, msg_h)
         self.msg = TextWidget(box = msg_box, text = widget.edit_message, font = self.font, parent = self)
         edit_box = Box.xywh(10,30,280,20)

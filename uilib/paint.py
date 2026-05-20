@@ -229,22 +229,36 @@ class PaintContext:
                 min_y -= 0x100000000
             if min_y < 0 and -min_y > glyph_desc:
                 glyph_desc = -min_y
-        # PIL `la` puts the pen (origin) at `pos`, so ink starts at pos.x + lsb.
-        # Render with origin=True at (0, asc): pen lands at temp x=0, ink lands
-        # at temp x=rect.x. Temp must be wide enough to hold ink: rect.x + rect.width.
-        temp_w = max(1, rect.x + rect.width)
+        # PIL `la` puts the pen at `pos`; ink lands at pos.x + lsb. When the
+        # first glyph has negative LSB (e.g. 'j' rect.x=-1), the ink dips left
+        # of the pen, and our temp surface must include that overhang or the
+        # leftmost ink column will be clipped. Pad `pad_x` columns on the
+        # left, render the pen at temp_x=pad_x, and blit with dst.x shifted
+        # left by pad_x so the final ink lands at the same dst column as the
+        # PIL output (= base_dst_x + rect.x).
+        pad_x = max(0, -rect.x)
+        temp_w = max(1, rect.x + rect.width + pad_x)
         temp_h = max(1, asc + desc + glyph_desc)
         temp = pygame.Surface((temp_w, temp_h), pygame.SRCALPHA)
         prev_origin = font.origin
         font.origin = True
         try:
-            font.render_to(temp, (0, asc), text, fgcolor=color)
+            font.render_to(temp, (pad_x, asc), text, fgcolor=color)
         finally:
             font.origin = prev_origin
         if anchor == "mm":
-            dst = (int(x - temp_w // 2), int(y - temp_h // 2))
+            # PIL anchor='mm' centers on (PIL.getbbox(text).w / 2, (asc+desc)/2).
+            # uilib.misc.get_text_size matches PIL getbbox semantics. Use int()
+            # (floor for positive operands) — not round() — because PIL's BASIC
+            # layout effectively floors the fractional pen position; Python's
+            # banker's rounding on .5 boundaries (e.g. 51.5 → 52) would push
+            # the glyph one pixel right of PIL.
+            from uilib.misc import get_text_size
+            tw, _ = get_text_size(text, font)
+            base_dst = (int(x - tw / 2), int(y - (asc + desc) / 2))
         else:
-            dst = (int(x), int(y))
+            base_dst = (int(x), int(y))
+        dst = (base_dst[0] - pad_x, base_dst[1])
         self.surface.blit(temp, dst)
 
     def paste(self, src: pygame.Surface, pos: Sequence[int], mask: Optional[pygame.Surface] = None) -> None:
