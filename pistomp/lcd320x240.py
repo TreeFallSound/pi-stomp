@@ -275,7 +275,8 @@ class Lcd(abstract_lcd.Lcd):
 
     def draw_pedalboard(self, pedalboard_name):
         pedalboard_name += ":"
-        self.title_split = min(self.title_font.get_rect(pedalboard_name).width, self.title_split_orig)
+        _r = self.title_font.get_rect(pedalboard_name)
+        self.title_split = min(_r.x + _r.width, self.title_split_orig)
         if self.w_pedalboard is not None:
             self.w_pedalboard.set_text(pedalboard_name)
             self.w_pedalboard.set_box(box=Box.xywh(0, 20, self.title_split, 36), realign=True, refresh=True)

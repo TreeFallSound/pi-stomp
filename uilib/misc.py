@@ -70,7 +70,11 @@ def get_text_size(text_string, font, metrics=None):
     line_height = asc + desc
     if not text_string:
         return (0, line_height)
-    width = font.get_rect(text_string).width
+    # PIL's getbbox width = rect.x + rect.width (includes first glyph's left-side
+    # bearing). pygame.freetype's rect.width is the tight ink width. Match PIL so
+    # widgets sized from this don't clip text on the right at non-zero x.
+    _r = font.get_rect(text_string)
+    width = _r.x + _r.width
     # pygame.freetype.Font.get_metrics returns per-glyph
     # (min_x, max_x, min_y, max_y, advance_x, advance_y); min_y < 0 means
     # the glyph dips below the baseline. pygame surfaces these as Python ints

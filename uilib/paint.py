@@ -201,23 +201,51 @@ class PaintContext:
             return
         color = _color(fill)
         x, y = self._abs_xy(pos)
-        if anchor == "mm":
-            rect = font.get_rect(text)
-            font.render_to(
-                self.surface,
-                (int(x - rect.width // 2), int(y - rect.height // 2)),
-                text,
-                fgcolor=color,
-            )
-            return
-        # PIL 'la' equivalent: draw with baseline = y + ascender, in origin mode.
-        ascender = int(font.get_sized_ascender())
+        # IMPORTANT: pygame._freetype.Font.render_to bypasses surface.set_clip
+        # — confirmed in pygame-ce src_c/freetype/ft_render*.c, where the
+        # rasterizer locks the destination surface and clamps only against
+        # full surface bounds, never consulting clip_rect. Surface.blit DOES
+        # honor the clip.
+        #
+        # We render into a line-height-sized temp surface with the baseline
+        # at the ascender position inside it (origin=True), so the glyph
+        # vertically lives at the same offset from the temp top that PIL's
+        # 'la' anchor produced (bbox[1] = ascender - glyph_top). Blitting the
+        # temp at (x, y) then puts pixels at the same absolute coords PIL
+        # would have, but the blit IS clip-respecting.
+        asc = int(font.get_sized_ascender())
+        desc = abs(int(font.get_sized_descender()))
+        rect = font.get_rect(text)
+        # font.get_rect(text).x is the left-side bearing — render at -rect.x so the
+        # leftmost visible glyph pixel lands at temp x=0 (PIL `la` semantics).
+        # Per-glyph descent below the nominal font descender (e.g. 'g','p','y')
+        # must extend the temp height; matches misc.get_text_size().
+        glyph_desc = 0
+        for m in font.get_metrics(text):
+            if m is None:
+                continue
+            min_y = m[2]
+            if min_y >= 0x80000000:
+                min_y -= 0x100000000
+            if min_y < 0 and -min_y > glyph_desc:
+                glyph_desc = -min_y
+        # PIL `la` puts the pen (origin) at `pos`, so ink starts at pos.x + lsb.
+        # Render with origin=True at (0, asc): pen lands at temp x=0, ink lands
+        # at temp x=rect.x. Temp must be wide enough to hold ink: rect.x + rect.width.
+        temp_w = max(1, rect.x + rect.width)
+        temp_h = max(1, asc + desc + glyph_desc)
+        temp = pygame.Surface((temp_w, temp_h), pygame.SRCALPHA)
         prev_origin = font.origin
         font.origin = True
         try:
-            font.render_to(self.surface, (int(x), int(y) + ascender), text, fgcolor=color)
+            font.render_to(temp, (0, asc), text, fgcolor=color)
         finally:
             font.origin = prev_origin
+        if anchor == "mm":
+            dst = (int(x - temp_w // 2), int(y - temp_h // 2))
+        else:
+            dst = (int(x), int(y))
+        self.surface.blit(temp, dst)
 
     def paste(self, src: pygame.Surface, pos: Sequence[int], mask: Optional[pygame.Surface] = None) -> None:
         """Blit a surface onto self.surface at widget-relative coords."""
