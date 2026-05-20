@@ -201,7 +201,11 @@ class ContainerWidget(Widget):
         parent = self.parent
         if (isinstance(parent, ContainerWidget)
                 and not parent._skip_cache_push
+                and parent._cache_valid
                 and parent.image is not None):
+            # Parent's cache is current — patch it in place so it stays current.
+            # If parent._cache_valid is False, the blit would be discarded by the
+            # next do_draw rebuild, so skip it.
             # _blit_into expects viewport-relative coords; convert from content coords
             viewport_clip = local_clip.deoffset(self.offset)
             self._blit_into(parent.image, viewport_clip, parent_clip.topleft)
