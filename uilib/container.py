@@ -25,6 +25,11 @@ class ContainerWidget(Widget):
     # Inherited attributes with defaults
     INH_ATTRS = { 'image_format' : 'RGB' }
 
+    # When True, descendants should not push fresh pixels into this container's
+    # cache during propagate_dirty. Used by PanelStack, whose image is rebuilt
+    # by composition on every propagate_dirty call (push-up would be wasted).
+    _skip_cache_push = False
+
     def __init__(self, box, **kwargs):
         # Non-inherited attributes
         self.mask_format = self._get_arg(kwargs, 'mask_format', None)
@@ -39,6 +44,10 @@ class ContainerWidget(Widget):
         self.image = None
         self.old_box = None
         self.offset = (0, 0)
+        # When True, self.image is trusted to hold the current rendered state
+        # for any clip, and do_draw can skip the rebuild and just blit.
+        # Invalidated on (re)allocation and on child attach/detach.
+        self._cache_valid = False
 
         super(ContainerWidget,self).__init__(box = box, **kwargs)
 
@@ -70,6 +79,7 @@ class ContainerWidget(Widget):
             self.mask = Image.new(self.mask_format, (w, h))
         else:
             self.mask = None
+        self._cache_valid = False
 
     def _viewport(self) -> Box:
         """Visible region in content (image) coords."""
@@ -111,6 +121,7 @@ class ContainerWidget(Widget):
                         c._dirty = True
             self._draw_outline(ctx)
             self._draw_selection(ctx)
+            self._cache_valid = True
             if self.visible and self.parent is not None:
                 self.propagate_dirty(viewport)
         else:
@@ -124,64 +135,85 @@ class ContainerWidget(Widget):
                     c.do_draw(ctx, c.box.offset(local_frame))
             self._draw_outline(ctx)
             self._draw_selection(ctx)
+            self._cache_valid = True
             if self.visible and self.parent is not None:
                 self.propagate_dirty(local_clip)
 
     def do_draw(self, ctx: PaintContext, frame: Box):
         """Draw this container's pixels into a parent's PaintContext.
 
-        It first updates its internal backing store for the dirty region, then blits
-        the relevant slice into the parent surface, delegating coordinate management
-        and potential buffer allocation to the framework's painting() context."""
-        # Note: We still draw into self.image as a backing store.
-        # Framework painting() handles the clip/temp-buffer/composite back to ctx.image.
+        If our cache is valid, this is a pure blit from self.image into the
+        parent surface. Otherwise we first rebuild the entire backing store
+        (so future partial blits can trust it), then blit the requested clip.
+        """
         with ctx.painting(frame) as pctx:
             pframe = pctx.frame
             assert pframe is not None
-            # 1. Update our own backing store (only the dirty region).
-            #    Skip for virtual containers — their backing image is maintained
-            #    incrementally by refresh()/scroll() and a partial-clip redraw
-            #    here would produce a local_frame/local_clip mismatch.
             local_clip = pctx.clip.deoffset(pframe.topleft)
             local_frame = self.box.norm()
-            if not self.virtual:
-                local_ctx = PaintContext(self.image, self.draw, local_clip, pctx.pool, frame=local_frame)
-                self._draw_erase(local_ctx)
-                self._draw(local_ctx)
+
+            # 1. Rebuild the cache only on a miss. Virtual containers maintain
+            #    their cache via refresh()/scroll() and never rebuild here.
+            if not self.virtual and not self._cache_valid:
+                full_ctx = PaintContext(self.image, self.draw, local_frame, pctx.pool, frame=local_frame)
+                self._draw_erase(full_ctx)
+                self._draw(full_ctx)
                 for c in self.children:
                     if c.visible:
-                        c.do_draw(local_ctx, c.box.offset(local_frame))
-                self._draw_outline(local_ctx)
-                self._draw_selection(local_ctx)
+                        c.do_draw(full_ctx, c.box.offset(local_frame))
+                self._draw_outline(full_ctx)
+                self._draw_selection(full_ctx)
+                self._cache_valid = True
 
-            # 2. Blit our backing store into pctx.image (which might be a temp)
-            # We only need to blit the local_clip portion.
-            # For virtual (tall) containers, local_clip is in viewport coords, so we must
-            # shift by self.offset to address the correct slice of the tall image.
-            src_box = local_clip.offset(self.offset)
-            # dst stays at the viewport position within pctx.image.
+            # 2. Blit our backing store into pctx.image (possibly a slow-path temp).
             dst_topleft = (pframe.x0 + local_clip.x0, pframe.y0 + local_clip.y0)
+            self._blit_into(pctx.image, local_clip, dst_topleft)
 
-            sub = self.image.crop(src_box.rect)
-            if self.mask is not None:
-                # Mask describes the viewport shape, so sample at local_clip coords
-                # (viewport-relative), not src_box coords (content coords).
-                # In the non-virtual case offset=(0,0) so src_box==local_clip anyway.
-                sub_mask = self.mask.crop(local_clip.rect)
-            else:
-                sub_mask = None
+    def _blit_into(self, target_image, local_clip: Box, dst_topleft):
+        """Copy self.image[local_clip + self.offset] into target_image at dst_topleft.
 
-            if self.has_alpha and pctx.image.mode == 'RGBA':
-                pctx.image.alpha_composite(sub, dst_topleft)
-            else:
-                pctx.image.paste(sub, dst_topleft, sub_mask)
+        For virtual (tall) containers, local_clip is in viewport coords; we
+        shift by self.offset to address the correct slice of the tall image.
+        Honors self.mask (e.g. RoundedPanel) and the target's pixel format."""
+        src_box = local_clip.offset(self.offset)
+        sub = self.image.crop(src_box.rect)
+        if self.mask is not None:
+            # Mask describes the viewport shape, so sample at local_clip coords
+            # (viewport-relative). In non-virtual case offset=(0,0) so the two coincide.
+            sub_mask = self.mask.crop(local_clip.rect)
+        else:
+            sub_mask = None
+        if self.has_alpha and target_image.mode == 'RGBA':
+            target_image.alpha_composite(sub, dst_topleft)
+        else:
+            target_image.paste(sub, dst_topleft, sub_mask)
 
     def propagate_dirty(self, local_clip: Box):
-        """Bubble a dirty region (in our local coords) up to our parent container."""
+        """Bubble a dirty region (in our local coords) up to our parent container.
+
+        Before bubbling, push our freshly-updated pixels into the parent's cache
+        so it doesn't need to rebuild on its next do_draw. Skipped for PanelStack
+        parents, whose image is rebuilt by composition on every propagate_dirty."""
         if not self.visible or self.parent is None:
             return
+        # parent_clip is local_clip expressed in parent-local coords
         parent_clip = local_clip.deoffset(self.offset).offset(self.box)
-        self.parent.propagate_dirty(parent_clip)
+        parent = self.parent
+        if (isinstance(parent, ContainerWidget)
+                and not parent._skip_cache_push
+                and parent.image is not None):
+            # _blit_into expects viewport-relative coords; convert from content coords
+            viewport_clip = local_clip.deoffset(self.offset)
+            self._blit_into(parent.image, viewport_clip, parent_clip.topleft)
+        parent.propagate_dirty(parent_clip)
+
+    def _invalidate_cache(self):
+        """Mark our cache stale and bubble the invalidation up the container
+        chain. A no-op if already invalid (caps the bubble cost)."""
+        if not self._cache_valid:
+            return
+        self._cache_valid = False
+        super()._invalidate_cache()
 
     def scroll(self, offset):
         self.offset = offset
@@ -201,6 +233,7 @@ class ContainerWidget(Widget):
                     c.do_draw(ctx, c.box)
                     c._painted = True
                     c._dirty = False
+        self._cache_valid = True
         if self.visible and self.parent is not None:
             self.propagate_dirty(viewport)
     

@@ -340,14 +340,23 @@ class Widget:
         if self.visible:
             self._setup_act_attrs()
             self._setup()
+        parent._invalidate_cache()
 
     def detach(self):
         """Detach a widget from the parent"""
         trace(self, "Widget detach, parent=",self.parent)
         if self.parent is not None:
+            parent = self.parent
             self.parent.children.remove(self)
             self.parent._notify_detach(self)
             self.parent = None
+            parent._invalidate_cache()
+
+    def _invalidate_cache(self):
+        """Bubble cache invalidation up. Containers override to flip their own
+        validity flag before bubbling further."""
+        if self.parent is not None:
+            self.parent._invalidate_cache()
 
     def _adjust_box(self):
         trace(self, "adjusting box, parent=", self.parent)

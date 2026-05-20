@@ -168,6 +168,8 @@ class LcdBase:
         return False
 
 class PanelStack(ContainerWidget):
+    _skip_cache_push = True
+
     def __init__(self, lcd, box = None, image_format = None, use_dimming = True):
         # XXX This implementation currently assumes box is at (0,0) in the LCD
         #     and the offset remains 0,0 (dont' try to scroll)
