@@ -59,35 +59,35 @@ def trace(obj, *args):
 def get_text_size(text_string, font, metrics=None):
     """Return (width, height) of `text_string` rendered with `font`.
 
-    Matches PIL's `(bbox[2]-bbox[0], bbox[3]+descent)`:
-        height = ascender + max_glyph_descender_in_text + font_descender
-    For text with no descender glyphs this collapses to the font line height
-    (ascender + descender). For text containing 'g'/'p'/'y'/etc. we add the
-    extra glyph-descent so widgets sized to the text don't clip the descender.
+    Width is the metric advance width — sum of per-glyph advance_x —
+    matching PIL's ImageFont.getbbox(text)[2]-[0] exactly. Earlier we returned
+    the tight ink width (`rect.x + rect.width`) which is 1-2px smaller, and
+    caused centered widgets to compute hoffset 1px right of where PIL
+    placed them. See PYGAME_SWAP_PLAN.md.
+
+    Height = ascender + font_descender + per-text glyph_descent overflow,
+    matching PIL's `bbox[3] + descent` for the text.
     """
     asc = int(font.get_sized_ascender())
     desc = abs(int(font.get_sized_descender()))
     line_height = asc + desc
     if not text_string:
         return (0, line_height)
-    # PIL's getbbox width = rect.x + rect.width (includes first glyph's left-side
-    # bearing). pygame.freetype's rect.width is the tight ink width. Match PIL so
-    # widgets sized from this don't clip text on the right at non-zero x.
-    _r = font.get_rect(text_string)
-    width = _r.x + _r.width
     # pygame.freetype.Font.get_metrics returns per-glyph
-    # (min_x, max_x, min_y, max_y, advance_x, advance_y); min_y < 0 means
-    # the glyph dips below the baseline. pygame surfaces these as Python ints
-    # but the negative values come back as 32-bit unsigned, so wrap them.
+    # (min_x, max_x, min_y, max_y, advance_x, advance_y); negative values
+    # come back as 32-bit unsigned, so wrap them.
+    advance_sum = 0.0
     glyph_desc = 0
     for m in font.get_metrics(text_string):
         if m is None:
             continue
+        advance_sum += m[4]
         min_y = m[2]
         if min_y >= 0x80000000:
             min_y -= 0x100000000
         if min_y < 0 and -min_y > glyph_desc:
             glyph_desc = -min_y
+    width = int(round(advance_sum))
     return (width, line_height + glyph_desc)
 
         
