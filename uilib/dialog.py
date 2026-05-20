@@ -51,6 +51,33 @@ class DialogDecorator(PanelDecorator):
         self.title.set_box(tbox, refresh = False)
         self.title.show(refresh = False)
 
+    def _draw_erase(self, ctx):
+        # Only the titlebar strip needs the title-bkgnd fill — the panel body
+        # paints itself. Filling under the body would leak through any
+        # transparent pixels in the panel's surface (e.g. a virtual menu whose
+        # viewport overshoots its content_height). We still draw the full
+        # rounded rectangle (so the top corners curve correctly) but clip the
+        # SDL surface to the titlebar strip first so nothing below the panel's
+        # top edge actually hits the surface.
+        from uilib.paint import _pg_rect
+        erase = ctx.dirty_bounds
+        if erase.is_empty():
+            return
+        pb = self.panel.box
+        titlebar_h = pb.y0 - self.box.y0  # decorator-local
+        strip = erase.intersection(Box(0, 0, self.box.width, titlebar_h))
+        if strip.is_empty():
+            return
+        assert ctx.frame is not None
+        abs_strip = _pg_rect(strip.offset(ctx.frame.topleft))
+        old_clip = ctx.surface.get_clip()
+        new_clip = abs_strip.clip(old_clip) if old_clip is not None else abs_strip
+        ctx.surface.set_clip(new_clip)
+        try:
+            ctx.draw_rectangle(ctx.bounds, fill=self.bkgnd_color, radius=self.outline_radius)
+        finally:
+            ctx.surface.set_clip(old_clip)
+
     def _draw(self, ctx):
         trace(self, "DialogDecorator draw, self.box=", self.box)
         y = self.th + 1
