@@ -30,35 +30,35 @@ class FootswitchWidget(Widget):
         self.foreground = (255, 255, 255)
         self.color_plugin_bypassed = (80, 80, 80)
 
-    # Visual constants (in pixels).
-    CAP_INSET_X = 10        # horizontal inset of the cap ellipse from each side
-    CAP_HEIGHT = 16         # height of each cap ellipse
-    CAP_STACK_OFFSET = 6    # how much the top cap sits above the bottom cap
-    CAP_BOTTOM_MARGIN = 18  # gap between bottom of cap and bottom of cap area
-    HALO_INSET = 2          # halo inset from frame edges
-    HALO_TOP = 10           # halo top relative to frame top
+    # Visual constants, top-anchored so the label area lives inside the frame
+    # (SDL clips to the widget frame; the old PIL renderer let text bleed past).
+    CAP_INSET_X = 10
+    CAP_HEIGHT = 16
+    CAP_STACK_OFFSET = 6
+    CAP_TOP_Y = 0           # top edge of upper cap
+    CAP_BOTTOM_Y = 6        # top edge of lower cap (= CAP_TOP_Y + CAP_STACK_OFFSET)
+    HALO_INSET_X = 2
+    HALO_TOP = 10
+    HALO_BOTTOM = 38        # bottom of halo, just under the lower cap
+    LABEL_Y = 40            # baseline-area for the label, below the cap
 
     def _draw(self, ctx):
-        w, h = ctx.width, ctx.height
+        w = ctx.width
 
         self._draw_halo(ctx)
 
-        # Cap is a stack of two ellipses near the top of the frame, leaving
-        # room below for the label.
         cap_x0 = self.CAP_INSET_X
         cap_x1 = w - self.CAP_INSET_X
-        cap_bottom_y = h - self.CAP_BOTTOM_MARGIN - self.CAP_HEIGHT
-        cap_top_y = cap_bottom_y - self.CAP_STACK_OFFSET
 
         # cap bottom
-        ctx.draw_ellipse(Box(cap_x0, cap_bottom_y, cap_x1, cap_bottom_y + self.CAP_HEIGHT),
+        ctx.draw_ellipse(Box(cap_x0, self.CAP_BOTTOM_Y, cap_x1, self.CAP_BOTTOM_Y + self.CAP_HEIGHT),
                          fill=self.background, outline="gray", width=2)
         # cap top
-        ctx.draw_ellipse(Box(cap_x0, cap_top_y, cap_x1, cap_top_y + self.CAP_HEIGHT),
+        ctx.draw_ellipse(Box(cap_x0, self.CAP_TOP_Y, cap_x1, self.CAP_TOP_Y + self.CAP_HEIGHT),
                          fill=self.background, outline="gray", width=2)
 
-        # label sits at the bottom of the frame
-        ctx.draw_text((0, h), self.label, self.foreground, self.font)
+        # Label sits below the cap, inside the frame.
+        ctx.draw_text((0, self.LABEL_Y), self.label, self.foreground, self.font)
 
     def _draw_halo(self, ctx):
         # When an unbound footswitch toggles active, self.color is None. PIL's
@@ -66,8 +66,8 @@ class FootswitchWidget(Widget):
         # the draw entirely. Fall back to foreground to preserve the look.
         color = self.color_plugin_bypassed if self.is_bypassed else (self.color or self.foreground)
         ctx.draw_ellipse(
-            Box(self.HALO_INSET, self.HALO_TOP,
-                ctx.width - self.HALO_INSET, ctx.height - self.HALO_INSET),
+            Box(self.HALO_INSET_X, self.HALO_TOP,
+                ctx.width - self.HALO_INSET_X, self.HALO_BOTTOM),
             fill=None, outline=color, width=self.footswitch_ring_width,
         )
 

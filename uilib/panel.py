@@ -153,8 +153,11 @@ class RoundedPanel(Panel):
         self._build_shape_mask()
 
     def _build_shape_mask(self) -> None:
-        assert self.surface is not None
-        size = self.surface.get_size()
+        # Mask is viewport-sized, not surface-sized. For virtual containers the
+        # surface is content_height tall, but the rounded corners must appear
+        # at the viewport edges (which is what _blit_into addresses via
+        # viewport-relative local_clip).
+        size = (int(self.box.width), int(self.box.height))
         mask = pygame.Surface(size, pygame.SRCALPHA)
         mask.fill((0, 0, 0, 0))
         pygame.draw.rect(mask, (255, 255, 255, 255),

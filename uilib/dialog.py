@@ -75,9 +75,10 @@ class Dialog(RoundedPanel):
                                      decorator=deco, **kwargs)
 
     def _build_shape_mask(self) -> None:
-        assert self.surface is not None
+        # Viewport-sized (not surface-sized) so virtual content_height surfaces
+        # still get rounded corners at the viewport's bottom edge.
         import pygame
-        size = self.surface.get_size()
+        size = (int(self.box.width), int(self.box.height))
         mask = pygame.Surface(size, pygame.SRCALPHA)
         mask.fill((0, 0, 0, 0))
         # Rounded full-panel base
