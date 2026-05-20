@@ -58,8 +58,12 @@ class DialogDecorator(PanelDecorator):
         ctx.draw_line(((0, y), (ctx.width - self.outline, y)), fill=self.fgnd_color, width=self.outline + 2)
 
 class Dialog(RoundedPanel):
-    """A pop-up dialog with a title decorator. Rounded corners come from the
-    backing surface's own alpha channel (pygame border_radius)."""
+    """A pop-up dialog with a title decorator.
+
+    Only the BOTTOM corners are rounded on the panel itself — the titlebar
+    decorator sits above with its own rounded top, so the panel's top corners
+    must stay square (otherwise we'd clip the top of the first content widget).
+    """
 
     def __init__(self, width, height, title, title_font=None, **kwargs):
         box = Box.xywh(0, 0, width, height)
@@ -69,6 +73,23 @@ class Dialog(RoundedPanel):
         deco = functools.partial(DialogDecorator, title=title, title_font=title_font, outline_radius=radius)
         super(Dialog, self).__init__(box=box, align=WidgetAlign.CENTRE, radius=radius,
                                      decorator=deco, **kwargs)
+
+    def _build_shape_mask(self) -> None:
+        assert self.surface is not None
+        import pygame
+        size = self.surface.get_size()
+        mask = pygame.Surface(size, pygame.SRCALPHA)
+        mask.fill((0, 0, 0, 0))
+        # Rounded full-panel base
+        pygame.draw.rect(mask, (255, 255, 255, 255),
+                         pygame.Rect(0, 0, size[0], size[1]), 0,
+                         border_radius=self.radius)
+        # Square off the top half — the titlebar decorator owns the top
+        # rounded corners. Without this, the rounded cutout clips the top
+        # of the first menu item / content widget.
+        pygame.draw.rect(mask, (255, 255, 255, 255),
+                         pygame.Rect(0, 0, size[0], size[1] // 2), 0)
+        self._shape_mask = mask
 
 class MessageDialog(Dialog):
     def __init__(self, panelstack, message, title="Error", width=200, height=90):
