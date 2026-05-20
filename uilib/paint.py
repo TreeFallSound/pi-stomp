@@ -122,6 +122,17 @@ class PaintContext:
         f = self._f()
         return Box(0, 0, f.width, f.height)
 
+    @property
+    def dirty_bounds(self) -> Box:
+        """Widget-relative dirty rect: bounds ∩ (clip in widget coords).
+
+        On the fast path this equals `bounds` whenever the clip fully covers
+        the frame. On the slow path the clip is the temp's own bounds and the
+        frame is re-anchored, so this still resolves to the widget-visible
+        sub-rect."""
+        f = self._f()
+        return self.bounds.intersection(self.clip.deoffset(f.topleft))
+
     def _abs_xy(self, xy):
         ox, oy = self._f().topleft
         return (xy[0] + ox, xy[1] + oy)

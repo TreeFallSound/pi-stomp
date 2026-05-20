@@ -470,15 +470,13 @@ class Widget:
             self._draw_selection(pctx)
 
     def _draw_erase(self, ctx: PaintContext):
-        frame = ctx.frame
-        assert frame is not None
-        erase_box = ctx.clip.intersection(frame)
-        if erase_box.is_empty():
+        erase = ctx.dirty_bounds
+        if erase.is_empty():
             return
-        if self.outline_radius is not None and erase_box == frame:
-            ctx.draw.rounded_rectangle(frame.PIL_rect, self.outline_radius, self.bkgnd_color, None, 0)
+        if self.outline_radius is not None and erase == ctx.bounds:
+            ctx.draw_rectangle(ctx.bounds, fill=self.bkgnd_color, radius=self.outline_radius)
         else:
-            ctx.draw.rectangle(erase_box.PIL_rect, self.bkgnd_color, None, 0)
+            ctx.draw_rectangle(erase, fill=self.bkgnd_color)
 
     def _draw_outline(self, ctx: PaintContext):
         if self.outline != 0:
