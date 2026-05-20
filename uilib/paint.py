@@ -147,24 +147,39 @@ class PaintContext:
         if rect.width <= 0 or rect.height <= 0:
             return
         if fill is not None:
-            cx = rect.x + rect.width // 2
-            cy = rect.y + rect.height // 2
-            rx = max(0, rect.width // 2 - 1)
-            ry = max(0, rect.height // 2 - 1)
+            # gfxdraw.filled_ellipse covers [cx-rx, cx+rx] inclusive (2*rx+1
+            # pixels). To fill the full Box, use rx = (width-1)//2 and place
+            # the center on the upper-left of the two center pixels for even
+            # sizes — matches PIL's coverage exactly.
+            cx = rect.x + (rect.width - 1) // 2
+            cy = rect.y + (rect.height - 1) // 2
+            rx = max(0, (rect.width - 1) // 2)
+            ry = max(0, (rect.height - 1) // 2)
             gfxdraw.filled_ellipse(self.surface, cx, cy, rx, ry, _color(fill))
         if outline is not None and int(width) > 0:
             pygame.draw.ellipse(self.surface, _color(outline), rect, int(width))
 
     def draw_line(self, xy: Union[PointSeq, FlatCoords], fill: Optional[ColorLike] = None, width: int = 0) -> None:
+        """Draw a polyline.
+
+        PIL stamps a `width`×`width` box at each step along the bresenham path,
+        so diagonals end up ~1px thicker than axis-aligned strokes of the same
+        nominal width. pygame strokes exactly `width` perpendicular to the
+        segment. To match PIL's visual weight on icon knob pointers / pedal
+        graphics, bump width by 1 for non-axis-aligned segments when width>=2.
+        """
         if fill is None:
             return
         color = _color(fill)
         w = max(1, int(width))
         pts = self._abs_points(xy)
-        if len(pts) == 2:
-            pygame.draw.line(self.surface, color, _ipt(pts[0]), _ipt(pts[1]), w)
-        elif len(pts) > 2:
-            pygame.draw.lines(self.surface, color, False, [_ipt(p) for p in pts], w)
+        if len(pts) < 2:
+            return
+        ipts = [_ipt(p) for p in pts]
+        for i in range(len(ipts) - 1):
+            p0, p1 = ipts[i], ipts[i + 1]
+            seg_w = w if (p0[0] == p1[0] or p0[1] == p1[1] or w < 2) else w + 1
+            pygame.draw.line(self.surface, color, p0, p1, seg_w)
 
     def draw_text(
         self,

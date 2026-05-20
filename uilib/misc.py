@@ -59,13 +59,31 @@ def trace(obj, *args):
 def get_text_size(text_string, font, metrics=None):
     """Return (width, height) of `text_string` rendered with `font`.
 
-    Width is the actual glyph width for the given text. Height is the font's
-    line height (ascender + descender), so a widget sized for one string
-    stays sized correctly when the text changes — matches the PIL behavior
-    where `getmetrics()`-derived descent was added regardless of the text."""
+    Matches PIL's `(bbox[2]-bbox[0], bbox[3]+descent)`:
+        height = ascender + max_glyph_descender_in_text + font_descender
+    For text with no descender glyphs this collapses to the font line height
+    (ascender + descender). For text containing 'g'/'p'/'y'/etc. we add the
+    extra glyph-descent so widgets sized to the text don't clip the descender.
+    """
+    asc = int(font.get_sized_ascender())
+    desc = abs(int(font.get_sized_descender()))
+    line_height = asc + desc
     if not text_string:
-        return (0, font.get_sized_height())
+        return (0, line_height)
     width = font.get_rect(text_string).width
-    return (width, font.get_sized_height())
+    # pygame.freetype.Font.get_metrics returns per-glyph
+    # (min_x, max_x, min_y, max_y, advance_x, advance_y); min_y < 0 means
+    # the glyph dips below the baseline. pygame surfaces these as Python ints
+    # but the negative values come back as 32-bit unsigned, so wrap them.
+    glyph_desc = 0
+    for m in font.get_metrics(text_string):
+        if m is None:
+            continue
+        min_y = m[2]
+        if min_y >= 0x80000000:
+            min_y -= 0x100000000
+        if min_y < 0 and -min_y > glyph_desc:
+            glyph_desc = -min_y
+    return (width, line_height + glyph_desc)
 
         
