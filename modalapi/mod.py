@@ -140,7 +140,7 @@ class Mod(Handler):
         self.pedalboard_change_timestamp = os.path.getmtime(self.pedalboard_modification_file)\
             if Path(self.pedalboard_modification_file).exists() else 0
 
-        self.wifi_manager = Wifi.WifiManager()
+        self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
@@ -435,10 +435,12 @@ class Mod(Handler):
             self.hardware.poll_controls()
 
     def poll_wifi(self):
-        wifi_update = self.wifi_manager.poll()
-        if wifi_update is not None:
-            self.wifi_status = wifi_update
-            self.lcd.update_wifi(self.wifi_status)
+        self.wifi_manager.poll()
+
+    def _on_wifi_status_change(self, status):
+        self.wifi_status = status
+        if self.lcd is not None:
+            self.lcd.update_wifi(status)
             if self.current_menu == MenuType.MENU_INFO:
                 self.system_info_update_wifi()
 
@@ -852,7 +854,7 @@ class Mod(Handler):
             self.menu_items[key] = {Token.NAME: self.wifi_status[key], Token.ACTION: None}
             if self.wifi_status[key]:
                 hotspot_active = True
-        key = 'ip_address'
+        key = 'ip4_address'
         if key in self.wifi_status:
             self.menu_items["ip_addr"] = {Token.NAME: self.wifi_status[key], Token.ACTION: None}
         else:
