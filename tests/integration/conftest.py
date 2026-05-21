@@ -4,6 +4,7 @@ Parametrized stack fixtures for cross-version integration tests.
   modhandler_system  — Modhandler-based hardware (v2, v3).
   any_system         — all hardware versions.  Add here when v1 (Mod) is ready.
 """
+
 import json
 from collections.abc import Generator
 from pathlib import Path
@@ -28,6 +29,7 @@ with patch("pistomp.settings.Settings.load_settings"), patch("pistomp.settings.S
 # Shared stack builder
 # ---------------------------------------------------------------------------
 
+
 def _build_stack(hw_class: Any, cfg_path: Path, fake_lcd, tmp_path) -> Generator[SystemFixture, None, None]:
     cwd = str(PROJECT_ROOT)
 
@@ -48,18 +50,23 @@ def _build_stack(hw_class: Any, cfg_path: Path, fake_lcd, tmp_path) -> Generator
         patch("requests.post") as mock_post,
         patch("pistomp.settings.Settings"),
         patch("modalapi.pedalboard.Pedalboard.load_bundle"),
-        patch("modalapi.wifi.WifiManager"),
+        patch("modalapi.wifi.WifiManager") as mock_wm_cls,
         patch("subprocess.check_output", return_value=b"SystemState=running"),
         patch("pistomp.lcd320x240.LcdIli9341", return_value=fake_lcd),
     ):
+        # Tests don't drive a poll loop, so stub pending_op_count to always return 0 (no pending ops).
+        mock_wm_cls.return_value.queue.pending_op_count.return_value = 0
+
         def get_side_effect(url, **kwargs):
             resp = MagicMock()
             resp.status_code = 200
             if "pedalboard/list" in url:
-                resp.text = json.dumps([
-                    {Token.TITLE: "Integration Rig", Token.BUNDLE: "/path/to/rig.pedalboard"},
-                    {Token.TITLE: "New Rig",         Token.BUNDLE: "/path/to/new.pedalboard"},
-                ])
+                resp.text = json.dumps(
+                    [
+                        {Token.TITLE: "Integration Rig", Token.BUNDLE: "/path/to/rig.pedalboard"},
+                        {Token.TITLE: "New Rig", Token.BUNDLE: "/path/to/new.pedalboard"},
+                    ]
+                )
             elif "snapshot/list" in url:
                 resp.text = json.dumps({"0": "Clean", "1": "Lead"})
             elif "snapshot/name" in url:
@@ -103,6 +110,7 @@ def _build_stack(hw_class: Any, cfg_path: Path, fake_lcd, tmp_path) -> Generator
 # Per-version stack builders
 # ---------------------------------------------------------------------------
 
+
 def _v2_stack(fake_lcd, tmp_path) -> Generator[SystemFixture, None, None]:
     cfg_path = PROJECT_ROOT / "setup" / "config_templates" / "default_config_pistompcore.yml"
     yield from _build_stack(Pistompcore, cfg_path, fake_lcd, tmp_path)
@@ -122,6 +130,7 @@ _BUILDERS = {
 # ---------------------------------------------------------------------------
 # Parametrized fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(params=["v2", "v3"])
 def modhandler_system(request, fake_lcd, tmp_path) -> Generator[SystemFixture, None, None]:

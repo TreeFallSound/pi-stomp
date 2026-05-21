@@ -32,7 +32,8 @@ class ImageWidget(Widget):
         loc = real_box.offset((offx,offy)).topleft
         
         # Draw image
-        image.paste(self.image, loc)
+        mask = self.image if self.image.mode == 'RGBA' else None
+        image.paste(self.image, loc, mask)
 
     def replace_img(self, image_path):
         # XXX Note that the new image must be the same size as the original
