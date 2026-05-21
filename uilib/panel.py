@@ -208,7 +208,9 @@ class PanelStack(ContainerWidget):
     def _compose(self, widget, orig_box, real_box):
         # This always called with widget = a Panel which is a direct
         # child of the stack, so we can drop orig_box
-        self._do_refresh(widget, real_box)
+        real_box = real_box.intersection(self.box.norm())
+        if not real_box.is_empty():
+            self._do_refresh(widget, real_box)
 
     def refresh(self):
         self._do_refresh(None, self.box)
