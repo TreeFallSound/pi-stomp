@@ -26,6 +26,7 @@ import pygame._freetype as _freetype
 import pygame.gfxdraw as gfxdraw
 
 from uilib.box import Box
+from uilib.radius import Radius
 
 
 # Color spec accepted by uilib's PaintContext primitives.
@@ -123,16 +124,16 @@ class PaintContext:
         fill: Optional[ColorLike] = None,
         outline: Optional[ColorLike] = None,
         width: int = 0,
-        radius: Optional[int] = None,
+        radius: int | Radius | None = None,
     ) -> None:
         rect = _pg_rect(self._abs_box(box))
         if rect.width <= 0 or rect.height <= 0:
             return
-        border_radius = int(radius) if radius is not None else 0
+        kwargs = Radius._coerce(radius).as_pygame_kwargs()
         if fill is not None:
-            pygame.draw.rect(self.surface, _color(fill), rect, 0, border_radius=border_radius)
+            pygame.draw.rect(self.surface, _color(fill), rect, 0, **kwargs)
         if outline is not None and int(width) > 0:
-            pygame.draw.rect(self.surface, _color(outline), rect, int(width), border_radius=border_radius)
+            pygame.draw.rect(self.surface, _color(outline), rect, int(width), **kwargs)
 
     def draw_ellipse(
         self, box: Box, fill: Optional[ColorLike] = None, outline: Optional[ColorLike] = None, width: int = 0
@@ -238,17 +239,6 @@ class PaintContext:
     def paste(self, src: pygame.Surface, pos: Sequence[int], mask: Optional[pygame.Surface] = None) -> None:
         """Blit a surface onto self.surface at widget-relative coords."""
         self.surface.blit(src, _ipt(self._abs_xy(pos)))
-
-    def alpha_composite(
-        self, src: pygame.Surface, pos: Sequence[int] = (0, 0), src_box: Optional[Tuple[int, int, int, int]] = None
-    ) -> None:
-        """SRCALPHA blit. Retained for API parity; equivalent to a normal blit
-        when src has per-pixel alpha (pygame handles compositing automatically)."""
-        dst = _ipt(self._abs_xy(pos))
-        if src_box is None:
-            self.surface.blit(src, dst)
-        else:
-            self.surface.blit(src, dst, area=pygame.Rect(*src_box))
 
     @contextmanager
     def painting(self, frame: Box) -> Generator["PaintContext", None, None]:
