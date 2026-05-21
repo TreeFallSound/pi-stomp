@@ -87,7 +87,7 @@ class ContainerWidget(Widget):
     def _compose(self, widget, orig_box, real_box):
         assert isinstance(widget, ContainerWidget)
 
-        real_box.deoffset(self.offset)
+        real_box.deoffset(self.offset)  # XXX: result is discarded
 
         # Crop real box to this image box. This avoids trying to copy pixels
         # that are outside of it
