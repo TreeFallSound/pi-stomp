@@ -19,7 +19,7 @@ import pygame
 
 from uilib.box import Box
 from uilib.container import *
-from uilib.paint import PaintContext
+from uilib.paint import PaintContext, _pg_rect
 
 #
 # Note about coordinates:
@@ -184,7 +184,6 @@ class RoundedPanel(Panel):
         # viewport-local view of the tall cache. local_clip may extend past
         # the surface (viewport-clamped); clip rect intersected with view.
         assert self._shape_mask is not None
-        from uilib.paint import _pg_rect
         view = self._viewport_view()
         view_rect = view.get_rect()
         clip_rect = _pg_rect(local_clip).clip(view_rect)
@@ -262,7 +261,6 @@ class PanelStack(ContainerWidget):
 
         for p in self.stack:
             if self.dimmer is not None:
-                from uilib.paint import _pg_rect
                 self.surface.blit(self.dimmer, clip.topleft, area=_pg_rect(clip))
             d = p.decorator
             if d is not None:

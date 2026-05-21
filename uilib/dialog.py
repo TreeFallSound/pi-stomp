@@ -87,20 +87,16 @@ class Dialog(RoundedPanel):
 
     def _build_shape_mask(self) -> None:
         # Viewport-sized (not surface-sized) so virtual content_height surfaces
-        # still get rounded corners at the viewport's bottom edge.
+        # still get rounded corners at the viewport's bottom edge. Only the
+        # bottom corners round — the titlebar decorator owns the top corners
+        # and the panel's top edge must stay square to meet it seamlessly.
         import pygame
         size = (int(self.box.width), int(self.box.height))
         mask = pygame.Surface(size, pygame.SRCALPHA)
         mask.fill((0, 0, 0, 0))
-        # Rounded full-panel base
         pygame.draw.rect(mask, (255, 255, 255, 255),
                          pygame.Rect(0, 0, size[0], size[1]), 0,
-                         border_radius=self.radius)
-        # Square off the top half — the titlebar decorator owns the top
-        # rounded corners. Without this, the rounded cutout clips the top
-        # of the first menu item / content widget.
-        pygame.draw.rect(mask, (255, 255, 255, 255),
-                         pygame.Rect(0, 0, size[0], size[1] // 2), 0)
+                         **Radius.bottom(self.radius).as_pygame_kwargs())
         self._shape_mask = mask
 
 class MessageDialog(Dialog):
