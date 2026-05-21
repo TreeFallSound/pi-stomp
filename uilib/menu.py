@@ -15,6 +15,7 @@
 
 from PIL.ImageFont import FreeTypeFont
 from typing_extensions import override
+
 from uilib.box import Box
 from uilib.config import Config
 from uilib.dialog import Dialog
@@ -27,7 +28,6 @@ class Menu(Dialog):
            items   : iterable of tuples whose first element is the text to display
            Returns a tuple (image, draw, box) where:
     """
-
     def __init__(
         self,
         items,
@@ -59,13 +59,13 @@ class Menu(Dialog):
         for i in items:
             # item structure: 0:name, 1:action, 2:object, 3:selected item
             t = i[0]
-            if len(i) == 4 and i[3]:
+            if len(i) >= 4 and i[3]:
                 t = "\u2714 " + t  # Add checkmark to selected item
             b = Box.xywh(0, h, self.box.width, self.item_h)
             w = TextWidget(
                 box=b, text_halign=self.text_halign, font=self.font, text=t, parent=self, action=self._item_action
             )
-            w.data = i  # pyright: ignore[reportAttributeAccessIssue] # FIXME: what is this?
+            w.data = i  # pyright: ignore[reportAttributeAccessIssue]
             self.add_sel_widget(w)
             if t == self.default_item:
                 self.sel_widget(w)
@@ -116,10 +116,10 @@ class Menu(Dialog):
         for i in self.items:
             t = i[0]
             tw, th = get_text_size(t, self.font, self.font_metrics)
-            trace(self, "item <", t, "> tw=", tw, "th=", th)
+            trace(self, "item <",t,"> tw=", tw, "th=", th)
             tw = tw + h_margin * 2
             th = th + v_margin * 2
-            # if tw > w:
+            #if tw > w:
             #    w = tw
             if h == 0:
                 self.item_h = th
@@ -131,5 +131,5 @@ class Menu(Dialog):
         if mh is not None and h > mh:
             h = mh
         print("-> adjusted w,h:", w, h)
-        self.box = Box.xywh(0, 0, w, h)
-        super(Menu, self)._adjust_box()
+        self.box = Box.xywh(0,0,w,h)
+        super(Menu,self)._adjust_box()
