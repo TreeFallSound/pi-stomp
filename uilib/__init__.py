@@ -14,6 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from uilib.misc import *
+from uilib.font_with_glyphs import *
 from uilib.box import *
 from uilib.widget import *
 from uilib.container import *

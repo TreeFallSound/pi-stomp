@@ -92,7 +92,7 @@ class Modhandler(Handler):
         self.pedalboard_change_timestamp = os.path.getmtime(self.pedalboard_modification_file)\
             if Path(self.pedalboard_modification_file).exists() else 0
 
-        self.wifi_manager = Wifi.WifiManager()
+        self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
@@ -176,10 +176,16 @@ class Modhandler(Handler):
             self.hardware.poll_indicators()
 
     def poll_wifi(self):
-        wifi_update = self.wifi_manager.poll()
-        if wifi_update is not None:
-            self.wifi_status = wifi_update
-            self.lcd.update_wifi(self.wifi_status)
+        self.wifi_manager.poll()
+        if self._lcd is not None and self.lcd.wifi_menu is not None:
+            self.lcd.wifi_menu.tick()
+
+    def _on_wifi_status_change(self, status):
+        self.wifi_status = status
+        if self._lcd is not None:
+            self.lcd.update_wifi(status)
+            if self.lcd.wifi_menu is not None:
+                self.lcd.wifi_menu.notify_status_change()
 
     def poll_system_info(self):
         # Get the system state from the systemd service
@@ -243,6 +249,7 @@ class Modhandler(Handler):
 
     def poll_lcd_updates(self):
         if self._lcd is not None:
+            self._lcd.update_wifi(self.wifi_status)
             self._lcd.poll_updates()
 
     def universal_encoder_select(self, direction):
@@ -388,6 +395,7 @@ class Modhandler(Handler):
         self.load_current_presets()
         self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
         self.lcd.draw_main_panel()
+        self.lcd.update_wifi(self.wifi_status)
 
         # Send external MIDI messages for this pedalboard
         # Config was already updated by hardware.reinit(cfg) above
@@ -782,15 +790,6 @@ class Modhandler(Handler):
 
     def change_bypass_preference(self, pref):
         self.settings.set_setting(Token.BYPASS, pref)
-
-    def system_toggle_hotspot(self, **kwargs):
-        if util.DICT_GET(self.wifi_status, 'hotspot_active'):
-            self.wifi_manager.disable_hotspot()
-        else:
-            self.wifi_manager.enable_hotspot()
-
-    def configure_wifi_credentials(self, ssid, password):
-        return self.wifi_manager.configure_wifi(ssid, password)
 
     def audio_parameter_change(self, direction, name, symbol, value, min, max, commit_callback):
         if symbol is not None:
