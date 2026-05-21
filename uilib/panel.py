@@ -147,29 +147,30 @@ class RoundedPanel(Panel):
     moves through the tall content surface on scroll)."""
 
     def __init__(self, radius: int = 10, **kwargs):
-        kwargs['image_format'] = 'RGBA'
-        super(RoundedPanel, self).__init__(**kwargs)
+        # Set radius *before* super().__init__() — ContainerWidget.__init__
+        # calls _setup() which calls _build_shape_mask(); the mask builder
+        # reads self.radius. The shape mask itself is populated by _setup().
         self.radius = radius
         self._shape_mask: Optional[pygame.Surface] = None
-        self._build_shape_mask()
+        kwargs['image_format'] = 'RGBA'
+        super(RoundedPanel, self).__init__(**kwargs)
 
-    def _build_shape_mask(self) -> None:
-        # Mask is viewport-sized. For virtual panels the cache surface is
-        # content_height tall and the mask is re-applied at blit time at the
-        # current viewport offset.
+    def _build_shape_mask(self) -> pygame.Surface:
+        """Build the per-corner viewport-sized alpha mask for this panel's outline shape."""
         size = (int(self.box.width), int(self.box.height))
         mask = pygame.Surface(size, pygame.SRCALPHA)
         mask.fill((0, 0, 0, 0))
         pygame.draw.rect(mask, (255, 255, 255, 255),
                          pygame.Rect(0, 0, size[0], size[1]), 0,
                          border_radius=self.radius)
-        self._shape_mask = mask
+        return mask
 
     def _setup(self):
         super()._setup()
-        # Rebuild the mask if the backing surface was just (re)allocated.
-        if getattr(self, "radius", None) is not None and self.surface is not None:
-            self._build_shape_mask()
+        # _setup may have just (re)allocated the backing surface; rebuild the
+        # mask so it matches the current box.
+        if self.surface is not None:
+            self._shape_mask = self._build_shape_mask()
 
     def _finalize_cache(self) -> None:
         if self.virtual or self._shape_mask is None or self.surface is None:

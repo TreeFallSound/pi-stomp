@@ -17,6 +17,8 @@ import functools
 import textwrap
 from typing_extensions import override
 
+import pygame
+
 from uilib.box import Box
 from uilib.radius import Radius
 from uilib.panel import *
@@ -85,19 +87,18 @@ class Dialog(RoundedPanel):
         super(Dialog, self).__init__(box=box, align=WidgetAlign.CENTRE, radius=radius,
                                      decorator=deco, **kwargs)
 
-    def _build_shape_mask(self) -> None:
-        # Viewport-sized (not surface-sized) so virtual content_height surfaces
-        # still get rounded corners at the viewport's bottom edge. Only the
-        # bottom corners round — the titlebar decorator owns the top corners
-        # and the panel's top edge must stay square to meet it seamlessly.
-        import pygame
+    @override
+    def _build_shape_mask(self) -> pygame.Surface:
+        # Only the bottom corners round — the titlebar decorator owns the top
+        # corners and the panel's top edge must stay square to meet it
+        # seamlessly.
         size = (int(self.box.width), int(self.box.height))
         mask = pygame.Surface(size, pygame.SRCALPHA)
         mask.fill((0, 0, 0, 0))
         pygame.draw.rect(mask, (255, 255, 255, 255),
                          pygame.Rect(0, 0, size[0], size[1]), 0,
                          **Radius.bottom(self.radius).as_pygame_kwargs())
-        self._shape_mask = mask
+        return mask
 
 class MessageDialog(Dialog):
     def __init__(self, panelstack, message, title="Error", width=200, height=90):
