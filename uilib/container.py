@@ -28,11 +28,6 @@ class ContainerWidget(Widget):
     # Inherited attributes with defaults
     INH_ATTRS = { 'image_format' : 'RGB' }
 
-    # When True, descendants should not push fresh pixels into this container's
-    # cache during propagate_dirty. Used by PanelStack, whose surface is rebuilt
-    # by composition on every propagate_dirty call (push-up would be wasted).
-    _skip_cache_push = False
-
     def __init__(self, box, **kwargs):
         # Non-inherited attributes
         self.virtual = self._get_arg(kwargs, 'virtual', False)
@@ -186,21 +181,17 @@ class ContainerWidget(Widget):
         target_surface.blit(self.surface, _ipt(dst_topleft), area=_pg_rect(src_box))
 
     def propagate_dirty(self, local_clip: Box):
-        """Bubble a dirty region (in our local coords) up to our parent container.
+        """Bubble a dirty region (in our local coords) up to our parent.
 
-        Before bubbling, push our freshly-updated pixels into the parent's cache
-        so it doesn't need to rebuild on its next do_draw. Skipped for PanelStack
-        parents, whose surface is rebuilt by composition on every propagate_dirty."""
+        Cached composites above us now hold stale pixels of our region, so we
+        invalidate the immediate parent container — the next do_draw will pull
+        fresh pixels from our (still-valid) cache via the cache-hit blit path."""
         if not self.visible or self.parent is None:
             return
         parent_clip = local_clip.deoffset(self.offset).offset(self.box)
         parent = self.parent
-        if (isinstance(parent, ContainerWidget)
-                and not parent._skip_cache_push
-                and parent._cache_valid
-                and parent.surface is not None):
-            viewport_clip = local_clip.deoffset(self.offset)
-            self._blit_into(parent.surface, viewport_clip, parent_clip.topleft)
+        if isinstance(parent, ContainerWidget):
+            parent._cache_valid = False
         parent.propagate_dirty(parent_clip)
 
     def _invalidate_cache(self):
