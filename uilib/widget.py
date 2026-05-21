@@ -352,11 +352,12 @@ class Widget:
             self.parent = None
             parent._invalidate_cache()
 
-    def _invalidate_cache(self):
-        """Bubble cache invalidation up. Containers override to flip their own
-        validity flag before bubbling further."""
+    def _invalidate_cache(self, box=None):
+        """Bubble cache invalidation up. Containers override to accumulate
+        a dirty region before bubbling further. `box` is in self-local coords
+        (or None ⇒ fully invalidate)."""
         if self.parent is not None:
-            self.parent._invalidate_cache()
+            self.parent._invalidate_cache(box)
 
     def _adjust_box(self):
         trace(self, "adjusting box, parent=", self.parent)

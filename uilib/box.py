@@ -176,6 +176,19 @@ class Box:
         y1 = min(self.box[3], box.box[3])
         return Box(x0,y0,x1,y1)
 
+    def union(self, box):
+        """Returns the bounding rectangle that contains both rectangles.
+        Empty boxes are skipped (treated as the identity)."""
+        if self.is_empty():
+            return box
+        if box.is_empty():
+            return self
+        x0 = min(self.box[0], box.box[0])
+        y0 = min(self.box[1], box.box[1])
+        x1 = max(self.box[2], box.box[2])
+        y1 = max(self.box[3], box.box[3])
+        return Box(x0,y0,x1,y1)
+
     def contains(self, other):
         """Returns True if other is fully contained within this box"""
         return (other.box[0] >= self.box[0] and other.box[1] >= self.box[1] and

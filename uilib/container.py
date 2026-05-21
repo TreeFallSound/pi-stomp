@@ -41,10 +41,10 @@ class ContainerWidget(Widget):
         self.surface: Optional[pygame.Surface] = None
         self.old_box = None
         self.offset: Tuple[int, int] = (0, 0)
-        # When True, self.surface is trusted to hold the current rendered state
-        # for any clip, and do_draw can skip the rebuild and just blit.
-        # Invalidated on (re)allocation and on child attach/detach.
-        self._cache_valid = False
+        # Surface-local rect of stale pixels — None ⇒ cache is fully valid.
+        # do_draw rebuilds only the dirty region on a cache miss, so frequent
+        # small-clip refreshes stay cheap.
+        self._dirty_region: Optional[Box] = None
 
         super(ContainerWidget,self).__init__(box = box, **kwargs)
 
@@ -74,7 +74,7 @@ class ContainerWidget(Widget):
             self.surface = pygame.Surface((int(w), int(h)), pygame.SRCALPHA)
         else:
             self.surface = pygame.Surface((int(w), int(h)))
-        self._cache_valid = False
+        self._dirty_region = Box(0, 0, int(w), int(h))
 
     def _viewport(self) -> Box:
         """Visible region in content (surface) coords."""
@@ -113,7 +113,7 @@ class ContainerWidget(Widget):
             self._draw_outline(ctx)
             self._draw_selection(ctx)
             self._finalize_cache()
-            self._cache_valid = True
+            self._dirty_region = None
             if self.visible and self.parent is not None:
                 self.propagate_dirty(viewport)
         else:
@@ -128,7 +128,7 @@ class ContainerWidget(Widget):
             self._draw_outline(ctx)
             self._draw_selection(ctx)
             self._finalize_cache()
-            self._cache_valid = True
+            self._dirty_region = None
             if self.visible and self.parent is not None:
                 self.propagate_dirty(local_clip)
 
@@ -141,10 +141,10 @@ class ContainerWidget(Widget):
     def do_draw(self, ctx: PaintContext, frame: Box):
         """Draw this container's pixels into a parent's PaintContext.
 
-        If our cache is valid, this is a pure blit from self.surface into the
-        parent surface. Otherwise we first rebuild the entire backing store
-        (so future partial blits can trust it), then blit the requested clip.
-        """
+        On a cache miss we rebuild only the dirty region (SDL clip clamps
+        every primitive to that rect), then blit into the parent. Virtual
+        containers maintain their cache via refresh()/scroll() and never
+        rebuild here."""
         assert self.surface is not None
         with ctx.painting(frame) as pctx:
             pframe = pctx.frame
@@ -152,21 +152,22 @@ class ContainerWidget(Widget):
             local_clip = pctx.clip.deoffset(pframe.topleft)
             local_frame = self.box.norm()
 
-            # 1. Rebuild the cache only on a miss. Virtual containers maintain
-            #    their cache via refresh()/scroll() and never rebuild here.
-            if not self.virtual and not self._cache_valid:
-                full_ctx = PaintContext(self.surface, local_frame, frame=local_frame)
-                self._draw_erase(full_ctx)
-                self._draw(full_ctx)
-                for c in self.children:
-                    if c.visible:
-                        c.do_draw(full_ctx, c.box.offset(local_frame))
-                self._draw_outline(full_ctx)
-                self._draw_selection(full_ctx)
+            if not self.virtual and self._dirty_region is not None:
+                dirty = self._dirty_region
+                base_ctx = PaintContext(self.surface, dirty)
+                with base_ctx.painting(local_frame) as full_ctx:
+                    self._draw_erase(full_ctx)
+                    self._draw(full_ctx)
+                    for c in self.children:
+                        if c.visible:
+                            cf = c.box.offset(local_frame)
+                            if cf.intersects(dirty):
+                                c.do_draw(full_ctx, cf)
+                    self._draw_outline(full_ctx)
+                    self._draw_selection(full_ctx)
                 self._finalize_cache()
-                self._cache_valid = True
+                self._dirty_region = None
 
-            # 2. Blit our backing store into pctx.surface.
             dst_topleft = (pframe.x0 + local_clip.x0, pframe.y0 + local_clip.y0)
             self._blit_into(pctx.surface, local_clip, dst_topleft)
 
@@ -183,23 +184,32 @@ class ContainerWidget(Widget):
     def propagate_dirty(self, local_clip: Box):
         """Bubble a dirty region (in our local coords) up to our parent.
 
-        Cached composites above us now hold stale pixels of our region, so we
-        invalidate the immediate parent container — the next do_draw will pull
-        fresh pixels from our (still-valid) cache via the cache-hit blit path."""
+        Cached composites above us hold stale pixels of our region, so we
+        invalidate the parent's cache with the precise rect — the next
+        do_draw rebuilds only that slice."""
         if not self.visible or self.parent is None:
             return
         parent_clip = local_clip.deoffset(self.offset).offset(self.box)
         parent = self.parent
         if isinstance(parent, ContainerWidget):
-            parent._cache_valid = False
+            parent._invalidate_cache(parent_clip)
         parent.propagate_dirty(parent_clip)
 
-    def _invalidate_cache(self):
-        """Mark our cache stale and bubble the invalidation up the container chain."""
-        if not self._cache_valid:
+    def _invalidate_cache(self, box: Optional[Box] = None) -> None:
+        """Mark a region of our cache stale and bubble up.
+
+        box=None means "fully invalidate" (used by child attach/detach where
+        we don't have a precise rect). Otherwise unions box into our dirty
+        region and bubbles a parent-coord rect to the parent."""
+        if self.surface is None:
             return
-        self._cache_valid = False
-        super()._invalidate_cache()
+        full = self._content_bounds()
+        region = full if box is None else box.intersection(full)
+        if region.is_empty():
+            return
+        self._dirty_region = region if self._dirty_region is None else self._dirty_region.union(region)
+        if self.visible and self.parent is not None:
+            self.parent._invalidate_cache(region.deoffset(self.offset).offset(self.box))
 
     def scroll(self, offset):
         self.offset = offset
@@ -217,7 +227,7 @@ class ContainerWidget(Widget):
                     c.do_draw(ctx, c.box)
                     c._painted = True
                     c._dirty = False
-        self._cache_valid = True
+        self._dirty_region = None
         if self.visible and self.parent is not None:
             self.propagate_dirty(viewport)
 
