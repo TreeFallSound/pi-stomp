@@ -140,10 +140,10 @@ class Panel(ContainerWidget):
 class RoundedPanel(Panel):
     """A panel with rounded corners.
 
-    The rounded shape is stored as a separate alpha mask surface and applied
-    at blit time (BLEND_RGBA_MULT), exactly the way the old PIL implementation
-    used a mode='1' bitmap with paste(mask=…). This means children that happen
-    to paint into the corner regions don't leak past the rounded edge."""
+    Non-virtual panels pre-multiply the rounded mask into the cached surface
+    in `_finalize_cache()` so steady-state blits are plain. Virtual panels
+    apply the mask at blit time since the mask tracks the viewport (which
+    moves through the tall content surface on scroll)."""
 
     def __init__(self, radius: int = 10, **kwargs):
         kwargs['image_format'] = 'RGBA'
@@ -153,10 +153,9 @@ class RoundedPanel(Panel):
         self._build_shape_mask()
 
     def _build_shape_mask(self) -> None:
-        # Mask is viewport-sized, not surface-sized. For virtual containers the
-        # surface is content_height tall, but the rounded corners must appear
-        # at the viewport edges (which is what _blit_into addresses via
-        # viewport-relative local_clip).
+        # Mask is viewport-sized. For virtual panels the cache surface is
+        # content_height tall and the mask is re-applied at blit time at the
+        # current viewport offset.
         size = (int(self.box.width), int(self.box.height))
         mask = pygame.Surface(size, pygame.SRCALPHA)
         mask.fill((0, 0, 0, 0))
@@ -171,13 +170,16 @@ class RoundedPanel(Panel):
         if getattr(self, "radius", None) is not None and self.surface is not None:
             self._build_shape_mask()
 
-    def _blit_into(self, target_surface: pygame.Surface, local_clip, dst_topleft) -> None:
-        """Blit the rounded slice into the parent.
+    def _finalize_cache(self) -> None:
+        if self.virtual or self._shape_mask is None or self.surface is None:
+            return
+        self.surface.blit(self._shape_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
 
-        Composite our pixels onto a small SRCALPHA scratch, multiply by the
-        shape mask's matching sub-rect, then blit the result. Cost scales with
-        the dirty rect, not the full panel — fast incremental updates remain
-        fast."""
+    def _blit_into(self, target_surface: pygame.Surface, local_clip, dst_topleft) -> None:
+        if not self.virtual:
+            super()._blit_into(target_surface, local_clip, dst_topleft)
+            return
+        # Virtual: mask follows the viewport, so we composite per-blit.
         assert self.surface is not None
         assert self._shape_mask is not None
         from uilib.paint import _pg_rect

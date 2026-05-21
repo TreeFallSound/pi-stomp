@@ -117,6 +117,7 @@ class ContainerWidget(Widget):
                         c._dirty = True
             self._draw_outline(ctx)
             self._draw_selection(ctx)
+            self._finalize_cache()
             self._cache_valid = True
             if self.visible and self.parent is not None:
                 self.propagate_dirty(viewport)
@@ -131,9 +132,16 @@ class ContainerWidget(Widget):
                     c.do_draw(ctx, c.box.offset(local_frame))
             self._draw_outline(ctx)
             self._draw_selection(ctx)
+            self._finalize_cache()
             self._cache_valid = True
             if self.visible and self.parent is not None:
                 self.propagate_dirty(local_clip)
+
+    def _finalize_cache(self) -> None:
+        """Hook called after the backing surface is rebuilt. Subclasses can
+        apply composite effects (e.g. corner masking) so steady-state blits
+        out of this container are plain. Default: no-op."""
+        pass
 
     def do_draw(self, ctx: PaintContext, frame: Box):
         """Draw this container's pixels into a parent's PaintContext.
@@ -160,6 +168,7 @@ class ContainerWidget(Widget):
                         c.do_draw(full_ctx, c.box.offset(local_frame))
                 self._draw_outline(full_ctx)
                 self._draw_selection(full_ctx)
+                self._finalize_cache()
                 self._cache_valid = True
 
             # 2. Blit our backing store into pctx.surface.
