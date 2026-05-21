@@ -204,51 +204,7 @@ class PaintContext:
             return
         color = _color(fill)
         x, y = self._abs_xy(pos)
-        # IMPORTANT: pygame._freetype.Font.render_to bypasses surface.set_clip
-        # — confirmed in pygame-ce src_c/freetype/ft_render*.c, where the
-        # rasterizer locks the destination surface and clamps only against
-        # full surface bounds, never consulting clip_rect. Surface.blit DOES
-        # honor the clip.
-        #
-        # We render into a line-height-sized temp surface with the baseline
-        # at the ascender position inside it (origin=True), so the glyph
-        # vertically lives at the same offset from the temp top that PIL's
-        # 'la' anchor produced (bbox[1] = ascender - glyph_top). Blitting the
-        # temp at (x, y) then puts pixels at the same absolute coords PIL
-        # would have, but the blit IS clip-respecting.
         asc = int(font.get_sized_ascender())
-        desc = abs(int(font.get_sized_descender()))
-        rect = font.get_rect(text)
-        # font.get_rect(text).x is the left-side bearing — render at -rect.x so the
-        # leftmost visible glyph pixel lands at temp x=0 (PIL `la` semantics).
-        # Per-glyph descent below the nominal font descender (e.g. 'g','p','y')
-        # must extend the temp height; matches misc.get_text_size().
-        glyph_desc = 0
-        for m in font.get_metrics(text):
-            if m is None:
-                continue
-            min_y = m[2]
-            if min_y >= 0x80000000:
-                min_y -= 0x100000000
-            if min_y < 0 and -min_y > glyph_desc:
-                glyph_desc = -min_y
-        # PIL `la` puts the pen at `pos`; ink lands at pos.x + lsb. When the
-        # first glyph has negative LSB (e.g. 'j' rect.x=-1), the ink dips left
-        # of the pen, and our temp surface must include that overhang or the
-        # leftmost ink column will be clipped. Pad `pad_x` columns on the
-        # left, render the pen at temp_x=pad_x, and blit with dst.x shifted
-        # left by pad_x so the final ink lands at the same dst column as the
-        # PIL output (= base_dst_x + rect.x).
-        pad_x = max(0, -rect.x)
-        temp_w = max(1, rect.x + rect.width + pad_x)
-        temp_h = max(1, asc + desc + glyph_desc)
-        temp = pygame.Surface((temp_w, temp_h), pygame.SRCALPHA)
-        prev_origin = font.origin
-        font.origin = True
-        try:
-            font.render_to(temp, (pad_x, asc), text, fgcolor=color)
-        finally:
-            font.origin = prev_origin
         if anchor == "mm":
             # PIL anchor='mm' centers on (PIL.getbbox(text).w / 2, (asc+desc)/2).
             # uilib.misc.get_text_size matches PIL getbbox semantics. Use int()
@@ -257,12 +213,27 @@ class PaintContext:
             # banker's rounding on .5 boundaries (e.g. 51.5 → 52) would push
             # the glyph one pixel right of PIL.
             from uilib.misc import get_text_size
+            desc = abs(int(font.get_sized_descender()))
             tw, _ = get_text_size(text, font)
             base_dst = (int(x - tw / 2), int(y - (asc + desc) / 2))
         else:
             base_dst = (int(x), int(y))
-        dst = (base_dst[0] - pad_x, base_dst[1])
-        self.surface.blit(temp, dst)
+        # pygame._freetype.Font.render_to bypasses surface.set_clip (it clamps
+        # only to the destination surface's bounds). To enforce the active
+        # clip without a temp+blit, render into a subsurface of the current
+        # clip rect — the rasterizer then clamps to that, giving us SDL-style
+        # clipping for free. `painting()` guarantees a non-empty clip.
+        clip = self.surface.get_clip()
+        if clip.width <= 0 or clip.height <= 0:
+            return
+        sub = self.surface.subsurface(clip)
+        pen = (base_dst[0] - clip.x, base_dst[1] + asc - clip.y)
+        prev_origin = font.origin
+        font.origin = True
+        try:
+            font.render_to(sub, pen, text, fgcolor=color)
+        finally:
+            font.origin = prev_origin
 
     def paste(self, src: pygame.Surface, pos: Sequence[int], mask: Optional[pygame.Surface] = None) -> None:
         """Blit a surface onto self.surface at widget-relative coords."""
