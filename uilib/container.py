@@ -171,15 +171,21 @@ class ContainerWidget(Widget):
             dst_topleft = (pframe.x0 + local_clip.x0, pframe.y0 + local_clip.y0)
             self._blit_into(pctx.surface, local_clip, dst_topleft)
 
-    def _blit_into(self, target_surface: pygame.Surface, local_clip: Box, dst_topleft: Tuple[int, int]):
-        """Copy self.surface[local_clip + self.offset] into target_surface at dst_topleft.
+    def _viewport_view(self) -> pygame.Surface:
+        """Viewport-local view of the backing surface.
 
-        For virtual (tall) containers, local_clip is in viewport coords; we
-        shift by self.offset to address the correct slice of the tall surface.
-        Per-pixel alpha (SRCALPHA) is honored automatically by pygame's blit."""
+        Non-virtual: viewport == bounds, so this is the whole surface.
+        Virtual: returns a subsurface slice of the tall surface at the current
+        scroll offset, clamped to surface bounds (the viewport can extend past
+        the content when scrolled near the end). Either way, callers treat
+        `local_clip` as viewport-local coords with no offset math."""
         assert self.surface is not None
-        src_box = local_clip.offset(self.offset)
-        target_surface.blit(self.surface, _ipt(dst_topleft), area=_pg_rect(src_box))
+        vp = self._viewport().intersection(self._content_bounds())
+        return self.surface.subsurface(_pg_rect(vp))
+
+    def _blit_into(self, target_surface: pygame.Surface, local_clip: Box, dst_topleft: Tuple[int, int]) -> None:
+        """Copy the viewport-local clip from our cache into target_surface."""
+        target_surface.blit(self._viewport_view(), _ipt(dst_topleft), area=_pg_rect(local_clip))
 
     def propagate_dirty(self, local_clip: Box):
         """Bubble a dirty region (in our local coords) up to our parent.

@@ -13,10 +13,11 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing import Optional
+from typing import Optional, Tuple
 
 import pygame
 
+from uilib.box import Box
 from uilib.container import *
 from uilib.paint import PaintContext
 
@@ -175,20 +176,22 @@ class RoundedPanel(Panel):
             return
         self.surface.blit(self._shape_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
 
-    def _blit_into(self, target_surface: pygame.Surface, local_clip, dst_topleft) -> None:
+    def _blit_into(self, target_surface: pygame.Surface, local_clip: Box, dst_topleft: Tuple[int, int]) -> None:
         if not self.virtual:
             super()._blit_into(target_surface, local_clip, dst_topleft)
             return
-        # Virtual: mask follows the viewport, so we composite per-blit.
-        assert self.surface is not None
+        # Virtual: mask follows the viewport, so we composite per-blit off a
+        # viewport-local view of the tall cache. local_clip may extend past
+        # the surface (viewport-clamped); clip rect intersected with view.
         assert self._shape_mask is not None
         from uilib.paint import _pg_rect
-        src_box = local_clip.offset(self.offset)
-        src_rect = _pg_rect(src_box)
-        mask_rect = _pg_rect(local_clip)
-        tmp = pygame.Surface((src_rect.width, src_rect.height), pygame.SRCALPHA)
-        tmp.blit(self.surface, (0, 0), area=src_rect)
-        tmp.blit(self._shape_mask, (0, 0), area=mask_rect, special_flags=pygame.BLEND_RGBA_MULT)
+        view = self._viewport_view()
+        view_rect = view.get_rect()
+        clip_rect = _pg_rect(local_clip).clip(view_rect)
+        if clip_rect.width <= 0 or clip_rect.height <= 0:
+            return
+        tmp = view.subsurface(clip_rect).copy()
+        tmp.blit(self._shape_mask, (0, 0), area=clip_rect, special_flags=pygame.BLEND_RGBA_MULT)
         target_surface.blit(tmp, (int(dst_topleft[0]), int(dst_topleft[1])))
 
     def _draw_outline(self, ctx):
