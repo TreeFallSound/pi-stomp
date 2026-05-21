@@ -16,6 +16,7 @@
 from uilib.dialog import *
 from uilib.config import *
 
+
 class Menu(Dialog):
     """A pop-up menu panel with lines of text to select
            items   : iterable of tuples whose first element is the text to display
@@ -45,7 +46,7 @@ class Menu(Dialog):
         for i in items:
             # item structure: 0:name, 1:action, 2:object, 3:selected item
             t = i[0]
-            if len(i) == 4 and i[3]:
+            if len(i) >= 4 and i[3]:
                 t = '\u2714 ' + t   # Add checkmark to selected item
             b = Box.xywh(0,h,self.box.width,self.item_h)
             w = TextWidget(box = b, text_halign = self.text_halign, font = self.font,

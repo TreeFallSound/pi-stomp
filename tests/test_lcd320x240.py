@@ -106,8 +106,9 @@ def test_wifi_menu_snapshot(lcd, snapshot):
     instance, _ = lcd
     instance.handler.wifi_status = {"hotspot_active": False}
     setup_main_ui(instance)
-    instance.draw_wifi_menu(None, None)
-    snapshot()
+    instance.wifi_menu.open(None, None)
+    snapshot("wifi_menu")
+
 
 
 def test_system_menu_snapshot(lcd, snapshot):
@@ -156,6 +157,40 @@ def test_update_footswitch_on_snapshot(lcd, snapshot):
     mock_fs.enabled = True  # pyright: ignore[reportAttributeAccessIssue]
     instance.update_footswitch(mock_fs)
     snapshot()
+
+
+@pytest.mark.parametrize("pending,status,expected", [
+    (1, {"wifi_connected": True,  "hotspot_active": False}, "wifi_processing.png"),
+    (1, {"wifi_connected": False, "hotspot_active": True},  "wifi_processing.png"),
+    (1, {"wifi_connected": False, "hotspot_active": False}, "wifi_processing.png"),
+    (0, {"wifi_connected": False, "hotspot_active": True},  "wifi_orange.png"),
+    (0, {"wifi_connected": True,  "hotspot_active": False}, "wifi_silver.png"),
+    (0, {"wifi_connected": False, "hotspot_active": False}, "wifi_gray.png"),
+])
+def test_update_wifi_icon_selection(lcd, mock_handler, pending, status, expected):
+    """Icon precedence: pending > hotspot > connected > disconnected."""
+    instance, _ = lcd
+    mock_handler.wifi_manager.queue.pending_op_count.return_value = pending
+    instance.draw_tools()  # creates w_wifi
+    with patch.object(instance.w_wifi, "replace_img") as mock_replace:
+        # Force first call to register by clearing the path cache.
+        instance._wifi_img_path = None
+        instance.update_wifi(status)
+    mock_replace.assert_called_once()
+    assert mock_replace.call_args[0][0].endswith(expected)
+
+
+def test_update_wifi_noop_when_path_unchanged(lcd, mock_handler):
+    """Repeated update_wifi calls with same status don't re-blit the icon."""
+    instance, _ = lcd
+    mock_handler.wifi_manager.queue.pending_op_count.return_value = 0
+    instance.draw_tools()
+    status = {"wifi_connected": True, "hotspot_active": False}
+    instance.update_wifi(status)  # first call sets path
+    with patch.object(instance.w_wifi, "replace_img") as mock_replace:
+        instance.update_wifi(status)
+        instance.update_wifi(status)
+    mock_replace.assert_not_called()
 
 
 def test_tap_tempo_snapshot(lcd, snapshot):
