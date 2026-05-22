@@ -89,7 +89,7 @@ class Footswitch(controller.Controller):
         super(Footswitch, self).__init__(midi_channel, midi_CC)
         self.id = id
         self.display_label = None
-        self.enabled = False
+        self.toggled = False
         self.led = None
         self.midiout = midiout
         self.refresh_callback = refresh_callback
@@ -100,6 +100,7 @@ class Footswitch(controller.Controller):
         self.category = None
         self.pixel = pixel
         self.longpress_groups = []
+        self.disabled = False
         self.taptempo = taptempo
 
         if adc_input and gpio_input:
@@ -137,9 +138,9 @@ class Footswitch(controller.Controller):
     def set_midi_channel(self, midi_channel):
         self.midi_channel = midi_channel
 
-    def set_value(self, value):
-        self.enabled = (value < 1)
-        self._set_led(self.enabled)
+    def set_value(self, bypass_value: float):
+        self.toggled = (bypass_value < 1)
+        self._set_led(self.toggled)
         self.refresh_callback(footswitch=self)
 
     def _set_led(self, enabled):
@@ -160,12 +161,15 @@ class Footswitch(controller.Controller):
     def set_category(self, category):
         self.category = category
         if self.pixel:
-            self.pixel.set_color_by_category(category, self.enabled)
+            self.pixel.set_color_by_category(category, self.toggled)
 
     def set_lcd_color(self, color):
         self.lcd_color = color
 
     def set_longpress_groups(self, groups):
+        if groups is None:
+            self.longpress_groups = []
+            return
         if isinstance(groups, str):
             groups = groups.split()
         if isinstance(groups, list):
@@ -176,6 +180,8 @@ class Footswitch(controller.Controller):
                     info.number_in_group += 1
 
     def poll(self):
+        if self.disabled:
+            return
         if self.adc_switch:
             self.adc_switch.refresh()
         elif self.gpio_switch:
@@ -199,7 +205,7 @@ class Footswitch(controller.Controller):
         # The footswitch will only "toggle" if it's associated with a relay
         # (in which case it will toggle with the relay) or with a Midi message
         #
-        new_enabled = not self.enabled
+        new_toggled = not self.toggled
 
         # First handle Longpress Events
         if state is switchstate.Value.LONGPRESSED:
@@ -207,13 +213,13 @@ class Footswitch(controller.Controller):
             if len(self.relay_list) > 0:
                 # Pin kept low (long press)
                 # toggle the relay and LED, exit this method
-                self.enabled = new_enabled
+                self.toggled = new_toggled
                 for r in self.relay_list:
-                    if self.enabled:
+                    if self.toggled:
                         r.enable()
                     else:
                         r.disable()
-                self._set_led(self.enabled)
+                self._set_led(self.toggled)
                 self.refresh_callback(True)  # True means this is a bypass change only
             else:
                 # TODO consider case where relay and longpress are specified
@@ -227,7 +233,7 @@ class Footswitch(controller.Controller):
 
         # If mapped to preset change
         elif self.preset_callback is not None:
-            # Change the preset and exit this method. Don't flip "enabled" since
+            # Change the preset and exit this method. Don't flip "toggled" since
             # there is no "toggle" action associated with a preset
             if self.preset_callback_arg is None:
                 self.preset_callback()
@@ -237,16 +243,16 @@ class Footswitch(controller.Controller):
 
         # Send midi
         elif self.midi_CC is not None:
-            self.enabled = new_enabled
+            self.toggled = new_toggled
             # Update LED
-            self._set_led(self.enabled)
-            cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.enabled else 0]
+            self._set_led(self.toggled)
+            cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.toggled else 0]
             logging.debug("Sending CC event: %d" % self.midi_CC)
             self.midiout.send_message(cc)
 
         # Update plugin parameter if any
         if self.parameter is not None:
-            self.parameter.value = not self.enabled  # TODO assumes mapped parameter is :bypass
+            self.parameter.value = not self.toggled  # TODO assumes mapped parameter is :bypass
 
         # Update LCD
         self.refresh_callback(footswitch=self)
@@ -266,7 +272,8 @@ class Footswitch(controller.Controller):
         self.preset_callback_arg = callback_arg
 
     def clear_pedalboard_info(self):
-        self.enabled = False
+        self.toggled = False
+        self.disabled = False
         self.display_label = None
         self.set_category(None)
         self.preset_callback = None
