@@ -74,11 +74,11 @@ class TestPressed:
     def test_short_press_toggles_enabled_and_sends_midi(self):
         midiout = MagicMock()
         with _make_footswitch(midi_CC=42, midi_channel=0, midiout=midiout) as fs:
-            assert fs.enabled is False
+            assert fs.toggled is False
 
             fs.pressed(switchstate.Value.RELEASED)
 
-            assert fs.enabled is True
+            assert fs.toggled is True
             midiout.send_message.assert_called_once()
             cc_msg = midiout.send_message.call_args[0][0]
             assert cc_msg[1] == 42
@@ -90,7 +90,7 @@ class TestPressed:
             fs.pressed(switchstate.Value.RELEASED)
             fs.pressed(switchstate.Value.RELEASED)
 
-            assert fs.enabled is False
+            assert fs.toggled is False
             assert midiout.send_message.call_count == 2
 
     def test_preset_callback_called_on_press(self):
@@ -101,7 +101,7 @@ class TestPressed:
             fs.pressed(switchstate.Value.RELEASED)
 
             cb.assert_called_once_with("bank_a")
-            assert fs.enabled is False  # preset press does not toggle enabled
+            assert fs.toggled is False  # preset press does not toggle enabled
 
     def test_longpress_logs_timestamp(self):
         with _make_footswitch() as fs:
@@ -128,13 +128,13 @@ class TestPressed:
 class TestClearPedalboardInfo:
     def test_clears_state(self):
         with _make_footswitch() as fs:
-            fs.enabled = True
+            fs.toggled = True
             fs.display_label = "Reverb"
             pixel = MagicMock()
             fs.pixel = pixel
 
             fs.clear_pedalboard_info()
 
-            assert fs.enabled is False
+            assert fs.toggled is False
             assert fs.display_label is None
             assert fs.preset_callback is None
