@@ -20,7 +20,9 @@ and pixels. Constructed with a fixed height; `render()` returns a cached
 from functools import lru_cache
 from pathlib import Path
 
+import numpy as np
 import pygame
+from PIL import Image, ImageDraw
 
 from uilib._pygame_init import freetype as _get_freetype
 
@@ -74,12 +76,15 @@ class PillGlyph:
         # and blit-subtract via BLEND_RGBA_SUB? Simpler: render the label dark
         # (assume light-on-dark UI) — matches PIL original which used fill=0
         # on an L-mask getting pasted as a foreground color.
+        # Center the label's ink rect (not line box) inside the pill. With
+        # origin=False, render_to's pen position is the top-left of the
+        # rendered ink — position it directly.
         prev = self._font.origin
-        self._font.origin = True
+        self._font.origin = False
         try:
-            asc = int(self._font.get_sized_ascender())
-            tx = bx + (bw - self._text_w) // 2
-            ty = by + (bh - self._text_h) // 2 + asc
+            rect = self._font.get_rect(self._label)
+            tx = bx + (bw - rect.width) // 2
+            ty = by + (bh - rect.height) // 2
             self._font.render_to(surf, (tx, ty), self._label, fgcolor=(0, 0, 0))
         finally:
             self._font.origin = prev
@@ -127,20 +132,22 @@ class SignalBarsGlyph:
 
     @lru_cache(maxsize=8)
     def _render_cached(self, color: tuple[int, int, int]) -> pygame.Surface:
+        # Render in PIL: pygame's smoothscale is bilinear and loses the crisp
+        # edges of the supersampled bars. PIL's LANCZOS downscale matches the
+        # original pistomp-v3 quality. We render the bars into an L-mask at
+        # full intensity (filled = 255, dim = 128) and then tint with the
+        # actual color when blitting onto a pygame Surface.
         s = self.SCALE
         cell_w = self._width
         cell_h = self._height
-        big = pygame.Surface((cell_w * s, cell_h * s), pygame.SRCALPHA)
-        big.fill((0, 0, 0, 0))
+        big = Image.new("L", (cell_w * s, cell_h * s), 0)
+        bd = ImageDraw.Draw(big)
 
         max_h = max(4, cell_h - 4) * s
         baseline = (cell_h - 2) * s
         bw = self._bar_w * s
         gap = self._gap * s
         span = (self._bar_count - 1) * (bw + gap) + bw - 1
-
-        # Dim outline: half the channel intensity. Matches PIL's `color // 2`.
-        dim = tuple(c // 2 for c in color)
 
         for i in range(self._bar_count):
             bx_left = s + i * (bw + gap)
@@ -154,8 +161,20 @@ class SignalBarsGlyph:
                 (bx_left, baseline - h_left),
             ]
             if i < self._level:
-                pygame.draw.polygon(big, color, poly, 0)
+                bd.polygon(poly, fill=255)
             else:
-                pygame.draw.polygon(big, dim, poly, s)
+                bd.polygon(poly, outline=128, width=s)
 
-        return pygame.transform.smoothscale(big, (cell_w, cell_h))
+        mask = big.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
+        # Build an RGBA pygame surface: RGB = color, A = mask intensity.
+        mask_bytes = mask.tobytes()
+        surf = pygame.Surface((cell_w, cell_h), pygame.SRCALPHA)
+        pixels = pygame.surfarray.pixels3d(surf)
+        alpha = pygame.surfarray.pixels_alpha(surf)
+        pixels[:, :, 0] = color[0]
+        pixels[:, :, 1] = color[1]
+        pixels[:, :, 2] = color[2]
+        import numpy as np
+        alpha[:, :] = np.frombuffer(mask_bytes, dtype=np.uint8).reshape((cell_h, cell_w)).T
+        del pixels, alpha  # release surface locks before returning
+        return surf
