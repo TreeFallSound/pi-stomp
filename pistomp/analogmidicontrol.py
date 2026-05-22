@@ -116,11 +116,6 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
         if abs(value - self.last_read) > self.tolerance:
             self._send_value(value)
 
-            self.last_read = value
-
-            if self.value_change_callback:
-                self.value_change_callback(value, self)
-
     def get_display_info(self) -> AnalogDisplayInfo:
         return {
             **super(AnalogMidiControl, self).get_display_info(),

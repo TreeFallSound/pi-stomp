@@ -88,6 +88,8 @@ class Modhandler(Handler):
         self._hardware: Hardware | None = None
         self.volume_parameter = None
 
+        self.next_pedalboard_preset_index = None
+
         self.notification: str | None = None
         self.pedalboards_remote: str | None = None
 
