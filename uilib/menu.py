@@ -13,17 +13,19 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from uilib.box import Box
 from uilib.config import Config
 from uilib.dialog import Dialog
 from uilib.misc import InputEvent, TextHAlign, get_text_size, trace
+from uilib.rich_text import RichTextWidget, Segment
 from uilib.text import TextWidget
 
-# A menu row label. `str` for now; the RichTextWidget step widens this to
-# `str | Sequence[Segment]`.
-Label = str
+# A menu row label. Either a plain string (rendered as a `TextWidget`) or a
+# sequence of `Segment`s (rendered as a `RichTextWidget` — emoji-style glyphs,
+# spacers for left/right alignment, etc.).
+Label = str | Sequence[Segment]
 
 # Action stored in slot 1 of a `MenuItem`. The menu framework never invokes
 # this directly — the per-item callable is decorative context that the
@@ -79,13 +81,19 @@ class Menu(Dialog):
         h = 0
         for i in self.items:
             t = _item_label(i)
-            if _item_selected(i):
-                t = '\u2714 ' + t
             b = Box.xywh(0, h, self.box.width, self.item_h)
-            w = TextWidget(box = b, text_halign = self.text_halign, font = self.font,
-                           text = t, parent = self, action = self._item_action)
+            if isinstance(t, str):
+                if _item_selected(i):
+                    t = '\u2714 ' + t
+                w: TextWidget | RichTextWidget = TextWidget(
+                    box=b, text_halign=self.text_halign, font=self.font,
+                    text=t, parent=self, action=self._item_action)
+            else:
+                # Rich rows ignore `selected` for now — the checkmark prefix
+                # only makes sense on string labels.
+                w = RichTextWidget(box=b, segments=t, font=self.font,
+                                   parent=self, action=self._item_action)
             # Stash the source item on the widget for `_item_action` to recover.
-            # TextWidget has no `data` field declared — set via setattr.
             setattr(w, 'data', i)
             self.add_sel_widget(w)
             if t == self.default_item:
@@ -126,18 +134,23 @@ class Menu(Dialog):
         # them once attached.
         #
         w = 240
-        h = 0
-        h_margin = 10
         v_margin = 0
+        # Row height = max across all items so a tall rich row (e.g. a glyph
+        # bigger than the text line) doesn't get clipped. Strings measure via
+        # get_text_size; rich rows measure each segment.
+        _, line_h = get_text_size('', self.font)
+        item_h = line_h
         for i in self.items:
             t = _item_label(i)
-            tw, th = get_text_size(t, self.font)
-            trace(self, "item <",t,"> tw=", tw, "th=", th)
-            tw = tw + h_margin * 2
+            if isinstance(t, str):
+                _, th = get_text_size(t, self.font)
+            else:
+                th = max((seg.measure(self.font)[1] for seg in t), default=line_h)
             th = th + v_margin * 2
-            if h == 0:
-                self.item_h = th
-                h = th * len(self.items)
+            if th > item_h:
+                item_h = th
+        self.item_h = item_h
+        h = item_h * len(self.items)
         mw = self.max_width
         mh = self.max_height
         if mw is not None and w > mw:
