@@ -16,6 +16,7 @@
 import logging
 import time
 import sys
+from typing_extensions import override
 from rtmidi.midiconstants import CONTROL_CHANGE
 
 import common.token as Token
@@ -139,8 +140,9 @@ class Footswitch(controller.Controller):
     def set_midi_channel(self, midi_channel):
         self.midi_channel = midi_channel
 
-    def set_value(self, bypass_value: float):
-        self.toggled = (bypass_value < 1)
+    @override
+    def set_value(self, value: float):
+        self.toggled = (value < 1)
         self._set_led(self.toggled)
         self.refresh_callback(footswitch=self)
 

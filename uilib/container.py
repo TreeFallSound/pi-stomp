@@ -14,7 +14,6 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from uilib.widget import *
-from uilib.paint import PaintContext
 from PIL import Image, ImageDraw
 
 class ContainerWidget(Widget):
@@ -67,67 +66,84 @@ class ContainerWidget(Widget):
             self.mask = None
         
     def _visible_box(self, box):
+        """Returns if any part of the box intersects this widget"""
         if box is None:
             return False
         return box.intersects(self.box.norm())
+        
+    def _focus(self, box):
+        box = box.deoffset(self.offset)
+        if self.visible and self._visible_box(box):
+            return (self.image, self.draw, box)
+        else:
+            return (None, None, None)
+
+    def _unfocus(self, box):
+        # A child updated itself, tell parent to "compose" a subsection of ourselves
+        if self.visible and self.parent:
+            box = box.deoffset(self.offset)
+            self.parent._compose(self, box, box.offset(self.box))
+
+    def _compose(self, widget, orig_box, real_box):
+        assert isinstance(widget, ContainerWidget)
+
+        real_box.deoffset(self.offset)  # XXX: result is discarded
+
+        # Crop real box to this image box. This avoids trying to copy pixels
+        # that are outside of it
+        crop = real_box.intersection(self.box.norm())
+        if crop.is_empty():
+            return
+
+        # XXX TODO: Fast path the case where no cropping occurs
+
+        # Now create a new orig box that is cropped as well
+        offset = orig_box.get_offset(real_box)
+        orig_crop = crop.deoffset(offset)
+
+        # Alpha path: If both images have alpha channels, then do an
+        # alpha composition which handles the cropping
+        if self.has_alpha and widget.has_alpha:
+            self.image.alpha_composite(widget.image, crop.topleft, orig_crop.rect)
+        else:
+            sub_image = widget.image.crop(orig_crop.rect)
+            if widget.mask is not None:
+                sub_mask = widget.mask.crop(orig_crop.rect)
+            else:
+                sub_mask = None
+            self.image.paste(sub_image, crop.rect, sub_mask)
+            # Compose ourselves into parent if we are visible
+            if self.visible and self.parent != None:
+                self.parent._compose(self, crop, crop)
 
     def refresh(self):
-        trace(self, "ContainerWidget.refresh: vis=", self.visible, "parent=", self.parent)
+        trace(self, "ContainerWidget.refresh: vis=",self.visible,"parent=", self.parent)
         if not self.image:
             return
-        local_clip = self.box.norm()
-        ctx = PaintContext(self.image, self.draw, local_clip)
-        local_frame = self.box.norm()
-        self._draw_erase(ctx, local_frame)
-        self._draw(ctx, local_frame)
+
+        # Refresh the content of the container
+        self._do_draw(self.image, self.draw, self.box.norm())
+
+        # Update into parent container (call the parent refresh who will do the job)
+        if self.visible and self.parent != None:
+            self.parent._compose(self, self.box, self.box)
+
+    def _do_draw(self, image, draw, real_box):
+        # We replace the base Widget implementation because of how we deal with
+        # offsets: The erase and outline aren't offsetted, the rest is
+        off_real_box = real_box.deoffset(self.offset)
+        self._draw_erase(image, draw, real_box)
+        self._draw(image, draw, off_real_box)
         for c in self.children:
             if c.visible:
-                c._do_draw(ctx, c.box.offset(local_frame))
-        self._draw_outline(ctx, local_frame)
-        self._draw_selection(ctx, local_frame)
-        if self.visible and self.parent is not None:
-            self._propagate_dirty(local_clip)
+                crb = c.box.offset(off_real_box)
+                c._do_draw(image, draw, crb)
+        self._draw_outline(image, draw, real_box)
+        self._draw_selection(image, draw, real_box)
 
-    def _do_draw(self, ctx: PaintContext, frame: Box):
-        """Draw this container into the parent surface at frame."""
-        local_clip = ctx.clip.deoffset(frame).intersection(self.box.norm())
-        if local_clip.is_empty():
-            return
-
-        local_frame = self.box.norm()
-        if self.outline_radius is not None:
-            r = self.outline_radius
-            safe = Box(r, r, local_frame.width - r, local_frame.height - r)
-            if not safe.contains(local_clip):
-                local_clip = local_frame
-        local_ctx = PaintContext(self.image, self.draw, local_clip)
-        self._draw_erase(local_ctx, local_frame)
-        self._draw(local_ctx, local_frame)
-        for c in self.children:
-            if c.visible:
-                c._do_draw(local_ctx, c.box.offset(local_frame))
-        self._draw_outline(local_ctx, local_frame)
-        self._draw_selection(local_ctx, local_frame)
-
-        # Blit dirty region into parent surface
-        src_box = local_clip
-        dst_topleft = local_clip.offset(frame).topleft
-        sub = self.image.crop(src_box.rect)
-        if self.mask is not None:
-            sub_mask = self.mask.crop(src_box.rect)
-        else:
-            sub_mask = None
-        if self.has_alpha and ctx.image.mode == 'RGBA':
-            ctx.image.alpha_composite(sub, dst_topleft, src_box.rect)
-        else:
-            ctx.image.paste(sub, dst_topleft, sub_mask)
-
-    def _propagate_dirty(self, local_clip: Box):
-        """Bubble a dirty region (in our local coords) up to our parent container."""
-        if not self.visible or self.parent is None:
-            return
-        parent_clip = local_clip.deoffset(self.offset).offset(self.box)
-        self.parent._propagate_dirty(parent_clip)
+        # Then update the parent unless we are drawing ourselves
+        if image is not self.image:
+            image.paste(self.image, real_box.rect)
 
     def scroll(self, offset):
         print(offset)

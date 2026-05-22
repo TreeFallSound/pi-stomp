@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from pistomp.handler import Handler
 from pistomp.audiocard import Audiocard
 
 import json
@@ -46,8 +47,8 @@ from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.controller import RoutingDestination, RoutingInfo
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
-from pistomp.handler import Handler
 from pistomp.sync import PedalboardSync, SyncResult
+from pistomp.handler import Handler
 from pathlib import Path
 
 
@@ -87,9 +88,6 @@ class Modhandler(Handler):
         self._hardware: Hardware | None = None
         self.volume_parameter = None
 
-        # Stores snapshot index from loading_end until pedalboard change is detected
-        self.next_pedalboard_preset_index = None
-
         self.notification: str | None = None
         self.pedalboards_remote: str | None = None
 
@@ -108,6 +106,12 @@ class Modhandler(Handler):
 
         self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
 
+        # Tuner state
+        self._tuner_engine = None
+        self._tuner_panel = None
+        self._tuner_source_factory = None
+        self._tuner_muted = False
+
         # WebSocket bridge for MOD-UI communication
         self.ws_bridge = AsyncWebSocketBridge(
             ws_url='ws://localhost:80/websocket',
@@ -115,12 +119,6 @@ class Modhandler(Handler):
         )
         self.ws_bridge.start()
         logging.info("WebSocket bridge started")
-
-        # Tuner state
-        self._tuner_engine = None
-        self._tuner_panel = None
-        self._tuner_source_factory = None
-        self._tuner_muted = False
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
@@ -147,21 +145,21 @@ class Modhandler(Handler):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
-        # ws_bridge.stop() lives in cleanup(), not here — join() in __del__ blows up
-        # during interpreter shutdown on Py 3.14. Daemon thread dies with the process.
         if self.external_midi is not None:
             self.external_midi.close()
+        # ws_bridge.stop() lives in cleanup(), not here — join() in __del__ blows up
+        # during interpreter shutdown on Py 3.14. Daemon thread dies with the process.
 
     def cleanup(self):
         if self._lcd is not None:
             self._lcd.cleanup()
         if self._hardware is not None:
             self._hardware.cleanup()
+        if self.external_midi is not None:
+            self.external_midi.close()
         if self.ws_bridge is not None:
             self.ws_bridge.stop()
             logging.info("WebSocket bridge stopped")
-        if self.external_midi is not None:
-            self.external_midi.close()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -887,12 +885,15 @@ class Modhandler(Handler):
             self.audio_parameter_commit(param.symbol, value)
             return
 
-        # External MIDI parameters are local-only (visual feedback), no host update needed
+        self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
+
+        # External MIDI parameters are local-only (visual feedback), no REST update needed
         if param.instance_id == EXTERNAL_INSTANCE_ID:
-            logging.debug("Skipping host update for external parameter: %s" % param.symbol)
+            logging.debug("Skipping REST update for external parameter: %s" % param.symbol)
             return
 
-        self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
+        url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/%s" % (param.instance_id, param.symbol)
+        self._rest_post(url, json={"value": "%.1f" % param.value})
 
     def parameter_midi_change(self, param, direction):
         if param:

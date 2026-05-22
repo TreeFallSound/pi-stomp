@@ -80,49 +80,66 @@ class Icon(TextWidget):
         if self.visible and self.parent:
             self.refresh()
 
-    def _draw(self, ctx, frame):
+    def _draw(self, image, draw, real_box):
+        # Draw shapes and text
+        # The loc calculation lines are a copy/paste from TextWidget._draw()
+        #
         h_margin, v_margin = self._get_margins()
         extra = self.outline
-        hroom = frame.width - h_margin - extra
-        vroom = frame.height - v_margin - extra
+        hroom = real_box.width - h_margin - extra
+        vroom = real_box.height - v_margin - extra
         if hroom < 0 or vroom < 0:
             return
 
         h_margin = 1
-        loc = (frame.x0 + h_margin, frame.y0 + v_margin)
+        loc = (real_box.x0 + h_margin, real_box.y0 + v_margin)
 
+        # Draw features (icon shapes)
         for e in self.ellipses:
-            ctx.draw.ellipse(xy=e['xy'], fill=e['fill'], outline=e['outline'], width=e['height'])
+            draw.ellipse(xy=e["xy"], fill=e["fill"], outline=e["outline"], width=e["height"])
 
         for l in self.lines:
-            ctx.draw.line(xy=l['xy'], fill=l['fill'], width=l['height'])
+            draw.line(xy=l["xy"], fill=l["fill"], width=l["height"])
 
+        # Calculate text position and size
         text_x = loc[0] + self.height + (h_margin * 2)
         text_y = loc[1]
 
+        # If no progress bar, draw text normally
         if self.progress is None or self.progress <= 0:
-            ctx.draw.text((text_x, text_y), self.text, fill=self.text_color, font=self.font)
+            draw.text((text_x, text_y), self.text, fill=self.text_color, font=self.font)
             return
 
-        bar_width = frame.width - self.height - (h_margin * 4)
-        bar_height = frame.height - (h_margin * 4)
+        # Progress bar rendering with text inversion
+        # Use full box width for progress bar (minus icon space)
+        bar_width = real_box.width - self.height - (h_margin * 4)
+        bar_height = real_box.height - (h_margin * 4)
+
+        # Calculate fill width based on progress (use full bar width)
         fill_width = int(bar_width * self.progress)
+
         icon_size = self.height
-
         if fill_width > 0:
+            # Draw filled rectangle (progress bar background) using full box height
             fill_rect = (
-                frame.x0 + icon_size + h_margin,
-                frame.y0,
-                frame.x0 + icon_size + h_margin + fill_width,
-                frame.y0 + bar_height,
+                real_box.x0 + icon_size + h_margin,
+                real_box.y0,
+                real_box.x0 + icon_size + h_margin + fill_width,
+                real_box.y0 + bar_height,
             )
-            ctx.draw.rectangle(fill_rect, fill=self.text_color)
+            draw.rectangle(fill_rect, fill=self.text_color)
 
-            ctx.draw.text((text_x, text_y), self.text, fill=self.text_color, font=self.font)
+            # Draw unfilled portion of text (normal)
+            draw.text((text_x, text_y), self.text, fill=self.text_color, font=self.font)
 
+            # Draw filled portion of text (inverted) using masking
+            # Create a temporary image for the full text
             inverted_img = Image.new("RGBA", (fill_width, bar_height), (0, 0, 0, 0))
             temp_draw = ImageDraw.Draw(inverted_img)
             temp_draw.text((0, 0), self.text, fill=self.bkgnd_color, font=self.font)
-            ctx.image.paste(inverted_img, (text_x, text_y), inverted_img)
+
+            # Paste the inverted text onto the main image
+            image.paste(inverted_img, (text_x, text_y), inverted_img)
         else:
-            ctx.draw.text((text_x, text_y), self.text, fill=self.text_color, font=self.font)
+            # No fill, just draw normal text
+            draw.text((text_x, text_y), self.text, fill=self.text_color, font=self.font)

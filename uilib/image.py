@@ -34,14 +34,17 @@ class ImageWidget(Widget):
             self._image_path = None
             self.image = image
 
-    def _draw(self, ctx, frame):
+    def _draw(self, image, draw, real_box):
+        # XXX TODO Centre and crop it ? For now just centre. XXX Assume box > image size,
+        # this needs to be cleaned up and made shinnier, possibly with a Box() helper
         width, height = self.image.size
-        offx = int((frame.width - width) / 2)
-        offy = int((frame.height - height) / 2)
-        loc = frame.offset((offx, offy)).topleft
+        offx = int((real_box.width - width) / 2)
+        offy = int((real_box.height - height) / 2)
+        loc = real_box.offset((offx, offy)).topleft
 
-        mask = self.image if self.image.mode == 'RGBA' else None
-        ctx.image.paste(self.image, loc, mask)
+        # Draw image
+        mask = self.image if self.image.mode == "RGBA" else None
+        image.paste(self.image, loc, mask)
 
     def replace_img(self, image: str | Image.Image):
         # XXX Note that the new image must be the same size as the original

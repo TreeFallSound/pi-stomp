@@ -171,11 +171,6 @@ class Box:
         y1 = min(self.box[3], box.box[3])
         return Box(x0,y0,x1,y1)
 
-    def contains(self, other):
-        """Returns True if other is fully contained within this box"""
-        return (other.box[0] >= self.box[0] and other.box[1] >= self.box[1] and
-                other.box[2] <= self.box[2] and other.box[3] <= self.box[3])
-
     def union(self, other: "Box") -> "Box":
         """Return the smallest Box that contains both self and other."""
         return Box(min(self.x0, other.x0), min(self.y0, other.y0),

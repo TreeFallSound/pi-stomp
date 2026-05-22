@@ -16,134 +16,81 @@
 """Type definitions for blend mode."""
 
 from dataclasses import dataclass
-from typing import Any, Callable, NamedTuple, NotRequired, Protocol, TypedDict
+from typing import Any, Callable, NamedTuple, NotRequired, Protocol, TypeAlias, TypedDict
 
 from modalapi.parameter import Type as ParameterType
 
 
-# Config TypedDicts
+# Domain identifiers. These are all `str` at runtime; the aliases exist so that
+# `dict[InstanceId, dict[Symbol, ParamData]]` reads as documentation.
+InstanceId: TypeAlias = str  # e.g. "/BigMuffPi"
+Symbol: TypeAlias = str  # e.g. "Tone", ":bypass"
+PositionKey: TypeAlias = str  # stringified float, e.g. "0.0", "0.5"
+SnapshotRef: TypeAlias = int | str  # snapshot index or name
+
+
 class BlendSnapshotConfig(TypedDict):
     """Single blend snapshot configuration from YAML."""
 
-    name: str  # Required - snapshot name
-    input_id: int  # Required - analog control or encoder ID
-    interpolation: NotRequired[str]  # Optional - default: "linear"
-    stops: dict[str, int | str] | list[str | int]  # Dict or list format
+    name: str
+    input_id: int
+    interpolation: NotRequired[str]
+    stops: dict[PositionKey, SnapshotRef] | list[SnapshotRef]
 
 
-class PedalboardBlendConfig(TypedDict):
-    """Pedalboard-level blend configuration containing multiple blend snapshots."""
-
-    blend_snapshots: list[BlendSnapshotConfig]
+NormalizedStops: TypeAlias = dict[PositionKey, SnapshotRef]
+MidiBoundParams: TypeAlias = set[tuple[InstanceId, Symbol]]
 
 
-# Type alias for normalized stops (always dict format after normalization)
-NormalizedStops = dict[str, int | str]  # "position" -> snapshot (index or name)
-
-# Type alias for MIDI-bound parameters (excluded from interpolation)
-MidiBoundParams = set[tuple[str, str]]  # {(instance_id, symbol)}
-
-
-# Snapshots.json TypedDicts
 class PluginData(TypedDict):
-    """Plugin data from snapshots.json."""
-
     bypassed: bool
     parameters: dict[str, Any]
-    ports: dict[str, float]
+    ports: dict[Symbol, float]
     preset: str
     bpm: NotRequired[float]
     bpb: NotRequired[float]
 
 
 class SnapshotData(TypedDict):
-    """Single snapshot entry from snapshots.json."""
-
     name: str
-    data: dict[str, PluginData]
+    data: dict[InstanceId, PluginData]
 
 
 class SnapshotsJson(TypedDict):
-    """Complete snapshots.json file structure."""
-
     current: int
     snapshots: list[SnapshotData]
 
 
-# State TypedDicts
-class ParameterState(TypedDict):
-    """Parameter values for a plugin: {symbol: value}"""
-
-    pass  # Dict[str, float] - dynamic keys
-
-
-class SnapshotState(TypedDict):
-    """Complete snapshot state: {instance_id: {symbol: value}}"""
-
-    pass  # Dict[str, Dict[str, float]] - dynamic keys
-
-
-class DiffMapEntry(TypedDict):
-    """Single parameter diff entry: (val_a, val_b, param_type)"""
-
-    pass  # Tuple[float, float, ParameterType] - but TypedDict doesn't support tuples
-
-
-# NamedTuple for intermediate data structures
-class StopData(NamedTuple):
-    """Intermediate representation of a stop during parsing."""
-
-    position: float
-    snapshot_index: int
-
-
 class ParameterKey(NamedTuple):
-    """Key for identifying a unique parameter in MIDI de-duplication tracking."""
-
-    instance_id: str
-    symbol: str
+    instance_id: InstanceId
+    symbol: Symbol
 
 
-# Protocol types for external dependencies
 class BlendInputProtocol(Protocol):
     """Protocol for blend mode input sources (expression pedal or encoder)."""
 
     id: int
     value_change_callback: Callable[[int, Any], None] | None
 
-    def get_normalized_value(self) -> float:
-        """Return current value normalized to [0.0, 1.0]."""
-        ...
-
-
-# Backwards compatibility alias
-AnalogControlProtocol = BlendInputProtocol
+    def get_normalized_value(self) -> float: ...
 
 
 class WebSocketBridgeProtocol(Protocol):
-    """Protocol for WebSocket bridge interface."""
-
-    def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool: ...
+    def send_parameter(self, instance_id: InstanceId, symbol: Symbol, value: float) -> bool: ...
     def clear_queue(self) -> int: ...
 
 
-# Type aliases for complex nested structures
-ParameterStateDict = dict[str, float]
-SnapshotStateDict = dict[str, ParameterStateDict]
-DiffMapDict = dict[str, dict[str, tuple[float, float, ParameterType]]]
-ParameterTypeGetter = Callable[[str, str], ParameterType]
+SnapshotStateDict: TypeAlias = dict[InstanceId, dict[Symbol, float]]
+ParameterTypeGetter: TypeAlias = Callable[[InstanceId, Symbol], ParameterType]
 
 
-# Pre-computed parameter data
 @dataclass
 class ParamData:
     """Pre-computed parameter data for a differing parameter between two stops."""
 
-    val_a: float       # Value at lower stop
-    val_b: float       # Value at upper stop
+    val_a: float
+    val_b: float
     param_type: ParameterType
 
 
-# Enriched diff map type
-EnrichedDiffMap = dict[str, dict[str, ParamData]]  # {instance_id: {symbol: ParamData}}
-
+EnrichedDiffMap: TypeAlias = dict[InstanceId, dict[Symbol, ParamData]]

@@ -30,24 +30,28 @@ class FootswitchWidget(Widget):
         self.foreground = (255, 255, 255)
         self.color_plugin_bypassed = (80, 80, 80)
 
-    def _draw(self, ctx, frame):
-        self.xy1 = (frame.x0, frame.y0)
-        self.xy2 = (frame.x0 + 60, frame.y0 + 40)  # TODO should these offsets be here?
-        self._ctx = ctx
+    def _draw(self, image, draw, real_box):
+        self.xy1 = (real_box.x0, real_box.y0)
+        self.xy2 = (real_box.x0 + 60, real_box.y0 + 40)  # TODO should these offsets be here?
+        self.draw = draw
 
+        # halo
         self._draw_halo()
 
+        # cap bottom
         fx1 = self.xy1[0] + 10
         fy1 = self.xy2[1] - 34
         fx2 = self.xy2[0] - 10
         fy2 = fy1 + 16
-        ctx.draw.ellipse(((fx1, fy1), (fx2, fy2)), fill=self.background, outline="gray", width=2)
+        draw.ellipse(((fx1, fy1), (fx2, fy2)), fill=self.background, outline="gray", width=2)
 
+        # cap top
         fy1 -= 6
         fy2 -= 6
-        ctx.draw.ellipse(((fx1, fy1), (fx2, fy2)), fill=self.background, outline="gray", width=2)
+        draw.ellipse(((fx1, fy1), (fx2, fy2)), fill=self.background, outline="gray", width=2)
 
-        ctx.draw.text((self.xy1[0], self.xy2[1]), self.label, self.foreground, self.font)
+        # label
+        draw.text((self.xy1[0], self.xy2[1]), self.label, self.foreground, self.font)
 
     def _draw_halo(self):
         hx1 = self.xy1[0] + 2
@@ -55,7 +59,7 @@ class FootswitchWidget(Widget):
         hx2 = self.xy2[0] - 2
         hy2 = self.xy2[1] - 2
         color = self.color_plugin_bypassed if self.is_bypassed else self.color
-        self._ctx.draw.ellipse(((hx1, hy1), (hx2, hy2)), fill=None, outline=color, width=self.footswitch_ring_width)
+        self.draw.ellipse(((hx1, hy1), (hx2, hy2)), fill=None, outline=color, width=self.footswitch_ring_width)
 
     def toggle(self, is_bypassed):
         self.is_bypassed = is_bypassed

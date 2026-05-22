@@ -55,8 +55,8 @@ class LetterSelector(Widget):
             self.l_count -= 1
         self.l_half = self.l_count // 2
 
-    def _draw(self, ctx, frame):
-        loc = (frame.x0 + self.l_w // 2, frame.y0 + self.l_h // 2)
+    def _draw(self, image, draw, real_box):
+        loc = (real_box.x0 + self.l_w // 2, real_box.y0 + self.l_h // 2)
         cs = self.charsets[self.mode]
         for i in range(self.l_idx - self.l_half, self.l_idx + self.l_half):
             ci = i % len(cs)
@@ -69,13 +69,13 @@ class LetterSelector(Widget):
             if i != self.l_idx:
                 a = log(abs(self.l_idx - i) + 1) + 1
                 color = (int(color[0]/a),int(color[1]/a),int(color[2]/a))
-            ctx.draw.text(loc, cs[ci], fill=color, font=self.font, anchor='mm')
+            draw.text(loc, cs[ci], fill = color, font = self.font, anchor = 'mm')
             loc = (loc[0] + self.l_w, loc[1])
 
-    def _draw_selection(self, ctx, frame):
-        l = frame.x0 + self.l_w * self.l_half
-        b = Box(l, frame.y0, l + self.l_w, frame.y1)
-        ctx.draw.rounded_rectangle(b.PIL_rect, self.l_w//4, None, self.sel_color, 1)
+    def _draw_selection(self, image, draw, real_box):
+        l = real_box.x0 + self.l_w * self.l_half
+        b = Box(l, real_box.y0, l + self.l_w, real_box.y1)
+        draw.rounded_rectangle(b.PIL_rect, self.l_w//4, None, self.sel_color, 1)
 
 
     def input_event(self, event):
@@ -253,11 +253,17 @@ class TextWidget(Widget):
 
     SPLIT_SEP = '\u001F'  # if present in text exactly once, render as left + right halves
 
-    def _draw(self, ctx, frame):
+    def _draw(self, image, draw, real_box):
+        # Draw text
+        #
+        # XXX TODO: Handle cropping etc... (using continuation characters ?)
+        # Should we use a local image & support scroll ? basically make this a
+        # ContainerWidget subclass ? For now assume it fits ...
+        #
         h_margin, v_margin = self._get_margins()
         extra = self.outline
-        hroom = frame.width - h_margin - extra
-        vroom = frame.height - v_margin - extra
+        hroom = real_box.width - h_margin - extra
+        vroom = real_box.height - v_margin - extra
         if hroom < 0 or vroom < 0:
             return
 
@@ -271,12 +277,12 @@ class TextWidget(Widget):
             th = max(lh, rh)
             if th > vroom:
                 th = vroom
-            y = frame.y0 + v_margin
+            y = real_box.y0 + v_margin
             # Extra padding for split rows so the right half doesn't hug the edge.
             split_pad = 3
-            ctx.draw.text((frame.x0 + h_margin + split_pad, y), left, fill=self.fgnd_color, font=self.font)
-            ctx.draw.text((frame.x0 + frame.width - h_margin - extra - split_pad - rw, y),
-                          right, fill=self.fgnd_color, font=self.font)
+            draw.text((real_box.x0 + h_margin + split_pad, y), left, fill=self.fgnd_color, font=self.font)
+            draw.text((real_box.x0 + real_box.width - h_margin - extra - split_pad - rw, y),
+                      right, fill=self.fgnd_color, font=self.font)
             return
 
         tw, th = self._get_text_size()
@@ -290,10 +296,11 @@ class TextWidget(Widget):
             hoffset = hroom - tw
         else:
             hoffset = int((hroom - tw) / 2)
-        loc = (frame.x0 + h_margin + hoffset, frame.y0 + v_margin)
+        loc = (real_box.x0 + h_margin + hoffset, real_box.y0 + v_margin)
         if self.prompt is not None:
-            ctx.draw.text((0, loc[1]), self.prompt, fill=self.fgnd_color, font=self.font)
-        ctx.draw.text(loc, self.text, fill=self.fgnd_color, font=self.font)
+            #draw.text((loc[0] - self.prompt_offset, loc[1]), self.prompt, fill=self.fgnd_color, font=self.font)
+            draw.text((0, loc[1]), self.prompt, fill=self.fgnd_color, font=self.font)
+        draw.text(loc, self.text, fill=self.fgnd_color, font=self.font)
 
     def tick(self):
         """Override in subclasses for animation."""

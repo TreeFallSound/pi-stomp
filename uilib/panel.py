@@ -15,8 +15,6 @@
 
 from abc import ABC
 from uilib.container import *
-from uilib.paint import PaintContext
-from pathlib import Path
 
 #
 # Note about coordinates:
@@ -150,10 +148,13 @@ class RoundedPanel(Panel):
         mdraw = ImageDraw.Draw(self.mask)
         mdraw.rounded_rectangle(self.box.norm().PIL_rect, radius, 1, None, 0)
 
-    def _draw_outline(self, ctx: PaintContext, frame: Box):
+    def _draw_outline(self, image, draw, real_box):
         if self.outline != 0:
-            color = self.outline_color if self.outline_color is not None else self.fgnd_color
-            ctx.draw.rounded_rectangle(frame.PIL_rect, self.radius, None, color, self.outline)
+            if self.outline_color is not None:
+                color = self.outline_color
+            else:
+                color = self.fgnd_color
+            draw.rounded_rectangle(real_box.PIL_rect, self.radius, None, color, self.outline)
 
 class LcdBase(ABC):
     def dimensions(self) -> tuple[int, int]:
@@ -164,6 +165,10 @@ class LcdBase(ABC):
 
     def update(self, image, box = None) -> None:
         ...
+
+    @property
+    def has_system_splash(self) -> bool:
+        return False
 
     @property
     def has_system_splash(self) -> bool:
@@ -204,34 +209,49 @@ class PanelStack(ContainerWidget):
         if self.lcd_needs_update:
             self.refresh()
 
+    def _compose(self, widget, orig_box, real_box):
+        # This always called with widget = a Panel which is a direct
+        # child of the stack, so we can drop orig_box
+        real_box = real_box.intersection(self.box.norm())
+        if not real_box.is_empty():
+            self._do_refresh(widget, real_box)
+
     def refresh(self):
-        self._propagate_dirty(self.box.norm())
+        self._do_refresh(None, self.box)
         self.lcd_needs_update = False
 
-    def _propagate_dirty(self, clip: Box):
-        """Recompose the dirty clip region from all stacked panels, then push to LCD."""
-        erase_ctx = PaintContext(self.image, self.draw, clip)
-        self._draw_erase(erase_ctx, clip)
+    def _do_refresh(self, panel, box):
+        # XXX TODO: Optimize the case where there is only one panel,
+        # or the refreshed box only intersects the top level one:
+        # go straight to LCD ! (If we want to do stacked panels with
+        # alpha this can get complicated...)
 
+        # Erase image
+        self._draw_erase(self.image, self.draw, box)
+
+        # XXX Do some alpha blending to "dim" inactive panels ?
+
+        # Compose panels
         for p in self.stack:
             if self.dimmer is not None:
-                self.image.alpha_composite(self.dimmer, clip.topleft, clip.rect)
+                self.image.alpha_composite(self.dimmer, box.topleft, box.rect)
             d = p.decorator
             if d is not None:
-                inter = clip.intersection(d.box)
+                inter = box.intersection(d.box)
                 if not inter.is_empty():
-                    ctx = PaintContext(self.image, self.draw, inter)
-                    d._do_draw(ctx, d.box)
-            inter = clip.intersection(p.box)
+                    d.refresh(inter)
+            inter = box.intersection(p.box)
             if not inter.is_empty():
-                ctx = PaintContext(self.image, self.draw, inter)
-                p._do_draw(ctx, p.box)
+                # Get intersection in panel local coordinates
+                local_inter = inter.deoffset(p.box)
+                super(PanelStack,self)._compose(p, local_inter, inter)
 
-        trace(self, "updating lcd with image", self.image, "box=", clip)
-        self.lcd.update(self.image, clip)
+        # Update LCD
+        trace(self, "updating lcd with image", self.image, "box=", box)
+        self.lcd.update(self.image, box)
 
-    def _do_draw(self, ctx: PaintContext, frame: Box):
-        assert False
+    def _do_draw(self, image, draw, real_box):
+        assert(False)
         
     def _get_stack(self):
         return self

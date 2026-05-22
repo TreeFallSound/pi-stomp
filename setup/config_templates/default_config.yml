@@ -89,11 +89,8 @@ hardware:
 # blend_snapshots:
 #   - name: "Clean to Fuzz"          # Required: descriptive name for this blend snapshot
 #     input_id: 0                    # Required: expression pedal (0) or encoder (1, 2)
-#     interpolation: linear          # Optional: interpolation function (default: linear)
-#                                    # Splines: hermite, catmull_rom
-#                                    # Easing: linear, ease_in_quad, ease_out_quad, ease_in_out_quad,
-#                                    #         ease_in_cubic, ease_out_cubic, ease_in_out_cubic,
-#                                    #         exponential, sine
+#     interpolation: linear          # Optional: easing function (default: linear)
+#                                    # One of: linear, smooth, build, drop, snap, bloom
 #     stops:                         # Position (stringified float) -> snapshot (index or name)
 #       "0.0": 0                     # Snapshot by index (0-based)
 #       "0.5": "Crunch"              # Or by name (case-insensitive prefix match)

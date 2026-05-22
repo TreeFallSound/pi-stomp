@@ -28,9 +28,9 @@ import pistomp.switchstate as switchstate
 import modalapi.pedalboard as Pedalboard
 import common.parameter as Parameter
 import modalapi.wifi as Wifi
-import modalapi.external_midi as ExternalMidi
 
 from blend.snapshot import SnapshotManager
+import modalapi.external_midi as ExternalMidi
 from modalapi.websocket_bridge import AsyncWebSocketBridge
 from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
@@ -165,6 +165,7 @@ class Mod(Handler):
         except Exception as e:
             logging.warning(f"Failed to initialize external MIDI manager: {e}")
 
+
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
         self.callbacks = {"set_mod_tap_tempo": self.set_mod_tap_tempo,
@@ -180,19 +181,19 @@ class Mod(Handler):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
-        if self.ws_bridge is not None:
-            self.ws_bridge.stop()
         if self.external_midi is not None:
             self.external_midi.close()
+        if self.ws_bridge is not None:
+            self.ws_bridge.stop()
 
     def cleanup(self):
         if self.lcd is not None:
             self.lcd.cleanup()
+        if self.external_midi is not None:
+            self.external_midi.close()
         if self.ws_bridge is not None:
             self.ws_bridge.stop()
             logging.info("WebSocket bridge stopped")
-        if self.external_midi is not None:
-            self.external_midi.close()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -633,6 +634,7 @@ class Mod(Handler):
                     continue
 
                 blend_mode = BlendMode(self, blend_cfg)
+                blend_mode.prepare()
                 self.blend_modes[snapshot_name] = blend_mode
                 logging.info(f"Prepared blend mode: '{snapshot_name}'")
 
@@ -647,7 +649,7 @@ class Mod(Handler):
 
                     # Activate the first blend mode
                     self.active_blend_mode = self.blend_modes[first_snapshot_name]
-                    self.active_blend_mode.initialize()
+                    self.active_blend_mode.activate()
                     logging.info(f"Activated blend mode: '{first_snapshot_name}'")
 
                 # Redraw analog assignments to use BlendMode object for expression pedal
@@ -832,7 +834,7 @@ class Mod(Handler):
                 old_name = self.active_blend_mode.config.get('name')
                 if old_name != new_snapshot_name:
                     logging.info(f"Deactivating blend mode: '{old_name}'")
-                    self.active_blend_mode.cleanup()
+                    self.active_blend_mode.deactivate()
                     self.active_blend_mode = None
 
             # Activate new blend mode if switching to a blend snapshot
@@ -843,7 +845,7 @@ class Mod(Handler):
                     # Check for snapshot changes immediately before activating
                     # to ensure we have the latest stop data (user may have just saved a snapshot)
                     self.active_blend_mode.check_for_snapshot_changes()
-                    self.active_blend_mode.initialize()
+                    self.active_blend_mode.activate()
                 except Exception as e:
                     logging.error(f"Failed to activate blend mode '{new_snapshot_name}': {e}")
                     self.active_blend_mode = None

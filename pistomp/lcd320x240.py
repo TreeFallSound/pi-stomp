@@ -259,7 +259,7 @@ class Lcd(abstract_lcd.Lcd):
         if self.w_wifi is not None:
             return
         self.w_notification = ImageWidget(box=Box.xywh(180, 0, 20, 20),
-                                          image=os.path.join(self.imagedir, 'alert_orange.png'),
+                                          image_path=os.path.join(self.imagedir, 'alert_orange.png'),
                                           parent=self.main_panel, action=self._notification_action)
         self.main_panel.add_sel_widget(self.w_notification)
         if self.handler is None or self.handler.notification is None:

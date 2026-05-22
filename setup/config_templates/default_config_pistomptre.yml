@@ -127,6 +127,7 @@ hardware:
   #         c4:
   #           - [0xC0, 0x05]        # Program Change 5 for this pedalboard only
 
+
 # Blend Mode Configuration (Pedalboard-specific)
 # This feature interpolates between snapshots based on analog input position.
 # IMPORTANT: This should be configured per-pedalboard in <pedalboard>.pedalboard/config.yml
@@ -138,7 +139,8 @@ hardware:
 # blend_snapshots:
 #   - name: "Clean to Fuzz"           # Required: Snapshot name (created automatically)
 #     input_id: 0                     # Required: Expression pedal (0) or encoder (1, 2)
-#     interpolation: ease_out_quad    # Optional: linear (default), hermite, catmull_rom, ease_*
+#     interpolation: smooth           # Optional easing (default: linear)
+#                                     # One of: linear, smooth, build, drop, snap, bloom
 #     stops:                          # Dict format: position -> snapshot name/index
 #       "0.0": "Clean"                # Snapshot by name (case-insensitive prefix match)
 #       "0.5": "Crunch"               # Or by index (0-based integer)
@@ -151,4 +153,3 @@ hardware:
 # - MIDI-bound parameters automatically excluded from interpolation (prevents conflicts)
 # - Pre-computed diff maps for optimized 10ms critical path
 # - MIDI-level de-duplication prevents redundant WebSocket traffic
-# - Splines (hermite/catmull_rom) use neighbor context for smooth curves

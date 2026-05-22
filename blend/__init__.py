@@ -20,29 +20,22 @@ This package provides functionality for smoothly interpolating between snapshots
 based on analog input position (expression pedals or tweak encoders).
 """
 
-from blend.manager import BlendMode
-from blend.stop import BlendStop
+from blend.easing import EASING_FUNCTIONS, EasingFunc
 from blend.input_controller import InputController
-from blend.snapshot import SnapshotManager
+from blend.manager import BlendMode
 from blend.parameter_setter import ParameterSetter
-from blend.types import BlendSnapshotConfig, PedalboardBlendConfig, NormalizedStops
-from blend.easing import EASING_FUNCTIONS, EasingFunc, linear, smooth, build, drop, snap, bloom
+from blend.snapshot import SnapshotManager
+from blend.stop import BlendStop
+from blend.types import BlendSnapshotConfig, NormalizedStops
 
 __all__ = [
-    'BlendMode',
-    'BlendStop',
-    'InputController',
-    'SnapshotManager',
-    'ParameterSetter',
-    'BlendSnapshotConfig',
-    'PedalboardBlendConfig',
-    'NormalizedStops',
-    'EASING_FUNCTIONS',
-    'EasingFunc',
-    'linear',
-    'smooth',
-    'build',
-    'drop',
-    'snap',
-    'bloom',
+    "BlendMode",
+    "BlendStop",
+    "InputController",
+    "SnapshotManager",
+    "ParameterSetter",
+    "BlendSnapshotConfig",
+    "NormalizedStops",
+    "EASING_FUNCTIONS",
+    "EasingFunc",
 ]

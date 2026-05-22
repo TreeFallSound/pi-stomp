@@ -32,8 +32,21 @@ def as_midi_value(adc_value: int):
     return util.renormalize(adc_value, 0, 1023, 0, 127)
 
 
-class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
-    def __init__(self, spi, adc_channel, tolerance, midi_CC, midi_channel, midiout, type, id=None, cfg={}, autosync=False, value_change_callback=None):
+class AnalogMidiControl(analogcontrol.AnalogControl):
+    def __init__(
+        self,
+        spi,
+        adc_channel,
+        tolerance,
+        midi_CC,
+        midi_channel,
+        midiout,
+        type,
+        id=None,
+        cfg={},
+        autosync=False,
+        value_change_callback=None,
+    ):
         super(AnalogMidiControl, self).__init__(spi, adc_channel, tolerance)
         controller.Controller.__init__(self, midi_channel, midi_CC)
         self.midiout = midiout
@@ -53,6 +66,26 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
     def set_value(self, value):
         self.value = value
 
+    def get_normalized_value(self) -> float:
+        """Current ADC reading normalized to [0.0, 1.0]."""
+        return self.last_read / 1023.0
+
+    @override
+    def initialize(self):
+        if not self.autosync:
+            return
+
+        # read the analog pin
+        value = self._clamp_endpoints(self.readChannel())
+        set_volume = as_midi_value(value)
+
+        cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, set_volume]
+        logging.debug("AnalogControl force-sending CC event %s" % cc)
+        self.midiout.send_message(cc)
+
+        # save the reading to prevent duplicate sends on next poll
+        self.last_read = value
+
     def _clamp_endpoints(self, value: int) -> int:
         """Clamp ADC values near endpoints to exact 0/1023 (deadband at extremes)."""
         if value <= self.tolerance:
@@ -68,6 +101,8 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
         logging.debug("AnalogControl Sending CC event %s" % cc)
         self.midiout.send_message(cc)
 
+        self.last_read = value
+
         if self.value_change_callback:
             self.value_change_callback(value, self)
 
@@ -75,21 +110,16 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
         """Force-send the current ADC value unconditionally. Used by sync_analog_controls()."""
         value = self._clamp_endpoints(self.readChannel())
         self._send_value(value)
-        self.last_read = value
-
-    def initialize(self):
-        if not self.autosync:
-            return
-        self.send_current_value()
 
     def refresh(self):
         value = self._clamp_endpoints(self.readChannel())
         if abs(value - self.last_read) > self.tolerance:
             self._send_value(value)
+
             self.last_read = value
 
-    def get_normalized_value(self) -> float:
-        return self.last_read / 1023.0
+            if self.value_change_callback:
+                self.value_change_callback(value, self)
 
     def get_display_info(self) -> AnalogDisplayInfo:
         return {
