@@ -15,9 +15,10 @@
 
 from typing import TYPE_CHECKING, Callable, NotRequired, Optional, Protocol, TypedDict, cast
 
-from PIL import ImageFont
+from pathlib import Path
 
 import common.util as util
+from uilib._pygame_init import freetype as _get_freetype
 from modalapi.wifi import (
     ConnectSavedCmd,
     ConnectScannedCmd,
@@ -99,7 +100,8 @@ class _PassphraseEditor(RoundedPanel):
         self._on_submit = on_submit
         self._curline = ''
 
-        font = ImageFont.truetype("DejaVuSans.ttf", 18)
+        _fonts = Path(__file__).resolve().parent.parent / "fonts"
+        font = _get_freetype().Font(str(_fonts / "DejaVuSans.ttf"), 18)
         box = Box(0, 0, 300, 80)
         box = box.centre(pstack.box)
         super().__init__(box=box, parent=pstack, auto_destroy=True)
@@ -526,12 +528,20 @@ class WifiMenu:
 
     def _open_join_dialog(self, _: object = None) -> None:
         d = Dialog(width=240, height=120, auto_destroy=True, title='Join other network')
-        ssid_w = TextWidget(box=Box.xywh(0, 0, 190, 0), text='', prompt='SSID :', parent=d,
+        font = Config().get_font('default')
+        from uilib.misc import get_text_size  # local import — uilib.__init__ doesn't re-export
+        ssid_label_w = get_text_size('SSID :', font)[0]
+        pw_label_w = get_text_size('Passwd :', font)[0]
+        TextWidget(box=Box.xywh(0, 0, ssid_label_w, 0), text='SSID :', parent=d,
+                   h_margin=0, v_margin=3, align=WidgetAlign.NONE)
+        ssid_w = TextWidget(box=Box.xywh(ssid_label_w, 0, 190, 0), text='', parent=d,
                             outline=1, sel_width=3, outline_radius=5,
                             align=WidgetAlign.NONE, name='ssid_field',
                             edit_message='WiFi SSID')
         d.add_sel_widget(ssid_w)
-        pw_w = TextWidget(box=Box.xywh(0, 30, 169, 0), text='', prompt='Passwd :', parent=d,
+        TextWidget(box=Box.xywh(0, 30, pw_label_w, 0), text='Passwd :', parent=d,
+                   h_margin=0, v_margin=3, align=WidgetAlign.NONE)
+        pw_w = TextWidget(box=Box.xywh(pw_label_w, 30, 169, 0), text='', parent=d,
                           outline=1, sel_width=3, outline_radius=5,
                           align=WidgetAlign.NONE, name='pw_field',
                           edit_message='Password')

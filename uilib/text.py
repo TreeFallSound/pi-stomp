@@ -222,10 +222,11 @@ class TextWidget(Widget):
             return
         h_margin, v_margin = self._get_margins()
         tw, th = self._get_text_size()
-        # For height, always use at least a full line height so empty-text
-        # widgets don't collapse to near-zero.
-        ascent, descent = self.font_metrics
-        th = max(th, ascent + descent)
+        # Always use at least a full line height so short / empty text doesn't
+        # collapse the widget. pygame's get_text_size('', font) returns
+        # (0, asc+desc) — reuse it instead of PIL-style font.getmetrics().
+        _, line_h = get_text_size('', self.font)
+        th = max(th, line_h)
         # Add outline to account for PIL rectangles being "inset"
         extra = self.outline
         trace(self, "margins=", h_margin, v_margin, "text_size=", tw, th)
