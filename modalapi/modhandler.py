@@ -13,8 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from pistomp.handler import Handler
-
 import json
 import logging
 import os
@@ -34,10 +32,14 @@ import modalapi.external_midi as ExternalMidi
 from pistomp.lcd320x240 import Lcd
 from pistomp.hardware import Controller, Hardware
 import pistomp.settings as Settings
+from modalapi.websocket_bridge import AsyncWebSocketBridge
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, WebSocketMessage
+from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encodermidicontrol import EncoderMidiControl
 from pistomp.footswitch import Footswitch
+from pistomp.handler import Handler
 from pathlib import Path
 
 
@@ -76,6 +78,9 @@ class Modhandler(Handler):
         self._lcd: Lcd | None = None
         self._hardware: Hardware | None = None
 
+        # Stores snapshot index from loading_end until pedalboard change is detected
+        self.next_pedalboard_preset_index = None
+
         # Backup
         self.backup_dir = "/media/usb0/backups"
         self.backup_file = "pistomp_backup.zip"
@@ -83,16 +88,25 @@ class Modhandler(Handler):
 
         # Banks
         self.banks_file = os.path.join(self.data_dir, "banks.json")
-        self.banks_file_timestamp = os.path.getmtime(self.banks_file) if Path(self.banks_file).exists() else 0
         self.banks = {}
         self.current_bank = None
 
-        # This file is modified when the pedalboard is changed via MOD UI
-        self.pedalboard_modification_file = os.path.join(self.data_dir, "last.json")
-        self.pedalboard_change_timestamp = os.path.getmtime(self.pedalboard_modification_file)\
-            if Path(self.pedalboard_modification_file).exists() else 0
+        self.last_json_monitor = FileChangeMonitor(os.path.join(self.data_dir, "last.json"))
+        self.banks_monitor = FileChangeMonitor(self.banks_file)
 
         self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
+
+        # WebSocket bridge for MOD-UI communication
+        self.ws_bridge = None
+        try:
+            self.ws_bridge = AsyncWebSocketBridge(
+                ws_url='ws://localhost:80/websocket',
+                backpressure_threshold=8192  # 8 KB
+            )
+            self.ws_bridge.start()
+            logging.info("WebSocket bridge started")
+        except Exception as e:
+            logging.warning(f"Failed to initialize WebSocket bridge: {e}")
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
@@ -116,6 +130,8 @@ class Modhandler(Handler):
             del self.wifi_manager
         if self.external_midi is not None:
             self.external_midi.close()
+        # ws_bridge.stop() lives in cleanup(), not here — join() in __del__ blows up
+        # during interpreter shutdown on Py 3.14. Daemon thread dies with the process.
 
     def cleanup(self):
         if self._lcd is not None:
@@ -124,6 +140,9 @@ class Modhandler(Handler):
             self._hardware.cleanup()
         if self.external_midi is not None:
             self.external_midi.close()
+        if self.ws_bridge is not None:
+            self.ws_bridge.stop()
+            logging.info("WebSocket bridge stopped")
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -133,7 +152,7 @@ class Modhandler(Handler):
         def __init__(self, pedalboard: Pedalboard.Pedalboard):
             self.pedalboard: Pedalboard.Pedalboard = pedalboard
             self.presets: dict[int, str] = {}
-            self.preset_index: int = 0
+            self.preset_index: int = 0  # Assumes pedalboard loads at snapshot 0 (default behavior)
             self.analog_controllers: dict[str, dict[str, Any]] = {}  # { type: (plugin_name, param_name) }
 
     def _rest_get(self, url: str) -> Response | None:
@@ -260,36 +279,74 @@ class Modhandler(Handler):
         if self._lcd is not None:
             self._lcd.enc_sw(value)
 
-    def poll_modui_changes(self):
-        # This poll looks for changes made via the MOD UI and tries to sync the pi-Stomp hardware
+    def _handle_ws_message(self, msg: WebSocketMessage):
+        """Handle incoming WebSocket message from MOD-UI."""
+        if isinstance(msg, LoadingEndMessage):
+            logging.debug(f"WebSocket: Pedalboard loading finished, snapshot={msg.snapshot_id}")
+            # Sometimes mod-ui sends us -1 for preset index, but shows 0 anyway ("Default")
+            self.next_pedalboard_preset_index = max(0, msg.snapshot_id)
 
-        # Look for a change of pedalboard
-        #
-        # If the pedalboard_modification_file timestamp has changed, extract the bundle path and set current pedalboard
-        #
-        # TODO this is an interim solution until better MOD-UI to pi-stomp event communication is added
-        #
-        if Path(self.pedalboard_modification_file).exists():
-            ts = os.path.getmtime(self.pedalboard_modification_file)
-            if ts != self.pedalboard_change_timestamp:
-                # Timestamp changed
-                self.pedalboard_change_timestamp = ts
-                self.lcd.draw_info_message("Loading...")
-                mod_bundle = self.get_pedalboard_bundle_from_mod()
-                if mod_bundle and self.current:
-                    logging.info("Pedalboard changed via MOD from: %s to: %s" %
-                                 (self.current.pedalboard.bundle if self.current else None, mod_bundle))
-                    pb = self.reload_pedalboard(mod_bundle)
-                    self.set_current_pedalboard(pb)
+        elif isinstance(msg, PedalSnapshotMessage):
+            if self.next_pedalboard_preset_index is not None:
+                # Check if we're still on the same pedalboard (stale flag from previous load)
+                mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
+                if mod_bundle and self.current and mod_bundle == self.current.pedalboard.bundle:
+                    # Same pedalboard - this is a new snapshot on current board, not a pre-switch
+                    logging.debug(f"WebSocket: Snapshot changed to {msg.snapshot_id} ({msg.snapshot_name}) - clearing stale pre-switch flag")
+                    self.next_pedalboard_preset_index = None
+
+                    if msg.snapshot_id not in self.current.presets:
+                        self.current.presets[msg.snapshot_id] = msg.snapshot_name
+
+                    self.current.preset_index = msg.snapshot_id
+                    self.lcd.draw_title()
+                else:
+                    # Different pedalboard pending - this is a legitimate pre-switch update
+                    logging.debug(f"WebSocket: Pre-switch snapshot changed to {msg.snapshot_id}")
+                    self.next_pedalboard_preset_index = msg.snapshot_id
+            else:
+                assert self.current is not None, "Received snapshot message but no current pedalboard is set"
+                logging.debug(f"WebSocket: Snapshot changed to {msg.snapshot_id} ({msg.snapshot_name})")
+
+                if msg.snapshot_id not in self.current.presets:
+                    self.current.presets[msg.snapshot_id] = msg.snapshot_name
+
+                self.current.preset_index = msg.snapshot_id
+                self.lcd.draw_title()
+
+    def poll_modui_changes(self):
+        """Poll for changes from MOD-UI: websockets and file watching"""
+        if self.ws_bridge is not None:
+            messages = self.ws_bridge.get_received_messages()
+            for msg in messages:
+                try:
+                    self._handle_ws_message(parse_message(msg))
+                except Exception as e:
+                    logging.error(f"Error handling WebSocket message '{msg}': {e}")
+
+        # Check for pedalboard change via last.json
+        if self.last_json_monitor.check_for_change():
+            self.lcd.draw_info_message("Loading...")
+            mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
+            if mod_bundle and self.current and mod_bundle != self.current.pedalboard.bundle:
+                logging.info(f"Pedalboard changed via MOD from: {self.current.pedalboard.bundle} to: {mod_bundle}")
+
+                if mod_bundle not in self.pedalboards:
+                    self.load_pedalboards()
+
+                pb = self.reload_pedalboard(mod_bundle)
+                self.set_current_pedalboard(pb)
+            elif mod_bundle and self.next_pedalboard_preset_index is not None:
+                # Same pedalboard reloaded with a pending snapshot - apply it now
+                logging.info(f"Applying pending snapshot {self.next_pedalboard_preset_index} to current pedalboard")
+                self.current.preset_index = self.next_pedalboard_preset_index
+                self.next_pedalboard_preset_index = None
+                self.lcd.draw_title()
 
         # Look for a change in banks file
-        if Path(self.banks_file).exists():
-            ts = os.path.getmtime(self.banks_file)
-            if ts != self.banks_file_timestamp:
-                # Timestamp changed
-                logging.info("Reloading banks file: %s" % self.banks_file)
-                self.banks_file_timestamp = ts
-                self.load_banks()
+        if self.banks_monitor.check_for_change():
+            logging.info("Reloading banks file: %s" % self.banks_file)
+            self.load_banks()
 
     #
     # Bank Stuff
@@ -361,19 +418,8 @@ class Modhandler(Handler):
 
         return pedalboard
 
-    def get_pedalboard_bundle_from_mod(self):
-        # Assumes the caller has already checked for existence of the file
-        mod_bundle = None
-        with open(self.pedalboard_modification_file, 'r') as file:
-            j = json.load(file)
-            mod_bundle = util.DICT_GET(j, 'pedalboard')
-        return mod_bundle
-
     def get_current_pedalboard_bundle_path(self):
-        mod_bundle = None
-        if Path(self.pedalboard_modification_file).exists():
-            mod_bundle = self.get_pedalboard_bundle_from_mod()
-        return mod_bundle
+        return read_pedalboard_bundle(self.last_json_monitor.path)
 
     def set_current_pedalboard(self, pedalboard):
         # Delete previous "current"
@@ -381,6 +427,10 @@ class Modhandler(Handler):
 
         # Create a new "current"
         self.current = self.Current(pedalboard)
+
+        if self.next_pedalboard_preset_index is not None:
+            self.current.preset_index = self.next_pedalboard_preset_index
+            self.next_pedalboard_preset_index = None
 
         # Load Pedalboard specific config (overrides default set during initial hardware init)
         config_file = Path(pedalboard.bundle) / "config.yml"

@@ -114,6 +114,8 @@ class Pistomptre(hardware.Hardware):
             enc_sw = gpioswitch.GpioSwitch(sw_pin, None, None, callback=self.handler.universal_encoder_sw,
                                            longpress_callback=longpress)
             self.encoder_switches.append(enc_sw)
+            if id is not None:
+                self.encoder_switch_map[id] = enc_sw
 
         return enc
 

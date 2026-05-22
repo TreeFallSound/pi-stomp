@@ -67,7 +67,7 @@ def setup_main_ui(instance):
             "exp:pedal": {Token.ID: 0, Token.TYPE: Token.EXPRESSION, Token.COLOR: "Red", Token.NAME: "Wah"},
         },
     )
-    mock_footswitches = [MockObject(id=i, enabled=False, get_display_label=lambda: "") for i in range(4)]
+    mock_footswitches = [MockObject(id=i, toggled=False, get_display_label=lambda: "") for i in range(4)]
     instance.link_data(pedalboards=[mock_pedalboard], current=mock_current, footswitches=mock_footswitches)
     instance.draw_main_panel()
 
@@ -135,26 +135,26 @@ def test_parameter_dialog_snapshot(lcd, snapshot):
 
 def test_update_footswitch_off_snapshot(lcd, snapshot):
     instance, _ = lcd
-    mock_fs = MockObject(id=0, enabled=True, get_display_label=lambda: "Dist", color="Red")
+    mock_fs = MockObject(id=0, toggled=True, get_display_label=lambda: "Dist", color="Red")
     mock_current = MockObject(
         pedalboard=MockObject(title="PB", plugins=[]), presets={0: "Clean"}, preset_index=0, analog_controllers={}
     )
     instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
     instance.draw_main_panel()
-    mock_fs.enabled = False  # pyright: ignore[reportAttributeAccessIssue]
+    mock_fs.toggled = False  # pyright: ignore[reportAttributeAccessIssue]
     instance.update_footswitch(mock_fs)
     snapshot()
 
 
 def test_update_footswitch_on_snapshot(lcd, snapshot):
     instance, _ = lcd
-    mock_fs = MockObject(id=1, enabled=False, get_display_label=lambda: "Drive", color="Orange")
+    mock_fs = MockObject(id=1, toggled=False, get_display_label=lambda: "Drive", color="Orange")
     mock_current = MockObject(
         pedalboard=MockObject(title="PB", plugins=[]), presets={0: "Clean"}, preset_index=0, analog_controllers={}
     )
     instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
     instance.draw_main_panel()
-    mock_fs.enabled = True  # pyright: ignore[reportAttributeAccessIssue]
+    mock_fs.toggled = True  # pyright: ignore[reportAttributeAccessIssue]
     instance.update_footswitch(mock_fs)
     snapshot()
 
@@ -195,7 +195,7 @@ def test_update_wifi_noop_when_path_unchanged(lcd, mock_handler):
 
 def test_tap_tempo_snapshot(lcd, snapshot):
     instance, _ = lcd
-    mock_fs = MockObject(id=2, enabled=True, get_display_label=lambda: "120")
+    mock_fs = MockObject(id=2, toggled=True, get_display_label=lambda: "120")
     mock_current = MockObject(
         pedalboard=MockObject(title="BPM Test", plugins=[]), presets={0: "Clean"}, preset_index=0, analog_controllers={}
     )

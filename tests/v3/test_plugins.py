@@ -112,7 +112,7 @@ def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_p
     handler.toggle_plugin_bypass(None, plugin)
 
     assert not any("pi_stomp_set" in u for u in get_urls(mock_post))
-    assert hw.footswitches[0].enabled is True
+    assert hw.footswitches[0].toggled is True
 
 
 def test_v3_preset_change_plugin_update(v3_system: SystemFixture, make_plugin, snapshot):
