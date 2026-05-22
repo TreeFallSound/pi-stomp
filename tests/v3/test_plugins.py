@@ -123,6 +123,24 @@ def test_v3_toggle_plugin_bypass_no_footswitch_sends_websocket(v3_system: System
     snapshot("bypassed")
 
 
+def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_plugin, get_urls):
+    """Plugin with has_footswitch: toggle_plugin_bypass() routes through footswitch.pressed()."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    mock_post = v3_system.mock_post
+
+    assert handler.current
+
+    plugin = make_plugin("fuzz", has_footswitch=True)
+    plugin.controllers = [hw.footswitches[0]]
+    handler.current.pedalboard.plugins = [plugin]
+
+    handler.toggle_plugin_bypass(None, plugin)
+
+    assert not any("pi_stomp_set" in u for u in get_urls(mock_post))
+    assert hw.footswitches[0].toggled is True
+
+
 def test_v3_preset_change_plugin_update(v3_system: SystemFixture, make_plugin, snapshot):
     """preset_change_plugin_update() GETs bypass state for each plugin and refreshes LCD."""
     handler = v3_system.handler
