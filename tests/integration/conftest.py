@@ -53,6 +53,7 @@ def _build_stack(hw_class: Any, cfg_path: Path, fake_lcd, tmp_path) -> Generator
         patch("modalapi.wifi.WifiManager") as mock_wm_cls,
         patch("subprocess.check_output", return_value=b"SystemState=running"),
         patch("pistomp.lcd320x240.LcdIli9341", return_value=fake_lcd),
+        patch("modalapi.modhandler.AsyncWebSocketBridge"),
     ):
         # Tests don't drive a poll loop, so stub pending_op_count to always return 0 (no pending ops).
         mock_wm_cls.return_value.queue.pending_op_count.return_value = 0
