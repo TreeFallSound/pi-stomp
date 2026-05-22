@@ -13,21 +13,56 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from uilib.dialog import *
-from uilib.config import *
+from typing import Any, Callable
+
+from uilib.box import Box
+from uilib.config import Config
+from uilib.dialog import Dialog
+from uilib.misc import InputEvent, TextHAlign, get_text_size, trace
+from uilib.text import TextWidget
+
+# A menu row label. `str` for now; the RichTextWidget step widens this to
+# `str | Sequence[Segment]`.
+Label = str
+
+# Action stored in slot 1 of a `MenuItem`. The menu framework never invokes
+# this directly — the per-item callable is decorative context that the
+# menu-level `action` callback unpacks from `data` at click time. Typed
+# loosely (any signature) so existing callers (`self._dismiss`, bound methods
+# with mismatched arities) keep type-checking.
+MenuAction = Callable[..., Any]
+
+# Menu items are positional tuples — callers construct them inline as
+# `(label, action, arg)` or `(label, action, arg, selected)`. We keep tuples
+# (rather than a NamedTuple) so callsites stay unchanged; accessors below
+# give the constructor named reads.
+MenuItem = (
+    tuple[Label, MenuAction | None, Any]
+    | tuple[Label, MenuAction | None, Any, bool]
+)
+
+
+def _item_label(i: MenuItem) -> Label:
+    return i[0]
+
+
+def _item_selected(i: MenuItem) -> bool:
+    return len(i) >= 4 and bool(i[3])
 
 
 class Menu(Dialog):
-    """A pop-up menu panel with lines of text to select
-           items   : iterable of tuples whose first element is the text to display
-           Returns a tuple (image, draw, box) where:
+    """A pop-up menu panel with lines of text to select.
+
+    `items` is a list of `MenuItem` tuples; the first element is the label.
     """
-    def __init__(self, items, font = None, max_width = None, max_height = None,
-                 text_halign = TextHAlign.CENTRE, auto_dismiss = True, dismiss_option = False,
-                 default_item = None, **kwargs):
+    def __init__(self, items: list[MenuItem], font=None,
+                 max_width: int | None = None, max_height: int | None = None,
+                 text_halign: TextHAlign = TextHAlign.CENTRE,
+                 auto_dismiss: bool = True, dismiss_option: bool = False,
+                 default_item: str | None = None, **kwargs) -> None:
         self.max_height = max_height
         self.max_width = max_width
-        self.items = items
+        self.items: list[MenuItem] = items
         self.auto_dismiss = auto_dismiss
         if auto_dismiss is False or dismiss_option is True:
             # without auto_dismiss provide a back arrow to close menu
@@ -35,23 +70,23 @@ class Menu(Dialog):
         if font is None:
             font = Config().get_font('default')
         self.font = font
-        self.font_metrics = None
-        self.item_h = 0
+        self.item_h: int = 0
         self.text_halign = text_halign
         self.default_item = default_item
         super(Menu,self).__init__(width = 0, height = 0, **kwargs)
 
         # Create item widgets
         h = 0
-        for i in items:
-            # item structure: 0:name, 1:action, 2:object, 3:selected item
-            t = i[0]
-            if len(i) >= 4 and i[3]:
-                t = '\u2714 ' + t   # Add checkmark to selected item
-            b = Box.xywh(0,h,self.box.width,self.item_h)
+        for i in self.items:
+            t = _item_label(i)
+            if _item_selected(i):
+                t = '\u2714 ' + t
+            b = Box.xywh(0, h, self.box.width, self.item_h)
             w = TextWidget(box = b, text_halign = self.text_halign, font = self.font,
                            text = t, parent = self, action = self._item_action)
-            w.data = i
+            # Stash the source item on the widget for `_item_action` to recover.
+            # TextWidget has no `data` field declared — set via setattr.
+            setattr(w, 'data', i)
             self.add_sel_widget(w)
             if t == self.default_item:
                 self.sel_widget(w)
@@ -95,8 +130,8 @@ class Menu(Dialog):
         h_margin = 10
         v_margin = 0
         for i in self.items:
-            t = i[0]
-            tw, th = get_text_size(t, self.font, self.font_metrics)
+            t = _item_label(i)
+            tw, th = get_text_size(t, self.font)
             trace(self, "item <",t,"> tw=", tw, "th=", th)
             tw = tw + h_margin * 2
             th = th + v_margin * 2
