@@ -58,10 +58,18 @@ class TextSeg:
     text: str
 
     def measure(self, font) -> tuple[int, int]:
-        return get_text_size(self.text, font)
+        # Width is text-specific, but height always reserves room for a worst-
+        # case descender ('g') so rows stay the same height regardless of
+        # whether the current label happens to contain descenders.
+        w, _ = get_text_size(self.text, font)
+        _, h = get_text_size("Mg", font)
+        return (w, h)
 
     def draw(self, ctx: PaintContext, x: int, y: int, font, color: ColorLike) -> None:
-        ctx.draw_text((x, y), self.text, fill=color, font=font)
+        # +1 matches the optical baseline of inline glyphs: glyphs sit at the
+        # row top, but a font's ascender-line is 1px above the visual cap top,
+        # so text drawn at the same y reads as too high next to a glyph.
+        ctx.draw_text((x, y + 1), self.text, fill=color, font=font)
 
 
 @dataclass(frozen=True)
