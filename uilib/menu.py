@@ -35,12 +35,15 @@ Label = str | Sequence[Segment]
 MenuAction = Callable[..., Any]
 
 # Menu items are positional tuples — callers construct them inline as
-# `(label, action, arg)` or `(label, action, arg, selected)`. We keep tuples
-# (rather than a NamedTuple) so callsites stay unchanged; accessors below
-# give the constructor named reads.
+# `(label, action, arg)`, `(label, action, arg, selected)`, or
+# `(label, action, arg, selected, long_action)`. The 5-tuple form is consumed
+# by user-supplied menu-level actions (e.g. `lcd.draw_selection_menu` dispatches
+# `long_action` on LONG_CLICK) — Menu itself only reads slots 0 and 3.
+# Slot 3 may be `None` when callers want to pass slot 4 without a selection flag.
 MenuItem = (
     tuple[Label, MenuAction | None, Any]
-    | tuple[Label, MenuAction | None, Any, bool]
+    | tuple[Label, MenuAction | None, Any, bool | None]
+    | tuple[Label, MenuAction | None, Any, bool | None, MenuAction | None]
 )
 
 
@@ -92,6 +95,7 @@ class Menu(Dialog):
                 # Rich rows ignore `selected` for now — the checkmark prefix
                 # only makes sense on string labels.
                 w = RichTextWidget(box=b, segments=t, font=self.font,
+                                   h_margin=5, v_margin=1,
                                    parent=self, action=self._item_action)
             # Stash the source item on the widget for `_item_action` to recover.
             setattr(w, 'data', i)
@@ -144,9 +148,11 @@ class Menu(Dialog):
             t = _item_label(i)
             if isinstance(t, str):
                 _, th = get_text_size(t, self.font)
+                th = th + v_margin * 2
             else:
+                # Rich rows: 1px top inset, no bottom padding.
                 th = max((seg.measure(self.font)[1] for seg in t), default=line_h)
-            th = th + v_margin * 2
+                th = th + 1
             if th > item_h:
                 item_h = th
         self.item_h = item_h

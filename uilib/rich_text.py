@@ -58,9 +58,7 @@ class TextSeg:
     text: str
 
     def measure(self, font) -> tuple[int, int]:
-        w, _ = get_text_size(self.text, font)
-        _, line_h = get_text_size("", font)
-        return (w, line_h)
+        return get_text_size(self.text, font)
 
     def draw(self, ctx: PaintContext, x: int, y: int, font, color: ColorLike) -> None:
         ctx.draw_text((x, y), self.text, fill=color, font=font)
@@ -84,7 +82,7 @@ class IconSeg:
 class Spacer:
     """Flexible gap. `min_w` is the guaranteed width; any leftover row width
     is split evenly across spacers. Use one between left/right groups for
-    SPLIT_SEP-style alignment."""
+    left/right alignment."""
 
     min_w: int = 0
 
@@ -158,13 +156,13 @@ class RichTextWidget(Widget):
         h_margin, v_margin = self._get_margins()
         extra = self.outline
         hroom = ctx.width - h_margin * 2 - extra
-        vroom = ctx.height - v_margin * 2 - extra
+        vroom = ctx.height - v_margin - extra
         if hroom <= 0 or vroom <= 0:
             return
 
         _, line_h = get_text_size("", self.font)
-        row_h = min(max(line_h, max((s.measure(self.font)[1] for s in self.segments), default=0)), vroom)
-        row_top = v_margin + (vroom - row_h) // 2
+        row_h = max(line_h, max((s.measure(self.font)[1] for s in self.segments), default=0))
+        row_top = v_margin
 
         # Measure all segments first so we know how much slack to distribute.
         sizes = [s.measure(self.font) for s in self.segments]

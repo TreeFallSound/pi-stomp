@@ -37,17 +37,16 @@ from uilib import (
     Box,
     Config,
     Dialog,
-    FontWithGlyphs,
     InputEvent,
     LetterSelector,
     MessageDialog,
-    PillGlyph,
     RoundedPanel,
-    SignalBarsGlyph,
     TextWidget,
     WidgetAlign,
 )
-from uilib.menu import Menu
+from uilib.glyphs import PillGlyph, SignalBarsGlyph
+from uilib.menu import Menu, MenuItem
+from uilib.rich_text import IconSeg, Segment, Spacer, TextSeg
 
 if TYPE_CHECKING:
     from pistomp.lcd320x240 import Lcd
@@ -62,11 +61,8 @@ class _WifiHost(Protocol):
     wifi_status: Optional[WifiStatus]
 
 
-ACTIVE_GLYPH = '\u2714'    # ✔
-PUBLIC_GLYPH = '\ue001'    # PUA sentinel — rendered as pill badge by FontWithGlyphs
-SIGNAL_GLYPHS = ['\ue010', '\ue011', '\ue012', '\ue013', '\ue014']  # 0..4 bars
-SEP = '\u00b7'             # ·
-SPLIT = TextWidget.SPLIT_SEP  # left/right alignment marker for menu rows
+ACTIVE_GLYPH = '\u2714'    # ✔ — rendered as a normal text segment
+SEP = '\u00b7'             # · — used in titles, plain text
 
 class Row(TypedDict):
     """A single network line in the wifi menu — saved profile, in-range network, or both.
@@ -85,7 +81,6 @@ class Row(TypedDict):
 
 
 PasswordCallback = Callable[[str], None]
-MenuItem = tuple  # (label, callback, arg) or (label, callback, arg, is_active)
 
 
 class _PassphraseEditor(RoundedPanel):
@@ -136,22 +131,22 @@ class _PassphraseEditor(RoundedPanel):
         self._edit.set_text(self._curline + '\u2588')
 
 
-def signal_bars(signal: int) -> str:
-    levels = max(1, min(4, (signal + 12) // 25))
-    return SIGNAL_GLYPHS[levels]
+def signal_bars_level(signal: int) -> int:
+    """0..4-bar bucket for the given dBm-ish signal value."""
+    return max(1, min(4, (signal + 12) // 25))
 
 
 def is_open_network(security: Optional[str]) -> bool:
     return not security or security == '--'
 
 
-def _make_badge_font(base_name: str = 'default') -> FontWithGlyphs:
-    base = Config().get_font(base_name)
-    assert base is not None, f"{base_name} font not configured"
-    glyphs: dict[str, object] = {PUBLIC_GLYPH: PillGlyph('P')}
-    for level, ch in enumerate(SIGNAL_GLYPHS):
-        glyphs[ch] = SignalBarsGlyph(level)
-    return FontWithGlyphs(base, glyphs)  # type: ignore[arg-type]
+def _glyph_height() -> int:
+    """Row height to size glyphs at — the default font's line height. Picked
+    once at construction (emoji model). RichTextWidget centers glyphs shorter
+    than the row inside the row band; this picks a height that matches text."""
+    font = Config().get_font('default')
+    assert font is not None
+    return int(font.get_sized_ascender()) + abs(int(font.get_sized_descender()))
 
 
 class WifiMenu:
@@ -232,8 +227,7 @@ class WifiMenu:
         title = self._title(wifi_status, active_name)
         items = self._build_items(rows, hotspot_active, supported)
         self._root_menu = self.lcd.draw_selection_menu(
-            items, title, dismiss_option=True,
-            font=_make_badge_font(), default_item=default_label)
+            items, title, dismiss_option=True, default_item=default_label)
 
     def _render_nearby_menu(self, default_label: Optional[str] = None) -> None:
         scanned = self._cached_scanned
@@ -242,12 +236,11 @@ class WifiMenu:
         active_name = util.DICT_GET(self._wifi_status, 'connection')
         _, nearby = self._build_rows(scanned, saved_by_ssid, scanned_ssids, active_name)
         if nearby:
-            items: list[MenuItem] = [(self._row_label(r), self._on_network_tap, r) for r in nearby]
+            items: list[MenuItem] = [(self._row_segments(r), self._on_network_tap, r) for r in nearby]
         else:
             items = [("Scanning...", None, None)]
         self._nearby_menu = self.lcd.draw_selection_menu(
-            items, "Nearby Networks", dismiss_option=True,
-            font=_make_badge_font(), default_item=default_label)
+            items, "Nearby Networks", dismiss_option=True, default_item=default_label)
 
     def notify_status_change(self) -> None:
         """Handler hook after wifi_status changes. Rebuilds the root menu
@@ -334,7 +327,7 @@ class WifiMenu:
         return rows, nearby
 
     def _build_items(self, rows: list[Row], hotspot_active: bool, supported: bool = True) -> list[MenuItem]:
-        items: list[MenuItem] = [(self._row_label(r), self._on_network_tap, r, None, self._on_network_long_tap) for r in rows]
+        items: list[MenuItem] = [(self._row_segments(r), self._on_network_tap, r, None, self._on_network_long_tap) for r in rows]
         if supported and not hotspot_active:
             items.append(("Nearby networks...", self._open_nearby_menu, None))
         items.append(("Join other network...", self._open_join_dialog, None))
@@ -351,13 +344,19 @@ class WifiMenu:
             return "WiFi %s %s" % (SEP, ssid)
         return "WiFi " + SEP + " Disconnected"
 
-    def _row_label(self, row: Row) -> str:
+    def _row_segments(self, row: Row) -> list[Segment]:
         label = row.get('display_name') or row['ssid']
-        badge = (' ' + PUBLIC_GLYPH) if (not row.get('saved') and is_open_network(row.get('security'))) else ''
-        active_mark = (' ' + ACTIVE_GLYPH) if row.get('active') else ''
-        left = label + badge + active_mark
-        right = signal_bars(row['signal']) if row.get('signal') is not None else ''
-        return left + SPLIT + right
+        h = _glyph_height()
+        segs: list[Segment] = [TextSeg(label)]
+        if not row.get('saved') and is_open_network(row.get('security')):
+            segs.append(TextSeg(' '))
+            segs.append(IconSeg(PillGlyph('P', height=h)))
+        if row.get('active'):
+            segs.append(TextSeg(' ' + ACTIVE_GLYPH))
+        segs.append(Spacer())
+        if row.get('signal') is not None:
+            segs.append(IconSeg(SignalBarsGlyph(signal_bars_level(row['signal']), height=h)))
+        return segs
 
     @staticmethod
     def _pick_profile(profiles: list[SavedConnection],

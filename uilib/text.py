@@ -253,31 +253,12 @@ class TextWidget(Widget):
         self.text_size_valid = False
         self.refresh()
 
-    SPLIT_SEP = '\u001F'  # if present in text exactly once, render as left + right halves
-
     def _draw(self, ctx):
         h_margin, v_margin = self._get_margins()
         extra = self.outline
         hroom = ctx.width - h_margin - extra
         vroom = ctx.height - v_margin - extra
         if hroom < 0 or vroom < 0:
-            return
-
-        if self.SPLIT_SEP in self.text:
-            parts = self.text.split(self.SPLIT_SEP)
-            if len(parts) != 2:
-                raise ValueError("TextWidget split text must contain exactly one separator")
-            left, right = parts
-            _, lh = get_text_size(left, self.font)
-            rw, rh = get_text_size(right, self.font)
-            th = max(lh, rh)
-            if th > vroom:
-                th = vroom
-            # Extra padding for split rows so the right half doesn't hug the edge.
-            split_pad = 3
-            ctx.draw_text((h_margin + split_pad, v_margin), left, fill=self.fgnd_color, font=self.font)
-            ctx.draw_text((ctx.width - h_margin - extra - split_pad - rw, v_margin),
-                          right, fill=self.fgnd_color, font=self.font)
             return
 
         tw, th = self._get_text_size()
