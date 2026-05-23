@@ -27,6 +27,7 @@ import os
 
 from modalapi.modhandler import Modhandler
 from modalapi.websocket_bridge import AsyncWebSocketBridge
+import pistomp.settings as Settings
 from emulator.stubs import VirtualAudiocard, StubWifiManager
 
 
@@ -36,11 +37,17 @@ class EmulatorModhandler(Modhandler):
         super().__init__(VirtualAudiocard(), homedir)
 
         emu_data_dir = os.path.join(os.path.expanduser("~"), ".pistomp_emulator")
+        os.makedirs(emu_data_dir, exist_ok=True)
         self.data_dir = emu_data_dir
         self.banks_file = os.path.join(emu_data_dir, "banks.json")
         self.pedalboard_modification_file = os.path.join(emu_data_dir, "last.json")
         self.pedalboard_change_timestamp = 0
         self.banks_file_timestamp = 0
+
+        # Repoint Settings at the emulator's config dir so changes persist across restarts.
+        emu_cfg_dir = os.path.join(emu_data_dir, "config")
+        os.makedirs(emu_cfg_dir, exist_ok=True)
+        self.settings = Settings.Settings(data_dir=emu_cfg_dir)
 
         self.root_uri = "http://127.0.0.1:18181/"
         self.wifi_manager = StubWifiManager(on_status_change=self._on_wifi_status_change)

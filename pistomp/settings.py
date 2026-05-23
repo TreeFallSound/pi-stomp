@@ -30,9 +30,9 @@ USER = 'pistomp'
 
 class Settings:
 
-    def __init__(self):
+    def __init__(self, data_dir=None):
         self.data = None
-        self.file = os.path.join(DATA_DIR, SETTINGS_FILE)
+        self.file = os.path.join(data_dir or DATA_DIR, SETTINGS_FILE)
         self.load_settings()
 
     def load_settings(self):
