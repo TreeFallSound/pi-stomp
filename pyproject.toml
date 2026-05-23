@@ -23,7 +23,7 @@ dependencies = [
     "python-rtmidi>=1.4",
     "requests>=2.28",
     "Pillow>=9.4",
-    "numpy>=1.24",
+    "numpy>=2.4",
     "pyalsaaudio>=0.9; sys_platform == 'linux'",
     "websockets>=15.0.1",
     "gpiozero>=2.0; sys_platform == 'linux'",
@@ -42,6 +42,7 @@ hardware = [
     "lgpio>=0.2; sys_platform == 'linux'",
     "rpi-lgpio>=0.4; sys_platform == 'linux'",
     "spidev>=3.0; sys_platform == 'linux'",
+    "Adafruit-Blinka-Raspberry-Pi5-Neopixel>=1.0.0rc2; sys_platform == 'linux' and platform_machine == 'aarch64'",
 ]
 
 # Local emulator (macOS / Linux desktop, no Pi hardware required)
@@ -49,7 +50,6 @@ emulator = ["pygame>=2.5"]
 
 [dependency-groups]
 dev = [
-    "numpy>=2.4.1",
     "pillow>=12.0.0",
     "pyright>=1.1.408",
     "pytest>=9.0.2",
@@ -73,6 +73,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["modalapi", "pistomp", "uilib", "ui", "common"]
+
+[tool.uv]
+# cap1xxx (via gfxhat) declares rpi-gpio as a dep, but rpi-gpio's sdist
+# only builds on a real Pi with cp311. We satisfy the RPi.GPIO import at
+# runtime via rpi-lgpio (already in [hardware]), so suppress the resolver
+# from ever pulling rpi-gpio in.
+override-dependencies = ["rpi-gpio ; sys_platform == 'never'"]
 
 [tool.ruff]
 line-length = 120
