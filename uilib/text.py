@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+import time
 from math import log
 from typing import Optional
 from PIL import Image, ImageDraw, ImageFont
@@ -330,14 +331,10 @@ class ScrollingText(TextWidget):
         self.pause_start_sec: float = pause_start_sec
         self.pause_end_sec: float = pause_end_sec
 
-        # Calculate duration of one tick in seconds (base loop sleep is 10ms = 0.01s)
-        self.tick_duration_sec: float = (10 * lcd_poll_divisor) / 1000.0
-
-        # Scrolling state
+        # Scrolling state — position is a deterministic f(now - anchor).
         self.scroll_offset: int = 0
-        self._float_scroll_offset: float = 0.0
-        self.scroll_direction: int = 1  # 1 = scroll left, -1 = scroll right
-        self.pause_counter_sec: float = pause_start_sec
+        self._anchor_time: Optional[float] = None
+        self._last_tick_time: Optional[float] = None
 
         # Cached rendering
         self.cached_text_image: Optional[Image.Image] = None
@@ -371,45 +368,50 @@ class ScrollingText(TextWidget):
         if not self._should_scroll():
             if self.scroll_offset != 0:
                 self.scroll_offset = 0
-                self._float_scroll_offset = 0.0
-                self.scroll_direction = 1
-                self.pause_counter_sec = self.pause_start_sec
+                self._anchor_time = None
+                self._last_tick_time = None
                 self.refresh()
-            return
-
-        if self.pause_counter_sec > 0:
-            self.pause_counter_sec -= self.tick_duration_sec
             return
 
         h_margin, _ = self._get_margins()
         available_width = self.box.width - 2 * h_margin - self.outline
         max_offset = self.cached_text_width - available_width
+        if max_offset <= 0:
+            return
 
-        old_offset = self.scroll_offset
-        move_amount = self.pixels_per_second * self.tick_duration_sec
-        self._float_scroll_offset += self.scroll_direction * move_amount
-        self.scroll_offset = int(self._float_scroll_offset)
+        scroll_duration = max_offset / self.pixels_per_second
+        period = self.pause_start_sec + scroll_duration + self.pause_end_sec + scroll_duration
 
-        if self.scroll_offset >= max_offset:
-            self.scroll_offset = max_offset
-            self._float_scroll_offset = float(max_offset)
-            self.scroll_direction = -1
-            self.pause_counter_sec = self.pause_end_sec
-        elif self.scroll_offset <= 0:
-            self.scroll_offset = 0
-            self._float_scroll_offset = 0.0
-            self.scroll_direction = 1
-            self.pause_counter_sec = self.pause_start_sec
+        now = time.monotonic()
+        # On first tick, or after a wild gap (process paused, panel hidden),
+        # re-anchor so we start a fresh cycle at the initial pause.
+        if (self._anchor_time is None
+                or (self._last_tick_time is not None and now - self._last_tick_time > 0.25)):
+            self._anchor_time = now
+        self._last_tick_time = now
 
-        if self.scroll_offset != old_offset:
+        t = (now - self._anchor_time) % period
+
+        if t < self.pause_start_sec:
+            offset = 0.0
+        elif t < self.pause_start_sec + scroll_duration:
+            offset = (t - self.pause_start_sec) * self.pixels_per_second
+        elif t < self.pause_start_sec + scroll_duration + self.pause_end_sec:
+            offset = float(max_offset)
+        else:
+            back = t - self.pause_start_sec - scroll_duration - self.pause_end_sec
+            offset = max_offset - back * self.pixels_per_second
+
+        new_offset = max(0, min(max_offset, int(offset)))
+        if new_offset != self.scroll_offset:
+            self.scroll_offset = new_offset
             self.refresh()
 
     def _clear_cache_and_restart(self) -> None:
         self.cached_text_image = None
         self.scroll_offset = 0
-        self._float_scroll_offset = 0.0
-        self.scroll_direction = 1
-        self.pause_counter_sec = self.pause_start_sec
+        self._anchor_time = None
+        self._last_tick_time = None
 
     def set_text(self, text: str) -> None:
         super().set_text(text)
