@@ -851,6 +851,7 @@ source = { editable = "." }
 dependencies = [
     { name = "gpiozero", marker = "sys_platform == 'linux'" },
     { name = "jsonschema" },
+    { name = "numpy" },
     { name = "pillow" },
     { name = "pyalsaaudio", marker = "sys_platform == 'linux'" },
     { name = "python-rtmidi" },
@@ -874,7 +875,6 @@ hardware = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "numpy" },
     { name = "pillow" },
     { name = "pyright" },
     { name = "pytest" },
@@ -893,6 +893,7 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4.0" },
     { name = "lgpio", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=0.2" },
     { name = "matplotlib", marker = "extra == 'hardware'", specifier = ">=3.5" },
+    { name = "numpy", specifier = ">=2.4" },
     { name = "pillow", specifier = ">=9.4" },
     { name = "pyalsaaudio", marker = "sys_platform == 'linux'", specifier = ">=0.9" },
     { name = "python-rtmidi", specifier = ">=1.4" },
@@ -907,7 +908,6 @@ provides-extras = ["hardware"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "numpy", specifier = ">=2.4.1" },
     { name = "pillow", specifier = ">=12.0.0" },
     { name = "pyright", specifier = ">=1.1.408" },
     { name = "pytest", specifier = ">=9.0.2" },
