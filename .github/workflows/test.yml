@@ -15,13 +15,13 @@ jobs:
         uses: astral-sh/setup-uv@v8.1.0
 
       - name: Set up Python
-        run: uv python install
+        run: uv python install 3.11
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential libasound2-dev libjack-dev pkg-config
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --group dev --python 3.11
 
       - name: Run tests
-        run: uv run pytest
+        run: uv run --python 3.11 pytest
