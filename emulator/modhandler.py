@@ -44,6 +44,9 @@ class EmulatorModhandler(Modhandler):
         self.pedalboard_change_timestamp = 0
         self.banks_file_timestamp = 0
 
+        from modalapi.pedalboard_monitor import FileChangeMonitor
+        self.last_json_monitor = FileChangeMonitor(os.path.join(emu_data_dir, "last.json"))
+
         # Repoint Settings at the emulator's config dir so changes persist across restarts.
         emu_cfg_dir = os.path.join(emu_data_dir, "config")
         os.makedirs(emu_cfg_dir, exist_ok=True)
@@ -69,9 +72,11 @@ class EmulatorModhandler(Modhandler):
     def pedalboard_change(self, pedalboard=None):
         if pedalboard is None and self.pedalboard_list:
             pedalboard = self.pedalboard_list[0]
+        if pedalboard is None:
+            return
         super().pedalboard_change(pedalboard)
-        if pedalboard is not None:
-            self.set_current_pedalboard(pedalboard)
+        pb = self.reload_pedalboard(pedalboard.bundle)
+        self.set_current_pedalboard(pb)
 
     # -------------------------------------------------------------------------
     # Skip Pi-only system calls
