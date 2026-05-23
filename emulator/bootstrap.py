@@ -20,7 +20,6 @@ from typing import Literal
 from rtmidi.midiutil import open_midioutput
 
 import pistomp.config as config
-import pistomp.settings as Settings_module
 from pistomp.tuner.source import ToneSweepSource
 
 EmulatorVersion = Literal["emulator_v1", "emulator_v2", "emulator_v3"]
@@ -60,11 +59,6 @@ def bootstrap_emulator(version: EmulatorVersion, cwd: str):
         midiout = None
 
     cfg = config.load_cfg_from_file(_CONFIG_TEMPLATES[version])
-
-    if version != "emulator_v1":
-        emu_cfg_dir = os.path.join(os.path.expanduser("~"), ".pistomp_emulator", "config")
-        os.makedirs(emu_cfg_dir, exist_ok=True)
-        Settings_module.DATA_DIR = emu_cfg_dir
 
     handler = EmuHandler(cwd)
     hw = EmuHW(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
