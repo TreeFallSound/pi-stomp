@@ -43,7 +43,8 @@ class EmulatorModhandler(Modhandler):
         self.banks_file_timestamp = 0
 
         self.root_uri = "http://127.0.0.1:18181/"
-        self.wifi_manager = StubWifiManager()
+        self.wifi_manager = StubWifiManager(on_status_change=self._on_wifi_status_change)
+        self.wifi_manager.poll()
 
         # Replace the :80 bridge created by super().__init__() with the emulator port
         self.ws_bridge.stop()
@@ -68,9 +69,6 @@ class EmulatorModhandler(Modhandler):
     # -------------------------------------------------------------------------
     # Skip Pi-only system calls
     # -------------------------------------------------------------------------
-
-    def poll_wifi(self):
-        pass
 
     def poll_system_info(self):
         pass
@@ -99,24 +97,19 @@ class EmulatorModhandler(Modhandler):
     def system_menu_reload(self, arg):
         logging.info("Emulator: reload configs is a no-op")
 
-    def system_toggle_hotspot(self, **kwargs):
-        pass
-
-    def configure_wifi_credentials(self, ssid, password):
-        return None
-
     # -------------------------------------------------------------------------
-    # Window integration — drain events and repaint every poll_controls tick
-    # (10 ms) to match the real device where lcd.update() is synchronous and
-    # each widget refresh is immediately visible.  poll_lcd_updates is still
-    # called for the lcd_needs_update full-screen path (panel transitions).
+    # Window integration — drain events every tick for input responsiveness,
+    # but couple LCD flush + window repaint to poll_lcd_updates so the
+    # emulator refresh rate matches the main loop's gating (200 ms on the
+    # device) instead of running at ~100 fps.
     # -------------------------------------------------------------------------
 
     def poll_controls(self):
         if self._window is not None:
             self._window.process_events()
-            self._window.render()
         super().poll_controls()
 
     def poll_lcd_updates(self):
         super().poll_lcd_updates()
+        if self._window is not None:
+            self._window.render()

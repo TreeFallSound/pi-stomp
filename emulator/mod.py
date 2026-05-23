@@ -35,7 +35,7 @@ class EmulatorMod(Mod):
     def __init__(self, homedir):
         import modalapi.wifi as _wifi_module
         _orig_wm = _wifi_module.WifiManager
-        _wifi_module.WifiManager = lambda *a, **kw: StubWifiManager()
+        _wifi_module.WifiManager = lambda *a, **kw: StubWifiManager(on_status_change=kw.get("on_status_change"))
         try:
             super().__init__(VirtualAudiocard(), homedir)
         finally:
@@ -46,6 +46,8 @@ class EmulatorMod(Mod):
         self.pedalboard_change_timestamp = 0
 
         self.root_uri = "http://127.0.0.1:18181/"
+        assert self.wifi_manager is not None
+        self.wifi_status = self.wifi_manager.poll() or {}
         self._window = None
 
         # Replace the :80 bridge created by super().__init__() with the emulator port
@@ -62,9 +64,6 @@ class EmulatorMod(Mod):
     # -------------------------------------------------------------------------
     # Skip Pi-only system calls
     # -------------------------------------------------------------------------
-
-    def poll_wifi(self):
-        pass
 
     def poll_system_info(self):
         pass
