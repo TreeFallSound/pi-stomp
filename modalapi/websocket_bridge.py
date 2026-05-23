@@ -218,16 +218,23 @@ class AsyncWebSocketBridge:
             self._thread.join(timeout=2.0)
         logging.info(f"WebSocket worker stopped (sent={self._worker.messages_sent})")
 
-    def send_bpm(self, bpm: float) -> None:
-        """Queue a BPM change (fire-and-forget)."""
+    def send_bpm(self, bpm: float) -> bool:
+        """Queue a BPM change. Returns False if backpressure is active."""
+        if self._worker.backpressure_active:
+            return False
         self.command_queue.put_nowait(f"transport-bpm {bpm}")
+        return True
 
-    def send_parameter(self, instance_id: str, symbol: str, value: float) -> None:
-        """Queue a parameter update (fire-and-forget). instance_id should be canonical (no leading slash)."""
+    def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
+        """Queue a parameter update. instance_id should be canonical (no leading slash).
+        Returns False if backpressure is active."""
         if instance_id.startswith("/"):
             logging.warning(f"send_parameter received non-canonical instance_id {instance_id!r}; stripping leading slash")
             instance_id = instance_id.lstrip("/")
+        if self._worker.backpressure_active:
+            return False
         self.command_queue.put_nowait(f"param_set /graph/{instance_id}/{symbol} {value}")
+        return True
 
     def get_received_messages(self) -> list:
         """Drain all pending inbound messages (non-blocking). Called from main thread."""

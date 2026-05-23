@@ -123,8 +123,10 @@ def blend_system(
 
     handler.set_current_pedalboard(pb)
 
-    # Clear WS captures from initial sync so tests start with a clean slate
+    # Clear WS captures and dedup tracking from initial sync so tests start with a clean slate
     cast(FakeWebSocketBridge, handler.ws_bridge).sent.clear()
+    if handler.active_blend_mode and handler.active_blend_mode.parameter_setter:
+        handler.active_blend_mode.parameter_setter.reset_tracking()
 
     yield SystemFixture(handler, hw, lcd, mock_get, mock_post, v3_system.ws_bridge)
 
