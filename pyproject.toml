@@ -47,7 +47,6 @@ hardware = [
 
 [dependency-groups]
 dev = [
-    "numpy>=2.4.1",
     "pillow>=12.0.0",
     "pygame>=2.5",
     "pyright>=1.1.408",
