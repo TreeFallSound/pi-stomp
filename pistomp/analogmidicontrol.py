@@ -32,7 +32,7 @@ def as_midi_value(adc_value: int):
     return util.renormalize(adc_value, 0, 1023, 0, 127)
 
 
-class AnalogMidiControl(analogcontrol.AnalogControl):
+class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
     def __init__(
         self,
         spi,
