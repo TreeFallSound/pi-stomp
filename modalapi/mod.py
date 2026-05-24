@@ -250,17 +250,26 @@ class Mod(Handler):
                 self.top_encoder_mode = TopEncoderMode.DEFAULT
                 self.update_lcd()
 
+    def _foreach_step(self, direction, fn):
+        """Apply a single-step function once per detent. parameter_value_change
+        is already burst-coalesced and takes the full magnitude directly."""
+        if direction == 0:
+            return
+        step = 1 if direction > 0 else -1
+        for _ in range(abs(direction)):
+            fn(step)
+
     def top_encoder_select(self, direction):
         # State machine for top encoder switch
         mode = self.top_encoder_mode
         if mode == TopEncoderMode.PEDALBOARD_SELECT or mode == TopEncoderMode.PEDALBOARD_SELECTED:
-            self.pedalboard_select(direction)
+            self._foreach_step(direction, self.pedalboard_select)
             self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECTED
         elif mode == TopEncoderMode.PRESET_SELECT or mode == TopEncoderMode.PRESET_SELECTED:
-            self.preset_select(direction)
+            self._foreach_step(direction, self.preset_select)
             self.top_encoder_mode = TopEncoderMode.PRESET_SELECTED
         elif mode == TopEncoderMode.SYSTEM_MENU:
-            self.menu_select(direction)
+            self._foreach_step(direction, self.menu_select)
         elif mode == TopEncoderMode.HEADPHONE_VOLUME:
             self.parameter_value_change(direction, self.headphone_volume_commit)
         elif mode == TopEncoderMode.INPUT_GAIN:
@@ -295,9 +304,9 @@ class Mod(Handler):
             return
         mode = self.bot_encoder_mode
         if mode == BotEncoderMode.DEFAULT:
-            self.plugin_select(direction)
+            self._foreach_step(direction, self.plugin_select)
         elif mode == BotEncoderMode.DEEP_EDIT:
-            self.menu_select(direction)
+            self._foreach_step(direction, self.menu_select)
         elif mode == BotEncoderMode.VALUE_EDIT:
             self.parameter_value_change(direction, self.parameter_value_commit)
 
@@ -387,13 +396,13 @@ class Mod(Handler):
             return
         if mode == UniversalEncoderMode.DEFAULT or mode == UniversalEncoderMode.SCROLL:
             self.universal_encoder_mode = UniversalEncoderMode.SCROLL
-            self.universal_select(direction)
+            self._foreach_step(direction, self.universal_select)
         elif mode == UniversalEncoderMode.PEDALBOARD_SELECT:
-            self.pedalboard_select(direction)
+            self._foreach_step(direction, self.pedalboard_select)
         elif mode == UniversalEncoderMode.PRESET_SELECT:
-            self.preset_select(direction)
+            self._foreach_step(direction, self.preset_select)
         elif mode == UniversalEncoderMode.SYSTEM_MENU:
-            self.menu_select(direction)
+            self._foreach_step(direction, self.menu_select)
         elif mode == UniversalEncoderMode.HEADPHONE_VOLUME:
             self.parameter_value_change(direction, self.headphone_volume_commit)
         elif mode == UniversalEncoderMode.INPUT_GAIN:
@@ -409,7 +418,7 @@ class Mod(Handler):
         elif mode == UniversalEncoderMode.EQ5_GAIN:
             self.parameter_value_change(direction, self.eq5_gain_commit)
         elif mode == UniversalEncoderMode.DEEP_EDIT:
-            self.menu_select(direction)
+            self._foreach_step(direction, self.menu_select)
         elif mode == UniversalEncoderMode.VALUE_EDIT:
             self.parameter_value_change(direction, self.parameter_value_commit)
 
@@ -1247,16 +1256,18 @@ class Mod(Handler):
         self.lcd.draw_value_edit(self.deep.plugin.instance_id, param, param.value)
 
     def parameter_value_change(self, direction, commit_callback):
+        if direction == 0:
+            return
         param = self.deep.selected_parameter
         value = float(param.value)
         # TODO tweak value won't change from call to call, cache it
         tweak = util.renormalize_float(self.parameter_tweak_amount, 0, 127, param.minimum, param.maximum)
-        new_value = round(((value - tweak) if (direction != 1) else (value + tweak)), 2)
+        new_value = round(value + direction * tweak, 2)
         if new_value > param.maximum:
             new_value = param.maximum
         if new_value < param.minimum:
             new_value = param.minimum
-        if new_value is value:
+        if new_value == value:
             return
         self.deep.selected_parameter.value = new_value  # TODO somewhat risky to change value before committed
         commit_callback()
