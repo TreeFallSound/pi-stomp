@@ -93,15 +93,10 @@ class Encoder:
         return self.clk.value
 
     def read_rotary(self):
-        d = 0
-        if self.direction != 0:
-            with self._lock:
-                if self.direction > 0:
-                    d = 1
-                elif self.direction < 0:
-                    d = -1
-                self.direction -= d
-        else:
+        with self._lock:
+            d = self.direction
+            self.direction = 0
+        if d == 0:
             d = self._process_gpios()
         if d != 0 and self.callback is not None:
             self.callback(d)
