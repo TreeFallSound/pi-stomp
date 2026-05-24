@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+import time
+
 from rtmidi import MidiOut
 from rtmidi.midiconstants import CONTROL_CHANGE
 from typing import Optional, List, Callable
@@ -35,16 +37,18 @@ class EncoderController(encoder.Encoder, controller.Controller):
     Encoder with speed-based amplification and parameter quantization.
     If not bound to a Parameter, acts in the standard MIDI range (0-127).
     Currently used for v3 hardware only.
+
+    Speed amplification uses inferred per-detent timing (continuous curve)
+    rather than per-tick burst thresholds. Spinning at the reference rate
+    yields 1× — faster yields a proportional bump up to MAX_MULTIPLIER.
+    A direction reversal resets the rate estimate.
     """
 
-    # Speed thresholds (accumulated rotations between poll cycles)
-    FAST_THRESHOLD = 4  # 4+ rotations = very fast
-    MEDIUM_THRESHOLD = 2  # 2-3 rotations = fast
-
-    # Multipliers
-    FAST_MULTIPLIER = 8
-    MEDIUM_MULTIPLIER = 4
-    SLOW_MULTIPLIER = 1
+    # Below this per-detent interval, amplification kicks in.
+    # 80 ms ≈ 12.5 detents/sec — comfortable steady cruising stays at 1×.
+    REFERENCE_DT_MS = 80.0
+    MAX_MULTIPLIER = 16.0
+    MIN_MULTIPLIER = 1.0
 
     def __init__(
         self,
@@ -72,6 +76,8 @@ class EncoderController(encoder.Encoder, controller.Controller):
         self.parameter: Optional[Parameter] = None
         self.step_values: List[float] = []
         self.current_step: int = 0
+        self._last_detent_time: Optional[float] = None
+        self._last_direction: int = 0
 
         # Initialize default quantization (MIDI CC 0-127)
         self._recalculate_steps()
@@ -156,20 +162,30 @@ class EncoderController(encoder.Encoder, controller.Controller):
         self.current_step = clamp(self.current_step + delta_steps, 0, len(self.step_values) - 1)
         return self.step_values[self.current_step]
 
+    def _compute_multiplier(self, rotations: int) -> float:
+        """Infer per-detent timing and return a continuous speed multiplier."""
+        now = time.monotonic()
+        last = self._last_detent_time
+        last_dir = self._last_direction
+        direction = 1 if rotations > 0 else -1 if rotations < 0 else 0
+        self._last_detent_time = now
+        self._last_direction = direction
+
+        if rotations == 0 or last is None or direction != last_dir:
+            return self.MIN_MULTIPLIER
+
+        dt = now - last
+        if dt <= 0:
+            return self.MAX_MULTIPLIER
+
+        dt_per_detent_ms = (dt * 1000.0) / abs(rotations)
+        return clamp(self.REFERENCE_DT_MS / dt_per_detent_ms,
+                     self.MIN_MULTIPLIER, self.MAX_MULTIPLIER)
+
     def refresh(self, rotations: int) -> None:
         """Handle encoder rotation with speed-based amplification."""
-        # logging.debug(f"EncoderController.refresh: id={self.id}, type={self.type}, direction={direction}, has_param={self.parameter is not None}")
-
-        # Use accumulated count as speed indicator (accumulated in 10ms poll cycle)
-        abs_dir = abs(rotations)
-        if abs_dir >= self.FAST_THRESHOLD:
-            multiplier = self.FAST_MULTIPLIER
-        elif abs_dir >= self.MEDIUM_THRESHOLD:
-            multiplier = self.MEDIUM_MULTIPLIER
-        else:
-            multiplier = self.SLOW_MULTIPLIER
-
-        delta = rotations * multiplier
+        multiplier = self._compute_multiplier(rotations)
+        delta = int(round(rotations * multiplier))
         new_value = self._move_steps(delta)
         self.midi_value = self._value_to_midi(new_value)
         if self.parameter:
