@@ -43,3 +43,22 @@ Package version incompatibilities are much more likely using this method.
 Run tests using `pytest` in the virtual environment. There is a Github Actions workflow that runs this in CI as well.
 
 If you are writing new snapshot tests, or experiencing unexpected snapshot assertion failures, try running `pytest --snapshot-update` and inspect the diff. Sometimes there are cross-platform differences; use PIL tweaks in `conftest.py` to align them.
+
+## Running the emulator
+
+The emulator runs the pi-Stomp UI on macOS or Linux desktop, with no Pi hardware required.
+
+Running it requires  system-level [lilv](https://drobilla.net/docs/lilv/), [MOD Desktop](https://mod.audio/desktop/), and the emulator extra for additional python packages.
+
+```bash
+brew install lilv pkg-config  # macos
+sudo apt install liblilv-dev python3-lilv pkg-config  # debian/ubuntu
+sudo pacman -S lilv pkgconf  # arch
+```
+
+Ensure the `emulator` uv extra is installed and run:
+
+```sh
+uv sync --extra emulator
+./run_emulator.sh  # can pass v1/v2/v3; defaults to v3
+```
