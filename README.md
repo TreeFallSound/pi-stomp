@@ -46,9 +46,9 @@ If you are writing new snapshot tests, or experiencing unexpected snapshot asser
 
 ## Running the emulator
 
-The emulator runs the pi-Stomp UI on macOS or Linux desktop, with no Pi hardware required.
+The emulator runs the pi-Stomp UI on macOS or Linux desktop, with no Pi hardware required. In this mode, pedalboards are provided by running [MOD Desktop](https://mod.audio/desktop/) locally as well.
 
-Running it requires  system-level [lilv](https://drobilla.net/docs/lilv/), [MOD Desktop](https://mod.audio/desktop/), and the emulator extra for additional python packages.
+We also need to install [lilv](https://drobilla.net/docs/lilv/), which is not available via PyPI, but is required for parsing pedalboard bundles. The [run_emulator.sh](./run_emulator.sh) script will discover it automatically after installation:
 
 ```bash
 brew install lilv pkg-config  # macos
