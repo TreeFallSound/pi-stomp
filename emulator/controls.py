@@ -101,11 +101,11 @@ class MockFootswitch(footswitch.Footswitch):
         pass
 
     def press(self):
-        self.enabled = not self.enabled
+        self.toggled = not self.toggled
         if self.midiout and self.midi_CC is not None and _rtmidi_available:
             self.midiout.send_message(
                 [CONTROL_CHANGE | (self.midi_channel & 0x0F),
-                 self.midi_CC, 127 if self.enabled else 0])
+                 self.midi_CC, 127 if self.toggled else 0])
         self.refresh_callback(footswitch=self)
 
 
