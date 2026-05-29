@@ -56,9 +56,9 @@ sudo apt install liblilv-dev python3-lilv pkg-config  # debian/ubuntu
 sudo pacman -S lilv pkgconf  # arch
 ```
 
-Ensure the `emulator` uv extra is installed and run:
+Then sync and run:
 
 ```sh
-uv sync --extra emulator
+uv sync
 ./run_emulator.sh  # can pass v1/v2/v3; defaults to v3
 ```
