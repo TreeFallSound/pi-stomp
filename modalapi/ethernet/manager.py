@@ -136,7 +136,12 @@ class EthernetManager:
 
     @staticmethod
     def read_xrun_buckets() -> tuple[int, int, int]:
-        """Counts of xruns in the last 1/5/15 minutes from the bounded service file."""
+        """Counts of xruns in the last 1/5/15 minutes from the bounded service file.
+
+        File format (produced by jackbridge-xrun-watcher): 15 lines, oldest
+        first, each "<epoch_sec_of_minute> <count>". Sum the count column
+        over the slice whose epoch is within the relevant window of now.
+        """
         try:
             with open(XRUN_FILE) as f:
                 lines = f.read().splitlines()
@@ -145,17 +150,24 @@ class EthernetManager:
         now = time.time()
         b1 = b5 = b15 = 0
         for line in lines:
+            parts = line.split()
+            if len(parts) != 2:
+                continue
             try:
-                ts = float(line.strip())
+                ts = float(parts[0])
+                count = int(parts[1])
             except ValueError:
                 continue
-            dt = now - ts
+            # Bucket's minute starts at ts and covers [ts, ts+60). Include the
+            # bucket if any of its seconds fall in the window — use the bucket
+            # END (ts+60) so a freshly-rolled bucket counts for the 1-min query.
+            dt = now - (ts + 60)
             if dt < 60:
-                b1 += 1
+                b1 += count
             if dt < 300:
-                b5 += 1
+                b5 += count
             if dt < 900:
-                b15 += 1
+                b15 += count
         return b1, b5, b15
 
     # ----- service control (mutating systemctl calls match the existing
