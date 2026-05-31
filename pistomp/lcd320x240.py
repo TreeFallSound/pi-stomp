@@ -20,6 +20,7 @@ import os
 from typing import Optional
 import common.token as Token
 import common.parameter as Parameter
+from ui.ethernet_menu import EthernetMenu
 from ui.wifi_menu import WifiMenu
 import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
@@ -95,6 +96,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_wifi = None
         self._wifi_img_path: Optional[str] = None
         self.wifi_menu: Optional[WifiMenu] = None
+        self.ethernet_menu: EthernetMenu = EthernetMenu(self)
         self.w_eq = None
         self.w_power = None
         self.w_wrench = None

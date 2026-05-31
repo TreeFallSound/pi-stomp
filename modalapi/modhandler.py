@@ -28,6 +28,7 @@ import common.token as Token
 import common.util as util
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
+from modalapi.ethernet import EthernetManager
 from pistomp.lcd320x240 import Lcd
 from pistomp.hardware import Controller, Hardware
 import pistomp.settings as Settings
@@ -94,6 +95,7 @@ class Modhandler(Handler):
         self.banks_monitor = FileChangeMonitor(self.banks_file)
 
         self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
+        self.ethernet_manager = EthernetManager()
 
         # WebSocket bridge for MOD-UI communication
         self.ws_bridge = None
@@ -131,6 +133,7 @@ class Modhandler(Handler):
         if self.ws_bridge is not None:
             self.ws_bridge.stop()
             logging.info("WebSocket bridge stopped")
+        self.ethernet_manager.shutdown()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -185,6 +188,20 @@ class Modhandler(Handler):
         self.wifi_manager.poll()
         if self._lcd is not None and self.lcd.wifi_menu is not None:
             self.lcd.wifi_menu.tick()
+
+    def poll_ethernet(self):
+        if self._lcd is None:
+            return
+        if self.ethernet_manager.drain_changed():
+            # Carrier or service-active flipped: rebuild the wifi root menu so the
+            # wired row appears/disappears, and re-render the ethernet sub-screen
+            # (or pop it + surface the disconnect dialog).
+            if self.lcd.wifi_menu is not None:
+                self.lcd.wifi_menu.notify_status_change()
+            self.lcd.ethernet_menu.notify_change()
+        else:
+            # Periodic tick: refresh xrun counters while the sub-screen is open.
+            self.lcd.ethernet_menu.tick()
 
     def _on_wifi_status_change(self, status):
         self.wifi_status = status

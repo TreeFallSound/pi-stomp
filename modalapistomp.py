@@ -177,6 +177,7 @@ def main():
                 handler.poll_modui_changes()
             if period % 200 == 0:
                 handler.poll_wifi()
+                handler.poll_ethernet()
             if period > 6000:  # every 60 seconds (when sleep = 0.01)
                 handler.poll_system_info()
                 period = 0

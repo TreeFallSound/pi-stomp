@@ -86,3 +86,7 @@ class Handler:
 
     def poll_wifi(self):
         raise NotImplementedError()
+
+    def poll_ethernet(self):
+        # v1/v2 handlers don't run the Ethernet/JackBridge integration.
+        pass

@@ -27,6 +27,8 @@ import pistomp.switchstate as switchstate
 import modalapi.pedalboard as Pedalboard
 import common.parameter as Parameter
 import modalapi.wifi as Wifi
+from modalapi.ethernet import EthernetManager
+from typing import Optional
 from modalapi.websocket_bridge import AsyncWebSocketBridge
 from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
@@ -97,6 +99,9 @@ class Mod(Handler):
 
     def __init__(self, audiocard, homedir):
         self.wifi_manager = None
+        # v1/v2 don't surface the Wired Connection menu; declared for type
+        # compatibility with the WifiMenu host protocol.
+        self.ethernet_manager: Optional[EthernetManager] = None
 
         logging.info("Init mod")
         if Mod.__single:
