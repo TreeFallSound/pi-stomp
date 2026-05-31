@@ -171,10 +171,6 @@ schema = {
         "version",
         "midi",
       ]
-    },
-    "pedalboards": {
-      "type": "string",
-      "description": "Git remote URL for the pedalboards repo. Ignored in per-pedalboard config."
     }
   },
   "required": [

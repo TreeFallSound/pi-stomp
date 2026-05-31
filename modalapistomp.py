@@ -138,11 +138,6 @@ def main():
         hw = factory.create(cfg, handler, midiout)
         handler.add_hardware(hw)
 
-        # Configure pedalboards git remote if specified in default_config.yml
-        url = cfg.get('pedalboards')
-        if url:
-            handler.init_pedalboards_remote(url)
-
         # Load all pedalboard info from the lilv ttl file
         handler.load_banks()
         handler.load_pedalboards()
@@ -208,6 +203,7 @@ def main():
                 handler.poll_modui_changes()
             if period % 200 == 0:
                 handler.poll_wifi()
+                handler.poll_ethernet()
             if period > 6000:  # every 60 seconds (when sleep = 0.01)
                 handler.poll_system_info()
                 period = 0

@@ -29,7 +29,10 @@ def mock_handler():
     handler.SystemState = "Running"
     handler.temperature = "45C"
     handler.throttled = "None"
-    handler.notification = None
+    # MagicMock would auto-truthify `ethernet_manager.carrier_up` and surface
+    # the Wired Connection row in every wifi-menu snapshot. Pin it off here;
+    # tests that exercise the ethernet flow can override per-test.
+    handler.ethernet_manager = None
     return handler
 
 

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Callable, NotRequired, Optional, Protocol, Typ
 from PIL import ImageFont
 
 import common.util as util
+from modalapi.ethernet import EthernetManager
 from modalapi.wifi import (
     ConnectSavedCmd,
     ConnectScannedCmd,
@@ -36,6 +37,7 @@ from uilib import (
     Box,
     Config,
     Dialog,
+    EthernetCableGlyph,
     FontWithGlyphs,
     InputEvent,
     LetterSelector,
@@ -59,11 +61,14 @@ class _WifiHost(Protocol):
     """
     wifi_manager: WifiManager
     wifi_status: Optional[WifiStatus]
+    # v3 sets this; v1/v2 (mod.py) leave it None — Wired Connection row stays hidden.
+    ethernet_manager: Optional[EthernetManager]
 
 
 ACTIVE_GLYPH = '\u2714'    # ✔
 PUBLIC_GLYPH = '\ue001'    # PUA sentinel — rendered as pill badge by FontWithGlyphs
 SIGNAL_GLYPHS = ['\ue010', '\ue011', '\ue012', '\ue013', '\ue014']  # 0..4 bars
+ETHERNET_GLYPH = '\ue020'  # PUA sentinel — RJ45 plug, prepended to Wired Connection row
 SEP = '\u00b7'             # ·
 SPLIT = TextWidget.SPLIT_SEP  # left/right alignment marker for menu rows
 
@@ -146,7 +151,10 @@ def is_open_network(security: Optional[str]) -> bool:
 def _make_badge_font(base_name: str = 'default') -> FontWithGlyphs:
     base = Config().get_font(base_name)
     assert base is not None, f"{base_name} font not configured"
-    glyphs: dict[str, object] = {PUBLIC_GLYPH: PillGlyph('P')}
+    glyphs: dict[str, object] = {
+        PUBLIC_GLYPH: PillGlyph('P'),
+        ETHERNET_GLYPH: EthernetCableGlyph(),
+    }
     for level, ch in enumerate(SIGNAL_GLYPHS):
         glyphs[ch] = SignalBarsGlyph(level)
     return FontWithGlyphs(base, glyphs)  # type: ignore[arg-type]
@@ -332,7 +340,11 @@ class WifiMenu:
         return rows, nearby
 
     def _build_items(self, rows: list[Row], hotspot_active: bool, supported: bool = True) -> list[MenuItem]:
-        items: list[MenuItem] = [(self._row_label(r), self._on_network_tap, r, None, self._on_network_long_tap) for r in rows]
+        items: list[MenuItem] = []
+        mgr = self._host.ethernet_manager
+        if mgr is not None and mgr.carrier_up:
+            items.append((ETHERNET_GLYPH + '  Wired Connection', self._open_ethernet_menu, None))
+        items.extend((self._row_label(r), self._on_network_tap, r, None, self._on_network_long_tap) for r in rows)
         if supported and not hotspot_active:
             items.append(("Nearby networks...", self._open_nearby_menu, None))
         items.append(("Join other network...", self._open_join_dialog, None))
@@ -428,6 +440,9 @@ class WifiMenu:
         items.append(("Replace password", self._open_replace_psk_dialog, row))
         items.append(("Forget", self._forget, row))
         self.lcd.draw_selection_menu(items, row['ssid'], dismiss_option=True)
+
+    def _open_ethernet_menu(self, _: object = None) -> None:
+        self.lcd.ethernet_menu.open()
 
     def _open_nearby_menu(self, _: object = None) -> None:
         self._render_nearby_menu()

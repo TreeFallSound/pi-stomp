@@ -958,9 +958,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-emulator = [
-    { name = "pygame" },
-]
 hardware = [
     { name = "adafruit-blinka-raspberry-pi5-neopixel", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
     { name = "adafruit-circuitpython-mcp3xxx" },
@@ -977,6 +974,7 @@ hardware = [
 [package.dev-dependencies]
 dev = [
     { name = "pillow" },
+    { name = "pygame" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -999,7 +997,6 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4" },
     { name = "pillow", specifier = ">=9.4" },
     { name = "pyalsaaudio", marker = "sys_platform == 'linux'", specifier = ">=0.9" },
-    { name = "pygame", marker = "extra == 'emulator'", specifier = ">=2.5" },
     { name = "python-rtmidi", specifier = ">=1.4" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.28" },
@@ -1008,11 +1005,12 @@ requires-dist = [
     { name = "spidev", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=3.0" },
     { name = "websockets", specifier = ">=15.0.1" },
 ]
-provides-extras = ["hardware", "emulator"]
+provides-extras = ["hardware"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pillow", specifier = ">=12.0.0" },
+    { name = "pygame", specifier = ">=2.5" },
     { name = "pyright", specifier = ">=1.1.408" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-cov", specifier = ">=7.0.0" },

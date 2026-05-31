@@ -113,6 +113,54 @@ class SignalBarsGlyph:
         return big.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
 
 
+class EthernetCableGlyph:
+    """RJ45 plug silhouette: outlined body with a few pin ticks and a clip tab below.
+
+    Sized to read at typical menu font heights (~22px). Renders into an L mask so
+    `FontWithGlyphs` can paste it inline like any other glyph."""
+
+    def __init__(self, body_w: int = 14) -> None:
+        self._body_w = body_w
+
+    def width(self, font_height: int) -> int:
+        return self._body_w + 2
+
+    def draw(self, draw: ImageDraw.ImageDraw, x: int, y: int, font_height: int, color) -> None:
+        draw._image.paste(self._render(font_height, int(color)), (x, y))  # type: ignore[attr-defined]
+
+    @lru_cache(maxsize=8)
+    def _render(self, font_height: int, color: int) -> Image.Image:
+        cell_w = self.width(font_height)
+        img = Image.new("L", (cell_w, font_height), 0)
+        d = ImageDraw.Draw(img)
+
+        body_h = max(7, font_height // 2)
+        body_w = self._body_w
+        body_x = 1
+        body_y = max(0, (font_height - body_h) // 2 - 1)
+        d.rectangle([body_x, body_y, body_x + body_w - 1, body_y + body_h - 1],
+                    outline=color, width=1)
+
+        # Pin ticks on the right half of the body.
+        pin_y0 = body_y + 2
+        pin_y1 = body_y + body_h - 3
+        for i in range(3):
+            px = body_x + body_w - 2 - i * 2
+            if px <= body_x + 1:
+                break
+            d.line([px, pin_y0, px, pin_y1], fill=color, width=1)
+
+        # Clip tab below the body.
+        tab_w = max(4, body_w // 3)
+        tab_x = body_x + (body_w - tab_w) // 2
+        tab_y0 = body_y + body_h
+        tab_y1 = min(font_height - 1, tab_y0 + 1)
+        if tab_y1 >= tab_y0:
+            d.rectangle([tab_x, tab_y0, tab_x + tab_w - 1, tab_y1], fill=color)
+
+        return img
+
+
 class FontWithGlyphs:
     """Font wrapper that renders custom glyphs for specified sentinel characters.
 

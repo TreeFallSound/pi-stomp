@@ -252,7 +252,7 @@ class EmulatorWindow:
         # Footswitch state colours
         for btn, idx in self._fs_btns:
             fs = self.hw.footswitches[idx]
-            color = FS_ON if fs.enabled else FS_OFF
+            color = FS_ON if fs.toggled else FS_OFF
             pygame.draw.rect(self.screen, color, btn.rect, border_radius=4)
             lbl = fs.get_display_label() or ("FS%d" % (idx + 1))
             text = self.font_med.render(lbl[:6], True, TEXT_COLOR)

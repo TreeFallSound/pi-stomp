@@ -31,6 +31,9 @@ import modalapi.wifi as Wifi
 
 from blend.snapshot import SnapshotManager
 import modalapi.external_midi as ExternalMidi
+from modalapi.ethernet import EthernetManager
+from modalapi.jack_mute import JackMute
+from typing import Optional
 from modalapi.websocket_bridge import AsyncWebSocketBridge
 from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
@@ -102,6 +105,10 @@ class Mod(Handler):
 
     def __init__(self, audiocard, homedir):
         self.wifi_manager = None
+        # v1/v2 don't surface the Wired Connection menu; declared for type
+        # compatibility with the WifiMenu host protocol.
+        self.ethernet_manager: Optional[EthernetManager] = None
+        self.jack_mute: Optional[JackMute] = None
 
         logging.info("Init mod")
         if Mod.__single:

@@ -45,12 +45,10 @@ hardware = [
     "Adafruit-Blinka-Raspberry-Pi5-Neopixel>=1.0.0rc2; sys_platform == 'linux' and platform_machine == 'aarch64'",
 ]
 
-# Local emulator (macOS / Linux desktop, no Pi hardware required)
-emulator = ["pygame>=2.5"]
-
 [dependency-groups]
 dev = [
     "pillow>=12.0.0",
+    "pygame>=2.5",
     "pyright>=1.1.408",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",

@@ -135,9 +135,8 @@ class ContainerWidget(Widget):
         self._draw_erase(image, draw, real_box)
         self._draw(image, draw, off_real_box)
         for c in self.children:
-            if c.visible:
-                crb = c.box.offset(off_real_box)
-                c._do_draw(image, draw, crb)
+            crb = c.box.offset(off_real_box)
+            c._do_draw(image, draw, crb)
         self._draw_outline(image, draw, real_box)
         self._draw_selection(image, draw, real_box)
 

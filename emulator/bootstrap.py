@@ -55,7 +55,7 @@ def bootstrap_emulator(version: EmulatorVersion, cwd: str):
     try:
         midiout, _port_name = open_midioutput(0)
     except Exception:
-        logging.warning("MIDI output unavailable in emulator mode - continuing without MIDI")
+        logging.warning("Disabled: MIDI output unavailable in emulator mode")
         midiout = None
 
     cfg = config.load_cfg_from_file(_CONFIG_TEMPLATES[version])

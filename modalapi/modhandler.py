@@ -35,6 +35,8 @@ import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
 import modalapi.external_midi as ExternalMidi
 from modalapi.external_midi import EXTERNAL_INSTANCE_ID
+from modalapi.ethernet import EthernetManager
+from modalapi.jack_mute import JackMute
 from pistomp.lcd320x240 import Lcd
 from pistomp.hardware import Controller, Hardware
 import pistomp.settings as Settings
@@ -47,7 +49,6 @@ from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.controller import RoutingDestination, RoutingInfo
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
-from pistomp.sync import PedalboardSync, SyncResult
 from pistomp.handler import Handler
 from pathlib import Path
 
@@ -88,10 +89,8 @@ class Modhandler(Handler):
         self._hardware: Hardware | None = None
         self.volume_parameter = None
 
+        # Stores snapshot index from loading_end until pedalboard change is detected
         self.next_pedalboard_preset_index = None
-
-        self.notification: str | None = None
-        self.pedalboards_remote: str | None = None
 
         # Backup
         self.backup_dir = "/media/usb0/backups"
@@ -107,6 +106,8 @@ class Modhandler(Handler):
         self.banks_monitor = FileChangeMonitor(self.banks_file)
 
         self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
+        self.ethernet_manager = EthernetManager()
+        self.jack_mute = JackMute()
 
         # Tuner state
         self._tuner_engine = None
@@ -162,6 +163,7 @@ class Modhandler(Handler):
         if self.ws_bridge is not None:
             self.ws_bridge.stop()
             logging.info("WebSocket bridge stopped")
+        self.ethernet_manager.shutdown()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -248,6 +250,20 @@ class Modhandler(Handler):
         self.wifi_manager.poll()
         if self._lcd is not None and self.lcd.wifi_menu is not None:
             self.lcd.wifi_menu.tick()
+
+    def poll_ethernet(self):
+        if self._lcd is None:
+            return
+        if self.ethernet_manager.drain_changed():
+            # Carrier or service-active flipped: rebuild the wifi root menu so the
+            # wired row appears/disappears, and re-render the ethernet sub-screen
+            # (or pop it + surface the disconnect dialog).
+            if self.lcd.wifi_menu is not None:
+                self.lcd.wifi_menu.notify_status_change()
+            self.lcd.ethernet_menu.notify_change()
+        else:
+            # Periodic tick: refresh xrun counters while the sub-screen is open.
+            self.lcd.ethernet_menu.tick()
 
     def _on_wifi_status_change(self, status):
         self.wifi_status = status
@@ -445,7 +461,7 @@ class Modhandler(Handler):
 
                 pb = self.reload_pedalboard(mod_bundle)
                 self.set_current_pedalboard(pb)
-            elif mod_bundle and self.next_pedalboard_preset_index is not None:
+            elif mod_bundle and self.current and self.next_pedalboard_preset_index is not None:
                 # Same pedalboard reloaded with a pending snapshot - apply it now
                 logging.info(f"Applying pending snapshot {self.next_pedalboard_preset_index} to current pedalboard")
                 self.current.preset_index = self.next_pedalboard_preset_index
@@ -579,8 +595,6 @@ class Modhandler(Handler):
         if config_file.exists():
             with open(config_file.as_posix(), 'r') as ymlfile:
                 cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
-            if cfg and 'pedalboards' in cfg:
-                logging.warning("'pedalboards' key in %s is ignored — set it in default_config.yml only", config_file)
         self.hardware.reinit(cfg)
 
         # Sync current state of analog controls (expression pedals, etc.)
@@ -1024,35 +1038,15 @@ class Modhandler(Handler):
         else:
             logging.debug("saved")
 
-    def init_pedalboards_remote(self, url: str) -> None:
-        self.pedalboards_remote = url
-        pedalboards_dir = Path(self.data_dir) / ".pedalboards"
-        sync = PedalboardSync(pedalboards_dir=pedalboards_dir, homedir=self.homedir, username=self.username)
-        result = sync.configure_remote(url)
-        logging.info("init_pedalboards_remote: %s", result.status)
-        if result.status in ("up_to_date", "applied"):
-            self.set_notification(None)
-        else:
-            self.set_notification(result.message)
-
-    def set_notification(self, msg: str | None) -> None:
-        self.notification = msg
-        if self.lcd is not None:
-            self.lcd.update_notification(msg)
-
-    def system_menu_sync_pedalboards(self) -> SyncResult:
-        logging.debug("sync_pedalboards")
-        pedalboards_dir = Path(self.data_dir) / ".pedalboards"
-        sync = PedalboardSync(pedalboards_dir=pedalboards_dir, homedir=self.homedir, username=self.username)
-        # If the repo is missing (e.g. user deleted it), re-run configure_remote if we have a URL
-        if self.pedalboards_remote and not (pedalboards_dir / ".git").exists():
-            result = sync.configure_remote(self.pedalboards_remote)
-            if result.status not in ("error", "remote_conflict"):
-                self.set_notification(None)
-            else:
-                self.set_notification(result.message)
-            return result
-        return sync.apply()
+    def system_menu_update_sample_pedalboards(self):
+        logging.debug("update_sample_pedalboards")
+        cmd = os.path.join(self.homedir, 'util', 'update-sample-pedalboards.sh')
+        try:
+            output = subprocess.check_output(['sudo', '-u', self.username, cmd])
+            return output.decode('utf-8')
+        except subprocess.CalledProcessError as e:
+            logging.error("update sample pedalboards:" + str(e.output))
+            return e.output.decode('utf-8')
 
     def system_menu_reload(self, arg):
         logging.info("Exiting main process, systemctl should restart if enabled")

@@ -26,6 +26,7 @@ import pistomp.footswitch as footswitch
 
 try:
     from rtmidi.midiconstants import CONTROL_CHANGE
+
     _rtmidi_available = True
 except ImportError:
     _rtmidi_available = False
@@ -55,14 +56,22 @@ class MockEncoder(encoder.Encoder):
 class MockEncoderMidi(encodermidicontrol.EncoderMidiControl):
     """Tweak encoder with MIDI CC.  Driven externally via step() / press()."""
 
-    def __init__(self, handler, callback, midi_channel, midi_CC, midiout,
-                 type=None, id=None, cfg=None):
-        super().__init__(handler=handler, d_pin=None, clk_pin=None, callback=callback,
-                         midi_CC=midi_CC, midi_channel=midi_channel, midiout=midiout,
-                         type=type, id=id)
-        self.cfg = cfg or {'type': type, 'id': id}
+    def __init__(self, handler, callback, midi_channel, midi_CC, midiout, type=None, id=None, cfg=None):
+        super().__init__(
+            handler=handler,
+            d_pin=None,
+            clk_pin=None,
+            callback=callback,
+            midi_CC=midi_CC,
+            midi_channel=midi_channel,
+            midiout=midiout,
+            type=type,
+            id=id,
+        )
+        self.cfg = cfg or {"type": type, "id": id}
         self.midi_value = 64
         self.press_callback = None
+        self._user_callback = callback
 
     def read_rotary(self):
         pass
@@ -73,11 +82,9 @@ class MockEncoderMidi(encodermidicontrol.EncoderMidiControl):
     def step(self, direction):
         self.midi_value = max(0, min(127, self.midi_value + direction))
         if self.midiout and self.midi_CC is not None and _rtmidi_available:
-            self.midiout.send_message(
-                [CONTROL_CHANGE | (self.midi_channel & 0x0F),
-                 self.midi_CC, self.midi_value])
-        if self.callback:
-            self.callback(direction)
+            self.midiout.send_message([CONTROL_CHANGE | (self.midi_channel & 0x0F), self.midi_CC, self.midi_value])
+        if self._user_callback:
+            self._user_callback(direction)
 
     def press(self, value):
         if self.press_callback:
@@ -101,19 +108,18 @@ class MockFootswitch(footswitch.Footswitch):
         pass
 
     def press(self):
-        self.enabled = not self.enabled
+        self.toggled = not self.toggled
         if self.midiout and self.midi_CC is not None and _rtmidi_available:
             self.midiout.send_message(
-                [CONTROL_CHANGE | (self.midi_channel & 0x0F),
-                 self.midi_CC, 127 if self.enabled else 0])
+                [CONTROL_CHANGE | (self.midi_channel & 0x0F), self.midi_CC, 127 if self.toggled else 0]
+            )
         self.refresh_callback(footswitch=self)
 
 
 class MockAnalogControl(analogcontrol.AnalogControl):
     """Expression pedal / knob with no SPI/ADC.  Value set externally."""
 
-    def __init__(self, midi_CC, midi_channel, midiout, control_type=None,
-                 id=None, cfg=None):
+    def __init__(self, midi_CC, midi_channel, midiout, control_type=None, id=None, cfg=None):
         # AnalogControl.__init__ only stores spi/channel/tolerance — safe with None
         super().__init__(spi=None, adc_channel=None, tolerance=0)
         self.midi_CC = midi_CC
@@ -121,7 +127,7 @@ class MockAnalogControl(analogcontrol.AnalogControl):
         self.midiout = midiout
         self.type = control_type
         self.id = id
-        self.cfg = cfg or {'type': control_type, 'id': id}
+        self.cfg = cfg or {"type": control_type, "id": id}
         self.value = 64
         self.parameter = None
 
@@ -139,6 +145,4 @@ class MockAnalogControl(analogcontrol.AnalogControl):
 
     def send_midi(self, value_0_127):
         if self.midiout and self.midi_CC is not None and _rtmidi_available:
-            self.midiout.send_message(
-                [CONTROL_CHANGE | (self.midi_channel & 0x0F),
-                 self.midi_CC, int(value_0_127)])
+            self.midiout.send_message([CONTROL_CHANGE | (self.midi_channel & 0x0F), self.midi_CC, int(value_0_127)])

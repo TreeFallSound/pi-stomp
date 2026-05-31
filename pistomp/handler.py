@@ -96,5 +96,6 @@ class Handler:
     def set_tuner_source_factory(self, factory) -> None:
         pass
 
-    def init_pedalboards_remote(self, url: str) -> None:
+    def poll_ethernet(self):
+        # v1/v2 handlers don't run the Ethernet/JackBridge integration.
         pass
