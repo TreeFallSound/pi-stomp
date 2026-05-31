@@ -16,6 +16,7 @@
 import pistomp.audioinjector
 import pistomp.hifiberry
 import pistomp.iqaudiocodec
+import pistomp.audiocard as audiocard
 from pathlib import Path
 
 
@@ -45,7 +46,7 @@ class Audiocardfactory:
         f.close()
         return result
 
-    def create(self):
+    def create(self) -> audiocard.Audiocard:
         # get the current card
         card_name = self.get_current_card()
         if card_name == "IQaudIOCODEC":
