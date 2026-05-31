@@ -15,15 +15,18 @@
 
 """Hardware and system stubs shared across all emulator versions.
 
-VirtualAudiocard  — in-memory audiocard; no ALSA/hardware access.
-StubWifiManager   — in-memory wifi; satisfies Mod/Modhandler's wifi_manager.
-StubRelay         — no-op relay; satisfies the Relay interface without GPIO.
+VirtualAudiocard      — in-memory audiocard; no ALSA/hardware access.
+StubWifiManager       — in-memory wifi; satisfies Mod/Modhandler's wifi_manager.
+StubEthernetManager   — pinned-up ethernet stub; no sysfs / systemctl / threads.
+StubRelay             — no-op relay; satisfies the Relay interface without GPIO.
 """
 
 
+import threading
 import time
 from typing import Callable, Optional
 
+from modalapi.ethernet import EthernetManager
 from modalapi.wifi import SavedConnection, ScannedNetwork, WifiStatus
 from modalapi.wifi.commands import CommandQueue
 from pistomp.audiocard import Audiocard
@@ -241,6 +244,67 @@ class StubWifiManager:
             self._active = None
             self._refresh_status()
         return None
+
+
+class StubEthernetManager(EthernetManager):
+    """Pinned-up ethernet stub for the emulator.
+
+    `carrier_up` is always True so the Wired Connection menu surface is always
+    reachable. `service_active` is flipped locally by start/stop so the menu
+    re-renders with the new state on the next poll tick — no real systemd unit
+    is touched. The base class' background polling thread is not started; we
+    override __init__ to skip it entirely so the emulator has no /sysfs or
+    systemctl dependencies.
+    """
+
+    def __init__(self) -> None:
+        # Deliberately skip super().__init__() — no thread, no sysfs polling.
+        self.carrier_up = True
+        self.service_active = False
+        # Signal a single initial render so the menu picks up our fake state.
+        self._changed = True
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+
+    def shutdown(self) -> None:
+        pass
+
+    def read_ipv4(self) -> Optional[str]:
+        return "169.254.125.193/16"
+
+    def read_jack_settings(self) -> tuple[Optional[int], Optional[int]]:
+        return (48000, 128)
+
+    @staticmethod
+    def read_xrun_buckets() -> tuple[int, int, int]:
+        return (0, 0, 0)
+
+    def start_service(self) -> None:
+        with self._lock:
+            self.service_active = True
+            self._changed = True
+
+    def stop_service(self) -> None:
+        with self._lock:
+            self.service_active = False
+            self._changed = True
+
+
+class StubJackMute:
+    """In-memory mute state; no JACK calls. Lets the menu's Mute/Unmute MOD
+    button visibly toggle in the emulator."""
+
+    def __init__(self) -> None:
+        self._muted = False
+
+    def is_muted(self) -> bool:
+        return self._muted
+
+    def mute(self) -> None:
+        self._muted = True
+
+    def unmute(self) -> None:
+        self._muted = False
 
 
 class StubRelay:

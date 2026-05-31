@@ -28,6 +28,7 @@ import modalapi.pedalboard as Pedalboard
 import common.parameter as Parameter
 import modalapi.wifi as Wifi
 from modalapi.ethernet import EthernetManager
+from modalapi.jack_mute import JackMute
 from typing import Optional
 from modalapi.websocket_bridge import AsyncWebSocketBridge
 from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, WebSocketMessage
@@ -102,6 +103,7 @@ class Mod(Handler):
         # v1/v2 don't surface the Wired Connection menu; declared for type
         # compatibility with the WifiMenu host protocol.
         self.ethernet_manager: Optional[EthernetManager] = None
+        self.jack_mute: Optional[JackMute] = None
 
         logging.info("Init mod")
         if Mod.__single:

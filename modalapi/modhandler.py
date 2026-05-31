@@ -32,6 +32,7 @@ import common.util as util
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
 from modalapi.ethernet import EthernetManager
+from modalapi.jack_mute import JackMute
 from pistomp.lcd320x240 import Lcd
 from pistomp.hardware import Controller, Hardware
 import pistomp.settings as Settings
@@ -99,6 +100,7 @@ class Modhandler(Handler):
 
         self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
         self.ethernet_manager = EthernetManager()
+        self.jack_mute = JackMute()
 
         # WebSocket bridge for MOD-UI communication
         self.ws_bridge = None
