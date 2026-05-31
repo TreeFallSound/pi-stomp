@@ -91,17 +91,6 @@ def test_ethernet_menu_enabled_with_stats(ethernet_env, snapshot):
     snapshot()
 
 
-def test_ethernet_menu_pending_enable(ethernet_env, snapshot):
-    """Click Enable → toggle reads "Starting..." and is non-selectable."""
-    lcd, em, _ = ethernet_env
-    em.service_active = False
-    menu = _open(lcd)
-    # Don't auto-flip service_active so we see the pending state.
-    em.start_service = lambda: setattr(em, "start_calls", em.start_calls + 1)  # type: ignore[method-assign]
-    menu._on_enable()
-    snapshot()
-
-
 def test_ethernet_menu_muted(ethernet_env, snapshot):
     """Service active + MOD muted → button reads "Unmute MOD"."""
     lcd, em, mute = ethernet_env
@@ -196,10 +185,12 @@ def test_back_pops_panel(ethernet_env):
     assert lcd.pstack.current is not panel
 
 
-def test_pending_clears_once_service_state_matches(ethernet_env):
-    """After Enable, the next render with service_active=True clears _pending."""
+def test_enable_then_state_flip_shows_disable(ethernet_env):
+    """After Enable fires, bg poll flips service_active; next render shows Disable."""
     lcd, em, _ = ethernet_env
     em.service_active = False
     menu = _open(lcd)
     menu._on_enable()  # StubFake flips service_active to True synchronously
-    assert menu._pending is None  # cleared inside _render after start_service
+    # Find the toggle widget by walking the panel's selectable list.
+    labels = [w.text for w in menu._panel.sel_list]
+    assert "Disable" in labels

@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 
 SPLIT = TextWidget.SPLIT_SEP
-BACK_GLYPH = '\u2b05'  # ⬅ — matches uilib.menu's dismiss-row idiom
+BACK_GLYPH = "\u2b05"  # ⬅ — matches uilib.menu's dismiss-row idiom
 DIALOG_W = 280
 DIALOG_H = 200
 
@@ -55,13 +55,23 @@ class EthernetMenu:
     thread (via handler poll-loop callbacks).
     """
 
-    def __init__(self, lcd: 'Lcd') -> None:
-        self.lcd: 'Lcd' = lcd
+    def __init__(self, lcd: "Lcd") -> None:
+        self.lcd: "Lcd" = lcd
         self._panel: Optional[Dialog] = None
-        # Tracks an in-flight toggle: True = waiting for the service to come up
-        # after Enable, False = waiting for it to go down after Disable, None = idle.
-        # Cleared in `_render` once `service_active` reflects the requested state.
-        self._pending: Optional[bool] = None
+        # Remembered across pop/rebuild so periodic re-renders don't yank focus
+        # back to the toggle button after the user has moved selection.
+        # One of: 'back', 'toggle', 'mute', or None.
+        self._last_selected_role: Optional[str] = None
+        self._role_widgets: dict[str, object] = {}
+
+    def _capture_selected_role(self) -> None:
+        if self._panel is None or self._panel.sel is None:
+            return
+        sel = self._panel.sel_list[self._panel.sel]
+        for role, w in self._role_widgets.items():
+            if w is sel:
+                self._last_selected_role = role
+                return
 
     @property
     def _host(self) -> _EthernetHost:
@@ -123,17 +133,14 @@ class EthernetMenu:
 
     def _render(self) -> None:
         if self._panel is not None:
+            self._capture_selected_role()
             old = self._panel
             self._panel = None
             self._pstack.pop_panel(old)
 
-        # Clear any pending toggle once reality has caught up.
         active = self._manager.service_active
-        if self._pending is not None and active == self._pending:
-            self._pending = None
 
-        d = Dialog(width=DIALOG_W, height=DIALOG_H,
-                   title="Ethernet Audio Interface", auto_destroy=True)
+        d = Dialog(width=DIALOG_W, height=DIALOG_H, title="Ethernet Audio Interface", auto_destroy=True)
         font = ImageFont.truetype("DejaVuSans.ttf", 14)
 
         rows: list[tuple[str, str]] = [("IP:", self._manager.read_ipv4() or "—")]
@@ -146,11 +153,7 @@ class EthernetMenu:
             rows.append(("xruns 5m:", str(b5)))
             rows.append(("xruns 15m:", str(b15)))
 
-        if self._pending is True:
-            toggle_label, toggle_action = "Starting...", None
-        elif self._pending is False:
-            toggle_label, toggle_action = "Stopping...", None
-        elif active:
+        if active:
             toggle_label, toggle_action = "Disable", self._on_disable
         else:
             toggle_label, toggle_action = "Enable", self._on_enable
@@ -161,71 +164,96 @@ class EthernetMenu:
         line_h = 18
         y = 4
         for label, value in rows:
-            TextWidget(box=Box.xywh(8, y, DIALOG_W - 16, line_h),
-                       text=label + SPLIT + value, font=font, parent=d,
-                       outline=0, sel_width=0, align=WidgetAlign.NONE)
+            TextWidget(
+                box=Box.xywh(8, y, DIALOG_W - 16, line_h),
+                text=label + SPLIT + value,
+                font=font,
+                parent=d,
+                outline=0,
+                sel_width=0,
+                align=WidgetAlign.NONE,
+            )
             y += line_h
 
         btn_y = DIALOG_H - 36
-        back_btn = TextWidget(box=Box.xywh(8, btn_y, 0, 0), text=BACK_GLYPH, parent=d,
-                              outline=1, sel_width=3, outline_radius=5,
-                              action=self._on_back, align=WidgetAlign.NONE,
-                              name='ethernet_back_btn')
+        back_btn = TextWidget(
+            box=Box.xywh(8, btn_y, 0, 0),
+            text=BACK_GLYPH,
+            parent=d,
+            outline=1,
+            sel_width=3,
+            outline_radius=5,
+            action=self._on_back,
+            align=WidgetAlign.NONE,
+            name="ethernet_back_btn",
+        )
         d.add_sel_widget(back_btn)
 
         # Toggle sits to the right of back; mute is right-aligned. Auto-width
         # buttons (w=0) compute their box during init, so we read back .width
-        # to chain placements without overlap. Toggle is non-selectable while
-        # pending — the user still sees "Starting..."/"Stopping..." but can't
-        # double-fire the action.
+        # to chain placements without overlap. Rapid taps are harmless:
+        # systemctl no-ops when the service is already in the target state,
+        # and the bg poll flips the label within POLL_INTERVAL_S.
+        assert back_btn.box
         toggle_x = back_btn.box.x0 + back_btn.box.width + 6
-        toggle_btn = TextWidget(box=Box.xywh(toggle_x, btn_y, 0, 0), text=toggle_label, parent=d,
-                                outline=1, sel_width=3, outline_radius=5,
-                                action=toggle_action, align=WidgetAlign.NONE,
-                                name='ethernet_toggle_btn')
-        if toggle_action is not None:
-            d.add_sel_widget(toggle_btn)
+        toggle_btn = TextWidget(
+            box=Box.xywh(toggle_x, btn_y, 0, 0),
+            text=toggle_label,
+            parent=d,
+            outline=1,
+            sel_width=3,
+            outline_radius=5,
+            action=toggle_action,
+            align=WidgetAlign.NONE,
+            name="ethernet_toggle_btn",
+        )
+        d.add_sel_widget(toggle_btn)
 
         # Build mute at x=0 first to learn its auto-computed width, then
         # reposition via set_box so its right edge sits at DIALOG_W - 8.
         # (Box.x0 setter leaves x1 alone — it shrinks rather than translates.)
-        mute_btn = TextWidget(box=Box.xywh(0, btn_y, 0, 0), text=mute_label, parent=d,
-                              outline=1, sel_width=3, outline_radius=5,
-                              action=self._on_toggle_mute, align=WidgetAlign.NONE,
-                              name='ethernet_mute_btn')
+        mute_btn = TextWidget(
+            box=Box.xywh(0, btn_y, 0, 0),
+            text=mute_label,
+            parent=d,
+            outline=1,
+            sel_width=3,
+            outline_radius=5,
+            action=self._on_toggle_mute,
+            align=WidgetAlign.NONE,
+            name="ethernet_mute_btn",
+        )
+        assert mute_btn.box
         mute_w = mute_btn.box.width
         mute_h = mute_btn.box.height
         mute_btn.set_box(Box.xywh(DIALOG_W - 8 - mute_w, btn_y, mute_w, mute_h))
         d.add_sel_widget(mute_btn)
 
-        if toggle_action is not None:
-            d.sel_widget(toggle_btn)
-        else:
-            d.sel_widget(back_btn)
+        # Stash refs by role so re-renders can preserve selection (panel pop
+        # blows away widget identity, so we track which role was selected).
+        self._role_widgets = {"back": back_btn, "toggle": toggle_btn, "mute": mute_btn}
+
+        # Restore selection from before the rebuild when possible, so periodic
+        # ticks and unrelated actions (Mute) don't drag focus back to Toggle.
+        restore_target = self._role_widgets.get(self._last_selected_role or "toggle", toggle_btn)
+        d.sel_widget(restore_target)
 
         self._panel = d
         self._pstack.push_panel(d)
         d.refresh()
 
     def _show_disconnected_dialog(self) -> None:
-        self._pstack.push_panel(
-            MessageDialog(self._pstack, "Ethernet cable disconnected.",
-                          title="Wired Connection"))
+        self._pstack.push_panel(MessageDialog(self._pstack, "Ethernet cable disconnected.", title="Wired Connection"))
 
     # ----- actions -----
 
     def _on_enable(self, _event: object = None, _widget: object = None) -> None:
-        self._pending = True
         self._manager.start_service()
-        # Render immediately with the "Starting..." pending state so the user
-        # gets feedback without waiting for the next poll tick. In the emulator
-        # the stub flips service_active synchronously and `_render` will clear
-        # `_pending`; on real hardware pending sticks until the manager poll
-        # (≤2s) observes the systemd state change.
+        # systemctl is fire-and-forget; the bg poll picks up the state flip
+        # within POLL_INTERVAL_S and the next tick re-renders with "Disable".
         self._render()
 
     def _on_disable(self, _event: object = None, _widget: object = None) -> None:
-        self._pending = False
         self._manager.stop_service()
         self._render()
 

@@ -14,7 +14,6 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
-import os
 import subprocess
 import threading
 import time
@@ -34,18 +33,26 @@ CARRIER_FILE = "/sys/class/net/%s/carrier" % IFACE
 
 
 class EthernetManager:
-    """Polls Ethernet carrier + JackBridge service state on a background thread.
+    """Polls Ethernet carrier + JackBridge state on a background thread.
 
-    Mirrors the WifiManager flag-drain pattern: the thread mutates state under
-    a lock and flips `_changed`; the handler's main poll loop calls
-    `drain_changed()` and notifies the UI on its own thread. xrun stats are
-    read on demand (from the menu) rather than cached, since the file is
-    bounded and cheap to re-read.
+    Mirrors the WifiManager pattern: all blocking I/O (sysfs, systemctl,
+    `ip`, `jack_*`, xrun file) runs on the poll thread and is cached under
+    a lock; the UI thread only reads cached values. `_changed` is flipped
+    when carrier/service-active flip so the handler's main poll loop can
+    notify the UI; field-only changes (IP, sample rate, xruns) are picked
+    up by the menu's periodic tick re-render without setting `_changed`.
+
+    Writes (start/stop service) are fire-and-forget via subprocess.Popen
+    so the UI thread never blocks on systemctl.
     """
 
     def __init__(self) -> None:
         self.carrier_up: bool = False
         self.service_active: bool = False
+        self._ipv4: Optional[str] = None
+        self._sample_rate: Optional[int] = None
+        self._period: Optional[int] = None
+        self._xruns: tuple[int, int, int] = (0, 0, 0)
         self._changed: bool = False
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -56,12 +63,6 @@ class EthernetManager:
         self._stop.set()
         self._thread.join(timeout=2.0)
 
-    def __del__(self) -> None:
-        try:
-            self.shutdown()
-        except Exception:
-            pass
-
     # ----- background polling -----
 
     def _run(self) -> None:
@@ -71,13 +72,25 @@ class EthernetManager:
             self._refresh()
 
     def _refresh(self) -> None:
-        carrier = self._read_carrier()
-        active = self._read_service_active() if carrier else False
+        carrier = self._probe_carrier()
+        active = self._probe_service_active() if carrier else False
+        ipv4 = self._probe_ipv4() if carrier else None
+        if active:
+            sample_rate = self._probe_jack_int("jack_samplerate")
+            period = self._probe_jack_int("jack_bufsize")
+            xruns = self._probe_xrun_buckets()
+        else:
+            sample_rate = period = None
+            xruns = (0, 0, 0)
         with self._lock:
             if carrier != self.carrier_up or active != self.service_active:
-                self.carrier_up = carrier
-                self.service_active = active
                 self._changed = True
+            self.carrier_up = carrier
+            self.service_active = active
+            self._ipv4 = ipv4
+            self._sample_rate = sample_rate
+            self._period = period
+            self._xruns = xruns
 
     def drain_changed(self) -> bool:
         with self._lock:
@@ -86,7 +99,7 @@ class EthernetManager:
             return c
 
     @staticmethod
-    def _read_carrier() -> bool:
+    def _probe_carrier() -> bool:
         try:
             with open(CARRIER_FILE) as f:
                 return f.read().strip() == "1"
@@ -94,7 +107,7 @@ class EthernetManager:
             return False
 
     @staticmethod
-    def _read_service_active() -> bool:
+    def _probe_service_active() -> bool:
         try:
             return subprocess.call(
                 ["systemctl", "is-active", "--quiet", SERVICE]
@@ -103,10 +116,8 @@ class EthernetManager:
             logging.warning("systemctl is-active failed for %s: %s", SERVICE, e)
             return False
 
-    # ----- on-demand reads (called from UI thread when the menu renders) -----
-
-    def read_ipv4(self) -> Optional[str]:
-        """Returns "<addr>/<prefix>" for the first IPv4 on the interface, or None."""
+    @staticmethod
+    def _probe_ipv4() -> Optional[str]:
         try:
             out = subprocess.check_output(
                 ["ip", "-4", "-o", "addr", "show", IFACE], timeout=2
@@ -122,11 +133,8 @@ class EthernetManager:
                     return parts[i + 1]
         return None
 
-    def read_jack_settings(self) -> tuple[Optional[int], Optional[int]]:
-        return self._jack_int("jack_samplerate"), self._jack_int("jack_bufsize")
-
     @staticmethod
-    def _jack_int(cmd: str) -> Optional[int]:
+    def _probe_jack_int(cmd: str) -> Optional[int]:
         try:
             out = subprocess.check_output([cmd], timeout=2).decode().strip()
             return int(out.split()[0]) if out else None
@@ -135,13 +143,11 @@ class EthernetManager:
             return None
 
     @staticmethod
-    def read_xrun_buckets() -> tuple[int, int, int]:
-        """Counts of xruns in the last 1/5/15 minutes from the bounded service file.
-
-        File format (produced by jackbridge-xrun-watcher): 15 lines, oldest
-        first, each "<epoch_sec_of_minute> <count>". Sum the count column
-        over the slice whose epoch is within the relevant window of now.
-        """
+    def _probe_xrun_buckets() -> tuple[int, int, int]:
+        # File format (produced by jackbridge-xrun-watcher): up to 15 lines,
+        # oldest first, "<epoch_sec_of_minute> <count>". Each bucket covers
+        # [ts, ts+60); include it if its END (ts+60) is within the window so a
+        # freshly-rolled bucket counts for the 1-min query.
         try:
             with open(XRUN_FILE) as f:
                 lines = f.read().splitlines()
@@ -158,9 +164,6 @@ class EthernetManager:
                 count = int(parts[1])
             except ValueError:
                 continue
-            # Bucket's minute starts at ts and covers [ts, ts+60). Include the
-            # bucket if any of its seconds fall in the window — use the bucket
-            # END (ts+60) so a freshly-rolled bucket counts for the 1-min query.
             dt = now - (ts + 60)
             if dt < 60:
                 b1 += count
@@ -170,11 +173,34 @@ class EthernetManager:
                 b15 += count
         return b1, b5, b15
 
-    # ----- service control (mutating systemctl calls match the existing
-    #       `os.system('sudo systemctl restart jack')` precedent) -----
+    # ----- UI-thread reads (return cached values, no I/O) -----
+
+    def read_ipv4(self) -> Optional[str]:
+        with self._lock:
+            return self._ipv4
+
+    def read_jack_settings(self) -> tuple[Optional[int], Optional[int]]:
+        with self._lock:
+            return self._sample_rate, self._period
+
+    def read_xrun_buckets(self) -> tuple[int, int, int]:
+        with self._lock:
+            return self._xruns
+
+    # ----- service control (non-blocking; bg poll picks up the state flip) -----
 
     def start_service(self) -> None:
-        os.system("sudo systemctl start " + SERVICE)
+        self._spawn_systemctl("start")
 
     def stop_service(self) -> None:
-        os.system("sudo systemctl stop " + SERVICE)
+        self._spawn_systemctl("stop")
+
+    @staticmethod
+    def _spawn_systemctl(verb: str) -> None:
+        try:
+            subprocess.Popen(
+                ["sudo", "systemctl", verb, SERVICE],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except Exception as e:
+            logging.warning("systemctl %s %s failed to spawn: %s", verb, SERVICE, e)
