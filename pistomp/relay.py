@@ -16,7 +16,6 @@
 import logging
 import os
 from pathlib import Path
-import gpiozero as GPIO
 import shutil
 import time
 
@@ -24,6 +23,7 @@ import time
 class Relay:
 
     def __init__(self, set_pin, reset_pin):
+        import gpiozero as GPIO
         self.enabled = False
         self.set_pin = set_pin
         self.reset_pin = reset_pin

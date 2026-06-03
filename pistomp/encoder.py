@@ -16,7 +16,6 @@
 import threading
 
 from functools import partial
-from gpiozero import Button   # TODO consider using Encoder class instead
 
 class Encoder:
 
@@ -61,12 +60,16 @@ class Encoder:
         # It works fine without a lock since this is just dumb UI, but let's be correct..
         self._lock = threading.Lock()
 
-        self.data = Button(d_pin)
-        self.data.when_pressed = self._gpio_callback
-        self.data.when_released = self._gpio_callback
-        self.clk = Button(clk_pin)
-        self.clk.when_pressed = self._gpio_callback
-        self.clk.when_released = self._gpio_callback
+        self.data = None
+        self.clk = None
+        if d_pin is not None:
+            from gpiozero import Button   # TODO consider using Encoder class instead
+            self.data = Button(d_pin)
+            self.data.when_pressed = self._gpio_callback
+            self.data.when_released = self._gpio_callback
+            self.clk = Button(clk_pin)
+            self.clk.when_pressed = self._gpio_callback
+            self.clk.when_released = self._gpio_callback
 
         self.prevNextCode = 0
         self.store = 0
@@ -78,8 +81,10 @@ class Encoder:
         super(Encoder, self).__init__(**kw)
 
     def __del__(self):
-        self.data.close()
-        self.clk.close()
+        if self.data is not None:
+            self.data.close()
+        if self.clk is not None:
+            self.clk.close()
 
     def get_data(self):
         return self.data.value
