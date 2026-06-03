@@ -13,6 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from pistomp.handler import Handler
+from pistomp.audiocard import Audiocard
+
 import json
 import logging
 import os
@@ -48,7 +51,7 @@ from pathlib import Path
 class Modhandler(Handler):
     __single = None
 
-    def __init__(self, audiocard, homedir, data_dir="/home/pistomp/data"):
+    def __init__(self, audiocard: Audiocard, homedir, data_dir="/home/pistomp/data"):
         logging.info("Init modhandler")
         if Modhandler.__single:
             raise RuntimeError("Attempt to create second Modhandler singleton", Modhandler.__single)
@@ -393,7 +396,7 @@ class Modhandler(Handler):
             logging.info("Loading pedalboard info: %s" % pb[Token.TITLE])
             bundle = pb[Token.BUNDLE]
             title = pb[Token.TITLE]
-            pedalboard = Pedalboard.Pedalboard(title, bundle)
+            pedalboard = Pedalboard.Pedalboard(title, bundle, root_uri=self.root_uri)
             pedalboard.load_bundle(bundle, self.plugin_dict)
             self.pedalboards[bundle] = pedalboard
             self.pedalboard_list.append(pedalboard)
@@ -405,7 +408,7 @@ class Modhandler(Handler):
         title = old.title
 
         # create a new one
-        pedalboard = Pedalboard.Pedalboard(title, bundle)
+        pedalboard = Pedalboard.Pedalboard(title, bundle, root_uri=self.root_uri)
         pedalboard.load_bundle(bundle, self.plugin_dict)
         self.pedalboards[bundle] = pedalboard
 

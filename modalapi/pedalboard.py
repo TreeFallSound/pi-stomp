@@ -29,8 +29,8 @@ import modalapi.plugin as Plugin
 
 class Pedalboard:
 
-    def __init__(self, title, bundle):
-        self.root_uri = "http://localhost:80/"
+    def __init__(self, title, bundle, root_uri="http://localhost:80/"):
+        self.root_uri = root_uri
         self.title = title
         self.bundle = bundle  # TODO used?
         self.plugins = []
