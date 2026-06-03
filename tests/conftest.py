@@ -3,9 +3,13 @@ Shims for Raspberry Pi / CircuitPython hardware modules unavailable on macOS/Win
 Injected into sys.modules at import time so application code can be imported in tests.
 """
 
+import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
+
+# Run pygame headlessly in tests so the emulator suite doesn't pop a window.
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 import pytest
 from PIL import Image, ImageFont

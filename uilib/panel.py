@@ -19,6 +19,7 @@ from uilib.box import Box
 from uilib.container import ContainerWidget
 from uilib.misc import InputEvent, trace
 from uilib.widget import Widget
+from abc import ABC
 
 #
 # Note about coordinates:
@@ -164,15 +165,12 @@ class RoundedPanel(Panel):
             draw.rounded_rectangle(real_box.PIL_rect, self.radius, None, color, self.outline)
 
 
-class LcdBase:
-    def dimensions(self):
-        pass
+class LcdBase(ABC):
+    def dimensions(self) -> tuple[int, int]: ...
 
-    def default_format(self):
-        pass
+    def default_format(self) -> str: ...
 
-    def update(self, image, box=None):
-        pass
+    def update(self, image, box=None) -> None: ...
 
     @property
     def has_system_splash(self) -> bool:
