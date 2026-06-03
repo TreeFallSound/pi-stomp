@@ -94,8 +94,8 @@ curl -s http://localhost:80/pedalboard/list | python3 -m json.tool
 
 ## Hardware Versions
 
-- **v1/v2**: Uses `modalapi/mod.py`
-- **v3**: Uses `modalapi/modhandler.py` (current device)
+- **v1**: Uses `modalapi/mod.py` (legacy handler)
+- **v2/v3**: Uses `modalapi/modhandler.py` (current device)
 
 ## Python Environment
 
@@ -261,6 +261,11 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 
 ### Hardware Version Selection
 
+**Version float** comes from `hardware.version` in the active YAML config, selected from templates in `setup/config_templates/`:
+- `default_config_pistomp.yml` → `1.0`
+- `default_config_pistompcore.yml` → `2.0`
+- `default_config_pistomptre.yml` → `3.0`
+
 **Factory Pattern** routes version-specific implementations:
 
 ```python
@@ -279,6 +284,8 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 - `poll_controls()` - Read all inputs
 - SPI/ADC communication
 - Controller dictionary: `{channel:CC}` → controller object
+
+**LCD wiring**: each hardware subclass creates the LCD in `init_lcd()` and injects it into the handler via `handler.add_lcd(Lcd(...))`. The LCD is owned by the handler (`handler._lcd`), not the hardware. For v2/v3, `lcd320x240.Lcd` receives a back-reference to the handler for UI action callbacks (pedalboard/preset change, plugin bypass, parameter edits, system menu, etc.).
 
 ### Configuration System
 
