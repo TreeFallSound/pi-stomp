@@ -15,6 +15,7 @@
 
 import logging
 import os
+from typing import Any
 
 import yaml
 from jsonschema import validate
@@ -177,7 +178,19 @@ schema = {
   ]
 }
 
-def load_default_cfg():
+def load_cfg_from_file(path):
+    """Load and validate a config from an explicit file path."""
+    with open(path, 'r') as ymlfile:
+        cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
+    try:
+        validate(instance=cfg, schema=schema)
+    except exceptions.SchemaError as e:
+        logging.error("Badly formatted schema in: %s %s" % (os.path.basename(path), e.message))
+    except exceptions.ValidationError as e:
+        logging.error("Config file error in: %s\n%s\n%s" % (path, e.schema_path, e.message))
+    return cfg
+
+def load_default_cfg() -> dict[str, Any]:
     # Read the default config file - should only need to read once per session
     default_config_file = os.path.join(data_dir, DEFAULT_CONFIG_FILE)
     with open(default_config_file, 'r') as ymlfile:
