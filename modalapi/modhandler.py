@@ -285,7 +285,6 @@ class Modhandler(Handler):
                         self.current.presets[msg.snapshot_id] = msg.snapshot_name
 
                     self.current.preset_index = msg.snapshot_id
-                    self._handle_collage_mode_snapshot_change(msg.snapshot_id)
                     self.lcd.draw_title()
                 else:
                     # Different pedalboard pending - this is a legitimate pre-switch update
@@ -334,7 +333,6 @@ class Modhandler(Handler):
                 # Same pedalboard reloaded with a pending snapshot - apply it now
                 logging.info(f"Applying pending snapshot {self.next_pedalboard_preset_index} to current pedalboard")
                 self.current.preset_index = self.next_pedalboard_preset_index
-                self._handle_collage_mode_snapshot_change(self.next_pedalboard_preset_index)
                 self.next_pedalboard_preset_index = None
                 self.lcd.draw_title()
 
