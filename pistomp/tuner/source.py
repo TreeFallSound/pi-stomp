@@ -14,6 +14,10 @@ class AudioSource(Protocol):
     def stop(self) -> None: ...
 
 
+class TunerSourceFactory(Protocol):
+    def __call__(self, port: str, *, name: str) -> AudioSource: ...
+
+
 class JackSource:
     """Reads audio from a JACK capture port."""
 

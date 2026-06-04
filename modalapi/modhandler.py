@@ -41,8 +41,8 @@ from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundl
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encodermidicontrol import EncoderMidiControl
 from pistomp.footswitch import Footswitch
-from pistomp.tuner import TunerEngine, TunerPanel
-from pistomp.tuner.source import build_source
+from pistomp.tuner import TunerEngine, TunerPanel, TunerSourceFactory
+from pistomp.tuner.source import AudioSource, build_source
 from pathlib import Path
 
 
@@ -112,10 +112,10 @@ class Modhandler(Handler):
             logging.warning(f"Failed to initialize WebSocket bridge: {e}")
 
         # Tuner state
-        self._tuner_engine = None
-        self._tuner_panel = None
-        self._tuner_source_factory = None
-        self._tuner_muted = False
+        self._tuner_engine: TunerEngine | None = None
+        self._tuner_panel: TunerPanel | None = None
+        self._tuner_source_factory: TunerSourceFactory | None = None
+        self._tuner_muted: bool = False
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
@@ -931,11 +931,11 @@ class Modhandler(Handler):
         self.hardware.toggle_tap_tempo_enable(self.get_bpm())
         self.lcd.update_footswitches()
 
-    def set_tuner_source_factory(self, factory) -> None:
+    def set_tuner_source_factory(self, factory: TunerSourceFactory) -> None:
         self._tuner_source_factory = factory
 
-    def _tuner_factory(self, port: str):
-        factory = self._tuner_source_factory or (lambda p, **kw: build_source("jack", p, **kw))
+    def _tuner_factory(self, port: str) -> AudioSource:
+        factory = self._tuner_source_factory or (lambda p, *, name: build_source("jack", p, name=name))
         return factory(port, name=f"pistomp-tuner-{port.split('_')[-1]}")
 
     def toggle_tuner_enable(self, *argv) -> None:

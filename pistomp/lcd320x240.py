@@ -28,6 +28,7 @@ from uilib import *
 from uilib.lcd_ili9341 import *
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
+from pistomp.tuner.panel import TunerPanel
 
 #import traceback
 
@@ -175,7 +176,7 @@ class Lcd(abstract_lcd.Lcd):
         if self._tuner_panel is not None and self.pstack.current == self._tuner_panel:
             self._tuner_panel.tick()
 
-    def show_tuner_panel(self, panel) -> None:
+    def show_tuner_panel(self, panel: TunerPanel) -> None:
         self._tuner_panel = panel
         self.pstack.push_panel(panel)
         # push_panel composes the (still-blank) panel image onto the stack but
@@ -186,7 +187,7 @@ class Lcd(abstract_lcd.Lcd):
     def hide_tuner_panel(self) -> None:
         if self._tuner_panel is not None:
             self.pstack.pop_panel(self._tuner_panel)
-            self._tuner_panel = None
+        self._tuner_panel: TunerPanel | None = None
 
     #
     # Toolbar

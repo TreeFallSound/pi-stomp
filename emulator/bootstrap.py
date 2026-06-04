@@ -84,6 +84,6 @@ def bootstrap_emulator(version: EmulatorVersion, cwd: str):
 
     handler.system_info_load()
 
-    handler.set_tuner_source_factory(lambda _port: ToneSweepSource())
+    handler.set_tuner_source_factory(lambda port, *, name: ToneSweepSource())
 
     return handler, midiout

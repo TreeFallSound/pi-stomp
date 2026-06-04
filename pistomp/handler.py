@@ -14,6 +14,11 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 
+from __future__ import annotations
+
+from pistomp.tuner.source import TunerSourceFactory
+
+
 class Handler:
     def __init__(self):
         self.homedir = None
@@ -93,5 +98,5 @@ class Handler:
     def poll_wifi(self):
         raise NotImplementedError()
 
-    def set_tuner_source_factory(self, factory) -> None:
+    def set_tuner_source_factory(self, factory: "TunerSourceFactory") -> None:
         pass

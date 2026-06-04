@@ -7,10 +7,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 
-from pistomp.tuner.engine import TunerEngine
-from pistomp.tuner.panel import TunerPanel
-from pistomp.tuner.source import ToneSource, ToneSweepSource
-from tests.types import SystemFixture
+from pistomp.tuner.source import ToneSource
 
 
 class SilenceSource:
@@ -33,14 +30,14 @@ class SilenceSource:
 @pytest.fixture
 def v3_tuner(v3_system):
     handler = v3_system.handler
-    handler.set_tuner_source_factory(lambda port, **kw: ToneSource(440.0))
+    handler.set_tuner_source_factory(lambda port, *, name: ToneSource(440.0))
     return v3_system
 
 
 @pytest.fixture
 def v3_tuner_silence(v3_system):
     handler = v3_system.handler
-    handler.set_tuner_source_factory(lambda port, **kw: SilenceSource())
+    handler.set_tuner_source_factory(lambda port, *, name: SilenceSource())
     return v3_system
 
 
