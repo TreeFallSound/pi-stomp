@@ -3,23 +3,24 @@ import numpy.typing as npt
 
 
 class RingBuffer:
-    """Lock-free SPSC fixed-capacity float32 ring buffer.
+    """Lock-free SPSC float32 ring buffer. Power-of-two capacity.
 
-    The JACK process callback is the sole writer; the DSP thread is the sole
-    reader. The writer mutates both ``_head`` and ``_tail`` (the latter only on
-    overflow); the reader is read-only. The writer publishes new samples by
-    incrementing ``_head`` *after* the buffer copy, so any reader that observes
-    a given ``_head`` value also observes the samples behind it.
+    Contract:
+      - Exactly one writer thread (typically the JACK process callback) and
+        one reader thread (typically a DSP worker). Multiple readers or
+        writers are not safe.
+      - ``write`` is RT-safe: no allocation, no blocking, drops oldest on
+        overflow and returns the dropped count.
+      - ``read_latest`` returns False if not enough data is buffered yet, or
+        if the writer trampled our window mid-copy. Callers must handle False
+        (typically: skip this DSP frame and try again next tick).
 
-    ``read_latest`` uses a seqlock-style re-check: it snapshots ``_head``,
-    copies, then verifies the writer hasn't advanced far enough to wrap over
-    the copied region. This is necessary because between the size check and
-    the copy completing, the writer can overwrite the bytes we're reading.
-
-    GIL safety: under CPython's GIL, integer attribute load/store is atomic
-    and numpy slice assignment of small float32 blocks does not release the
-    GIL, so we don't need explicit barriers. Free-threaded Python would
-    require atomics and acquire/release fences.
+    Implementation notes (not relevant to callers): the read path uses a
+    seqlock-style head re-check to detect a writer wrapping over the copied
+    window; a transient under-count is possible during writer overflow but
+    only ever causes a False return, never wrong data. Relies on CPython
+    GIL atomicity for integer load/store and numpy slice-assign; free-
+    threaded Python would need explicit acquire/release fences.
     """
 
     def __init__(self, capacity: int = 16384) -> None:
@@ -49,7 +50,7 @@ class RingBuffer:
         else:
             split = self._cap - start
             self._buf[start:] = block[:split]
-            self._buf[:n - split] = block[split:]
+            self._buf[: n - split] = block[split:]
         self._head += n
         return overflow
 
@@ -73,7 +74,7 @@ class RingBuffer:
             else:
                 split = self._cap - start
                 out[:split] = self._buf[start:]
-                out[split:] = self._buf[:n - split]
+                out[split:] = self._buf[: n - split]
             # If the writer advanced by no more than `slack` samples while we
             # copied, our window cannot have been overwritten.
             if self._head - h1 <= slack:
