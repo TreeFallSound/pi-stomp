@@ -4,67 +4,82 @@ from uilib.widget import Widget
 _PAD = 1  # px around bbox to absorb anti-aliasing fringe
 
 
-class Label:
-    """Positioned text cell with dirty-rectangle tracking for surgical LCD updates.
+class Label(Widget):
+    """Positioned text widget with surgical dirty-rectangle updates.
 
-    Bake font, background color, and default anchor (x, y) at construction.
-    render() is called from a widget's _draw pass (full redraw).
-    update() does a surgical clear-then-redraw, pushing only the dirty region
-    to the LCD via the host widget's _focus/_unfocus.
-    Pass x= to override the anchor per call (e.g. for right-aligned text).
+    set_text() recomputes the bounding box and refreshes only the union of
+    old and new bboxes, so a one-character change pushes a few-pixel column
+    to the LCD rather than the whole parent.
+
+    The widget's box tracks the text bbox (with _PAD around it). Empty text
+    collapses the box to a zero-area point at the anchor — _draw_erase and
+    _draw both become no-ops, so an unset Label is invisible without any
+    state hacks.
     """
 
-    def __init__(self, x: int, y: int, font, bg_color: tuple) -> None:
-        self._x = x
-        self._y = y
+    def __init__(self, x: int, y: int, font, parent: Widget | None = None, **kwargs) -> None:
+        super().__init__(box=Box(x, y, x, y), parent=parent, **kwargs)
         self._font = font
-        self._bg = bg_color
+        self._anchor_x = x
+        self._anchor_y = y
         self._text: str | None = None
         self._color: tuple | None = None
-        self._bbox: Box | None = None
 
     @property
     def text(self) -> str | None:
         return self._text
 
-    def _measure(self, text: str, x: int) -> Box:
+    def _measure(self, text: str, x: int, y: int) -> Box:
         tb = self._font.getbbox(text)
-        return Box(x + tb[0] - _PAD, self._y + tb[1] - _PAD, x + tb[2] + _PAD, self._y + tb[3] + _PAD)
+        return Box(x + tb[0] - _PAD, y + tb[1] - _PAD, x + tb[2] + _PAD, y + tb[3] + _PAD)
 
-    def render(self, draw, color: tuple, text: str | None, *, x: int | None = None) -> None:
-        """Draw into an already-obtained draw context; record bbox."""
-        rx = x if x is not None else self._x
-        self._x = rx
-        self._color = color
-        if text:
-            draw.text((rx, self._y), text, font=self._font, fill=color)
-            self._bbox = self._measure(text, rx)
-        else:
-            self._bbox = None
-        self._text = text
+    def set_text(self, text: str | None, color: tuple, *, x: int | None = None) -> None:
+        rx = x if x is not None else self._anchor_x
+        if text == self._text and color == self._color and rx == self._anchor_x:
+            return
 
-    def update(self, widget: Widget, color: tuple, text: str | None, *, x: int | None = None) -> None:
-        """Surgical update: clear old bbox, draw new text, push to LCD."""
-        rx = x if x is not None else self._x
-        if text == self._text and rx == self._x and color == self._color:
-            return
-        new_bbox = self._measure(text, rx) if text else None
-        if self._bbox and new_bbox:
-            dirty = self._bbox.union(new_bbox)
-        elif self._bbox or new_bbox:
-            dirty = self._bbox or new_bbox
+        old_box = self.box
+        new_box = (
+            self._measure(text, rx, self._anchor_y)
+            if text
+            else Box(rx, self._anchor_y, rx, self._anchor_y)
+        )
+
+        if self._text and text:
+            dirty = old_box.union(new_box)
+        elif self._text:
+            dirty = old_box
+        elif text:
+            dirty = new_box
         else:
-            dirty = None
+            # both empty — anchor may have moved, but there's nothing to repaint
+            self._anchor_x = rx
+            self.box = new_box
+            return
+
         self._text = text
         self._color = color
-        self._bbox = new_bbox
-        self._x = rx
-        if dirty is None:
+        self._anchor_x = rx
+        self.box = new_box
+        self.refresh(dirty)
+
+    def _draw_erase(self, image, draw, box) -> None:
+        # Skip the rounded-rect path in the default _draw_erase; a zero-area
+        # box would still trigger a one-pixel artifact.
+        if box.width <= 0 or box.height <= 0:
             return
-        image, draw, _ = widget._focus(dirty)
-        if image is None or draw is None:
+        draw.rectangle(box.PIL_rect, fill=self.bkgnd_color)
+
+    def _draw(self, image, draw, real_box) -> None:
+        if not self._text:
             return
-        draw.rectangle(dirty.PIL_rect, fill=self._bg)
-        if text:
-            draw.text((rx, self._y), text, font=self._font, fill=color)
-        widget._unfocus(dirty)
+        # Translate parent-relative anchor → image coordinates via the
+        # offset between self.box (parent-rel) and real_box (image-rel).
+        ox = real_box.x0 - self.box.x0
+        oy = real_box.y0 - self.box.y0
+        draw.text(
+            (self._anchor_x + ox, self._anchor_y + oy),
+            self._text,
+            font=self._font,
+            fill=self._color,
+        )

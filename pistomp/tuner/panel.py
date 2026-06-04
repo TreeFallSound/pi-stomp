@@ -59,22 +59,17 @@ class TunerHeaderWidget(Widget):
         self._note_font = note_font
 
         nb = note_font.getbbox("A4")
-        note_y = box.y0 + (box.height - (nb[3] - nb[1])) // 2 - nb[1]
-        self._note_label = Label(0, note_y, note_font, self.bkgnd_color)
+        # header-local y: box.y0 is 0 here, but keep the expression honest.
+        note_y = (box.height - (nb[3] - nb[1])) // 2 - nb[1]
+        self._note_label = Label(0, note_y, note_font, parent=self)
 
     # ── drawing ───────────────────────────────────────────────────────────────
 
     def _draw_erase(self, image, draw, box) -> None:
-        pass
+        pass  # bg painted by Label._draw_erase only over its own bbox
 
     def _draw(self, image, draw, real_box) -> None:
-        if self._note_label.text:
-            self._note_label.render(
-                draw,
-                self._note_label._color or self.fgnd_color,
-                self._note_label.text,
-                x=self._note_label._x,
-            )
+        pass  # Label child draws itself via _do_draw recursion
 
     # ── tick ──────────────────────────────────────────────────────────────────
 
@@ -85,7 +80,7 @@ class TunerHeaderWidget(Widget):
     def tick(self, reading: TunerReading | None) -> None:
         note = reading.note if reading else "--"
         color = self.fgnd_color if reading else self.MUTED_COLOR
-        self._note_label.update(self, color, note, x=self._centered_x(note))
+        self._note_label.set_text(note, color, x=self._centered_x(note))
 
 
 _BTN_GAP = 2
@@ -113,8 +108,8 @@ class TunerOffsetBar(Widget):
 
     # Zone boundaries in pixels from centre — computed with the same sqrt mapping
     # as _cents_to_px so colours stay aligned with their cent thresholds.
-    _GREEN_PX: int = round(_CX * (_IN_TUNE_THRESH / BAR_MAX_CENTS) ** 0.5)   # ~32 px
-    _YELLOW_PX: int = round(_CX * (_RED_THRESH / BAR_MAX_CENTS) ** 0.5)      # ~101 px
+    _GREEN_PX: int = round(_CX * (_IN_TUNE_THRESH / BAR_MAX_CENTS) ** 0.5)  # ~32 px
+    _YELLOW_PX: int = round(_CX * (_RED_THRESH / BAR_MAX_CENTS) ** 0.5)  # ~101 px
 
     def __init__(self, box: Box, **kwargs) -> None:
         kwargs.setdefault("bkgnd_color", TunerOffsetBar.BG_COLOR)
@@ -358,7 +353,7 @@ class TunerPanel(Panel):
         self._engine = engine
 
         note_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 56)
-        btn_font = Config().get_font('default')
+        btn_font = Config().get_font("default")
         _, btn_text_h = get_text_size("Mute", btn_font)
         btn_v_margin = max(0, (_BTN_H - btn_text_h) // 2)
 
