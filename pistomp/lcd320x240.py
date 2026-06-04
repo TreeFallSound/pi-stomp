@@ -13,8 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import board
-import digitalio
 import logging
 import os
 from typing import Optional
@@ -35,20 +33,22 @@ from pistomp.footswitch import Footswitch  # TODO would like to avoid this modul
 
 class Lcd(abstract_lcd.Lcd):
 
-    def __init__(self, cwd, handler=None, flip=False):
+    def __init__(self, cwd, handler=None, flip=False, display=None):
         self.cwd = cwd
         self.imagedir = os.path.join(cwd, "images")
         Config(os.path.join(cwd, 'ui', 'config.json'))
         self.handler = handler
         self.flip = flip
 
-        # TODO would be good to decouple the actual LCD hardware.  This file should work for any 320x240 display
-        display = LcdIli9341(board.SPI(),
-                             digitalio.DigitalInOut(board.CE0),
-                             digitalio.DigitalInOut(board.D6),
-                             digitalio.DigitalInOut(board.D5),
-                             24000000,
-                             flip)
+        if display is None:
+            import board
+            import digitalio
+            display = LcdIli9341(board.SPI(),
+                                 digitalio.DigitalInOut(board.CE0),
+                                 digitalio.DigitalInOut(board.D6),
+                                 digitalio.DigitalInOut(board.D5),
+                                 24000000,
+                                 flip)
 
         # Colors
         self.background = (0, 0, 0)
@@ -135,19 +135,19 @@ class Lcd(abstract_lcd.Lcd):
     #
 
     def enc_step_widget(self, widget, direction):
-        #traceback.print_stack()
         # TODO check if widget is type
-        if direction > 0:
-            widget.input_event(InputEvent.RIGHT)
-        elif direction < 0:
-            widget.input_event(InputEvent.LEFT)
+        if direction == 0:
+            return
+        event = InputEvent.RIGHT if direction > 0 else InputEvent.LEFT
+        for _ in range(abs(direction)):
+            widget.input_event(event)
 
     def enc_step(self, d):
-        #traceback.print_stack()
-        if d > 0:
-            self.pstack.input_event(InputEvent.RIGHT)
-        elif d < 0:
-            self.pstack.input_event(InputEvent.LEFT)
+        if d == 0:
+            return
+        event = InputEvent.RIGHT if d > 0 else InputEvent.LEFT
+        for _ in range(abs(d)):
+            self.pstack.input_event(event)
 
     def enc_sw(self, v):
         if v == switchstate.Value.RELEASED:
@@ -594,9 +594,11 @@ class Lcd(abstract_lcd.Lcd):
         self.splash_panel.refresh()
 
     def cleanup(self):
-        self.pstack.pop_panel(None)  # current panel
-        self.pstack.pop_panel(self.footswitch_panel)
-        if self.main_panel_pushed:
+        if self.pstack.current is not None:
+            self.pstack.pop_panel(None)
+        if self.footswitch_panel in self.pstack.stack:
+            self.pstack.pop_panel(self.footswitch_panel)
+        if self.main_panel_pushed and self.main_panel in self.pstack.stack:
             self.pstack.pop_panel(self.main_panel)
         if self.w_splash is not None:
             self.w_splash.set_foreground(self.color_splash_down)
