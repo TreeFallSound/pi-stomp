@@ -30,6 +30,16 @@ class TestBuildSource:
         assert isinstance(src, ToneSource)
         assert src._freq == 82.41
 
+    def test_sweep_spec_default_center(self):
+        src = build_source("sweep")
+        assert isinstance(src, ToneSweepSource)
+        assert src._center == 440.0
+
+    def test_sweep_spec_custom_center(self):
+        src = build_source("sweep:220")
+        assert isinstance(src, ToneSweepSource)
+        assert src._center == 220.0
+
     def test_unknown_spec_raises(self):
         with pytest.raises(ValueError, match="Unknown tuner source spec"):
             build_source("alsa")

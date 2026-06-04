@@ -140,10 +140,17 @@ class ToneSweepSource(_ToneBase):
 
 
 def build_source(spec: str, capture_port: str = "system:capture_1", *, name: str = "pistomp-tuner") -> AudioSource:
-    """Parse a source spec string ('jack' or 'tone:<hz>') and return an AudioSource."""
+    """Parse a source spec string and return an AudioSource.
+
+    Specs: 'jack', 'tone:<hz>', 'sweep:<hz>' (ToneSweepSource centered at hz, default 440).
+    """
     if spec == "jack":
         return JackSource(capture_port, name=name)
     if spec.startswith("tone:"):
         hz = float(spec[5:])
         return ToneSource(hz)
+    if spec.startswith("sweep"):
+        _, _, rest = spec.partition(":")
+        center = float(rest) if rest else 440.0
+        return ToneSweepSource(center_hz=center)
     raise ValueError(f"Unknown tuner source spec: {spec!r}")
