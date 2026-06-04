@@ -350,7 +350,7 @@ class Modhandler(Handler):
 
                 pb = self.reload_pedalboard(mod_bundle)
                 self.set_current_pedalboard(pb)
-            elif mod_bundle and self.next_pedalboard_preset_index is not None:
+            elif mod_bundle and self.current and self.next_pedalboard_preset_index is not None:
                 # Same pedalboard reloaded with a pending snapshot - apply it now
                 logging.info(f"Applying pending snapshot {self.next_pedalboard_preset_index} to current pedalboard")
                 self.current.preset_index = self.next_pedalboard_preset_index
