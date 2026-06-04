@@ -44,6 +44,17 @@ hardware = [
     "Adafruit-Blinka-Raspberry-Pi5-Neopixel>=1.0.0rc2; sys_platform == 'linux' and platform_machine == 'aarch64'",
 ]
 
+[dependency-groups]
+dev = [
+    "pillow>=12.0.0",
+    "pygame>=2.5",
+    "pyright>=1.1.408",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.1.0",
+    "typing-extensions>=4.15.0",
+]
+
 [project.urls]
 Homepage = "https://treefallsound.com"
 Documentation = "https://www.treefallsound.com/wiki/doku.php"
@@ -83,13 +94,3 @@ venvPath = "."
 venv = ".venv"
 stubPath = "typings"
 pythonVersion = "3.11"
-
-[dependency-groups]
-dev = [
-    "pillow>=12.0.0",
-    "pyright>=1.1.408",
-    "pytest>=9.0.2",
-    "pytest-cov>=7.0.0",
-    "ruff>=0.1.0",
-    "typing-extensions>=4.15.0",
-]
