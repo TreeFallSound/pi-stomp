@@ -114,6 +114,21 @@ class TestLabelDrawing:
         cropped = parent.image.crop((bx.x0, bx.y0, bx.x1, bx.y1))
         assert any(p == (255, 255, 255) for p in cropped.getdata())
 
+    def test_text_lands_at_new_anchor_after_move(self):
+        """Regression: when the label moves rightward, _draw must place text
+        at the new anchor — not shifted left by (new_x - old_x)."""
+        parent = _FakeParent(width=320)
+        label = Label(50, 20, _font(), parent=parent)
+        label.set_text("X", (255, 255, 255), x=50)
+        # Wipe and re-draw at a new x to isolate the second render.
+        parent.image.paste((0, 0, 0), (0, 0, 320, 50))
+        label.set_text("X", (255, 255, 255), x=200)
+        # New bbox should hold white pixels; old bbox should be empty.
+        new_crop = parent.image.crop(label.box.PIL_rect)
+        assert any(p == (255, 255, 255) for p in new_crop.getdata())
+        old_crop = parent.image.crop((40, 0, 80, 50))
+        assert all(p == (0, 0, 0) for p in old_crop.getdata())
+
     def test_clear_erases_old_pixels(self):
         parent = _FakeParent()
         label = Label(50, 20, _font(), parent=parent)

@@ -60,8 +60,9 @@ class Label(Widget):
         self._text = text
         self._color = color
         self._anchor_x = rx
+        self.box = dirty
+        self.refresh()
         self.box = new_box
-        self.refresh(dirty)
 
     def _draw_erase(self, image, draw, box) -> None:
         # Skip the rounded-rect path in the default _draw_erase; a zero-area
