@@ -14,6 +14,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 import yaml
 
+from tests.conftest import FakeWebSocketBridge
 from tests.types import SystemFixture
 import common.token as Token
 
@@ -45,6 +46,8 @@ def _build_stack(hw_class: Any, cfg_path: Path, fake_lcd, tmp_path) -> Generator
     with open(cfg_path) as f:
         cfg = yaml.safe_load(f)
 
+    fake_ws = FakeWebSocketBridge()
+
     with (
         patch("requests.get") as mock_get,
         patch("requests.post") as mock_post,
@@ -53,7 +56,7 @@ def _build_stack(hw_class: Any, cfg_path: Path, fake_lcd, tmp_path) -> Generator
         patch("modalapi.wifi.WifiManager") as mock_wm_cls,
         patch("subprocess.check_output", return_value=b"SystemState=running"),
         patch("pistomp.lcd320x240.LcdIli9341", return_value=fake_lcd),
-        patch("modalapi.modhandler.AsyncWebSocketBridge"),
+        patch("modalapi.modhandler.AsyncWebSocketBridge", return_value=fake_ws),
     ):
         # Tests don't drive a poll loop, so stub pending_op_count to always return 0 (no pending ops).
         mock_wm_cls.return_value.queue.pending_op_count.return_value = 0
@@ -104,7 +107,7 @@ def _build_stack(hw_class: Any, cfg_path: Path, fake_lcd, tmp_path) -> Generator
         mock_post.reset_mock()
         mock_post.side_effect = post_side_effect
 
-        yield SystemFixture(handler, hw, fake_lcd, mock_get, mock_post)
+        yield SystemFixture(handler, hw, fake_lcd, mock_get, mock_post, fake_ws)
 
 
 # ---------------------------------------------------------------------------

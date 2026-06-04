@@ -123,6 +123,50 @@ def snapshot(request, fake_lcd, snapshot_update):
 
 
 # ---------------------------------------------------------------------------
+# FakeWebSocketBridge — captures outbound param_set messages, injects inbound
+# ---------------------------------------------------------------------------
+
+
+class FakeWebSocketBridge:
+    """
+    Drop-in replacement for AsyncWebSocketBridge in integration tests.
+
+    Messages sent via send_parameter() are captured in `sent` for assertion.
+    Incoming messages (loading_end, pedal_snapshot, etc.) can be queued with
+    inject() so that poll_modui_changes() processes them normally.
+    """
+
+    def __init__(self):
+        self.sent: list[str] = []
+        self._inbox: list[str] = []
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+    def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
+        self.sent.append(f"param_set /graph/{instance_id.lstrip('/')}/{symbol} {value}")
+        return True
+
+    def clear_queue(self) -> int:
+        return 0
+
+    def get_received_messages(self) -> list[str]:
+        msgs, self._inbox = self._inbox, []
+        return msgs
+
+    def inject(self, raw: str) -> None:
+        self._inbox.append(raw)
+
+    def sent_values_for(self, instance_id: str, symbol: str) -> list[float]:
+        """Extract all values sent for a specific parameter, in order."""
+        prefix = f"param_set /graph/{instance_id.lstrip('/')}/{symbol} "
+        return [float(m[len(prefix):]) for m in self.sent if m.startswith(prefix)]
+
+
+# ---------------------------------------------------------------------------
 # FakeLcd — captures rendered frames without touching hardware
 # ---------------------------------------------------------------------------
 
