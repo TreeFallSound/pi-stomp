@@ -134,6 +134,12 @@ class Modhandler(Handler):
         # during interpreter shutdown on Py 3.14. Daemon thread dies with the process.
 
     def cleanup(self):
+        if self._tuner_engine is not None:
+            if self._tuner_muted:
+                self.audiocard.set_output_muted(False)
+            self._tuner_engine.stop()
+            self._tuner_engine = None
+            self._tuner_panel = None
         if self._lcd is not None:
             self._lcd.cleanup()
         if self._hardware is not None:
@@ -575,10 +581,6 @@ class Modhandler(Handler):
                     break
 
     def preset_change(self, index):
-        if self._tuner_engine is not None:
-            self.toggle_tuner_enable()
-            return
-
         if not self.current:
             logging.error("Cannot change preset since current pedalboard is not set")
             return
@@ -931,13 +933,17 @@ class Modhandler(Handler):
     def set_tuner_source_factory(self, factory) -> None:
         self._tuner_source_factory = factory
 
+    def _tuner_factory(self, port: str):
+        from pistomp.tuner import build_source
+        factory = self._tuner_source_factory or (lambda p, **kw: build_source("jack", p, **kw))
+        return factory(port, name=f"pistomp-tuner-{port.split('_')[-1]}")
+
     def toggle_tuner_enable(self, *argv) -> None:
         if self._tuner_engine is None:
-            from pistomp.tuner import TunerEngine, TunerPanel, build_source
-            factory = self._tuner_source_factory or (lambda port: build_source("jack", port))
+            from pistomp.tuner import TunerEngine, TunerPanel
             muted = bool(self.settings.get_setting(Token.TUNER_MUTE))
             input_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
-            engine = TunerEngine(factory(f"system:capture_{input_port}"))
+            engine = TunerEngine(self._tuner_factory(f"system:capture_{input_port}"))
             engine.start()
             self._tuner_engine = engine
             if muted:
@@ -954,13 +960,17 @@ class Modhandler(Handler):
             self._tuner_panel = panel
             self.lcd.show_tuner_panel(panel)
         else:
-            if self._tuner_muted:
-                self.audiocard.set_output_muted(False)
-                self._tuner_muted = False
-            self.lcd.hide_tuner_panel()
+            self._dismiss_tuner()
+
+    def _dismiss_tuner(self) -> None:
+        if self._tuner_muted:
+            self.audiocard.set_output_muted(False)
+            self._tuner_muted = False
+        self.lcd.hide_tuner_panel()
+        if self._tuner_engine is not None:
             self._tuner_engine.stop()
             self._tuner_engine = None
-            self._tuner_panel = None
+        self._tuner_panel = None
 
     def _toggle_tuner_mute(self) -> None:
         new_muted = not self._tuner_muted
@@ -971,14 +981,15 @@ class Modhandler(Handler):
             self._tuner_panel.set_muted(new_muted)
 
     def _toggle_tuner_input(self) -> None:
-        from pistomp.tuner import TunerEngine, build_source
-        factory = self._tuner_source_factory or (lambda port: build_source("jack", port))
+        from pistomp.tuner import TunerEngine
         current_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
         new_port = 2 if current_port == 1 else 1
-        engine = TunerEngine(factory(f"system:capture_{new_port}"))
-        engine.start()  # start before stopping old — if this raises, old engine keeps running
+        old_engine = self._tuner_engine
+        engine = TunerEngine(self._tuner_factory(f"system:capture_{new_port}"))
+        engine.start()
         self.settings.set_setting(Token.TUNER_INPUT, new_port)
-        self._tuner_engine.stop()
+        if old_engine is not None:
+            old_engine.stop()
         self._tuner_engine = engine
         if self._tuner_panel is not None:
             self._tuner_panel.set_engine(engine)

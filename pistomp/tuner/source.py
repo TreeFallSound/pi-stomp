@@ -8,29 +8,34 @@ import numpy.typing as npt
 
 
 class AudioSource(Protocol):
-    sample_rate: int
-
+    @property
+    def sample_rate(self) -> int: ...
     def start(self, on_samples: Callable[[npt.NDArray[np.float32]], Any]) -> None: ...
     def stop(self) -> None: ...
 
 
 class JackSource:
-    """Reads audio from JACK system:capture_1."""
+    """Reads audio from a JACK capture port."""
 
-    sample_rate: int
-
-    def __init__(self, capture_port: str = "system:capture_1") -> None:
+    def __init__(self, capture_port: str = "system:capture_1", *, name: str = "pistomp-tuner") -> None:
         self._capture_port = capture_port
+        self._client_name = name
         self._client = None
         self._on_samples: Callable[[npt.NDArray[np.float32]], None] | None = None
-        self.sample_rate = 48000  # updated after connect
+        self._sample_rate: int = 48000  # placeholder; overwritten in start()
+
+    @property
+    def sample_rate(self) -> int:
+        if self._client is None:
+            raise RuntimeError("sample_rate is not available until start() is called")
+        return self._sample_rate
 
     def start(self, on_samples: Callable[[npt.NDArray[np.float32]], None]) -> None:
         import jack  # type: ignore[import-untyped]
 
         self._on_samples = on_samples
-        self._client = jack.Client("pistomp-tuner", no_start_server=True)
-        self.sample_rate = self._client.samplerate
+        self._client = jack.Client(self._client_name, no_start_server=True)
+        self._sample_rate = self._client.samplerate
 
         port = self._client.inports.register("in")
 
@@ -59,10 +64,14 @@ class _ToneBase:
     BLOCK_SIZE = 256
 
     def __init__(self, sample_rate: int = 48000) -> None:
-        self.sample_rate = sample_rate
+        self._sample_rate = sample_rate
         self._thread: threading.Thread | None = None
         self._running = False
         self._on_samples: Callable[[npt.NDArray[np.float32]], Any] | None = None
+
+    @property
+    def sample_rate(self) -> int:
+        return self._sample_rate
 
     def _freq_at(self, t_elapsed: float) -> float:
         raise NotImplementedError
@@ -130,10 +139,10 @@ class ToneSweepSource(_ToneBase):
         return self._center * math.pow(2.0, cents / 1200.0)
 
 
-def build_source(spec: str, capture_port: str = "system:capture_1") -> AudioSource:
+def build_source(spec: str, capture_port: str = "system:capture_1", *, name: str = "pistomp-tuner") -> AudioSource:
     """Parse a source spec string ('jack' or 'tone:<hz>') and return an AudioSource."""
     if spec == "jack":
-        return JackSource(capture_port)
+        return JackSource(capture_port, name=name)
     if spec.startswith("tone:"):
         hz = float(spec[5:])
         return ToneSource(hz)

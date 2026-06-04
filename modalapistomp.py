@@ -179,7 +179,7 @@ def main():
 
     if not is_emulator and args.tuner_source:
         tuner_spec = args.tuner_source
-        handler.set_tuner_source_factory(lambda port: build_source(tuner_spec, port))
+        handler.set_tuner_source_factory(lambda port, **kw: build_source(tuner_spec, port, **kw))
 
     logging.info("Entering main loop. Press Control-C to exit.")
     period = 0
