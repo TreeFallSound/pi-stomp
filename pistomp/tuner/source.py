@@ -42,8 +42,7 @@ class JackSource:
         @self._client.set_process_callback
         def process(frames: int) -> None:
             if self._on_samples is not None:
-                block = port.get_array().copy().astype(np.float32)  # type: ignore[union-attr]
-                self._on_samples(block)
+                self._on_samples(port.get_array())  # pyright: ignore[reportAttributeAccessIssue]
 
         self._client.activate()
         self._client.connect(self._capture_port, port)
