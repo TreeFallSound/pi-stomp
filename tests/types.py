@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 if TYPE_CHECKING:
     from modalapi.modhandler import Modhandler
     from pistomp.hardware import Hardware
-    from tests.conftest import FakeLcd
+    from tests.conftest import FakeLcd, FakeWebSocketBridge
 
 
 @dataclass
@@ -17,3 +17,4 @@ class SystemFixture:
     lcd:       FakeLcd
     mock_get:  MagicMock
     mock_post: MagicMock
+    ws_bridge: FakeWebSocketBridge

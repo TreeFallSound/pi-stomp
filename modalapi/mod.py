@@ -28,7 +28,7 @@ import modalapi.pedalboard as Pedalboard
 import common.parameter as Parameter
 import modalapi.wifi as Wifi
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -146,16 +146,12 @@ class Mod(Handler):
         self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
 
         # WebSocket bridge for MOD-UI communication
-        self.ws_bridge = None
-        try:
-            self.ws_bridge = AsyncWebSocketBridge(
-                ws_url='ws://localhost:80/websocket',
-                backpressure_threshold=8192  # 8 KB
-            )
-            self.ws_bridge.start()
-            logging.info("WebSocket bridge started")
-        except Exception as e:
-            logging.warning(f"Failed to initialize WebSocket bridge: {e}")
+        self.ws_bridge = AsyncWebSocketBridge(
+            ws_url='ws://localhost:80/websocket',
+            backpressure_threshold=8192  # 8 KB
+        )
+        self.ws_bridge.start()
+        logging.info("WebSocket bridge started")
 
 
         # Callback function map.  Key is the user specified name, value is function from this handler
@@ -497,15 +493,22 @@ class Mod(Handler):
                 self.current.preset_index = msg.snapshot_id
                 self.update_lcd_title()
 
+        elif isinstance(msg, PluginBypassMessage):
+            if self.current is not None:
+                for plugin in self.current.pedalboard.plugins:
+                    if plugin.instance_id == msg.instance:
+                        logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
+                        plugin.set_bypass(msg.bypassed)
+                        self.lcd.refresh_plugins()
+                        break
+
     def poll_modui_changes(self):
         """Poll for changes from MOD-UI: websockets and file watching"""
-        if self.ws_bridge is not None:
-            messages = self.ws_bridge.get_received_messages()
-            for msg in messages:
-                try:
-                    self._handle_ws_message(parse_message(msg))
-                except Exception as e:
-                    logging.error(f"Error handling WebSocket message '{msg}': {e}")
+        for msg in self.ws_bridge.get_received_messages():
+            try:
+                self._handle_ws_message(parse_message(msg))
+            except Exception as e:
+                logging.error(f"Error handling WebSocket message '{msg}': {e}")
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
@@ -803,11 +806,8 @@ class Mod(Handler):
                         c.pressed(0)
                         return
             # Regular (non footswitch plugin)
-            url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/:bypass" % inst.instance_id
             value = inst.toggle_bypass()
-            code = self.parameter_set_send(url, "1" if value else "0", 200)
-            if (code != 200):
-                inst.toggle_bypass()  # toggle back to original value since request wasn't successful
+            self.ws_bridge.send_parameter(inst.instance_id, ":bypass", 1.0 if value else 0.0)
 
             #  Indicate change on LCD, and redraw selection(highlight)
             self.update_lcd_plugins()
@@ -1211,18 +1211,8 @@ class Mod(Handler):
         return util.DICT_GET(self.callbacks, callback_name)
 
     def set_mod_tap_tempo(self, bpm):
-        try:
-            resp = None
-            if bpm is not None:
-                url = self.root_uri + "set_bpm"
-                resp = req.post(url, json={"value": bpm})
-            if resp.status_code != 200:
-                logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
-            else:
-                logging.debug("BPM changed to: %d" % bpm)
-        except:
-            logging.debug("status: %s" % resp.status_code)
-            return resp.status_code
+        if bpm is not None:
+            self.ws_bridge.send_bpm(bpm)
 
     #
     # Parameter Edit
@@ -1275,24 +1265,7 @@ class Mod(Handler):
 
     def parameter_value_commit(self):
         param = self.deep.selected_parameter
-        url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/%s" % (self.deep.plugin.instance_id, param.symbol)
-        formatted_value = ("%.1f" % param.value)
-        self.parameter_set_send(url, formatted_value, 200)
-
-    def parameter_set_send(self, url, value, expect_code):
-        logging.debug("request: %s" % url)
-        try:
-            resp = None
-            if value is not None:
-                logging.debug("value: %s" % value)
-                resp = req.post(url, json={"value": value})
-            if resp.status_code != expect_code:
-                logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
-            else:
-                logging.debug("Parameter changed to: %d" % value)
-        except:
-            logging.debug("status: %s" % resp.status_code)
-            return resp.status_code
+        self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     #
     # LCD Stuff

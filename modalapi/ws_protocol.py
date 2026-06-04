@@ -81,6 +81,14 @@ class TrueBypassMessage:
 
 
 @dataclass
+class PluginBypassMessage:
+    """Plugin bypass state changed (received as param_set ... :bypass ...)."""
+
+    instance: str  # canonical bare form, e.g. "CollisionDrive"
+    bypassed: bool
+
+
+@dataclass
 class UnknownMessage:
     """Message type we don't handle yet."""
 
@@ -96,6 +104,7 @@ WebSocketMessage = Union[
     AddHwPortMessage,
     RemoveHwPortMessage,
     TrueBypassMessage,
+    PluginBypassMessage,
     UnknownMessage,
 ]
 
@@ -163,6 +172,12 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                 return RemoveHwPortMessage(port_name=port_name)
             case ["remove_hw_port"]:
                 return RemoveHwPortMessage(port_name="")
+
+            # Format: param_set /graph/{instance} :bypass {value}
+            case ["param_set", path, rest] if rest.startswith(":bypass "):
+                instance = path.removeprefix("/graph/")
+                value_str = rest.split(" ", 1)[1]
+                return PluginBypassMessage(instance=instance, bypassed=float(value_str) != 0.0)
 
             # Format: truebypass {left} {right}
             case ["truebypass", left, right_trailing]:
