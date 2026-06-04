@@ -41,7 +41,8 @@ from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundl
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encodermidicontrol import EncoderMidiControl
 from pistomp.footswitch import Footswitch
-from pistomp.handler import Handler
+from pistomp.tuner import TunerEngine, TunerPanel
+from pistomp.tuner.source import build_source
 from pathlib import Path
 
 
@@ -934,13 +935,11 @@ class Modhandler(Handler):
         self._tuner_source_factory = factory
 
     def _tuner_factory(self, port: str):
-        from pistomp.tuner import build_source
         factory = self._tuner_source_factory or (lambda p, **kw: build_source("jack", p, **kw))
         return factory(port, name=f"pistomp-tuner-{port.split('_')[-1]}")
 
     def toggle_tuner_enable(self, *argv) -> None:
         if self._tuner_engine is None:
-            from pistomp.tuner import TunerEngine, TunerPanel
             muted = bool(self.settings.get_setting(Token.TUNER_MUTE))
             input_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
             engine = TunerEngine(self._tuner_factory(f"system:capture_{input_port}"))
@@ -981,7 +980,6 @@ class Modhandler(Handler):
             self._tuner_panel.set_muted(new_muted)
 
     def _toggle_tuner_input(self) -> None:
-        from pistomp.tuner import TunerEngine
         current_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
         new_port = 2 if current_port == 1 else 1
         old_engine = self._tuner_engine
