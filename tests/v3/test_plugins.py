@@ -1,9 +1,12 @@
-"""Controller binding, plugin bypass toggle, preset plugin update, and parameter editing."""
+"""Controller binding, plugin bypass toggle, preset plugin update, parameter editing,
+and instance_id normalization round-trips."""
 
 from unittest.mock import MagicMock
 
 import pistomp.switchstate as switchstate
 from pistomp.encodermidicontrol import EncoderMidiControl
+from common.parameter import Parameter
+from modalapi.plugin import Plugin
 import common.token as Token
 from tests.types import SystemFixture
 
@@ -293,3 +296,115 @@ def test_v3_bypass_event_unknown_plugin_is_ignored(v3_system: SystemFixture, mak
     handler.poll_modui_changes()
 
     assert not plugin.is_bypassed()
+
+
+# ---------------------------------------------------------------------------
+# instance_id normalization and round-trip
+# ---------------------------------------------------------------------------
+
+
+def test_v3_plugin_instance_id_strips_leading_slash():
+    plugin = Plugin("/fuzz", parameters={}, info=None)
+    assert plugin.instance_id == "fuzz"
+
+
+def test_v3_plugin_instance_id_strips_multiple_slashes():
+    plugin = Plugin("///fuzz", parameters={}, info=None)
+    assert plugin.instance_id == "fuzz"
+
+
+def test_v3_parameter_instance_id_strips_leading_slash():
+    param = Parameter({"shortName": "Gain", "symbol": "gain", "ranges": {}}, 0.5, None, "/fuzz")
+    assert param.instance_id == "fuzz"
+
+
+def test_v3_parameter_instance_id_none_preserved():
+    param = Parameter({"shortName": "Gain", "symbol": "gain", "ranges": {}}, 0.5, None, None)
+    assert param.instance_id is None
+
+
+def test_v3_rest_bypass_url_uses_slash_before_instance_id(v3_system, get_urls):
+    """preset_change_plugin_update() constructs REST URLs with /graph/
+    prefix, producing '/graph/{id}/:bypass' — never '/graph{id}/:bypass'."""
+    handler = v3_system.handler
+    mock_get = v3_system.mock_get
+
+    plugin = Plugin("CollisionDrive", {}, None, "Distortion")
+    bypass_param = Parameter(
+        {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}},
+        False,
+        None,
+        "CollisionDrive",
+    )
+    plugin.parameters[":bypass"] = bypass_param
+    handler.current.pedalboard.plugins = [plugin]
+
+    def get_side_effect(url, **kwargs):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.text = "false"
+        return resp
+
+    mock_get.side_effect = get_side_effect
+
+    handler.preset_change_plugin_update()
+
+    bypass_urls = [u for u in get_urls(mock_get) if "pi_stomp_get" in u and ":bypass" in u]
+    assert len(bypass_urls) == 1
+    assert "/graph/CollisionDrive/:bypass" in bypass_urls[0]
+    assert "/graphCollisionDrive" not in bypass_urls[0]
+
+
+def test_v3_websocket_send_parameter_uses_canonical_id(v3_system):
+    """send_parameter() formats messages as 'param_set /graph/{id}/{symbol} {value}'
+    using canonical instance_id (no leading slash)."""
+    ws_bridge = v3_system.ws_bridge
+
+    ws_bridge.send_parameter("BigMuffPi", "Tone", 0.75)
+    ws_bridge.send_parameter("Cabinet", ":bypass", 1.0)
+
+    assert ws_bridge.sent[-2] == "param_set /graph/BigMuffPi/Tone 0.75"
+    assert ws_bridge.sent[-1] == "param_set /graph/Cabinet/:bypass 1.0"
+
+
+def test_v3_websocket_bypass_event_matches_canonical_id(v3_system):
+    """Inbound param_set /graph/{id}/:bypass messages are parsed to extract
+    the canonical instance_id and must match Plugin.instance_id."""
+    handler = v3_system.handler
+
+    plugin = Plugin("fuzz", {}, None, "Distortion")
+    bypass_param = Parameter(
+        {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}},
+        False,
+        None,
+        "fuzz",
+    )
+    plugin.parameters[":bypass"] = bypass_param
+    handler.current.pedalboard.plugins = [plugin]
+
+    ws_bridge = v3_system.ws_bridge
+    ws_bridge.inject("param_set /graph/fuzz :bypass 1.0")
+    handler.poll_modui_changes()
+
+    assert plugin.is_bypassed()
+
+
+def test_v3_websocket_bypass_event_with_multiword_id(v3_system):
+    """WS parser correctly strips /graph/ prefix from multi-word instance IDs."""
+    handler = v3_system.handler
+
+    plugin = Plugin("Cabinet", {}, None, "Cabinet")
+    bypass_param = Parameter(
+        {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}},
+        False,
+        None,
+        "Cabinet",
+    )
+    plugin.parameters[":bypass"] = bypass_param
+    handler.current.pedalboard.plugins = [plugin]
+
+    ws_bridge = v3_system.ws_bridge
+    ws_bridge.inject("param_set /graph/Cabinet :bypass 1.0")
+    handler.poll_modui_changes()
+
+    assert plugin.is_bypassed()

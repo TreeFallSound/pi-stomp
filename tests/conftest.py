@@ -138,11 +138,13 @@ class FakeWebSocketBridge:
     def stop(self) -> None:
         pass
 
-    def send_parameter(self, instance_id: str, symbol: str, value: float) -> None:
+    def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
         self.sent.append(f"param_set /graph/{instance_id}/{symbol} {value}")
+        return True
 
-    def send_bpm(self, bpm: float) -> None:
+    def send_bpm(self, bpm: float) -> bool:
         self.sent.append(f"transport-bpm {bpm}")
+        return True
 
     def clear_queue(self) -> int:
         return 0
