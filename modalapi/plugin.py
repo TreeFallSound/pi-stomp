@@ -16,11 +16,9 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from common.parameter import Parameter
-    from pistomp.footswitch import Footswitch
+from common.parameter import Parameter
+from pistomp.footswitch import Footswitch
 
 Point = tuple[int, int]
 
