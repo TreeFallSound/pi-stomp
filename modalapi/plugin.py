@@ -21,7 +21,7 @@ class Plugin:
 
     def __init__(self, instance_id, parameters, info, category=None):
 
-        self.instance_id = instance_id
+        self.instance_id = instance_id.lstrip("/")
         self.parameters = parameters
         self.bypass_indicator_xy = ((0,0), (0,0))
         self.lcd_xyz = None

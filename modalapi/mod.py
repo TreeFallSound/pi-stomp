@@ -29,7 +29,7 @@ import common.parameter as Parameter
 import modalapi.wifi as Wifi
 import modalapi.external_midi as ExternalMidi
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -148,16 +148,12 @@ class Mod(Handler):
         self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
 
         # WebSocket bridge for MOD-UI communication
-        self.ws_bridge = None
-        try:
-            self.ws_bridge = AsyncWebSocketBridge(
-                ws_url='ws://localhost:80/websocket',
-                backpressure_threshold=8192  # 8 KB
-            )
-            self.ws_bridge.start()
-            logging.info("WebSocket bridge started")
-        except Exception as e:
-            logging.warning(f"Failed to initialize WebSocket bridge: {e}")
+        self.ws_bridge = AsyncWebSocketBridge(
+            ws_url='ws://localhost:80/websocket',
+            backpressure_threshold=8192  # 8 KB
+        )
+        self.ws_bridge.start()
+        logging.info("WebSocket bridge started")
 
         # External MIDI device synchronization
         self.external_midi = None
@@ -264,17 +260,26 @@ class Mod(Handler):
                 self.top_encoder_mode = TopEncoderMode.DEFAULT
                 self.update_lcd()
 
+    def _foreach_step(self, direction, fn):
+        """Apply a single-step function once per detent. parameter_value_change
+        is already burst-coalesced and takes the full magnitude directly."""
+        if direction == 0:
+            return
+        step = 1 if direction > 0 else -1
+        for _ in range(abs(direction)):
+            fn(step)
+
     def top_encoder_select(self, direction):
         # State machine for top encoder switch
         mode = self.top_encoder_mode
         if mode == TopEncoderMode.PEDALBOARD_SELECT or mode == TopEncoderMode.PEDALBOARD_SELECTED:
-            self.pedalboard_select(direction)
+            self._foreach_step(direction, self.pedalboard_select)
             self.top_encoder_mode = TopEncoderMode.PEDALBOARD_SELECTED
         elif mode == TopEncoderMode.PRESET_SELECT or mode == TopEncoderMode.PRESET_SELECTED:
-            self.preset_select(direction)
+            self._foreach_step(direction, self.preset_select)
             self.top_encoder_mode = TopEncoderMode.PRESET_SELECTED
         elif mode == TopEncoderMode.SYSTEM_MENU:
-            self.menu_select(direction)
+            self._foreach_step(direction, self.menu_select)
         elif mode == TopEncoderMode.HEADPHONE_VOLUME:
             self.parameter_value_change(direction, self.headphone_volume_commit)
         elif mode == TopEncoderMode.INPUT_GAIN:
@@ -309,9 +314,9 @@ class Mod(Handler):
             return
         mode = self.bot_encoder_mode
         if mode == BotEncoderMode.DEFAULT:
-            self.plugin_select(direction)
+            self._foreach_step(direction, self.plugin_select)
         elif mode == BotEncoderMode.DEEP_EDIT:
-            self.menu_select(direction)
+            self._foreach_step(direction, self.menu_select)
         elif mode == BotEncoderMode.VALUE_EDIT:
             self.parameter_value_change(direction, self.parameter_value_commit)
 
@@ -401,13 +406,13 @@ class Mod(Handler):
             return
         if mode == UniversalEncoderMode.DEFAULT or mode == UniversalEncoderMode.SCROLL:
             self.universal_encoder_mode = UniversalEncoderMode.SCROLL
-            self.universal_select(direction)
+            self._foreach_step(direction, self.universal_select)
         elif mode == UniversalEncoderMode.PEDALBOARD_SELECT:
-            self.pedalboard_select(direction)
+            self._foreach_step(direction, self.pedalboard_select)
         elif mode == UniversalEncoderMode.PRESET_SELECT:
-            self.preset_select(direction)
+            self._foreach_step(direction, self.preset_select)
         elif mode == UniversalEncoderMode.SYSTEM_MENU:
-            self.menu_select(direction)
+            self._foreach_step(direction, self.menu_select)
         elif mode == UniversalEncoderMode.HEADPHONE_VOLUME:
             self.parameter_value_change(direction, self.headphone_volume_commit)
         elif mode == UniversalEncoderMode.INPUT_GAIN:
@@ -423,7 +428,7 @@ class Mod(Handler):
         elif mode == UniversalEncoderMode.EQ5_GAIN:
             self.parameter_value_change(direction, self.eq5_gain_commit)
         elif mode == UniversalEncoderMode.DEEP_EDIT:
-            self.menu_select(direction)
+            self._foreach_step(direction, self.menu_select)
         elif mode == UniversalEncoderMode.VALUE_EDIT:
             self.parameter_value_change(direction, self.parameter_value_commit)
 
@@ -502,15 +507,22 @@ class Mod(Handler):
                 self.current.preset_index = msg.snapshot_id
                 self.update_lcd_title()
 
+        elif isinstance(msg, PluginBypassMessage):
+            if self.current is not None:
+                for plugin in self.current.pedalboard.plugins:
+                    if plugin.instance_id == msg.instance:
+                        logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
+                        plugin.set_bypass(msg.bypassed)
+                        self.lcd.refresh_plugins()
+                        break
+
     def poll_modui_changes(self):
         """Poll for changes from MOD-UI: websockets and file watching"""
-        if self.ws_bridge is not None:
-            messages = self.ws_bridge.get_received_messages()
-            for msg in messages:
-                try:
-                    self._handle_ws_message(parse_message(msg))
-                except Exception as e:
-                    logging.error(f"Error handling WebSocket message '{msg}': {e}")
+        for msg in self.ws_bridge.get_received_messages():
+            try:
+                self._handle_ws_message(parse_message(msg))
+            except Exception as e:
+                logging.error(f"Error handling WebSocket message '{msg}': {e}")
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
@@ -838,11 +850,8 @@ class Mod(Handler):
                         c.pressed(0)
                         return
             # Regular (non footswitch plugin)
-            url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/:bypass" % inst.instance_id
             value = inst.toggle_bypass()
-            code = self.parameter_set_send(url, "1" if value else "0", 200)
-            if (code != 200):
-                inst.toggle_bypass()  # toggle back to original value since request wasn't successful
+            self.ws_bridge.send_parameter(inst.instance_id, ":bypass", 1.0 if value else 0.0)
 
             #  Indicate change on LCD, and redraw selection(highlight)
             self.update_lcd_plugins()
@@ -1246,18 +1255,8 @@ class Mod(Handler):
         return util.DICT_GET(self.callbacks, callback_name)
 
     def set_mod_tap_tempo(self, bpm):
-        try:
-            resp = None
-            if bpm is not None:
-                url = self.root_uri + "set_bpm"
-                resp = req.post(url, json={"value": bpm})
-            if resp.status_code != 200:
-                logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
-            else:
-                logging.debug("BPM changed to: %d" % bpm)
-        except:
-            logging.debug("status: %s" % resp.status_code)
-            return resp.status_code
+        if bpm is not None:
+            self.ws_bridge.send_bpm(bpm)
 
     #
     # Parameter Edit
@@ -1291,16 +1290,18 @@ class Mod(Handler):
         self.lcd.draw_value_edit(self.deep.plugin.instance_id, param, param.value)
 
     def parameter_value_change(self, direction, commit_callback):
+        if direction == 0:
+            return
         param = self.deep.selected_parameter
         value = float(param.value)
         # TODO tweak value won't change from call to call, cache it
         tweak = util.renormalize_float(self.parameter_tweak_amount, 0, 127, param.minimum, param.maximum)
-        new_value = round(((value - tweak) if (direction != 1) else (value + tweak)), 2)
+        new_value = round(value + direction * tweak, 2)
         if new_value > param.maximum:
             new_value = param.maximum
         if new_value < param.minimum:
             new_value = param.minimum
-        if new_value is value:
+        if new_value == value:
             return
         self.deep.selected_parameter.value = new_value  # TODO somewhat risky to change value before committed
         commit_callback()
@@ -1308,24 +1309,7 @@ class Mod(Handler):
 
     def parameter_value_commit(self):
         param = self.deep.selected_parameter
-        url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/%s" % (self.deep.plugin.instance_id, param.symbol)
-        formatted_value = ("%.1f" % param.value)
-        self.parameter_set_send(url, formatted_value, 200)
-
-    def parameter_set_send(self, url, value, expect_code):
-        logging.debug("request: %s" % url)
-        try:
-            resp = None
-            if value is not None:
-                logging.debug("value: %s" % value)
-                resp = req.post(url, json={"value": value})
-            if resp.status_code != expect_code:
-                logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
-            else:
-                logging.debug("Parameter changed to: %d" % value)
-        except:
-            logging.debug("status: %s" % resp.status_code)
-            return resp.status_code
+        self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     #
     # LCD Stuff
