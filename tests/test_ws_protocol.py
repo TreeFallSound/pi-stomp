@@ -59,7 +59,9 @@ def test_pedal_snapshot_with_name():
 
 def test_pedal_snapshot_name_with_spaces():
     # split(" ", 2) means the name part is everything after the second token
-    assert parse_message("pedal_snapshot 2 Clean Boost") == PedalSnapshotMessage(snapshot_id=2, snapshot_name="Clean Boost")
+    assert parse_message("pedal_snapshot 2 Clean Boost") == PedalSnapshotMessage(
+        snapshot_id=2, snapshot_name="Clean Boost"
+    )
 
 
 def test_pedal_snapshot_no_name():

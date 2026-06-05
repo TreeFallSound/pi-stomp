@@ -175,7 +175,7 @@ class Pedalboard:
                         category = cat[0]
 
             # Extract Parameter data
-            instance_id = str(block.get_path()).replace(bundlepath, "", 1)
+            instance_id = str(block.get_path()).replace(bundlepath, "", 1).lstrip("/")
             nodes = self.world.find_nodes(block, self.world.ns.lv2.port, None)
             parameters = {}
             if len(nodes) > 0:

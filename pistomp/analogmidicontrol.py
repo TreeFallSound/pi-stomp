@@ -30,7 +30,20 @@ def as_midi_value(adc_value: int):
 
 
 class AnalogMidiControl(analogcontrol.AnalogControl):
-    def __init__(self, spi, adc_channel, tolerance, midi_CC, midi_channel, midiout, type, id=None, cfg={}, autosync=False):
+    def __init__(
+        self,
+        spi,
+        adc_channel,
+        tolerance,
+        midi_CC,
+        midi_channel,
+        midiout,
+        type,
+        id=None,
+        cfg={},
+        autosync=False,
+        value_change_callback=None,
+    ):
         super(AnalogMidiControl, self).__init__(spi, adc_channel, tolerance)
         self.midi_CC = midi_CC
         self.midiout = midiout
@@ -43,12 +56,17 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
         self.last_read = 0  # this keeps track of the last potentiometer value
         self.value = None
         self.cfg: dict[str, Any] = cfg
+        self.value_change_callback = value_change_callback
 
     def set_midi_channel(self, midi_channel):
         self.midi_channel = midi_channel
 
     def set_value(self, value):
         self.value = value
+
+    def get_normalized_value(self) -> float:
+        """Current ADC reading normalized to [0.0, 1.0]."""
+        return self.last_read / 1023.0
 
     @override
     def initialize(self):
@@ -94,5 +112,7 @@ class AnalogMidiControl(analogcontrol.AnalogControl):
             logging.debug("AnalogControl Sending CC event %s" % cc)
             self.midiout.send_message(cc)
 
-            # save the potentiometer reading for the next loop
             self.last_read = value
+
+            if self.value_change_callback:
+                self.value_change_callback(value, self)
