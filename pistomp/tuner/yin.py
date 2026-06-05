@@ -61,7 +61,8 @@ def detect_pitch(
     cumsum = np.cumsum(diff[1:tau_max + 1])
     taus = np.arange(1, tau_max + 1, dtype=np.float64)
     cmnd = np.ones(tau_max + 1, dtype=np.float64)
-    cmnd[1:tau_max + 1] = np.where(cumsum > 0.0, diff[1:tau_max + 1] * taus / cumsum, 1.0)
+    cmnd[1:tau_max + 1] = 1.0
+    np.divide(diff[1:tau_max + 1] * taus, cumsum, out=cmnd[1:tau_max + 1], where=cumsum > 0.0)
 
     # Step 3: absolute threshold — first dip below threshold, walk to its bottom.
     # No argmin fallback: a reading that doesn't pass the threshold is not published.
