@@ -5,6 +5,7 @@ from modalapi.ws_protocol import (
     LoadingEndMessage,
     LoadingStartMessage,
     PedalSnapshotMessage,
+    PluginBypassMessage,
     RemoveHwPortMessage,
     SizeMessage,
     TrueBypassMessage,
@@ -58,7 +59,9 @@ def test_pedal_snapshot_with_name():
 
 def test_pedal_snapshot_name_with_spaces():
     # split(" ", 2) means the name part is everything after the second token
-    assert parse_message("pedal_snapshot 2 Clean Boost") == PedalSnapshotMessage(snapshot_id=2, snapshot_name="Clean Boost")
+    assert parse_message("pedal_snapshot 2 Clean Boost") == PedalSnapshotMessage(
+        snapshot_id=2, snapshot_name="Clean Boost"
+    )
 
 
 def test_pedal_snapshot_no_name():
@@ -163,6 +166,37 @@ def test_truebypass_left_only():
 
 def test_truebypass_bare():
     assert parse_message("truebypass") == TrueBypassMessage(left=0, right=0)
+
+
+# ---------------------------------------------------------------------------
+# plugin bypass (param_set ... :bypass ...)
+# ---------------------------------------------------------------------------
+
+
+def test_plugin_bypass_on():
+    msg = parse_message("param_set /graph/CollisionDrive :bypass 1.0")
+    assert msg == PluginBypassMessage(instance="CollisionDrive", bypassed=True)
+
+
+def test_plugin_bypass_off():
+    msg = parse_message("param_set /graph/CollisionDrive :bypass 0.0")
+    assert msg == PluginBypassMessage(instance="CollisionDrive", bypassed=False)
+
+
+def test_plugin_bypass_nested_instance():
+    msg = parse_message("param_set /graph/xfade :bypass 1.0")
+    assert msg == PluginBypassMessage(instance="xfade", bypassed=True)
+
+
+def test_plugin_bypass_nonzero_is_true():
+    msg = parse_message("param_set /graph/Reverb :bypass 0.5")
+    assert msg == PluginBypassMessage(instance="Reverb", bypassed=True)
+
+
+def test_param_set_non_bypass_is_unknown():
+    # Regular param_set (non-bypass symbol) should not parse as PluginBypassMessage
+    msg = parse_message("param_set /graph/CollisionDrive/DRIVE 0.75")
+    assert isinstance(msg, UnknownMessage)
 
 
 # ---------------------------------------------------------------------------
