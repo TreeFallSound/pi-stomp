@@ -2,6 +2,7 @@ import logging
 import math
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 
 import numpy as np
@@ -52,7 +53,27 @@ class TunerEngine:
     _RING_CAPACITY = 1 << FRAME_SIZE.bit_length()  # 8192
 
     DSP_RATE_HZ = 20
-    IIR_ALPHA = 0.35
+
+    # Per-frame YIN is accurate (sub-3-cent steady jitter on real guitar/bass), but it
+    # throws brief octave excursions at note attacks/transitions. A low-pass IIR *smears*
+    # those discrete jumps into a multi-second crawl through wrong notes; a MEDIAN rejects
+    # them outright. We take the median of the last MEDIAN_LEN raw frequency estimates.
+    # 5 frames @ 20 Hz = ~100 ms group delay and survives up to two consecutive bad frames.
+    #
+    # TODO: octave-aware note-lock. Two residuals the median doesn't catch, both verified
+    # against real guitar/bass recordings:
+    #   1. Single-frame (~50 ms) octave blips at note onsets before the median settles.
+    #   2. Decay-tail flicker: as a note dies, YIN period-doubles (e.g. bass G3 → G2 for
+    #      ~1.3 s). The wrong reading has a DEEP/confident YIN trough and sits at RMS
+    #      ~0.004-0.007 — above SILENCE_RMS and at a genuinely quiet-but-valid level — so
+    #      neither the silence gate nor a confidence gate can distinguish it. The only
+    #      signal that knows it's wrong is context: we were locked on G3 for seconds, then
+    #      a reading jumped exactly -1200 cents.
+    # Fix is a note-lock that holds the current note against octave (±1200 cent) jumps
+    # unless they persist overwhelmingly — NOT a louder gate (that would blank quiet
+    # sustain, bass especially). Deferred; the median alone is a clear improvement.
+    MEDIAN_LEN = 5
+
     SILENCE_RMS = 0.002  # ~-54 dBFS; below this we consider input silent
     ONSET_RATIO = 4.0  # RMS jump factor that signals a new note being plucked (~12 dB)
     ONSET_HOLDOFF_FRAMES = 1  # frames to skip after onset (rejects attack transient)
@@ -70,7 +91,7 @@ class TunerEngine:
         self._worker: threading.Thread | None = None
         self._lock = threading.Lock()
         self._latest: TunerReading | None = None
-        self._iir_freq: float | None = None
+        self._freq_history: deque[float] = deque(maxlen=self.MEDIAN_LEN)
         self._prev_rms: float = 0.0
         self._onset_holdoff: int = 0
 
@@ -104,7 +125,7 @@ class TunerEngine:
         rms = float(np.sqrt(np.mean(self._frame.astype(np.float64) ** 2)))
 
         if rms < self.SILENCE_RMS:
-            self._iir_freq = None
+            self._freq_history.clear()
             self._onset_holdoff = 0
             self._prev_rms = rms
             with self._lock:
@@ -114,7 +135,7 @@ class TunerEngine:
         # Amplitude onset: a sudden RMS jump means the player plucked a new note.
         # Reset IIR immediately and skip ONSET_HOLDOFF_FRAMES to let the transient pass.
         if rms > self._prev_rms * self.ONSET_RATIO:
-            self._iir_freq = None
+            self._freq_history.clear()
             self._onset_holdoff = self.ONSET_HOLDOFF_FRAMES
             with self._lock:
                 self._latest = None
@@ -130,21 +151,19 @@ class TunerEngine:
         if estimate is None:
             return
 
-        if self._iir_freq is None:
-            self._iir_freq = estimate.freq
-        else:
-            self._iir_freq = self.IIR_ALPHA * estimate.freq + (1.0 - self.IIR_ALPHA) * self._iir_freq
+        self._freq_history.append(estimate.freq)
+        freq = float(np.median(self._freq_history))
 
         try:
-            note, cents, ideal = _freq_to_note(self._iir_freq)
+            note, cents, ideal = _freq_to_note(freq)
         except Exception:
-            logging.debug("tuner: freq_to_note failed for %s", self._iir_freq)
+            logging.debug("tuner: freq_to_note failed for %s", freq)
             return
 
         reading = TunerReading(
             note=note,
             cents=cents,
-            freq_hz=self._iir_freq,
+            freq_hz=freq,
             ideal_hz=ideal,
             ts=time.monotonic(),
         )
