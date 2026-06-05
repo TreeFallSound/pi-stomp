@@ -49,6 +49,7 @@ hardware = [
 dev = [
     "pillow>=12.0.0",
     "pygame>=2.5",
+    "soundfile>=0.12",
     "pyright>=1.1.408",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
