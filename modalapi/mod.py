@@ -582,6 +582,10 @@ class Mod(Handler):
         # Initialize the data
         self.bind_current_pedalboard()
         self.load_current_presets()
+
+        # ensure plugin states (like bypass) are correct on preset change
+        self.preset_change_plugin_update()
+
         self.update_lcd()
 
         # Selection info

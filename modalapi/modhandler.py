@@ -438,6 +438,10 @@ class Modhandler(Handler):
         # Initialize the data and draw on LCD
         self.bind_current_pedalboard()
         self.load_current_presets()
+
+        # ensure plugin states (like bypass) are correct on preset change
+        self.preset_change_plugin_update()
+
         self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
         self.lcd.draw_main_panel()
         self.lcd.update_wifi(self.wifi_status)
