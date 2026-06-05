@@ -81,3 +81,20 @@ hardware:
     - id: 3
       type: VOLUME
 
+# Blend Mode Configuration (Pedalboard-specific)
+# This feature interpolates between snapshots based on analog input position.
+# IMPORTANT: This should be configured per-pedalboard in <pedalboard>.pedalboard/config.yml
+# Requires an expression pedal or encoder to be configured in analog_controllers above.
+#
+# blend_snapshots:
+#   - name: "Clean to Fuzz"          # Required: descriptive name for this blend snapshot
+#     input_id: 0                    # Required: expression pedal (0) or encoder (1, 2)
+#     interpolation: linear          # Optional: easing function (default: linear)
+#                                    # One of: linear, smooth, build, drop, snap, bloom
+#     stops:                         # Position (stringified float) -> snapshot (index or name)
+#       "0.0": 0                     # Snapshot by index (0-based)
+#       "0.5": "Crunch"              # Or by name (case-insensitive prefix match)
+#       "1.0": "Heavy"               # Min separation: 1/127 (0.0079)
+#   - name: "Volume Swell"
+#     input_id: 1                    # Tweak1 encoder
+#     stops: ["Quiet", "Loud"]       # List format: auto-spaced evenly
