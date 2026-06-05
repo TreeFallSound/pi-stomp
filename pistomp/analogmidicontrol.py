@@ -68,6 +68,10 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
         logging.debug("AnalogControl Sending CC event %s" % cc)
         self.midiout.send_message(cc)
 
+        # Update last_read BEFORE the callback so get_normalized_value() reflects
+        # the new position when blend mode re-reads the control inside the callback.
+        self.last_read = value
+
         if self.value_change_callback:
             self.value_change_callback(value, self)
 
@@ -75,7 +79,6 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
         """Force-send the current ADC value unconditionally. Used by sync_analog_controls()."""
         value = self._clamp_endpoints(self.readChannel())
         self._send_value(value)
-        self.last_read = value
 
     def initialize(self):
         if not self.autosync:
@@ -86,7 +89,6 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
         value = self._clamp_endpoints(self.readChannel())
         if abs(value - self.last_read) > self.tolerance:
             self._send_value(value)
-            self.last_read = value
 
     def get_normalized_value(self) -> float:
         return self.last_read / 1023.0
