@@ -14,7 +14,9 @@ from unittest.mock import patch, MagicMock
 import pytest
 import yaml
 
+from tests.conftest import FakeWebSocketBridge
 from tests.types import SystemFixture
+from tests.conftest import FakeWebSocketBridge
 import common.token as Token
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -45,15 +47,17 @@ def _build_stack(hw_class: Any, cfg_path: Path, fake_lcd, tmp_path) -> Generator
     with open(cfg_path) as f:
         cfg = yaml.safe_load(f)
 
+    fake_bridge = FakeWebSocketBridge()
+
     with (
         patch("requests.get") as mock_get,
         patch("requests.post") as mock_post,
-        patch("pistomp.settings.Settings"),
+        patch("pistomp.settings.Settings") as mock_settings_cls,
         patch("modalapi.pedalboard.Pedalboard.load_bundle"),
         patch("modalapi.wifi.WifiManager") as mock_wm_cls,
         patch("subprocess.check_output", return_value=b"SystemState=running"),
         patch("pistomp.lcd320x240.LcdIli9341", return_value=fake_lcd),
-        patch("modalapi.modhandler.AsyncWebSocketBridge"),
+        patch("modalapi.modhandler.AsyncWebSocketBridge", return_value=fake_bridge),
     ):
         # Tests don't drive a poll loop, so stub pending_op_count to always return 0 (no pending ops).
         mock_wm_cls.return_value.queue.pending_op_count.return_value = 0
@@ -86,7 +90,10 @@ def _build_stack(hw_class: Any, cfg_path: Path, fake_lcd, tmp_path) -> Generator
 
         mock_post.side_effect = post_side_effect
 
+        mock_settings_cls.return_value.get_setting.return_value = None
+
         mock_audiocard = MagicMock()
+        mock_audiocard.get_volume_parameter.return_value = 0.0
         handler = Modhandler(mock_audiocard, cwd, data_dir=str(data_dir))
 
         midiout = MagicMock()
@@ -104,7 +111,7 @@ def _build_stack(hw_class: Any, cfg_path: Path, fake_lcd, tmp_path) -> Generator
         mock_post.reset_mock()
         mock_post.side_effect = post_side_effect
 
-        yield SystemFixture(handler, hw, fake_lcd, mock_get, mock_post)
+        yield SystemFixture(handler, hw, fake_lcd, mock_get, mock_post, fake_bridge)
 
 
 # ---------------------------------------------------------------------------

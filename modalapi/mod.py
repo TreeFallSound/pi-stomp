@@ -20,6 +20,7 @@ import requests as req
 import subprocess
 import sys
 import yaml
+from typing import Any
 
 import common.token as Token
 import common.util as util
@@ -27,8 +28,10 @@ import pistomp.switchstate as switchstate
 import modalapi.pedalboard as Pedalboard
 import common.parameter as Parameter
 import modalapi.wifi as Wifi
+
+from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -146,17 +149,12 @@ class Mod(Handler):
         self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
 
         # WebSocket bridge for MOD-UI communication
-        self.ws_bridge = None
-        try:
-            self.ws_bridge = AsyncWebSocketBridge(
-                ws_url='ws://localhost:80/websocket',
-                backpressure_threshold=8192  # 8 KB
-            )
-            self.ws_bridge.start()
-            logging.info("WebSocket bridge started")
-        except Exception as e:
-            logging.warning(f"Failed to initialize WebSocket bridge: {e}")
-
+        self.ws_bridge = AsyncWebSocketBridge(
+            ws_url='ws://localhost:80/websocket',
+            backpressure_threshold=8192  # 8 KB
+        )
+        self.ws_bridge.start()
+        logging.info("WebSocket bridge started")
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
@@ -164,6 +162,10 @@ class Mod(Handler):
                           "next_snapshot": self.preset_incr_and_change,
                           "previous_snapshot": self.preset_decr_and_change
         }
+
+        # Blend mode manager - multiple blend snapshots per pedalboard
+        self.blend_modes: dict[str, Any] = {}  # {snapshot_name: BlendMode}
+        self.active_blend_mode: Any | None = None  # Currently active blend mode
 
     def __del__(self):
         logging.info("Handler cleanup")
@@ -497,15 +499,22 @@ class Mod(Handler):
                 self.current.preset_index = msg.snapshot_id
                 self.update_lcd_title()
 
+        elif isinstance(msg, PluginBypassMessage):
+            if self.current is not None:
+                for plugin in self.current.pedalboard.plugins:
+                    if plugin.instance_id == msg.instance:
+                        logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
+                        plugin.set_bypass(msg.bypassed)
+                        self.lcd.refresh_plugins()
+                        break
+
     def poll_modui_changes(self):
         """Poll for changes from MOD-UI: websockets and file watching"""
-        if self.ws_bridge is not None:
-            messages = self.ws_bridge.get_received_messages()
-            for msg in messages:
-                try:
-                    self._handle_ws_message(parse_message(msg))
-                except Exception as e:
-                    logging.error(f"Error handling WebSocket message '{msg}': {e}")
+        for msg in self.ws_bridge.get_received_messages():
+            try:
+                self._handle_ws_message(parse_message(msg))
+            except Exception as e:
+                logging.error(f"Error handling WebSocket message '{msg}': {e}")
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
@@ -519,6 +528,18 @@ class Mod(Handler):
 
                 pb = self.pedalboards[mod_bundle]
                 self.set_current_pedalboard(pb)
+
+        # Check for snapshot file modifications (blend mode stop edits)
+        # Check ALL blend modes, not just active one (user might be editing a stop snapshot)
+        for blend_mode in self.blend_modes.values():
+            try:
+                blend_mode.check_for_snapshot_changes()
+            except Exception as e:
+                logging.error(f"Blend mode snapshot check failed: {e}")
+                # If it's the active one, deactivate it
+                if blend_mode == self.active_blend_mode:
+                    blend_mode.cleanup()
+                    self.active_blend_mode = None
 
     #
     # Pedalboard Stuff
@@ -558,6 +579,12 @@ class Mod(Handler):
         return read_pedalboard_bundle(self.last_json_monitor.path)
 
     def set_current_pedalboard(self, pedalboard):
+        # Cleanup all previous blend modes if active
+        for blend_mode in self.blend_modes.values():
+            blend_mode.cleanup()
+        self.blend_modes = {}
+        self.active_blend_mode = None
+
         # Delete previous "current"
         del self.current
 
@@ -580,6 +607,52 @@ class Mod(Handler):
         self.bind_current_pedalboard()
         self.load_current_presets()
         self.update_lcd()
+
+        # Prepare blend modes if configured (snapshot-based activation)
+        try:
+            blend_configs = cfg.get('blend_snapshots', []) if cfg else []
+            bundle_path = Path(self.current.pedalboard.bundle)
+
+            # Sync all blend snapshots (create/recreate based on config)
+            snapshot_indices = SnapshotManager.sync_blend_snapshots(
+                bundle_path,
+                blend_configs,
+                self.root_uri
+            )
+
+            # Initialize BlendMode instances for each blend snapshot
+            from blend import BlendMode
+            for blend_cfg in blend_configs:
+                snapshot_name = blend_cfg.get('name')
+                if not snapshot_name:
+                    continue
+
+                blend_mode = BlendMode(self, blend_cfg)
+                blend_mode.prepare()
+                self.blend_modes[snapshot_name] = blend_mode
+                logging.info(f"Prepared blend mode: '{snapshot_name}'")
+
+            # Auto-switch to FIRST blend snapshot if any exist
+            if self.blend_modes:
+                first_snapshot_name = list(self.blend_modes.keys())[0]
+                first_snapshot_idx = snapshot_indices.get(first_snapshot_name)
+
+                if first_snapshot_idx is not None:
+                    logging.info(f"Auto-switching to first blend snapshot: '{first_snapshot_name}' (index {first_snapshot_idx})")
+                    self.preset_change(first_snapshot_idx)
+
+                    # Activate the first blend mode
+                    self.active_blend_mode = self.blend_modes[first_snapshot_name]
+                    self.active_blend_mode.activate()
+                    logging.info(f"Activated blend mode: '{first_snapshot_name}'")
+
+                # Redraw analog assignments to use BlendMode object for expression pedal
+                self.lcd.draw_analog_assignments(self.current.analog_controllers)
+
+        except Exception as e:
+            logging.error(f"Failed to prepare blend modes: {e}")
+            self.blend_modes = {}
+            self.active_blend_mode = None
 
         # Selection info
         self.selectable_items.clear()
@@ -717,6 +790,30 @@ class Mod(Handler):
         index = self.selected_preset_index
         logging.info("preset change: %d" % index)
 
+        # Handle blend mode snapshot-based activation
+        new_snapshot_name = self.current.presets.get(index)
+        if self.blend_modes:
+            # Deactivate current blend mode if switching away
+            if self.active_blend_mode:
+                old_name = self.active_blend_mode.config.get('name')
+                if old_name != new_snapshot_name:
+                    logging.info(f"Deactivating blend mode: '{old_name}'")
+                    self.active_blend_mode.deactivate()
+                    self.active_blend_mode = None
+
+            # Activate new blend mode if switching to a blend snapshot
+            if new_snapshot_name in self.blend_modes:
+                self.active_blend_mode = self.blend_modes[new_snapshot_name]
+                logging.info(f"Activating blend mode: '{new_snapshot_name}'")
+                try:
+                    # Check for snapshot changes immediately before activating
+                    # to ensure we have the latest stop data (user may have just saved a snapshot)
+                    self.active_blend_mode.check_for_snapshot_changes()
+                    self.active_blend_mode.activate()
+                except Exception as e:
+                    logging.error(f"Failed to activate blend mode '{new_snapshot_name}': {e}")
+                    self.active_blend_mode = None
+
         self.lcd.draw_info_message("Loading...")
         url = (self.root_uri + "snapshot/load?id=%d" % index)
         # req.get(self.root_uri + "reset")
@@ -756,7 +853,7 @@ class Mod(Handler):
     def preset_change_plugin_update(self):
         # Now that the preset has changed on the host, update plugin bypass indicators
         for p in self.current.pedalboard.plugins:
-            uri = self.root_uri + "effect/parameter/pi_stomp_get//graph" + p.instance_id + "/:bypass"
+            uri = self.root_uri + "effect/parameter/pi_stomp_get//graph/" + p.instance_id + "/:bypass"
             try:
                 resp = req.get(uri)
                 if resp.status_code == 200:
@@ -803,11 +900,8 @@ class Mod(Handler):
                         c.pressed(0)
                         return
             # Regular (non footswitch plugin)
-            url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/:bypass" % inst.instance_id
             value = inst.toggle_bypass()
-            code = self.parameter_set_send(url, "1" if value else "0", 200)
-            if (code != 200):
-                inst.toggle_bypass()  # toggle back to original value since request wasn't successful
+            self.ws_bridge.send_parameter(inst.instance_id, ":bypass", 1.0 if value else 0.0)
 
             #  Indicate change on LCD, and redraw selection(highlight)
             self.update_lcd_plugins()
@@ -1211,18 +1305,8 @@ class Mod(Handler):
         return util.DICT_GET(self.callbacks, callback_name)
 
     def set_mod_tap_tempo(self, bpm):
-        try:
-            resp = None
-            if bpm is not None:
-                url = self.root_uri + "set_bpm"
-                resp = req.post(url, json={"value": bpm})
-            if resp.status_code != 200:
-                logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
-            else:
-                logging.debug("BPM changed to: %d" % bpm)
-        except:
-            logging.debug("status: %s" % resp.status_code)
-            return resp.status_code
+        if bpm is not None:
+            self.ws_bridge.send_bpm(bpm)
 
     #
     # Parameter Edit
@@ -1275,24 +1359,7 @@ class Mod(Handler):
 
     def parameter_value_commit(self):
         param = self.deep.selected_parameter
-        url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/%s" % (self.deep.plugin.instance_id, param.symbol)
-        formatted_value = ("%.1f" % param.value)
-        self.parameter_set_send(url, formatted_value, 200)
-
-    def parameter_set_send(self, url, value, expect_code):
-        logging.debug("request: %s" % url)
-        try:
-            resp = None
-            if value is not None:
-                logging.debug("value: %s" % value)
-                resp = req.post(url, json={"value": value})
-            if resp.status_code != expect_code:
-                logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
-            else:
-                logging.debug("Parameter changed to: %d" % value)
-        except:
-            logging.debug("status: %s" % resp.status_code)
-            return resp.status_code
+        self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     #
     # LCD Stuff
