@@ -209,14 +209,6 @@ def test_send_parameter_small_value_uses_repr_not_e_notation():
     assert sent == ["param_set /graph/delay/gain 0.001"], sent
 
 
-def test_send_parameter_strips_leading_slash_and_warns(caplog):
-    bridge = _make_bridge()
-    with caplog.at_level("WARNING"):
-        bridge.send_parameter("/fuzz", ":bypass", 1.0)
-    assert _drain(bridge) == ["param_set /graph/fuzz/:bypass 1.0"]
-    assert any("non-canonical" in r.message for r in caplog.records)
-
-
 def test_multiple_sends_preserve_order():
     bridge = _make_bridge()
     bridge.send_parameter("a", "x", 1.0)

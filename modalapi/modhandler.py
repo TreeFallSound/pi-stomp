@@ -699,13 +699,15 @@ class Modhandler(Handler):
 
         # Now that the preset has changed on the host, update plugin bypass indicators
         for p in self.current.pedalboard.plugins:
-            uri = self.root_uri + "effect/parameter/pi_stomp_get//graph" + p.instance_id + "/:bypass"
+            uri = self.root_uri + "effect/parameter/pi_stomp_get//graph/" + p.instance_id + "/:bypass"
             resp = self._rest_get(uri)
             if resp is None:
                 logging.error("failed to get bypass value for: %s" % p.instance_id)
                 continue
             if resp.status_code == 200:
                 p.set_bypass(resp.text == "true")
+            else:
+                logging.error(f"[preset_change_plugin_update] {p.instance_id}: REST status {resp.status_code}")
         self.lcd.refresh_plugins()
 
     def preset_incr_and_change(self, *argv):

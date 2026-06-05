@@ -43,7 +43,9 @@ class WebSocketWorker:
     reconnection and backpressure monitoring.
     """
 
-    def __init__(self, ws_url: str, backpressure_threshold: int, command_queue: queue.Queue, received_queue: queue.Queue):
+    def __init__(
+        self, ws_url: str, backpressure_threshold: int, command_queue: queue.Queue, received_queue: queue.Queue
+    ):
         self.ws_url = ws_url
         self.backpressure_threshold = backpressure_threshold
         self.command_queue = command_queue
@@ -228,9 +230,6 @@ class AsyncWebSocketBridge:
     def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
         """Queue a parameter update. instance_id should be canonical (no leading slash).
         Returns False if backpressure is active."""
-        if instance_id.startswith("/"):
-            logging.warning(f"send_parameter received non-canonical instance_id {instance_id!r}; stripping leading slash")
-            instance_id = instance_id.lstrip("/")
         if self._worker.backpressure_active:
             return False
         self.command_queue.put_nowait(f"param_set /graph/{instance_id}/{symbol} {value}")

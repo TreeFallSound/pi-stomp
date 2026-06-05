@@ -425,7 +425,7 @@ class Lcd(abstract_lcd.Lcd):
                     if c.parameter.symbol != ":bypass":  # TODO token
                         label = c.parameter.name
                     else:
-                        label = p.instance_id.replace('/', "")[:self.plugin_label_length]  # TODO this replacement should be done in one place higher level
+                        label = p.instance_id[:self.plugin_label_length]
                         label = label.replace("_", "")
                     self.draw_plugin(7, self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1], label,
                                      self.footswitch_width, False, p, True)
@@ -461,7 +461,7 @@ class Lcd(abstract_lcd.Lcd):
         for p in plugins:
             if p.has_footswitch:
                 continue
-            label = p.instance_id.replace('/', "")[:self.plugin_label_length]
+            label = p.instance_id[:self.plugin_label_length]
             label = label.replace("_", "")
             count += 1
             if count > 4:
