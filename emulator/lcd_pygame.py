@@ -45,16 +45,15 @@ class LcdPygame(LcdBase):
         self.height = height
         self.spi_hz = spi_hz
         self.surface = pygame.Surface((width, height))
-        self._lock = threading.Lock()
-        self._queue = queue.SimpleQueue()
+        self._queue = queue.Queue()
         self._worker = threading.Thread(target=self._spi_worker, daemon=True)
         self._worker.start()
 
     def _spi_worker(self):
         while True:
             pg_surf, dest, transfer_s, t0 = self._queue.get()
-            with self._lock:
-                self.surface.blit(pg_surf, dest)
+            self.surface.blit(pg_surf, dest)
+            self._queue.task_done()
             deficit = transfer_s - (time.perf_counter() - t0)
             if deficit >= self._SLEEP_THRESHOLD_S:
                 time.sleep(deficit)
@@ -87,7 +86,11 @@ class LcdPygame(LcdBase):
         self._queue.put((pg_surf, dest, transfer_s, time.perf_counter()))
 
     def blit_scaled(self, dest_surface, dest_rect):
-        """Scale the LCD surface to dest_rect and blit it onto dest_surface."""
-        with self._lock:
-            scaled = pygame.transform.scale(self.surface, (dest_rect.width, dest_rect.height))
+        """
+        Scale the LCD surface to dest_rect and blit it onto dest_surface.
+        Blocks until all queued SPI transfers have been applied to
+        self.surface, so the snapshot is always consistent.
+        """
+        self._queue.join()
+        scaled = pygame.transform.scale(self.surface, (dest_rect.width, dest_rect.height))
         dest_surface.blit(scaled, dest_rect.topleft)
