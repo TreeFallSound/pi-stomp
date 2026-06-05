@@ -54,24 +54,11 @@ class TunerEngine:
 
     DSP_RATE_HZ = 20
 
-    # Per-frame YIN is accurate (sub-3-cent steady jitter on real guitar/bass), but it
-    # throws brief octave excursions at note attacks/transitions. A low-pass IIR *smears*
-    # those discrete jumps into a multi-second crawl through wrong notes; a MEDIAN rejects
-    # them outright. We take the median of the last MEDIAN_LEN raw frequency estimates.
-    # 5 frames @ 20 Hz = ~100 ms group delay and survives up to two consecutive bad frames.
-    #
-    # TODO: octave-aware note-lock. Two residuals the median doesn't catch, both verified
-    # against real guitar/bass recordings:
-    #   1. Single-frame (~50 ms) octave blips at note onsets before the median settles.
-    #   2. Decay-tail flicker: as a note dies, YIN period-doubles (e.g. bass G3 → G2 for
-    #      ~1.3 s). The wrong reading has a DEEP/confident YIN trough and sits at RMS
-    #      ~0.004-0.007 — above SILENCE_RMS and at a genuinely quiet-but-valid level — so
-    #      neither the silence gate nor a confidence gate can distinguish it. The only
-    #      signal that knows it's wrong is context: we were locked on G3 for seconds, then
-    #      a reading jumped exactly -1200 cents.
-    # Fix is a note-lock that holds the current note against octave (±1200 cent) jumps
-    # unless they persist overwhelmingly — NOT a louder gate (that would blank quiet
-    # sustain, bass especially). Deferred; the median alone is a clear improvement.
+    # Median of the last MEDIAN_LEN raw estimates: rejects the brief octave excursions
+    # YIN throws at note attacks (an IIR would smear them across wrong notes instead).
+    # 5 @ 20 Hz = ~100 ms delay, survives 2 bad frames.
+    # TODO: median can't catch decay-tail octave flicker (period-doubling on a fading
+    # note); would need a note-lock that holds the current note against ±1200-cent jumps.
     MEDIAN_LEN = 5
 
     SILENCE_RMS = 0.002  # ~-54 dBFS; below this we consider input silent

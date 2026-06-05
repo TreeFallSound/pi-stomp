@@ -99,6 +99,37 @@ class TestDetectPitchFreqBounds:
             assert est.freq <= 1000.0
 
 
+class TestFlatTroughInterpolation:
+    """Sub-sample period must land on the midpoint of a flat-bottomed CMND trough,
+    not snap ±1 sample to one side (the parabolic-interpolation degeneracy that
+    caused a bistable ~12-cent waver on high guitar strings)."""
+
+    def test_period_between_samples_is_resolved(self):
+        # A true period of 145.5 samples (sr/145.5 = 329.9 Hz, ~E4) gives a CMND
+        # trough whose two bottom samples (145, 146) are ~equal. The estimate must
+        # resolve to ~329.9 Hz, not the +13c / -10c values a 3-point parabola yields.
+        true_freq = _SR / 145.5
+        frame = _sine(true_freq, duration=0.4)
+        est = detect_pitch(frame, _SR, window=6144)
+        assert est is not None
+        cents = 1200.0 * np.log2(est.freq / true_freq)
+        assert abs(cents) < 3.0, f"off by {cents:.1f} cents (freq={est.freq:.2f})"
+
+    def test_high_string_is_stable_across_phases(self):
+        # Slide the analysis window across the signal; the estimate must not flip
+        # between two states. Pre-centroid this swung ~20 cents peak-to-peak.
+        true_freq = _SR / 145.5
+        full = _sine(true_freq, duration=0.8)
+        freqs = []
+        for off in range(0, _SR // 5, 257):  # varied phase offsets
+            est = detect_pitch(full[off : off + 7746], _SR, window=6144)
+            if est is not None:
+                freqs.append(est.freq)
+        assert len(freqs) >= 5
+        spread = 1200.0 * np.log2(max(freqs) / min(freqs))
+        assert spread < 4.0, f"peak-to-peak {spread:.1f} cents across phases"
+
+
 class TestPitchEstimate:
     def test_frozen_dataclass(self):
         p = PitchEstimate(freq=440.0, yin_error=0.05)
