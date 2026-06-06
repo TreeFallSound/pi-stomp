@@ -188,7 +188,7 @@ def main():
                 handler.poll_indicators()
             if period % 20 == 0:
                 handler.poll_lcd_updates()
-            if period % 100 == 0:
+            if period % 5 == 0:
                 handler.poll_modui_changes()
             if period % 200 == 0:
                 handler.poll_wifi()
