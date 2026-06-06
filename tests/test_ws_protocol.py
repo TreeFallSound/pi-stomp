@@ -5,6 +5,7 @@ from modalapi.ws_protocol import (
     LoadingEndMessage,
     LoadingStartMessage,
     PedalSnapshotMessage,
+    ParamSetMessage,
     PluginBypassMessage,
     RemoveHwPortMessage,
     SizeMessage,
@@ -193,9 +194,20 @@ def test_plugin_bypass_nonzero_is_true():
     assert msg == PluginBypassMessage(instance="Reverb", bypassed=True)
 
 
-def test_param_set_non_bypass_is_unknown():
-    # Regular param_set (non-bypass symbol) should not parse as PluginBypassMessage
-    msg = parse_message("param_set /graph/CollisionDrive/DRIVE 0.75")
+def test_param_set_generic_control_port():
+    # Inbound (space) form for a non-bypass control port.
+    msg = parse_message("param_set /graph/Delay gain 0.75")
+    assert msg == ParamSetMessage(instance="Delay", symbol="gain", value=0.75)
+
+
+def test_param_set_bypass_precedes_generic_arm():
+    # The :bypass arm must match before the generic param_set arm.
+    msg = parse_message("param_set /graph/Delay :bypass 1.0")
+    assert msg == PluginBypassMessage(instance="Delay", bypassed=True)
+
+
+def test_param_set_missing_value_is_unknown():
+    msg = parse_message("param_set /graph/Delay gain")
     assert isinstance(msg, UnknownMessage)
 
 

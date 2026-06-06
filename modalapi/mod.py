@@ -31,7 +31,7 @@ import modalapi.wifi as Wifi
 
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, ParamSetMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -506,6 +506,17 @@ class Mod(Handler):
                         logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
                         plugin.set_bypass(msg.bypassed)
                         self.lcd.refresh_plugins()
+                        break
+
+        elif isinstance(msg, ParamSetMessage):
+            # Keep the cached value fresh so a later edit opens at the current
+            # value. Not drawn anywhere live, so no LCD refresh.
+            if self.current is not None:
+                for plugin in self.current.pedalboard.plugins:
+                    if plugin.instance_id == msg.instance:
+                        param = plugin.parameters.get(msg.symbol)
+                        if param is not None:
+                            param.value = msg.value
                         break
 
     def poll_ws_messages(self):

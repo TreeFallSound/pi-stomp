@@ -89,6 +89,15 @@ class PluginBypassMessage:
 
 
 @dataclass
+class ParamSetMessage:
+    """A plugin control-port value changed (param_set, non-:bypass)."""
+
+    instance: str  # canonical bare form, e.g. "HotBox"
+    symbol: str  # e.g. "gain"
+    value: float
+
+
+@dataclass
 class UnknownMessage:
     """Message type we don't handle yet."""
 
@@ -105,6 +114,7 @@ WebSocketMessage = Union[
     RemoveHwPortMessage,
     TrueBypassMessage,
     PluginBypassMessage,
+    ParamSetMessage,
     UnknownMessage,
 ]
 
@@ -178,6 +188,12 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                 instance = path.removeprefix("/graph/")
                 value_str = rest.split(" ", 1)[1]
                 return PluginBypassMessage(instance=instance, bypassed=float(value_str) != 0.0)
+
+            # Format: param_set /graph/{instance} {symbol} {value}  (must follow :bypass arm)
+            case ["param_set", path, rest]:
+                instance = path.removeprefix("/graph/")
+                symbol, value_str = rest.split(" ", 1)
+                return ParamSetMessage(instance=instance, symbol=symbol, value=float(value_str))
 
             # Format: truebypass {left} {right}
             case ["truebypass", left, right_trailing]:

@@ -346,6 +346,39 @@ def test_v3_bypass_event_unknown_plugin_is_ignored(v3_system: SystemFixture, mak
     assert not plugin.is_bypassed()
 
 
+def test_v3_inbound_param_set_refreshes_cached_value(v3_system: SystemFixture, make_plugin, make_parameter):
+    """An external param_set updates the cached Parameter.value so a later edit opens current."""
+    handler = v3_system.handler
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+    gain = make_parameter("Gain", "fuzz", value=0.1)
+    plugin = make_plugin("fuzz", parameters={"gain": gain})
+    handler.current.pedalboard.plugins = [plugin]
+
+    ws_bridge.inject("param_set /graph/fuzz gain 0.75")
+    handler.poll_ws_messages()
+
+    assert gain.value == 0.75
+
+
+def test_v3_inbound_param_set_unknown_target_is_ignored(v3_system: SystemFixture, make_plugin, make_parameter):
+    """param_set for an unknown plugin or symbol doesn't raise or corrupt state."""
+    handler = v3_system.handler
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+    gain = make_parameter("Gain", "fuzz", value=0.1)
+    plugin = make_plugin("fuzz", parameters={"gain": gain})
+    handler.current.pedalboard.plugins = [plugin]
+
+    ws_bridge.inject("param_set /graph/fuzz unknown_symbol 0.9")
+    ws_bridge.inject("param_set /graph/nope gain 0.9")
+    handler.poll_ws_messages()
+
+    assert gain.value == 0.1
+
+
 # ---------------------------------------------------------------------------
 # instance_id normalization and round-trip
 # ---------------------------------------------------------------------------
