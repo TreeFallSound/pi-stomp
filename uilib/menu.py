@@ -13,8 +13,14 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from uilib.dialog import *
-from uilib.config import *
+from PIL.ImageFont import FreeTypeFont
+from typing_extensions import override
+
+from uilib.box import Box
+from uilib.config import Config
+from uilib.dialog import Dialog
+from uilib.misc import InputEvent, TextHAlign, get_text_size, trace
+from uilib.text import TextWidget
 
 
 class Menu(Dialog):
@@ -22,24 +28,31 @@ class Menu(Dialog):
            items   : iterable of tuples whose first element is the text to display
            Returns a tuple (image, draw, box) where:
     """
-    def __init__(self, items, font = None, max_width = None, max_height = None,
-                 text_halign = TextHAlign.CENTRE, auto_dismiss = True, dismiss_option = False,
-                 default_item = None, **kwargs):
+    def __init__(
+        self,
+        items,
+        font: FreeTypeFont | None = None,
+        max_width=None,
+        max_height=None,
+        text_halign=TextHAlign.CENTRE,
+        auto_dismiss=True,
+        dismiss_option=False,
+        default_item=None,
+        **kwargs,
+    ):
         self.max_height = max_height
         self.max_width = max_width
         self.items = items
         self.auto_dismiss = auto_dismiss
         if auto_dismiss is False or dismiss_option is True:
             # without auto_dismiss provide a back arrow to close menu
-            self.items.append(('\u2b05', self._dismiss, None))
-        if font is None:
-            font = Config().get_font('default')
-        self.font = font
-        self.font_metrics = font.getmetrics()
+            self.items.append(("\u2b05", self._dismiss, None))
+        self.font: FreeTypeFont | None = font or Config().get_font("default")
+        self.font_metrics = self.font.getmetrics() if self.font else None
         self.item_h = 0
         self.text_halign = text_halign
         self.default_item = default_item
-        super(Menu,self).__init__(width = 0, height = 0, **kwargs)
+        super(Menu, self).__init__(width=0, height=0, **kwargs)
 
         # Create item widgets
         h = 0
@@ -47,17 +60,23 @@ class Menu(Dialog):
             # item structure: 0:name, 1:action, 2:object, 3:selected item
             t = i[0]
             if len(i) >= 4 and i[3]:
-                t = '\u2714 ' + t   # Add checkmark to selected item
-            b = Box.xywh(0,h,self.box.width,self.item_h)
-            w = TextWidget(box = b, text_halign = self.text_halign, font = self.font,
-                           text = t, parent = self, action = self._item_action)
-            w.data = i
+                t = "\u2714 " + t  # Add checkmark to selected item
+            b = Box.xywh(0, h, self.box.width, self.item_h)
+            w = TextWidget(
+                box=b, text_halign=self.text_halign, font=self.font, text=t, parent=self, action=self._item_action
+            )
+            w.data = i  # pyright: ignore[reportAttributeAccessIssue]
             self.add_sel_widget(w)
             if t == self.default_item:
                 self.sel_widget(w)
             h = h + self.item_h
 
         self.refresh()
+
+    @override
+    def _scroll_delta(self, box: Box, movex: int, movey: int, orig_box: Box):
+        # Vertical movement only
+        return 0, movey
 
     def _dismiss(self, arg=None):
         stack = self._get_stack()
