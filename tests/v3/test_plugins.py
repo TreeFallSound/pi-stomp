@@ -1,7 +1,12 @@
 """Controller binding, plugin bypass toggle, preset plugin update, parameter editing,
 and instance_id normalization round-trips."""
 
+import json
+import os
+from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
 
 import pistomp.switchstate as switchstate
 from pistomp.encodermidicontrol import EncoderMidiControl
@@ -437,6 +442,62 @@ def test_v3_reconnect_dump_reseeds_bypass_via_poll(v3_system: SystemFixture, mak
     assert not drive.is_bypassed()
     assert delay.is_bypassed()
     snapshot("delay_bypassed")
+
+
+@pytest.mark.skip(
+    reason="""
+    If the board changes during a WS disconnect onto a non-default snapshot AND the connect
+    dump drains in the same poll tick as the last.json reload, the dump applies to the OLD
+    board (per-instance no-op) and is then lost to the reloaded board's .ttl default.
+    Display-only (audio stays correct — mod-ui is source of truth); recover live by reselecting
+    the pedalboard (unconditional rebroadcast resyncs).
+    """
+)
+def test_v3_reconnect_after_board_change_loses_nondefault_snapshot(v3_system: SystemFixture, make_plugin):
+    """
+    Same-tick reconnect race: board B reloads to its .ttl default while the
+    connect dump (B's live snapshot — delay bypassed) is drained against the old board.
+    The asserted behavior (delay bypassed) is what gets out-of-sync today
+    """
+    handler = v3_system.handler
+    mock_get = v3_system.mock_get
+
+    drive = make_plugin("drive", category="Distortion", bypassed=False)
+    delay = make_plugin("delay", category="Delay", bypassed=False)
+    new_pb = handler.pedalboards["/path/to/new.pedalboard"]
+    new_pb.plugins = [drive, delay]
+    handler.reload_pedalboard = lambda bundle: new_pb  # LILV is patched out in tests
+
+    def get_side_effect(url, **kwargs):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.text = (
+            json.dumps({"0": "Default", "1": "Lead"})
+            if "snapshot/list" in url
+            else json.dumps({"name": "Lead"})
+            if "snapshot/name" in url
+            else "{}"
+        )
+        return resp
+
+    mock_get.side_effect = get_side_effect
+
+    # One tick: the dump for B at live snapshot 1 (delay bypassed) is queued AND last.json flipped.
+    ws_bridge = v3_system.ws_bridge
+    ws_bridge.inject("loading_start 0")
+    ws_bridge.inject("add drive http://uri 0.0 0.0 0 1 1")
+    ws_bridge.inject("add delay http://uri 0.0 0.0 1 1 1")
+    ws_bridge.inject("loading_end 1")
+
+    last_json = Path(handler.data_dir) / "last.json"
+    last_json.write_text(json.dumps({"pedalboard": "/path/to/new.pedalboard"}))
+    os.utime(last_json, (9999, 9999))
+
+    handler.poll_modui_changes()
+
+    assert handler.current
+    assert handler.current.pedalboard.bundle == "/path/to/new.pedalboard"
+    assert delay.is_bypassed()  # the live snapshot; lost to .ttl default on clean core
 
 
 def test_v3_inbound_param_set_refreshes_cached_value(v3_system: SystemFixture, make_plugin, make_parameter):
