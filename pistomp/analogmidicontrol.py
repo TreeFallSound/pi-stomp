@@ -13,7 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing_extensions import override
 from typing import Any
 
 

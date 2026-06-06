@@ -76,9 +76,9 @@ class Controller:
             return RoutingInfo.external(self.midiout.port_name)
         return RoutingInfo.virtual()
 
-    def get_display_info(self) -> dict:
+    def get_display_info(self) -> AnalogDisplayInfo:
         routing = self.get_routing_info()
-        info: dict = {}
+        info: AnalogDisplayInfo = {}
         if routing.destination == RoutingDestination.EXTERNAL:
             info["port_name"] = routing.port_name
             info["midi_cc"] = self.midi_CC
