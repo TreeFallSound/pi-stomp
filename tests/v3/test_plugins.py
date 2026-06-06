@@ -121,7 +121,13 @@ def test_v3_toggle_plugin_bypass_no_footswitch_sends_websocket(v3_system: System
     widget = next(w for w in handler.lcd.w_plugins if w.object is plugin)
     handler.toggle_plugin_bypass(widget, plugin)
 
+    # Emit-only: state and LCD stay put until the inbound echo arrives.
     assert ws_bridge.sent_values_for("fuzz", ":bypass") == [1.0]
+    assert not plugin.is_bypassed()
+    snapshot("active")
+
+    ws_bridge.inject("param_set /graph/fuzz :bypass 1.0")
+    handler.poll_ws_messages()
     assert plugin.is_bypassed()
     snapshot("bypassed")
 
@@ -142,6 +148,29 @@ def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_p
 
     assert not any("pi_stomp_set" in u for u in get_urls(mock_post))
     assert hw.footswitches[0].toggled is True
+
+
+def test_v3_bound_footswitch_emits_absolute_values_without_display(v3_system: SystemFixture, make_plugin):
+    """A bound :bypass footswitch sends alternating absolute CC values from local
+    intent — so rapid presses that outrun the echo stay correct — and leaves its
+    indicators and parameter for the inbound echo to update."""
+    hw = v3_system.hw
+    fs = hw.footswitches[0]
+    fs.refresh_callback = MagicMock()
+    fs.midiout.send_message.reset_mock()
+
+    plugin = make_plugin("fuzz")
+    fs.parameter = plugin.parameters[":bypass"]
+    assert not fs.drives_display
+
+    bypass_before = fs.parameter.value
+    for _ in range(3):
+        fs.pressed(switchstate.Value.RELEASED)
+
+    sent = [c.args[0][2] for c in fs.midiout.send_message.call_args_list]
+    assert sent == [127, 0, 127]
+    fs.refresh_callback.assert_not_called()
+    assert fs.parameter.value == bypass_before
 
 
 def test_v3_preset_change_plugin_update(v3_system: SystemFixture, make_plugin, snapshot):
@@ -274,7 +303,7 @@ def test_v3_handle_bypass_event_updates_plugin(v3_system: SystemFixture, make_pl
 
 
 def test_v3_bypass_echo_is_idempotent(v3_system: SystemFixture, make_plugin, snapshot):
-    """After toggle_plugin_bypass, the mod-ui echo doesn't corrupt state or LCD."""
+    """Toggle emits only; the echo is the sole writer and a repeat echo is idempotent."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -284,18 +313,22 @@ def test_v3_bypass_echo_is_idempotent(v3_system: SystemFixture, make_plugin, sna
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
-    snapshot("before")
+    snapshot("active")
 
     widget = next(w for w in handler.lcd.w_plugins if w.object is plugin)
     handler.toggle_plugin_bypass(widget, plugin)
-    assert plugin.is_bypassed()
-    snapshot("after_toggle")
+    assert not plugin.is_bypassed()
+    snapshot("active")  # emit-only: LCD unchanged before the echo
 
     ws_bridge.inject("param_set /graph/fuzz :bypass 1.0")
-    handler.poll_modui_changes()
-
+    handler.poll_ws_messages()
     assert plugin.is_bypassed()
-    snapshot("after_toggle")  # reuse the same baseline — echo must not change the LCD
+    snapshot("bypassed")
+
+    ws_bridge.inject("param_set /graph/fuzz :bypass 1.0")
+    handler.poll_ws_messages()
+    assert plugin.is_bypassed()
+    snapshot("bypassed")  # repeat echo is idempotent
 
 
 def test_v3_bypass_event_unknown_plugin_is_ignored(v3_system: SystemFixture, make_plugin):

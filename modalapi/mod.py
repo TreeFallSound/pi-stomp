@@ -903,13 +903,10 @@ class Mod(Handler):
                     if isinstance(c, Footswitch):
                         c.pressed(0)
                         return
-            # Regular (non footswitch plugin)
-            value = inst.toggle_bypass()
-            self.ws_bridge.send_parameter(inst.instance_id, ":bypass", 1.0 if value else 0.0)
-
-            #  Indicate change on LCD, and redraw selection(highlight)
-            self.update_lcd_plugins()
-            self.lcd.draw_plugin_select(inst)  # Not strictly required for original pi-stomp
+            # Non-footswitch plugin: emit only; the inbound echo updates state and LCD.
+            target_bypass = not inst.is_bypassed()
+            self.ws_bridge.send_parameter(inst.instance_id, ":bypass", 1.0 if target_bypass else 0.0)
+            self.lcd.draw_plugin_select(inst)  # selection highlight (navigation, not bypass)
 
     #
     # Generic Menu functions

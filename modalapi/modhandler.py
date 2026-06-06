@@ -741,12 +741,9 @@ class Modhandler(Handler):
                     if isinstance(c, Footswitch):
                         c.pressed(0)
                         return
-            # Regular (non footswitch plugin)
-            value = plugin.toggle_bypass()
-            self.ws_bridge.send_parameter(plugin.instance_id, ":bypass", 1.0 if value else 0.0)
-
-            #  Indicate change on LCD
-            self.lcd.toggle_plugin(widget, plugin)
+            # Non-footswitch plugin: emit only; the inbound echo updates state and LCD.
+            target_bypass = not plugin.is_bypassed()
+            self.ws_bridge.send_parameter(plugin.instance_id, ":bypass", 1.0 if target_bypass else 0.0)
 
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
         self.lcd.update_footswitch(footswitch)
