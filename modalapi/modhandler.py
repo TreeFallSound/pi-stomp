@@ -708,25 +708,7 @@ class Modhandler(Handler):
 
         # Update name on lcd
         self.lcd.draw_title()
-
-        # load of the preset might have changed plugin bypass status
-        self.preset_change_plugin_update()
-
-    def preset_change_plugin_update(self):
-        assert self.current is not None, "Current pedalboard is not set"
-
-        # Now that the preset has changed on the host, update plugin bypass indicators
-        for p in self.current.pedalboard.plugins:
-            uri = self.root_uri + "effect/parameter/pi_stomp_get//graph/" + p.instance_id + "/:bypass"
-            resp = self._rest_get(uri)
-            if resp is None:
-                logging.error("failed to get bypass value for: %s" % p.instance_id)
-                continue
-            if resp.status_code == 200:
-                p.set_bypass(resp.text == "true")
-            else:
-                logging.error(f"[preset_change_plugin_update] {p.instance_id}: REST status {resp.status_code}")
-        self.lcd.refresh_plugins()
+        # Bypass/param changes from the snapshot arrive via the WS drain (source of truth).
 
     def preset_incr_and_change(self, *argv):
         assert self.current is not None, "Current pedalboard is not set"

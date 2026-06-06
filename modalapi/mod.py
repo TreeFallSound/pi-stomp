@@ -837,8 +837,7 @@ class Mod(Handler):
             logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
         self.current.preset_index = index
 
-        #load of the preset might have changed plugin bypass status
-        self.preset_change_plugin_update()
+        # Bypass/param changes from the snapshot arrive via the WS drain (source of truth).
         self.bot_encoder_mode = BotEncoderMode.DEFAULT
 
     def preset_incr_and_change(self):
@@ -864,23 +863,6 @@ class Mod(Handler):
         if self.preset_select_index(index):
             self.preset_change()
         self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
-
-    def preset_change_plugin_update(self):
-        # Now that the preset has changed on the host, update plugin bypass indicators
-        for p in self.current.pedalboard.plugins:
-            uri = self.root_uri + "effect/parameter/pi_stomp_get//graph/" + p.instance_id + "/:bypass"
-            try:
-                resp = req.get(uri)
-                if resp.status_code == 200:
-                    p.set_bypass(resp.text == "true")
-            except:
-                logging.error("failed to get bypass value for: %s" % p.instance_id)
-                continue
-        self.lcd.draw_tools(SelectedType.WIFI, SelectedType.EQ, SelectedType.BYPASS, SelectedType.SYSTEM)
-        self.lcd.draw_analog_assignments(self.current.analog_controllers)
-        self.lcd.draw_plugins(self.current.pedalboard.plugins)
-        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
-        self.lcd.draw_plugin_select()
 
     #
     # Plugin Stuff
