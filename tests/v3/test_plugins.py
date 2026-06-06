@@ -281,6 +281,37 @@ def test_v3_poll_ws_messages_drains_without_file_watch(v3_system: SystemFixture,
     assert plugin.is_bypassed()
 
 
+def test_v3_add_dump_reseeds_bypass_on_reconnect(v3_system: SystemFixture, make_plugin):
+    """The connect/reconnect dump carries bypass only in the `add` line (field 4);
+    draining it reseeds plugin bypass without any param_set :bypass."""
+    handler = v3_system.handler
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+    plugin = make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=False)
+    handler.current.pedalboard.plugins = [plugin]
+
+    ws_bridge.inject("add fuzz http://uri 0.0 0.0 1 1 1")
+    handler.poll_ws_messages()
+
+    assert plugin.is_bypassed()
+
+
+def test_v3_add_dump_unknown_instance_is_ignored(v3_system: SystemFixture, make_plugin):
+    """An add for an instance we don't have (stale/other board) is a safe no-op."""
+    handler = v3_system.handler
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+    plugin = make_plugin("fuzz", bypassed=False, has_footswitch=False)
+    handler.current.pedalboard.plugins = [plugin]
+
+    ws_bridge.inject("add other_board_plugin http://uri 0.0 0.0 1 1 1")
+    handler.poll_ws_messages()
+
+    assert not plugin.is_bypassed()
+
+
 def test_v3_handle_bypass_event_updates_plugin(v3_system: SystemFixture, make_plugin, snapshot):
     """Inbound param_set :bypass from mod-ui updates plugin state and redraws LCD."""
     handler = v3_system.handler
@@ -344,6 +375,70 @@ def test_v3_bypass_event_unknown_plugin_is_ignored(v3_system: SystemFixture, mak
     assert not plugin.is_bypassed()
 
 
+def test_v3_snapshot_sequence_applies_bypass_via_ws(v3_system: SystemFixture, make_plugin, snapshot):
+    """mod-ui broadcasts pedal_snapshot + diff-gated param_set :bypass, and
+    the snapshot's bypass states become the source of truth (no REST poll).
+    The frame round-trips back to the baseline when the original snapshot is restored."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+    drive = make_plugin("drive", category="Distortion", bypassed=False, has_footswitch=False)
+    delay = make_plugin("delay", category="Delay", bypassed=False, has_footswitch=False)
+    handler.current.pedalboard.plugins = [drive, delay]
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+    snapshot("clean")  # snapshot 0: both active
+
+    # mod-ui → "Lead" (snapshot 1): delay engaged
+    ws_bridge.inject("pedal_snapshot 1 Lead")
+    ws_bridge.inject("param_set /graph/delay :bypass 1.0")
+    handler.poll_modui_changes()
+
+    assert handler.current.preset_index == 1
+    assert not drive.is_bypassed()
+    assert delay.is_bypassed()
+    snapshot("lead")
+
+    # mod-ui → "Clean" (snapshot 0): delay disengaged; screen returns to baseline
+    ws_bridge.inject("pedal_snapshot 0 Clean")
+    ws_bridge.inject("param_set /graph/delay :bypass 0.0")
+    handler.poll_modui_changes()
+
+    assert handler.current.preset_index == 0
+    assert not delay.is_bypassed()
+    snapshot("clean")
+
+
+def test_v3_reconnect_dump_reseeds_bypass_via_poll(v3_system: SystemFixture, make_plugin, snapshot):
+    """A reconnect delivers the connect dump (loading_start / add … / loading_end).
+    Bypass rides only in the add line (field 4); draining the dump through the real
+    poll entry point reseeds plugin state — the gap branch 5 closes."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+    drive = make_plugin("drive", category="Distortion", bypassed=False, has_footswitch=False)
+    delay = make_plugin("delay", category="Delay", bypassed=False, has_footswitch=False)
+    handler.current.pedalboard.plugins = [drive, delay]
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+    snapshot("both_active")
+
+    # Reconnect dump for the same board: delay reconnects bypassed (field 4 = 1)
+    ws_bridge.inject("loading_start 0")
+    ws_bridge.inject("add drive http://uri 0.0 0.0 0 1 1")
+    ws_bridge.inject("add delay http://uri 0.0 0.0 1 1 1")
+    ws_bridge.inject("loading_end 0")
+    handler.poll_modui_changes()
+
+    assert not drive.is_bypassed()
+    assert delay.is_bypassed()
+    snapshot("delay_bypassed")
+
+
 def test_v3_inbound_param_set_refreshes_cached_value(v3_system: SystemFixture, make_plugin, make_parameter):
     """An external param_set updates the cached Parameter.value so a later edit opens current."""
     handler = v3_system.handler
@@ -400,7 +495,6 @@ def test_v3_parameter_instance_id_strips_leading_slash():
 def test_v3_parameter_instance_id_none_preserved():
     param = Parameter({"shortName": "Gain", "symbol": "gain", "ranges": {}}, 0.5, None, None)
     assert param.instance_id is None
-
 
 
 def test_v3_websocket_send_parameter_uses_canonical_id(v3_system):

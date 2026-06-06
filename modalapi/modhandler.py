@@ -37,7 +37,7 @@ from pistomp.hardware import Controller, Hardware
 import pistomp.settings as Settings
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, ParamSetMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, AddPluginMessage, ParamSetMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -349,7 +349,8 @@ class Modhandler(Handler):
                 self._handle_blend_mode_snapshot_change(msg.snapshot_id)
                 self.lcd.draw_title()
 
-        elif isinstance(msg, PluginBypassMessage):
+        elif isinstance(msg, (PluginBypassMessage, AddPluginMessage)):
+            # PluginBypassMessage: live delta. AddPluginMessage: (re)connect dump
             if self.current is not None:
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
