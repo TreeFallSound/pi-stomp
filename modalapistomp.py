@@ -40,6 +40,7 @@ import pistomp.generichost as Generichost
 import pistomp.testhost as Testhost
 import pistomp.handlerfactory as Handlerfactory
 import pistomp.hardwarefactory as Hardwarefactory
+from pistomp.tuner.source import build_source
 
 EMULATOR_HOSTS = ("emulator_v1", "emulator_v2", "emulator_v3")
 
@@ -62,6 +63,11 @@ def main():
         help="Plugin host to use. Example --host mod'",
         default=["mod"],
         choices=["mod", "mod1", "generic", "test", "emulator_v1", "emulator_v2", "emulator_v3"],
+    )
+    parser.add_argument(
+        "--tuner-source",
+        default=None,
+        help="Audio source for tuner: 'jack' or 'tone:<hz>' (e.g. tone:440). Defaults to 'tone:440' on emulator, 'jack' otherwise.",
     )
 
     args = parser.parse_args()
@@ -171,6 +177,10 @@ def main():
 
     assert handler is not None
 
+    if not is_emulator and args.tuner_source:
+        tuner_spec = args.tuner_source
+        handler.set_tuner_source_factory(lambda port, *, name: build_source(tuner_spec, port, name=name))
+
     logging.info("Entering main loop. Press Control-C to exit.")
     period = 0
     try:
@@ -186,7 +196,8 @@ def main():
             period += 1
             if period % 2 == 0:
                 handler.poll_indicators()
-            if period % 20 == 0:
+            # LCD polling frequency adapts to SPI speed (24MHz→80ms, 48MHz→40ms, 56MHz→30ms)
+            if period % handler.lcd_poll_divisor == 0:
                 handler.poll_lcd_updates()
             if period % 100 == 0:
                 handler.poll_modui_changes()
