@@ -508,13 +508,17 @@ class Mod(Handler):
                         self.lcd.refresh_plugins()
                         break
 
-    def poll_modui_changes(self):
-        """Poll for changes from MOD-UI: websockets and file watching"""
+    def poll_ws_messages(self):
+        """Drain and dispatch inbound WebSocket messages (fast ~10ms cadence)."""
         for msg in self.ws_bridge.get_received_messages():
             try:
                 self._handle_ws_message(parse_message(msg))
             except Exception as e:
                 logging.error(f"Error handling WebSocket message '{msg}': {e}")
+
+    def poll_modui_changes(self):
+        """Poll for changes from MOD-UI: websockets and file watching"""
+        self.poll_ws_messages()
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():

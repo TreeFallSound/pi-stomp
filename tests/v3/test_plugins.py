@@ -239,6 +239,21 @@ def test_v3_parameter_midi_change(v3_system: SystemFixture, make_parameter, snap
 # ---------------------------------------------------------------------------
 
 
+def test_v3_poll_ws_messages_drains_without_file_watch(v3_system: SystemFixture, make_plugin):
+    """The fast-cadence poll_ws_messages() dispatches inbound WS on its own."""
+    handler = v3_system.handler
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+    plugin = make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=False)
+    handler.current.pedalboard.plugins = [plugin]
+
+    ws_bridge.inject("param_set /graph/fuzz :bypass 1.0")
+    handler.poll_ws_messages()
+
+    assert plugin.is_bypassed()
+
+
 def test_v3_handle_bypass_event_updates_plugin(v3_system: SystemFixture, make_plugin, snapshot):
     """Inbound param_set :bypass from mod-ui updates plugin state and redraws LCD."""
     handler = v3_system.handler

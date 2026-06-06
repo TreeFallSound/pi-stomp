@@ -358,13 +358,20 @@ class Modhandler(Handler):
                         self.lcd.refresh_plugins()
                         break
 
-    def poll_modui_changes(self):
-        """Poll for changes from MOD-UI: websockets and file watching"""
+    def poll_ws_messages(self):
+        """Drain inbound WS messages (fast ~10ms cadence). Main-thread only.
+        Must not touch next_pedalboard_preset_index (owned by the file-watch path)."""
         for msg in self.ws_bridge.get_received_messages():
             try:
                 self._handle_ws_message(parse_message(msg))
             except Exception as e:
                 logging.error(f"Error handling WebSocket message '{msg}': {e}")
+
+    def poll_modui_changes(self):
+        """Poll for changes from MOD-UI: websockets and file watching"""
+        # Drain WS first so loading_end/snapshot lands before the file-watch
+        # reads next_pedalboard_preset_index this tick. No-op if already drained.
+        self.poll_ws_messages()
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():

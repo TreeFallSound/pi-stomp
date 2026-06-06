@@ -143,10 +143,22 @@ def test_receive_data_ready_echoes_and_does_not_queue():
     assert worker.messages_received == 0
 
 
+def test_receive_output_set_is_dropped():
+    worker = _make_worker()
+    worker.running = True
+    ws = _FakeWs(["output_set /graph/Delay/meter 0.5", "output_set /graph/Amp/out 0.9"])
+
+    asyncio.run(worker._receive_messages(ws))
+
+    assert worker.received_queue.empty()
+    assert worker.messages_received == 0
+    assert ws._sent == []
+
+
 def test_receive_mixed_messages_routes_correctly():
     worker = _make_worker()
     worker.running = True
-    ws = _FakeWs(["ping", "loading_end 0", "data_ready x", "pedal_snapshot 2 Fuzz"])
+    ws = _FakeWs(["ping", "loading_end 0", "output_set /graph/Amp/out 0.9", "data_ready x", "pedal_snapshot 2 Fuzz"])
 
     asyncio.run(worker._receive_messages(ws))
 
