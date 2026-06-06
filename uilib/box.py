@@ -171,6 +171,11 @@ class Box:
         y1 = min(self.box[3], box.box[3])
         return Box(x0,y0,x1,y1)
 
+    def union(self, other: "Box") -> "Box":
+        """Return the smallest Box that contains both self and other."""
+        return Box(min(self.x0, other.x0), min(self.y0, other.y0),
+                   max(self.x1, other.x1), max(self.y1, other.y1))
+
     def is_empty(self):
         return self.box[0] >= self.box[2] or self.box[1] >= self.box[3]
 

@@ -113,6 +113,10 @@ class Audiocard:
     def set_bypass_right(self, bypass):
         pass
 
+    def set_output_muted(self, muted: bool) -> None:
+        if self.MASTER is not None:
+            self._amixer_sset(self.MASTER, "mute" if muted else "unmute", store=False)
+
     #
     # Use the following get and set methods depending on the value type
     #

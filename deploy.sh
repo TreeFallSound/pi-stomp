@@ -9,6 +9,7 @@ scp modalapi/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/modalapi/
 ssh pistomp@pistomp.local "rm -f /home/pistomp/pi-stomp/modalapi/wifi.py"
 scp modalapi/wifi/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/modalapi/wifi/
 scp pistomp/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/pistomp/
+scp pistomp/tuner/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/pistomp/tuner/
 if [ -d blend ]; then
     scp -r blend pistomp@pistomp.local:/home/pistomp/pi-stomp/
 fi
