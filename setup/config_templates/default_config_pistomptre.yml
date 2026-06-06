@@ -42,6 +42,7 @@ hardware:
     adc_input: 2
     ledstrip_position: 2
     midi_CC: 62
+    longpress: toggle_tuner_enable
   - id: 3
     adc_input: 3
     ledstrip_position: 3
