@@ -389,10 +389,10 @@ class Hardware(ABC):
 
     def __validate_midi_port(self, port_name):
         if self.external_midi is None:
-            logging.error(f"midi_port '{port_name}' set but external_midi not initialized, falling back to virtual")
+            logging.warning(f"midi_port '{port_name}' set but external_midi not initialized, falling back to virtual")
             return None
         if port_name not in self.external_midi.port_configs:
-            logging.error(f"midi_port '{port_name}' not found in external_midi config, falling back to virtual")
+            logging.warning(f"midi_port '{port_name}' not found in external_midi config, falling back to virtual")
             return None
         return port_name
 

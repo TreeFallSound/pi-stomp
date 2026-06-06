@@ -214,6 +214,20 @@ class TestSendMessagesForPedalboard:
         midi_out.close_port.assert_called_once()
 
 
+class TestInitPort:
+    def test_open_port_failure_returns_none_without_keyerror(self, monkeypatch):
+        """A failing open_port must not KeyError on a cache entry that was never set."""
+        failing = MagicMock()
+        failing.open_port.side_effect = RuntimeError("cannot open")
+        monkeypatch.setattr("modalapi.external_midi.rtmidi.MidiOut", lambda *a, **k: failing)
+
+        mgr = ExternalMidiManager()
+        mgr.update_config({"enabled": True, "ports": {"dev": {"port_index": 0}}})
+
+        assert mgr._init_port("dev") is None
+        assert "dev" not in mgr.midi_ports
+
+
 class TestSendRaw:
     def test_returns_false_when_disabled(self):
         mgr = ExternalMidiManager()

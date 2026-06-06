@@ -177,7 +177,6 @@ class ExternalMidiManager:
             return midi_out
         except Exception as e:
             logging.error(f"Failed to open MIDI port {port_name} (index {port_idx}): {e}")
-            del self.midi_ports[port_name]
             return None
 
     def _invalidate_port(self, port_name: str) -> None:

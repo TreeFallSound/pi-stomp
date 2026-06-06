@@ -180,8 +180,6 @@ class Mod(Handler):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
-        if self.external_midi is not None:
-            self.external_midi.close()
         if self.ws_bridge is not None:
             self.ws_bridge.stop()
 
