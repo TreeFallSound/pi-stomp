@@ -599,10 +599,9 @@ class Modhandler(Handler):
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
 
-        # Clear previous parameter bindings from all controllers except volume encoder
+        # Clear previous parameter bindings from all controllers except the volume control
         for controller in self.hardware.controllers.values():
-            is_volume = hasattr(controller, 'type') and controller.type == Token.VOLUME
-            if not is_volume:
+            if controller.type != Token.VOLUME:
                 controller.parameter = None
 
         # Clear analog controllers display data
