@@ -80,6 +80,15 @@ class TestUpdateConfig:
         assert mgr.messages["c4"] == [[0xC0, 0x05]]
         assert mgr.messages["hx"] == [[0xC0, 0x01]]
 
+    def test_ports_deep_merge_preserves_defaults(self):
+        """Pedalboard config overlay should merge fields, not replace the whole port dict."""
+        mgr = ExternalMidiManager()
+        mgr.update_config({"ports": {"c4": {"auto_detect": ["*C4*"], "port_index": 0}}})
+        # Overlay only changes auto_detect — port_index should be preserved
+        mgr.update_config({"ports": {"c4": {"auto_detect": ["*C4 Ultra*"]}}})
+        assert mgr.port_configs["c4"].get("auto_detect") == ["*C4 Ultra*"]
+        assert mgr.port_configs["c4"].get("port_index") == 0
+
 
 class TestPortDiscovery:
     def test_auto_detect_glob_case_insensitive(self, fake_ports):
@@ -205,17 +214,55 @@ class TestSendMessagesForPedalboard:
         midi_out.close_port.assert_called_once()
 
 
+class TestSendRaw:
+    def test_returns_false_when_disabled(self):
+        mgr = ExternalMidiManager()
+        mgr.update_config({"ports": {"dev": {"port_index": 0}}})
+        assert mgr.send_raw("dev", [0xB0, 10, 64]) is False
+
+    def test_unknown_port_returns_false(self):
+        mgr = ExternalMidiManager()
+        mgr.update_config({"enabled": True})
+        assert mgr.send_raw("ghost", [0xB0, 10, 64]) is False
+
+    def test_sends_message_and_returns_true(self, fake_ports):
+        available, _ = fake_ports
+        available[:] = ["dev"]
+        mgr = ExternalMidiManager()
+        mgr.update_config({"enabled": True, "ports": {"dev": {"port_index": 0}}})
+        assert mgr.send_raw("dev", [0xB0, 80, 100]) is True
+        _port(mgr, "dev").send_message.assert_called_once_with([0xB0, 80, 100])
+
+    def test_sends_non_cc_message(self, fake_ports):
+        available, _ = fake_ports
+        available[:] = ["dev"]
+        mgr = ExternalMidiManager()
+        mgr.update_config({"enabled": True, "ports": {"dev": {"port_index": 0}}})
+        assert mgr.send_raw("dev", [0xC0, 5]) is True  # Program Change
+        _port(mgr, "dev").send_message.assert_called_once_with([0xC0, 5])
+
+    def test_returns_false_when_port_unavailable(self, fake_ports):
+        mgr = ExternalMidiManager()
+        mgr.update_config({"enabled": True, "ports": {"dev": {"auto_detect": ["*nope*"]}}})
+        available, _ = fake_ports
+        available[:] = ["something_else"]
+        assert mgr.send_raw("dev", [0xB0, 10, 64]) is False
+
+    def test_send_failure_invalidates_port(self, fake_ports):
+        mgr = ExternalMidiManager()
+        mgr.update_config({"enabled": True, "ports": {"dev": {"port_index": 0}}})
+        midi_out = MagicMock()
+        midi_out.send_message.side_effect = RuntimeError("broken")
+        mgr.midi_ports["dev"] = midi_out
+        assert mgr.send_raw("dev", [0xB0, 10, 64]) is False
+        assert "dev" not in mgr.midi_ports
+
+
 class TestSendCC:
     def test_returns_false_when_disabled(self):
         mgr = ExternalMidiManager()
         mgr.update_config({"ports": {"dev": {"port_index": 0}}})
         assert mgr.send_cc("dev", 0, 10, 64) is False
-
-    def test_unknown_port_raises(self):
-        mgr = ExternalMidiManager()
-        mgr.update_config({"enabled": True})
-        with pytest.raises(RuntimeError, match="not found in external_midi config"):
-            mgr.send_cc("ghost", 0, 10, 64)
 
     @pytest.mark.parametrize(
         "channel,cc,value",
@@ -227,31 +274,13 @@ class TestSendCC:
         with pytest.raises(ValueError):
             mgr.send_cc("dev", channel, cc, value)
 
-    def test_sends_cc_and_returns_true(self, fake_ports):
+    def test_delegates_to_send_raw(self, fake_ports):
         available, _ = fake_ports
         available[:] = ["dev"]
         mgr = ExternalMidiManager()
         mgr.update_config({"enabled": True, "ports": {"dev": {"port_index": 0}}})
         assert mgr.send_cc("dev", 2, 80, 100) is True
-        # CC status = 0xB0 | channel
         _port(mgr, "dev").send_message.assert_called_once_with([0xB2, 80, 100])
-
-    def test_returns_false_when_port_unavailable(self, fake_ports):
-        mgr = ExternalMidiManager()
-        # auto_detect won't match → _init_port returns None
-        mgr.update_config({"enabled": True, "ports": {"dev": {"auto_detect": ["*nope*"]}}})
-        available, _ = fake_ports
-        available[:] = ["something_else"]
-        assert mgr.send_cc("dev", 0, 10, 64) is False
-
-    def test_send_failure_invalidates_port(self, fake_ports):
-        mgr = ExternalMidiManager()
-        mgr.update_config({"enabled": True, "ports": {"dev": {"port_index": 0}}})
-        midi_out = MagicMock()
-        midi_out.send_message.side_effect = RuntimeError("broken")
-        mgr.midi_ports["dev"] = midi_out
-        assert mgr.send_cc("dev", 0, 10, 64) is False
-        assert "dev" not in mgr.midi_ports
 
 
 class TestClose:
@@ -275,29 +304,51 @@ class TestClose:
 
 
 class TestExternalMidiOut:
-    def test_short_message_uses_fallback(self):
+    def test_delegates_to_send_raw(self):
         manager = MagicMock()
+        manager.send_raw.return_value = True
         fallback = MagicMock()
-        out = ExternalMidiOut(manager, "dev", 0, fallback)
-        out.send_message([0xF0, 0x7E])  # 2 bytes
-        fallback.send_message.assert_called_once_with([0xF0, 0x7E])
-        manager.send_cc.assert_not_called()
-
-    def test_routes_to_external_when_available(self):
-        manager = MagicMock()
-        manager.send_cc.return_value = True
-        fallback = MagicMock()
-        out = ExternalMidiOut(manager, "dev", 3, fallback)
+        out = ExternalMidiOut(manager, "dev", fallback)
         out.send_message([0xB3, 80, 100])
-        manager.send_cc.assert_called_once_with("dev", 3, 80, 100)
+        manager.send_raw.assert_called_once_with("dev", [0xB3, 80, 100])
         fallback.send_message.assert_not_called()
 
-    def test_falls_back_when_external_unavailable(self):
+    def test_falls_back_when_send_raw_fails(self):
         manager = MagicMock()
-        manager.send_cc.return_value = False
+        manager.send_raw.return_value = False
         fallback = MagicMock()
-        out = ExternalMidiOut(manager, "dev", 0, fallback)
+        out = ExternalMidiOut(manager, "dev", fallback)
         msg = [0xB0, 10, 64]
         out.send_message(msg)
-        manager.send_cc.assert_called_once_with("dev", 0, 10, 64)
+        manager.send_raw.assert_called_once_with("dev", msg)
         fallback.send_message.assert_called_once_with(msg)
+
+    def test_falls_back_when_send_raw_raises(self):
+        """Exceptions from send_raw must not crash the poll loop."""
+        manager = MagicMock()
+        manager.send_raw.side_effect = RuntimeError("port not in config")
+        fallback = MagicMock()
+        out = ExternalMidiOut(manager, "dev", fallback)
+        out.send_message([0xB0, 10, 64])
+        fallback.send_message.assert_called_once_with([0xB0, 10, 64])
+
+    def test_non_cc_message_routes_to_external(self):
+        """Non-CC messages are sent to external port via send_raw like any other."""
+        manager = MagicMock()
+        manager.send_raw.return_value = True
+        fallback = MagicMock()
+        out = ExternalMidiOut(manager, "dev", fallback)
+        msg = [0x92, 64, 100]  # Note On
+        out.send_message(msg)
+        manager.send_raw.assert_called_once_with("dev", msg)
+        fallback.send_message.assert_not_called()
+
+    def test_program_change_routes_to_external(self):
+        """Even short messages go through send_raw."""
+        manager = MagicMock()
+        manager.send_raw.return_value = True
+        fallback = MagicMock()
+        out = ExternalMidiOut(manager, "dev", fallback)
+        out.send_message([0xC0, 5])  # Program Change, 2 bytes
+        manager.send_raw.assert_called_once_with("dev", [0xC0, 5])
+        fallback.send_message.assert_not_called()
