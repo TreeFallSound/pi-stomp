@@ -37,7 +37,7 @@ from pistomp.hardware import Controller, Hardware
 import pistomp.settings as Settings
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -380,6 +380,11 @@ class Modhandler(Handler):
                         plugin.set_bypass(msg.bypassed)
                         self.lcd.refresh_plugins()
                         break
+
+        elif isinstance(msg, TransportMessage):
+            # Track MOD tempo regardless of tap-tempo mode (mod-ui owns transport state).
+            if self.hardware and self.hardware.taptempo:
+                self.hardware.taptempo.set_bpm(msg.bpm)
 
     def poll_modui_changes(self):
         """Poll for changes from MOD-UI: websockets and file watching"""
