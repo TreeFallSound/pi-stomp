@@ -45,7 +45,8 @@ class Footswitch(controller.Controller):
                                     "previous_snapshot":LongpressInfo(),
                                     "toggle_bypass":LongpressInfo(),
                                     "set_mod_tap_tempo":LongpressInfo(),
-                                    "toggle_tap_tempo_enable":LongpressInfo()}
+                                    "toggle_tap_tempo_enable":LongpressInfo(),
+                                    "toggle_tuner_enable":LongpressInfo()}
 
         # Static list of possible callbacks from the handler
         if len(cls.callbacks) == 0:

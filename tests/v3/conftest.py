@@ -14,6 +14,9 @@ from modalapi.wifi import SavedConnection, ScannedNetwork
 from tests.conftest import FakeWebSocketBridge
 from tests.integration.conftest import _v3_stack
 from tests.types import SystemFixture
+from ui.wifi_menu import _PassphraseEditor
+from uilib.misc import InputEvent
+from uilib.text import LetterSelector, TextEditor
 
 
 @pytest.fixture
@@ -185,3 +188,39 @@ def wifi_state(v3_system):
         }
         v3_system.handler.wifi_status = status
     return _set
+
+
+@pytest.fixture
+def type_in_editor():
+    """Type text into the active TextEditor / _PassphraseEditor via the LetterSelector.
+
+    Returns a ``type(lcd, text)`` helper that, for each character, switches the
+    selector into the matching charset mode (via long-click) and clicks it.
+    """
+    def _type_char(lcd, ch):
+        editor = lcd.pstack.current
+        assert isinstance(editor, (TextEditor, _PassphraseEditor)), type(editor)
+        assert editor.sel is not None
+        selector = editor.sel_list[editor.sel]
+        assert isinstance(selector, LetterSelector)
+
+        for mode_idx, charset in enumerate(LetterSelector.charsets):
+            if ch in charset:
+                break
+        else:
+            raise ValueError(f"character {ch!r} not found in any charset")
+
+        steps = (mode_idx - selector.mode) % len(LetterSelector.charsets)
+        if steps:
+            selector.l_idx = 3  # a non-control char: long-click cycles the charset
+            for _ in range(steps):
+                lcd.pstack.input_event(InputEvent.LONG_CLICK)
+
+        selector.l_idx = charset.index(ch)
+        lcd.pstack.input_event(InputEvent.CLICK)
+
+    def _type(lcd, text):
+        for ch in text:
+            _type_char(lcd, ch)
+
+    return _type
