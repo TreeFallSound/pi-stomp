@@ -204,7 +204,10 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 - **Timestamp-based change detection** - File mtimes for MOD sync, not polling APIs
 
 ### MOD Integration
-- **Direct REST calls** - No SDK abstraction, just `requests` to `localhost:80`
+- **mod-ui owns live state** - It is the single writer of bypass and parameter values;
+  piStomp mirrors over the WebSocket and emits its own changes for mod-ui to echo back
+- **REST for operations, WS for values** - `requests` to `localhost:80` drives
+  pedalboard/snapshot/tempo; the WebSocket carries live bypass/parameter state
 - **LILV for local parsing** - Parse `.ttl` bundles locally for performance and rich data
 - **Trust MOD for audio** - piStomp is controller interface, not audio processor
 - **Sync on change** - Reload pedalboard data when MOD writes `last.json`
@@ -323,14 +326,41 @@ POST /pedalboard/save                    # Save state
 GET /snapshot/list                       # Get all snapshots
 GET /snapshot/load?id={n}                # Load snapshot n
 
-# Parameter control
-POST /effect/parameter/pi_stomp_set//graph{id}/{symbol}  # Set parameter
-GET  /effect/parameter/pi_stomp_get//graph{id}/:bypass   # Get bypass state
-
 # Tempo
-POST /set_bpm                            # Set tap tempo
 GET  /get_bpm                            # Get current BPM
 ```
+
+REST covers pedalboard and snapshot operations and reads the current BPM. Live
+**values** — bypass, parameters, and tap-tempo BPM — flow over the WebSocket (below).
+
+**WebSocket — Live State, Source of Truth** (`modalapi/websocket_bridge.py`, `modalapi/ws_protocol.py`):
+
+mod-ui is the **single writer** of plugin bypass and control-port values. piStomp
+consumes its WebSocket (`ws://localhost:80/websocket`) and mirrors that state — it
+never authoritatively sets its own copy. A persistent daemon-thread bridge
+(auto-reconnect, backpressure) feeds a queue drained on the fast tick
+(`poll_ws_messages`, ~10ms). `output_set` meter/scope spam is dropped at the bridge.
+
+Inbound (`parse_message` → typed messages → each handler's `_handle_ws_message`):
+- `param_set …/:bypass v` — live bypass delta → set bypass + redraw.
+- `param_set …/{sym} v` — control value → refresh cached `Parameter.value` (a later
+  edit opens at current); no live redraw.
+- `add {inst} {uri} … {bypassed} …` — appears **only** in the (re)connect/load dump;
+  bypass rides in field 4 — its sole arrival point on connect. Same bypass dispatch.
+- `loading_start` / `loading_end {snapshot}` — bracket a dump; `loading_end` stashes
+  the snapshot index for the file-watch reload to apply.
+- `pedal_snapshot {id} {name}` — in-board snapshot change → set preset index; its
+  bypass/ports follow as `param_set`.
+
+**Diff-gating asymmetry (mod-ui side):** snapshot loads broadcast only deltas vs
+mod-ui's own cache; pedalboard loads and connect dumps rebroadcast **unconditionally**.
+⇒ reselecting a board is a full resync; reselecting a snapshot is not.
+
+Outbound is **emit-only**: a hardware change is *sent* to mod-ui — footswitch → MIDI CC
+(absolute, from local `toggled` intent); non-footswitch toggle / value edit → WS
+`send_parameter`; tap tempo → WS `send_bpm` — then piStomp **waits for the echo** to
+update its own state + LCD. It does not write its own bypass on the press. Single-writer
+keeps rapid presses correct and avoids dual-source drift.
 
 **Pedalboard Data Loading** via LILV (LV2 bundle parser):
 1. Parse `.ttl` files in pedalboard bundle
@@ -410,19 +440,19 @@ MOD-UI writes /home/pistomp/data/last.json
           → update_lcd()
 ```
 
-**Footswitch Press → Plugin Bypass**:
+**Footswitch Press → Plugin Bypass** (emit-only; mod-ui echoes back):
 
 ```
 poll_controls()
-  → Footswitch.poll() → detect press
-    → footswitch.pressed()
-      → Toggle self.enabled
-      → Update LED
-      → Send MIDI CC (if configured)
-      → Update bound parameter.value (e.g., :bypass)
-      → refresh_callback(footswitch=self)
-        → Handler.update_lcd_fs()
-          → LCD.update_footswitch() - redraw indicator
+  → Footswitch.pressed()
+      → advance local `toggled` intent
+      → send absolute MIDI CC  (or WS param_set for a non-footswitch toggle)
+      (no LED / parameter write here — state waits for the echo)
+
+mod-ui applies the bypass, broadcasts it back
+  → poll_ws_messages() (10ms)
+    → _handle_ws_message(param_set …/:bypass)   # or `add …` on reconnect
+      → plugin.set_bypass(v) → LCD.refresh_plugins()
 ```
 
 ### Key Files
