@@ -43,7 +43,8 @@ from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundl
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encodermidicontrol import EncoderMidiControl
 from pistomp.footswitch import Footswitch
-from pistomp.handler import Handler
+from pistomp.tuner import TunerEngine, TunerPanel, TunerSourceFactory
+from pistomp.tuner.source import AudioSource, build_source
 from pathlib import Path
 
 
@@ -108,13 +109,20 @@ class Modhandler(Handler):
         self.ws_bridge.start()
         logging.info("WebSocket bridge started")
 
+        # Tuner state
+        self._tuner_engine: TunerEngine | None = None
+        self._tuner_panel: TunerPanel | None = None
+        self._tuner_source_factory: TunerSourceFactory | None = None
+        self._tuner_muted: bool = False
+
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
         self.callbacks = {"set_mod_tap_tempo": self.set_mod_tap_tempo,
                           "next_snapshot": self.preset_incr_and_change,
                           "previous_snapshot": self.preset_decr_and_change,
                           "toggle_bypass": self.system_toggle_bypass,
-                          "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable
+                          "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable,
+                          "toggle_tuner_enable": self.toggle_tuner_enable,
         }
 
         # Blend mode manager - multiple blend snapshots per pedalboard
@@ -129,6 +137,12 @@ class Modhandler(Handler):
         # during interpreter shutdown on Py 3.14. Daemon thread dies with the process.
 
     def cleanup(self):
+        if self._tuner_engine is not None:
+            if self._tuner_muted:
+                self.audiocard.set_output_muted(False)
+            self._tuner_engine.stop()
+            self._tuner_engine = None
+            self._tuner_panel = None
         if self._lcd is not None:
             self._lcd.cleanup()
         if self._hardware is not None:
@@ -262,6 +276,15 @@ class Modhandler(Handler):
         if self._lcd is not None:
             self._lcd.update_wifi(self.wifi_status)
             self._lcd.poll_updates()
+
+    @property
+    def lcd_poll_divisor(self) -> int:
+        # Tick the LCD on every 10 ms main-loop pass (~100 fps) while the
+        # tuner panel is mounted. Strobe's worst-case redraw at STRIPE_W=4
+        # is ~4.3 ms of SPI, well inside the 10 ms budget; typical ticks
+        # are sub-millisecond. Fall back to the default 200 ms gate
+        # otherwise.
+        return 1 if self._tuner_panel is not None else 20
 
     def universal_encoder_select(self, direction):
         if self._lcd is not None:
@@ -1032,3 +1055,65 @@ class Modhandler(Handler):
     def toggle_tap_tempo_enable(self, *argv):
         self.hardware.toggle_tap_tempo_enable(self.get_bpm())
         self.lcd.update_footswitches()
+
+    def set_tuner_source_factory(self, factory: TunerSourceFactory) -> None:
+        self._tuner_source_factory = factory
+
+    def _tuner_factory(self, port: str) -> AudioSource:
+        factory = self._tuner_source_factory or (lambda p, *, name: build_source("jack", p, name=name))
+        return factory(port, name=f"pistomp-tuner-{port.split('_')[-1]}")
+
+    def toggle_tuner_enable(self, *argv) -> None:
+        if self._tuner_engine is None:
+            muted = bool(self.settings.get_setting(Token.TUNER_MUTE))
+            input_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
+            engine = TunerEngine(self._tuner_factory(f"system:capture_{input_port}"))
+            engine.start()
+            self._tuner_engine = engine
+            if muted:
+                self.audiocard.set_output_muted(True)
+                self._tuner_muted = True
+            panel = TunerPanel(
+                engine,
+                on_dismiss=self.toggle_tuner_enable,
+                on_mute_toggle=self._toggle_tuner_mute,
+                on_input_toggle=self._toggle_tuner_input,
+                muted=muted,
+                input_port=input_port,
+            )
+            self._tuner_panel = panel
+            self.lcd.show_tuner_panel(panel)
+        else:
+            self._dismiss_tuner()
+
+    def _dismiss_tuner(self) -> None:
+        if self._tuner_muted:
+            self.audiocard.set_output_muted(False)
+            self._tuner_muted = False
+        self.lcd.hide_tuner_panel()
+        if self._tuner_engine is not None:
+            self._tuner_engine.stop()
+            self._tuner_engine = None
+        self._tuner_panel = None
+
+    def _toggle_tuner_mute(self) -> None:
+        new_muted = not self._tuner_muted
+        self.audiocard.set_output_muted(new_muted)
+        self._tuner_muted = new_muted
+        self.settings.set_setting(Token.TUNER_MUTE, new_muted)
+        if self._tuner_panel is not None:
+            self._tuner_panel.set_muted(new_muted)
+
+    def _toggle_tuner_input(self) -> None:
+        current_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
+        new_port = 2 if current_port == 1 else 1
+        old_engine = self._tuner_engine
+        engine = TunerEngine(self._tuner_factory(f"system:capture_{new_port}"))
+        engine.start()
+        self.settings.set_setting(Token.TUNER_INPUT, new_port)
+        if old_engine is not None:
+            old_engine.stop()
+        self._tuner_engine = engine
+        if self._tuner_panel is not None:
+            self._tuner_panel.set_engine(engine)
+            self._tuner_panel.set_input_port(new_port)
