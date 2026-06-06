@@ -668,7 +668,7 @@ class Modhandler(Handler):
             routing = controller.get_routing_info()
             if routing.destination == RoutingDestination.EXTERNAL:
                 if controller.midi_CC is not None:
-                    controller.parameter = self.hardware._create_external_parameter(
+                    controller.parameter = self.hardware.create_external_parameter(
                         controller, routing.port_name, controller.midi_channel, controller.midi_CC
                     )
                 if isinstance(controller, AnalogMidiControl):

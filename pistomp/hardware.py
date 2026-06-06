@@ -138,16 +138,13 @@ class Hardware(ABC):
         # External MIDI configuration
         self.__init_external_midi(self.cfg)
 
-        # Encoder and analog controller configuration (update midiout for external routing)
-        self.__init_encoders_and_analog(self.cfg)
-
         # Pedalboard specific config
         if cfg is not None:
             self.__init_midi(cfg)
             self.__init_footswitches(cfg)
             self.__init_external_midi(cfg)
             self.__init_encoders(cfg)
-            self.__init_encoders_and_analog(cfg)
+            self.__apply_midi_routing(cfg)
 
     @abstractmethod
     def init_analog_controls(self):
@@ -376,7 +373,7 @@ class Hardware(ABC):
             pass
         return chan
 
-    def _create_external_parameter(self, controller, port_name, midi_channel, midi_cc):
+    def create_external_parameter(self, controller, port_name, midi_channel, midi_cc):
         name = f"{port_name}:{midi_cc}"
         info = {
             Token.NAME: name,
@@ -391,26 +388,16 @@ class Hardware(ABC):
         return Parameter.Parameter(info, val, f"{midi_channel}:{midi_cc}", EXTERNAL_INSTANCE_ID)
 
     def __validate_midi_port(self, port_name):
-        """Validate a midi_port name against external_midi config. Returns port_name or None."""
-        if port_name is None:
-            return None
         if self.external_midi is None:
-            logging.error(
-                f"Control configured with midi_port '{port_name}' but external_midi not initialized. "
-                f"Falling back to virtual port."
-            )
+            logging.error(f"midi_port '{port_name}' set but external_midi not initialized, falling back to virtual")
             return None
         if port_name not in self.external_midi.port_configs:
-            available = list(self.external_midi.port_configs.keys()) if self.external_midi.port_configs else []
-            logging.error(
-                f"Control configured with midi_port '{port_name}' but port not found in external_midi config. "
-                f"Available ports: {available}. Falling back to virtual port."
-            )
+            logging.error(f"midi_port '{port_name}' not found in external_midi config, falling back to virtual")
             return None
         return port_name
 
-    def __init_encoders_and_analog(self, cfg):
-        """Update midiout for encoders and analog controllers based on config."""
+    def __apply_midi_routing(self, cfg):
+        """Apply per-pedalboard MIDI routing overrides for encoders and analog controllers."""
         if cfg is None:
             return
 
@@ -434,10 +421,8 @@ class Hardware(ABC):
                         encoder.midi_CC = midi_cc
                     if midi_port:
                         encoder.midiout = ExternalMidiOut(self.external_midi, midi_port, self.midiout)
-                        logging.debug(f"Encoder {enc_id} routing CC {midi_cc} to external port '{midi_port}'")
                     else:
                         encoder.midiout = self.midiout
-                        logging.debug(f"Encoder {enc_id} routing to virtual port")
 
         if Token.HARDWARE in cfg and Token.ANALOG_CONTROLLERS in cfg[Token.HARDWARE]:
             cfg_analog = cfg[Token.HARDWARE][Token.ANALOG_CONTROLLERS]
@@ -457,10 +442,8 @@ class Hardware(ABC):
                         analog.midi_CC = midi_cc
                     if midi_port:
                         analog.midiout = ExternalMidiOut(self.external_midi, midi_port, self.midiout)
-                        logging.debug(f"Analog controller {analog_id} routing CC {midi_cc} to external port '{midi_port}'")
                     else:
                         analog.midiout = self.midiout
-                        logging.debug(f"Analog controller {analog_id} routing to virtual port")
 
     def __init_midi_default(self):
         self.__init_midi(self.cfg)
