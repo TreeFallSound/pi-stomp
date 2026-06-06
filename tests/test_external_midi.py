@@ -228,6 +228,28 @@ class TestInitPort:
         assert "dev" not in mgr.midi_ports
 
 
+class TestOpenBackoff:
+    def test_failed_open_backs_off_no_reenumerate(self, fake_ports):
+        """A port whose device is absent must not re-enumerate on every poll tick (C3)."""
+        available, created = fake_ports
+        available[:] = ["something_else"]
+        mgr = ExternalMidiManager()
+        mgr.update_config({"enabled": True, "ports": {"c4": {"auto_detect": ["*c4*"]}}})
+
+        assert mgr._init_port("c4") is None
+        n = len(created)
+        assert mgr._init_port("c4") is None
+        assert len(created) == n  # second attempt skipped enumeration
+
+    def test_open_port_eager_returns_bool(self, fake_ports):
+        available, _ = fake_ports
+        available[:] = ["dev"]
+        mgr = ExternalMidiManager()
+        mgr.update_config({"enabled": True, "ports": {"dev": {"port_index": 0}}})
+        assert mgr.open_port("dev") is True
+        assert "dev" in mgr.midi_ports
+
+
 class TestSendRaw:
     def test_returns_false_when_disabled(self):
         mgr = ExternalMidiManager()

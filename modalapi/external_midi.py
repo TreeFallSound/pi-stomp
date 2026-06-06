@@ -27,6 +27,8 @@ MidiMessage = list[int]
 
 EXTERNAL_INSTANCE_ID = "External"
 
+PORT_RETRY_BACKOFF_S = 5.0  # don't re-enumerate a failed port more often than this (C3)
+
 
 class ExternalMidiOut:
     """
@@ -75,6 +77,7 @@ class ExternalMidiManager:
         self.messages: dict[str, list[MidiMessage]] = {}
         self.enabled: bool = False
         self.send_delay_ms: int = 10
+        self._open_failures: dict[str, float] = {}
 
     def update_config(self, cfg: ExternalMidiConfig | None) -> None:
         """
@@ -155,28 +158,40 @@ class ExternalMidiManager:
         logging.info(f"Auto-detected MIDI port: {selected_name} (index {selected_idx})")
         return selected_idx
 
+    def open_port(self, port_name: str) -> bool:
+        """Eagerly open a port at routing time so the first poll-loop send doesn't enumerate (C3)."""
+        return self._init_port(port_name) is not None
+
     def _init_port(self, port_name: str) -> rtmidi.MidiOut | None:
         if port_name in self.midi_ports:
             return self.midi_ports[port_name]
 
+        last_fail = self._open_failures.get(port_name)
+        if last_fail is not None and (time.monotonic() - last_fail) < PORT_RETRY_BACKOFF_S:
+            return None
+
         port_config = self.port_configs.get(port_name)
         if not port_config:
             logging.warning(f"No configuration found for MIDI port: {port_name}")
+            self._open_failures[port_name] = time.monotonic()
             return None
 
         port_idx = self._find_port_by_name(port_config)
         if port_idx is None:
             logging.warning(f"Could not find MIDI port for: {port_name}")
+            self._open_failures[port_name] = time.monotonic()
             return None
 
         try:
             midi_out = rtmidi.MidiOut()
             midi_out.open_port(port_idx)
             self.midi_ports[port_name] = midi_out
+            self._open_failures.pop(port_name, None)
             logging.info(f"Opened MIDI port: {port_name}")
             return midi_out
         except Exception as e:
             logging.error(f"Failed to open MIDI port {port_name} (index {port_idx}): {e}")
+            self._open_failures[port_name] = time.monotonic()
             return None
 
     def _invalidate_port(self, port_name: str) -> None:
@@ -191,6 +206,7 @@ class ExternalMidiManager:
             except Exception as e:
                 logging.debug(f"Error closing invalidated port {port_name}: {e}")
             del self.midi_ports[port_name]
+            self._open_failures[port_name] = time.monotonic()  # back off before re-enumerating (C3)
 
     def _validate_midi_message(self, message: MidiMessage) -> bool:
         if not isinstance(message, list) or len(message) < 2:

@@ -1,8 +1,14 @@
 """Unit tests for pistomp.hardware.Hardware helpers."""
 
 import logging
+from types import SimpleNamespace
+from typing import cast
+from unittest.mock import MagicMock
 
-from modalapi.external_midi import ExternalMidiManager
+import pytest
+
+import common.token as Token
+from modalapi.external_midi import ExternalMidiManager, ExternalMidiOut
 from pistomp.hardware import Hardware
 
 
@@ -15,7 +21,8 @@ class _StubHardware(Hardware):
     def init_relays(self): ...
     def cleanup(self): ...
     def test(self): ...
-    def add_encoder(self, *a, **k): ...
+    def add_encoder(self, *a, **k):
+        raise NotImplementedError
 
 
 def _validate(hw, port_name):
@@ -45,3 +52,83 @@ class TestValidateMidiPort:
         recs = [r for r in caplog.records if "dev" in r.getMessage()]
         assert recs
         assert all(r.levelno == logging.WARNING for r in recs)
+
+
+@pytest.fixture
+def routed_hw(monkeypatch):
+    """A Hardware with one encoder, analog control, and footswitch, and a 'c4' external port."""
+    monkeypatch.setattr("modalapi.external_midi.rtmidi.MidiOut", lambda *a, **k: MagicMock())
+
+    hw = object.__new__(_StubHardware)
+    hw.midiout = MagicMock(name="virtual")
+    hw.external_midi = ExternalMidiManager()
+    hw.external_midi.update_config({"enabled": True, "ports": {"c4": {"port_index": 0}}})
+
+    hw.encoders = [SimpleNamespace(id=1, midi_CC=70, midiout=hw.midiout)]
+    hw.analog_controls = cast(list, [SimpleNamespace(id=2, midi_CC=75, midiout=hw.midiout)])
+    hw.footswitches = cast(list, [SimpleNamespace(id=0, midiout=hw.midiout)])
+    return hw
+
+
+def _route(hw, cfg):
+    hw._Hardware__apply_midi_routing(cfg)
+
+
+class TestApplyMidiRouting:
+    def test_footswitch_routed_to_external_port(self, routed_hw):
+        """C1: footswitches had no routing branch, so midi_port never took effect."""
+        cfg = {Token.HARDWARE: {Token.FOOTSWITCHES: [{Token.ID: 0, "midi_port": "c4"}]}}
+        _route(routed_hw, cfg)
+        fs = routed_hw.footswitches[0]
+        assert isinstance(fs.midiout, ExternalMidiOut)
+        assert fs.midiout.port_name == "c4"
+
+    def test_encoder_and_analog_routed_to_external_port(self, routed_hw):
+        cfg = {
+            Token.HARDWARE: {
+                Token.ENCODERS: [{Token.ID: 1, "midi_port": "c4"}],
+                Token.ANALOG_CONTROLLERS: [{Token.ID: 2, "midi_port": "c4"}],
+            }
+        }
+        _route(routed_hw, cfg)
+        assert isinstance(routed_hw.encoders[0].midiout, ExternalMidiOut)
+        assert isinstance(routed_hw.analog_controls[0].midiout, ExternalMidiOut)
+
+    def test_encoder_midi_cc_override(self, routed_hw):
+        cfg = {Token.HARDWARE: {Token.ENCODERS: [{Token.ID: 1, Token.MIDI_CC: 99}]}}
+        _route(routed_hw, cfg)
+        assert routed_hw.encoders[0].midi_CC == 99
+
+    def test_no_midi_port_falls_back_to_virtual(self, routed_hw):
+        cfg = {Token.HARDWARE: {Token.FOOTSWITCHES: [{Token.ID: 0}]}}
+        _route(routed_hw, cfg)
+        assert routed_hw.footswitches[0].midiout is routed_hw.midiout
+
+    def test_external_port_opened_eagerly(self, routed_hw):
+        """C3: the port is opened at routing time, not lazily inside the poll loop."""
+        cfg = {Token.HARDWARE: {Token.FOOTSWITCHES: [{Token.ID: 0, "midi_port": "c4"}]}}
+        _route(routed_hw, cfg)
+        assert "c4" in routed_hw.external_midi.midi_ports
+
+
+class TestReinitDefaultRouting:
+    def test_reinit_applies_routing_for_default_cfg(self, monkeypatch):
+        """C1: default-config routing was never applied (only pedalboard cfg was)."""
+        hw = object.__new__(_StubHardware)
+        hw.default_cfg = {Token.HARDWARE: {}}
+        hw.handler = MagicMock()
+
+        for name in (
+            "_Hardware__init_midi_default",
+            "_Hardware__init_footswitches",
+            "_Hardware__init_encoders",
+            "_Hardware__init_external_midi",
+        ):
+            setattr(hw, name, lambda *a, **k: None)
+        routed = []
+        setattr(hw, "_Hardware__apply_midi_routing", lambda cfg: routed.append(cfg))
+        monkeypatch.setattr("pistomp.footswitch.Footswitch.init", staticmethod(lambda cb: None))
+
+        hw.reinit(None)
+
+        assert routed == [hw.cfg]
