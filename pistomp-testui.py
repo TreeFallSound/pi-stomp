@@ -91,11 +91,11 @@ def do_main_screen():
     p = Panel(box = Box.xywh(0,0,display_width,180))
 
     # toolbar
-    wifi = ImageWidget(box=Box.xywh(240,0,20,20), image_path='./images/wifi_orange.png', parent=p, action=do_wifi_dialog)
+    wifi = ImageWidget(box=Box.xywh(240,0,20,20), image='./images/wifi_orange.png', parent=p, action=do_wifi_dialog)
     p.add_sel_widget(wifi)
-    power = ImageWidget(box=Box.xywh(270,0,20,20), image_path='./images/power_green.png', parent=p)
+    power = ImageWidget(box=Box.xywh(270,0,20,20), image='./images/power_green.png', parent=p)
     p.add_sel_widget(power)
-    wrench = ImageWidget(box=Box.xywh(296,0,20,20), image_path='./images/wrench_silver.png', parent=p,
+    wrench = ImageWidget(box=Box.xywh(296,0,20,20), image='./images/wrench_silver.png', parent=p,
                          action=do_menu)
     p.add_sel_widget(wrench)
 
