@@ -23,7 +23,8 @@ hardware:
   # adc_input: <integer>          The analog input to which the switch is connected (required)
   # ledstrip_position: <integer>  The position of the corresponding LED (optional)
   # midi_CC: <integer>            The MIDI CC message to be sent when switch is clicked (optional)
-  # midi_port: <port_name>        Route MIDI to an external device port (optional, must match a port in external_midi)
+  # midi_port: <port_name>        Send MIDI to this external port INSTEAD of the virtual MIDI Through port (optional)
+  #                               Falls back to the virtual port only if the device is unavailable; must match a port in external_midi
   # longpress: <callback_name>    The name of a handler method to call when switch is long-pressed (optional)
   #                               longpress can be a list enclosed with []'s
   #
@@ -56,7 +57,8 @@ hardware:
   # id: <integer>                 The id and position on the screen (starting with 0 on the left)
   # type: <KNOB | EXPRESSION>     The control type, used to represent the control on the screen (optional)
   # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
-  # midi_port: <port_name>        Route MIDI to an external device port (optional, must match a port in external_midi)
+  # midi_port: <port_name>        Send MIDI to this external port INSTEAD of the virtual MIDI Through port (optional)
+  #                               Falls back to the virtual port only if the device is unavailable; must match a port in external_midi
   # autosync: <true | false>      Whether to send current value on pedalboard load (optional, default: false)
   #
   #analog_controllers:
@@ -72,7 +74,8 @@ hardware:
   # type: <KNOB | VOLUME>         The control type (default is KNOB, VOLUME controls output volume)
   # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
   #                               cannot be used along with type=VOLUME
-  # midi_port: <port_name>        Route MIDI to an external device port (optional, must match a port in external_midi)
+  # midi_port: <port_name>        Send MIDI to this external port INSTEAD of the virtual MIDI Through port (optional)
+  #                               Falls back to the virtual port only if the device is unavailable; must match a port in external_midi
   # longpress: <callback_name>    The name of a handler method to call when switch is long-pressed (optional)
   #
   encoders:

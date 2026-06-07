@@ -23,6 +23,8 @@ hardware:
   # adc_input: <integer>          The analog input to which the switch is connected (required)
   # ledstrip_position: <integer>  The position of the corresponding LED (optional)
   # midi_CC: <integer>            The MIDI CC message to be sent when switch is clicked (optional)
+  # midi_port: <port_name>        Send MIDI to this external port INSTEAD of the virtual MIDI Through port (optional)
+  #                               Falls back to the virtual port only if the device is unavailable; must match a port in external_midi
   # longpress: <callback_name>    The name of a handler method to call when switch is long-pressed (optional)
   #                               longpress can be a list enclosed with []'s
   #
@@ -55,6 +57,8 @@ hardware:
   # id: <integer>                 The id and position on the screen (starting with 0 on the left)
   # type: <KNOB | EXPRESSION>     The control type, used to represent the control on the screen (optional)
   # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
+  # midi_port: <port_name>        Send MIDI to this external port INSTEAD of the virtual MIDI Through port (optional)
+  #                               Falls back to the virtual port only if the device is unavailable; must match a port in external_midi
   # autosync: <true | false>      Whether to send current value on pedalboard load (optional, default: false)
   #
   #analog_controllers:
@@ -70,6 +74,8 @@ hardware:
   # type: <KNOB | VOLUME>         The control type (default is KNOB, VOLUME controls output volume)
   # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
   #                               cannot be used along with type=VOLUME
+  # midi_port: <port_name>        Send MIDI to this external port INSTEAD of the virtual MIDI Through port (optional)
+  #                               Falls back to the virtual port only if the device is unavailable; must match a port in external_midi
   # longpress: <callback_name>    The name of a handler method to call when switch is long-pressed (optional)
   #
   encoders:
@@ -81,6 +87,49 @@ hardware:
       longpress: next_snapshot
     - id: 3
       type: VOLUME
+
+  # external_midi:
+  # External MIDI device synchronization - sends messages when pedalboards load
+  # Can be overridden per-pedalboard by creating <pedalboard>.pedalboard/config.yml
+  #
+  # enabled: <boolean>              Enable/disable external MIDI (default: false)
+  # send_delay_ms: <integer>        Delay between consecutive messages in milliseconds (default: 10)
+  #
+  # ports:                          Define external MIDI devices
+  #   <port_name>:
+  #     auto_detect: [<patterns>]   List of glob patterns to match port names (case-insensitive)
+  #     port_index: <integer>       Manual port index (overrides auto_detect)
+  #
+  # messages:                       MIDI messages to send for each port on pedalboard load
+  #   <port_name>:
+  #     - [0xSS, 0xDD, ...]         List of MIDI messages (hex bytes)
+  #
+  # Example configuration:
+  #
+  # external_midi:
+  #   enabled: true
+  #   send_delay_ms: 10
+  #   ports:
+  #     c4:
+  #       auto_detect: ["*C4*", "*Source Audio*"]
+  #     hx_stomp:
+  #       auto_detect: ["*HX Stomp*"]
+  #   messages:
+  #     c4:
+  #       - [0xB0, 0x66, 0x00]      # CC 102 = 0 (bypass)
+  #     hx_stomp:
+  #       - [0xC0, 0x00]            # Program Change 0
+  #
+  # MIDI message formats:
+  #   Program Change: [0xCn, program]        where n = channel (0-F)
+  #   Control Change: [0xBn, cc, value]      where n = channel (0-F)
+  #
+  # Per-pedalboard override example (<pedalboard>.pedalboard/config.yml):
+  #   hardware:
+  #     external_midi:
+  #       messages:
+  #         c4:
+  #           - [0xC0, 0x05]        # Program Change 5 for this pedalboard only
 
 # Blend Mode Configuration (Pedalboard-specific)
 # This feature interpolates between snapshots based on analog input position.
