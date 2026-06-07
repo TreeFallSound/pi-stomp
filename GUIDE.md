@@ -132,33 +132,26 @@ JACK (bridges via `-X seq`)
 - ✅ Expression Pedal (CC 75) - sends to virtual port
 - ✅ Footswitches (CC 60-63) - send to virtual port when pressed
 - ✅ Rotary Encoder Rotation (Tweak1=CC70, Tweak2=CC71) - send to virtual port
-- ✅ Encoder Button Presses - Can optionally send MIDI via `shortpress` config (see below)
+- ❌ Encoder Button Presses - UI navigation / handler actions only; do not send MIDI
 
-### Encoder Button Configuration (v3 only)
+### Encoder Button Behavior (v3)
 
-Encoder buttons support configurable `shortpress` callbacks:
+Encoder button presses are wired to handler callbacks, not MIDI. A short press
+invokes the built-in click handler (`universal_encoder_sw`, UI navigation); a
+long press invokes the named `longpress` callback from config.
 
 ```yaml
 encoders:
   - id: 1
-    midi_CC: 70  # Rotation
+    midi_CC: 70             # rotation sends CC 70
     longpress: previous_snapshot
-    # shortpress omitted — defaults to the built-in encoder click handler
-
-  - id: 2
-    midi_CC: 71
-    shortpress:
-      callback: send_midi_cc
-      args: {cc: 72}  # Button sends CC 72 to virtual port
 ```
-
-Shortpress accepts string (callback name) or object with `callback` and `args` (expanded as kwargs).
 
 #### Implementation Details
 
 | Control | Shortpress | Longpress |
 |---------|------------|-----------|
-| Encoder | String or `{callback, args}` via `encoderconfig.parse_shortpress_config()` | String only (no args) |
+| Encoder | Built-in click handler (UI nav) - no config | String (callback name) - no args |
 | Footswitch | Hardcoded (toggle/MIDI) - no config | String or list (group names) - no args |
 | `GpioSwitch` | `callback_arg` (dict→kwargs, value→arg, None) | `longpress_callback_arg` (dict→kwargs, value→arg, None) |
 | `AnalogSwitch` | Single `callback(state)` - no separate longpress | Same callback, state=LONGPRESSED |
@@ -364,7 +357,7 @@ GET  /get_bpm                            # Get current BPM
 **Encoders** (`pistomp/encoder.py`, `pistomp/encodermidicontrol.py`):
 - **Base**: Quadrature decoding, GPIO interrupts, debounce
 - **MIDI Control**: Sends CC on rotation (v3 tweak encoders)
-- **Buttons**: Configurable shortpress (callback + args) and longpress
+- **Buttons**: Built-in shortpress (UI nav) and configurable longpress (callback name)
 - **State Machines** (v1/v2 only): `TopEncoderMode`, `BotEncoderMode`, `UniversalEncoderMode`
 
 **Analog Controls** (`pistomp/analogmidicontrol.py`):
