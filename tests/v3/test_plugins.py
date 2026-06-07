@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pistomp.switchstate as switchstate
 from pistomp.encodermidicontrol import EncoderMidiControl
+from pistomp.footswitch import Footswitch
 from common.parameter import Parameter
 from modalapi.plugin import Plugin
 import common.token as Token
@@ -72,6 +73,31 @@ def test_v3_bind_volume_encoder_populates_analog_controllers(v3_system: SystemFi
     assert Token.VOLUME in handler.current.analog_controllers
 
 
+def test_v3_bind_does_not_reorder_footswitch_plugins(v3_system: SystemFixture, make_plugin):
+    """v3 (modhandler) leaves the plugin chain order untouched.
+
+    Counterpart to v1's reorder-to-end behavior — pins the asymmetry so a shared
+    controller-manager extraction must preserve it rather than unify it.
+    """
+    handler = v3_system.handler
+    hw = v3_system.hw
+
+    fs_key = next(k for k, v in hw.controllers.items() if isinstance(v, Footswitch))
+
+    fuzz = make_plugin("fuzz")  # footswitch-controlled, placed first
+    fuzz.parameters[":bypass"].binding = fs_key
+    reverb = make_plugin("reverb")  # no controller binding
+
+    assert handler.current
+    handler.current.pedalboard.plugins = [fuzz, reverb]
+    handler.bind_current_pedalboard()
+
+    assert hw.controllers[fs_key].parameter is fuzz.parameters[":bypass"]
+    assert fuzz.has_footswitch is True
+    titles = [p.instance_id for p in handler.current.pedalboard.plugins]
+    assert titles == ["fuzz", "reverb"], "v3 must not reorder footswitch plugins"
+
+
 # ---------------------------------------------------------------------------
 # Plugin bypass
 # ---------------------------------------------------------------------------
@@ -97,6 +123,7 @@ def test_v3_toggle_plugin_bypass_via_footswitch_sends_midi_cc(v3_system: SystemF
 
     handler.toggle_plugin_bypass(None, plugin)
 
+    assert isinstance(fs.midiout, MagicMock)
     fs.midiout.send_message.assert_called_once()
     sent_cc = fs.midiout.send_message.call_args[0][0]
     assert sent_cc[1] == fs.midi_CC
