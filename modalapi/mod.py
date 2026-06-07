@@ -745,6 +745,20 @@ class Mod(Handler):
                                                if elem.has_footswitch is False]
             self.current.pedalboard.plugins += footswitch_plugins
 
+        # Externally-routed controllers: bind a synthetic parameter and show under "External"
+        for controller in self.hardware.controllers.values():
+            routing = controller.get_routing_info()
+            if routing.destination != RoutingDestination.EXTERNAL or controller.midi_CC is None:
+                continue
+            controller.parameter = self.hardware.create_external_parameter(
+                controller, routing.port_name, controller.midi_channel, controller.midi_CC
+            )
+            if isinstance(controller, AnalogMidiControl):
+                key = f"{controller.midi_channel}:{controller.midi_CC}"
+                display_info = controller.get_display_info()  # already carries type/id
+                display_info[Token.CATEGORY] = 'External'
+                self.current.analog_controllers[key] = display_info
+
     def pedalboard_select(self, direction):
         # 0 means the pedalboard field is selected but a new pedalboard hasn't been scrolled to yet
         if direction == 0:

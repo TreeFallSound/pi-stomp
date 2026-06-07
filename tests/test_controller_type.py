@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import common.token as Token
 from modalapi.mod import Mod
-from pistomp.controller import Controller
+from pistomp.controller import Controller, RoutingInfo
 
 
 class _Ctl:
@@ -19,6 +19,10 @@ class _Ctl:
     def __init__(self, type):
         self.type = type
         self.parameter = "bound"
+        self.midi_CC = None
+
+    def get_routing_info(self):
+        return RoutingInfo.virtual()
 
 
 def test_controller_type_defaults_to_none():

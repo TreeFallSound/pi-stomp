@@ -325,9 +325,13 @@ class Lcd(abstract_lcd.Lcd):
         knob = Token.NONE
         for k, v in controllers.items():
             control_type = util.DICT_GET(v, Token.TYPE)
-            s = k.split(":")
-            text = "%s:%s" % (self.shorten_name(s[0], self.plugin_width),
-                              self.shorten_name(s[1], self.plugin_width_medium))
+            if util.DICT_GET(v, Token.CATEGORY) == 'External':
+                port = util.DICT_GET(v, 'port_name') or ''
+                text = "%s:%s" % (self.shorten_name(port, self.plugin_width), util.DICT_GET(v, 'midi_cc'))
+            else:
+                s = k.split(":")
+                text = "%s:%s" % (self.shorten_name(s[0], self.plugin_width),
+                                  self.shorten_name(s[1], self.plugin_width_medium))
             if control_type == Token.EXPRESSION:
                 exp = text
             elif control_type == Token.KNOB:
