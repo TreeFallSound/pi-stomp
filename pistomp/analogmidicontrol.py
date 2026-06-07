@@ -79,11 +79,6 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
         value = self._clamp_endpoints(self.readChannel())
         self._send_value(value)
 
-    def initialize(self):
-        if not self.autosync:
-            return
-        self.send_current_value()
-
     def refresh(self):
         value = self._clamp_endpoints(self.readChannel())
         if abs(value - self.last_read) > self.tolerance:

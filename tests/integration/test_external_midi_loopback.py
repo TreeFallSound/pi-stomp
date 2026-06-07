@@ -10,7 +10,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import common.token as Token
+import pistomp.switchstate as switchstate
 from modalapi.external_midi import ExternalMidiManager, ExternalMidiOut
+from pistomp.analogmidicontrol import AnalogMidiControl
+from pistomp.encodermidicontrol import EncoderMidiControl
+from pistomp.footswitch import Footswitch
 
 pytestmark = pytest.mark.skipif(
     sys.platform != "darwin",
@@ -129,4 +134,64 @@ class TestRealLoopback:
         assert mgr.send_raw("dev", [0xB0, 1, 2]) is False  # within backoff window
 
         assert len(enumerations) == 1  # second send short-circuited on backoff
+        mgr.close()
+
+
+class TestControlRoutesToRealPort:
+    """End-to-end: a real control routed via ExternalMidiOut emits framed CC bytes on the wire.
+
+    Each builds the actual control with its midiout set to an external wrapper (as
+    __apply_midi_routing does), drives the action method directly, and asserts the
+    bytes land on the virtual port. Covers every externally-routable control:
+    footswitch press, tweak-encoder rotation, expression/knob movement.
+    """
+
+    def _routed(self, port_name):
+        mgr = _manager_for(port_name)
+        fallback = MagicMock()
+        return mgr, ExternalMidiOut(mgr, "dev", fallback), fallback
+
+    def test_footswitch_press_reaches_real_port(self, loopback):
+        port_name, received = loopback
+        mgr, out, fallback = self._routed(port_name)
+        fs = Footswitch(1, None, None, midi_CC=61, midi_channel=0, midiout=out, refresh_callback=MagicMock())
+
+        fs.pressed(switchstate.Value.RELEASED)  # short press → CC 127 (toggled on)
+
+        assert _wait_for(lambda: received == [[0xB0, 61, 127]])
+        fallback.send_message.assert_not_called()
+        mgr.close()
+
+    def test_tweak_encoder_rotation_reaches_real_port(self, loopback):
+        port_name, received = loopback
+        mgr, out, fallback = self._routed(port_name)
+        enc = EncoderMidiControl(
+            MagicMock(),
+            d_pin=None,
+            clk_pin=None,
+            callback=None,
+            midi_CC=70,
+            midi_channel=0,
+            midiout=out,
+            type=Token.KNOB,
+            id=1,
+        )
+
+        enc.refresh(1)  # one detent clockwise → midi_value 0 + per_click(8)
+
+        assert _wait_for(lambda: received == [[0xB0, 70, 8]])
+        fallback.send_message.assert_not_called()
+        mgr.close()
+
+    def test_expression_movement_reaches_real_port(self, loopback):
+        port_name, received = loopback
+        mgr, out, fallback = self._routed(port_name)
+        exp = AnalogMidiControl(
+            MagicMock(), 0, 16, midi_CC=75, midi_channel=0, midiout=out, type=Token.EXPRESSION, id=4
+        )
+
+        exp._send_value(1023)  # full travel → MIDI 127
+
+        assert _wait_for(lambda: received == [[0xB0, 75, 127]])
+        fallback.send_message.assert_not_called()
         mgr.close()

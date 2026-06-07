@@ -297,7 +297,7 @@ class Hardware(ABC):
                           (adc_input, midi_channel, midi_cc))
 
     @abstractmethod
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc, shortpress_config=None, midiout=None) -> Encoder.Encoder | EncoderMidiControl.EncoderMidiControl:
+    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc, midiout=None) -> Encoder.Encoder | EncoderMidiControl.EncoderMidiControl:
         # This should be implemented by hardware subclasses that support tweak encoders (Tre at least)
         ...
 
@@ -424,11 +424,6 @@ class Hardware(ABC):
         ext_cfg = cfg[Token.HARDWARE].get("external_midi")
         if ext_cfg:
             self.external_midi.update_config(ext_cfg)
-
-    def __init_footswitches_default(self):
-        for fs in self.footswitches:
-            fs.clear_relays()
-        self.__init_footswitches(self.cfg)
 
     def __init_footswitches(self, cfg):
         if cfg is None or (Token.HARDWARE not in cfg) or (Token.FOOTSWITCHES not in cfg[Token.HARDWARE]):

@@ -226,14 +226,6 @@ class ExternalMidiManager:
         return True
 
     def _send_messages(self, port_name: str, messages: list[MidiMessage], delay_ms: int = 10):
-        """
-        Send MIDI messages to a port.
-
-        Args:
-            port_name: Name of port configuration.
-            messages: List of MIDI messages to send.
-            delay_ms: Delay between messages in milliseconds.
-        """
         midi_out = self._init_port(port_name)
         if midi_out is None:
             logging.warning(f"Skipping messages for unavailable port: {port_name}")
@@ -258,11 +250,7 @@ class ExternalMidiManager:
                 break  # Stop sending remaining messages to this broken port
 
     def send_raw(self, port_name: str, message: MidiMessage) -> bool:
-        """
-        Send a raw MIDI message to an external port.
-        Same contract as send_cc: enabled gate, lazy port discovery, invalidation on failure.
-        Returns True on success, False if port unavailable (caller should fallback).
-        """
+        """Send one raw message; True on success, False if the port is unavailable (caller falls back)."""
         if not self.enabled:
             return False
 
@@ -282,38 +270,8 @@ class ExternalMidiManager:
             self._invalidate_port(port_name)
             return False
 
-    def send_cc(self, port_name: str, channel: int, cc: int, value: int) -> bool:
-        """
-        Send a single MIDI CC message to an external port.
-        Convenience wrapper around send_raw that constructs the CC message.
-
-        Args:
-            port_name: Name of port configuration from config file.
-            channel: MIDI channel (0-15).
-            cc: MIDI CC number (0-127).
-            value: MIDI CC value (0-127).
-
-        Returns:
-            True if message was sent successfully, False if port unavailable (caller should fallback).
-        """
-        if not (0 <= channel <= 15):
-            raise ValueError(f"Invalid MIDI channel {channel} (must be 0-15)")
-        if not (0 <= cc <= 127):
-            raise ValueError(f"Invalid MIDI CC {cc} (must be 0-127)")
-        if not (0 <= value <= 127):
-            raise ValueError(f"Invalid MIDI value {value} (must be 0-127)")
-
-        status = 0xB0 | channel
-        return self.send_raw(port_name, [status, cc, value])
-
     def send_messages_for_pedalboard(self) -> bool:
-        """
-        Send external MIDI messages for current pedalboard configuration.
-        Configuration should have been set via update_config() before calling this.
-
-        Returns:
-            True if messages were sent successfully, False otherwise.
-        """
+        """Send the current pedalboard's external messages (config set earlier via update_config)."""
         if not self.enabled:
             return False
 

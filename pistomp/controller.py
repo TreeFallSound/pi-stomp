@@ -43,8 +43,8 @@ class RoutingInfo:
 
 
 class AnalogDisplayInfo(TypedDict, total=False):
-    type: str  # Token.KNOB, Token.EXPRESSION, Token.VOLUME
-    id: int  # Position on screen (0-based from left)
+    type: str | None  # Token.KNOB, Token.EXPRESSION, Token.VOLUME
+    id: int | None  # Position on screen (0-based from left); None if unpositioned
     category: str | None
     port_name: str | None  # External port name if routed externally
     midi_cc: int | None  # MIDI CC for external routing display

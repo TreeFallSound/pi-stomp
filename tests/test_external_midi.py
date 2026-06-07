@@ -5,7 +5,6 @@ These exercise the UX flows added on feat/external-midi:
   - configuring external MIDI ports via auto-detect / explicit index
   - sending pedalboard load messages with inter-message delay
   - per-pedalboard config overrides (incremental update_config)
-  - send_cc with graceful fallback when an external port is unavailable
   - ExternalMidiOut wrapper preferring external port, falling back to virtual
 """
 
@@ -292,31 +291,6 @@ class TestSendRaw:
         mgr.midi_ports["dev"] = midi_out
         assert mgr.send_raw("dev", [0xB0, 10, 64]) is False
         assert "dev" not in mgr.midi_ports
-
-
-class TestSendCC:
-    def test_returns_false_when_disabled(self):
-        mgr = ExternalMidiManager()
-        mgr.update_config({"ports": {"dev": {"port_index": 0}}})
-        assert mgr.send_cc("dev", 0, 10, 64) is False
-
-    @pytest.mark.parametrize(
-        "channel,cc,value",
-        [(-1, 10, 64), (16, 10, 64), (0, -1, 64), (0, 128, 64), (0, 10, -1), (0, 10, 128)],
-    )
-    def test_invalid_midi_args_raise(self, channel, cc, value):
-        mgr = ExternalMidiManager()
-        mgr.update_config({"enabled": True, "ports": {"dev": {"port_index": 0}}})
-        with pytest.raises(ValueError):
-            mgr.send_cc("dev", channel, cc, value)
-
-    def test_delegates_to_send_raw(self, fake_ports):
-        available, _ = fake_ports
-        available[:] = ["dev"]
-        mgr = ExternalMidiManager()
-        mgr.update_config({"enabled": True, "ports": {"dev": {"port_index": 0}}})
-        assert mgr.send_cc("dev", 2, 80, 100) is True
-        _port(mgr, "dev").send_message.assert_called_once_with([0xB2, 80, 100])
 
 
 class TestClose:

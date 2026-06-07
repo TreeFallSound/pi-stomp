@@ -24,8 +24,6 @@ from requests import Response
 import subprocess
 import sys
 import yaml
-from typing import Any
-
 from typing import cast, Any
 
 import common.token as Token
@@ -35,7 +33,7 @@ import modalapi.wifi as Wifi
 import modalapi.external_midi as ExternalMidi
 from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 from pistomp.lcd320x240 import Lcd
-from pistomp.hardware import Controller, Hardware
+from pistomp.hardware import Hardware
 import pistomp.settings as Settings
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
@@ -926,7 +924,7 @@ class Modhandler(Handler):
             logging.info("Data backup...")
             cmd = os.path.join(self.homedir, 'util', 'data-backup.sh')
             try:
-                output = subprocess.check_output([cmd, os.path.join(self.backup_dir, self.backup_file), self.data_dir])
+                subprocess.check_output([cmd, os.path.join(self.backup_dir, self.backup_file), self.data_dir])
                 self.lcd.draw_message_dialog("Backup complete", "Info")
                 logging.info("Backup complete")
             except subprocess.CalledProcessError as e:
@@ -945,8 +943,8 @@ class Modhandler(Handler):
             logging.info("Restoring data backup...")
             cmd = os.path.join(self.homedir, 'util', 'data-restore.sh')
             try:
-                output = subprocess.check_output(['sudo', '-u', self.username, cmd,
-                                                  os.path.join(self.backup_dir, self.backup_file), self.data_dir])
+                subprocess.check_output(['sudo', '-u', self.username, cmd,
+                                         os.path.join(self.backup_dir, self.backup_file), self.data_dir])
                 logging.info("Restore complete")
                 self.system_menu_restart_sound(None)
             except subprocess.CalledProcessError as e:

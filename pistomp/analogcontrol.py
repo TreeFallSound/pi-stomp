@@ -17,14 +17,12 @@ import logging
 
 
 class AnalogControl:
-
     def __init__(self, spi, adc_channel, tolerance):
-
         self.spi = spi
         self.adc_channel = adc_channel
-        self.last_read = 0          # this keeps track of the last potentiometer value
+        self.last_read = 0  # this keeps track of the last potentiometer value
         self.tolerance = tolerance  # to keep from being jittery we'll only change the
-                                    # value when the control has moved a significant amount
+        # value when the control has moved a significant amount
 
     def readChannel(self):
         adc = self.spi.xfer2([1, (8 + self.adc_channel) << 4, 0])
@@ -34,7 +32,3 @@ class AnalogControl:
     def refresh(self):
         """Read current value from hardware and potentially take action."""
         logging.error("AnalogControl subclass hasn't overriden the refresh method")
-
-    def initialize(self):
-        """Called when the pedalboard has been loaded, e.g. to sync current value."""
-        logging.error("AnalogControl subclass hasn't implemented initialize method")
