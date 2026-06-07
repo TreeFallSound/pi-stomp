@@ -35,8 +35,8 @@ from modalapi.websocket_bridge import AsyncWebSocketBridge
 from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
-from pistomp.analogmidicontrol import AnalogMidiControl
-from pistomp.controller import RoutingDestination
+from pistomp.controller_manager import ControllerManager
+from pistomp.current import Current
 from pistomp.footswitch import Footswitch
 from pistomp.handler import Handler
 from enum import Enum
@@ -136,7 +136,7 @@ class Mod(Handler):
         self.software_version = None
         self.git_describe = None
 
-        self.current = None  # pointer to Current class
+        self.current: Current | None = None
         self.deep = None     # pointer to current Deep class
 
         # Stores snapshot index from loading_end until pedalboard change is detected
@@ -180,29 +180,19 @@ class Mod(Handler):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
-        if self.ws_bridge is not None:
-            self.ws_bridge.stop()
+        self.ws_bridge.stop()
 
     def cleanup(self):
         if self.lcd is not None:
             self.lcd.cleanup()
         if self.external_midi is not None:
             self.external_midi.close()
-        if self.ws_bridge is not None:
-            self.ws_bridge.stop()
-            logging.info("WebSocket bridge stopped")
+        self.ws_bridge.stop()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
     # replaced when a different pedalboard is made current (old Current object
     # gets deleted and a new one added via self.set_current_pedalboard()
-    class Current:
-        def __init__(self, pedalboard):
-            self.pedalboard = pedalboard
-            self.presets = {}
-            self.preset_index = 0  # Assumes pedalboard loads at snapshot 0 (default behavior)
-            self.analog_controllers = {}  # { type: (plugin_name, param_name) }
-
     class Deep:
         def __init__(self, plugin):
             self.plugin = plugin
@@ -218,6 +208,7 @@ class Mod(Handler):
     def add_hardware(self, hardware):
         self.hardware = hardware
         hardware.external_midi = self.external_midi
+        self._controller_manager = ControllerManager(hardware, reorder_footswitch_plugins=True)
 
     def add_lcd(self, lcd):
         self.lcd = lcd
@@ -601,7 +592,7 @@ class Mod(Handler):
         del self.current
 
         # Create a new "current"
-        self.current = self.Current(pedalboard)
+        self.current = Current(pedalboard)
 
         if self.next_pedalboard_preset_index is not None:
             self.current.preset_index = self.next_pedalboard_preset_index
@@ -695,69 +686,7 @@ class Mod(Handler):
         # "current" being the pedalboard mod-host says is current
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
-
-        # Clear previous parameter bindings from all controllers except the volume control
-        for controller in self.hardware.controllers.values():
-            if controller.type != Token.VOLUME:
-                controller.parameter = None
-
-        # Clear analog controllers display data
-        self.current.analog_controllers = {}
-
-        footswitch_plugins = []
-        if self.current.pedalboard:
-            #logging.debug(self.current.pedalboard.to_json())
-            for plugin in self.current.pedalboard.plugins:
-                if plugin is None or plugin.parameters is None:
-                    continue
-                for sym, param in plugin.parameters.items():
-                    if param.binding is not None:
-                        controller = self.hardware.controllers.get(param.binding)
-                        if controller is not None:
-                            routing = controller.get_routing_info()
-
-                            # External controllers shouldn't be bound to plugin parameters
-                            if routing.destination == RoutingDestination.EXTERNAL:
-                                logging.warning(
-                                    f"Plugin parameter {plugin.name}:{param.name} is bound to external controller "
-                                    f"{param.binding} (routed to {routing.port_name}) - ignoring plugin binding"
-                                )
-                                continue
-
-                            # TODO possibly use a setter instead of accessing var directly
-                            # What if multiple params could map to the same controller?
-                            controller.parameter = param
-                            controller.set_value(param.value)
-                            plugin.controllers.append(controller)
-                            if isinstance(controller, Footswitch):
-                                # TODO sort this list so selection orders correctly (sort on midi_CC?)
-                                plugin.has_footswitch = True
-                                footswitch_plugins.append(plugin)
-                                controller.set_category(plugin.category)
-                            elif isinstance(controller, AnalogMidiControl):
-                                key = "%s:%s" % (plugin.instance_id, param.name)
-                                controller.cfg[Token.CATEGORY] = plugin.category  # somewhat LAME adding to cfg dict
-                                controller.cfg[Token.TYPE] = controller.type
-                                self.current.analog_controllers[key] = controller.cfg
-
-            # Move Footswitch controlled plugins to the end of the list
-            self.current.pedalboard.plugins = [elem for elem in self.current.pedalboard.plugins
-                                               if elem.has_footswitch is False]
-            self.current.pedalboard.plugins += footswitch_plugins
-
-        # Externally-routed controllers: bind a synthetic parameter and show under "External"
-        for controller in self.hardware.controllers.values():
-            routing = controller.get_routing_info()
-            if routing.destination != RoutingDestination.EXTERNAL or controller.midi_CC is None:
-                continue
-            controller.parameter = self.hardware.create_external_parameter(
-                controller, routing.port_name, controller.midi_channel, controller.midi_CC
-            )
-            if isinstance(controller, AnalogMidiControl):
-                key = f"{controller.midi_channel}:{controller.midi_CC}"
-                display_info = controller.get_display_info()  # already carries type/id
-                display_info[Token.CATEGORY] = 'External'
-                self.current.analog_controllers[key] = display_info
+        self._controller_manager.bind(self.current)
 
     def pedalboard_select(self, direction):
         # 0 means the pedalboard field is selected but a new pedalboard hasn't been scrolled to yet

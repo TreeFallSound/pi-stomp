@@ -50,6 +50,11 @@ class AnalogDisplayInfo(TypedDict, total=False):
     midi_cc: int | None  # MIDI CC for external routing display
 
 
+# Per-pedalboard analog/encoder assignment display, keyed by "instance:param"
+# (plugin-bound), "channel:cc" (external), or Token.VOLUME.
+AnalogControllers = dict[str, AnalogDisplayInfo]
+
+
 class Controller:
     type: str | None = None  # class default; not in __init__ — clashes with Encoder.type in EncoderController's MRO
 

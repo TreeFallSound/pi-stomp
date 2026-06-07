@@ -40,9 +40,8 @@ from modalapi.websocket_bridge import AsyncWebSocketBridge
 from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
-from pistomp.analogmidicontrol import AnalogMidiControl
-from pistomp.controller import RoutingDestination
-from pistomp.encodermidicontrol import EncoderMidiControl
+from pistomp.controller_manager import ControllerManager
+from pistomp.current import Current
 from pistomp.footswitch import Footswitch
 from pistomp.tuner import TunerEngine, TunerPanel, TunerSourceFactory
 from pistomp.tuner.source import AudioSource, build_source
@@ -80,7 +79,7 @@ class Modhandler(Handler):
         self.bypass_left = False
         self.bypass_right = False
 
-        self.current: Modhandler.Current | None = None
+        self.current: Current | None = None
         self._lcd: Lcd | None = None
         self._hardware: Hardware | None = None
 
@@ -157,20 +156,7 @@ class Modhandler(Handler):
             self._hardware.cleanup()
         if self.external_midi is not None:
             self.external_midi.close()
-        if self.ws_bridge is not None:
-            self.ws_bridge.stop()
-            logging.info("WebSocket bridge stopped")
-
-    # Container for dynamic data which is unique to the "current" pedalboard
-    # The self.current pointed above will point to this object which gets
-    # replaced when a different pedalboard is made current (old Current object
-    # gets deleted and a new one added via self.set_current_pedalboard()
-    class Current:
-        def __init__(self, pedalboard: Pedalboard.Pedalboard):
-            self.pedalboard: Pedalboard.Pedalboard = pedalboard
-            self.presets: dict[int, str] = {}
-            self.preset_index: int = 0  # Assumes pedalboard loads at snapshot 0 (default behavior)
-            self.analog_controllers: dict[str, dict[str, Any]] = {}  # { type: (plugin_name, param_name) }
+        self.ws_bridge.stop()
 
     def _rest_get(self, url: str) -> Response | None:
         try:
@@ -189,6 +175,7 @@ class Modhandler(Handler):
     def add_hardware(self, hardware):
         self._hardware = hardware
         hardware.external_midi = self.external_midi
+        self._controller_manager = ControllerManager(hardware, stamp_plugin_cfg_id=True)
 
     def add_lcd(self, lcd):
         self._lcd = lcd
@@ -521,7 +508,7 @@ class Modhandler(Handler):
         del self.current
 
         # Create a new "current"
-        self.current = self.Current(pedalboard)
+        self.current = Current(pedalboard)
 
         if self.next_pedalboard_preset_index is not None:
             self.current.preset_index = self.next_pedalboard_preset_index
@@ -596,92 +583,7 @@ class Modhandler(Handler):
         # "current" being the pedalboard mod-host says is current
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
-
-        # Clear previous parameter bindings from all controllers except the volume control
-        for controller in self.hardware.controllers.values():
-            if controller.type != Token.VOLUME:
-                controller.parameter = None
-
-        # Clear analog controllers display data
-        self.current.analog_controllers = {}
-
-        footswitch_plugins = []
-        if self.current:
-            #logging.debug(self.current.pedalboard.to_json())
-            for plugin in self.current.pedalboard.plugins:
-                if plugin is None or plugin.parameters is None:
-                    continue
-                for sym, param in plugin.parameters.items():
-                    if param.binding is not None:
-                        controller = self.hardware.controllers.get(param.binding)
-                        if controller is not None:
-                            routing = controller.get_routing_info()
-
-                            # External controllers shouldn't be bound to plugin parameters
-                            if routing.destination == RoutingDestination.EXTERNAL:
-                                logging.warning(
-                                    f"Plugin parameter {plugin.name}:{param.name} is bound to external controller "
-                                    f"{param.binding} (routed to {routing.port_name}) - ignoring plugin binding"
-                                )
-                                continue
-
-                            # TODO possibly use a setter instead of accessing var directly
-                            # What if multiple params could map to the same controller?
-                            controller.parameter = param  # pyright: ignore[reportAttributeAccessIssue]
-                            controller.set_value(param.value)
-                            plugin.controllers.append(controller)
-                            if isinstance(controller, Footswitch):
-                                # TODO sort this list so selection orders correctly (sort on midi_CC?)
-                                plugin.has_footswitch = True
-                                footswitch_plugins.append(plugin)
-                                controller.set_category(plugin.category)
-                            elif isinstance(controller, AnalogMidiControl):
-                                key = "%s:%s" % (plugin.instance_id, param.name)
-                                controller.cfg[Token.CATEGORY] = plugin.category  # somewhat LAME adding to cfg dict
-                                controller.cfg[Token.TYPE] = controller.type
-                                controller.cfg[Token.ID] = controller.id
-                                self.current.analog_controllers[key] = controller.cfg
-                            elif isinstance(controller, EncoderMidiControl):
-                                key = "%s:%s" % (plugin.instance_id, param.name)
-                                controller.cfg[Token.CATEGORY] = plugin.category  # somewhat LAME adding to cfg dict
-                                controller.cfg[Token.TYPE] = controller.type
-                                controller.cfg[Token.ID] = controller.id
-                                self.current.analog_controllers[key] = controller.cfg
-
-            # Special case for volume control
-            for e in self.hardware.encoders:
-                if e.type == Token.VOLUME:
-                    cfg = {
-                        Token.CATEGORY: None,
-                        Token.TYPE: e.type,
-                        Token.ID: e.id
-                    }
-                    self.current.analog_controllers[Token.VOLUME] = cfg
-
-        # Handle external controllers (bind synthetic parameter + add to display)
-        for controller in self.hardware.controllers.values():
-            routing = controller.get_routing_info()
-            if routing.destination == RoutingDestination.EXTERNAL:
-                if controller.midi_CC is not None:
-                    controller.parameter = self.hardware.create_external_parameter(
-                        controller, routing.port_name, controller.midi_channel, controller.midi_CC
-                    )
-                if isinstance(controller, AnalogMidiControl):
-                    if controller.midi_CC is not None:
-                        key = f"{controller.midi_channel}:{controller.midi_CC}"
-                        display_info = controller.get_display_info()
-                        display_info['category'] = 'External'
-                        self.current.analog_controllers[key] = display_info
-                elif isinstance(controller, EncoderMidiControl):
-                    if controller.midi_CC is not None:
-                        key = f"{controller.midi_channel}:{controller.midi_CC}"
-                        cfg = {
-                            Token.CATEGORY: 'External',
-                            Token.TYPE: controller.type,
-                            Token.ID: controller.id,
-                            **controller.get_display_info()
-                        }
-                        self.current.analog_controllers[key] = cfg
+        self._controller_manager.bind(self.current)
 
     def pedalboard_change(self, pedalboard=None):
         logging.info("Pedalboard change")

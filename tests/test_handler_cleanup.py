@@ -15,7 +15,7 @@ class TestModCleanup:
         h = object.__new__(Mod)
         h.wifi_manager = None
         h.external_midi = MagicMock()
-        h.ws_bridge = None
+        h.ws_bridge = MagicMock()
         h.__del__()
         h.external_midi.close.assert_not_called()
 
@@ -24,7 +24,7 @@ class TestModCleanup:
         h.wifi_manager = None
         h.lcd = None
         h.external_midi = MagicMock()
-        h.ws_bridge = None
+        h.ws_bridge = MagicMock()
         h.cleanup()
         h.external_midi.close.assert_called_once()
 
@@ -44,6 +44,6 @@ class TestModhandlerCleanup:
         h._lcd = None
         h._hardware = None
         h.external_midi = MagicMock()
-        h.ws_bridge = None
+        h.ws_bridge = MagicMock()
         h.cleanup()
         h.external_midi.close.assert_called_once()
