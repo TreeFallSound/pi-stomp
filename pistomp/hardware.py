@@ -234,7 +234,7 @@ class Hardware(ABC):
             if taptempo:
                 taptempo.set_callback(self.handler.get_callback(tap_tempo_callback))
 
-            # midi_port routing is applied later in __apply_midi_routing (external_midi is None here — C1)
+            # midi_port routing is applied later in __apply_midi_routing (external_midi is None here)
             midiout = self.midiout
 
             fs: Footswitch.Footswitch | None = None
@@ -287,7 +287,7 @@ class Hardware(ABC):
             if autosync is None:
                 autosync = False  # Default to False
 
-            # midi_port routing is applied later in __apply_midi_routing (external_midi is None here — C1)
+            # midi_port routing is applied later in __apply_midi_routing (external_midi is None here)
             control = AnalogMidiControl.AnalogMidiControl(self.spi, adc_input, threshold, midi_cc, midi_channel,
                                                           self.midiout, control_type, id, c, autosync)
             self.analog_controls.append(control)
@@ -322,7 +322,7 @@ class Hardware(ABC):
                 logging.error("Config file error.  Encoder specified without %s" % Token.ID)
                 continue
 
-            # midi_port routing is applied later in __apply_midi_routing (external_midi is None here — C1)
+            # midi_port routing is applied later in __apply_midi_routing (external_midi is None here)
             try:
                 control = self.add_encoder(id, type, None, longpress_callback, midi_channel, midi_cc, midiout=self.midiout)
                 self.encoders.append(control)
@@ -376,7 +376,7 @@ class Hardware(ABC):
             midi_port = self.__validate_midi_port(midi_port)
         if not midi_port or self.external_midi is None:
             return self.midiout
-        self.external_midi.open_port(midi_port)  # eager (C3): first poll-loop send must not enumerate
+        self.external_midi.open_port(midi_port)  # eager: first poll-loop send must not enumerate
         return ExternalMidiOut(self.external_midi, midi_port, self.midiout)
 
     def __route_section(self, cfg, section, controls, set_cc):

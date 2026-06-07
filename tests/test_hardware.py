@@ -76,7 +76,7 @@ def _route(hw, cfg):
 
 class TestApplyMidiRouting:
     def test_footswitch_routed_to_external_port(self, routed_hw):
-        """C1: footswitches had no routing branch, so midi_port never took effect."""
+        """A footswitch with midi_port routes to its external port."""
         cfg = {Token.HARDWARE: {Token.FOOTSWITCHES: [{Token.ID: 0, "midi_port": "c4"}]}}
         _route(routed_hw, cfg)
         fs = routed_hw.footswitches[0]
@@ -105,7 +105,7 @@ class TestApplyMidiRouting:
         assert routed_hw.footswitches[0].midiout is routed_hw.midiout
 
     def test_external_port_opened_eagerly(self, routed_hw):
-        """C3: the port is opened at routing time, not lazily inside the poll loop."""
+        """The external port is opened at routing time, not lazily inside the poll loop."""
         cfg = {Token.HARDWARE: {Token.FOOTSWITCHES: [{Token.ID: 0, "midi_port": "c4"}]}}
         _route(routed_hw, cfg)
         assert "c4" in routed_hw.external_midi.midi_ports
@@ -113,7 +113,7 @@ class TestApplyMidiRouting:
 
 class TestReinitDefaultRouting:
     def test_reinit_applies_routing_for_default_cfg(self, monkeypatch):
-        """C1: default-config routing was never applied (only pedalboard cfg was)."""
+        """Routing is applied for the default config, not only for pedalboard cfg."""
         hw = object.__new__(_StubHardware)
         hw.default_cfg = {Token.HARDWARE: {}}
         hw.handler = MagicMock()

@@ -215,7 +215,7 @@ class TestSendMessagesForPedalboard:
 
 class TestInitPort:
     def test_open_port_failure_returns_none_without_keyerror(self, monkeypatch):
-        """A failing open_port must not KeyError on a cache entry that was never set."""
+        """A failing open_port must not KeyError when the port is absent from the cache."""
         failing = MagicMock()
         failing.open_port.side_effect = RuntimeError("cannot open")
         monkeypatch.setattr("modalapi.external_midi.rtmidi.MidiOut", lambda *a, **k: failing)
@@ -229,7 +229,7 @@ class TestInitPort:
 
 class TestOpenBackoff:
     def test_failed_open_backs_off_no_reenumerate(self, fake_ports):
-        """A port whose device is absent must not re-enumerate on every poll tick (C3)."""
+        """A port whose device is absent must not re-enumerate on every poll tick."""
         available, created = fake_ports
         available[:] = ["something_else"]
         mgr = ExternalMidiManager()

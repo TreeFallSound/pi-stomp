@@ -117,7 +117,7 @@ class TestRealLoopback:
         mgr.close()
 
     def test_absent_device_backs_off_no_per_send_reenumerate(self, loopback, monkeypatch):
-        # C3 end-to-end: an absent device must not re-enumerate on every send.
+        # End-to-end: an absent device must not re-enumerate on every send.
         _, _received = loopback
         mgr = _manager_for("unused", glob="*no-such-pistomp-port*")
 

@@ -1,4 +1,4 @@
-"""4D: external controllers must be bound + displayed on v1 (mod.py), as on v3.
+"""External controllers must be bound + displayed on v1 (mod.py), as on v3.
 
 An externally-routed control isn't bound to any plugin parameter, so the plugin
 loop skips it. Without the dedicated external block it stays invisible: no

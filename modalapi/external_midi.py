@@ -27,7 +27,7 @@ MidiMessage = list[int]
 
 EXTERNAL_INSTANCE_ID = "External"
 
-PORT_RETRY_BACKOFF_S = 5.0  # don't re-enumerate a failed port more often than this (C3)
+PORT_RETRY_BACKOFF_S = 5.0  # don't re-enumerate a failed port more often than this
 
 
 class ExternalMidiOut:
@@ -159,7 +159,7 @@ class ExternalMidiManager:
         return selected_idx
 
     def open_port(self, port_name: str) -> bool:
-        """Eagerly open a port at routing time so the first poll-loop send doesn't enumerate (C3)."""
+        """Eagerly open a port at routing time so the first poll-loop send doesn't enumerate."""
         return self._init_port(port_name) is not None
 
     def _init_port(self, port_name: str) -> rtmidi.MidiOut | None:
@@ -206,7 +206,7 @@ class ExternalMidiManager:
             except Exception as e:
                 logging.debug(f"Error closing invalidated port {port_name}: {e}")
             del self.midi_ports[port_name]
-            self._open_failures[port_name] = time.monotonic()  # back off before re-enumerating (C3)
+            self._open_failures[port_name] = time.monotonic()  # back off before re-enumerating
 
     def _validate_midi_message(self, message: MidiMessage) -> bool:
         if not isinstance(message, list) or len(message) < 2:

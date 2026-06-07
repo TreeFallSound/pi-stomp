@@ -1,4 +1,4 @@
-"""4D: external controllers must render in the v1 mono analog-assignments zone."""
+"""External controllers must render in the v1 mono analog-assignments zone."""
 
 import common.token as Token
 

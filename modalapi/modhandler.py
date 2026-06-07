@@ -550,7 +550,7 @@ class Modhandler(Handler):
             except Exception as e:
                 logging.warning(f"Failed to send external MIDI messages: {e}")
 
-        # Sync analog controls last: after bind + external send, matching mod.py (4B)
+        # Sync analog controls last: after bind + external send, matching mod.py
         self.hardware.sync_analog_controls()
 
         # Prepare blend modes if configured (snapshot-based activation)
