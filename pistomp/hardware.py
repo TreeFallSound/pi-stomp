@@ -71,17 +71,18 @@ class Hardware(ABC):
                 self.taptempo.set_bpm(bpm)
                 logging.debug("tap tempo mode enabled: %f", bpm)
 
+    def _adc_speed(self):
+        # When the LCD is running at 24MHz (spec), use conservative 240kHz ADC (tested stable).
+        # Above 24MHz (experimental) we use 1MHz (MCP3008 max at 3.3V).
+        # Before we can roll out 1MHz by default we need hardware validation on v1/v2/v3.
+        lcd_mhz = self.handler.settings.get_setting('lcd.spi_speed_mhz') or 24
+        return 240_000 if lcd_mhz <= 24 else 1_000_000
+
     def init_spi(self):
         import spidev
         self.spi = spidev.SpiDev()
         self.spi.open(0, 1)  # Bus 0, CE1
-        # TODO SPI bus is shared by ADC and LCD.  Ideally, they would use the same frequency.
-        # MCP3008 ADC has a max of 1MHz (higher makes it loose resolution)
-        # Color LCD needs to run at 24Mhz
-        # until we can get them on the same, we'll set ADC (the one set here) to be a slower multiple of the LCD
-        #self.spi.max_speed_hz = 24000000
-        #self.spi.max_speed_hz =  1000000
-        self.spi.max_speed_hz = 240000
+        self.spi.max_speed_hz = self._adc_speed()
 
     def poll_controls(self):
         # This is intended to be called periodically from main working loop to poll the instantiated controls
