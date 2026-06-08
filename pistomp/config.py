@@ -167,7 +167,13 @@ schema = {
               },
               "midi_port": {
                 "type": "string",
-                "description": "Send MIDI to this external port instead of the virtual MIDI Through port; falls back to virtual if the device is unavailable (must match a port in external_midi)"
+                "description": "Send MIDI to this external port instead of the virtual MIDI Through port; falls back to virtual if the device is unavailable (must be the device name)"
+              },
+              "midi_channel": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 15,
+                "description": "Override MIDI channel for this encoder (0-15); useful when the external device is on a different channel than the hardware default"
               },
               "type": {
                 "enum": ["KNOB", "VOLUME"]
@@ -190,24 +196,6 @@ schema = {
             "send_delay_ms": {
               "type": "integer",
               "minimum": 0
-            },
-            "ports": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object",
-                "properties": {
-                  "auto_detect": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "port_index": {
-                    "type": "integer",
-                    "minimum": 0
-                  }
-                }
-              }
             },
             "messages": {
               "type": "object",

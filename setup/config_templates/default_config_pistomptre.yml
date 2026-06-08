@@ -24,7 +24,9 @@ hardware:
   # ledstrip_position: <integer>  The position of the corresponding LED (optional)
   # midi_CC: <integer>            The MIDI CC message to be sent when switch is clicked (optional)
   # midi_port: <port_name>        Send MIDI to this external port INSTEAD of the virtual MIDI Through port (optional)
-  #                               Falls back to the virtual port only if the device is unavailable; must match a port in external_midi
+  #                               Falls back to the virtual port only if the device is unavailable; must be the device name (e.g. 'Source Audio C4 Synth')
+  # midi_channel: <integer>       Override MIDI channel for this encoder (0-15, optional)
+  #                               Use when the external device is on a different channel than the hardware default
   # longpress: <callback_name>    The name of a handler method to call when switch is long-pressed (optional)
   #                               longpress can be a list enclosed with []'s
   #
@@ -58,7 +60,7 @@ hardware:
   # type: <KNOB | EXPRESSION>     The control type, used to represent the control on the screen (optional)
   # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
   # midi_port: <port_name>        Send MIDI to this external port INSTEAD of the virtual MIDI Through port (optional)
-  #                               Falls back to the virtual port only if the device is unavailable; must match a port in external_midi
+  #                               Falls back to the virtual port only if the device is unavailable; must be the device name (e.g. 'Source Audio C4 Synth')
   # autosync: <true | false>      Whether to send current value on pedalboard load (optional, default: false)
   #
   #analog_controllers:
@@ -75,7 +77,9 @@ hardware:
   # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
   #                               cannot be used along with type=VOLUME
   # midi_port: <port_name>        Send MIDI to this external port INSTEAD of the virtual MIDI Through port (optional)
-  #                               Falls back to the virtual port only if the device is unavailable; must match a port in external_midi
+  #                               Falls back to the virtual port only if the device is unavailable; must be the device name (e.g. 'Source Audio C4 Synth')
+  # midi_channel: <integer>       Override MIDI channel for this encoder (0-15, optional)
+  #                               Use when the external device is on a different channel than the hardware default
   # longpress: <callback_name>    The name of a handler method to call when switch is long-pressed (optional)
   #
   encoders:
@@ -95,13 +99,8 @@ hardware:
   # enabled: <boolean>              Enable/disable external MIDI (default: false)
   # send_delay_ms: <integer>        Delay between consecutive messages in milliseconds (default: 10)
   #
-  # ports:                          Define external MIDI devices
-  #   <port_name>:
-  #     auto_detect: [<patterns>]   List of glob patterns to match port names (case-insensitive)
-  #     port_index: <integer>       Manual port index (overrides auto_detect)
-  #
-  # messages:                       MIDI messages to send for each port on pedalboard load
-  #   <port_name>:
+  # messages:                       MIDI messages to send on pedalboard load
+  #   <device_name>:                Exact ALSA client name of the device (run `aconnect -l` to find it)
   #     - [0xSS, 0xDD, ...]         List of MIDI messages (hex bytes)
   #
   # Example configuration:
@@ -109,15 +108,10 @@ hardware:
   # external_midi:
   #   enabled: true
   #   send_delay_ms: 10
-  #   ports:
-  #     c4:
-  #       auto_detect: ["*C4*", "*Source Audio*"]
-  #     hx_stomp:
-  #       auto_detect: ["*HX Stomp*"]
   #   messages:
-  #     c4:
+  #     Source Audio C4 Synth:
   #       - [0xB0, 0x66, 0x00]      # CC 102 = 0 (bypass)
-  #     hx_stomp:
+  #     HX Stomp:
   #       - [0xC0, 0x00]            # Program Change 0
   #
   # MIDI message formats:
@@ -128,7 +122,7 @@ hardware:
   #   hardware:
   #     external_midi:
   #       messages:
-  #         c4:
+  #         Source Audio C4 Synth:
   #           - [0xC0, 0x05]        # Program Change 5 for this pedalboard only
 
 

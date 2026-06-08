@@ -38,6 +38,7 @@ def _port_is_visible(port_name, timeout=1.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         import rtmidi
+
         temp = rtmidi.MidiOut()
         ports = temp.get_ports()
         del temp
@@ -77,16 +78,10 @@ def loopback():
         del midi_in
 
 
-def _manager_for(port_name, glob=None):
-    """Enabled manager with one port auto-detected by name glob."""
+def _manager_for(port_name):
+    """Enabled manager; port_name is the exact ALSA client device name used as the key."""
     mgr = ExternalMidiManager()
-    mgr.update_config(
-        {
-            "enabled": True,
-            "send_delay_ms": 0,
-            "ports": {"dev": {"auto_detect": [glob or f"*{port_name}*"]}},
-        }
-    )
+    mgr.update_config({"enabled": True, "send_delay_ms": 0})
     return mgr
 
 
@@ -94,18 +89,18 @@ class TestRealLoopback:
     def test_send_raw_reaches_real_device(self, loopback):
         port_name, received = loopback
         mgr = _manager_for(port_name)
-        mgr.open_port("dev")
+        mgr.open_port(port_name)
 
-        assert mgr.send_raw("dev", [0xB0, 75, 42]) is True
+        assert mgr.send_raw(port_name, [0xB0, 75, 42]) is True
         assert _wait_for(lambda: received == [[0xB0, 75, 42]])
         mgr.close()
 
     def test_external_midi_out_prefers_real_port_over_fallback(self, loopback):
         port_name, received = loopback
         mgr = _manager_for(port_name)
-        mgr.open_port("dev")
+        mgr.open_port(port_name)
         fallback = MagicMock()
-        out = ExternalMidiOut(mgr, "dev", fallback)
+        out = ExternalMidiOut(mgr, port_name, fallback)
 
         out.send_message([0xB0, 70, 7])
 
@@ -114,11 +109,10 @@ class TestRealLoopback:
         mgr.close()
 
     def test_external_midi_out_falls_back_when_device_absent(self, loopback):
-        # Glob matches nothing → real enumeration finds no port → fallback used.
         _, received = loopback
-        mgr = _manager_for("unused", glob="*no-such-pistomp-port*")
+        mgr = _manager_for("no-such-pistomp-port")
         fallback = MagicMock()
-        out = ExternalMidiOut(mgr, "dev", fallback)
+        out = ExternalMidiOut(mgr, "no-such-pistomp-port", fallback)
 
         out.send_message([0xB0, 70, 7])
 
@@ -129,8 +123,8 @@ class TestRealLoopback:
     def test_send_messages_for_pedalboard_delivers_sequence(self, loopback):
         port_name, received = loopback
         mgr = _manager_for(port_name)
-        mgr.messages = {"dev": [[0xC0, 5], [0xB0, 7, 100]]}
-        mgr.open_port("dev")
+        mgr.messages = {port_name: [[0xC0, 5], [0xB0, 7, 100]]}
+        mgr.open_port(port_name)
 
         assert mgr.send_messages_for_pedalboard() is True
 
@@ -140,7 +134,7 @@ class TestRealLoopback:
     def test_absent_device_backs_off_no_per_send_reenumerate(self, loopback, monkeypatch):
         # End-to-end: an absent device must not re-enumerate on every send.
         _, _received = loopback
-        mgr = _manager_for("unused", glob="*no-such-pistomp-port*")
+        mgr = _manager_for("no-such-pistomp-port")
 
         enumerations = []
         real_enumerate = mgr._get_available_ports
@@ -151,8 +145,8 @@ class TestRealLoopback:
 
         monkeypatch.setattr(mgr, "_get_available_ports", counting_enumerate)
 
-        assert mgr.send_raw("dev", [0xB0, 1, 1]) is False
-        assert mgr.send_raw("dev", [0xB0, 1, 2]) is False  # within backoff window
+        assert mgr.send_raw("no-such-pistomp-port", [0xB0, 1, 1]) is False
+        assert mgr.send_raw("no-such-pistomp-port", [0xB0, 1, 2]) is False  # within backoff window
 
         assert len(enumerations) == 1  # second send short-circuited on backoff
         mgr.close()
@@ -170,9 +164,9 @@ class TestControlRoutesToRealPort:
     def _routed(self, port_name):
         mgr = _manager_for(port_name)
         fallback = MagicMock()
-        out = ExternalMidiOut(mgr, "dev", fallback)
+        out = ExternalMidiOut(mgr, port_name, fallback)
         # Eagerly open the port so the first send doesn't race enumeration.
-        mgr.open_port("dev")
+        mgr.open_port(port_name)
         return mgr, out, fallback
 
     def test_footswitch_press_reaches_real_port(self, loopback):

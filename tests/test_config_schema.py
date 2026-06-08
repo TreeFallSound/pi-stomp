@@ -32,14 +32,18 @@ def test_midi_port_and_external_midi_accepted():
         "hardware": {
             "version": 3.0,
             "midi": {"channel": 14},
-            "footswitches": [{"id": 0, "midi_CC": 60, "midi_port": "c4"}],
-            "analog_controllers": [{"adc_input": 5, "id": 0, "midi_CC": 75, "midi_port": "hx", "type": "EXPRESSION"}],
-            "encoders": [{"id": 1, "midi_CC": 70, "midi_port": "c4"}],
+            "footswitches": [{"id": 0, "midi_CC": 60, "midi_port": "Source Audio C4 Synth"}],
+            "analog_controllers": [
+                {"adc_input": 5, "id": 0, "midi_CC": 75, "midi_port": "HX Stomp", "type": "EXPRESSION"}
+            ],
+            "encoders": [{"id": 1, "midi_CC": 70, "midi_port": "Source Audio C4 Synth"}],
             "external_midi": {
                 "enabled": True,
                 "send_delay_ms": 10,
-                "ports": {"c4": {"auto_detect": ["*C4*"]}, "hx": {"port_index": 2}},
-                "messages": {"c4": [[0xB0, 0x66, 0x00]], "hx": [[0xC0, 0x00]]},
+                "messages": {
+                    "Source Audio C4 Synth": [[0xB0, 0x66, 0x00]],
+                    "HX Stomp": [[0xC0, 0x00]],
+                },
             },
         }
     }

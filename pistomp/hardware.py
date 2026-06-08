@@ -364,9 +364,6 @@ class Hardware(ABC):
         if self.external_midi is None:
             logging.warning(f"midi_port '{port_name}' set but external_midi not initialized, falling back to virtual")
             return None
-        if port_name not in self.external_midi.port_configs:
-            logging.warning(f"midi_port '{port_name}' not found in external_midi config, falling back to virtual")
-            return None
         return port_name
 
     def __resolve_midiout(self, cfg_entry):
@@ -395,6 +392,9 @@ class Hardware(ABC):
                 midi_cc = Util.DICT_GET(entry, Token.MIDI_CC)
                 if midi_cc is not None and hasattr(ctrl, 'midi_CC'):
                     ctrl.midi_CC = midi_cc
+                midi_channel = Util.DICT_GET(entry, "midi_channel")
+                if midi_channel is not None and hasattr(ctrl, 'midi_channel'):
+                    ctrl.midi_channel = midi_channel
             ctrl.midiout = self.__resolve_midiout(entry)
 
     def __apply_midi_routing(self, cfg):

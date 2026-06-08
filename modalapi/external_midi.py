@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import fnmatch
 import logging
 import time
 from typing import TypedDict
@@ -53,37 +52,36 @@ class ExternalMidiOut:
             self.fallback.send_message(message)
 
 
-class PortConfig(TypedDict, total=False):
-    auto_detect: list[str]
-    port_index: int
-
-
 class ExternalMidiConfig(TypedDict, total=False):
     enabled: bool
     send_delay_ms: int
-    ports: dict[str, PortConfig]
     messages: dict[str, list[MidiMessage]]
+
+
+def _client_name_of(port: str) -> str:
+    """Extract the ALSA client name from an rtmidi port string like 'Client Name:Port Name N:M'."""
+    return port.split(":")[0].strip()
 
 
 class ExternalMidiManager:
     """
     Manages external MIDI device synchronization.
     Sends MIDI messages to external devices when pedalboards are loaded.
+
+    Config keys in `messages` and `midi_port` are ALSA client names exactly as
+    reported by the device (e.g. 'Source Audio C4 Synth'). Matching is
+    case-insensitive against the client-name prefix of each rtmidi port string.
     """
 
     def __init__(self):
         self.midi_ports: dict[str, rtmidi.MidiOut] = {}
-        self.port_configs: dict[str, PortConfig] = {}
         self.messages: dict[str, list[MidiMessage]] = {}
         self.enabled: bool = False
         self.send_delay_ms: int = 10
         self._open_failures: dict[str, float] = {}
 
     def update_config(self, cfg: ExternalMidiConfig | None) -> None:
-        """
-        Update configuration incrementally (can be called multiple times).
-        Only updates fields that are present.
-        """
+        """Update configuration incrementally; only fields present are updated."""
         if cfg is None:
             return
 
@@ -96,14 +94,6 @@ class ExternalMidiManager:
 
         if "send_delay_ms" in cfg:
             self.send_delay_ms = cfg["send_delay_ms"]
-
-        if "ports" in cfg:
-            # Deep merge: overlay individual port fields without replacing entire dicts
-            for port_name, port_cfg in cfg["ports"].items():
-                if port_name in self.port_configs:
-                    self.port_configs[port_name] = {**self.port_configs[port_name], **port_cfg}
-                else:
-                    self.port_configs[port_name] = port_cfg
 
         if "messages" in cfg:
             # Merge messages at port level (replace entire message list per port)
@@ -119,44 +109,15 @@ class ExternalMidiManager:
             logging.error(f"Failed to enumerate MIDI ports: {e}")
             return []
 
-    def _find_port_by_name(self, port_config: PortConfig) -> int | None:
-        """
-        Find MIDI port index matching a given config, returning its index if found.
-        """
-        if "port_index" in port_config:
-            return port_config["port_index"]
-
-        # Auto-detect by name patterns
-        auto_detect = port_config.get("auto_detect", [])
-        if not auto_detect:
-            return None
-
-        available_ports = self._get_available_ports()
-        if not available_ports:
-            return None
-
-        # Search for matching ports using glob patterns
-        matched_ports = []
-        for pattern in auto_detect:
-            for idx, port_name in enumerate(available_ports):
-                # Case-insensitive glob matching
-                if fnmatch.fnmatch(port_name.lower(), pattern.lower()):
-                    matched_ports.append((idx, port_name))
-
-        if not matched_ports:
-            logging.warning(f"No MIDI ports matched patterns: {auto_detect}")
-            return None
-
-        # Warn if multiple matches
-        if len(matched_ports) > 1:
-            port_names = [name for _, name in matched_ports]
-            logging.warning(
-                f"Multiple MIDI ports matched {auto_detect}: {port_names}. Using first match: {matched_ports[0][1]}"
-            )
-
-        selected_idx, selected_name = matched_ports[0]
-        logging.info(f"Auto-detected MIDI port: {selected_name} (index {selected_idx})")
-        return selected_idx
+    def _find_port_index(self, device_name: str) -> int | None:
+        """Return the index of the first port whose ALSA client name matches device_name (case-insensitive)."""
+        available = self._get_available_ports()
+        for idx, port in enumerate(available):
+            if _client_name_of(port).lower() == device_name.lower():
+                logging.info(f"Found MIDI port: {port} (index {idx})")
+                return idx
+        logging.warning(f"No MIDI port found with device name: {device_name!r}")
+        return None
 
     def open_port(self, port_name: str) -> bool:
         """Eagerly open a port at routing time so the first poll-loop send doesn't enumerate."""
@@ -170,15 +131,8 @@ class ExternalMidiManager:
         if last_fail is not None and (time.monotonic() - last_fail) < PORT_RETRY_BACKOFF_S:
             return None
 
-        port_config = self.port_configs.get(port_name)
-        if not port_config:
-            logging.warning(f"No configuration found for MIDI port: {port_name}")
-            self._open_failures[port_name] = time.monotonic()
-            return None
-
-        port_idx = self._find_port_by_name(port_config)
+        port_idx = self._find_port_index(port_name)
         if port_idx is None:
-            logging.warning(f"Could not find MIDI port for: {port_name}")
             self._open_failures[port_name] = time.monotonic()
             return None
 
@@ -252,10 +206,6 @@ class ExternalMidiManager:
     def send_raw(self, port_name: str, message: MidiMessage) -> bool:
         """Send one raw message; True on success, False if the port is unavailable (caller falls back)."""
         if not self.enabled:
-            return False
-
-        if port_name not in self.port_configs:
-            logging.error(f"Port '{port_name}' not found in external_midi config, falling back to virtual")
             return False
 
         midi_out = self._init_port(port_name)

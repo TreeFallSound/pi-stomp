@@ -1,11 +1,8 @@
 """
 Tests for ExternalMidiManager and ExternalMidiOut.
 
-These exercise the UX flows added on feat/external-midi:
-  - configuring external MIDI ports via auto-detect / explicit index
-  - sending pedalboard load messages with inter-message delay
-  - per-pedalboard config overrides (incremental update_config)
-  - ExternalMidiOut wrapper preferring external port, falling back to virtual
+Config keys are ALSA client device names (e.g. 'Source Audio C4 Synth').
+Matching is case-insensitive against the client-name prefix of each rtmidi port string.
 """
 
 from typing import cast
@@ -17,8 +14,6 @@ from modalapi.external_midi import ExternalMidiManager, ExternalMidiOut
 
 
 def _port(mgr: ExternalMidiManager, name: str) -> MagicMock:
-    # Casting at the access site lets pyright resolve
-    # the mock helpers (`assert_called_once_with`, `call_args_list`, etc).
     return cast(MagicMock, mgr.midi_ports[name])
 
 
@@ -49,7 +44,6 @@ class TestUpdateConfig:
         mgr = ExternalMidiManager()
         assert mgr.enabled is False
         assert mgr.send_delay_ms == 10
-        assert mgr.port_configs == {}
         assert mgr.messages == {}
 
     def test_none_config_is_noop(self):
@@ -63,82 +57,73 @@ class TestUpdateConfig:
         assert mgr.enabled is True
         assert mgr.send_delay_ms == 25
 
-    def test_ports_merge_across_calls(self):
-        """Pedalboard config can add/override individual ports without wiping defaults."""
-        mgr = ExternalMidiManager()
-        mgr.update_config({"ports": {"c4": {"auto_detect": ["*C4*"]}}})
-        mgr.update_config({"ports": {"hx": {"auto_detect": ["*HX*"]}}})
-        assert "c4" in mgr.port_configs
-        assert "hx" in mgr.port_configs
-
     def test_messages_merge_per_port(self):
         """Per-pedalboard override updates only the named port, leaves others."""
         mgr = ExternalMidiManager()
-        mgr.update_config({"messages": {"c4": [[0xC0, 0x00]], "hx": [[0xC0, 0x01]]}})
-        mgr.update_config({"messages": {"c4": [[0xC0, 0x05]]}})
-        assert mgr.messages["c4"] == [[0xC0, 0x05]]
-        assert mgr.messages["hx"] == [[0xC0, 0x01]]
-
-    def test_ports_deep_merge_preserves_defaults(self):
-        """Pedalboard config overlay should merge fields, not replace the whole port dict."""
-        mgr = ExternalMidiManager()
-        mgr.update_config({"ports": {"c4": {"auto_detect": ["*C4*"], "port_index": 0}}})
-        # Overlay only changes auto_detect — port_index should be preserved
-        mgr.update_config({"ports": {"c4": {"auto_detect": ["*C4 Ultra*"]}}})
-        assert mgr.port_configs["c4"].get("auto_detect") == ["*C4 Ultra*"]
-        assert mgr.port_configs["c4"].get("port_index") == 0
+        mgr.update_config({"messages": {"Source Audio C4 Synth": [[0xC0, 0x00]], "HX Stomp": [[0xC0, 0x01]]}})
+        mgr.update_config({"messages": {"Source Audio C4 Synth": [[0xC0, 0x05]]}})
+        assert mgr.messages["Source Audio C4 Synth"] == [[0xC0, 0x05]]
+        assert mgr.messages["HX Stomp"] == [[0xC0, 0x01]]
 
 
 class TestPortDiscovery:
-    def test_auto_detect_glob_case_insensitive(self, fake_ports):
+    def test_device_name_matches_by_client_name(self, fake_ports):
         available, _ = fake_ports
-        available[:] = ["Midi Through:0", "Source Audio C4 Synth", "HX Stomp"]
+        available[:] = [
+            "Midi Through:Midi Through Port-0 14:0",
+            "Source Audio C4 Synth:Source Audio C4 Synth MIDI 1 20:0",
+            "HX Stomp:HX Stomp MIDI 1 21:0",
+        ]
         mgr = ExternalMidiManager()
         mgr.update_config(
             {
                 "enabled": True,
-                "ports": {"c4": {"auto_detect": ["*c4*"]}},
-                "messages": {"c4": [[0xC0, 0x05]]},
+                "messages": {"Source Audio C4 Synth": [[0xC0, 0x05]]},
             }
         )
         assert mgr.send_messages_for_pedalboard() is True
-        # Opened port 1 (the C4)
-        _port(mgr, "c4").open_port.assert_called_once_with(1)
+        _port(mgr, "Source Audio C4 Synth").open_port.assert_called_once_with(1)
 
-    def test_explicit_port_index_wins(self, fake_ports):
+    def test_device_name_match_is_case_insensitive(self, fake_ports):
         available, _ = fake_ports
-        available[:] = ["A", "B", "C"]
+        available[:] = ["Source Audio C4 Synth:Source Audio C4 Synth MIDI 1 20:0"]
         mgr = ExternalMidiManager()
         mgr.update_config(
             {
                 "enabled": True,
-                "ports": {"manual": {"port_index": 2, "auto_detect": ["*A*"]}},
-                "messages": {"manual": [[0xC0, 0x00]]},
+                "messages": {"source audio c4 synth": [[0xC0, 0x05]]},
             }
         )
-        mgr.send_messages_for_pedalboard()
-        _port(mgr, "manual").open_port.assert_called_once_with(2)
+        assert mgr.send_messages_for_pedalboard() is True
+        _port(mgr, "source audio c4 synth").open_port.assert_called_once_with(0)
 
     def test_no_match_skips_port(self, fake_ports):
         available, _ = fake_ports
-        available[:] = ["Midi Through"]
+        available[:] = ["Midi Through:Midi Through Port-0 14:0"]
         mgr = ExternalMidiManager()
         mgr.update_config(
             {
                 "enabled": True,
-                "ports": {"c4": {"auto_detect": ["*C4*"]}},
-                "messages": {"c4": [[0xC0, 0x05]]},
+                "messages": {"Source Audio C4 Synth": [[0xC0, 0x05]]},
             }
         )
-        # send_messages_for_pedalboard returns True (iteration ran), but no port opened
         mgr.send_messages_for_pedalboard()
-        assert "c4" not in mgr.midi_ports or mgr.midi_ports.get("c4") is None
+        assert "Source Audio C4 Synth" not in mgr.midi_ports
+
+    def test_port_name_without_colon_matches_exactly(self, fake_ports):
+        """Port strings with no colon (short names) match the key directly."""
+        available, _ = fake_ports
+        available[:] = ["dev"]
+        mgr = ExternalMidiManager()
+        mgr.update_config({"enabled": True, "messages": {"dev": [[0xC0, 0x00]]}})
+        assert mgr.send_messages_for_pedalboard() is True
+        _port(mgr, "dev").open_port.assert_called_once_with(0)
 
 
 class TestSendMessagesForPedalboard:
     def test_disabled_short_circuits(self, fake_ports):
         mgr = ExternalMidiManager()
-        mgr.update_config({"messages": {"c4": [[0xC0, 0]]}})
+        mgr.update_config({"messages": {"dev": [[0xC0, 0]]}})
         assert mgr.send_messages_for_pedalboard() is False
 
     def test_no_messages_returns_false(self):
@@ -157,7 +142,6 @@ class TestSendMessagesForPedalboard:
             {
                 "enabled": True,
                 "send_delay_ms": 25,
-                "ports": {"dev": {"auto_detect": ["*dev*"]}},
                 "messages": {"dev": [[0xC0, 0], [0xC0, 1], [0xC0, 2]]},
             }
         )
@@ -174,7 +158,6 @@ class TestSendMessagesForPedalboard:
             {
                 "enabled": True,
                 "send_delay_ms": 0,
-                "ports": {"dev": {"auto_detect": ["dev"]}},
                 "messages": {
                     "dev": [
                         [0x00, 0x00],  # invalid status byte (< 0x80)
@@ -197,17 +180,14 @@ class TestSendMessagesForPedalboard:
             {
                 "enabled": True,
                 "send_delay_ms": 0,
-                "ports": {"dev": {"auto_detect": ["dev"]}},
                 "messages": {"dev": [[0xC0, 1], [0xC0, 2], [0xC0, 3]]},
             }
         )
         midi_out = MagicMock()
         midi_out.send_message.side_effect = RuntimeError("device disconnected")
-        # Pre-seed the cache so _init_port returns our failing mock
         mgr.midi_ports["dev"] = midi_out
 
         mgr.send_messages_for_pedalboard()
-        # Stopped after first failure; port removed from cache so next call re-opens
         assert midi_out.send_message.call_count == 1
         assert "dev" not in mgr.midi_ports
         midi_out.close_port.assert_called_once()
@@ -221,7 +201,9 @@ class TestInitPort:
         monkeypatch.setattr("modalapi.external_midi.rtmidi.MidiOut", lambda *a, **k: failing)
 
         mgr = ExternalMidiManager()
-        mgr.update_config({"enabled": True, "ports": {"dev": {"port_index": 0}}})
+        mgr.update_config({"enabled": True})
+        # Bypass enumeration so we reach open_port directly
+        monkeypatch.setattr(mgr, "_find_port_index", lambda name: 0)
 
         assert mgr._init_port("dev") is None
         assert "dev" not in mgr.midi_ports
@@ -233,18 +215,18 @@ class TestOpenBackoff:
         available, created = fake_ports
         available[:] = ["something_else"]
         mgr = ExternalMidiManager()
-        mgr.update_config({"enabled": True, "ports": {"c4": {"auto_detect": ["*c4*"]}}})
+        mgr.update_config({"enabled": True})
 
-        assert mgr._init_port("c4") is None
+        assert mgr._init_port("missing_device") is None
         n = len(created)
-        assert mgr._init_port("c4") is None
+        assert mgr._init_port("missing_device") is None
         assert len(created) == n  # second attempt skipped enumeration
 
     def test_open_port_eager_returns_bool(self, fake_ports):
         available, _ = fake_ports
         available[:] = ["dev"]
         mgr = ExternalMidiManager()
-        mgr.update_config({"enabled": True, "ports": {"dev": {"port_index": 0}}})
+        mgr.update_config({"enabled": True})
         assert mgr.open_port("dev") is True
         assert "dev" in mgr.midi_ports
 
@@ -252,10 +234,11 @@ class TestOpenBackoff:
 class TestSendRaw:
     def test_returns_false_when_disabled(self):
         mgr = ExternalMidiManager()
-        mgr.update_config({"ports": {"dev": {"port_index": 0}}})
         assert mgr.send_raw("dev", [0xB0, 10, 64]) is False
 
-    def test_unknown_port_returns_false(self):
+    def test_unknown_port_returns_false(self, fake_ports):
+        available, _ = fake_ports
+        available[:] = ["something_else"]
         mgr = ExternalMidiManager()
         mgr.update_config({"enabled": True})
         assert mgr.send_raw("ghost", [0xB0, 10, 64]) is False
@@ -264,7 +247,7 @@ class TestSendRaw:
         available, _ = fake_ports
         available[:] = ["dev"]
         mgr = ExternalMidiManager()
-        mgr.update_config({"enabled": True, "ports": {"dev": {"port_index": 0}}})
+        mgr.update_config({"enabled": True})
         assert mgr.send_raw("dev", [0xB0, 80, 100]) is True
         _port(mgr, "dev").send_message.assert_called_once_with([0xB0, 80, 100])
 
@@ -272,20 +255,20 @@ class TestSendRaw:
         available, _ = fake_ports
         available[:] = ["dev"]
         mgr = ExternalMidiManager()
-        mgr.update_config({"enabled": True, "ports": {"dev": {"port_index": 0}}})
+        mgr.update_config({"enabled": True})
         assert mgr.send_raw("dev", [0xC0, 5]) is True  # Program Change
         _port(mgr, "dev").send_message.assert_called_once_with([0xC0, 5])
 
     def test_returns_false_when_port_unavailable(self, fake_ports):
-        mgr = ExternalMidiManager()
-        mgr.update_config({"enabled": True, "ports": {"dev": {"auto_detect": ["*nope*"]}}})
         available, _ = fake_ports
         available[:] = ["something_else"]
+        mgr = ExternalMidiManager()
+        mgr.update_config({"enabled": True})
         assert mgr.send_raw("dev", [0xB0, 10, 64]) is False
 
     def test_send_failure_invalidates_port(self, fake_ports):
         mgr = ExternalMidiManager()
-        mgr.update_config({"enabled": True, "ports": {"dev": {"port_index": 0}}})
+        mgr.update_config({"enabled": True})
         midi_out = MagicMock()
         midi_out.send_message.side_effect = RuntimeError("broken")
         mgr.midi_ports["dev"] = midi_out
@@ -301,7 +284,6 @@ class TestClose:
         mgr.update_config(
             {
                 "enabled": True,
-                "ports": {"a": {"port_index": 0}, "b": {"port_index": 1}},
                 "messages": {"a": [[0xC0, 0]], "b": [[0xC0, 0]]},
             }
         )
@@ -343,7 +325,6 @@ class TestExternalMidiOut:
         fallback.send_message.assert_called_once_with([0xB0, 10, 64])
 
     def test_non_cc_message_routes_to_external(self):
-        """Non-CC messages are sent to external port via send_raw like any other."""
         manager = MagicMock()
         manager.send_raw.return_value = True
         fallback = MagicMock()
@@ -354,7 +335,6 @@ class TestExternalMidiOut:
         fallback.send_message.assert_not_called()
 
     def test_program_change_routes_to_external(self):
-        """Even short messages go through send_raw."""
         manager = MagicMock()
         manager.send_raw.return_value = True
         fallback = MagicMock()
