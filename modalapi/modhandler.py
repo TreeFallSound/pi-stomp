@@ -175,7 +175,7 @@ class Modhandler(Handler):
     def add_hardware(self, hardware):
         self._hardware = hardware
         hardware.external_midi = self.external_midi
-        self._controller_manager = ControllerManager(hardware, stamp_plugin_cfg_id=True)
+        self._controller_manager = ControllerManager(hardware)
 
     def add_lcd(self, lcd):
         self._lcd = lcd

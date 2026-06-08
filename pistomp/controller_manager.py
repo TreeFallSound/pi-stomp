@@ -37,8 +37,6 @@ class ControllerManager:
 
       reorder_footswitch_plugins  v1 moves footswitch-controlled plugins to the
                                   tail of the chain; v3 leaves order untouched.
-      stamp_plugin_cfg_id         v3 stamps the controller id onto plugin-bound
-                                  analog/encoder cfg entries; v1 does not.
     """
 
     def __init__(
@@ -46,11 +44,9 @@ class ControllerManager:
         hardware: "Hardware",
         *,
         reorder_footswitch_plugins: bool = False,
-        stamp_plugin_cfg_id: bool = False,
     ):
         self._hw = hardware
         self._reorder_footswitch_plugins = reorder_footswitch_plugins
-        self._stamp_plugin_cfg_id = stamp_plugin_cfg_id
 
     def bind(self, current: Current | None) -> None:
         """Rebind all controllers for the active pedalboard state."""
@@ -107,8 +103,7 @@ class ControllerManager:
                     key = "%s:%s" % (plugin.instance_id, param.name)
                     controller.cfg[Token.CATEGORY] = plugin.category  # somewhat LAME adding to cfg dict
                     controller.cfg[Token.TYPE] = controller.type
-                    if self._stamp_plugin_cfg_id:
-                        controller.cfg[Token.ID] = controller.id
+                    controller.cfg[Token.ID] = controller.id
                     current.analog_controllers[key] = cast(AnalogDisplayInfo, controller.cfg)
         return footswitch_plugins
 

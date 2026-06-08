@@ -33,11 +33,27 @@ def _wait_for(predicate, timeout=1.0):
     return predicate()
 
 
+def _port_is_visible(port_name, timeout=1.0):
+    """Block until CoreMIDI publishes the virtual port to enumeration."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        import rtmidi
+        temp = rtmidi.MidiOut()
+        ports = temp.get_ports()
+        del temp
+        if any(port_name in p for p in ports):
+            return True
+        time.sleep(0.01)
+    return False
+
+
 @pytest.fixture
 def loopback():
     """Open a real virtual MIDI-in port; yield (port_name, received_messages).
 
     Each test gets a uniquely-named port so async callbacks can't cross-talk.
+    The fixture blocks until CoreMIDI has published the port to enumeration,
+    eliminating the race between port creation and port discovery.
     """
     import rtmidi
 
@@ -51,7 +67,9 @@ def loopback():
         received.append(message)
 
     midi_in.set_callback(_on_message)
-    time.sleep(0.05)  # let the port register before MidiOut enumerates
+
+    assert _port_is_visible(port_name), f"Virtual port {port_name!r} never became visible"
+
     try:
         yield port_name, received
     finally:
@@ -76,6 +94,7 @@ class TestRealLoopback:
     def test_send_raw_reaches_real_device(self, loopback):
         port_name, received = loopback
         mgr = _manager_for(port_name)
+        mgr.open_port("dev")
 
         assert mgr.send_raw("dev", [0xB0, 75, 42]) is True
         assert _wait_for(lambda: received == [[0xB0, 75, 42]])
@@ -84,6 +103,7 @@ class TestRealLoopback:
     def test_external_midi_out_prefers_real_port_over_fallback(self, loopback):
         port_name, received = loopback
         mgr = _manager_for(port_name)
+        mgr.open_port("dev")
         fallback = MagicMock()
         out = ExternalMidiOut(mgr, "dev", fallback)
 
@@ -110,6 +130,7 @@ class TestRealLoopback:
         port_name, received = loopback
         mgr = _manager_for(port_name)
         mgr.messages = {"dev": [[0xC0, 5], [0xB0, 7, 100]]}
+        mgr.open_port("dev")
 
         assert mgr.send_messages_for_pedalboard() is True
 
@@ -149,7 +170,10 @@ class TestControlRoutesToRealPort:
     def _routed(self, port_name):
         mgr = _manager_for(port_name)
         fallback = MagicMock()
-        return mgr, ExternalMidiOut(mgr, "dev", fallback), fallback
+        out = ExternalMidiOut(mgr, "dev", fallback)
+        # Eagerly open the port so the first send doesn't race enumeration.
+        mgr.open_port("dev")
+        return mgr, out, fallback
 
     def test_footswitch_press_reaches_real_port(self, loopback):
         port_name, received = loopback

@@ -5,7 +5,7 @@ controller-manager extraction can't silently flatten the asymmetry:
 
   - v1 reorders the plugin chain so footswitch-controlled plugins sit last.
   - v1 populates analog_controllers from an AnalogMidiControl's cfg dict,
-    stamping CATEGORY + TYPE (but, unlike v3, no ID).
+    stamping CATEGORY + TYPE + ID.
 """
 
 import common.token as Token
@@ -46,8 +46,7 @@ def test_v1_bind_footswitch_and_analog(v1_system, make_plugin):
     assert len(analog_entries) == 1
     entry = analog_entries[0]
     assert entry[Token.CATEGORY] == "Filter"
-    # v1 does NOT stamp an ID onto the analog cfg (v3 does) — pin the difference.
-    assert Token.ID not in entry
+    assert Token.ID in entry
 
 
 def test_v1_bind_reorders_footswitch_plugins_to_end(v1_system, make_plugin):
