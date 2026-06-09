@@ -757,9 +757,12 @@ class Modhandler(Handler):
                     if isinstance(c, Footswitch):
                         c.pressed(0)
                         return
-            # Non-footswitch plugin: emit only; the inbound echo updates state and LCD.
-            target_bypass = not plugin.is_bypassed()
-            self.ws_bridge.send_parameter(plugin.instance_id, ":bypass", 1.0 if target_bypass else 0.0)
+            # Non-footswitch plugin: update locally then notify mod-ui.
+            # No echo arrives for WS-initiated bypass. Contrast with footswitches,
+            # which send MIDI CC → mod-host internally → feedback → msg_callback.
+            value = plugin.toggle_bypass()
+            self.ws_bridge.send_parameter(plugin.instance_id, ":bypass", value)
+            self.lcd.toggle_plugin(widget, plugin)
 
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
         self.lcd.update_footswitch(footswitch)
