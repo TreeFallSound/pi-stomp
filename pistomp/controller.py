@@ -74,17 +74,7 @@ class Controller:
         self.parameter = parameter
         self.set_value(parameter.value)
 
-    def get_routing_info(self) -> RoutingInfo:
-        from modalapi.external_midi import ExternalMidiOut
-
-        if isinstance(self.midiout, ExternalMidiOut):
-            return RoutingInfo.external(self.midiout.port_name)
-        return RoutingInfo.virtual()
-
     def get_display_info(self) -> AnalogDisplayInfo:
-        routing = self.get_routing_info()
-        info: AnalogDisplayInfo = {}
-        if routing.destination == RoutingDestination.EXTERNAL:
-            info["port_name"] = routing.port_name
-            info["midi_cc"] = self.midi_CC
-        return info
+        """Own-presentation only; routing-derived fields are added by the
+        registry owner (ControllerManager._bind_external_controllers)."""
+        return {}

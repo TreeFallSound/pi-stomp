@@ -1,7 +1,6 @@
 """Unit tests for pistomp.hardware.Hardware helpers."""
 
 import logging
-from types import SimpleNamespace
 from typing import cast
 from unittest.mock import MagicMock
 
@@ -10,6 +9,13 @@ import pytest
 import common.token as Token
 from modalapi.external_midi import ExternalMidiManager, ExternalMidiOut
 from pistomp.hardware import Hardware
+
+
+class _Ctl:
+    """Hashable double; SimpleNamespace can't key the registry (defines __eq__)."""
+
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
 
 
 class _StubHardware(Hardware):
@@ -60,9 +66,10 @@ def routed_hw(monkeypatch):
     hw.external_midi = ExternalMidiManager()
     hw.external_midi.update_config({"enabled": True})
 
-    hw.encoders = [SimpleNamespace(id=1, midi_CC=70, midi_channel=13, midiout=hw.midiout)]
-    hw.analog_controls = cast(list, [SimpleNamespace(id=2, midi_CC=75, midiout=hw.midiout)])
-    hw.footswitches = cast(list, [SimpleNamespace(id=0, midiout=hw.midiout)])
+    hw.encoders = [_Ctl(id=1, midi_CC=70, midi_channel=13, midiout=hw.midiout)]
+    hw.analog_controls = cast(list, [_Ctl(id=2, midi_CC=75, midiout=hw.midiout)])
+    hw.footswitches = cast(list, [_Ctl(id=0, midiout=hw.midiout)])
+    hw.external_routing = {}  # __new__ bypasses __init__; __route_section writes here
     return hw
 
 
@@ -78,6 +85,28 @@ class TestApplyMidiRouting:
         fs = routed_hw.footswitches[0]
         assert isinstance(fs.midiout, ExternalMidiOut)
         assert fs.midiout.port_name == "My MIDI Device"
+        assert routed_hw.is_external(fs)
+        assert routed_hw.external_port_name(fs) == "My MIDI Device"
+        assert routed_hw.external_routing[fs].port_name == "My MIDI Device"
+
+    def test_unrouted_control_is_internal(self, routed_hw):
+        """No midi_port → internal: absent from the registry, sends to virtual."""
+        cfg = {Token.HARDWARE: {Token.FOOTSWITCHES: [{Token.ID: 0}]}}
+        _route(routed_hw, cfg)
+        fs = routed_hw.footswitches[0]
+        assert fs.midiout is routed_hw.midiout
+        assert not routed_hw.is_external(fs)
+        assert routed_hw.external_port_name(fs) is None
+        assert fs not in routed_hw.external_routing
+
+    def test_routing_overlay_clears_external(self, routed_hw):
+        """A later cfg pass with no midi_port removes a prior external routing."""
+        ext = {Token.HARDWARE: {Token.FOOTSWITCHES: [{Token.ID: 0, "midi_port": "My MIDI Device"}]}}
+        _route(routed_hw, ext)
+        fs = routed_hw.footswitches[0]
+        assert routed_hw.is_external(fs)
+        _route(routed_hw, {Token.HARDWARE: {Token.FOOTSWITCHES: [{Token.ID: 0}]}})
+        assert not routed_hw.is_external(fs)
 
     def test_encoder_and_analog_routed_to_external_port(self, routed_hw):
         cfg = {
@@ -119,6 +148,7 @@ class TestReinitDefaultRouting:
         hw = object.__new__(_StubHardware)
         hw.default_cfg = {Token.HARDWARE: {}}
         hw.handler = MagicMock()
+        hw.external_routing = {}  # __new__ bypasses __init__; reinit clears it
 
         for name in (
             "_Hardware__init_midi_default",

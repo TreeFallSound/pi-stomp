@@ -20,7 +20,7 @@ from typing import cast, TYPE_CHECKING
 
 import common.token as Token
 from pistomp.analogmidicontrol import AnalogMidiControl
-from pistomp.controller import AnalogDisplayInfo, RoutingDestination
+from pistomp.controller import AnalogDisplayInfo
 from pistomp.current import Current
 from pistomp.encodermidicontrol import EncoderMidiControl
 from pistomp.footswitch import Footswitch
@@ -82,12 +82,11 @@ class ControllerManager:
                 if controller is None:
                     continue
 
-                routing = controller.get_routing_info()
                 # External controllers aren't bound to plugin parameters.
-                if routing.destination == RoutingDestination.EXTERNAL:
+                if self._hw.is_external(controller):
                     logging.warning(
                         f"Plugin parameter {plugin.name}:{param.name} is bound to external controller "
-                        f"{param.binding} (routed to {routing.port_name}) - ignoring plugin binding"
+                        f"{param.binding} (routed to {self._hw.external_port_name(controller)}) - ignoring plugin binding"
                     )
                     continue
 
@@ -124,23 +123,25 @@ class ControllerManager:
         """Externally-routed controllers: bind a synthetic parameter and show
         them under an "External" category."""
         for controller in self._hw.controllers.values():
-            routing = controller.get_routing_info()
-            if routing.destination != RoutingDestination.EXTERNAL or controller.midi_CC is None:
+            if not self._hw.is_external(controller) or controller.midi_CC is None:
                 continue
+            port_name = self._hw.external_port_name(controller)
 
             controller.parameter = self._hw.create_external_parameter(
-                controller, routing.port_name, controller.midi_channel, controller.midi_CC
+                controller, port_name, controller.midi_channel, controller.midi_CC
             )
 
             if not isinstance(controller, (AnalogMidiControl, EncoderMidiControl)):
                 continue
             key = f"{controller.midi_channel}:{controller.midi_CC}"
-            # AnalogMidiControl.get_display_info() already carries type/id; the
-            # encoder's does not, so seed them and let the dict override.
+            # Seed type/id (the encoder's get_display_info is empty); routing
+            # fields come from the registry, not the control.
             entry: AnalogDisplayInfo = {
                 "type": controller.type,
                 "id": controller.id,
                 **controller.get_display_info(),
+                "port_name": port_name,
+                "midi_cc": controller.midi_CC,
                 "category": "External",
             }
             current.analog_controllers[key] = entry
