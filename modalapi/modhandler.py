@@ -126,11 +126,7 @@ class Modhandler(Handler):
         }
 
         # External MIDI device synchronization
-        self.external_midi = None
-        try:
-            self.external_midi = ExternalMidi.ExternalMidiManager()
-        except Exception as e:
-            logging.warning(f"Failed to initialize external MIDI manager: {e}")
+        self.external_midi = ExternalMidi.ExternalMidiManager()
 
         # Blend mode manager - multiple blend snapshots per pedalboard
         self.blend_modes: dict[str, Any] = {}  # {snapshot_name: BlendMode}
@@ -154,8 +150,7 @@ class Modhandler(Handler):
             self._lcd.cleanup()
         if self._hardware is not None:
             self._hardware.cleanup()
-        if self.external_midi is not None:
-            self.external_midi.close()
+        self.external_midi.close()
         self.ws_bridge.stop()
 
     def _rest_get(self, url: str) -> Response | None:
@@ -531,11 +526,10 @@ class Modhandler(Handler):
 
         # Send external MIDI messages for this pedalboard
         # Config was already updated by hardware.reinit(cfg) above
-        if self.external_midi is not None:
-            try:
-                self.external_midi.send_messages_for_pedalboard()
-            except Exception as e:
-                logging.warning(f"Failed to send external MIDI messages: {e}")
+        try:
+            self.external_midi.send_messages_for_pedalboard()
+        except Exception as e:
+            logging.warning(f"Failed to send external MIDI messages: {e}")
 
         # Sync analog controls last: after bind + external send, matching mod.py
         self.hardware.sync_analog_controls()

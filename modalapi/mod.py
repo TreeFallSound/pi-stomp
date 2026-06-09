@@ -159,11 +159,7 @@ class Mod(Handler):
         logging.info("WebSocket bridge started")
 
         # External MIDI device synchronization
-        self.external_midi = None
-        try:
-            self.external_midi = ExternalMidi.ExternalMidiManager()
-        except Exception as e:
-            logging.warning(f"Failed to initialize external MIDI manager: {e}")
+        self.external_midi = ExternalMidi.ExternalMidiManager()
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
@@ -185,8 +181,7 @@ class Mod(Handler):
     def cleanup(self):
         if self.lcd is not None:
             self.lcd.cleanup()
-        if self.external_midi is not None:
-            self.external_midi.close()
+        self.external_midi.close()
         self.ws_bridge.stop()
 
     # Container for dynamic data which is unique to the "current" pedalboard
@@ -613,11 +608,10 @@ class Mod(Handler):
 
         # Send external MIDI messages for this pedalboard
         # Config was already updated by hardware.reinit(cfg) above
-        if self.external_midi is not None:
-            try:
-                self.external_midi.send_messages_for_pedalboard()
-            except Exception as e:
-                logging.warning(f"Failed to send external MIDI messages: {e}")
+        try:
+            self.external_midi.send_messages_for_pedalboard()
+        except Exception as e:
+            logging.warning(f"Failed to send external MIDI messages: {e}")
 
         # Sync current state of analog controls (expression pedals, etc.)
         self.hardware.sync_analog_controls()
