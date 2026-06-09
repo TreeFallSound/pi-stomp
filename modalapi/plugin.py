@@ -52,8 +52,9 @@ class Plugin:
         param = self.parameters.get(":bypass")
         if param is None:
             return 0.0
-        param.value = not param.value
-        return param.value
+        new_value = 0.0 if param.value else 1.0
+        param.value = new_value
+        return new_value
 
     def set_bypass(self, bypass: bool) -> None:
         param = self.parameters.get(":bypass")
