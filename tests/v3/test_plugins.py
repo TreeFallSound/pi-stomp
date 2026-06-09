@@ -104,7 +104,11 @@ def test_v3_toggle_plugin_bypass_via_footswitch_sends_midi_cc(v3_system: SystemF
 
 
 def test_v3_toggle_plugin_bypass_no_footswitch_sends_websocket(v3_system: SystemFixture, make_plugin, snapshot):
-    """Non-footswitch plugin: toggle_plugin_bypass() sends :bypass via WebSocket and flips state."""
+    """Non-footswitch plugin: toggle_plugin_bypass() updates state+LCD immediately and sends :bypass via WS.
+
+    No echo arrives for WS-initiated bypass (msg_callback_broadcast skips origin; mod-host
+    doesn't generate param_set feedback for bypass commands). State and LCD must update locally.
+    """
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -121,13 +125,8 @@ def test_v3_toggle_plugin_bypass_no_footswitch_sends_websocket(v3_system: System
     widget = next(w for w in handler.lcd.w_plugins if w.object is plugin)
     handler.toggle_plugin_bypass(widget, plugin)
 
-    # Emit-only: state and LCD stay put until the inbound echo arrives.
+    # State and LCD update immediately — no echo needed.
     assert ws_bridge.sent_values_for("fuzz", ":bypass") == [1.0]
-    assert not plugin.is_bypassed()
-    snapshot("active")
-
-    ws_bridge.inject("param_set /graph/fuzz :bypass 1.0")
-    handler.poll_ws_messages()
     assert plugin.is_bypassed()
     snapshot("bypassed")
 
@@ -303,7 +302,7 @@ def test_v3_handle_bypass_event_updates_plugin(v3_system: SystemFixture, make_pl
 
 
 def test_v3_bypass_echo_is_idempotent(v3_system: SystemFixture, make_plugin, snapshot):
-    """Toggle emits only; the echo is the sole writer and a repeat echo is idempotent."""
+    """Inbound bypass echo (Path C: external change) is idempotent with local state."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -317,18 +316,15 @@ def test_v3_bypass_echo_is_idempotent(v3_system: SystemFixture, make_plugin, sna
 
     widget = next(w for w in handler.lcd.w_plugins if w.object is plugin)
     handler.toggle_plugin_bypass(widget, plugin)
-    assert not plugin.is_bypassed()
-    snapshot("active")  # emit-only: LCD unchanged before the echo
+    # State and LCD update immediately (Path B: no echo arrives for WS-initiated bypass).
+    assert plugin.is_bypassed()
+    snapshot("bypassed")
 
+    # An inbound echo (e.g. from mod-ui browser) confirming the same state is idempotent.
     ws_bridge.inject("param_set /graph/fuzz :bypass 1.0")
     handler.poll_ws_messages()
     assert plugin.is_bypassed()
     snapshot("bypassed")
-
-    ws_bridge.inject("param_set /graph/fuzz :bypass 1.0")
-    handler.poll_ws_messages()
-    assert plugin.is_bypassed()
-    snapshot("bypassed")  # repeat echo is idempotent
 
 
 def test_v3_bypass_event_unknown_plugin_is_ignored(v3_system: SystemFixture, make_plugin):
