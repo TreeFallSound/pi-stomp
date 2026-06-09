@@ -204,8 +204,8 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 - **Timestamp-based change detection** - File mtimes for MOD sync, not polling APIs
 
 ### MOD Integration
-- **mod-ui owns live state** - It is the single writer of bypass and parameter values;
-  piStomp mirrors over the WebSocket and emits its own changes for mod-ui to echo back
+- **mod-ui owns live state** - Single writer of bypass and parameter values; piStomp
+  mirrors inbound WS changes. Echo behaviour differs by initiator — see bypass paths below.
 - **REST for operations, WS for values** - `requests` to `localhost:80` drives
   pedalboard/snapshot/tempo; the WebSocket carries live bypass/parameter state
 - **LILV for local parsing** - Parse `.ttl` bundles locally for performance and rich data
@@ -356,11 +356,20 @@ Inbound (`parse_message` → typed messages → each handler's `_handle_ws_messa
 mod-ui's own cache; pedalboard loads and connect dumps rebroadcast **unconditionally**.
 ⇒ reselecting a board is a full resync; reselecting a snapshot is not.
 
-Outbound is **emit-only**: a hardware change is *sent* to mod-ui — footswitch → MIDI CC
-(absolute, from local `toggled` intent); non-footswitch toggle / value edit → WS
-`send_parameter`; tap tempo → WS `send_bpm` — then piStomp **waits for the echo** to
-update its own state + LCD. It does not write its own bypass on the press. Single-writer
-keeps rapid presses correct and avoids dual-source drift.
+Outbound behaviour depends on the initiator:
+
+- **Footswitch press** → MIDI CC (absolute `toggled` intent) → mod-host processes
+  internally → mod-host emits `param_set` feedback on port 5556 → `msg_callback` to
+  ALL clients (including us). Emit-only is correct here; the feedback echo drives the
+  LCD/LED update.
+- **Non-footswitch UI tap** → WS `send_parameter` → mod-ui calls `host.bypass()` →
+  `msg_callback_broadcast` **skips the origin socket** (us), and mod-host does NOT
+  generate `param_set` feedback for `bypass` commands it received from mod-ui. No echo
+  arrives. piStomp updates local state and LCD immediately, then sends WS to keep mod-ui
+  in sync.
+- **Parameter value edit** → WS `send_parameter` → same no-echo situation; cached
+  `Parameter.value` is updated locally before sending.
+- **Tap tempo** → WS `send_bpm` — not echoed at all.
 
 **Pedalboard Data Loading** via LILV (LV2 bundle parser):
 1. Parse `.ttl` files in pedalboard bundle
@@ -440,19 +449,41 @@ MOD-UI writes /home/pistomp/data/last.json
           → update_lcd()
 ```
 
-**Footswitch Press → Plugin Bypass** (emit-only; mod-ui echoes back):
+**Bypass Change — Three Paths with Different Echo Behaviour**:
+
+mod-ui has two broadcast mechanisms, and mod-host only generates feedback for MIDI-triggered
+changes (not for commands mod-ui itself issued). This determines who sees what:
 
 ```
-poll_controls()
-  → Footswitch.pressed()
-      → advance local `toggled` intent
-      → send absolute MIDI CC  (or WS param_set for a non-footswitch toggle)
-      (no LED / parameter write here — state waits for the echo)
+Path A — Footswitch (MIDI CC):
+  poll_controls() → Footswitch.pressed()
+    → midiout.send_message([CC, midi_CC, 127/0])   # direct to ALSA
+      → JACK → mod-host:midi_in                    # bypasses mod-ui WS entirely
+        → mod-host applies change
+          → mod-host emits param_set feedback on port 5556
+            → mod-ui process_read_message_body
+              → msg_callback("param_set /graph/X :bypass V")  # ALL clients, no skip
+                → pi-stomp poll_ws_messages() receives it
+                  → plugin.set_bypass() + lcd.refresh_plugins()
+  Emit-only is correct: pi-stomp waits for the feedback echo to update LCD/LED.
 
-mod-ui applies the bypass, broadcasts it back
-  → poll_ws_messages() (10ms)
-    → _handle_ws_message(param_set …/:bypass)   # or `add …` on reconnect
-      → plugin.set_bypass(v) → LCD.refresh_plugins()
+Path B — Non-footswitch UI tap (LCD plugin widget click):
+  toggle_plugin_bypass(widget, plugin)
+    → plugin.toggle_bypass()                       # update local state immediately
+    → ws_bridge.send_parameter(id, ":bypass", v)   # queued, sent async
+    → lcd.toggle_plugin(widget, plugin)            # update LCD immediately
+      [async, in mod-ui]
+      → ws_parameter_set → host.bypass(instance, v)
+          → msg_callback_broadcast(...)            # skips origin socket (us)
+          mod-host receives "bypass N V" cmd — not a param_set, no feedback generated
+  Must update locally: no echo will ever arrive for WS-initiated bypass.
+
+Path C — External change (browser or another WS client):
+  [mod-ui browser / other WS client sends param_set /graph/X/:bypass V]
+    → ws_parameter_set → host.bypass(...)
+        → msg_callback_broadcast(...)              # skips origin (browser), reaches pi-stomp
+          → pi-stomp poll_ws_messages() receives it
+            → plugin.set_bypass() + lcd.refresh_plugins()
 ```
 
 ### Key Files
