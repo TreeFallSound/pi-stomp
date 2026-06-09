@@ -410,19 +410,41 @@ MOD-UI writes /home/pistomp/data/last.json
           → update_lcd()
 ```
 
-**Footswitch Press → Plugin Bypass**:
+**Bypass Change — Three Paths with Different Echo Behaviour**:
+
+mod-ui has two broadcast mechanisms, and mod-host only generates feedback for MIDI-triggered
+changes (not for commands mod-ui itself issued). This determines who sees what:
 
 ```
-poll_controls()
-  → Footswitch.poll() → detect press
-    → footswitch.pressed()
-      → Toggle self.enabled
-      → Update LED
-      → Send MIDI CC (if configured)
-      → Update bound parameter.value (e.g., :bypass)
-      → refresh_callback(footswitch=self)
-        → Handler.update_lcd_fs()
-          → LCD.update_footswitch() - redraw indicator
+Path A — Footswitch (MIDI CC):
+  poll_controls() → Footswitch.pressed()
+    → midiout.send_message([CC, midi_CC, 127/0])   # direct to ALSA
+      → JACK → mod-host:midi_in                    # bypasses mod-ui WS entirely
+        → mod-host applies change
+          → mod-host emits param_set feedback on port 5556
+            → mod-ui process_read_message_body
+              → msg_callback("param_set /graph/X :bypass V")  # ALL clients, no skip
+                → pi-stomp poll_ws_messages() receives it
+                  → plugin.set_bypass() + lcd.refresh_plugins()
+  Emit-only is correct: pi-stomp waits for the feedback echo to update LCD/LED.
+
+Path B — Non-footswitch UI tap (LCD plugin widget click):
+  toggle_plugin_bypass(widget, plugin)
+    → plugin.toggle_bypass()                       # update local state immediately
+    → ws_bridge.send_parameter(id, ":bypass", v)   # queued, sent async
+    → lcd.toggle_plugin(widget, plugin)            # update LCD immediately
+      [async, in mod-ui]
+      → ws_parameter_set → host.bypass(instance, v)
+          → msg_callback_broadcast(...)            # skips origin socket (us)
+          mod-host receives "bypass N V" cmd — not a param_set, no feedback generated
+  Must update locally: no echo will ever arrive for WS-initiated bypass.
+
+Path C — External change (browser or another WS client):
+  [mod-ui browser / other WS client sends param_set /graph/X/:bypass V]
+    → ws_parameter_set → host.bypass(...)
+        → msg_callback_broadcast(...)              # skips origin (browser), reaches pi-stomp
+          → pi-stomp poll_ws_messages() receives it
+            → plugin.set_bypass() + lcd.refresh_plugins()
 ```
 
 ### Key Files
