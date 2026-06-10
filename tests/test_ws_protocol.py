@@ -2,9 +2,11 @@
 
 from modalapi.ws_protocol import (
     AddHwPortMessage,
+    AddPluginMessage,
     LoadingEndMessage,
     LoadingStartMessage,
     PedalSnapshotMessage,
+    ParamSetMessage,
     PluginBypassMessage,
     RemoveHwPortMessage,
     SizeMessage,
@@ -193,9 +195,57 @@ def test_plugin_bypass_nonzero_is_true():
     assert msg == PluginBypassMessage(instance="Reverb", bypassed=True)
 
 
-def test_param_set_non_bypass_is_unknown():
-    # Regular param_set (non-bypass symbol) should not parse as PluginBypassMessage
-    msg = parse_message("param_set /graph/CollisionDrive/DRIVE 0.75")
+def test_param_set_generic_control_port():
+    # Inbound (space) form for a non-bypass control port.
+    msg = parse_message("param_set /graph/Delay gain 0.75")
+    assert msg == ParamSetMessage(instance="Delay", symbol="gain", value=0.75)
+
+
+def test_param_set_bypass_precedes_generic_arm():
+    # The :bypass arm must match before the generic param_set arm.
+    msg = parse_message("param_set /graph/Delay :bypass 1.0")
+    assert msg == PluginBypassMessage(instance="Delay", bypassed=True)
+
+
+def test_param_set_missing_value_is_unknown():
+    msg = parse_message("param_set /graph/Delay gain")
+    assert isinstance(msg, UnknownMessage)
+
+
+# ---------------------------------------------------------------------------
+# add (connect/load dump) — bypass rides in field 4, the only place it appears
+# ---------------------------------------------------------------------------
+
+
+def test_add_plugin_bypassed():
+    # add {instance} {uri} {x} {y} {bypassed} {sversion} {buildEnv}
+    msg = parse_message("add CollisionDrive http://moddevices.com/caps 419.0 198.0 1 2 1")
+    assert msg == AddPluginMessage(instance="CollisionDrive", bypassed=True)
+
+
+def test_add_plugin_active():
+    msg = parse_message("add fuzz http://uri 0.0 0.0 0 1 1")
+    assert msg == AddPluginMessage(instance="fuzz", bypassed=False)
+
+
+def test_add_plugin_strips_graph_prefix():
+    msg = parse_message("add /graph/fuzz http://uri 0.0 0.0 1 1 1")
+    assert msg == AddPluginMessage(instance="fuzz", bypassed=True)
+
+
+def test_add_plugin_nonzero_bypass_is_true():
+    msg = parse_message("add Reverb http://uri 0.0 0.0 2 1 1")
+    assert msg == AddPluginMessage(instance="Reverb", bypassed=True)
+
+
+def test_add_plugin_missing_bypass_field_is_unknown():
+    # Fewer than 4 trailing fields → cannot locate bypass → unknown, not a crash.
+    msg = parse_message("add fuzz http://uri 0.0")
+    assert isinstance(msg, UnknownMessage)
+
+
+def test_add_plugin_non_int_bypass_is_unknown():
+    msg = parse_message("add fuzz http://uri 0.0 0.0 notanint 1 1")
     assert isinstance(msg, UnknownMessage)
 
 

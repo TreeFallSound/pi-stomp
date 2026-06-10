@@ -164,13 +164,19 @@ Snapshot loads from mod-ui broadcast only deltas vs its own cache; pedalboard lo
 
 #### Outbound: emit and echo back
 
-piStomp never writes its own bypass values authoritatively. Instead:
+piStomp usually defers to WS messages from MOD-UI to bring state updates, even when we initiated them:
 
 - **Footswitch**: `pressed()` sets local `toggled` state and sends absolute MIDI CC immediately. The bypass display (plugin state, LCD) updates only when mod-ui echoes the change back over WebSocket. For unbound footswitches (`drives_display` == true), the local LED updates immediately.
-- **Non-footswitch toggle**: Sends `param_set` via WebSocket bridge. No local state change until echo.
 - **Tap tempo**: Sends `transport-bpm` via WebSocket bridge.
 
-This single-writer discipline keeps rapid presses correct and avoids dual-source drift.
+This single-writer discipline keeps rapid presses correct and avoids dual-source drift, at the expense of ~10ms delay (our poll rate). The outlier is footswitches in non-MIDI mode:
+
+1. WS `send_parameter`
+2. mod-ui calls `host.bypass()`
+3. `msg_callback_broadcast` **skips the origin socket** (us)
+4. mod-host does NOT generate `param_set` feedback for `bypass` commands it received from mod-ui
+
+As such, no echo arrives. In this case, pi-Stomp updates local state and LCD immediately, then sends WS to keep mod-ui in sync.
 
 ### Pedalboard Data Loading
 

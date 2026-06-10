@@ -34,13 +34,22 @@ from pistomp.tuner.panel import TunerPanel
 
 class Lcd(abstract_lcd.Lcd):
 
-    def __init__(self, cwd, handler=None, flip=False, display=None):
+    def __init__(self, cwd, handler=None, flip=False, display=None, spi_speed_mhz=24):
         self.cwd = cwd
         self.imagedir = os.path.join(cwd, "images")
         Config(os.path.join(cwd, 'ui', 'config.json'))
         self.handler = handler
         self.flip = flip
+        self.spi_speed_mhz = spi_speed_mhz
 
+        # Calculate optimal polling divisor based on LCD speed
+        # 24MHz: 78ms/frame → poll every 80ms (divisor=8)
+        # 48MHz: 39ms/frame → poll every 40ms (divisor=4)
+        # 56MHz: 34ms/frame → poll every 30ms (divisor=3)
+        frame_time_ms = (56.0 / spi_speed_mhz) * 33.6
+        self.poll_divisor = max(1, round(frame_time_ms / 10.0))
+
+        # TODO would be good to decouple the actual LCD hardware.  This file should work for any 320x240 display
         if display is None:
             import board
             import digitalio
@@ -48,7 +57,7 @@ class Lcd(abstract_lcd.Lcd):
                                  digitalio.DigitalInOut(board.CE0),
                                  digitalio.DigitalInOut(board.D6),
                                  digitalio.DigitalInOut(board.D5),
-                                 24000000,
+                                 spi_speed_mhz * 1_000_000,
                                  flip)
 
         # Colors
@@ -528,7 +537,8 @@ class Lcd(abstract_lcd.Lcd):
                  ("System reboot",  self.handler.system_menu_reboot, None),
                  ("Restart sound engine", self.handler.system_menu_restart_sound, None),
                  ("Bank Select >", self.draw_bank_menu, None),
-                 ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None)]
+                 ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None),
+                 ("LCD Speed >", self.draw_lcd_speed_menu, None)]
         self.draw_selection_menu(items, "System Menu")
 
     def _toggle_tuner_from_menu(self, arg):
@@ -563,6 +573,22 @@ class Lcd(abstract_lcd.Lcd):
             self.handler.temperature,
             self.handler.throttled)
         d = MessageDialog(self.pstack, msg, title="System Info", width=300, height=130)
+        self.pstack.push_panel(d)
+
+    def draw_lcd_speed_menu(self, event):
+        current_speed = self.spi_speed_mhz
+        items = [
+            ("24 MHz (safe)", self.handler.set_lcd_speed, 24, current_speed==24),
+            ("48 MHz (experimental)", self.handler.set_lcd_speed, 48, current_speed==48),
+            ("56 MHz (experimental)", self.handler.set_lcd_speed, 56, current_speed==56),
+            ("80 MHz (experimental)", self.handler.set_lcd_speed, 80, current_speed==80),
+        ]
+        self.draw_selection_menu(items, "LCD SPI Speed", auto_dismiss=False)
+
+    def show_lcd_speed_message(self, speed_mhz):
+        adc_speed = "240 kHz" if speed_mhz <= 24 else "1 MHz"
+        msg = f"LCD: {speed_mhz} MHz / ADC: {adc_speed}\n\nRestarting..."
+        d = MessageDialog(self.pstack, msg, title="SPI Speed", width=280, height=140)
         self.pstack.push_panel(d)
 
     def draw_bank_menu(self, event):

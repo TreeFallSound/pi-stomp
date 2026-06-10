@@ -37,7 +37,7 @@ from pistomp.hardware import Controller, Hardware
 import pistomp.settings as Settings
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, AddPluginMessage, ParamSetMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -282,9 +282,11 @@ class Modhandler(Handler):
         # Tick the LCD on every 10 ms main-loop pass (~100 fps) while the
         # tuner panel is mounted. Strobe's worst-case redraw at STRIPE_W=4
         # is ~4.3 ms of SPI, well inside the 10 ms budget; typical ticks
-        # are sub-millisecond. Fall back to the default 200 ms gate
-        # otherwise.
-        return 1 if self._tuner_panel is not None else 20
+        # are sub-millisecond. Otherwise fall back to the SPI-clock-derived
+        # divisor computed by the LCD itself.
+        if self._tuner_panel is not None:
+            return 1
+        return self._lcd.poll_divisor if self._lcd is not None else 8
 
     def universal_encoder_select(self, direction):
         if self._lcd is not None:
@@ -372,7 +374,8 @@ class Modhandler(Handler):
                 self._handle_blend_mode_snapshot_change(msg.snapshot_id)
                 self.lcd.draw_title()
 
-        elif isinstance(msg, PluginBypassMessage):
+        elif isinstance(msg, (PluginBypassMessage, AddPluginMessage)):
+            # PluginBypassMessage: live delta. AddPluginMessage: (re)connect dump
             if self.current is not None:
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
@@ -381,13 +384,31 @@ class Modhandler(Handler):
                         self.lcd.refresh_plugins()
                         break
 
-    def poll_modui_changes(self):
-        """Poll for changes from MOD-UI: websockets and file watching"""
+        elif isinstance(msg, ParamSetMessage):
+            # Keep the cached value fresh so a later long-press edit opens at the
+            # current value. Not drawn anywhere live, so no LCD refresh.
+            if self.current is not None:
+                for plugin in self.current.pedalboard.plugins:
+                    if plugin.instance_id == msg.instance:
+                        param = plugin.parameters.get(msg.symbol)
+                        if param is not None:
+                            param.value = msg.value
+                        break
+
+    def poll_ws_messages(self):
+        """Drain inbound WS messages (fast ~10ms cadence). Main-thread only.
+        Must not touch next_pedalboard_preset_index (owned by the file-watch path)."""
         for msg in self.ws_bridge.get_received_messages():
             try:
                 self._handle_ws_message(parse_message(msg))
             except Exception as e:
                 logging.error(f"Error handling WebSocket message '{msg}': {e}")
+
+    def poll_modui_changes(self):
+        """Poll for changes from MOD-UI: websockets and file watching"""
+        # Drain WS first so loading_end/snapshot lands before the file-watch
+        # reads next_pedalboard_preset_index this tick. No-op if already drained.
+        self.poll_ws_messages()
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
@@ -452,6 +473,15 @@ class Modhandler(Handler):
     def set_bank(self, bank_name):
         self.current_bank = bank_name
         self.settings.set_setting(Token.BANK, bank_name)
+
+    def set_lcd_speed(self, speed_mhz):
+        self.settings.set_setting('lcd.spi_speed_mhz', speed_mhz)
+        self.lcd.show_lcd_speed_message(speed_mhz)
+        # Exit cleanly - systemd will restart with new LCD speed
+        import time
+        import sys
+        time.sleep(1.5)  # Show message briefly
+        sys.exit(0)
 
     #
     # Pedalboard Stuff
@@ -713,25 +743,7 @@ class Modhandler(Handler):
 
         # Update name on lcd
         self.lcd.draw_title()
-
-        # load of the preset might have changed plugin bypass status
-        self.preset_change_plugin_update()
-
-    def preset_change_plugin_update(self):
-        assert self.current is not None, "Current pedalboard is not set"
-
-        # Now that the preset has changed on the host, update plugin bypass indicators
-        for p in self.current.pedalboard.plugins:
-            uri = self.root_uri + "effect/parameter/pi_stomp_get//graph/" + p.instance_id + "/:bypass"
-            resp = self._rest_get(uri)
-            if resp is None:
-                logging.error("failed to get bypass value for: %s" % p.instance_id)
-                continue
-            if resp.status_code == 200:
-                p.set_bypass(resp.text == "true")
-            else:
-                logging.error(f"[preset_change_plugin_update] {p.instance_id}: REST status {resp.status_code}")
-        self.lcd.refresh_plugins()
+        # Bypass/param changes from the snapshot arrive via the WS drain (source of truth).
 
     def preset_incr_and_change(self, *argv):
         assert self.current is not None, "Current pedalboard is not set"
@@ -757,11 +769,11 @@ class Modhandler(Handler):
                     if isinstance(c, Footswitch):
                         c.pressed(0)
                         return
-            # Regular (non footswitch plugin)
+            # Non-footswitch plugin: update locally then notify mod-ui.
+            # No echo arrives for WS-initiated bypass. Contrast with footswitches,
+            # which send MIDI CC → mod-host internally → feedback → msg_callback.
             value = plugin.toggle_bypass()
-            self.ws_bridge.send_parameter(plugin.instance_id, ":bypass", 1.0 if value else 0.0)
-
-            #  Indicate change on LCD
+            self.ws_bridge.send_parameter(plugin.instance_id, ":bypass", value)
             self.lcd.toggle_plugin(widget, plugin)
 
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
