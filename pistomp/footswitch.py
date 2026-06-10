@@ -139,6 +139,12 @@ class Footswitch(controller.Controller):
     def set_midi_channel(self, midi_channel):
         self.midi_channel = midi_channel
 
+    @property
+    def drives_display(self) -> bool:
+        """True when unbound: no inbound echo will arrive, so the press updates
+        indicators itself. When bound to a plugin :bypass, the WS broadcast does."""
+        return self.parameter is None
+
     def set_value(self, bypass_value: float):
         self.toggled = (bypass_value < 1)
         self._set_led(self.toggled)
@@ -245,18 +251,14 @@ class Footswitch(controller.Controller):
         # Send midi
         elif self.midi_CC is not None:
             self.toggled = new_toggled
-            # Update LED
-            self._set_led(self.toggled)
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.toggled else 0]
             logging.debug("Sending CC event: %d" % self.midi_CC)
             self.midiout.send_message(cc)
+            if self.drives_display:
+                self._set_led(self.toggled)
 
-        # Update plugin parameter if any
-        if self.parameter is not None:
-            self.parameter.value = not self.toggled  # TODO assumes mapped parameter is :bypass
-
-        # Update LCD
-        self.refresh_callback(footswitch=self)
+        if self.drives_display:
+            self.refresh_callback(footswitch=self)
 
     def set_display_label(self, label):
         self.display_label = label
