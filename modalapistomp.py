@@ -190,6 +190,7 @@ def main():
         # main loop
         while True:
             handler.poll_controls()
+            handler.poll_ws_messages()  # drain inbound WS every tick for instant bypass/snapshot indicators
             time.sleep(0.01)  # lower to increase responsiveness, but can cause conflict with LCD if too low
 
             # For less frequent events
