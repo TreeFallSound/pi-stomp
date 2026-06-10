@@ -89,6 +89,23 @@ class PluginBypassMessage:
 
 
 @dataclass
+class AddPluginMessage:
+    """Plugin present in a (re)connect/load dump (add ...)."""
+
+    instance: str  # canonical bare form, e.g. "CollisionDrive"
+    bypassed: bool
+
+
+@dataclass
+class ParamSetMessage:
+    """A plugin control-port value changed (param_set, non-:bypass)."""
+
+    instance: str  # canonical bare form, e.g. "HotBox"
+    symbol: str  # e.g. "gain"
+    value: float
+
+
+@dataclass
 class UnknownMessage:
     """Message type we don't handle yet."""
 
@@ -105,6 +122,8 @@ WebSocketMessage = Union[
     RemoveHwPortMessage,
     TrueBypassMessage,
     PluginBypassMessage,
+    AddPluginMessage,
+    ParamSetMessage,
     UnknownMessage,
 ]
 
@@ -167,6 +186,11 @@ def parse_message(raw_message: str) -> WebSocketMessage:
             case ["add_hw_port", port_name]:
                 return AddHwPortMessage(port_name=port_name, port_type="", is_output=False, title="", index=0)
 
+            # Format: add {instance} {uri} {x} {y} {bypassed} {sversion} {buildEnv}
+            case ["add", instance_path, rest]:
+                bypassed = int(rest.split()[3])
+                return AddPluginMessage(instance=instance_path.removeprefix("/graph/"), bypassed=bypassed != 0)
+
             # Format: remove_hw_port /graph/{name}
             case ["remove_hw_port", port_name, *_]:
                 return RemoveHwPortMessage(port_name=port_name)
@@ -178,6 +202,12 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                 instance = path.removeprefix("/graph/")
                 value_str = rest.split(" ", 1)[1]
                 return PluginBypassMessage(instance=instance, bypassed=float(value_str) != 0.0)
+
+            # Format: param_set /graph/{instance} {symbol} {value}  (must follow :bypass arm)
+            case ["param_set", path, rest]:
+                instance = path.removeprefix("/graph/")
+                symbol, value_str = rest.split(" ", 1)
+                return ParamSetMessage(instance=instance, symbol=symbol, value=float(value_str))
 
             # Format: truebypass {left} {right}
             case ["truebypass", left, right_trailing]:

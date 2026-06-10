@@ -40,6 +40,9 @@ class Lcd(abstract_lcd.Lcd):
             from gfxhat import touch, lcd, backlight  # type: ignore[import-untyped]
             self._lcd, self._backlight, self._touch = lcd, backlight, touch
 
+        # Polling divisor for main loop (monochrome LCD is fast)
+        self.poll_divisor = 3
+
         self.width, self.height = self._lcd.dimensions()
         self.height -= 1  # TODO figure out why this is needed
         self.num_leds = 6
@@ -110,6 +113,8 @@ class Lcd(abstract_lcd.Lcd):
 
         self.supports_toolbar = False
 
+        self.plugins = []  # drawn plugins, for bypass-indicator redraw on refresh_plugins
+
     def poll_updates(self):
         pass  # lcdgfx pushes eagerly on every refresh call
 
@@ -172,6 +177,8 @@ class Lcd(abstract_lcd.Lcd):
         self._lcd.show()
 
     def refresh_plugins(self):
+        for p in self.plugins:
+            self.draw[p.lcd_xyz[2]].line(p.bypass_indicator_xy, not p.is_bypassed(), self.plugin_bypass_thickness)
         self.refresh_zone(2)
         self.refresh_zone(4)
         self.refresh_zone(6)
@@ -414,6 +421,9 @@ class Lcd(abstract_lcd.Lcd):
         plugin.bypass_indicator_xy = bypass_indicator_xy
         self.draw[zone].line(bypass_indicator_xy, not plugin.is_bypassed(), self.plugin_bypass_thickness)
 
+        if plugin not in self.plugins:
+            self.plugins.append(plugin)
+
         return x2
 
     def draw_bound_plugins(self, plugins, footswitches):
@@ -445,6 +455,7 @@ class Lcd(abstract_lcd.Lcd):
         self.refresh_zone(7)
 
     def draw_plugins(self, plugins):
+        self.plugins = []  # reset; draw_plugin repopulates (incl. via draw_bound_plugins)
         y = 0
         x = 0
         xwrap = 110  # scroll if exceeds this width

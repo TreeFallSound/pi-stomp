@@ -88,7 +88,11 @@ class Pistomptre(hardware.Hardware):
         #self.reinit(None)  # TODO do we still need this?  Maybe after pb load?  mappings?
 
     def init_lcd(self):
-        self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler, flip=False))
+        # LCD SPI speed: 24 MHz (spec), 56 MHz tested stable (opt-in via system menu)
+        spi_speed = self.handler.settings.get_setting('lcd.spi_speed_mhz')
+        if spi_speed is None:
+            spi_speed = 24  # Default to spec
+        self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler, flip=False, spi_speed_mhz=spi_speed))
 
     def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc, midiout=None):
         enc_pins = Util.DICT_GET(ENC, id)
