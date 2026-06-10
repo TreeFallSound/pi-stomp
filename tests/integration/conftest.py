@@ -129,6 +129,7 @@ def _build_stack(hw_class: type[Hardware], cfg_path: Path, fake_lcd, tmp_path) -
         mock_audiocard = MagicMock()
         mock_audiocard.get_volume_parameter.return_value = 0.0
         handler = Modhandler(mock_audiocard, cwd, data_dir=str(data_dir))
+        handler.settings.get_setting.return_value = None
 
         midiout = MagicMock()
         hw = hw_class(cfg, handler, midiout, handler.update_lcd_fs)

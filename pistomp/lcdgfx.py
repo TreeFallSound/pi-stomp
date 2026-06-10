@@ -40,6 +40,9 @@ class Lcd(abstract_lcd.Lcd):
             from gfxhat import touch, lcd, backlight  # type: ignore[import-untyped]
             self._lcd, self._backlight, self._touch = lcd, backlight, touch
 
+        # Polling divisor for main loop (monochrome LCD is fast)
+        self.poll_divisor = 3
+
         self.width, self.height = self._lcd.dimensions()
         self.height -= 1  # TODO figure out why this is needed
         self.num_leds = 6
