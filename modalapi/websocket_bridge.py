@@ -169,6 +169,8 @@ class WebSocketWorker:
                 elif message.startswith("data_ready "):
                     await ws.send(message)
                     continue
+                elif message.startswith("output_set "):
+                    continue  # audio-meter flood; nothing consumes it, drop before it floods the queue
                 self.received_queue.put(message)
                 self.messages_received += 1
                 logging.debug(f"Received message from server: {message[:100]}")

@@ -50,6 +50,10 @@ class Handler:
     def poll_modui_changes(self):
         raise NotImplementedError()
 
+    def poll_ws_messages(self):
+        # no-op for handlers without a WS
+        pass
+
     def preset_incr_and_change(self):
         raise NotImplementedError()
 

@@ -203,7 +203,7 @@ class Pedalboard:
                     # Bypass "parameter" is a special case without an entry in the plugin definition
                     if symbol == Token.COLON_BYPASS:
                         info = {"shortName": "bypass", "symbol": symbol, "ranges": {"minimum": 0, "maximum": 1}}  # TODO tokenize
-                        v = False if value == 0 else True
+                        v = 0.0 if value == 0 else 1.0
                         param = Parameter.Parameter(info, v, binding, instance_id)
                         parameters[symbol] = param
                         continue  # don't try to find matching symbol in plugin_dict
