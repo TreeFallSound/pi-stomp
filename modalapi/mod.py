@@ -510,9 +510,11 @@ class Mod(Handler):
                         break
 
         elif isinstance(msg, TransportMessage):
-            # Track MOD tempo regardless of tap-tempo mode (mod-ui owns transport state).
             if self.hardware and self.hardware.taptempo:
                 self.hardware.taptempo.set_bpm(msg.bpm)
+                if self.hardware.taptempo.is_enabled():
+                    fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
+                    self.update_lcd_fs(footswitch=fs)
 
         elif isinstance(msg, ParamSetMessage):
             # Keep the cached value fresh so a later edit opens at the current
@@ -1306,7 +1308,7 @@ class Mod(Handler):
 
     def set_mod_tap_tempo(self, bpm):
         if bpm is not None:
-            self.ws_bridge.send_bpm(bpm)
+            req.post(self.root_uri + "set_bpm", json={"value": bpm})
 
     #
     # Parameter Edit
