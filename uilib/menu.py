@@ -78,7 +78,7 @@ class Menu(Dialog):
         self.item_h: int = 0
         self.text_halign = text_halign
         self.default_item = default_item
-        super(Menu,self).__init__(width = 0, height = 0, **kwargs)
+        super(Menu, self).__init__(width=0, height=0, **kwargs)
 
         # Create item widgets
         h = 0

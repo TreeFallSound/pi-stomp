@@ -17,7 +17,9 @@ from typing import Optional, Tuple
 
 import pygame
 
-from uilib.widget import *
+from uilib.box import Box
+from uilib.misc import trace
+from uilib.widget import Widget
 from uilib.paint import PaintContext, _pg_rect
 
 
@@ -25,8 +27,9 @@ class ContainerWidget(Widget):
     """A Widget container with a pygame.Surface backing store. Children are
     drawn inside the container. A container also supports scrolling its content.
     """
+
     # Inherited attributes with defaults
-    INH_ATTRS = { 'image_format' : 'RGB' }
+    INH_ATTRS = {"image_format": "RGB"}
 
     def __init__(self, box, **kwargs):
         # Non-inherited attributes
@@ -46,7 +49,7 @@ class ContainerWidget(Widget):
         # small-clip refreshes stay cheap.
         self._dirty_region: Optional[Box] = None
 
-        super(ContainerWidget,self).__init__(box = box, **kwargs)
+        super(ContainerWidget, self).__init__(box=box, **kwargs)
 
         # A container doesn't need a parent to be setup so ensure that happens
         self._setup_act_attrs()
@@ -54,7 +57,7 @@ class ContainerWidget(Widget):
 
     def _setup(self):
         # May adjust boundary box
-        super(ContainerWidget,self)._setup()
+        super(ContainerWidget, self)._setup()
 
         w = self.box.width
         h = self._content_height if (self.virtual and self._content_height) else self.box.height

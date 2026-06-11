@@ -15,10 +15,13 @@
 
 from math import log
 
-from uilib._pygame_init import freetype as _get_freetype
+from uilib.pygame_init import font as _make_font
 from uilib.panel import *
 from uilib.misc import *
 from uilib.config import *
+
+CHAR_TO_DISPLAY = {' ': '\u2423'}
+
 
 class LetterSelector(Widget):
     ctrl_BKSP, ctrl_CANCEL, ctrl_OK = 0, 1, 2
@@ -26,7 +29,7 @@ class LetterSelector(Widget):
     numbers = '0123456789'
     lo_chars = controls + 'abcdefghijklmnopqrstuvwxyz' + numbers
     hi_chars = controls + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' + numbers
-    specials = controls + '`~!@#$%^&*()-_=+[]{}\\|;:\'",<>./?'
+    specials = controls + ' `~!@#$%^&*()-_=+[]{}\\|;:\'",<>./?'
     MODE_LO, MODE_HI, MODE_SP = 0,1,2
     charsets = [ lo_chars, hi_chars, specials ]
 
@@ -47,9 +50,10 @@ class LetterSelector(Widget):
         # at 18pt — it would put loc.y 1-2px above where PIL placed it.
         asc = int(self.font.get_sized_ascender())
         for c in cs:
-            cw, _ = get_text_size(c, self.font)
+            dc = CHAR_TO_DISPLAY.get(c, c)
+            cw, _ = get_text_size(dc, self.font)
             mw = max(mw, cw)
-            m = self.font.get_metrics(c)[0]
+            m = self.font.get_metrics(dc)[0]
             min_y = m[2]
             if min_y >= 0x80000000:
                 min_y -= 0x100000000
@@ -77,7 +81,8 @@ class LetterSelector(Widget):
             if i != self.l_idx:
                 a = log(abs(self.l_idx - i) + 1) + 1
                 color = (int(color[0]/a),int(color[1]/a),int(color[2]/a))
-            ctx.draw_text(loc, cs[ci], fill=color, font=self.font, anchor='mm')
+            ch = CHAR_TO_DISPLAY.get(cs[ci], cs[ci])
+            ctx.draw_text(loc, ch, fill=color, font=self.font, anchor='mm')
             loc = (loc[0] + self.l_w, loc[1])
 
     def _draw_selection(self, ctx):
@@ -139,7 +144,7 @@ class TextEditor(RoundedPanel):
         self.curline = widget.text
         from pathlib import Path
         _fonts = Path(__file__).resolve().parent.parent / "fonts"
-        self.font = _get_freetype().Font(str(_fonts / "DejaVuSans.ttf"), 18)
+        self.font = _make_font(_fonts / "DejaVuSans.ttf", 18)
         msg_w, msg_h = get_text_size(widget.edit_message, self.font)
         msg_box = Box.xywh(10, 10, msg_w, msg_h)
         self.msg = TextWidget(box = msg_box, text = widget.edit_message, font = self.font, parent = self)

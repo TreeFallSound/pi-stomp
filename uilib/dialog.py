@@ -21,21 +21,24 @@ import pygame
 
 from uilib.box import Box
 from uilib.radius import Radius
-from uilib.panel import *
-from uilib.text import *
+from uilib.config import Config
+from uilib.panel import PanelDecorator, RoundedPanel
+from uilib.text import TextWidget
+from uilib.misc import WidgetAlign, TextHAlign, get_text_size, trace
+
 
 class DialogDecorator(PanelDecorator):
     def __init__(self, panel, title, title_font, **kwargs):
         # Dialog comes with standard defaults
-        kwargs['outline'] = self._get_arg(kwargs, 'outline', 2)
-        kwargs['outline_radius'] = self._get_arg(kwargs, 'outline_radius', 10)
-        kwargs['outline_color'] = self._get_arg(kwargs, 'outline_color', (255,255,255))
-        kwargs['bkgnd_color'] = self._get_arg(kwargs, 'bkgnd_color', Config().get_color('default_title_bkgnd'))
-        title_color = self._get_arg(kwargs, 'title_color', Config().get_color('default_title_fgnd'))
-        super(DialogDecorator,self).__init__(panel, **kwargs)
-        self.title = TextWidget(box = None, text_halign = TextHAlign.CENTRE,
-                                text = title, font = title_font, parent = self,
-                                fgnd_color = title_color)
+        kwargs["outline"] = self._get_arg(kwargs, "outline", 2)
+        kwargs["outline_radius"] = self._get_arg(kwargs, "outline_radius", 10)
+        kwargs["outline_color"] = self._get_arg(kwargs, "outline_color", (255, 255, 255))
+        kwargs["bkgnd_color"] = self._get_arg(kwargs, "bkgnd_color", Config().get_color("default_title_bkgnd"))
+        title_color = self._get_arg(kwargs, "title_color", Config().get_color("default_title_fgnd"))
+        super(DialogDecorator, self).__init__(panel, **kwargs)
+        self.title = TextWidget(
+            box=None, text_halign=TextHAlign.CENTRE, text=title, font=title_font, parent=self, fgnd_color=title_color
+        )
 
     def _adjust_box(self):
         trace(self, "DialogDecorator adjusting box ! pb=", self.panel.box)
@@ -49,12 +52,11 @@ class DialogDecorator(PanelDecorator):
         tmargin = 2
 
         self.tw, self.th = get_text_size(self.title.text, self.title.font, self.title.font_metrics)
-        self.box = Box(pb.x0 - m, pb.y0 - self.th - m - tmargin,
-                       pb.x1 + m, pb.y1 + m)
+        self.box = Box(pb.x0 - m, pb.y0 - self.th - m - tmargin, pb.x1 + m, pb.y1 + m)
         trace(self, "new box=", self.box)
         tbox = Box(o, o, self.box.width - o, self.th + o)
-        self.title.set_box(tbox, refresh = False)
-        self.title.show(refresh = False)
+        self.title.set_box(tbox, refresh=False)
+        self.title.show(refresh=False)
 
     @override
     def _draw_erase(self, ctx):
@@ -100,6 +102,7 @@ class Dialog(RoundedPanel):
                          **Radius.bottom(self.radius).as_pygame_kwargs())
         return mask
 
+
 class MessageDialog(Dialog):
     def __init__(self, panelstack, message, title="Error", width=200, height=90):
         super(MessageDialog, self).__init__(width=width, height=height, title=title, auto_destroy=True)
@@ -107,13 +110,27 @@ class MessageDialog(Dialog):
         char_w = Config().get_font('default_title').get_rect("a").width
         chars_per_line = width // max(1, int(char_w))
         chunks = textwrap.wrap(message, width=chars_per_line)
-        wrapped = '\n'.join(chunks)
+        wrapped = "\n".join(chunks)
 
-        t = TextWidget(box=Box.xywh(5, 0, width-10, 50), text=wrapped, parent=self, outline=0, sel_width=0,
-                       align=WidgetAlign.NONE)
+        t = TextWidget(
+            box=Box.xywh(5, 0, width - 10, 50),
+            text=wrapped,
+            parent=self,
+            outline=0,
+            sel_width=0,
+            align=WidgetAlign.NONE,
+        )
         self.add_widget(t)
-        b = TextWidget(box=Box.xywh(int((width/2)-20), height-30, 0, 0), text='Ok', parent=self, outline=1,
-                       sel_width=3, outline_radius=5, action=lambda x, y: panelstack.pop_panel(self),
-                       align=WidgetAlign.NONE, name='ok_btn')
+        b = TextWidget(
+            box=Box.xywh(int((width / 2) - 20), height - 30, 0, 0),
+            text="Ok",
+            parent=self,
+            outline=1,
+            sel_width=3,
+            outline_radius=5,
+            action=lambda x, y: panelstack.pop_panel(self),
+            align=WidgetAlign.NONE,
+            name="ok_btn",
+        )
         self.add_sel_widget(b)
         self.sel_widget(b)

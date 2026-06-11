@@ -3,14 +3,18 @@ Shims for Raspberry Pi / CircuitPython hardware modules unavailable on macOS/Win
 Injected into sys.modules at import time so application code can be imported in tests.
 """
 
+import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
+# Run pygame headlessly in tests so the emulator suite doesn't pop a window.
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
 import pytest
 
 # Initialize pygame headlessly before any uilib import so SDL is ready.
-from uilib._pygame_init import init as _pg_init
+from uilib.pygame_init import init as _pg_init
 _pg_init()
 import pygame
 
@@ -65,9 +69,12 @@ def snapshot_update(request):
     return request.config.getoption("--snapshot-update")
 
 
-def _surface_to_rgb_bytes(surface: pygame.Surface) -> tuple[bytes, tuple[int, int]]:
-    rgb = pygame.image.tobytes(surface, "RGB")
-    return rgb, surface.get_size()
+def _surface_to_rgb_bytes(surface) -> tuple[bytes, tuple[int, int]]:
+    # v3 LCDs render to pygame Surfaces; v1/v2 hardware renders to PIL Images.
+    if isinstance(surface, pygame.Surface):
+        return pygame.image.tobytes(surface, "RGB"), surface.get_size()
+    rgb = surface.convert("RGB")
+    return rgb.tobytes(), rgb.size
 
 
 def assert_snapshot(surface: pygame.Surface, name: str, *, update: bool = False):
@@ -104,6 +111,50 @@ def snapshot(request, fake_lcd, snapshot_update):
         assert_snapshot(fake_lcd.frames[-1], f"{module}/{test}/{suffix}", update=snapshot_update)
 
     return _assert
+
+
+# ---------------------------------------------------------------------------
+# FakeWebSocketBridge — captures outbound messages, injects inbound
+# ---------------------------------------------------------------------------
+
+
+class FakeWebSocketBridge:
+    def __init__(self):
+        self.sent: list[str] = []
+        self._inbox: list[str] = []
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+    def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
+        self.sent.append(f"param_set /graph/{instance_id}/{symbol} {value}")
+        return True
+
+    def send_bpm(self, bpm: float) -> bool:
+        self.sent.append(f"transport-bpm {bpm}")
+        return True
+
+    def clear_queue(self) -> int:
+        return 0
+
+    def get_received_messages(self) -> list[str]:
+        msgs, self._inbox = self._inbox, []
+        return msgs
+
+    def inject(self, raw: str) -> None:
+        self._inbox.append(raw)
+
+    def sent_values_for(self, instance_id: str, symbol: str) -> list[float]:
+        prefix = f"param_set /graph/{instance_id}/{symbol} "
+        return [float(m[len(prefix):]) for m in self.sent if m.startswith(prefix)]
+
+
+@pytest.fixture
+def fake_ws_bridge():
+    return FakeWebSocketBridge()
 
 
 # ---------------------------------------------------------------------------

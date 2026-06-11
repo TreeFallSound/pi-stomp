@@ -17,12 +17,13 @@ from dataclasses import dataclass, replace
 from typing import Generator, Optional, Sequence, Tuple, Union
 from contextlib import contextmanager
 
-from uilib._pygame_init import init as _pg_init
+from uilib.pygame_init import freetype as _get_freetype
 
-_pg_init()
+# Initializes pygame + freetype (sets the headless SDL driver) and returns the
+# module — must run before `import pygame` so the driver is set first.
+_freetype = _get_freetype()
 
 import pygame
-import pygame._freetype as _freetype
 import pygame.gfxdraw as gfxdraw
 
 from uilib.box import Box

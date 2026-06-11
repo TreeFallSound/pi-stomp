@@ -24,7 +24,7 @@ import numpy as np
 import pygame
 from PIL import Image, ImageDraw
 
-from uilib._pygame_init import freetype as _get_freetype
+from uilib.pygame_init import font as _make_font
 
 _FONTS_DIR = Path(__file__).resolve().parent.parent / "fonts"
 _DEFAULT_COLOR: tuple[int, int, int] = (255, 255, 255)
@@ -43,7 +43,7 @@ class PillGlyph:
         self._label = label
         self._height = height
         self._color = color
-        self._font = _get_freetype().Font(str(_FONTS_DIR / "DejaVuSans.ttf"), label_size)
+        self._font = _make_font(_FONTS_DIR / "DejaVuSans.ttf", label_size)
         # Measure once: width is text-driven (text + padding), height is fixed.
         rect = self._font.get_rect(label)
         self._text_w = rect.width

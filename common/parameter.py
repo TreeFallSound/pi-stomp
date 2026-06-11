@@ -46,7 +46,7 @@ class Parameter:
         self.maximum = util.DICT_GET(util.DICT_GET(plugin_info, Token.RANGES), Token.MAXIMUM)
         self.value = value
         self.binding = binding
-        self.instance_id = instance_id
+        self.instance_id = instance_id.lstrip("/") if instance_id else instance_id
         self.type = Type.DEFAULT
         self.enum_values = []
 

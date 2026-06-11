@@ -88,12 +88,14 @@ class Lcd(ABC):
                      ImageDraw.Draw(self.images[4]), ImageDraw.Draw(self.images[5]),
                      ImageDraw.Draw(self.images[6]), ImageDraw.Draw(self.images[7])]
 
-        # Load fonts
-        self.splash_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 18)
-        self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 11)
-        self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)
-        self.small_bold_font = ImageFont.truetype("DejaVuSansMono-Bold.ttf", 8)
-        self.small_font = ImageFont.truetype("DejaVuSansMono.ttf", 8)
+        # Load fonts from the bundled fonts dir (PIL won't find bare names on
+        # systems without DejaVu installed system-wide).
+        fonts_dir = os.path.join(cwd, "fonts")
+        self.splash_font = ImageFont.truetype(os.path.join(fonts_dir, "DejaVuSans-Bold.ttf"), 18)
+        self.title_font = ImageFont.truetype(os.path.join(fonts_dir, "DejaVuSans-Bold.ttf"), 11)
+        self.label_font = ImageFont.truetype(os.path.join(fonts_dir, "DejaVuSans-Bold.ttf"), 10)
+        self.small_bold_font = ImageFont.truetype(os.path.join(fonts_dir, "DejaVuSansMono-Bold.ttf"), 8)
+        self.small_font = ImageFont.truetype(os.path.join(fonts_dir, "DejaVuSansMono.ttf"), 8)
         #self.small_font = ImageFont.truetype(os.path.join(cwd, "fonts", "EtBt6001-JO47.ttf"), 6)
 
         # Splash
@@ -103,6 +105,8 @@ class Lcd(ABC):
         self.splash = Image.new('L', (self.width, self.height))
         self.splash.paste(text_im.rotate(24), (0, 0, 103, 63))
         self.splash_show()
+
+        self.plugins = []  # drawn plugins, for bypass-indicator redraw on refresh_plugins
 
 
     def splash_show(self, boot=True):
@@ -146,6 +150,8 @@ class Lcd(ABC):
         lcd.show()
 
     def refresh_plugins(self):
+        for p in self.plugins:
+            self.draw[p.lcd_xyz[2]].line(p.bypass_indicator_xy, not p.is_bypassed(), self.plugin_bypass_thickness)
         self.refresh_zone(2)
         self.refresh_zone(4)
         self.refresh_zone(6)
@@ -370,6 +376,9 @@ class Lcd(ABC):
         plugin.bypass_indicator_xy = bypass_indicator_xy
         self.draw[zone].line(bypass_indicator_xy, not plugin.is_bypassed(), self.plugin_bypass_thickness)
 
+        if plugin not in self.plugins:
+            self.plugins.append(plugin)
+
         return x2
 
     def draw_bound_plugins(self, plugins, footswitches):
@@ -385,7 +394,7 @@ class Lcd(ABC):
                     if c.parameter.symbol != ":bypass":  # TODO token
                         label = c.parameter.name
                     else:
-                        label = p.instance_id.replace('/', "")[:self.plugin_label_length]  # TODO this replacement should be done in one place higher level
+                        label = p.instance_id[:self.plugin_label_length]
                         label = label.replace("_", "")
                     self.draw_plugin(7, self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1], label,
                                      self.footswitch_width, False, p, True)
@@ -401,6 +410,7 @@ class Lcd(ABC):
         self.refresh_zone(7)
 
     def draw_plugins(self, plugins):
+        self.plugins = []  # reset; draw_plugin repopulates (incl. via draw_bound_plugins)
         y = 0
         x = 0
         xwrap = 110  # scroll if exceeds this width
@@ -421,7 +431,7 @@ class Lcd(ABC):
         for p in plugins:
             if p.has_footswitch:
                 continue
-            label = p.instance_id.replace('/', "")[:self.plugin_label_length]
+            label = p.instance_id[:self.plugin_label_length]
             label = label.replace("_", "")
             count += 1
             if count > 4:

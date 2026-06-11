@@ -15,7 +15,6 @@
 
 import logging
 import time
-import gpiozero as GPIO
 import sys
 from rtmidi.midiconstants import CONTROL_CHANGE
 
@@ -46,7 +45,8 @@ class Footswitch(controller.Controller):
                                     "previous_snapshot":LongpressInfo(),
                                     "toggle_bypass":LongpressInfo(),
                                     "set_mod_tap_tempo":LongpressInfo(),
-                                    "toggle_tap_tempo_enable":LongpressInfo()}
+                                    "toggle_tap_tempo_enable":LongpressInfo(),
+                                    "toggle_tuner_enable":LongpressInfo()}
 
         # Static list of possible callbacks from the handler
         if len(cls.callbacks) == 0:
@@ -118,6 +118,7 @@ class Footswitch(controller.Controller):
 
         if led_pin is not None:
             try:
+                import gpiozero as GPIO
                 self.led = GPIO.LED(led_pin)
             except Exception as e:
                 logging.error("Initializing LED for footswitch %d: %s" % (id, str(e)))
@@ -137,6 +138,12 @@ class Footswitch(controller.Controller):
     # Should this be in Controller ?
     def set_midi_channel(self, midi_channel):
         self.midi_channel = midi_channel
+
+    @property
+    def drives_display(self) -> bool:
+        """True when unbound: no inbound echo will arrive, so the press updates
+        indicators itself. When bound to a plugin :bypass, the WS broadcast does."""
+        return self.parameter is None
 
     def set_value(self, bypass_value: float):
         self.toggled = (bypass_value < 1)
@@ -244,18 +251,14 @@ class Footswitch(controller.Controller):
         # Send midi
         elif self.midi_CC is not None:
             self.toggled = new_toggled
-            # Update LED
-            self._set_led(self.toggled)
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.toggled else 0]
             logging.debug("Sending CC event: %d" % self.midi_CC)
             self.midiout.send_message(cc)
+            if self.drives_display:
+                self._set_led(self.toggled)
 
-        # Update plugin parameter if any
-        if self.parameter is not None:
-            self.parameter.value = not self.toggled  # TODO assumes mapped parameter is :bypass
-
-        # Update LCD
-        self.refresh_callback(footswitch=self)
+        if self.drives_display:
+            self.refresh_callback(footswitch=self)
 
     def set_display_label(self, label):
         self.display_label = label

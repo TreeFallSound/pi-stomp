@@ -18,6 +18,7 @@
 # Configure logging BEFORE any imports to ensure it takes effect
 import logging
 import sys
+from typing import Any
 
 # Set up logging with format that works well with systemd journal
 logging.basicConfig(
@@ -32,13 +33,16 @@ import time
 
 from rtmidi.midiutil import open_midioutput
 
+from pistomp.audiocard import Audiocard
 import pistomp.audiocardfactory as Audiocardfactory
 import pistomp.config as config
 import pistomp.generichost as Generichost
 import pistomp.testhost as Testhost
 import pistomp.handlerfactory as Handlerfactory
 import pistomp.hardwarefactory as Hardwarefactory
+from pistomp.tuner.source import build_source
 
+EMULATOR_HOSTS = ("emulator_v1", "emulator_v2", "emulator_v3")
 
 def main():
     sys.settrace
@@ -58,7 +62,12 @@ def main():
         nargs="+",
         help="Plugin host to use. Example --host mod'",
         default=["mod"],
-        choices=["mod", "mod1", "generic", "test"],
+        choices=["mod", "mod1", "generic", "test", "emulator_v1", "emulator_v2", "emulator_v3"],
+    )
+    parser.add_argument(
+        "--tuner-source",
+        default=None,
+        help="Audio source for tuner: 'jack' or 'tone:<hz>' (e.g. tone:440). Defaults to 'tone:440' on emulator, 'jack' otherwise.",
     )
 
     args = parser.parse_args()
@@ -83,31 +92,38 @@ def main():
     # Current Working Dir
     cwd = os.path.dirname(os.path.realpath(__file__))
 
-    # Audio Card Config - doing this early so audio passes ASAP
-    factory = Audiocardfactory.Audiocardfactory(cwd)
-    audiocard = factory.create()
-    audiocard.restore()
-
-    # MIDI initialization
-    # Prompts user for MIDI input port, unless a valid port number or name
-    # is given as the first argument on the command line.
-    # API backend defaults to ALSA on Linux.
-    # TODO discover and use the thru port (seems to be 14:0 on my system)
-    # shouldn't need to aconnect, just send msgs directly to the thru port
-    port = 0  # TODO get this (the Midi Through port) programmatically
-    # port = sys.argv[1] if len(sys.argv) > 1 else None
-    try:
-        midiout, port_name = open_midioutput(port)
-    except (EOFError, KeyboardInterrupt):
-        sys.exit()
-
     # Handler object
     handler = None
+    midiout = None
 
-    # Load the default config
-    # cfg used by factories to determine which handler and hardware objects to create
-    # Hardware object uses cfg to know how to initialize the hardware elements
-    cfg = config.load_default_cfg()
+    cfg: dict[str, Any] | None = None
+    audiocard: Audiocard | None = None
+
+    is_emulator = args.host[0] in EMULATOR_HOSTS
+
+    if not is_emulator:
+        # Audio Card Config - doing this early so audio passes ASAP
+        factory = Audiocardfactory.Audiocardfactory(cwd)
+        audiocard = factory.create()
+        audiocard.restore()
+
+        # MIDI initialization
+        # Prompts user for MIDI input port, unless a valid port number or name
+        # is given as the first argument on the command line.
+        # API backend defaults to ALSA on Linux.
+        # TODO discover and use the thru port (seems to be 14:0 on my system)
+        # shouldn't need to aconnect, just send msgs directly to the thru port
+        port = 0  # TODO get this (the Midi Through port) programmatically
+        # port = sys.argv[1] if len(sys.argv) > 1 else None
+        try:
+            midiout, port_name = open_midioutput(port)
+        except (EOFError, KeyboardInterrupt):
+            sys.exit()
+
+        # Load the default config
+        # cfg used by factories to determine which handler and hardware objects to create
+        # Hardware object uses cfg to know how to initialize the hardware elements
+        cfg = config.load_default_cfg()
 
     if args.host[0] == "mod":
         # Create singleton Mod handler
@@ -155,7 +171,16 @@ def main():
         except:
             raise
 
+    elif is_emulator:
+        from emulator.bootstrap import bootstrap_emulator
+        handler, midiout = bootstrap_emulator(args.host[0], cwd)
+
     assert handler is not None
+
+    if not is_emulator and args.tuner_source:
+        tuner_spec = args.tuner_source
+        handler.set_tuner_source_factory(lambda port, *, name: build_source(tuner_spec, port, name=name))
+
     logging.info("Entering main loop. Press Control-C to exit.")
     period = 0
     try:
@@ -165,13 +190,15 @@ def main():
         # main loop
         while True:
             handler.poll_controls()
+            handler.poll_ws_messages()  # drain inbound WS every tick for instant bypass/snapshot indicators
             time.sleep(0.01)  # lower to increase responsiveness, but can cause conflict with LCD if too low
 
             # For less frequent events
             period += 1
             if period % 2 == 0:
                 handler.poll_indicators()
-            if period % 20 == 0:
+            # LCD polling frequency adapts to SPI speed (24MHz→80ms, 48MHz→40ms, 56MHz→30ms)
+            if period % handler.lcd_poll_divisor == 0:
                 handler.poll_lcd_updates()
             if period % 100 == 0:
                 handler.poll_modui_changes()
@@ -185,7 +212,8 @@ def main():
         logging.info("keyboard interrupt")
     finally:
         logging.info("Exit.")
-        midiout.close_port()
+        if midiout:
+            midiout.close_port()
         handler.cleanup()
         del handler
         logging.info("Completed cleanup")

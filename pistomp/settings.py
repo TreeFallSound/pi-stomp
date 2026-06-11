@@ -30,9 +30,9 @@ USER = 'pistomp'
 
 class Settings:
 
-    def __init__(self):
+    def __init__(self, data_dir=None):
         self.data = None
-        self.file = os.path.join(DATA_DIR, SETTINGS_FILE)
+        self.file = os.path.join(data_dir or DATA_DIR, SETTINGS_FILE)
         self.load_settings()
 
     def load_settings(self):
@@ -55,4 +55,7 @@ class Settings:
         # Each set results in a file dump
         with open(self.file, 'w') as ymlfile:
             yaml.dump(self.data, ymlfile)
+        try:
             shutil.chown(self.file, user=USER, group=USER)
+        except LookupError:
+            pass

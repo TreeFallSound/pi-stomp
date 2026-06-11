@@ -13,8 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import board
-import digitalio
 import logging
 import os
 from typing import Optional
@@ -25,31 +23,44 @@ import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
 import pygame
+from PIL import Image
 
 from uilib import *
-from uilib._pygame_init import freetype as _get_freetype
+from uilib.pygame_init import font as _make_font
 from uilib.lcd_ili9341 import *
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
+from pistomp.tuner.panel import TunerPanel
 
 #import traceback
 
 class Lcd(abstract_lcd.Lcd):
 
-    def __init__(self, cwd, handler=None, flip=False):
+    def __init__(self, cwd, handler=None, flip=False, display=None, spi_speed_mhz=24):
         self.cwd = cwd
         self.imagedir = os.path.join(cwd, "images")
         Config(os.path.join(cwd, 'ui', 'config.json'))
         self.handler = handler
         self.flip = flip
+        self.spi_speed_mhz = spi_speed_mhz
+
+        # Calculate optimal polling divisor based on LCD speed
+        # 24MHz: 78ms/frame → poll every 80ms (divisor=8)
+        # 48MHz: 39ms/frame → poll every 40ms (divisor=4)
+        # 56MHz: 34ms/frame → poll every 30ms (divisor=3)
+        frame_time_ms = (56.0 / spi_speed_mhz) * 33.6
+        self.poll_divisor = max(1, round(frame_time_ms / 10.0))
 
         # TODO would be good to decouple the actual LCD hardware.  This file should work for any 320x240 display
-        display = LcdIli9341(board.SPI(),
-                             digitalio.DigitalInOut(board.CE0),
-                             digitalio.DigitalInOut(board.D6),
-                             digitalio.DigitalInOut(board.D5),
-                             24000000,
-                             flip)
+        if display is None:
+            import board
+            import digitalio
+            display = LcdIli9341(board.SPI(),
+                                 digitalio.DigitalInOut(board.CE0),
+                                 digitalio.DigitalInOut(board.D6),
+                                 digitalio.DigitalInOut(board.D5),
+                                 spi_speed_mhz * 1_000_000,
+                                 flip)
 
         # Colors
         self.background = (0, 0, 0)
@@ -75,11 +86,10 @@ class Lcd(abstract_lcd.Lcd):
         # TODO get fonts from config.json
         from pathlib import Path
         _fonts_dir = Path(__file__).resolve().parent.parent / "fonts"
-        _ft = _get_freetype()
-        self.title_font = _ft.Font(str(_fonts_dir / "DejaVuSans-Bold.ttf"), 26)
-        self.splash_font = _ft.Font(str(_fonts_dir / "DejaVuSans.ttf"), 48)
-        self.small_font = _ft.Font(str(_fonts_dir / "DejaVuSans.ttf"), 20)
-        self.tiny_font = _ft.Font(str(_fonts_dir / "DejaVuSans.ttf"), 16)
+        self.title_font = _make_font(_fonts_dir / "DejaVuSans-Bold.ttf", 26)
+        self.splash_font = _make_font(_fonts_dir / "DejaVuSans.ttf", 48)
+        self.small_font = _make_font(_fonts_dir / "DejaVuSans.ttf", 20)
+        self.tiny_font = _make_font(_fonts_dir / "DejaVuSans.ttf", 16)
         self.title_split_orig = 190
         self.title_split = self.title_split_orig
         self.display_width = 320
@@ -97,7 +107,14 @@ class Lcd(abstract_lcd.Lcd):
 
         # widgets
         self.w_wifi = None
-        self._wifi_img_path: Optional[str] = None
+        self._wifi_frames: list[Image.Image] = [
+            Image.open(os.path.join(self.imagedir, f'wifi_processing_{i}.png'))
+            for i in range(1, 4)
+        ]
+        for frame in self._wifi_frames:
+            frame.load()
+        self._wifi_tick = 0
+        self._wifi_ticks_per_frame = 2
         self.wifi_menu: Optional[WifiMenu] = None
         self.w_eq = None
         self.w_power = None
@@ -119,6 +136,7 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel_pushed = False
         self.footswitch_panel = Panel(box=Box.xywh(0, 176, self.display_width, 64))
         self.pstack.push_panel(self.footswitch_panel, refresh=False)
+        self._tuner_panel = None
 
         self.pedalboards = {}
 
@@ -132,19 +150,19 @@ class Lcd(abstract_lcd.Lcd):
     #
 
     def enc_step_widget(self, widget, direction):
-        #traceback.print_stack()
         # TODO check if widget is type
-        if direction > 0:
-            widget.input_event(InputEvent.RIGHT)
-        elif direction < 0:
-            widget.input_event(InputEvent.LEFT)
+        if direction == 0:
+            return
+        event = InputEvent.RIGHT if direction > 0 else InputEvent.LEFT
+        for _ in range(abs(direction)):
+            widget.input_event(event)
 
     def enc_step(self, d):
-        #traceback.print_stack()
-        if d > 0:
-            self.pstack.input_event(InputEvent.RIGHT)
-        elif d < 0:
-            self.pstack.input_event(InputEvent.LEFT)
+        if d == 0:
+            return
+        event = InputEvent.RIGHT if d > 0 else InputEvent.LEFT
+        for _ in range(abs(d)):
+            self.pstack.input_event(event)
 
     def enc_sw(self, v):
         if v == switchstate.Value.RELEASED:
@@ -175,6 +193,21 @@ class Lcd(abstract_lcd.Lcd):
 
     def poll_updates(self):
         self.pstack.poll_updates()
+        if self._tuner_panel is not None and self.pstack.current == self._tuner_panel:
+            self._tuner_panel.tick()
+
+    def show_tuner_panel(self, panel: TunerPanel) -> None:
+        self._tuner_panel = panel
+        self.pstack.push_panel(panel)
+        # push_panel composes the (still-blank) panel image onto the stack but
+        # doesn't draw the panel's children. Force a full redraw so bg, rules,
+        # header and hint are on screen before tick()'s partial refreshes start.
+        panel.refresh()
+
+    def hide_tuner_panel(self) -> None:
+        if self._tuner_panel is not None:
+            self.pstack.pop_panel(self._tuner_panel)
+        self._tuner_panel: TunerPanel | None = None
 
     #
     # Toolbar
@@ -182,18 +215,22 @@ class Lcd(abstract_lcd.Lcd):
     def draw_tools(self, wifi_type=None, eq_type=None, bypass_type=None, system_type=None):
         if self.w_wifi is not None:
             return
-        self.w_wifi = ImageWidget(box=Box.xywh(210, 0, 20, 20), image_path=os.path.join(self.imagedir,
-                                  'wifi_gray.png'), parent=self.main_panel, action=self.wifi_menu.open)
+        self.w_wifi = ImageWidget(
+            box=Box.xywh(210, 0, 20, 20),
+            image=os.path.join(self.imagedir, 'wifi_gray.png'),
+            parent=self.main_panel,
+            action=self.wifi_menu.open,
+        )
         self.main_panel.add_sel_widget(self.w_wifi)
         if self.w_eq is not None:
             return
-        self.w_eq = ImageWidget(box=Box.xywh(240, 0, 20, 20), image_path=os.path.join(self.imagedir,
+        self.w_eq = ImageWidget(box=Box.xywh(240, 0, 20, 20), image=os.path.join(self.imagedir,
                                   'eq_blue.png'), parent=self.main_panel, action=self.draw_audio_menu)
         self.main_panel.add_sel_widget(self.w_eq)
-        self.w_power = ImageWidget(box=Box.xywh(270, 0, 20, 20), image_path=os.path.join(self.imagedir,
+        self.w_power = ImageWidget(box=Box.xywh(270, 0, 20, 20), image=os.path.join(self.imagedir,
                                    'power_gray.png'), parent=self.main_panel, action=self.toggle_bypass)
         self.main_panel.add_sel_widget(self.w_power)
-        self.w_wrench = ImageWidget(box=Box.xywh(296, 0, 20, 20), image_path=os.path.join(self.imagedir,
+        self.w_wrench = ImageWidget(box=Box.xywh(296, 0, 20, 20), image=os.path.join(self.imagedir,
                              'wrench_silver.png'), parent=self.main_panel, action=self.draw_system_menu)
         self.main_panel.add_sel_widget(self.w_wrench)
 
@@ -312,7 +349,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_plugins = []
 
         for plugin in self.current.pedalboard.plugins:
-            label = plugin.instance_id.replace('/', "")[:self.plugin_label_length]
+            label = plugin.instance_id[:self.plugin_label_length]
             label = label.replace("_", "")
             label = self.shorten_name(label, self.plugin_width)
             p = TextWidget(box=Box.xywh(x, y, self.plugin_width, self.plugin_height), text=label, outline_radius=5,
@@ -358,9 +395,16 @@ class Lcd(abstract_lcd.Lcd):
             self.color_plugin(w, plugin)
         self.main_panel.refresh()
 
+    def refresh_plugin(self, plugin):
+        for w in self.w_plugins:
+            if w.object is plugin:
+                self.color_plugin(w, plugin)
+                w.refresh()
+                break
+
     def toggle_plugin(self, widget, plugin):
         self.color_plugin(widget, plugin)
-        self.main_panel.refresh()
+        widget.refresh()
 
     # Try to map color to a valid displayable color, if not use foreground
     def valid_color(self, color):
@@ -476,12 +520,9 @@ class Lcd(abstract_lcd.Lcd):
         for wfs in self.w_footswitches:
             if wfs.object == footswitch:
                 wfs.toggle(footswitch.toggled == False)
-                label = footswitch.get_display_label()
-                if label:
-                    wfs.label = label
+                wfs.label = footswitch.get_display_label() or ""
+                wfs.refresh()
                 break
-        self.footswitch_panel.refresh()
-        self.refresh_plugins()  # TODO maybe not the most efficient, does exhibit some lag time
 
     def update_footswitches(self):
         for fs in self.footswitches:
@@ -502,12 +543,18 @@ class Lcd(abstract_lcd.Lcd):
     #
     def draw_system_menu(self, event, widget):
         items = [("System info", self.draw_system_info_dialog, None),
+                 ("Tuner", self._toggle_tuner_from_menu, None),
                  ("System shutdown", self.handler.system_menu_shutdown, None),
                  ("System reboot",  self.handler.system_menu_reboot, None),
                  ("Restart sound engine", self.handler.system_menu_restart_sound, None),
                  ("Bank Select >", self.draw_bank_menu, None),
-                 ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None)]
+                 ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None),
+                 ("LCD Speed >", self.draw_lcd_speed_menu, None)]
         self.draw_selection_menu(items, "System Menu")
+
+    def _toggle_tuner_from_menu(self, arg):
+        self.pstack.pop_panel(None)  # dismiss the menu first
+        self.handler.toggle_tuner_enable()
 
     def draw_pedalboard_mgmt_menu(self, arg):
         items = [("Save current pedalboard", self.handler.system_menu_save_current_pb, None),
@@ -537,6 +584,22 @@ class Lcd(abstract_lcd.Lcd):
             self.handler.temperature,
             self.handler.throttled)
         d = MessageDialog(self.pstack, msg, title="System Info", width=300, height=130)
+        self.pstack.push_panel(d)
+
+    def draw_lcd_speed_menu(self, event):
+        current_speed = self.spi_speed_mhz
+        items = [
+            ("24 MHz (safe)", self.handler.set_lcd_speed, 24, current_speed==24),
+            ("48 MHz (experimental)", self.handler.set_lcd_speed, 48, current_speed==48),
+            ("56 MHz (experimental)", self.handler.set_lcd_speed, 56, current_speed==56),
+            ("80 MHz (experimental)", self.handler.set_lcd_speed, 80, current_speed==80),
+        ]
+        self.draw_selection_menu(items, "LCD SPI Speed", auto_dismiss=False)
+
+    def show_lcd_speed_message(self, speed_mhz):
+        adc_speed = "240 kHz" if speed_mhz <= 24 else "1 MHz"
+        msg = f"LCD: {speed_mhz} MHz / ADC: {adc_speed}\n\nRestarting..."
+        d = MessageDialog(self.pstack, msg, title="SPI Speed", width=280, height=140)
         self.pstack.push_panel(d)
 
     def draw_bank_menu(self, event):
@@ -590,9 +653,11 @@ class Lcd(abstract_lcd.Lcd):
         self.splash_panel.refresh()
 
     def cleanup(self):
-        self.pstack.pop_panel(None)  # current panel
-        self.pstack.pop_panel(self.footswitch_panel)
-        if self.main_panel_pushed:
+        if self.pstack.current is not None:
+            self.pstack.pop_panel(None)
+        if self.footswitch_panel in self.pstack.stack:
+            self.pstack.pop_panel(self.footswitch_panel)
+        if self.main_panel_pushed and self.main_panel in self.pstack.stack:
             self.pstack.pop_panel(self.main_panel)
         if self.w_splash is not None:
             self.w_splash.set_foreground(self.color_splash_down)
@@ -612,18 +677,22 @@ class Lcd(abstract_lcd.Lcd):
         if self.w_wifi is None:
             return
         if self.handler.wifi_manager.queue.pending_op_count() > 0:
-            img = "wifi_processing.png"
-        elif util.DICT_GET(wifi_status, 'hotspot_active'):
+            period = self._wifi_ticks_per_frame * len(self._wifi_frames)
+            self._wifi_tick = (self._wifi_tick + 1) % period
+            idx = self._wifi_tick // self._wifi_ticks_per_frame
+            self.w_wifi.replace_img(self._wifi_frames[idx])
+        else:
+            self._wifi_tick = 0
+            self.w_wifi.replace_img(self._resolved_wifi_png(wifi_status))
+
+    def _resolved_wifi_png(self, wifi_status):
+        if util.DICT_GET(wifi_status, 'hotspot_active'):
             img = "wifi_orange.png"
         elif util.DICT_GET(wifi_status, 'wifi_connected'):
             img = "wifi_silver.png"
         else:
             img = "wifi_gray.png"
-        image_path = os.path.join(self.imagedir, img)
-        if image_path == self._wifi_img_path:
-            return
-        self._wifi_img_path = image_path
-        self.w_wifi.replace_img(image_path)
+        return os.path.join(self.imagedir, img)
 
     def update_eq(self, eq_status):
         pass

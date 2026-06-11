@@ -5,23 +5,25 @@ from unittest.mock import MagicMock
 from tests.types import SystemFixture
 
 
-def test_set_mod_tap_tempo(modhandler_system: SystemFixture, get_urls):
-    """set_mod_tap_tempo() POSTs the BPM value to /set_bpm."""
+def test_set_mod_tap_tempo(modhandler_system: SystemFixture):
+    """set_mod_tap_tempo() POSTs to /set_bpm with the BPM value."""
     handler = modhandler_system.handler
     mock_post = modhandler_system.mock_post
 
     handler.set_mod_tap_tempo(120)
 
-    assert any("set_bpm" in u for u in get_urls(mock_post))
-    assert mock_post.call_args[1].get("json") == {"value": 120}
+    mock_post.assert_called_once()
+    call_args = mock_post.call_args
+    assert "set_bpm" in call_args.args[0]
+    assert call_args.kwargs.get("json", {}).get("value") == 120
 
 
-def test_set_mod_tap_tempo_none(modhandler_system: SystemFixture, get_urls):
+def test_set_mod_tap_tempo_none(modhandler_system: SystemFixture):
     """set_mod_tap_tempo(None) is a no-op."""
     handler = modhandler_system.handler
     mock_post = modhandler_system.mock_post
     handler.set_mod_tap_tempo(None)
-    assert not any("set_bpm" in u for u in get_urls(mock_post))
+    mock_post.assert_not_called()
 
 
 def test_get_bpm(modhandler_system: SystemFixture, get_urls):

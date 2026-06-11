@@ -17,22 +17,24 @@ import json
 import os
 from pathlib import Path
 
-from uilib._pygame_init import freetype as _get_freetype
+from uilib.pygame_init import font as _make_font
 
 _FONTS_DIR = Path(__file__).resolve().parent.parent / "fonts"
 
-class Config():
+
+class Config:
     _instance = None
-    def __new__(cls,*args, **kwargs):
+
+    def __new__(cls, *args, **kwargs):
         if Config._instance is None:
             Config._instance = super().__new__(cls)
         return Config._instance
 
-    def __init__(self, config_json = None):
-        if not hasattr(self, 'fonts'):
+    def __init__(self, config_json=None):
+        if not hasattr(self, "fonts"):
             print("Adding empty fonts...")
             self.fonts = {}
-        if not hasattr(self, 'colors'):
+        if not hasattr(self, "colors"):
             print("Adding empty colors...")
             self.colors = {}
         if config_json is not None:
@@ -60,10 +62,10 @@ class Config():
             candidate = _FONTS_DIR / file_name
             if candidate.exists():
                 path = str(candidate)
-        f = _get_freetype().Font(path, size)
+        f = _make_font(path, size)
         self.fonts[label] = f
 
-    def get_font(self, label):
+    def get_font(self, label) -> ImageFont.FreeTypeFont | None:
         if label not in self.fonts:
             return None
         return self.fonts[label]
@@ -79,33 +81,32 @@ class Config():
 
     def has_color(self, label):
         return label in self.colors
-    
-    def load_config(self, json_file, reset_old = True):
+
+    def load_config(self, json_file, reset_old=True):
         if reset_old:
             self.fonts = {}
             self.colors = {}
-        with open(json_file, 'r') as f:
+        with open(json_file, "r") as f:
             data = json.load(f)
-        if 'fonts' in data:
-            fonts = data['fonts']
+        if "fonts" in data:
+            fonts = data["fonts"]
             for font_def in fonts:
                 try:
-                    l = font_def['label']
-                    n = font_def['name']
-                    s = font_def['size']
+                    l = font_def["label"]
+                    n = font_def["name"]
+                    s = font_def["size"]
                 except KeyError as e:
                     print("Error loading font:", e)
                 else:
                     self.add_font(l, n, s)
-        if 'colors' in data:
-            colors = data['colors']
+        if "colors" in data:
+            colors = data["colors"]
             for color_def in colors:
                 try:
-                    l = color_def['label']
-                    c = color_def['rgb']
+                    l = color_def["label"]
+                    c = color_def["rgb"]
                 except KeyError as e:
                     print("Error loading color:", e, colors)
                 else:
                     c = tuple(c)
                     self.add_color(l, c)
-

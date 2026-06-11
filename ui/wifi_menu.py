@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Callable, NotRequired, Optional, Protocol, Typ
 from pathlib import Path
 
 import common.util as util
-from uilib._pygame_init import freetype as _get_freetype
+from uilib.pygame_init import font as _make_font
 from modalapi.wifi import (
     ConnectSavedCmd,
     ConnectScannedCmd,
@@ -96,7 +96,7 @@ class _PassphraseEditor(RoundedPanel):
         self._curline = ''
 
         _fonts = Path(__file__).resolve().parent.parent / "fonts"
-        font = _get_freetype().Font(str(_fonts / "DejaVuSans.ttf"), 18)
+        font = _make_font(_fonts / "DejaVuSans.ttf", 18)
         box = Box(0, 0, 300, 80)
         box = box.centre(pstack.box)
         super().__init__(box=box, parent=pstack, auto_destroy=True)

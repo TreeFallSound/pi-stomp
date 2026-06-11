@@ -94,8 +94,8 @@ curl -s http://localhost:80/pedalboard/list | python3 -m json.tool
 
 ## Hardware Versions
 
-- **v1/v2**: Uses `modalapi/mod.py`
-- **v3**: Uses `modalapi/modhandler.py` (current device)
+- **v1**: Uses `modalapi/mod.py` (legacy handler)
+- **v2/v3**: Uses `modalapi/modhandler.py` (current device)
 
 ## Python Environment
 
@@ -204,7 +204,10 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 - **Timestamp-based change detection** - File mtimes for MOD sync, not polling APIs
 
 ### MOD Integration
-- **Direct REST calls** - No SDK abstraction, just `requests` to `localhost:80`
+- **mod-ui owns live state** - Single writer of bypass and parameter values; piStomp
+  mirrors inbound WS changes. Echo behaviour differs by initiator — see bypass paths below.
+- **REST for operations, WS for values** - `requests` to `localhost:80` drives
+  pedalboard/snapshot/tempo; the WebSocket carries live bypass/parameter state
 - **LILV for local parsing** - Parse `.ttl` bundles locally for performance and rich data
 - **Trust MOD for audio** - piStomp is controller interface, not audio processor
 - **Sync on change** - Reload pedalboard data when MOD writes `last.json`
@@ -261,6 +264,11 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 
 ### Hardware Version Selection
 
+**Version float** comes from `hardware.version` in the active YAML config, selected from templates in `setup/config_templates/`:
+- `default_config_pistomp.yml` → `1.0`
+- `default_config_pistompcore.yml` → `2.0`
+- `default_config_pistomptre.yml` → `3.0`
+
 **Factory Pattern** routes version-specific implementations:
 
 ```python
@@ -279,6 +287,8 @@ Shortpress accepts string (callback name) or object with `callback` and `args` (
 - `poll_controls()` - Read all inputs
 - SPI/ADC communication
 - Controller dictionary: `{channel:CC}` → controller object
+
+**LCD wiring**: each hardware subclass creates the LCD in `init_lcd()` and injects it into the handler via `handler.add_lcd(Lcd(...))`. The LCD is owned by the handler (`handler._lcd`), not the hardware. For v2/v3, `lcd320x240.Lcd` receives a back-reference to the handler for UI action callbacks (pedalboard/preset change, plugin bypass, parameter edits, system menu, etc.).
 
 ### Configuration System
 
@@ -316,14 +326,50 @@ POST /pedalboard/save                    # Save state
 GET /snapshot/list                       # Get all snapshots
 GET /snapshot/load?id={n}                # Load snapshot n
 
-# Parameter control
-POST /effect/parameter/pi_stomp_set//graph{id}/{symbol}  # Set parameter
-GET  /effect/parameter/pi_stomp_get//graph{id}/:bypass   # Get bypass state
-
 # Tempo
-POST /set_bpm                            # Set tap tempo
 GET  /get_bpm                            # Get current BPM
 ```
+
+REST covers pedalboard and snapshot operations and reads the current BPM. Live
+**values** — bypass, parameters, and tap-tempo BPM — flow over the WebSocket (below).
+
+**WebSocket — Live State, Source of Truth** (`modalapi/websocket_bridge.py`, `modalapi/ws_protocol.py`):
+
+mod-ui is the **single writer** of plugin bypass and control-port values. piStomp
+consumes its WebSocket (`ws://localhost:80/websocket`) and mirrors that state — it
+never authoritatively sets its own copy. A persistent daemon-thread bridge
+(auto-reconnect, backpressure) feeds a queue drained on the fast tick
+(`poll_ws_messages`, ~10ms). `output_set` meter/scope spam is dropped at the bridge.
+
+Inbound (`parse_message` → typed messages → each handler's `_handle_ws_message`):
+- `param_set …/:bypass v` — live bypass delta → set bypass + redraw.
+- `param_set …/{sym} v` — control value → refresh cached `Parameter.value` (a later
+  edit opens at current); no live redraw.
+- `add {inst} {uri} … {bypassed} …` — appears **only** in the (re)connect/load dump;
+  bypass rides in field 4 — its sole arrival point on connect. Same bypass dispatch.
+- `loading_start` / `loading_end {snapshot}` — bracket a dump; `loading_end` stashes
+  the snapshot index for the file-watch reload to apply.
+- `pedal_snapshot {id} {name}` — in-board snapshot change → set preset index; its
+  bypass/ports follow as `param_set`.
+
+**Diff-gating asymmetry (mod-ui side):** snapshot loads broadcast only deltas vs
+mod-ui's own cache; pedalboard loads and connect dumps rebroadcast **unconditionally**.
+⇒ reselecting a board is a full resync; reselecting a snapshot is not.
+
+Outbound behaviour depends on the initiator:
+
+- **Footswitch press** → MIDI CC (absolute `toggled` intent) → mod-host processes
+  internally → mod-host emits `param_set` feedback on port 5556 → `msg_callback` to
+  ALL clients (including us). Emit-only is correct here; the feedback echo drives the
+  LCD/LED update.
+- **Non-footswitch UI tap** → WS `send_parameter` → mod-ui calls `host.bypass()` →
+  `msg_callback_broadcast` **skips the origin socket** (us), and mod-host does NOT
+  generate `param_set` feedback for `bypass` commands it received from mod-ui. No echo
+  arrives. piStomp updates local state and LCD immediately, then sends WS to keep mod-ui
+  in sync.
+- **Parameter value edit** → WS `send_parameter` → same no-echo situation; cached
+  `Parameter.value` is updated locally before sending.
+- **Tap tempo** → WS `send_bpm` — not echoed at all.
 
 **Pedalboard Data Loading** via LILV (LV2 bundle parser):
 1. Parse `.ttl` files in pedalboard bundle
@@ -403,19 +449,41 @@ MOD-UI writes /home/pistomp/data/last.json
           → update_lcd()
 ```
 
-**Footswitch Press → Plugin Bypass**:
+**Bypass Change — Three Paths with Different Echo Behaviour**:
+
+mod-ui has two broadcast mechanisms, and mod-host only generates feedback for MIDI-triggered
+changes (not for commands mod-ui itself issued). This determines who sees what:
 
 ```
-poll_controls()
-  → Footswitch.poll() → detect press
-    → footswitch.pressed()
-      → Toggle self.enabled
-      → Update LED
-      → Send MIDI CC (if configured)
-      → Update bound parameter.value (e.g., :bypass)
-      → refresh_callback(footswitch=self)
-        → Handler.update_lcd_fs()
-          → LCD.update_footswitch() - redraw indicator
+Path A — Footswitch (MIDI CC):
+  poll_controls() → Footswitch.pressed()
+    → midiout.send_message([CC, midi_CC, 127/0])   # direct to ALSA
+      → JACK → mod-host:midi_in                    # bypasses mod-ui WS entirely
+        → mod-host applies change
+          → mod-host emits param_set feedback on port 5556
+            → mod-ui process_read_message_body
+              → msg_callback("param_set /graph/X :bypass V")  # ALL clients, no skip
+                → pi-stomp poll_ws_messages() receives it
+                  → plugin.set_bypass() + lcd.refresh_plugins()
+  Emit-only is correct: pi-stomp waits for the feedback echo to update LCD/LED.
+
+Path B — Non-footswitch UI tap (LCD plugin widget click):
+  toggle_plugin_bypass(widget, plugin)
+    → plugin.toggle_bypass()                       # update local state immediately
+    → ws_bridge.send_parameter(id, ":bypass", v)   # queued, sent async
+    → lcd.toggle_plugin(widget, plugin)            # update LCD immediately
+      [async, in mod-ui]
+      → ws_parameter_set → host.bypass(instance, v)
+          → msg_callback_broadcast(...)            # skips origin socket (us)
+          mod-host receives "bypass N V" cmd — not a param_set, no feedback generated
+  Must update locally: no echo will ever arrive for WS-initiated bypass.
+
+Path C — External change (browser or another WS client):
+  [mod-ui browser / other WS client sends param_set /graph/X/:bypass V]
+    → ws_parameter_set → host.bypass(...)
+        → msg_callback_broadcast(...)              # skips origin (browser), reaches pi-stomp
+          → pi-stomp poll_ws_messages() receives it
+            → plugin.set_bypass() + lcd.refresh_plugins()
 ```
 
 ### Key Files

@@ -14,11 +14,14 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from typing import Optional, Tuple
+from abc import ABC
 
 import pygame
 
 from uilib.box import Box
-from uilib.container import *
+from uilib.container import ContainerWidget
+from uilib.widget import Widget
+from uilib.misc import InputEvent, trace
 from uilib.paint import PaintContext, _pg_rect
 
 #
@@ -29,9 +32,11 @@ from uilib.paint import PaintContext, _pg_rect
 # Widget "box" is relative to the panel etc..
 #
 
+
 class Panel(ContainerWidget):
     """A Panel. Holds widgets, tracks selectable items, can be pushed onto a PanelStack."""
-    def __init__(self, auto_destroy = False, decorator = None, **kwargs):
+
+    def __init__(self, auto_destroy=False, decorator=None, **kwargs):
         self.sel_list = []
         self.sel = None
         self.auto_destroy = auto_destroy
@@ -39,7 +44,7 @@ class Panel(ContainerWidget):
             self.decorator = decorator(self)
         else:
             self.decorator = None
-        super(Panel,self).__init__(**kwargs)
+        super(Panel, self).__init__(**kwargs)
 
     def del_sel_widget(self, widget):
         if self.sel is None or self.sel_list[self.sel] == widget:
@@ -58,14 +63,15 @@ class Panel(ContainerWidget):
                     self._select_widget_idx(0)
 
     def add_sel_widget(self, widget):
-        assert(widget.visible)
+        """Add a widget to the selectable list"""
+        assert widget.visible
         self.sel_list.append(widget)
         widget.selectable = True
         if self.sel is None:
             self._select_widget_idx(0)
 
     def add_widget(self, widget):
-        assert(widget.visible)
+        assert widget.visible
         widget.selectable = False
         self.sel_list.append(widget)  # TODO if a widget is not selectable, adding to sel_list seems wrong
 
@@ -118,18 +124,18 @@ class Panel(ContainerWidget):
 
     def attach(self, parent):
         assert isinstance(parent, PanelStack)
-        super(Panel,self).attach(parent)
+        super(Panel, self).attach(parent)
         if self.decorator:
             self.decorator.attach(parent)
 
     def detach(self):
         assert isinstance(self.parent, PanelStack)
-        super(Panel,self).detach()
+        super(Panel, self).detach()
         if self.decorator:
             self.decorator.detach()
 
     def destroy(self):
-        super(Panel,self).destroy()
+        super(Panel, self).destroy()
         if self.decorator:
             self.decorator.destroy()
             del self.decorator
@@ -200,15 +206,13 @@ class RoundedPanel(Panel):
             ctx.draw_rectangle(ctx.bounds, None, color, self.outline, radius=self.radius)
 
 
-class LcdBase:
-    def dimensions(self):
-        pass
 
-    def default_format(self):
-        pass
+class LcdBase(ABC):
+    def dimensions(self) -> tuple[int, int]: ...
 
-    def update(self, image, box=None):
-        pass
+    def default_format(self) -> str: ...
+
+    def update(self, image, box=None) -> None: ...
 
     @property
     def has_system_splash(self) -> bool:
@@ -220,14 +224,14 @@ class PanelStack(ContainerWidget):
         # XXX This implementation currently assumes box is at (0,0) in the LCD
         #     and the offset remains 0,0 (don't try to scroll)
         if box is None:
-            box = Box((0,0), lcd.dimensions())
+            box = Box((0, 0), lcd.dimensions())
         if image_format is None:
             image_format = lcd.default_format()
         if use_dimming:
-            image_format = 'RGBA'
+            image_format = "RGBA"
 
         trace(self, "Panel stack initializing with box=", box)
-        super(PanelStack,self).__init__(box=box, image_format=image_format)
+        super(PanelStack, self).__init__(box=box, image_format=image_format)
         self.stack = []
         self.current = None
         self.lcd = lcd
@@ -287,6 +291,7 @@ class PanelStack(ContainerWidget):
         assert panel not in self.stack
         assert isinstance(panel, Panel)
 
+        # Check if we haven't been attached yet
         if panel.parent is None:
             panel.attach(self)
         self.stack.append(panel)
@@ -327,5 +332,6 @@ class PanelStack(ContainerWidget):
 class PanelDecorator(Widget):
     def __init__(self, panel, **kwargs):
         self.panel = panel
-        kwargs['box'] = Box(0,0,0,0)
-        super(PanelDecorator,self).__init__(**kwargs)
+        # Default box, will be updated by subclass
+        kwargs["box"] = Box(0, 0, 0, 0)
+        super(PanelDecorator, self).__init__(**kwargs)

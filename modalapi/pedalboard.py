@@ -29,8 +29,8 @@ import modalapi.plugin as Plugin
 
 class Pedalboard:
 
-    def __init__(self, title, bundle):
-        self.root_uri = "http://localhost:80/"
+    def __init__(self, title, bundle, root_uri="http://localhost:80/"):
+        self.root_uri = root_uri
         self.title = title
         self.bundle = bundle  # TODO used?
         self.plugins = []
@@ -175,7 +175,7 @@ class Pedalboard:
                         category = cat[0]
 
             # Extract Parameter data
-            instance_id = str(block.get_path()).replace(bundlepath, "", 1)
+            instance_id = str(block.get_path()).replace(bundlepath, "", 1).lstrip("/")
             nodes = self.world.find_nodes(block, self.world.ns.lv2.port, None)
             parameters = {}
             if len(nodes) > 0:
@@ -203,7 +203,7 @@ class Pedalboard:
                     # Bypass "parameter" is a special case without an entry in the plugin definition
                     if symbol == Token.COLON_BYPASS:
                         info = {"shortName": "bypass", "symbol": symbol, "ranges": {"minimum": 0, "maximum": 1}}  # TODO tokenize
-                        v = False if value == 0 else True
+                        v = 0.0 if value == 0 else 1.0
                         param = Parameter.Parameter(info, v, binding, instance_id)
                         parameters[symbol] = param
                         continue  # don't try to find matching symbol in plugin_dict

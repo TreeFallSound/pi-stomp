@@ -18,7 +18,7 @@ import common.util as util
 import os
 import pistomp.lcd as abstract_lcd
 
-from gfxhat import touch, lcd, backlight, fonts
+from typing import Any
 from PIL import Image, ImageFont, ImageDraw
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
@@ -27,13 +27,23 @@ from pistomp.footswitch import Footswitch  # TODO would like to avoid this modul
 class Lcd(abstract_lcd.Lcd):
     __single = None
 
-    def __init__(self, cwd):
+    def __init__(self, cwd, lcd=None, backlight=None, touch=None):
         if Lcd.__single:
             raise Lcd.__single
         Lcd.__single = self
 
-        # GFX properties
-        self.width, self.height = lcd.dimensions()
+        self._lcd: Any = lcd
+        self._backlight: Any = backlight
+        self._touch: Any = touch
+
+        if lcd is None:
+            from gfxhat import touch, lcd, backlight  # type: ignore[import-untyped]
+            self._lcd, self._backlight, self._touch = lcd, backlight, touch
+
+        # Polling divisor for main loop (monochrome LCD is fast)
+        self.poll_divisor = 3
+
+        self.width, self.height = self._lcd.dimensions()
         self.height -= 1  # TODO figure out why this is needed
         self.num_leds = 6
 
@@ -82,13 +92,15 @@ class Lcd(abstract_lcd.Lcd):
                      ImageDraw.Draw(self.images[4]), ImageDraw.Draw(self.images[5]),
                      ImageDraw.Draw(self.images[6]), ImageDraw.Draw(self.images[7])]
 
-        # Load fonts
-        self.splash_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 18)
-        self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 11)
-        self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)
-        self.small_bold_font = ImageFont.truetype("DejaVuSansMono-Bold.ttf", 8)
+        # Load fonts from the bundled fonts dir (PIL won't find bare names on
+        # systems without DejaVu installed system-wide).
+        fonts_dir = os.path.join(cwd, "fonts")
+        self.splash_font = ImageFont.truetype(os.path.join(fonts_dir, "DejaVuSans-Bold.ttf"), 18)
+        self.title_font = ImageFont.truetype(os.path.join(fonts_dir, "DejaVuSans-Bold.ttf"), 11)
+        self.label_font = ImageFont.truetype(os.path.join(fonts_dir, "DejaVuSans-Bold.ttf"), 10)
+        self.small_bold_font = ImageFont.truetype(os.path.join(fonts_dir, "DejaVuSansMono-Bold.ttf"), 8)
         #self.small_font = ImageFont.truetype("DejaVuSansMono.ttf", 8)
-        self.small_font = ImageFont.truetype(os.path.join(cwd, "fonts", "EtBt6001-JO47.ttf"), 6)
+        self.small_font = ImageFont.truetype(os.path.join(fonts_dir, "EtBt6001-JO47.ttf"), 6)
 
         # Splash
         text_im = Image.new('L', (103, 63))
@@ -102,6 +114,11 @@ class Lcd(abstract_lcd.Lcd):
         self.enable_backlight()
 
         self.supports_toolbar = False
+
+        self.plugins = []  # drawn plugins, for bypass-indicator redraw on refresh_plugins
+
+    def poll_updates(self):
+        pass  # lcdgfx pushes eagerly on every refresh call
 
     def clear_select(self):
         pass
@@ -125,8 +142,8 @@ class Lcd(abstract_lcd.Lcd):
         for x in range(0, self.width):
             for y in range(0, self.height):
                 pixel = self.splash.getpixel((x, y))
-                lcd.set_pixel(self.width - x - 1, self.height - y, pixel)
-        lcd.show()
+                self._lcd.set_pixel(self.width - x - 1, self.height - y, pixel)
+        self._lcd.show()
 
     def erase_zone(self, zone_idx):
         self.images[zone_idx].paste(0, (0, 0, self.width, self.zone_height[zone_idx]))
@@ -145,8 +162,8 @@ class Lcd(abstract_lcd.Lcd):
         for x in range(0, self.width):
             for y in range(0, self.zone_height[zone_idx]):
                 pixel = flipped.getpixel((x, y))
-                lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
-        lcd.show()
+                self._lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
+        self._lcd.show()
 
     def refresh_menu(self, highlight_range=None, scroll_offset=0):
         # Set Pixels
@@ -158,10 +175,12 @@ class Lcd(abstract_lcd.Lcd):
                     pixel = self.menu_image.getpixel((x, y_draw))
                     if highlight_range and (y_draw >= highlight_range[0]) and (y_draw <= highlight_range[1]):  # TODO LAME
                          pixel = not pixel
-                    lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
-        lcd.show()
+                    self._lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
+        self._lcd.show()
 
     def refresh_plugins(self):
+        for p in self.plugins:
+            self.draw[p.lcd_xyz[2]].line(p.bypass_indicator_xy, not p.is_bypassed(), self.plugin_bypass_thickness)
         self.refresh_zone(2)
         self.refresh_zone(4)
         self.refresh_zone(6)
@@ -171,24 +190,24 @@ class Lcd(abstract_lcd.Lcd):
 
     def enable_backlight(self):
         for x in range(6):
-            backlight.set_pixel(x, 50, 100, 100)
-        backlight.show()
+            self._backlight.set_pixel(x, 50, 100, 100)
+        self._backlight.show()
 
     def cleanup(self):
-        backlight.set_all(0, 0, 0)
-        backlight.show()
-        lcd.clear()
-        lcd.show()
+        self._backlight.set_all(0, 0, 0)
+        self._backlight.show()
+        self._lcd.clear()
+        self._lcd.show()
         for i in range(0, self.num_leds):
-            touch.set_led(i, 0)
+            self._touch.set_led(i, 0)
 
     def clear(self):
         for x in range(6):
-            backlight.set_pixel(x, 0, 0, 0)
-            touch.set_led(x, 0)
-        backlight.show()
-        lcd.clear()
-        lcd.show()
+            self._backlight.set_pixel(x, 0, 0, 0)
+            self._touch.set_led(x, 0)
+        self._backlight.show()
+        self._lcd.clear()
+        self._lcd.show()
 
     def erase_all(self):
         for z in range(self.zones):
@@ -350,7 +369,7 @@ class Lcd(abstract_lcd.Lcd):
         self.erase_zone(4)
         self.erase_zone(6)
 
-        if plugin is not None:
+        if plugin is not None and plugin.lcd_xyz is not None:
             x = plugin.lcd_xyz[0]
             y = plugin.lcd_xyz[1]
             zone = plugin.lcd_xyz[2] - 1
@@ -400,6 +419,9 @@ class Lcd(abstract_lcd.Lcd):
         plugin.bypass_indicator_xy = bypass_indicator_xy
         self.draw[zone].line(bypass_indicator_xy, not plugin.is_bypassed(), self.plugin_bypass_thickness)
 
+        if plugin not in self.plugins:
+            self.plugins.append(plugin)
+
         return x2
 
     def draw_bound_plugins(self, plugins, footswitches):
@@ -415,7 +437,7 @@ class Lcd(abstract_lcd.Lcd):
                     if c.parameter.symbol != ":bypass":  # TODO token
                         label = c.parameter.name
                     else:
-                        label = p.instance_id.replace('/', "")[:self.plugin_label_length]  # TODO this replacement should be done in one place higher level
+                        label = p.instance_id[:self.plugin_label_length]
                         label = label.replace("_", "")
                     self.draw_plugin(7, self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1], label,
                                      self.footswitch_width, False, p, True)
@@ -431,6 +453,7 @@ class Lcd(abstract_lcd.Lcd):
         self.refresh_zone(7)
 
     def draw_plugins(self, plugins):
+        self.plugins = []  # reset; draw_plugin repopulates (incl. via draw_bound_plugins)
         y = 0
         x = 0
         xwrap = 110  # scroll if exceeds this width
@@ -451,7 +474,7 @@ class Lcd(abstract_lcd.Lcd):
         for p in plugins:
             if p.has_footswitch:
                 continue
-            label = p.instance_id.replace('/', "")[:self.plugin_label_length]
+            label = p.instance_id[:self.plugin_label_length]
             label = label.replace("_", "")
             count += 1
             if count > 4:
@@ -463,8 +486,8 @@ class Lcd(abstract_lcd.Lcd):
             if x > xwrap:
                 zone += 2
                 x = 0
-                if y >= ymax:
-                    break  # Only display 2 rows, huge pedalboards won't fully render  # TODO make sure this works
+                if zone > 5:
+                    break  # Only display 2 rows, huge pedalboards won't fully render
         self.refresh_plugins()
 
     def shorten_name(self, name, width):

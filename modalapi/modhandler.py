@@ -13,6 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from pistomp.handler import Handler
+from pistomp.audiocard import Audiocard
+
 import json
 import logging
 import os
@@ -21,6 +24,7 @@ from requests import Response
 import subprocess
 import sys
 import yaml
+from typing import Any
 
 from typing import cast, Any
 
@@ -31,21 +35,23 @@ import modalapi.wifi as Wifi
 from pistomp.lcd320x240 import Lcd
 from pistomp.hardware import Controller, Hardware
 import pistomp.settings as Settings
+from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encodermidicontrol import EncoderMidiControl
 from pistomp.footswitch import Footswitch
-from pistomp.handler import Handler
+from pistomp.tuner import TunerEngine, TunerPanel, TunerSourceFactory
+from pistomp.tuner.source import AudioSource, build_source
 from pathlib import Path
 
 
 class Modhandler(Handler):
     __single = None
 
-    def __init__(self, audiocard, homedir, data_dir="/home/pistomp/data"):
+    def __init__(self, audiocard: Audiocard, homedir, data_dir="/home/pistomp/data"):
         logging.info("Init modhandler")
         if Modhandler.__single:
             raise RuntimeError("Attempt to create second Modhandler singleton", Modhandler.__single)
@@ -96,16 +102,18 @@ class Modhandler(Handler):
         self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
 
         # WebSocket bridge for MOD-UI communication
-        self.ws_bridge = None
-        try:
-            self.ws_bridge = AsyncWebSocketBridge(
-                ws_url='ws://localhost:80/websocket',
-                backpressure_threshold=8192  # 8 KB
-            )
-            self.ws_bridge.start()
-            logging.info("WebSocket bridge started")
-        except Exception as e:
-            logging.warning(f"Failed to initialize WebSocket bridge: {e}")
+        self.ws_bridge = AsyncWebSocketBridge(
+            ws_url='ws://localhost:80/websocket',
+            backpressure_threshold=8192  # 8 KB
+        )
+        self.ws_bridge.start()
+        logging.info("WebSocket bridge started")
+
+        # Tuner state
+        self._tuner_engine: TunerEngine | None = None
+        self._tuner_panel: TunerPanel | None = None
+        self._tuner_source_factory: TunerSourceFactory | None = None
+        self._tuner_muted: bool = False
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
@@ -113,8 +121,13 @@ class Modhandler(Handler):
                           "next_snapshot": self.preset_incr_and_change,
                           "previous_snapshot": self.preset_decr_and_change,
                           "toggle_bypass": self.system_toggle_bypass,
-                          "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable
+                          "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable,
+                          "toggle_tuner_enable": self.toggle_tuner_enable,
         }
+
+        # Blend mode manager - multiple blend snapshots per pedalboard
+        self.blend_modes: dict[str, Any] = {}  # {snapshot_name: BlendMode}
+        self.active_blend_mode: Any | None = None  # Currently active blend mode
 
     def __del__(self):
         logging.info("Handler cleanup")
@@ -124,6 +137,12 @@ class Modhandler(Handler):
         # during interpreter shutdown on Py 3.14. Daemon thread dies with the process.
 
     def cleanup(self):
+        if self._tuner_engine is not None:
+            if self._tuner_muted:
+                self.audiocard.set_output_muted(False)
+            self._tuner_engine.stop()
+            self._tuner_engine = None
+            self._tuner_panel = None
         if self._lcd is not None:
             self._lcd.cleanup()
         if self._hardware is not None:
@@ -258,6 +277,17 @@ class Modhandler(Handler):
             self._lcd.update_wifi(self.wifi_status)
             self._lcd.poll_updates()
 
+    @property
+    def lcd_poll_divisor(self) -> int:
+        # Tick the LCD on every 10 ms main-loop pass (~100 fps) while the
+        # tuner panel is mounted. Strobe's worst-case redraw at STRIPE_W=4
+        # is ~4.3 ms of SPI, well inside the 10 ms budget; typical ticks
+        # are sub-millisecond. Otherwise fall back to the SPI-clock-derived
+        # divisor computed by the LCD itself.
+        if self._tuner_panel is not None:
+            return 1
+        return self._lcd.poll_divisor if self._lcd is not None else 8
+
     def universal_encoder_select(self, direction):
         if self._lcd is not None:
             self._lcd.enc_step(direction)
@@ -265,6 +295,47 @@ class Modhandler(Handler):
     def universal_encoder_sw(self, value, obj=None):
         if self._lcd is not None:
             self._lcd.enc_sw(value)
+
+    def _handle_blend_mode_snapshot_change(self, new_snapshot_index: int):
+        """
+        Handle blend mode activation/deactivation when snapshot changes.
+
+        Args:
+            new_snapshot_index: Index of the new snapshot being loaded
+        """
+        if not self.blend_modes:
+            return
+
+        new_snapshot_name = self.current.presets.get(new_snapshot_index)
+        logging.debug(f"Snapshot change: index={new_snapshot_index}, name='{new_snapshot_name}', "
+                     f"active_blend={self.active_blend_mode.config.get('name') if self.active_blend_mode else None}")
+
+        # Deactivate current blend mode if switching away
+        if self.active_blend_mode:
+            old_name = self.active_blend_mode.config.get('name')
+            if old_name != new_snapshot_name:
+                logging.info(f"Deactivating blend mode '{old_name}' (switching to '{new_snapshot_name}')")
+                self.active_blend_mode.deactivate()
+                self.active_blend_mode = None
+                self.lcd.draw_analog_assignments(self.current.analog_controllers)
+            else:
+                logging.debug(f"Staying on blend mode '{old_name}'")
+
+        # Activate new blend mode if switching to a blend snapshot
+        if new_snapshot_name in self.blend_modes:
+            logging.info(f"Activating blend mode '{new_snapshot_name}'")
+            self.active_blend_mode = self.blend_modes[new_snapshot_name]
+            try:
+                # Check for snapshot changes immediately before activating
+                # to ensure we have the latest stop data (user may have just saved a snapshot)
+                self.active_blend_mode.check_for_snapshot_changes()
+                self.active_blend_mode.activate()
+                self.lcd.draw_analog_assignments(self.current.analog_controllers)
+            except Exception as e:
+                logging.error(f"Failed to activate blend mode '{new_snapshot_name}': {e}")
+                self.active_blend_mode = None
+        else:
+            logging.debug(f"Snapshot '{new_snapshot_name}' is not a blend snapshot")
 
     def _handle_ws_message(self, msg: WebSocketMessage):
         """Handle incoming WebSocket message from MOD-UI."""
@@ -286,7 +357,7 @@ class Modhandler(Handler):
                         self.current.presets[msg.snapshot_id] = msg.snapshot_name
 
                     self.current.preset_index = msg.snapshot_id
-                    self._handle_collage_mode_snapshot_change(msg.snapshot_id)
+                    self._handle_blend_mode_snapshot_change(msg.snapshot_id)
                     self.lcd.draw_title()
                 else:
                     # Different pedalboard pending - this is a legitimate pre-switch update
@@ -300,17 +371,51 @@ class Modhandler(Handler):
                     self.current.presets[msg.snapshot_id] = msg.snapshot_name
 
                 self.current.preset_index = msg.snapshot_id
+                self._handle_blend_mode_snapshot_change(msg.snapshot_id)
                 self.lcd.draw_title()
+
+        elif isinstance(msg, (PluginBypassMessage, AddPluginMessage)):
+            # PluginBypassMessage: live delta. AddPluginMessage: (re)connect dump
+            if self.current is not None:
+                for plugin in self.current.pedalboard.plugins:
+                    if plugin.instance_id == msg.instance:
+                        logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
+                        plugin.set_bypass(msg.bypassed)
+                        self.lcd.refresh_plugin(plugin)
+                        break
+
+        elif isinstance(msg, TransportMessage):
+            if self.hardware and self.hardware.taptempo:
+                self.hardware.taptempo.set_bpm(msg.bpm)
+                if self.hardware.taptempo.is_enabled():
+                    fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
+                    self.update_lcd_fs(footswitch=fs)
+
+        elif isinstance(msg, ParamSetMessage):
+            # Keep the cached value fresh so a later long-press edit opens at the
+            # current value. Not drawn anywhere live, so no LCD refresh.
+            if self.current is not None:
+                for plugin in self.current.pedalboard.plugins:
+                    if plugin.instance_id == msg.instance:
+                        param = plugin.parameters.get(msg.symbol)
+                        if param is not None:
+                            param.value = msg.value
+                        break
+
+    def poll_ws_messages(self):
+        """Drain inbound WS messages (fast ~10ms cadence). Main-thread only.
+        Must not touch next_pedalboard_preset_index (owned by the file-watch path)."""
+        for msg in self.ws_bridge.get_received_messages():
+            try:
+                self._handle_ws_message(parse_message(msg))
+            except Exception as e:
+                logging.error(f"Error handling WebSocket message '{msg}': {e}")
 
     def poll_modui_changes(self):
         """Poll for changes from MOD-UI: websockets and file watching"""
-        if self.ws_bridge is not None:
-            messages = self.ws_bridge.get_received_messages()
-            for msg in messages:
-                try:
-                    self._handle_ws_message(parse_message(msg))
-                except Exception as e:
-                    logging.error(f"Error handling WebSocket message '{msg}': {e}")
+        # Drain WS first so loading_end/snapshot lands before the file-watch
+        # reads next_pedalboard_preset_index this tick. No-op if already drained.
+        self.poll_ws_messages()
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
@@ -324,11 +429,11 @@ class Modhandler(Handler):
 
                 pb = self.reload_pedalboard(mod_bundle)
                 self.set_current_pedalboard(pb)
-            elif mod_bundle and self.next_pedalboard_preset_index is not None:
+            elif mod_bundle and self.current and self.next_pedalboard_preset_index is not None:
                 # Same pedalboard reloaded with a pending snapshot - apply it now
                 logging.info(f"Applying pending snapshot {self.next_pedalboard_preset_index} to current pedalboard")
                 self.current.preset_index = self.next_pedalboard_preset_index
-                self._handle_collage_mode_snapshot_change(self.next_pedalboard_preset_index)
+                self._handle_blend_mode_snapshot_change(self.next_pedalboard_preset_index)
                 self.next_pedalboard_preset_index = None
                 self.lcd.draw_title()
 
@@ -336,6 +441,18 @@ class Modhandler(Handler):
         if self.banks_monitor.check_for_change():
             logging.info("Reloading banks file: %s" % self.banks_file)
             self.load_banks()
+
+        # Check for snapshot file modifications (blend mode stop edits)
+        # Check ALL blend modes, not just active one (user might be editing a stop snapshot)
+        for blend_mode in self.blend_modes.values():
+            try:
+                blend_mode.check_for_snapshot_changes()
+            except Exception as e:
+                logging.error(f"Blend mode snapshot check failed: {e}")
+                # If it's the active one, deactivate it
+                if blend_mode == self.active_blend_mode:
+                    blend_mode.cleanup()
+                    self.active_blend_mode = None
 
     #
     # Bank Stuff
@@ -364,6 +481,15 @@ class Modhandler(Handler):
         self.current_bank = bank_name
         self.settings.set_setting(Token.BANK, bank_name)
 
+    def set_lcd_speed(self, speed_mhz):
+        self.settings.set_setting('lcd.spi_speed_mhz', speed_mhz)
+        self.lcd.show_lcd_speed_message(speed_mhz)
+        # Exit cleanly - systemd will restart with new LCD speed
+        import time
+        import sys
+        time.sleep(1.5)  # Show message briefly
+        sys.exit(0)
+
     #
     # Pedalboard Stuff
     #
@@ -380,7 +506,7 @@ class Modhandler(Handler):
             logging.info("Loading pedalboard info: %s" % pb[Token.TITLE])
             bundle = pb[Token.BUNDLE]
             title = pb[Token.TITLE]
-            pedalboard = Pedalboard.Pedalboard(title, bundle)
+            pedalboard = Pedalboard.Pedalboard(title, bundle, root_uri=self.root_uri)
             pedalboard.load_bundle(bundle, self.plugin_dict)
             self.pedalboards[bundle] = pedalboard
             self.pedalboard_list.append(pedalboard)
@@ -392,7 +518,7 @@ class Modhandler(Handler):
         title = old.title
 
         # create a new one
-        pedalboard = Pedalboard.Pedalboard(title, bundle)
+        pedalboard = Pedalboard.Pedalboard(title, bundle, root_uri=self.root_uri)
         pedalboard.load_bundle(bundle, self.plugin_dict)
         self.pedalboards[bundle] = pedalboard
 
@@ -411,6 +537,12 @@ class Modhandler(Handler):
         return read_pedalboard_bundle(self.last_json_monitor.path)
 
     def set_current_pedalboard(self, pedalboard):
+        # Cleanup all previous blend modes if active
+        for blend_mode in self.blend_modes.values():
+            blend_mode.cleanup()
+        self.blend_modes = {}
+        self.active_blend_mode = None
+
         # Delete previous "current"
         del self.current
 
@@ -435,6 +567,45 @@ class Modhandler(Handler):
         self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
         self.lcd.draw_main_panel()
         self.lcd.update_wifi(self.wifi_status)
+
+        # Prepare blend modes if configured (snapshot-based activation)
+        try:
+            blend_configs = cfg.get('blend_snapshots', []) if cfg else []
+            bundle_path = Path(self.current.pedalboard.bundle)
+
+            # Sync all blend snapshots (create/recreate based on config)
+            snapshot_indices = SnapshotManager.sync_blend_snapshots(
+                bundle_path,
+                blend_configs,
+                self.root_uri
+            )
+
+            # Create and prepare BlendMode instances for each blend snapshot
+            from blend import BlendMode
+            for blend_cfg in blend_configs:
+                snapshot_name = blend_cfg.get('name')
+                if not snapshot_name:
+                    continue
+
+                blend_mode = BlendMode(self, blend_cfg)
+                blend_mode.prepare()  # One-time setup: compute diff maps, create controllers
+                self.blend_modes[snapshot_name] = blend_mode
+                logging.info(f"Prepared blend mode: '{snapshot_name}'")
+
+            # Auto-switch to FIRST blend snapshot if any exist
+            if self.blend_modes:
+                first_snapshot_name = list(self.blend_modes.keys())[0]
+                first_snapshot_idx = snapshot_indices.get(first_snapshot_name)
+
+                if first_snapshot_idx is not None:
+                    logging.info(f"Auto-switching to first blend snapshot: '{first_snapshot_name}' (index {first_snapshot_idx})")
+                    self.preset_change(first_snapshot_idx)
+                    # Note: preset_change calls _handle_blend_mode_snapshot_change which activates the blend mode
+
+        except Exception as e:
+            logging.error(f"Failed to prepare blend modes: {e}")
+            self.blend_modes = {}
+            self.active_blend_mode = None
 
     def bind_current_pedalboard(self):
         # "current" being the pedalboard mod-host says is current
@@ -561,9 +732,13 @@ class Modhandler(Handler):
             return
 
         logging.info("preset change: %d" % index)
+
         if index < 0 or index >= len(self.current.presets):
             self.lcd.draw_message_dialog("Snapshot id %d does not exist for this pedalboard" % index)
             return
+
+        # Handle blend mode snapshot-based activation
+        self._handle_blend_mode_snapshot_change(index)
 
         self.lcd.draw_info_message("Loading...")
         url = (self.root_uri + "snapshot/load?id=%d" % index)
@@ -575,23 +750,7 @@ class Modhandler(Handler):
 
         # Update name on lcd
         self.lcd.draw_title()
-
-        # load of the preset might have changed plugin bypass status
-        self.preset_change_plugin_update()
-
-    def preset_change_plugin_update(self):
-        assert self.current is not None, "Current pedalboard is not set"
-
-        # Now that the preset has changed on the host, update plugin bypass indicators
-        for p in self.current.pedalboard.plugins:
-            uri = self.root_uri + "effect/parameter/pi_stomp_get//graph" + p.instance_id + "/:bypass"
-            resp = self._rest_get(uri)
-            if resp is None:
-                logging.error("failed to get bypass value for: %s" % p.instance_id)
-                continue
-            if resp.status_code == 200:
-                p.set_bypass(resp.text == "true")
-        self.lcd.refresh_plugins()
+        # Bypass/param changes from the snapshot arrive via the WS drain (source of truth).
 
     def preset_incr_and_change(self, *argv):
         assert self.current is not None, "Current pedalboard is not set"
@@ -617,14 +776,11 @@ class Modhandler(Handler):
                     if isinstance(c, Footswitch):
                         c.pressed(0)
                         return
-            # Regular (non footswitch plugin)
-            url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/:bypass" % plugin.instance_id
+            # Non-footswitch plugin: update locally then notify mod-ui.
+            # No echo arrives for WS-initiated bypass. Contrast with footswitches,
+            # which send MIDI CC → mod-host internally → feedback → msg_callback.
             value = plugin.toggle_bypass()
-            resp = self._rest_post(url, json={"value": "1" if value else "0"})
-            if resp is None or resp.status_code != 200:
-                plugin.toggle_bypass()  # toggle back to original value since request wasn't successful
-
-            #  Indicate change on LCD
+            self.ws_bridge.send_parameter(plugin.instance_id, ":bypass", value)
             self.lcd.toggle_plugin(widget, plugin)
 
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
@@ -638,8 +794,13 @@ class Modhandler(Handler):
     #
     def parameter_value_commit(self, param, value):
         param.value = value
-        url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/%s" % (param.instance_id, param.symbol)
-        self._rest_post(url, json={"value": "%.1f" % param.value})
+
+        # Audio parameter (volume, EQ, etc.) - no REST update needed
+        if param.instance_id is None:
+            self.audio_parameter_commit(param.symbol, value)
+            return
+
+        self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     def parameter_midi_change(self, param, direction):
         if param:
@@ -885,14 +1046,8 @@ class Modhandler(Handler):
         return util.DICT_GET(self.callbacks, callback_name)
 
     def set_mod_tap_tempo(self, bpm):
-        if bpm is None:
-            return
-        url = self.root_uri + "set_bpm"
-        resp = self._rest_post(url, json={"value": bpm})
-        if resp is None or resp.status_code != 200:
-            logging.error("Bad Rest request: %s" % url)
-        else:
-            logging.debug("BPM changed to: %d" % bpm)
+        if bpm is not None:
+            self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
 
     def get_bpm(self):
         url = self.root_uri + "get_bpm"
@@ -904,3 +1059,65 @@ class Modhandler(Handler):
     def toggle_tap_tempo_enable(self, *argv):
         self.hardware.toggle_tap_tempo_enable(self.get_bpm())
         self.lcd.update_footswitches()
+
+    def set_tuner_source_factory(self, factory: TunerSourceFactory) -> None:
+        self._tuner_source_factory = factory
+
+    def _tuner_factory(self, port: str) -> AudioSource:
+        factory = self._tuner_source_factory or (lambda p, *, name: build_source("jack", p, name=name))
+        return factory(port, name=f"pistomp-tuner-{port.split('_')[-1]}")
+
+    def toggle_tuner_enable(self, *argv) -> None:
+        if self._tuner_engine is None:
+            muted = bool(self.settings.get_setting(Token.TUNER_MUTE))
+            input_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
+            engine = TunerEngine(self._tuner_factory(f"system:capture_{input_port}"))
+            engine.start()
+            self._tuner_engine = engine
+            if muted:
+                self.audiocard.set_output_muted(True)
+                self._tuner_muted = True
+            panel = TunerPanel(
+                engine,
+                on_dismiss=self.toggle_tuner_enable,
+                on_mute_toggle=self._toggle_tuner_mute,
+                on_input_toggle=self._toggle_tuner_input,
+                muted=muted,
+                input_port=input_port,
+            )
+            self._tuner_panel = panel
+            self.lcd.show_tuner_panel(panel)
+        else:
+            self._dismiss_tuner()
+
+    def _dismiss_tuner(self) -> None:
+        if self._tuner_muted:
+            self.audiocard.set_output_muted(False)
+            self._tuner_muted = False
+        self.lcd.hide_tuner_panel()
+        if self._tuner_engine is not None:
+            self._tuner_engine.stop()
+            self._tuner_engine = None
+        self._tuner_panel = None
+
+    def _toggle_tuner_mute(self) -> None:
+        new_muted = not self._tuner_muted
+        self.audiocard.set_output_muted(new_muted)
+        self._tuner_muted = new_muted
+        self.settings.set_setting(Token.TUNER_MUTE, new_muted)
+        if self._tuner_panel is not None:
+            self._tuner_panel.set_muted(new_muted)
+
+    def _toggle_tuner_input(self) -> None:
+        current_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
+        new_port = 2 if current_port == 1 else 1
+        old_engine = self._tuner_engine
+        engine = TunerEngine(self._tuner_factory(f"system:capture_{new_port}"))
+        engine.start()
+        self.settings.set_setting(Token.TUNER_INPUT, new_port)
+        if old_engine is not None:
+            old_engine.stop()
+        self._tuner_engine = engine
+        if self._tuner_panel is not None:
+            self._tuner_panel.set_engine(engine)
+            self._tuner_panel.set_input_port(new_port)
