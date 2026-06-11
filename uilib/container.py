@@ -33,10 +33,10 @@ class ContainerWidget(Widget):
 
     def __init__(self, box, **kwargs):
         # Non-inherited attributes
-        self.virtual = self._get_arg(kwargs, 'virtual', False)
-        self._content_height = self._get_arg(kwargs, 'content_height', None)
-        kwargs.pop('virtual', None)
-        kwargs.pop('content_height', None)
+        self.virtual = self._get_arg(kwargs, "virtual", False)
+        self._content_height = self._get_arg(kwargs, "content_height", None)
+        kwargs.pop("virtual", None)
+        kwargs.pop("content_height", None)
 
         # Inheritable attributes
         self._init_attrs(ContainerWidget.INH_ATTRS, kwargs)
@@ -63,16 +63,20 @@ class ContainerWidget(Widget):
         h = self._content_height if (self.virtual and self._content_height) else self.box.height
 
         # Check if we are already setup for this box
-        if (self.surface is not None and self.old_box is not None and
-            self.old_box.width == w and self.old_box.height == self.box.height and
-            self.surface.get_height() == h):
+        if (
+            self.surface is not None
+            and self.old_box is not None
+            and self.old_box.width == w
+            and self.old_box.height == self.box.height
+            and self.surface.get_height() == h
+        ):
             return
 
         trace(self, "container setup, box=", self.box, "old_box=", self.old_box)
 
         # Create new pygame surface
         self.old_box = self.box.copy()
-        self.has_alpha = self.image_format == 'RGBA'
+        self.has_alpha = self.image_format == "RGBA"
         if self.has_alpha:
             self.surface = pygame.Surface((int(w), int(h)), pygame.SRCALPHA)
         else:
@@ -270,7 +274,7 @@ class ContainerWidget(Widget):
         movex = x0 if x0 < 0 else (x1 - brx if x1 > brx else 0)
         movey = y0 if y0 < 0 else (y1 - bry if y1 > bry else 0)
         if not (movex or movey):
-        return False
+            return False
         dx, dy = self._scroll_delta(box, movex, movey, orig_box)
         ox, oy = self.offset
         self.scroll((ox + dx, oy + dy))
