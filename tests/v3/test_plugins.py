@@ -403,6 +403,21 @@ def test_v3_bypass_event_unknown_plugin_is_ignored(v3_system: SystemFixture, mak
     assert not plugin.is_bypassed()
 
 
+def test_v3_inbound_transport_tracks_bpm_even_when_taptempo_disabled(v3_system: SystemFixture):
+    """An inbound transport broadcast updates tempo whether or not tap-tempo mode is on."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    hw.taptempo.enable(False)
+    hw.taptempo.set_bpm(120.0)
+
+    ws_bridge.inject("transport 1 4.0 138.0 Internal")
+    handler.poll_modui_changes()
+
+    assert hw.taptempo.get_bpm() == 138.0
+
+
 def test_v3_snapshot_sequence_applies_bypass_via_ws(v3_system: SystemFixture, make_plugin, snapshot):
     """mod-ui broadcasts pedal_snapshot + diff-gated param_set :bypass, and
     the snapshot's bypass states become the source of truth (no REST poll).
