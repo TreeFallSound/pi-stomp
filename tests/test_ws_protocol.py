@@ -5,6 +5,7 @@ from modalapi.ws_protocol import (
     AddPluginMessage,
     LoadingEndMessage,
     LoadingStartMessage,
+    MidiMapMessage,
     PedalSnapshotMessage,
     ParamSetMessage,
     PluginBypassMessage,
@@ -189,6 +190,27 @@ def test_plugin_bypass_off():
 def test_plugin_bypass_nested_instance():
     msg = parse_message("param_set /graph/xfade :bypass 1.0")
     assert msg == PluginBypassMessage(instance="xfade", bypassed=True)
+
+
+# ---------------------------------------------------------------------------
+# midi_map (midi_map /graph/{instance} {symbol} {channel} {controller} {min} {max})
+# ---------------------------------------------------------------------------
+
+
+def test_midi_map_bypass():
+    msg = parse_message("midi_map /graph/CollisionDrive :bypass 0 60 0.0 1.0")
+    assert msg == MidiMapMessage(instance="CollisionDrive", symbol=":bypass", channel=0, controller=60)
+
+
+def test_midi_map_control_port():
+    msg = parse_message("midi_map /graph/HotBox gain 13 70 0.0 1.0")
+    assert msg == MidiMapMessage(instance="HotBox", symbol="gain", channel=13, controller=70)
+
+
+def test_midi_map_malformed_is_unknown():
+    assert parse_message("midi_map /graph/HotBox gain notanint 70 0.0 1.0") == UnknownMessage(
+        raw="midi_map /graph/HotBox gain notanint 70 0.0 1.0"
+    )
 
 
 # ---------------------------------------------------------------------------

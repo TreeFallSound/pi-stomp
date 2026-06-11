@@ -114,6 +114,16 @@ class ParamSetMessage:
 
 
 @dataclass
+class MidiMapMessage:
+    """A MIDI binding was learned/assigned in mod-ui (midi_map ...)."""
+
+    instance: str  # canonical bare form, e.g. "CollisionDrive"
+    symbol: str  # e.g. "gain" or ":bypass"
+    channel: int
+    controller: int
+
+
+@dataclass
 class UnknownMessage:
     """Message type we don't handle yet."""
 
@@ -133,6 +143,7 @@ WebSocketMessage = Union[
     TransportMessage,
     AddPluginMessage,
     ParamSetMessage,
+    MidiMapMessage,
     UnknownMessage,
 ]
 
@@ -217,6 +228,16 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                 instance = path.removeprefix("/graph/")
                 symbol, value_str = rest.split(" ", 1)
                 return ParamSetMessage(instance=instance, symbol=symbol, value=float(value_str))
+
+            # Format: midi_map /graph/{instance} {symbol} {channel} {controller} {min} {max}
+            case ["midi_map", path, rest]:
+                symbol, ch, ctrl = rest.split(" ")[:3]
+                return MidiMapMessage(
+                    instance=path.removeprefix("/graph/"),
+                    symbol=symbol,
+                    channel=int(ch),
+                    controller=int(ctrl),
+                )
 
             # Format: truebypass {left} {right}
             case ["truebypass", left, right_trailing]:
