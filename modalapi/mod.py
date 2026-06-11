@@ -34,7 +34,6 @@ from modalapi.websocket_bridge import AsyncWebSocketBridge
 from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
-from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.footswitch import Footswitch
 from pistomp.handler import Handler
 from enum import Enum
@@ -529,7 +528,6 @@ class Mod(Handler):
 
         elif isinstance(msg, MidiMapMessage):
             # MIDI learn in mod-ui assigned a hardware control to a parameter.
-            # Bind it now so the assignment shows without a reload.
             self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
 
     def poll_ws_messages(self):
@@ -718,47 +716,9 @@ class Mod(Handler):
                                                if elem.has_footswitch is False]
             self.current.pedalboard.plugins += footswitch_plugins
 
-    def _bind_controller_to_param(self, plugin, param, controller) -> bool:
-        # Wire a hardware controller to a plugin parameter. Returns True if the
-        # controller is a footswitch (so callers can track footswitch plugins).
-        # TODO possibly use a setter instead of accessing var directly
-        # What if multiple params could map to the same controller?
-        controller.parameter = param
-        controller.set_value(param.value)
-        if controller not in plugin.controllers:
-            plugin.controllers.append(controller)
-        if isinstance(controller, Footswitch):
-            # TODO sort this list so selection orders correctly (sort on midi_CC?)
-            plugin.has_footswitch = True
-            controller.set_category(plugin.category)
-            return True
-        elif isinstance(controller, AnalogMidiControl):
-            key = "%s:%s" % (plugin.instance_id, param.name)
-            controller.cfg[Token.CATEGORY] = plugin.category  # somewhat LAME adding to cfg dict
-            controller.cfg[Token.TYPE] = controller.type
-            self.current.analog_controllers[key] = controller.cfg
-        return False
-
-    def _apply_midi_binding(self, instance, symbol, binding):
-        # A MIDI mapping was learned in mod-ui. Update the matching parameter's
-        # binding and wire its hardware controller so the LCD reflects it without
-        # a pedalboard reload. Idempotent: replayed connect-dump maps are no-ops.
+    def _redraw_after_binding(self, controller, is_footswitch):
         # draw_plugins/draw_bound_plugins place by has_footswitch, so no reorder
         # is needed here — the redraw alone moves the plugin to the footswitch row.
-        if self.current is None:
-            return
-        plugin = next((p for p in self.current.pedalboard.plugins
-                       if p is not None and p.instance_id == instance), None)
-        if plugin is None or plugin.parameters is None:
-            return
-        param = plugin.parameters.get(symbol)
-        if param is None or param.binding == binding:
-            return
-        controller = self.hardware.controllers.get(binding)
-        if controller is None:
-            return
-        param.binding = binding
-        self._bind_controller_to_param(plugin, param, controller)
         self.update_lcd()
 
     def pedalboard_select(self, direction):
