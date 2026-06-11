@@ -39,7 +39,7 @@ from pistomp.hardware import Controller, Hardware
 import pistomp.settings as Settings
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, AddPluginMessage, ParamSetMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -400,8 +400,15 @@ class Modhandler(Handler):
                     if plugin.instance_id == msg.instance:
                         logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
                         plugin.set_bypass(msg.bypassed)
-                        self.lcd.refresh_plugins()
+                        self.lcd.refresh_plugin(plugin)
                         break
+
+        elif isinstance(msg, TransportMessage):
+            if self.hardware and self.hardware.taptempo:
+                self.hardware.taptempo.set_bpm(msg.bpm)
+                if self.hardware.taptempo.is_enabled():
+                    fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
+                    self.update_lcd_fs(footswitch=fs)
 
         elif isinstance(msg, ParamSetMessage):
             # Keep the cached value fresh so a later long-press edit opens at the
@@ -1059,7 +1066,7 @@ class Modhandler(Handler):
 
     def set_mod_tap_tempo(self, bpm):
         if bpm is not None:
-            self.ws_bridge.send_bpm(bpm)
+            self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
 
     def get_bpm(self):
         url = self.root_uri + "get_bpm"

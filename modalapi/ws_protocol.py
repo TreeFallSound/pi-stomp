@@ -89,6 +89,14 @@ class PluginBypassMessage:
 
 
 @dataclass
+class TransportMessage:
+    """Transport state changed (transport {rolling} {beatsPerBar} {bpm} {syncMode})."""
+
+    rolling: bool
+    bpm: float
+
+
+@dataclass
 class AddPluginMessage:
     """Plugin present in a (re)connect/load dump (add ...)."""
 
@@ -122,6 +130,7 @@ WebSocketMessage = Union[
     RemoveHwPortMessage,
     TrueBypassMessage,
     PluginBypassMessage,
+    TransportMessage,
     AddPluginMessage,
     ParamSetMessage,
     UnknownMessage,
@@ -216,6 +225,11 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                 return TrueBypassMessage(left=int(left), right=0)
             case ["truebypass"]:
                 return TrueBypassMessage(left=0, right=0)
+
+            # Format: transport {rolling} {beatsPerBar} {bpm} {syncMode}
+            case ["transport", rolling, rest]:
+                bpm = float(rest.split()[1])
+                return TransportMessage(rolling=rolling != "0", bpm=bpm)
 
     except (ValueError, IndexError) as e:
         logging.warning(f"Failed to parse WebSocket message '{raw_message}': {e}")
