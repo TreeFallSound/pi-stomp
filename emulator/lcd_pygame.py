@@ -68,8 +68,10 @@ class LcdPygame(LcdBase):
 
         if box is not None:
             x0, y0, x1, y1 = box.rect
-            x1 = min(x1, self.width)
-            y1 = min(y1, self.height)
+            x0 = max(0, min(x0, img_w))
+            y0 = max(0, min(y0, img_h))
+            x1 = max(x0, min(x1, img_w))
+            y1 = max(y0, min(y1, img_h))
             # Crop to the dirty region if the surface is larger
             if x0 != 0 or y0 != 0 or x1 != img_w or y1 != img_h:
                 surface = surface.subsurface(pygame.Rect(x0, y0, x1 - x0, y1 - y0))

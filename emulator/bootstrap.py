@@ -49,7 +49,7 @@ def bootstrap_emulator(version: EmulatorVersion, cwd: str):
             from emulator.hardware_v3 import EmulatorHardwareV3 as EmuHW
             from emulator.modhandler import EmulatorModhandler as EmuHandler
 
-    pygame_init(headless=False)
+    pygame_init()
 
     try:
         midiout, _port_name = open_midioutput(0)

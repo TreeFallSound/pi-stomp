@@ -80,10 +80,10 @@ class LcdIli9341(LcdBase):
                 box = Box(0, 0, img_width, img_height)
 
             x1, y1, x2, y2 = box.rect
-            if x2 > self.width:
-                x2 = self.width
-            if y2 > self.height:
-                y2 = self.height
+            x1 = max(0, min(x1, img_width))
+            y1 = max(0, min(y1, img_height))
+            x2 = max(x1, min(x2, img_width))
+            y2 = max(y1, min(y2, img_height))
 
             cropped = x1 != 0 or y1 != 0 or x2 != img_width or y2 != img_height
             if cropped:

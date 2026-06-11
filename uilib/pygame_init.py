@@ -23,7 +23,7 @@ import os
 _initialized = False
 
 
-def init(headless: bool = True):
+def init():
     """Initialize pygame + pygame._freetype, idempotently.
 
     Re-initializes if a prior `quit()` (ours or a bare `pygame.quit()`) tore
@@ -31,7 +31,8 @@ def init(headless: bool = True):
     teardown, so we also consult pygame/freetype's own init state.
     """
     global _initialized
-    if headless and "SDL_VIDEODRIVER" not in os.environ:
+    # default to headless mode; this is the production use case
+    if "SDL_VIDEODRIVER" not in os.environ:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
     import pygame
     import pygame._freetype as _freetype

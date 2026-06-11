@@ -215,6 +215,7 @@ class PaintContext:
             # banker's rounding on .5 boundaries (e.g. 51.5 → 52) would push
             # the glyph one pixel right of PIL.
             from uilib.misc import get_text_size
+
             desc = abs(int(font.get_sized_descender()))
             tw, _ = get_text_size(text, font)
             base_dst = (int(x - tw / 2), int(y - (asc + desc) / 2))

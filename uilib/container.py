@@ -221,10 +221,10 @@ class ContainerWidget(Widget):
             self.parent._invalidate_cache(region.deoffset(self.offset).offset(self.box))
 
     def scroll(self, offset):
-        self.offset = offset
         if not self.virtual:
             self.refresh()
             return
+        self.offset = offset
         if self.surface is None:
             return
         viewport = self._viewport()
@@ -261,6 +261,8 @@ class ContainerWidget(Widget):
         return dx, dy
 
     def _scroll_into_view(self, box):
+        if not self.virtual:
+            return super()._scroll_into_view(box)
         orig_box = box
         box = box.deoffset(self.offset)
         x0, y0, x1, y1 = box.rect
@@ -268,7 +270,7 @@ class ContainerWidget(Widget):
         movex = x0 if x0 < 0 else (x1 - brx if x1 > brx else 0)
         movey = y0 if y0 < 0 else (y1 - bry if y1 > bry else 0)
         if not (movex or movey):
-            return False
+        return False
         dx, dy = self._scroll_delta(box, movex, movey, orig_box)
         ox, oy = self.offset
         self.scroll((ox + dx, oy + dy))
