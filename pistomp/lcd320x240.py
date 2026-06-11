@@ -389,9 +389,16 @@ class Lcd(abstract_lcd.Lcd):
             self.color_plugin(w, plugin)
         self.main_panel.refresh()
 
+    def refresh_plugin(self, plugin):
+        for w in self.w_plugins:
+            if w.object is plugin:
+                self.color_plugin(w, plugin)
+                w.refresh()
+                break
+
     def toggle_plugin(self, widget, plugin):
         self.color_plugin(widget, plugin)
-        self.main_panel.refresh()
+        widget.refresh()
 
     # Try to map color to a valid displayable color, if not use foreground
     def valid_color(self, color):
@@ -481,7 +488,7 @@ class Lcd(abstract_lcd.Lcd):
                 x = self.get_footswitch_pitch() * fs_id
                 self.footswitch_slots[fs_id] = label
                 color = self.get_plugin_color(plugin)
-                p = FootswitchWidget(Box.xywh(x, y, self.plugin_width, self.plugin_height), self.small_font,
+                p = FootswitchWidget(Box.xywh(x, y, self.plugin_width, self.footswitch_height), self.small_font,
                              label, color, plugin.is_bypassed(), parent=self.footswitch_panel, object=c)
                 self.w_footswitches.append(p)
                 self.footswitch_panel.add_widget(p)
@@ -496,7 +503,7 @@ class Lcd(abstract_lcd.Lcd):
             label = "" if dl is None else dl
             y = 0
             x = self.get_footswitch_pitch() * slot
-            p = FootswitchWidget(Box.xywh(x, y, self.plugin_width, self.plugin_height), self.small_font,
+            p = FootswitchWidget(Box.xywh(x, y, self.plugin_width, self.footswitch_height), self.small_font,
                                  label, None, True, parent=self.footswitch_panel, object=fs)
             self.w_footswitches.append(p)
             self.footswitch_panel.add_widget(p)
@@ -509,9 +516,8 @@ class Lcd(abstract_lcd.Lcd):
                 label = footswitch.get_display_label()
                 if label:
                     wfs.label = label
+                wfs.refresh()
                 break
-        self.footswitch_panel.refresh()
-        self.refresh_plugins()  # TODO maybe not the most efficient, does exhibit some lag time
 
     def update_footswitches(self):
         for fs in self.footswitches:
