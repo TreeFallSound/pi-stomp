@@ -10,6 +10,7 @@ from modalapi.ws_protocol import (
     PluginBypassMessage,
     RemoveHwPortMessage,
     SizeMessage,
+    TransportMessage,
     TrueBypassMessage,
     UnknownMessage,
     parse_message,
@@ -188,6 +189,25 @@ def test_plugin_bypass_off():
 def test_plugin_bypass_nested_instance():
     msg = parse_message("param_set /graph/xfade :bypass 1.0")
     assert msg == PluginBypassMessage(instance="xfade", bypassed=True)
+
+
+# ---------------------------------------------------------------------------
+# transport (transport {rolling} {beatsPerBar} {bpm} {syncMode})
+# ---------------------------------------------------------------------------
+
+
+def test_transport_rolling():
+    assert parse_message("transport 1 4.0 120.0 Internal") == TransportMessage(rolling=True, bpm=120.0)
+
+
+def test_transport_stopped():
+    assert parse_message("transport 0 4.0 90.5 Internal") == TransportMessage(rolling=False, bpm=90.5)
+
+
+def test_transport_malformed_bpm_is_unknown():
+    assert parse_message("transport 1 4.0 notanumber Internal") == UnknownMessage(
+        raw="transport 1 4.0 notanumber Internal"
+    )
 
 
 def test_plugin_bypass_nonzero_is_true():
