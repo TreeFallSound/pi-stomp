@@ -405,7 +405,7 @@ class Modhandler(Handler):
         elif isinstance(msg, MidiMapMessage):
             # MIDI learn in mod-ui assigned a hardware control to a parameter.
             # Bind it now so the footswitch/assignment shows without a reload.
-            self._apply_midi_binding(msg.instance, msg.symbol, "%d:%d" % (msg.channel, msg.controller))
+            self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
 
     def poll_ws_messages(self):
         """Drain inbound WS messages (fast ~10ms cadence). Main-thread only.

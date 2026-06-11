@@ -122,6 +122,11 @@ class MidiMapMessage:
     channel: int
     controller: int
 
+    @property
+    def binding(self) -> str:
+        # Matches Parameter.binding's "channel:controller" form.
+        return "%d:%d" % (self.channel, self.controller)
+
 
 @dataclass
 class UnknownMessage:

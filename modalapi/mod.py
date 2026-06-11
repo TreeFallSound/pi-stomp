@@ -530,7 +530,7 @@ class Mod(Handler):
         elif isinstance(msg, MidiMapMessage):
             # MIDI learn in mod-ui assigned a hardware control to a parameter.
             # Bind it now so the assignment shows without a reload.
-            self._apply_midi_binding(msg.instance, msg.symbol, "%d:%d" % (msg.channel, msg.controller))
+            self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
 
     def poll_ws_messages(self):
         """Drain and dispatch inbound WebSocket messages (fast ~10ms cadence)."""
