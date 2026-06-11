@@ -381,7 +381,7 @@ class Modhandler(Handler):
                     if plugin.instance_id == msg.instance:
                         logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
                         plugin.set_bypass(msg.bypassed)
-                        self.lcd.refresh_plugins()
+                        self.lcd.refresh_plugin(plugin)
                         break
 
         elif isinstance(msg, TransportMessage):
