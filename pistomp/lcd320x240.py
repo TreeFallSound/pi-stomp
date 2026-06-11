@@ -23,7 +23,6 @@ import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
 import pygame
-from PIL import Image
 
 from uilib import *
 from uilib.pygame_init import font as _make_font
@@ -107,12 +106,10 @@ class Lcd(abstract_lcd.Lcd):
 
         # widgets
         self.w_wifi = None
-        self._wifi_frames: list[Image.Image] = [
-            Image.open(os.path.join(self.imagedir, f'wifi_processing_{i}.png'))
+        self._wifi_frames: list[pygame.Surface] = [
+            load_surface(os.path.join(self.imagedir, f'wifi_processing_{i}.png'))
             for i in range(1, 4)
         ]
-        for frame in self._wifi_frames:
-            frame.load()
         self._wifi_tick = 0
         self._wifi_ticks_per_frame = 2
         self.wifi_menu: Optional[WifiMenu] = None

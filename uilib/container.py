@@ -248,30 +248,31 @@ class ContainerWidget(Widget):
         else:
             return -s * step
 
+    def _scroll_delta(self, box: Box, movex: int, movey: int, orig_box: Box):
+        """Translate overflow on each axis into a scroll adjustment.
+
+        Default policy: page-snap to the moving box's own dimensions, and
+        reset y to 0 when the requested box originates at the container top.
+        Subclasses (e.g. Menu) override to scroll pixel-precise / single-axis."""
+        dx = self.__adj_off_step(movex, box.width) if movex else 0
+        dy = self.__adj_off_step(movey, box.height) if movey else 0
+        if orig_box.y0 == 0:
+            dy = -self.offset[1]
+        return dx, dy
+
     def _scroll_into_view(self, box):
-        b0 = box
+        orig_box = box
         box = box.deoffset(self.offset)
-        x0,y0,x1,y1 = box.rect
-        ox,oy = self.offset
-        brx,bry = self.box.width, self.box.height
-        movex,movey = 0,0
-        if x0 < 0:
-            movex = x0
-        if y0 < 0:
-            movey = y0
-        if x1 > brx:
-            movex = x1 - brx
-        if y1 > bry:
-            movey = y1 - bry
-        if movex != 0 or movey != 0:
-            ox += self.__adj_off_step(movex, box.width)
-            oy += self.__adj_off_step(movey, box.height)
-            if b0.y0 == 0:
-                self.scroll((ox, 0))
-            else:
-                self.scroll((ox, oy))
-            return True
-        return False
+        x0, y0, x1, y1 = box.rect
+        brx, bry = self.box.width, self.box.height
+        movex = x0 if x0 < 0 else (x1 - brx if x1 > brx else 0)
+        movey = y0 if y0 < 0 else (y1 - bry if y1 > bry else 0)
+        if not (movex or movey):
+            return False
+        dx, dy = self._scroll_delta(box, movex, movey, orig_box)
+        ox, oy = self.offset
+        self.scroll((ox + dx, oy + dy))
+        return True
 
 
 def _ipt(p):

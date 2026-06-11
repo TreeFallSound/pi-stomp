@@ -14,23 +14,16 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import pygame
-from PIL import Image
 
 from uilib.widget import Widget
 
 
-def _to_surface(image: str | Image.Image) -> pygame.Surface:
-    """Load an image (file path or PIL Image) as a pygame Surface.
+def load_surface(path: str) -> pygame.Surface:
+    """Load an image file as a pygame Surface.
 
     convert_alpha needs a video surface; under SDL_VIDEODRIVER=dummy a
     display surface exists after pygame.init(), so this is safe."""
-    if isinstance(image, str):
-        surf = pygame.image.load(image)
-    else:
-        # PIL Image — frombytes only handles RGB/RGBA, so normalise first.
-        if image.mode not in ("RGB", "RGBA"):
-            image = image.convert("RGBA")
-        surf = pygame.image.frombytes(image.tobytes(), image.size, image.mode)
+    surf = pygame.image.load(path)
     try:
         return surf.convert_alpha()
     except pygame.error:
@@ -38,12 +31,24 @@ def _to_surface(image: str | Image.Image) -> pygame.Surface:
 
 
 class ImageWidget(Widget):
-    """A simple widget that paints a pygame.Surface centered in its frame."""
+    """A simple widget that paints a pygame.Surface centered in its frame.
 
-    def __init__(self, image: str | Image.Image, **kwargs):
+    Accepts a file path (loaded + cached, with same-path dedup on replace) or a
+    pre-built Surface (used directly, deduped by identity).
+    """
+
+    image: pygame.Surface
+    _image_path: str | None
+
+    def __init__(self, image: str | pygame.Surface, **kwargs):
         self._init_attrs(Widget.INH_ATTRS, kwargs)
         super(ImageWidget, self).__init__(**kwargs)
-        self.image = _to_surface(image)
+        if isinstance(image, str):
+            self._image_path = image
+            self.image = load_surface(image)
+        else:
+            self._image_path = None
+            self.image = image
 
     def _draw(self, ctx):
         width, height = self.image.get_size()
@@ -51,7 +56,16 @@ class ImageWidget(Widget):
         offy = int((ctx.height - height) / 2)
         ctx.paste(self.image, (offx, offy))
 
-    def replace_img(self, image: str | Image.Image):
-        # XXX the new image should be the same size as the original
-        self.image = _to_surface(image)
+    def replace_img(self, image: str | pygame.Surface):
+        # XXX Note that the new image must be the same size as the original
+        if isinstance(image, str):
+            if image == self._image_path:
+                return
+            self._image_path = image
+            self.image = load_surface(image)
+        else:
+            if self.image is image:
+                return
+            self._image_path = None
+            self.image = image
         self.refresh()

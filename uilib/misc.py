@@ -15,18 +15,20 @@
 
 from enum import Enum, Flag
 
+
 # Input events.
 class InputEvent(Enum):
-    LEFT = 0          # Encoder left
-    RIGHT = 1         # Encoder right
-    CLICK = 2         # Encoder click
-    LONG_CLICK = 3    # Encoder long click
-    EDITED = 4        # Editable text modified (data = string)
-    LETTER = 5        # A letter input (internal to TextEditor for now)
-    OK = 6            # Ok button
-    CANCEL = 7        # Cancel button
-    BACKSPACE = 8     # Backspace (text editor)
-    CLEAR = 9         # Clear (text editor)
+    LEFT = 0  # Encoder left
+    RIGHT = 1  # Encoder right
+    CLICK = 2  # Encoder click
+    LONG_CLICK = 3  # Encoder long click
+    EDITED = 4  # Editable text modified (data = string)
+    LETTER = 5  # A letter input (internal to TextEditor for now)
+    OK = 6  # Ok button
+    CANCEL = 7  # Cancel button
+    BACKSPACE = 8  # Backspace (text editor)
+    CLEAR = 9  # Clear (text editor)
+
 
 # Alignments. These can be specified at widget creation and will override the
 # topleft location of the widget.
@@ -34,7 +36,8 @@ class WidgetAlign(Flag):
     NONE = 0
     CENTRE_H = 1
     CENTRE_V = 2
-    CENTRE   = 3 # This must be CENTRE_H | CENTRE_V
+    CENTRE = 3  # This must be CENTRE_H | CENTRE_V
+
 
 # Text Alignments. Limited to horizontal text for now
 class TextHAlign(Enum):
@@ -42,18 +45,21 @@ class TextHAlign(Enum):
     RIGHT = 2
     CENTRE = 3
 
+
 # Debug helpers
 debug = False
-#debug = True
+# debug = True
+
 
 def trace(obj, *args):
     if debug:
         n = None
-        if hasattr(obj, 'name'):
+        if hasattr(obj, "name"):
             n = obj.name
         if n is None:
-            n = '<>'
+            n = "<>"
         print(str(type(obj)), n, args)
+
 
 # Utility function (from stack overflow). TODO: Move to a TextUtils
 def get_text_size(text_string, font, metrics=None):
@@ -75,6 +81,7 @@ def get_text_size(text_string, font, metrics=None):
     line_height = asc + desc
     if not text_string:
         return (0, line_height)
+
     # pygame.freetype.Font.get_metrics returns per-glyph
     # (min_x, max_x, min_y, max_y, advance_x, advance_y). Negative values come
     # back as 32-bit unsigned ints — wrap them.
@@ -112,4 +119,43 @@ def get_text_size(text_string, font, metrics=None):
     width = int(round(right_edge - left_edge))
     return (width, line_height + glyph_desc)
 
-        
+
+def get_text_bbox(text_string, font):
+    """Return (x0, y0, x1, y1) of `text_string`'s ink, matching PIL's
+    `ImageFont.getbbox(text)` with the default 'la' anchor.
+
+    Coordinates are relative to the text-draw origin (top-left of the ascender
+    line). PIL clamps the bottom edge to the baseline, so glyphs that sit
+    entirely above the baseline ('--', '^') still report bottom == ascender.
+    """
+    asc = int(font.get_sized_ascender())
+
+    def _signed(v):
+        return v - 0x100000000 if v >= 0x80000000 else v
+
+    pen = 0.0
+    ink_left = ink_right = 0.0
+    max_y = min_y = 0
+    has_any = False
+    for m in font.get_metrics(text_string):
+        if m is None:
+            continue
+        g_min_x, g_max_x, g_min_y, g_max_y = (_signed(m[0]), _signed(m[1]), _signed(m[2]), _signed(m[3]))
+        l = pen + g_min_x
+        r = pen + g_max_x
+        if not has_any:
+            ink_left, ink_right, has_any = l, r, True
+            max_y, min_y = g_max_y, g_min_y
+        else:
+            ink_left = min(ink_left, l)
+            ink_right = max(ink_right, r)
+            max_y = max(max_y, g_max_y)
+            min_y = min(min_y, g_min_y)
+        pen += m[4]
+    if not has_any:
+        return (0, 0, 0, 0)
+    x0 = int(round(min(0.0, ink_left)))
+    x1 = int(round(max(ink_right, pen)))
+    y0 = asc - max_y
+    y1 = asc - min(0, min_y)
+    return (x0, y0, x1, y1)

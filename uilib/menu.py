@@ -106,6 +106,10 @@ class Menu(Dialog):
 
         self.refresh()
 
+    def _scroll_delta(self, box: Box, movex: int, movey: int, orig_box: Box):
+        # Vertical movement only, pixel-precise (no page-snap, no y0==0 reset)
+        return 0, movey
+
     def _dismiss(self, arg=None):
         stack = self._get_stack()
         if stack:

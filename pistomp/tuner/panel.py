@@ -1,17 +1,19 @@
 import statistics
 import time
 from collections import deque
+from pathlib import Path
 from typing import Callable, Literal
-
-from PIL import ImageFont
 
 from uilib.box import Box
 from uilib.config import Config
-from uilib.misc import get_text_size
+from uilib.misc import get_text_bbox, get_text_size
 from uilib.panel import Panel
+from uilib.pygame_init import font as make_font
 from uilib.label import Label
 from uilib.text import Button
 from uilib.widget import Widget
+
+_FONTS_DIR = Path(__file__).resolve().parents[2] / "fonts"
 
 from pistomp.tuner.engine import TunerEngine, TunerReading
 
@@ -58,23 +60,23 @@ class TunerHeaderWidget(Widget):
         super().__init__(box=box, **kwargs)
         self._note_font = note_font
 
-        nb = note_font.getbbox("A4")
+        nb = get_text_bbox("A4", note_font)
         # header-local y: box.y0 is 0 here, but keep the expression honest.
         note_y = (box.height - (nb[3] - nb[1])) // 2 - nb[1]
         self._note_label = Label(0, note_y, note_font, parent=self)
 
     # ── drawing ───────────────────────────────────────────────────────────────
 
-    def _draw_erase(self, image, draw, box) -> None:
+    def _draw_erase(self, ctx) -> None:
         pass  # bg painted by Label._draw_erase only over its own bbox
 
-    def _draw(self, image, draw, real_box) -> None:
-        pass  # Label child draws itself via _do_draw recursion
+    def _draw(self, ctx) -> None:
+        pass  # Label child draws itself via do_draw recursion
 
     # ── tick ──────────────────────────────────────────────────────────────────
 
     def _centered_x(self, text: str) -> int:
-        bb = self._note_font.getbbox(text)
+        bb = get_text_bbox(text, self._note_font)
         return (_W - (bb[2] - bb[0])) // 2 - bb[0]
 
     def tick(self, reading: TunerReading | None) -> None:
@@ -118,23 +120,24 @@ class TunerOffsetBar(Widget):
 
     # ── drawing ──────────────────────────────────────────────────────────────
 
-    def _draw_erase(self, image, draw, box) -> None:
+    def _draw_erase(self, ctx) -> None:
         pass  # _draw handles its own background
 
-    def _draw(self, image, draw, real_box) -> None:
-        draw.rectangle(real_box.PIL_rect, fill=self.BG_COLOR)
-        self._paint_fill(draw, real_box, self._bar_px)
+    def _draw(self, ctx) -> None:
+        # Frame-relative: the bar's box starts at x=0, so _CX (=_W//2) and the
+        # pixel offsets below are already in ctx coordinates. The SDL clip set
+        # by a partial refresh restricts what actually lands.
+        ctx.draw_rectangle(ctx.bounds, fill=self.BG_COLOR)
+        self._paint_fill(ctx, self._bar_px)
 
-    def _paint_fill(self, draw, real_box, bar_px: int) -> None:
+    def _paint_fill(self, ctx, bar_px: int) -> None:
         if bar_px == 0:
             return
         cx = self._CX
         abs_px = abs(bar_px)
         sign = 1 if bar_px > 0 else -1
-        ry0 = real_box.y0
-        ry1 = real_box.y1 - 1
-        rx0 = real_box.x0
-        rx1 = real_box.x1
+        h = ctx.height
+        w = ctx.width
 
         def seg(a: int, b: int, color: Color) -> None:
             a, b = min(a, abs_px), min(b, abs_px)
@@ -142,11 +145,11 @@ class TunerOffsetBar(Widget):
                 return
             sx0 = (cx + a) if sign > 0 else (cx - b)
             sx1 = (cx + b) if sign > 0 else (cx - a)
-            sx0 = max(sx0, rx0)
-            sx1 = min(sx1, rx1)
+            sx0 = max(sx0, 0)
+            sx1 = min(sx1, w)
             if sx0 >= sx1:
                 return
-            draw.rectangle([sx0, ry0, sx1 - 1, ry1], fill=color)
+            ctx.draw_rectangle(Box(sx0, 0, sx1, h), fill=color)
 
         seg(0, self._GREEN_PX, _ZONE_COLORS["in_tune"])
         seg(self._GREEN_PX, self._YELLOW_PX, _ZONE_COLORS["accent"])
@@ -216,42 +219,40 @@ class StrobeWidget(Widget):
 
     # ── drawing ──────────────────────────────────────────────────────────────
 
-    def _draw_erase(self, image, draw, box) -> None:
+    def _draw_erase(self, ctx) -> None:
         pass  # handled inside _draw
 
-    def _draw(self, image, draw, real_box) -> None:
-        draw.rectangle(real_box.PIL_rect, fill=self.BG_COLOR)
+    def _draw(self, ctx) -> None:
+        # Frame-relative: the strobe box starts at x=0, so stripe phase (0.._W)
+        # maps straight to ctx coordinates. Partial refreshes set the SDL clip,
+        # so we always paint the full state and let the clip trim it.
+        ctx.draw_rectangle(ctx.bounds, fill=self.BG_COLOR)
+        w = ctx.width
+        h = ctx.height
 
         if self._has_reading:
-            rx0, rx1 = real_box.x0, real_box.x1
-            y0 = real_box.y0 + 1
-            y1 = real_box.y1 - 2
+            y0 = 1
+            y1 = h - 2
             if y0 <= y1:
                 for i in range(self.N_STRIPES):
                     sx = (int(self._phase) + i * self.STRIPE_P) % _W
-                    self._paint_overlap(draw, sx, self.STRIPE_W, rx0, rx1, y0, y1)
+                    self._paint_overlap(ctx, sx, self.STRIPE_W, w, y0, y1)
 
-        bx = self.box
-        if bx is None:
-            return
-        rx0, rx1 = real_box.x0, max(real_box.x0, real_box.x1 - 1)
-        if real_box.y0 <= bx.y0:
-            draw.line([(rx0, bx.y0), (rx1, bx.y0)], fill=self.RULE_COLOR)
-        if real_box.y1 >= bx.y1:
-            draw.line([(rx0, bx.y1 - 1), (rx1, bx.y1 - 1)], fill=self.RULE_COLOR)
+        rx1 = max(0, w - 1)
+        ctx.draw_line([(0, 0), (rx1, 0)], fill=self.RULE_COLOR)
+        ctx.draw_line([(0, h - 1), (rx1, h - 1)], fill=self.RULE_COLOR)
 
-    def _paint_overlap(self, draw, sx: int, sw: int, rx0: int, rx1: int, y0: int, y1: int) -> None:
-        """Paint the part of stripe [sx, sx+sw) (wrapping at _W) within [rx0, rx1)."""
-        x0 = max(sx, rx0)
-        x1 = min(sx + sw, rx1)
+    def _paint_overlap(self, ctx, sx: int, sw: int, w: int, y0: int, y1: int) -> None:
+        """Paint the part of stripe [sx, sx+sw) (wrapping at _W) within [0, w)."""
+        x0 = max(sx, 0)
+        x1 = min(sx + sw, w)
         if x0 < x1:
-            draw.rectangle([x0, y0, x1 - 1, y1], fill=self._stripe_color)
+            ctx.draw_rectangle(Box(x0, y0, x1, y1 + 1), fill=self._stripe_color)
         if sx + sw > _W:
             wrap_end = sx + sw - _W
-            wx0 = max(0, rx0)
-            wx1 = min(wrap_end, rx1)
-            if wx0 < wx1:
-                draw.rectangle([wx0, y0, wx1 - 1, y1], fill=self._stripe_color)
+            wx1 = min(wrap_end, w)
+            if 0 < wx1:
+                ctx.draw_rectangle(Box(0, y0, wx1, y1 + 1), fill=self._stripe_color)
 
     # ── partial-column refresh ────────────────────────────────────────────────
 
@@ -352,7 +353,7 @@ class TunerPanel(Panel):
         super().__init__(box=Box.xywh(0, 0, _W, 240), auto_destroy=True)
         self._engine = engine
 
-        note_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 56)
+        note_font = make_font(str(_FONTS_DIR / "DejaVuSans-Bold.ttf"), 56)
         btn_font = Config().get_font("default")
         _, btn_text_h = get_text_size("Mute", btn_font)
         btn_v_margin = max(0, (_BTN_H - btn_text_h) // 2)
