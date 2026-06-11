@@ -9,7 +9,7 @@ DEST="/home/pistomp/pi-stomp"
 #   new world: ~/pi-stomp is a symlink to the root-owned, pacman-packaged
 #              /opt/pistomp/pi-stomp tree                  -> rsync via `sudo rsync`
 # Detect which one we're on and only elevate if the target is a symlink.
-RSYNC_OPTS=(-az)
+RSYNC_OPTS=(-az --exclude='__pycache__/' --exclude='*.pyc')
 SUDO=""
 if ssh "${HOST}" "test -L ${DEST}"; then
     echo "Detected packaged layout (~/pi-stomp is a symlink); writing with sudo on device."
@@ -17,26 +17,17 @@ if ssh "${HOST}" "test -L ${DEST}"; then
     SUDO="sudo "
 fi
 
-push() { rsync "${RSYNC_OPTS[@]}" "$@"; }
+# Source folders and top-level files to deploy. Directories are copied
+# wholesale; __pycache__/*.pyc are filtered via RSYNC_OPTS.
+PATHS=(modalapistomp.py modalapi pistomp common fonts images ui uilib util)
+[ -d blend ] && PATHS+=(blend)
 
 echo "Deploying Python files to pistomp..."
 
-# Copy Python files to device
-push modalapistomp.py "${HOST}:${DEST}/"
-push modalapi/*.py "${HOST}:${DEST}/modalapi/"
+# wifi.py became the wifi/ package; rsync (no --delete) won't drop the stale file.
 ssh "${HOST}" "${SUDO}rm -f ${DEST}/modalapi/wifi.py"
-push modalapi/wifi/*.py "${HOST}:${DEST}/modalapi/wifi/"
-push pistomp/*.py "${HOST}:${DEST}/pistomp/"
-push pistomp/tuner/*.py "${HOST}:${DEST}/pistomp/tuner/"
-if [ -d blend ]; then
-    push blend "${HOST}:${DEST}/"
-fi
-push common "${HOST}:${DEST}/"
-push fonts "${HOST}:${DEST}/"
-push images "${HOST}:${DEST}/"
-push ui "${HOST}:${DEST}/"
-push uilib "${HOST}:${DEST}/"
-push util "${HOST}:${DEST}/"
+
+rsync "${RSYNC_OPTS[@]}" "${PATHS[@]}" "${HOST}:${DEST}/"
 
 echo "Restarting service..."
 ssh "${HOST}" "sudo systemctl restart mod-ala-pi-stomp"
