@@ -38,17 +38,17 @@ class Config:
 
     def _set_defaults(self):
         if "default" not in self.fonts:
-            add_font("default", "DejaVuSans.ttf", 16)
+            self.add_font("default", "DejaVuSans.ttf", 16)
         if "default_title" not in self.fonts:
-            add_font("default_title", "DejaVuSans-Bold.ttf", 16)
+            self.add_font("default_title", "DejaVuSans-Bold.ttf", 16)
         if "default_fgnd" not in self.colors:
-            add_color("default_fgnd", (255, 255, 255))
+            self.add_color("default_fgnd", (255, 255, 255))
         if "default_bkgnd" not in self.colors:
-            add_color("default_bkgnd", (0, 0, 0))
+            self.add_color("default_bkgnd", (0, 0, 0))
         if "default_title_fgnd" not in self.colors:
-            add_color("default_title_fgnd", (255, 191, 63))
+            self.add_color("default_title_fgnd", (255, 191, 63))
         if "default_title_bkgnd" not in self.colors:
-            add_color("default_title_bkgnd", (63, 63, 63))
+            self.add_color("default_title_bkgnd", (63, 63, 63))
 
     def add_font(self, label, file_name, size):
         f = ImageFont.truetype(file_name, size)
