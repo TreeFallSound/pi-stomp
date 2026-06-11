@@ -513,9 +513,7 @@ class Lcd(abstract_lcd.Lcd):
         for wfs in self.w_footswitches:
             if wfs.object == footswitch:
                 wfs.toggle(footswitch.toggled == False)
-                label = footswitch.get_display_label()
-                if label:
-                    wfs.label = label
+                wfs.label = footswitch.get_display_label() or ""
                 wfs.refresh()
                 break
 

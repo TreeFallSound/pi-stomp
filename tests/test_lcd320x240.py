@@ -110,7 +110,6 @@ def test_wifi_menu_snapshot(lcd, snapshot):
     snapshot("wifi_menu")
 
 
-
 def test_system_menu_snapshot(lcd, snapshot):
     instance, _ = lcd
     setup_main_ui(instance)
@@ -159,11 +158,14 @@ def test_update_footswitch_on_snapshot(lcd, snapshot):
     snapshot()
 
 
-@pytest.mark.parametrize("status,expected", [
-    ({"wifi_connected": False, "hotspot_active": True},  "wifi_orange.png"),
-    ({"wifi_connected": True,  "hotspot_active": False}, "wifi_silver.png"),
-    ({"wifi_connected": False, "hotspot_active": False}, "wifi_gray.png"),
-])
+@pytest.mark.parametrize(
+    "status,expected",
+    [
+        ({"wifi_connected": False, "hotspot_active": True}, "wifi_orange.png"),
+        ({"wifi_connected": True, "hotspot_active": False}, "wifi_silver.png"),
+        ({"wifi_connected": False, "hotspot_active": False}, "wifi_gray.png"),
+    ],
+)
 def test_update_wifi_idle_icon_selection(lcd, mock_handler, status, expected):
     """When no ops pending, icon resolves to hotspot/connected/disconnected."""
     instance, _ = lcd
@@ -175,11 +177,14 @@ def test_update_wifi_idle_icon_selection(lcd, mock_handler, status, expected):
     assert mock_replace.call_args[0][0].endswith(expected)
 
 
-@pytest.mark.parametrize("status", [
-    {"wifi_connected": True,  "hotspot_active": False},
-    {"wifi_connected": False, "hotspot_active": True},
-    {"wifi_connected": False, "hotspot_active": False},
-])
+@pytest.mark.parametrize(
+    "status",
+    [
+        {"wifi_connected": True, "hotspot_active": False},
+        {"wifi_connected": False, "hotspot_active": True},
+        {"wifi_connected": False, "hotspot_active": False},
+    ],
+)
 def test_update_wifi_pending_shows_frame(lcd, mock_handler, status):
     """When ops are pending, the widget shows a preloaded animation frame."""
     instance, _ = lcd
@@ -198,6 +203,7 @@ def test_wifi_frames_are_preloaded(lcd):
     instance.draw_tools()
     assert len(instance._wifi_frames) == 3
     from PIL import Image as PILImage
+
     for f in instance._wifi_frames:
         assert isinstance(f, PILImage.Image)
         # .load() populates the .im attribute; absence means lazy/closed.
@@ -227,3 +233,46 @@ def test_tap_tempo_snapshot(lcd, snapshot):
     instance.draw_main_panel()
     instance.update_footswitch(mock_fs)
     snapshot()
+
+
+def test_tap_tempo_disable_clears_label(lcd, snapshot):
+    instance, _ = lcd
+    labels = ["120"]
+    mock_fs = MockObject(id=2, toggled=True, get_display_label=lambda: labels[0])
+    mock_current = MockObject(
+        pedalboard=MockObject(title="BPM Test", plugins=[]), presets={0: "Clean"}, preset_index=0, analog_controllers={}
+    )
+    instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
+    instance.draw_main_panel()
+    instance.update_footswitch(mock_fs)
+    snapshot("tap_tempo_enabled")
+
+    labels[0] = ""
+    mock_fs.toggled = False  # pyright: ignore[reportAttributeAccessIssue]
+    instance.update_footswitch(mock_fs)
+    snapshot("tap_tempo_disabled")
+
+
+def test_update_footswitch_clears_label_when_empty(lcd):
+    instance, _ = lcd
+    labels = ["120"]
+
+    def get_label():
+        return labels[0]
+
+    mock_fs = MockObject(id=2, toggled=True, get_display_label=get_label)
+    mock_current = MockObject(
+        pedalboard=MockObject(title="BPM Test", plugins=[]), presets={0: "Clean"}, preset_index=0, analog_controllers={}
+    )
+    instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
+    instance.draw_main_panel()
+    instance.update_footswitch(mock_fs)
+
+    wfs = instance.w_footswitches[0]
+    assert wfs.label == "120"
+
+    labels[0] = ""
+    mock_fs.toggled = False  # pyright: ignore[reportAttributeAccessIssue]
+    instance.update_footswitch(mock_fs)
+
+    assert wfs.label == "", f"Expected empty label after tap tempo disabled, got: {wfs.label!r}"
