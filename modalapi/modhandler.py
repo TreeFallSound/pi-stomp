@@ -37,11 +37,9 @@ from pistomp.hardware import Controller, Hardware
 import pistomp.settings as Settings
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
-from pistomp.analogmidicontrol import AnalogMidiControl
-from pistomp.encodermidicontrol import EncoderMidiControl
 from pistomp.footswitch import Footswitch
 from pistomp.tuner import TunerEngine, TunerPanel, TunerSourceFactory
 from pistomp.tuner.source import AudioSource, build_source
@@ -402,6 +400,10 @@ class Modhandler(Handler):
                             param.value = msg.value
                         break
 
+        elif isinstance(msg, MidiMapMessage):
+            # MIDI learn in mod-ui assigned a hardware control to a parameter.
+            self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
+
     def poll_ws_messages(self):
         """Drain inbound WS messages (fast ~10ms cadence). Main-thread only.
         Must not touch next_pedalboard_preset_index (owned by the file-watch path)."""
@@ -621,28 +623,8 @@ class Modhandler(Handler):
                     if param.binding is not None:
                         controller = self.hardware.controllers.get(param.binding)
                         if controller is not None:
-                            # TODO possibly use a setter instead of accessing var directly
-                            # What if multiple params could map to the same controller?
-                            controller.parameter = param  # pyright: ignore[reportAttributeAccessIssue]
-                            controller.set_value(param.value)
-                            plugin.controllers.append(controller)
-                            if isinstance(controller, Footswitch):
-                                # TODO sort this list so selection orders correctly (sort on midi_CC?)
-                                plugin.has_footswitch = True
+                            if self._bind_controller_to_param(plugin, param, controller):
                                 footswitch_plugins.append(plugin)
-                                controller.set_category(plugin.category)
-                            elif isinstance(controller, AnalogMidiControl):
-                                key = "%s:%s" % (plugin.instance_id, param.name)
-                                controller.cfg[Token.CATEGORY] = plugin.category  # somewhat LAME adding to cfg dict
-                                controller.cfg[Token.TYPE] = controller.type
-                                controller.cfg[Token.ID] = controller.id
-                                self.current.analog_controllers[key] = controller.cfg
-                            elif isinstance(controller, EncoderMidiControl):
-                                key = "%s:%s" % (plugin.instance_id, param.name)
-                                controller.cfg[Token.CATEGORY] = plugin.category  # somewhat LAME adding to cfg dict
-                                controller.cfg[Token.TYPE] = controller.type
-                                controller.cfg[Token.ID] = controller.id
-                                self.current.analog_controllers[key] = controller.cfg
 
             # LAME special case for volume control
             # Doesn't seem quite right to add this here, but it's where all the mapped controls are bound
@@ -654,6 +636,14 @@ class Modhandler(Handler):
                         Token.ID : e.id
                     }
                     self.current.analog_controllers[Token.VOLUME] = cfg
+
+
+    def _redraw_after_binding(self, controller, is_footswitch):
+        if is_footswitch:
+            # Footswitch: redraw just that one switch, not the whole board.
+            self.lcd.update_footswitch(controller)
+        else:
+            self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
     def pedalboard_change(self, pedalboard=None):
         logging.info("Pedalboard change")

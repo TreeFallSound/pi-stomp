@@ -31,10 +31,9 @@ import modalapi.wifi as Wifi
 
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
-from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.footswitch import Footswitch
 from pistomp.handler import Handler
 from enum import Enum
@@ -527,6 +526,10 @@ class Mod(Handler):
                             param.value = msg.value
                         break
 
+        elif isinstance(msg, MidiMapMessage):
+            # MIDI learn in mod-ui assigned a hardware control to a parameter.
+            self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
+
     def poll_ws_messages(self):
         """Drain and dispatch inbound WebSocket messages (fast ~10ms cadence)."""
         for msg in self.ws_bridge.get_received_messages():
@@ -705,26 +708,18 @@ class Mod(Handler):
                     if param.binding is not None:
                         controller = self.hardware.controllers.get(param.binding)
                         if controller is not None:
-                            # TODO possibly use a setter instead of accessing var directly
-                            # What if multiple params could map to the same controller?
-                            controller.parameter = param
-                            controller.set_value(param.value)
-                            plugin.controllers.append(controller)
-                            if isinstance(controller, Footswitch):
-                                # TODO sort this list so selection orders correctly (sort on midi_CC?)
-                                plugin.has_footswitch = True
+                            if self._bind_controller_to_param(plugin, param, controller):
                                 footswitch_plugins.append(plugin)
-                                controller.set_category(plugin.category)
-                            elif isinstance(controller, AnalogMidiControl):
-                                key = "%s:%s" % (plugin.instance_id, param.name)
-                                controller.cfg[Token.CATEGORY] = plugin.category  # somewhat LAME adding to cfg dict
-                                controller.cfg[Token.TYPE] = controller.type
-                                self.current.analog_controllers[key] = controller.cfg
 
             # Move Footswitch controlled plugins to the end of the list
             self.current.pedalboard.plugins = [elem for elem in self.current.pedalboard.plugins
                                                if elem.has_footswitch is False]
             self.current.pedalboard.plugins += footswitch_plugins
+
+    def _redraw_after_binding(self, controller, is_footswitch):
+        # draw_plugins/draw_bound_plugins place by has_footswitch, so no reorder
+        # is needed here — the redraw alone moves the plugin to the footswitch row.
+        self.update_lcd()
 
     def pedalboard_select(self, direction):
         # 0 means the pedalboard field is selected but a new pedalboard hasn't been scrolled to yet
