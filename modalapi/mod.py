@@ -31,7 +31,7 @@ import modalapi.wifi as Wifi
 
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, LoadingStartMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.footswitch import Footswitch
@@ -154,6 +154,11 @@ class Mod(Handler):
         )
         self.ws_bridge.start()
         logging.info("WebSocket bridge started")
+
+        # Suppress outbound WebSocket messages while a pedalboard change is in flight.
+        # Set on loading_start (inbound from MOD-UI) and on file-watch detection.
+        # Cleared after set_current_pedalboard() completes.
+        self._suppress_outbound_ws = False
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
@@ -480,7 +485,15 @@ class Mod(Handler):
 
     def _handle_ws_message(self, msg: WebSocketMessage):
         """Handle incoming WebSocket message from MOD-UI"""
-        if isinstance(msg, LoadingEndMessage):
+        if isinstance(msg, LoadingStartMessage):
+            logging.debug("WebSocket: Pedalboard loading started - suppressing outbound messages")
+            self._suppress_outbound_ws = True
+            if self.ws_bridge is not None:
+                cleared = self.ws_bridge.clear_queue()
+                if cleared:
+                    logging.debug(f"Cleared {cleared} stale outbound messages on loading_start")
+
+        elif isinstance(msg, LoadingEndMessage):
             logging.debug(f"WebSocket: Pedalboard loading finished, snapshot={msg.snapshot_id}")
             self.next_pedalboard_preset_index = msg.snapshot_id
 
@@ -544,6 +557,7 @@ class Mod(Handler):
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
+            self._suppress_outbound_ws = True
             self.lcd.draw_info_message("Loading...")
             mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
             if mod_bundle and mod_bundle != self.current.pedalboard.bundle:
@@ -679,6 +693,9 @@ class Mod(Handler):
             logging.error(f"Failed to prepare blend modes: {e}")
             self.blend_modes = {}
             self.active_blend_mode = None
+
+        # Resume outbound WebSocket messages now that the new pedalboard is fully set up.
+        self._suppress_outbound_ws = False
 
         # Selection info
         self.selectable_items.clear()
@@ -901,7 +918,8 @@ class Mod(Handler):
                         return
             # Non-footswitch plugin: emit only; the inbound echo updates state and LCD.
             target_bypass = not inst.is_bypassed()
-            self.ws_bridge.send_parameter(inst.instance_id, ":bypass", 1.0 if target_bypass else 0.0)
+            if not self._suppress_outbound_ws:
+                self.ws_bridge.send_parameter(inst.instance_id, ":bypass", 1.0 if target_bypass else 0.0)
             self.lcd.draw_plugin_select(inst)  # selection highlight (navigation, not bypass)
 
     #
@@ -1356,7 +1374,8 @@ class Mod(Handler):
 
     def parameter_value_commit(self):
         param = self.deep.selected_parameter
-        self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
+        if not self._suppress_outbound_ws:
+            self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     #
     # LCD Stuff
