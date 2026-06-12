@@ -475,15 +475,21 @@ class Lcd(abstract_lcd.Lcd):
     #
     # Footswitches
     #
+    def footswitch_label(self, footswitch):
+        """Label for a footswitch bound to a plugin param: the param name, or the plugin instance for a :bypass binding."""
+        param = footswitch.parameter
+        if param is None:
+            return None
+        if param.symbol != ":bypass":  # TODO token
+            return param.name
+        return self.shorten_name(param.instance_id, self.footswitch_width)
+
     def draw_footswitch(self, plugin):
         for c in plugin.controllers:
             if isinstance(c, Footswitch):
                 fs_id = c.id
                 #fss[fs_id] = None
-                if c.parameter.symbol != ":bypass":  # TODO token
-                    label = c.parameter.name
-                else:
-                    label = self.shorten_name(plugin.instance_id, self.footswitch_width)
+                label = self.footswitch_label(c)
                 c.set_display_label(label)
 
                 y = 0
@@ -514,6 +520,10 @@ class Lcd(abstract_lcd.Lcd):
     def update_footswitch(self, footswitch):
         for wfs in self.w_footswitches:
             if wfs.object == footswitch:
+                if footswitch.parameter is not None:
+                    # Binding may be new (e.g. MIDI learn) — reflect label + color.
+                    footswitch.set_display_label(self.footswitch_label(footswitch))
+                    wfs.color = self.get_category_color(footswitch.category)
                 wfs.toggle(footswitch.toggled == False)
                 wfs.label = footswitch.get_display_label() or ""
                 wfs.refresh()

@@ -53,6 +53,8 @@ class JackSource:
 
     def stop(self) -> None:
         if self._client is not None:
+            # Silence the process callback before teardown (prevents deadlock w/JACK)
+            self._on_samples = None
             try:
                 self._client.deactivate()
                 self._client.close()
