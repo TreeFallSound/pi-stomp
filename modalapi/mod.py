@@ -32,7 +32,7 @@ import modalapi.external_midi as ExternalMidi
 
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.controller_manager import ControllerManager
@@ -525,6 +525,10 @@ class Mod(Handler):
                             param.value = msg.value
                         break
 
+        elif isinstance(msg, MidiMapMessage):
+            # MIDI learn in mod-ui assigned a hardware control to a parameter.
+            self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
+
     def poll_ws_messages(self):
         """Drain and dispatch inbound WebSocket messages (fast ~10ms cadence)."""
         for msg in self.ws_bridge.get_received_messages():
@@ -704,6 +708,11 @@ class Mod(Handler):
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
         self._controller_manager.bind(self.current)
+
+    def _redraw_after_binding(self, controller, is_footswitch):
+        # draw_plugins/draw_bound_plugins place by has_footswitch, so no reorder
+        # is needed here — the redraw alone moves the plugin to the footswitch row.
+        self.update_lcd()
 
     def pedalboard_select(self, direction):
         # 0 means the pedalboard field is selected but a new pedalboard hasn't been scrolled to yet

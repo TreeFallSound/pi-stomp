@@ -37,7 +37,7 @@ from pistomp.hardware import Hardware
 import pistomp.settings as Settings
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.controller_manager import ControllerManager
@@ -395,6 +395,10 @@ class Modhandler(Handler):
                             param.value = msg.value
                         break
 
+        elif isinstance(msg, MidiMapMessage):
+            # MIDI learn in mod-ui assigned a hardware control to a parameter.
+            self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
+
     def poll_ws_messages(self):
         """Drain inbound WS messages (fast ~10ms cadence). Main-thread only.
         Must not touch next_pedalboard_preset_index (owned by the file-watch path)."""
@@ -615,6 +619,14 @@ class Modhandler(Handler):
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
         self._controller_manager.bind(self.current)
+
+
+    def _redraw_after_binding(self, controller, is_footswitch):
+        if is_footswitch:
+            # Footswitch: redraw just that one switch, not the whole board.
+            self.lcd.update_footswitch(controller)
+        else:
+            self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
     def pedalboard_change(self, pedalboard=None):
         logging.info("Pedalboard change")
