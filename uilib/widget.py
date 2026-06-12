@@ -266,9 +266,16 @@ class Widget:
             
         return (None, None, None)
 
+    def _invalidate_self(self):
+        """Mark this widget's own region stale and bubble it up."""
+        self._dirty = True
+        if self.parent is not None and self.box is not None:
+            self.parent._invalidate_cache(self.box)
+
     def set_outline(self, width, color=None):
         self.outline = width
         self.outline_color = color
+        self._invalidate_self()
 
     def set_selected(self, selected):
         if self.selected is not selected:
@@ -281,12 +288,12 @@ class Widget:
         self.refresh()
 
     def set_background(self, color):
-        # Need an explicit refresh call
         self.bkgnd_color = color
+        self._invalidate_self()
 
     def set_foreground(self, color):
-        # Need an explicit refresh call
         self.fgnd_color = color
+        self._invalidate_self()
 
     def set_action(self, action):
         self.action = action

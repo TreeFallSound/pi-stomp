@@ -393,10 +393,6 @@ class Lcd(abstract_lcd.Lcd):
             if plugin.has_footswitch:
                 self.draw_footswitch(plugin)
 
-        # Rebuild the whole panel surface: children added across the loop may
-        # have baked a partial cache, which main_panel's dirty-gated redraw
-        # would otherwise skip.
-        self.plugin_panel.refresh()
         self.main_panel.refresh()
         self.footswitch_panel.refresh()
 
