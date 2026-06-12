@@ -15,12 +15,21 @@
 
 from abc import ABC, abstractmethod
 
+from pistomp.input.event import ControllerEvent
+
 
 class Lcd(ABC):
 
     def __init__(self, cwd, handler=None, flip=False):
         # expects cwd (current working directory)
         pass
+
+    def handle(self, event: ControllerEvent) -> bool:
+        """Input dispatch hook. Default returns False (LCD doesn't intercept).
+        Panels override or wrap this when they want to consume controller
+        events for their own UI. See INPUT_ROUTER.md."""
+        del event
+        return False
 
     @abstractmethod
     def splash_show(self, boot=True):
@@ -111,6 +120,24 @@ class Lcd(ABC):
     def refresh_zone(self, zone_idx):
         pass
 
+    # Panels
     @abstractmethod
-    def shorten_name(self):
+    def shorten_name(self, name, width):
+        pass
+
+    @abstractmethod
+    def show_plugin_panel(self, panel):
+        pass
+
+    @abstractmethod
+    def hide_plugin_panel(self):
+        pass
+
+    @abstractmethod
+    def has_active_fullscreen_panel(self):
+        pass
+
+    @property
+    @abstractmethod
+    def plugin_panel(self):
         pass

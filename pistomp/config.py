@@ -92,6 +92,10 @@ schema = {
               "midi_CC": {
                 "type": "integer"
               },
+              "midi_port": {
+                "type": "string",
+                "description": "Send MIDI to this external port instead of the virtual MIDI Through port; falls back to virtual if the device is unavailable (must match a port in external_midi)"
+              },
               "preset": {
                 "oneOf": [
                   {
@@ -121,8 +125,15 @@ schema = {
               "adc_input": {
                 "type": "integer"
               },
+              "id": {
+                "type": "integer"
+              },
               "midi_CC": {
                 "type": "integer"
+              },
+              "midi_port": {
+                "type": "string",
+                "description": "Send MIDI to this external port instead of the virtual MIDI Through port; falls back to virtual if the device is unavailable (must match a port in external_midi)"
               },
               "threshold": {
                 "type": "integer",
@@ -154,6 +165,16 @@ schema = {
               "midi_CC": {
                 "type": "integer"
               },
+              "midi_port": {
+                "type": "string",
+                "description": "Send MIDI to this external port instead of the virtual MIDI Through port; falls back to virtual if the device is unavailable (must be the device name)"
+              },
+              "midi_channel": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 15,
+                "description": "Override MIDI channel for this encoder (0-15); useful when the external device is on a different channel than the hardware default"
+              },
               "type": {
                 "enum": ["KNOB", "VOLUME"]
               },
@@ -164,6 +185,32 @@ schema = {
             "required": [
               "id"
             ]
+          }
+        },
+        "external_midi": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "send_delay_ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "messages": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 255
+                  }
+                }
+              }
+            }
           }
         }
       },

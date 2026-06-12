@@ -216,7 +216,7 @@ class Lcdcolor(lcdbase.Lcdbase):
         for p in plugins:
             if p.has_footswitch:
                 continue
-            label = p.instance_id.replace('/', "")[:self.plugin_label_length]
+            label = p.instance_id[:self.plugin_label_length]
             label = label.replace("_", "")
             count += 1
             if count > 4:

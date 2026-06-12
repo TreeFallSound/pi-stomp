@@ -23,7 +23,7 @@ from modalapi.parameter import Type as ParameterType
 
 # Domain identifiers. These are all `str` at runtime; the aliases exist so that
 # `dict[InstanceId, dict[Symbol, ParamData]]` reads as documentation.
-InstanceId: TypeAlias = str  # e.g. "/BigMuffPi"
+InstanceId: TypeAlias = str  # e.g. "BigMuffPi" (canonical, no leading slash)
 Symbol: TypeAlias = str  # e.g. "Tone", ":bypass"
 PositionKey: TypeAlias = str  # stringified float, e.g. "0.0", "0.5"
 SnapshotRef: TypeAlias = int | str  # snapshot index or name
@@ -70,7 +70,6 @@ class BlendInputProtocol(Protocol):
     """Protocol for blend mode input sources (expression pedal or encoder)."""
 
     id: int
-    value_change_callback: Callable[[int, Any], None] | None
 
     def get_normalized_value(self) -> float: ...
 

@@ -14,85 +14,26 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
-import time
 import sys
 from typing_extensions import override
-from rtmidi.midiconstants import CONTROL_CHANGE
 
 import common.token as Token
 import pistomp.controller as controller
 import pistomp.analogswitch as analogswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
-import common.util as util
+from pistomp.input.event import SwitchEvent, SwitchEventKind
 
-class LongpressInfo:
-    def __init__(self):
-        self.number_in_group = 0
-        self.timestamps = dict()
 
 class Footswitch(controller.Controller):
-    # Global static info
-    all_longpress_groups = {}
-    callbacks = {}
 
-    @classmethod
-    def init(cls, callbacks):
-        # Static dict of dict which stores the timestamps for all footswitch objects
-        # The group name serves dual purpose for linking two footswithes and as a key for looking up the callback
-        # So each entry should have a corresponding entry in the handler callbacks dict
-        # Only these can be used as callbacks.  Any other specified by the user will result in no action.
-        cls.all_longpress_groups = {"next_snapshot":LongpressInfo(),
-                                    "previous_snapshot":LongpressInfo(),
-                                    "toggle_bypass":LongpressInfo(),
-                                    "set_mod_tap_tempo":LongpressInfo(),
-                                    "toggle_tap_tempo_enable":LongpressInfo(),
-                                    "toggle_tuner_enable":LongpressInfo()}
-
-        # Static list of possible callbacks from the handler
-        if len(cls.callbacks) == 0:
-            cls.callbacks = callbacks
-
-    @classmethod
-    def check_longpress_events(cls):
-        # This should get called once per polling cycle.
-        for (group, info) in cls.all_longpress_groups.items():
-            num_ts = len(info.timestamps)
-            # check for group longpress events (two timestamps, same group within a window were logged)
-            if num_ts > 1:
-                last = info.timestamps.popitem()[1]
-                first = info.timestamps.popitem()[1]
-                if abs(last - first) < 0.4:  # Threshold for longpress events to be considered "simultaneous"
-                    callback = util.DICT_GET(cls.callbacks, group)
-                    if callback:
-                        logging.debug("Calling %s" % group)
-                        cls._clear_all_groups()
-                        callback()
-            # check single longpress events (just one timestamp currently logged and the group requires only one fs)
-            elif num_ts == 1 and info.number_in_group == 1:
-                now = time.monotonic()
-                v = list(info.timestamps.values())[0]
-                if now >= v + 0.4:
-                     # by this time, a second footswitch from a group member has expired, consider it a single
-                     callback = util.DICT_GET(cls.callbacks, group)
-                     if callback:
-                         logging.debug("Calling %s" % group)
-                         callback()
-                     cls._clear_all_groups()
-
-    @classmethod
-    def _clear_all_groups(cls):
-        for (g, info) in cls.all_longpress_groups.items():
-            info.timestamps.clear()
-
-    def __init__(self, id, led_pin, pixel, midi_CC, midi_channel, midiout, refresh_callback,
+    def __init__(self, id, led_pin, pixel, midi_CC, midi_channel, refresh_callback,
                  gpio_input=None, adc_input=None, spi=None, taptempo=None):
         super(Footswitch, self).__init__(midi_channel, midi_CC)
-        self.id = id
+        self.id: int = id
         self.display_label = None
         self.toggled = False
         self.led = None
-        self.midiout = midiout
         self.refresh_callback = refresh_callback
         self.relay_list = []
         self.preset_callback = None
@@ -110,16 +51,17 @@ class Footswitch(controller.Controller):
 
         self.gpio_switch = None
         if gpio_input is not None:
-            self.gpio_switch = gpioswitch.GpioSwitch(gpio_input, midi_channel, midi_CC, self.pressed,
-                                                     taptempo = self.taptempo)
+            self.gpio_switch = gpioswitch.GpioSwitch(gpio_input, self._on_switch,
+                                                     longpress_callback=self._on_switch)
 
         self.adc_switch = None
         if adc_input is not None:
-            self.adc_switch = analogswitch.AnalogSwitch(spi, adc_input, 800, self.pressed, taptempo = self.taptempo)
+            self.adc_switch = analogswitch.AnalogSwitch(spi, adc_input, self._on_switch,
+                                                         longpress_callback=self._on_switch)
 
         if led_pin is not None:
             try:
-                import gpiozero as GPIO
+                import gpiozero as GPIO  # pyright: ignore[reportMissingImports]
                 self.led = GPIO.LED(led_pin)
             except Exception as e:
                 logging.error("Initializing LED for footswitch %d: %s" % (id, str(e)))
@@ -140,13 +82,29 @@ class Footswitch(controller.Controller):
     def set_midi_channel(self, midi_channel):
         self.midi_channel = midi_channel
 
+    @property
+    def drives_display(self) -> bool:
+        """True when unbound: no inbound echo will arrive, so the press updates
+        indicators itself. When bound to a plugin :bypass, the WS broadcast does."""
+        return self.parameter is None
+
     @override
     def set_value(self, value: float):
         self.toggled = (value < 1)
-        self._set_led(self.toggled)
+        self.set_led(self.toggled)
         self.refresh_callback(footswitch=self)
 
-    def _set_led(self, enabled):
+    def current_toggle_state(self) -> bool:
+        return self.toggled
+
+    def toggle_relays(self, enabled: bool):
+        for r in self.relay_list:
+            if enabled:
+                r.enable()
+            else:
+                r.disable()
+
+    def set_led(self, enabled):
         if self.led is not None:
             if self.taptempo:
                 tempo = self.taptempo.get_bpm()
@@ -172,15 +130,10 @@ class Footswitch(controller.Controller):
     def set_longpress_groups(self, groups):
         if groups is None:
             self.longpress_groups = []
-            return
-        if isinstance(groups, str):
-            groups = groups.split()
-        if isinstance(groups, list):
+        elif isinstance(groups, str):
+            self.longpress_groups = groups.split()
+        elif isinstance(groups, list):
             self.longpress_groups = groups
-            for g in groups:
-                info = util.DICT_GET(self.all_longpress_groups, g)
-                if info is not None:
-                    info.number_in_group += 1
 
     def poll(self):
         if self.disabled:
@@ -190,75 +143,14 @@ class Footswitch(controller.Controller):
         elif self.gpio_switch:
             self.gpio_switch.poll()
 
-    def _log_longpress_events(self):
-        # for each group this footswitch is assigned to, keep track of longpress timestamps per group.
-        if len(self.longpress_groups) == 0:
+    def _on_switch(self, state, timestamp=0.0):
+        # Pure dispatch: map hardware state to a SwitchEvent and hand it to the
+        # sink. All toggle / relay / MIDI / preset logic lives in the handler.
+        if self.disabled:
             return
-        now = time.monotonic()
-        for group in self.longpress_groups:
-            info = util.DICT_GET(self.all_longpress_groups, group)
-            if info is None:
-                continue
-            logging.debug("longpress event logged")
-            info.timestamps.update({self.id: now})
-
-    def pressed(self, state):
-        # If a footswitch can be mapped to control a relay, preset, MIDI or all 3
-        #
-        # The footswitch will only "toggle" if it's associated with a relay
-        # (in which case it will toggle with the relay) or with a Midi message
-        #
-        new_toggled = not self.toggled
-
-        # First handle Longpress Events
-        if state is switchstate.Value.LONGPRESSED:
-            # Update Relay (if relay is associated with this footswitch)
-            if len(self.relay_list) > 0:
-                # Pin kept low (long press)
-                # toggle the relay and LED, exit this method
-                self.toggled = new_toggled
-                for r in self.relay_list:
-                    if self.toggled:
-                        r.enable()
-                    else:
-                        r.disable()
-                self._set_led(self.toggled)
-                self.refresh_callback(True)  # True means this is a bypass change only
-            else:
-                # TODO consider case where relay and longpress are specified
-                self._log_longpress_events()
-            return
-
-        # Now short Press Events
-
-        if self.taptempo and self.taptempo.is_enabled():
-            pass  # Don't process other events when in taptempo mode
-
-        # If mapped to preset change
-        elif self.preset_callback is not None:
-            # Change the preset and exit this method. Don't flip "toggled" since
-            # there is no "toggle" action associated with a preset
-            if self.preset_callback_arg is None:
-                self.preset_callback()
-            else:
-                self.preset_callback(self.preset_callback_arg)
-            return
-
-        # Send midi
-        elif self.midi_CC is not None:
-            self.toggled = new_toggled
-            # Update LED
-            self._set_led(self.toggled)
-            cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.toggled else 0]
-            logging.debug("Sending CC event: %d" % self.midi_CC)
-            self.midiout.send_message(cc)
-
-        # Update plugin parameter if any
-        if self.parameter is not None:
-            self.parameter.value = not self.toggled  # TODO assumes mapped parameter is :bypass
-
-        # Update LCD
-        self.refresh_callback(footswitch=self)
+        kind = (SwitchEventKind.LONGPRESS if state is switchstate.Value.LONGPRESSED
+                else SwitchEventKind.PRESS)
+        self.sink.handle(SwitchEvent(controller=self, kind=kind, timestamp=timestamp))
 
     def set_display_label(self, label):
         self.display_label = label

@@ -13,8 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Analog input hijacking and control for blend mode."""
-
 import logging
 from bisect import bisect_right
 
@@ -23,10 +21,11 @@ from blend.easing import EasingFunc
 from blend.parameter_setter import ParameterSetter
 from blend.stop import BlendStop
 from blend.types import BlendInputProtocol, EnrichedDiffMap
+from pistomp.input.event import AnalogEvent, ControllerEvent, EncoderEvent
 
 
 class InputController:
-    """Hijacks analog input callbacks to implement blend mode interpolation."""
+    """Receives events from the blend input and interpolates parameters."""
 
     def __init__(
         self,
@@ -42,28 +41,18 @@ class InputController:
         self.controlled_input: BlendInputProtocol | None = None
         self._stop_positions = [s.position for s in stops]
 
-    def attach_to_input(self, analog_controls: list, encoders: list, input_id: int) -> None:
-        """Hijack `value_change_callback` on the input matching `input_id`."""
-        for control in (*analog_controls, *encoders):
-            if getattr(control, "id", None) != input_id:
-                continue
-            if getattr(control, "type", None) == Token.VOLUME:
-                raise ValueError(f"Input {input_id} is a VOLUME controller and cannot be used for blend mode")
-            if not hasattr(control, "get_normalized_value"):
-                raise ValueError(f"Input {input_id} does not support blend mode (missing get_normalized_value)")
-            self.controlled_input = control
-            control.value_change_callback = self.handle_value_change
-            logging.info(f"Attached blend mode to {type(control).__name__} {input_id}")
-            return
-
-        raise ValueError(f"Input {input_id} not found in analog_controls or encoders")
+    def attach_to_input(self, control: BlendInputProtocol) -> None:
+        """Store reference to the blend input controller."""
+        if getattr(control, "type", None) == Token.VOLUME:
+            raise ValueError(f"Input {control.id} is a VOLUME controller and cannot be used for blend mode")
+        self.controlled_input = control
+        logging.info(f"Attached blend mode to {type(control).__name__} {control.id}")
 
     def detach_from_input(self) -> None:
         if self.controlled_input:
             input_type = type(self.controlled_input).__name__
             input_id = getattr(self.controlled_input, "id", "?")
             logging.info(f"Detaching blend mode from {input_type} (id={input_id})")
-            self.controlled_input.value_change_callback = None
             self.controlled_input = None
         else:
             logging.warning("detach_from_input called but no controlled_input attached")
@@ -94,14 +83,24 @@ class InputController:
             f"sent {diff_sent} differing + {const_sent} constant = {diff_sent + const_sent} total parameters"
         )
 
-    def handle_value_change(self, _raw: int, control: BlendInputProtocol) -> None:
-        """Critical-path callback from expression pedal or encoder."""
+    def handle_event(self, event: ControllerEvent) -> bool:
+        """Process a hardware event from the blend input.
+
+        Returns True if the event was consumed (blend interpolation ran), False otherwise.
+        """
+        control = event.controller
+        if self.controlled_input is None or control is not self.controlled_input:
+            return False
+        if not isinstance(event, (AnalogEvent, EncoderEvent)):
+            return False
         try:
-            _, _, segment_idx, local_pct = self._resolve_position(control)
+            _, _, segment_idx, local_pct = self._resolve_position(self.controlled_input)
             self._send_diff_map(self.segment_diff_maps[segment_idx], local_pct)
+            return True
         except Exception as e:
             # Don't crash the polling loop.
             logging.error(f"Error in blend interpolation: {e}", exc_info=True)
+            return False
 
     # ----------------------------------------------------------------- helpers
 

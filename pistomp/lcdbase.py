@@ -78,6 +78,19 @@ class Lcdbase(abstract_lcd.Lcd):
         self.selected_plugin = None
         self.selected_box = None  # ((x0, y0), (x1, y1), width)
 
+    # Plugin panels (not supported on monochrome LCD base)
+    def show_plugin_panel(self, panel):
+        pass
+
+    def hide_plugin_panel(self):
+        pass
+
+    def has_active_fullscreen_panel(self):
+        return False
+
+    @property
+    def plugin_panel(self):
+        return None
 
     # This method verifies that each variable declared above in __init__ gets assigned a value by the object class
     # It might flag vars which get assigned a value of None intentionally by the object class

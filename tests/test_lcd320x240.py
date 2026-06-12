@@ -8,8 +8,10 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from tests.conftest import PROJECT_ROOT
+from tests import pedalboard_fixtures
 from pistomp.lcd320x240 import Lcd
 import common.token as Token
+from uilib.misc import InputEvent
 
 
 class MockObject:
@@ -44,6 +46,36 @@ def lcd(fake_lcd, mock_handler):
 
 
 def setup_main_ui(instance):
+    mock_gain = MockObject(
+        name="Gain",
+        instance_id="distortion",
+        value=0.5,
+        minimum=0.0,
+        maximum=1.0,
+        type=MockObject(value=0),
+        get_taper=lambda: 1,
+        format=lambda v: f"{v:.2f}",
+    )
+    mock_time = MockObject(
+        name="Time",
+        instance_id="delay",
+        value=0.3,
+        minimum=0.0,
+        maximum=1.0,
+        type=MockObject(value=0),
+        get_taper=lambda: 1,
+        format=lambda v: f"{v:.2f}",
+    )
+    mock_mix = MockObject(
+        name="Mix",
+        instance_id="reverb",
+        value=0.4,
+        minimum=0.0,
+        maximum=1.0,
+        type=MockObject(value=0),
+        get_taper=lambda: 1,
+        format=lambda v: f"{v:.2f}",
+    )
     plugins = [
         MockObject(
             instance_id="distortion",
@@ -51,18 +83,34 @@ def setup_main_ui(instance):
             category="Distortion",
             has_footswitch=True,
             controllers=[],
+            parameters={":bypass": MockObject(name=":bypass"), "gain": mock_gain},
         ),
         MockObject(
-            instance_id="delay", is_bypassed=lambda: False, category="Delay", has_footswitch=True, controllers=[]
+            instance_id="delay",
+            is_bypassed=lambda: False,
+            category="Delay",
+            has_footswitch=True,
+            controllers=[],
+            parameters={":bypass": MockObject(name=":bypass"), "time": mock_time},
         ),
         MockObject(
-            instance_id="reverb", is_bypassed=lambda: True, category="Reverb", has_footswitch=True, controllers=[]
+            instance_id="reverb",
+            is_bypassed=lambda: True,
+            category="Reverb",
+            has_footswitch=True,
+            controllers=[],
+            parameters={":bypass": MockObject(name=":bypass"), "mix": mock_mix},
         ),
         MockObject(
-            instance_id="chorus", is_bypassed=lambda: False, category="Modulator", has_footswitch=False, controllers=[]
+            instance_id="chorus",
+            is_bypassed=lambda: False,
+            category="Modulator",
+            has_footswitch=False,
+            controllers=[],
+            parameters={":bypass": MockObject(name=":bypass")},
         ),
     ]
-    mock_pedalboard = MockObject(title="Rock Rig", plugins=plugins)
+    mock_pedalboard = MockObject(title="Rock Rig", plugins=plugins, connections=[])
     mock_current = MockObject(
         pedalboard=mock_pedalboard,
         presets={0: "Clean", 1: "Lead"},
@@ -90,7 +138,7 @@ def test_main_panel_snapshot(lcd, snapshot):
 
 def test_analog_assignments_snapshot(lcd, snapshot):
     instance, _ = lcd
-    mock_pedalboard = MockObject(title="Analog Test", plugins=[])
+    mock_pedalboard = MockObject(title="Analog Test", plugins=[], connections=[])
     mock_current = MockObject(
         pedalboard=mock_pedalboard,
         presets={0: "Clean"},
@@ -112,7 +160,6 @@ def test_wifi_menu_snapshot(lcd, snapshot):
     setup_main_ui(instance)
     instance.wifi_menu.open(None, None)
     snapshot("wifi_menu")
-
 
 
 def test_system_menu_snapshot(lcd, snapshot):
@@ -139,11 +186,25 @@ def test_parameter_dialog_snapshot(lcd, snapshot):
     snapshot()
 
 
+def test_plugin_longpress_opens_parameter_menu(lcd, snapshot):
+    """Long-click on a selected plugin widget opens the parameter menu."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    # Select the first plugin widget (distortion)
+    instance.main_panel.sel_widget(instance.w_plugins[0])
+    # Simulate the long-press event that travels through the panel stack
+    instance.main_panel.input_event(InputEvent.LONG_CLICK)
+    snapshot()
+
+
 def test_update_footswitch_off_snapshot(lcd, snapshot):
     instance, _ = lcd
-    mock_fs = MockObject(id=0, toggled=True, get_display_label=lambda: "Dist", color="Red")
+    mock_fs = MockObject(id=0, toggled=True, get_display_label=lambda: "Dist", color="Red", parameter=None)
     mock_current = MockObject(
-        pedalboard=MockObject(title="PB", plugins=[]), presets={0: "Clean"}, preset_index=0, analog_controllers={}
+        pedalboard=MockObject(title="PB", plugins=[], connections=[]),
+        presets={0: "Clean"},
+        preset_index=0,
+        analog_controllers={},
     )
     instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
     instance.draw_main_panel()
@@ -154,9 +215,12 @@ def test_update_footswitch_off_snapshot(lcd, snapshot):
 
 def test_update_footswitch_on_snapshot(lcd, snapshot):
     instance, _ = lcd
-    mock_fs = MockObject(id=1, toggled=False, get_display_label=lambda: "Drive", color="Orange")
+    mock_fs = MockObject(id=1, toggled=False, get_display_label=lambda: "Drive", color="Orange", parameter=None)
     mock_current = MockObject(
-        pedalboard=MockObject(title="PB", plugins=[]), presets={0: "Clean"}, preset_index=0, analog_controllers={}
+        pedalboard=MockObject(title="PB", plugins=[], connections=[]),
+        presets={0: "Clean"},
+        preset_index=0,
+        analog_controllers={},
     )
     instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
     instance.draw_main_panel()
@@ -165,11 +229,14 @@ def test_update_footswitch_on_snapshot(lcd, snapshot):
     snapshot()
 
 
-@pytest.mark.parametrize("status,expected", [
-    ({"wifi_connected": False, "hotspot_active": True},  "wifi_orange.png"),
-    ({"wifi_connected": True,  "hotspot_active": False}, "wifi_silver.png"),
-    ({"wifi_connected": False, "hotspot_active": False}, "wifi_gray.png"),
-])
+@pytest.mark.parametrize(
+    "status,expected",
+    [
+        ({"wifi_connected": False, "hotspot_active": True}, "wifi_orange.png"),
+        ({"wifi_connected": True, "hotspot_active": False}, "wifi_silver.png"),
+        ({"wifi_connected": False, "hotspot_active": False}, "wifi_gray.png"),
+    ],
+)
 def test_update_wifi_idle_icon_selection(lcd, mock_handler, status, expected):
     """When no ops pending, icon resolves to hotspot/connected/disconnected."""
     instance, _ = lcd
@@ -181,11 +248,14 @@ def test_update_wifi_idle_icon_selection(lcd, mock_handler, status, expected):
     assert mock_replace.call_args[0][0].endswith(expected)
 
 
-@pytest.mark.parametrize("status", [
-    {"wifi_connected": True,  "hotspot_active": False},
-    {"wifi_connected": False, "hotspot_active": True},
-    {"wifi_connected": False, "hotspot_active": False},
-])
+@pytest.mark.parametrize(
+    "status",
+    [
+        {"wifi_connected": True, "hotspot_active": False},
+        {"wifi_connected": False, "hotspot_active": True},
+        {"wifi_connected": False, "hotspot_active": False},
+    ],
+)
 def test_update_wifi_pending_shows_frame(lcd, mock_handler, status):
     """When ops are pending, the widget shows a preloaded animation frame."""
     instance, _ = lcd
@@ -204,6 +274,7 @@ def test_wifi_frames_are_preloaded(lcd):
     instance.draw_tools()
     assert len(instance._wifi_frames) == 3
     from PIL import Image as PILImage
+
     for f in instance._wifi_frames:
         assert isinstance(f, PILImage.Image)
         # .load() populates the .im attribute; absence means lazy/closed.
@@ -225,11 +296,82 @@ def test_update_wifi_noop_when_path_unchanged(lcd, mock_handler):
 
 def test_tap_tempo_snapshot(lcd, snapshot):
     instance, _ = lcd
-    mock_fs = MockObject(id=2, toggled=True, get_display_label=lambda: "120")
+    mock_fs = MockObject(id=2, toggled=True, get_display_label=lambda: "120", parameter=None)
     mock_current = MockObject(
-        pedalboard=MockObject(title="BPM Test", plugins=[]), presets={0: "Clean"}, preset_index=0, analog_controllers={}
+        pedalboard=MockObject(title="BPM Test", plugins=[], connections=[]),
+        presets={0: "Clean"},
+        preset_index=0,
+        analog_controllers={},
     )
     instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
     instance.draw_main_panel()
     instance.update_footswitch(mock_fs)
     snapshot()
+
+
+def test_tap_tempo_disable_clears_label(lcd, snapshot):
+    instance, _ = lcd
+    labels = ["120"]
+    mock_fs = MockObject(id=2, toggled=True, get_display_label=lambda: labels[0], parameter=None)
+    mock_current = MockObject(
+        pedalboard=MockObject(title="BPM Test", plugins=[], connections=[]),
+        presets={0: "Clean"},
+        preset_index=0,
+        analog_controllers={},
+    )
+    instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
+    instance.draw_main_panel()
+    instance.update_footswitch(mock_fs)
+    snapshot("tap_tempo_enabled")
+
+    labels[0] = ""
+    mock_fs.toggled = False  # pyright: ignore[reportAttributeAccessIssue]
+    instance.update_footswitch(mock_fs)
+    snapshot("tap_tempo_disabled")
+
+
+def test_update_footswitch_clears_label_when_empty(lcd):
+    instance, _ = lcd
+    labels = ["120"]
+
+    def get_label():
+        return labels[0]
+
+    mock_fs = MockObject(id=2, toggled=True, get_display_label=get_label, parameter=None)
+    mock_current = MockObject(
+        pedalboard=MockObject(title="BPM Test", plugins=[], connections=[]),
+        presets={0: "Clean"},
+        preset_index=0,
+        analog_controllers={},
+    )
+    instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
+    instance.draw_main_panel()
+    instance.update_footswitch(mock_fs)
+
+    wfs = instance.w_footswitches[0]
+    assert wfs.label == "120"
+
+    labels[0] = ""
+    mock_fs.toggled = False  # pyright: ignore[reportAttributeAccessIssue]
+    instance.update_footswitch(mock_fs)
+
+    assert wfs.label == "", f"Expected empty label after tap tempo disabled, got: {wfs.label!r}"
+
+
+def _setup_pedalboard(instance, pb):
+    mock_current = MockObject(
+        pedalboard=pb,
+        presets={0: "Clean"},
+        preset_index=0,
+        analog_controllers={},
+    )
+    mock_footswitches = [MockObject(id=i, toggled=False, get_display_label=lambda: "") for i in range(4)]
+    instance.link_data(pedalboards=[pb], current=mock_current, footswitches=mock_footswitches)
+    instance.draw_main_panel()
+
+
+@pytest.mark.parametrize("topology", ["blank", "linear", "parallel", "stereo"])
+def test_routing_snapshot(lcd, snapshot, topology):
+    instance, _ = lcd
+    _setup_pedalboard(instance, pedalboard_fixtures.REGISTRY[topology]())
+    snapshot(topology)

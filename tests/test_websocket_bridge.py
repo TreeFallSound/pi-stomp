@@ -143,10 +143,22 @@ def test_receive_data_ready_echoes_and_does_not_queue():
     assert worker.messages_received == 0
 
 
+def test_receive_output_set_is_dropped():
+    worker = _make_worker()
+    worker.running = True
+    ws = _FakeWs(["output_set /graph/Delay/meter 0.5", "output_set /graph/Amp/out 0.9"])
+
+    asyncio.run(worker._receive_messages(ws))
+
+    assert worker.received_queue.empty()
+    assert worker.messages_received == 0
+    assert ws._sent == []
+
+
 def test_receive_mixed_messages_routes_correctly():
     worker = _make_worker()
     worker.running = True
-    ws = _FakeWs(["ping", "loading_end 0", "data_ready x", "pedal_snapshot 2 Fuzz"])
+    ws = _FakeWs(["ping", "loading_end 0", "output_set /graph/Amp/out 0.9", "data_ready x", "pedal_snapshot 2 Fuzz"])
 
     asyncio.run(worker._receive_messages(ws))
 
@@ -207,14 +219,6 @@ def test_send_parameter_small_value_uses_repr_not_e_notation():
     bridge.send_parameter("delay", "gain", 0.001)
     sent = _drain(bridge)
     assert sent == ["param_set /graph/delay/gain 0.001"], sent
-
-
-def test_send_parameter_strips_leading_slash_and_warns(caplog):
-    bridge = _make_bridge()
-    with caplog.at_level("WARNING"):
-        bridge.send_parameter("/fuzz", ":bypass", 1.0)
-    assert _drain(bridge) == ["param_set /graph/fuzz/:bypass 1.0"]
-    assert any("non-canonical" in r.message for r in caplog.records)
 
 
 def test_multiple_sends_preserve_order():

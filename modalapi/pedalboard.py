@@ -14,26 +14,29 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import json
-import lilv
+import lilv  # pyright: ignore[reportMissingImports] -- lilv is system-installed
 import logging
 import operator
 import os
 import requests as req
 import sys
 import urllib.parse
+from typing import Optional
 
 import common.token as Token
 import common.util as util
 import common.parameter as Parameter
 import modalapi.plugin as Plugin
+from modalapi.connections import Connection, build_connection
+
 
 class Pedalboard:
-
     def __init__(self, title, bundle, root_uri="http://localhost:80/"):
         self.root_uri = root_uri
         self.title = title
         self.bundle = bundle  # TODO used?
         self.plugins = []
+        self.connections: list[Connection] = []
 
         self.world = lilv.World()
 
@@ -42,10 +45,11 @@ class Pedalboard:
         self.world.load_specifications()
         self.world.load_plugin_classes()
 
+        self.uri_arc = self.world.new_uri("http://drobilla.net/ns/ingen#arc")
         self.uri_block = self.world.new_uri("http://drobilla.net/ns/ingen#block")
-        self.uri_head  = self.world.new_uri("http://drobilla.net/ns/ingen#head")
-        self.uri_port  = self.world.new_uri("http://lv2plug.in/ns/lv2core#port")
-        self.uri_tail  = self.world.new_uri("http://drobilla.net/ns/ingen#tail")
+        self.uri_head = self.world.new_uri("http://drobilla.net/ns/ingen#head")
+        self.uri_port = self.world.new_uri("http://lv2plug.in/ns/lv2core#port")
+        self.uri_tail = self.world.new_uri("http://drobilla.net/ns/ingen#tail")
         self.uri_value = self.world.new_uri("http://drobilla.net/ns/ingen#value")
 
     def get_pedalboard_plugin(self, world, bundlepath):
@@ -60,14 +64,14 @@ class Pedalboard:
         self.world.load_bundle(bundlenode)
 
         # free bundlenode, no longer needed
-        #self.world.node_free(bundlenode)  # TODO find out why this is no longer necessary (why did API method go away)
+        # self.world.node_free(bundlenode)  # TODO find out why this is no longer necessary (why did API method go away)
 
         # get all plugins in the bundle
         ps = self.world.get_all_plugins()
 
         # make sure the bundle includes 1 and only 1 plugin (the pedalboard)
         if len(ps) != 1:
-            raise Exception('get_pedalboard_info(%s) - bundle has 0 or > 1 plugin'.format(bundle))
+            raise Exception("get_pedalboard_info(%s) - bundle has 0 or > 1 plugin".format(bundle))
 
         # no indexing in python-lilv yet, just get the first item
         plugin = None
@@ -76,14 +80,14 @@ class Pedalboard:
             break
 
         if plugin is None:
-            raise Exception('get_pedalboard_plugin(%s)'.format(bundle))
+            raise Exception("get_pedalboard_plugin(%s)".format(bundle))
 
         return plugin
 
     def get_plugin_data(self, uri):
         url = self.root_uri + "effect/get?uri=" + urllib.parse.quote(uri)
         try:
-            resp = req.get(url, headers={'Cache-Control': 'no-cache', 'Pragma': 'no-cache'})
+            resp = req.get(url, headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
         except:  # TODO
             logging.error("Cannot connect to mod-host.")
             sys.exit()
@@ -91,7 +95,7 @@ class Pedalboard:
         if resp.status_code != 200:
             logging.error("mod-host not able to get plugin data: %s\nStatus: %s" % (url, resp.status_code))
             return {}
-            #sys.exit()
+            # sys.exit()
 
         return json.loads(resp.text)
 
@@ -128,7 +132,7 @@ class Pedalboard:
         u = self.world.new_uri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
         plugin_types = [i for i in util.LILV_FOREACH(plugin.get_value(u), fill_in_type)]
         if "http://moddevices.com/ns/modpedal#Pedalboard" not in plugin_types:
-            raise Exception('get_pedalboard_info(%s) - plugin has no mod:Pedalboard type'.format(bundlepath))
+            raise Exception("get_pedalboard_info(%s) - plugin has no mod:Pedalboard type".format(bundlepath))
 
         # Walk ports starting from capture1 to determine general plugin order
         # TODO can this be generalized to use the chase_tail function?
@@ -137,7 +141,7 @@ class Pedalboard:
         for port in ports:
             if port is None:
                 continue
-            tail = self.world.get(None, self.uri_tail, port)   # TODO could end up being capture2
+            tail = self.world.get(None, self.uri_tail, port)  # TODO could end up being capture2
             if tail is None:
                 continue
             head = self.world.get(tail, self.uri_head, None)
@@ -150,6 +154,7 @@ class Pedalboard:
         # Iterate blocks (plugins)
         plugins_unordered = {}
         plugins_extra = []
+        instance_to_info: dict[str, Optional[dict]] = {}
         blocks = plugin.get_value(self.uri_block)
         for block in blocks:
             if block is None or block.is_blank():
@@ -160,7 +165,7 @@ class Pedalboard:
             category = None
             prototype = self.world.find_nodes(block, self.world.ns.lv2.prototype, None)
             if len(prototype) > 0:
-                #logging.debug("prototype %s" % prototype[0])
+                # logging.debug("prototype %s" % prototype[0])
                 plugin_uri = str(prototype[0])  # plugin.get_uri()
                 if plugin_uri not in plugin_dict:
                     plugin_info = self.get_plugin_data(plugin_uri)
@@ -175,20 +180,23 @@ class Pedalboard:
                         category = cat[0]
 
             # Extract Parameter data
-            instance_id = str(block.get_path()).replace(bundlepath, "", 1)
+            instance_id = str(block.get_path()).replace(bundlepath, "", 1).lstrip("/")
             nodes = self.world.find_nodes(block, self.world.ns.lv2.port, None)
             parameters = {}
             if len(nodes) > 0:
                 # These are the port nodes used to define parameter controls
                 for port in nodes:
                     param_value = self.world.get(port, self.uri_value, None)
-                    #logging.debug("port: %s  value: %s" % (port, param_value))
+                    # logging.debug("port: %s  value: %s" % (port, param_value))
                     binding = self.world.get(port, self.world.ns.midi.binding, None)
                     if binding is not None:
                         controller_num = self.world.get(binding, self.world.ns.midi.controllerNumber, None)
                         channel = self.world.get(binding, self.world.ns.midi.channel, None)
                         if (controller_num is not None) and (channel is not None):
-                            binding = "%d:%d" % (self.world.new_int(int(channel)), self.world.new_int(int(controller_num)))
+                            binding = "%d:%d" % (
+                                self.world.new_int(int(channel)),
+                                self.world.new_int(int(controller_num)),
+                            )
                             logging.debug("  MIDI CC binding %s" % binding)
                     path = str(port)
                     symbol = os.path.basename(path)
@@ -202,34 +210,39 @@ class Pedalboard:
                             value = str(value)
                     # Bypass "parameter" is a special case without an entry in the plugin definition
                     if symbol == Token.COLON_BYPASS:
-                        info = {"shortName": "bypass", "symbol": symbol, "ranges": {"minimum": 0, "maximum": 1}}  # TODO tokenize
-                        v = False if value == 0 else True
+                        info = {
+                            "shortName": "bypass",
+                            "symbol": symbol,
+                            "ranges": {"minimum": 0, "maximum": 1},
+                        }  # TODO tokenize
+                        v = 0.0 if value == 0 else 1.0
                         param = Parameter.Parameter(info, v, binding, instance_id)
                         parameters[symbol] = param
                         continue  # don't try to find matching symbol in plugin_dict
                     # Try to find a matching symbol in plugin_dict to obtain the remaining param details
                     try:
-                        plugin_params = plugin_info[Token.PORTS][Token.CONTROL][Token.INPUT]
+                        plugin_params = (plugin_info or {})[Token.PORTS][Token.CONTROL][Token.INPUT]
                     except KeyError:
                         logging.warning("plugin port info not found, could be missing LV2 for: %s", instance_id)
                         continue
                     for pp in plugin_params:
                         sym = util.DICT_GET(pp, Token.SYMBOL)
                         if sym == symbol:
-                            #logging.debug("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
+                            # logging.debug("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
                             param = Parameter.Parameter(pp, value, binding, instance_id)
-                            #logging.debug("Param: %s %s %4.2f %4.2f %s" % (param.name, param.symbol, param.minimum, value, binding))
+                            # logging.debug("Param: %s %s %4.2f %4.2f %s" % (param.name, param.symbol, param.minimum, value, binding))
                             parameters[symbol] = param
 
-                    #logging.debug("  Label: %s" % label)
-            inst = Plugin.Plugin(instance_id, parameters, plugin_info, category)
+                    # logging.debug("  Label: %s" % label)
+            inst = Plugin.Plugin(instance_id, parameters, plugin_info, category, uri=plugin_uri)
+            instance_to_info[instance_id.lstrip("/")] = plugin_info
 
             try:
                 index = plugin_order.index(block)
                 plugins_unordered[index] = inst
             except:
                 plugins_extra.append(inst)
-            #logging.debug("dump: %s" % inst.to_json())
+            # logging.debug("dump: %s" % inst.to_json())
 
         # Add "extra" plugins (those not part of the tail_chase order) to the plugins_unordered dict
         max_index = len(plugins_unordered)
@@ -244,10 +257,49 @@ class Pedalboard:
             for i in range(0, len(sorted_dict)):
                 val = sorted_dict.get(i)
                 if val is not None:
+                    # Capture parse-time snapshot of all parameter values for Reset
+                    val.pedalboard_snapshot = {
+                        sym: float(p.value) if p.value is not None else 0.0
+                        for sym, p in val.parameters.items()
+                    }
                     self.plugins.append(val)
+
+        self.connections = self._extract_connections(plugin, bundlepath, instance_to_info)
 
         # Done obtaining relevant lilv for the pedalboard
         return
+
+    def _extract_connections(
+        self,
+        pedalboard_plugin,
+        bundlepath: str,
+        instance_to_info: dict[str, Optional[dict]],
+    ) -> list[Connection]:
+        """Enumerate ingen:arc objects on the pedalboard and resolve each to a
+        Connection. Mirrors mod-ui's approach (utils_lilv.cpp:4992)."""
+        connections: list[Connection] = []
+        arcs = pedalboard_plugin.get_value(self.uri_arc)
+        if arcs is None:
+            return connections
+        for arc in arcs:
+            if arc is None:
+                continue
+            tail = self.world.get(arc, self.uri_tail, None)
+            head = self.world.get(arc, self.uri_head, None)
+            if tail is None or head is None:
+                continue
+            try:
+                connections.append(
+                    build_connection(
+                        str(tail),
+                        str(head),
+                        bundlepath,
+                        instance_to_info,
+                    )
+                )
+            except Exception as e:
+                logging.warning("Failed to parse arc %s -> %s: %s", tail, head, e)
+        return connections
 
     def to_json(self):
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)

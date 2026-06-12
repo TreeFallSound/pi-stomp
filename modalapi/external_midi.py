@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import fnmatch
 import logging
 import time
 from typing import TypedDict
@@ -25,90 +24,41 @@ from rtmidi import MidiOut as RtMidiOut
 
 MidiMessage = list[int]
 
-# Constant for identifying external parameters
 EXTERNAL_INSTANCE_ID = "External"
 
-
-class ExternalMidiOut:
-    """
-    Wrapper around external MIDI port that implements the same interface as
-    the virtual port's midiout. Allows controls to send MIDI to external devices
-    transparently, with automatic fallback to virtual port if device unavailable.
-    """
-
-    def __init__(
-        self, external_midi_manager: ExternalMidiManager, port_name: str, midi_channel: int, fallback_midiout: RtMidiOut
-    ):
-        """
-        Initialize external MIDI output wrapper.
-
-        Args:
-            external_midi_manager: Reference to ExternalMidiManager.
-            port_name: Name of external MIDI port from config.
-            midi_channel: MIDI channel (0-15).
-            fallback_midiout: Virtual port midiout to use if external unavailable.
-        """
-        self.external_midi = external_midi_manager
-        self.port_name = port_name
-        self.channel = midi_channel
-        self.fallback = fallback_midiout
-
-    def send_message(self, message: MidiMessage) -> None:
-        """
-        Send MIDI message to external port, falling back to virtual port if unavailable.
-
-        Args:
-            message: MIDI message as [status_byte, data1, data2, ...]
-        """
-        if len(message) < 3:
-            # Not a CC message we can route, just use fallback
-            self.fallback.send_message(message)
-            return
-
-        # Extract CC and value from message
-        # Status byte format: 0xBn where n is channel (already included)
-        cc = message[1]
-        value = message[2]
-
-        # Try to send to external port
-        success = self.external_midi.send_cc(self.port_name, self.channel, cc, value)
-
-        if not success:
-            # External port unavailable, fallback to virtual port
-            logging.debug(f"External port {self.port_name} unavailable, using virtual port")
-            self.fallback.send_message(message)
-
-
-class PortConfig(TypedDict, total=False):
-    auto_detect: list[str]
-    port_index: int
+PORT_RETRY_BACKOFF_S = 5.0  # don't re-enumerate a failed port more often than this
 
 
 class ExternalMidiConfig(TypedDict, total=False):
     enabled: bool
     send_delay_ms: int
-    ports: dict[str, PortConfig]  # configured devices
-    messages: dict[str, list[MidiMessage]]  # port_name -> list of MIDI messages
+    messages: dict[str, list[MidiMessage]]
+
+
+def _client_name_of(port: str) -> str:
+    """Extract the ALSA client name from an rtmidi port string like 'Client Name:Port Name N:M'."""
+    return port.split(":")[0].strip()
 
 
 class ExternalMidiManager:
     """
     Manages external MIDI device synchronization.
     Sends MIDI messages to external devices when pedalboards are loaded.
+
+    Config keys in `messages` and `midi_port` are ALSA client names exactly as
+    reported by the device (e.g. 'Source Audio C4 Synth'). Matching is
+    case-insensitive against the client-name prefix of each rtmidi port string.
     """
 
     def __init__(self):
         self.midi_ports: dict[str, rtmidi.MidiOut] = {}
-        self.port_configs: dict[str, PortConfig] = {}
         self.messages: dict[str, list[MidiMessage]] = {}
         self.enabled: bool = False
         self.send_delay_ms: int = 10
+        self._open_failures: dict[str, float] = {}
 
     def update_config(self, cfg: ExternalMidiConfig | None) -> None:
-        """
-        Update configuration incrementally (can be called multiple times).
-        Only updates fields that are present.
-        """
+        """Update configuration incrementally; only fields present are updated."""
         if cfg is None:
             return
 
@@ -122,13 +72,8 @@ class ExternalMidiManager:
         if "send_delay_ms" in cfg:
             self.send_delay_ms = cfg["send_delay_ms"]
 
-        if "ports" in cfg:
-            # Merge ports (port-level granularity)
-            self.port_configs.update(cfg["ports"])
-
         if "messages" in cfg:
-            # Merge messages at port level
-            # This allows pedalboard config to override specific ports while keeping others default
+            # Merge messages at port level (replace entire message list per port)
             self.messages.update(cfg["messages"])
 
     def _get_available_ports(self) -> list[str]:
@@ -141,68 +86,43 @@ class ExternalMidiManager:
             logging.error(f"Failed to enumerate MIDI ports: {e}")
             return []
 
-    def _find_port_by_name(self, port_config: PortConfig) -> int | None:
-        """
-        Find MIDI port index matching a given config, returning its index if found.
-        """
-        if "port_index" in port_config:
-            return port_config["port_index"]
+    def _find_port_index(self, device_name: str) -> int | None:
+        """Return the index of the first port whose ALSA client name matches device_name (case-insensitive)."""
+        available = self._get_available_ports()
+        for idx, port in enumerate(available):
+            if _client_name_of(port).lower() == device_name.lower():
+                logging.info(f"Found MIDI port: {port} (index {idx})")
+                return idx
+        logging.warning(f"No MIDI port found with device name: {device_name!r}")
+        return None
 
-        # Auto-detect by name patterns
-        auto_detect = port_config.get("auto_detect", [])
-        if not auto_detect:
-            return None
-
-        available_ports = self._get_available_ports()
-        if not available_ports:
-            return None
-
-        # Search for matching ports using glob patterns
-        matched_ports = []
-        for pattern in auto_detect:
-            for idx, port_name in enumerate(available_ports):
-                # Case-insensitive glob matching
-                if fnmatch.fnmatch(port_name.lower(), pattern.lower()):
-                    matched_ports.append((idx, port_name))
-
-        if not matched_ports:
-            logging.warning(f"No MIDI ports matched patterns: {auto_detect}")
-            return None
-
-        # Warn if multiple matches
-        if len(matched_ports) > 1:
-            port_names = [name for _, name in matched_ports]
-            logging.warning(
-                f"Multiple MIDI ports matched {auto_detect}: {port_names}. Using first match: {matched_ports[0][1]}"
-            )
-
-        selected_idx, selected_name = matched_ports[0]
-        logging.info(f"Auto-detected MIDI port: {selected_name} (index {selected_idx})")
-        return selected_idx
+    def open_port(self, port_name: str) -> bool:
+        """Eagerly open a port at routing time so the first poll-loop send doesn't enumerate."""
+        return self._init_port(port_name) is not None
 
     def _init_port(self, port_name: str) -> rtmidi.MidiOut | None:
         if port_name in self.midi_ports:
             return self.midi_ports[port_name]
 
-        port_config = self.port_configs.get(port_name)
-        if not port_config:
-            logging.warning(f"No configuration found for MIDI port: {port_name}")
+        last_fail = self._open_failures.get(port_name)
+        if last_fail is not None and (time.monotonic() - last_fail) < PORT_RETRY_BACKOFF_S:
             return None
 
-        port_idx = self._find_port_by_name(port_config)
+        port_idx = self._find_port_index(port_name)
         if port_idx is None:
-            logging.warning(f"Could not find MIDI port for: {port_name}")
+            self._open_failures[port_name] = time.monotonic()
             return None
 
         try:
             midi_out = rtmidi.MidiOut()
             midi_out.open_port(port_idx)
             self.midi_ports[port_name] = midi_out
+            self._open_failures.pop(port_name, None)
             logging.info(f"Opened MIDI port: {port_name}")
             return midi_out
         except Exception as e:
             logging.error(f"Failed to open MIDI port {port_name} (index {port_idx}): {e}")
-            self.midi_ports[port_name] = None
+            self._open_failures[port_name] = time.monotonic()
             return None
 
     def _invalidate_port(self, port_name: str) -> None:
@@ -217,6 +137,7 @@ class ExternalMidiManager:
             except Exception as e:
                 logging.debug(f"Error closing invalidated port {port_name}: {e}")
             del self.midi_ports[port_name]
+            self._open_failures[port_name] = time.monotonic()  # back off before re-enumerating
 
     def _validate_midi_message(self, message: MidiMessage) -> bool:
         if not isinstance(message, list) or len(message) < 2:
@@ -236,14 +157,6 @@ class ExternalMidiManager:
         return True
 
     def _send_messages(self, port_name: str, messages: list[MidiMessage], delay_ms: int = 10):
-        """
-        Send MIDI messages to a port.
-
-        Args:
-            port_name: Name of port configuration.
-            messages: List of MIDI messages to send.
-            delay_ms: Delay between messages in milliseconds.
-        """
         midi_out = self._init_port(port_name)
         if midi_out is None:
             logging.warning(f"Skipping messages for unavailable port: {port_name}")
@@ -267,73 +180,25 @@ class ExternalMidiManager:
                 self._invalidate_port(port_name)
                 break  # Stop sending remaining messages to this broken port
 
-    def send_cc(self, port_name: str, channel: int, cc: int, value: int) -> bool:
-        """
-        Send a single MIDI CC message to an external port.
-        Used by controls (footswitches, encoders, expression pedals) when
-        configured to route to external MIDI devices.
-
-        Args:
-            port_name: Name of port configuration from config file.
-            channel: MIDI channel (0-15).
-            cc: MIDI CC number (0-127).
-            value: MIDI CC value (0-127).
-
-        Returns:
-            True if message was sent successfully, False if port unavailable (caller should fallback).
-
-        Raises:
-            RuntimeError: If port_name not in config (config validation failed at startup).
-        """
+    def send_raw(self, port_name: str, message: MidiMessage) -> bool:
+        """Send one raw message; True on success, False if the port is unavailable (caller falls back)."""
         if not self.enabled:
-            logging.debug(f"External MIDI disabled, falling back to virtual port")
             return False
 
-        # Port name must exist in config (should have been validated at startup)
-        if port_name not in self.port_configs:
-            raise RuntimeError(
-                f"Port '{port_name}' not found in external_midi config. "
-                f"Available ports: {list(self.port_configs.keys())}. "
-                f"This should have been caught during config validation."
-            )
-
-        # Validate MIDI values (programming errors)
-        if not (0 <= channel <= 15):
-            raise ValueError(f"Invalid MIDI channel {channel} (must be 0-15)")
-        if not (0 <= cc <= 127):
-            raise ValueError(f"Invalid MIDI CC {cc} (must be 0-127)")
-        if not (0 <= value <= 127):
-            raise ValueError(f"Invalid MIDI value {value} (must be 0-127)")
-
-        # Lazy initialization of port (may fail if device not connected)
         midi_out = self._init_port(port_name)
         if midi_out is None:
-            # Port not available - caller should fallback to virtual port
-            logging.debug(f"Port {port_name} not available, caller will fallback to virtual port")
             return False
-
-        # Construct and send MIDI message
-        # Status byte: 0xB0 (CC) | channel
-        status = 0xB0 | channel
-        message = [status, cc, value]
 
         try:
             midi_out.send_message(message)
-            logging.debug(f"Sent CC to {port_name}: channel={channel} cc={cc} value={value}")
             return True
         except Exception as e:
-            logging.error(f"Failed to send CC to {port_name}: {e}")
+            logging.error(f"Failed to send MIDI message to {port_name}: {e}")
             self._invalidate_port(port_name)
             return False
 
     def send_messages_for_pedalboard(self) -> bool:
-        """
-        Send external MIDI messages for current pedalboard configuration.
-        Configuration should have been set via update_config() before calling this.
-
-        Returns:
-            True if messages were sent successfully, False otherwise.
-        """
+        """Send the current pedalboard's external messages (config set earlier via update_config)."""
         if not self.enabled:
             return False
 

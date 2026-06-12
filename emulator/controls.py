@@ -19,10 +19,13 @@ Each mock control subclasses the corresponding real hardware class so that
 type checkers are satisfied, but bypasses any GPIO / SPI / ADC init.
 """
 
+import time
+
 import pistomp.analogcontrol as analogcontrol
-import pistomp.encoder as encoder
-import pistomp.encodermidicontrol as encodermidicontrol
+import pistomp.encoder_controller as encoder_controller
+from pistomp.encoder_controller import EncoderController
 import pistomp.footswitch as footswitch
+import pistomp.switchstate as switchstate
 
 try:
     from rtmidi.midiconstants import CONTROL_CHANGE
@@ -33,62 +36,52 @@ except ImportError:
     CONTROL_CHANGE = 0xB0
 
 
-class MockEncoder(encoder.Encoder):
+class MockEncoder(encoder_controller.EncoderController):
     """Nav encoder (no GPIO).  Driven externally via step() / press()."""
 
-    def __init__(self, callback, type=None, id=None):
-        super().__init__(d_pin=None, clk_pin=None, callback=callback, type=type, id=id)
-        self.press_callback = None
+    def __init__(self, type=None, id=None):
+        super().__init__(d_pin=None, clk_pin=None, type=type, id=id)
         self.label: str | None = None
 
     def read_rotary(self):
         pass
 
     def step(self, direction):
-        if direction != 0 and self.callback:
-            self.callback(direction)
+        if direction != 0:
+            self.refresh(direction)
+
+    def get_display_info(self) -> dict:
+        return {"type": self.type, "id": self.id, "category": None}
 
     def press(self, value):
-        if self.press_callback:
-            self.press_callback(value)
+        ts = time.monotonic()
+        if value == switchstate.Value.LONGPRESSED:
+            self._on_button_longpress(value, ts)
+        else:
+            self._on_button(value, ts)
 
 
-class MockEncoderMidi(encodermidicontrol.EncoderMidiControl):
+class MockEncoderMidi(EncoderController):
     """Tweak encoder with MIDI CC.  Driven externally via step() / press()."""
 
-    def __init__(self, handler, callback, midi_channel, midi_CC, midiout, type=None, id=None, cfg=None):
-        super().__init__(
-            handler=handler,
-            d_pin=None,
-            clk_pin=None,
-            callback=callback,
-            midi_CC=midi_CC,
-            midi_channel=midi_channel,
-            midiout=midiout,
-            type=type,
-            id=id,
-        )
-        self.cfg = cfg or {"type": type, "id": id}
-        self.midi_value = 64
-        self.press_callback = None
-        self._user_callback = callback
+    def __init__(self, midi_channel, midi_CC, type=None, id=None, cfg=None):
+        super().__init__(d_pin=None, clk_pin=None,
+                         midi_CC=midi_CC, midi_channel=midi_channel,
+                         type=type, id=id)
+        self.cfg = cfg or {'type': type, 'id': id}
 
     def read_rotary(self):
         pass
 
-    def set_value(self, value):
-        self.midi_value = int(value)
-
     def step(self, direction):
-        self.midi_value = max(0, min(127, self.midi_value + direction))
-        if self.midiout and self.midi_CC is not None and _rtmidi_available:
-            self.midiout.send_message([CONTROL_CHANGE | (self.midi_channel & 0x0F), self.midi_CC, self.midi_value])
-        if self._user_callback:
-            self._user_callback(direction)
+        self.refresh(direction)
 
     def press(self, value):
-        if self.press_callback:
-            self.press_callback(value)
+        ts = time.monotonic()
+        if value == switchstate.Value.LONGPRESSED:
+            self._on_button_longpress(value, ts)
+        else:
+            self._on_button(value, ts)
 
 
 class MockFootswitch(footswitch.Footswitch):
@@ -98,9 +91,9 @@ class MockFootswitch(footswitch.Footswitch):
     def check_longpress_events(cls):
         pass
 
-    def __init__(self, id, midi_CC, midi_channel, midiout, refresh_callback):
+    def __init__(self, id, midi_CC, midi_channel, refresh_callback):
         # led_pin=None, pixel=None, gpio_input=None, adc_input=None — no GPIO paths taken
-        super().__init__(id, None, None, midi_CC, midi_channel, midiout, refresh_callback)
+        super().__init__(id, None, None, midi_CC, midi_channel, refresh_callback)
         self.type = None
         self.cfg = {}
 
@@ -109,22 +102,17 @@ class MockFootswitch(footswitch.Footswitch):
 
     def press(self):
         self.toggled = not self.toggled
-        if self.midiout and self.midi_CC is not None and _rtmidi_available:
-            self.midiout.send_message(
-                [CONTROL_CHANGE | (self.midi_channel & 0x0F), self.midi_CC, 127 if self.toggled else 0]
-            )
         self.refresh_callback(footswitch=self)
 
 
 class MockAnalogControl(analogcontrol.AnalogControl):
     """Expression pedal / knob with no SPI/ADC.  Value set externally."""
 
-    def __init__(self, midi_CC, midi_channel, midiout, control_type=None, id=None, cfg=None):
+    def __init__(self, midi_CC, midi_channel, control_type=None, id=None, cfg=None):
         # AnalogControl.__init__ only stores spi/channel/tolerance — safe with None
         super().__init__(spi=None, adc_channel=None, tolerance=0)
         self.midi_CC = midi_CC
         self.midi_channel = midi_channel
-        self.midiout = midiout
         self.type = control_type
         self.id = id
         self.cfg = cfg or {"type": control_type, "id": id}
@@ -142,7 +130,3 @@ class MockAnalogControl(analogcontrol.AnalogControl):
 
     def set_value(self, value):
         self.value = int(value)
-
-    def send_midi(self, value_0_127):
-        if self.midiout and self.midi_CC is not None and _rtmidi_available:
-            self.midiout.send_message([CONTROL_CHANGE | (self.midi_channel & 0x0F), self.midi_CC, int(value_0_127)])

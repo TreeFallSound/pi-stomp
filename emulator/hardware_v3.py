@@ -39,8 +39,7 @@ class EmulatorHardwareV3(EmulatorHardwareBase):
         self.init_analog_controls()
 
     def init_encoders(self):
-        nav = MockEncoder(callback=self.handler.universal_encoder_select, id=0)
-        nav.press_callback = self.handler.universal_encoder_sw
+        nav = MockEncoder(type=Token.NAV, id=0)
         self.encoders.append(nav)
         self.nav_encoder = nav
 
@@ -50,25 +49,16 @@ class EmulatorHardwareV3(EmulatorHardwareBase):
     def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
         """Called by Hardware.create_encoders() for each encoder in config."""
         if type == Token.VOLUME:
-            enc = MockEncoder(
-                callback=self.handler.system_menu_headphone_volume,
-                type=type, id=id)
+            enc = MockEncoder(type=type, id=id)
             self.volume_encoder = enc
         else:
             enc = MockEncoderMidi(
-                handler=self.handler,
-                callback=callback,
                 midi_channel=midi_channel,
                 midi_CC=midi_cc,
-                midiout=self.midiout,
                 type=Token.KNOB,
                 id=id)
-            enc.press_callback = self.handler.universal_encoder_sw
+            if longpress_callback:
+                enc.set_longpress(longpress_callback)
             self.tweak_encoders.append(enc)
-
-        if longpress_callback:
-            lp = self.handler.get_callback(longpress_callback)
-            if lp and isinstance(enc, MockEncoderMidi):
-                enc.press_callback = lp
 
         return enc

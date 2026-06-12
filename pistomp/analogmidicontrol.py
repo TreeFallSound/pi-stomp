@@ -13,18 +13,13 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing_extensions import override
 from typing import Any
-
-
-from rtmidi.midiconstants import CONTROL_CHANGE
 
 import common.util as util
 import pistomp.analogcontrol as analogcontrol
 import pistomp.controller as controller
 from pistomp.controller import AnalogDisplayInfo
-
-import logging
+from pistomp.input.event import AnalogEvent
 
 
 def as_midi_value(adc_value: int):
@@ -33,32 +28,16 @@ def as_midi_value(adc_value: int):
 
 
 class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
-    def __init__(
-        self,
-        spi,
-        adc_channel,
-        tolerance,
-        midi_CC,
-        midi_channel,
-        midiout,
-        type,
-        id=None,
-        cfg={},
-        autosync=False,
-        value_change_callback=None,
-    ):
+    def __init__(self, spi, adc_channel, tolerance, midi_CC, midi_channel, type, id=None, cfg=None, autosync=False):
         super(AnalogMidiControl, self).__init__(spi, adc_channel, tolerance)
         controller.Controller.__init__(self, midi_channel, midi_CC)
-        self.midiout = midiout
         self.autosync = autosync
 
-        # Parent member overrides
         self.type = type
         self.id = id
-        self.last_read = 0  # this keeps track of the last potentiometer value
+        self.last_read = 0
         self.value = None
-        self.cfg: dict[str, Any] = cfg
-        self.value_change_callback = value_change_callback
+        self.cfg: dict[str, Any] = cfg or {}
 
     def set_midi_channel(self, midi_channel):
         self.midi_channel = midi_channel
@@ -66,28 +45,7 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
     def set_value(self, value):
         self.value = value
 
-    def get_normalized_value(self) -> float:
-        """Current ADC reading normalized to [0.0, 1.0]."""
-        return self.last_read / 1023.0
-
-    @override
-    def initialize(self):
-        if not self.autosync:
-            return
-
-        # read the analog pin
-        value = self._clamp_endpoints(self.readChannel())
-        set_volume = as_midi_value(value)
-
-        cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, set_volume]
-        logging.debug("AnalogControl force-sending CC event %s" % cc)
-        self.midiout.send_message(cc)
-
-        # save the reading to prevent duplicate sends on next poll
-        self.last_read = value
-
     def _clamp_endpoints(self, value: int) -> int:
-        """Clamp ADC values near endpoints to exact 0/1023 (deadband at extremes)."""
         if value <= self.tolerance:
             return 0
         if value >= 1023 - self.tolerance:
@@ -95,16 +53,16 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
         return value
 
     def _send_value(self, value):
-        """Send ADC value as MIDI CC and invoke callback if set."""
-        set_volume = as_midi_value(value)
-        cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, set_volume]
-        logging.debug("AnalogControl Sending CC event %s" % cc)
-        self.midiout.send_message(cc)
-
+        midi_value = as_midi_value(value)
+        self.midi_value = midi_value
+        self.value = value
         self.last_read = value
 
-        if self.value_change_callback:
-            self.value_change_callback(value, self)
+        self.sink.handle(AnalogEvent(
+            controller=self,
+            raw_value=value,
+            midi_value=midi_value,
+        ))
 
     def send_current_value(self):
         """Force-send the current ADC value unconditionally. Used by sync_analog_controls()."""
@@ -116,10 +74,8 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
         if abs(value - self.last_read) > self.tolerance:
             self._send_value(value)
 
+    def get_normalized_value(self) -> float:
+        return self.last_read / 1023.0
+
     def get_display_info(self) -> AnalogDisplayInfo:
-        return {
-            **super(AnalogMidiControl, self).get_display_info(),
-            'type': self.type,
-            'id': self.id,
-            'category': None,
-        }
+        return {'type': self.type, 'id': self.id, 'category': None}

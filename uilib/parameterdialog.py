@@ -190,25 +190,6 @@ class Parameterdialog(Dialog):
             self.action(self.object, new_value)
         self._draw_graph()
 
-    def _taper_adjusted_steps(self, current_index, steps):
-        """Scale step count to compensate for non-linear step sizes."""
-        direction = 1 if steps > 0 else -1
-        next_index = np.clip(current_index + direction, 0, self.num_actual - 1)
-
-        current_value = self.actual_points[current_index]
-        next_value = self.actual_points[next_index]
-        step_size = abs(next_value - current_value)
-
-        param_range = self.parameter.maximum - self.parameter.minimum
-        linear_step_size = param_range / (self.num_actual - 1)
-
-        if step_size < 0.0001:
-            return steps
-
-        ratio = linear_step_size / step_size
-        adjusted = int(abs(steps) * ratio)
-        return max(1, adjusted) * direction
-
     def input_event(self, event):
         if event == InputEvent.CLICK:
             self.pop()

@@ -113,6 +113,8 @@ class Lcd(abstract_lcd.Lcd):
 
         self.supports_toolbar = False
 
+        self.plugins = []  # drawn plugins, for bypass-indicator redraw on refresh_plugins
+
     def poll_updates(self):
         pass  # lcdgfx pushes eagerly on every refresh call
 
@@ -174,7 +176,23 @@ class Lcd(abstract_lcd.Lcd):
                     self._lcd.set_pixel(self.width - x - 1, self.height - y - y_offset, pixel)
         self._lcd.show()
 
+    # Plugin panels (not supported on monochrome LCD)
+    def show_plugin_panel(self, panel):
+        pass
+
+    def hide_plugin_panel(self):
+        pass
+
+    def has_active_fullscreen_panel(self):
+        return False
+
+    @property
+    def plugin_panel(self):
+        return None
+
     def refresh_plugins(self):
+        for p in self.plugins:
+            self.draw[p.lcd_xyz[2]].line(p.bypass_indicator_xy, not p.is_bypassed(), self.plugin_bypass_thickness)
         self.refresh_zone(2)
         self.refresh_zone(4)
         self.refresh_zone(6)
@@ -328,9 +346,13 @@ class Lcd(abstract_lcd.Lcd):
         knob = Token.NONE
         for k, v in controllers.items():
             control_type = util.DICT_GET(v, Token.TYPE)
-            s = k.split(":")
-            text = "%s:%s" % (self.shorten_name(s[0], self.plugin_width),
-                              self.shorten_name(s[1], self.plugin_width_medium))
+            if util.DICT_GET(v, Token.CATEGORY) == 'External':
+                port = util.DICT_GET(v, 'port_name') or ''
+                text = "%s:%s" % (self.shorten_name(port, self.plugin_width), util.DICT_GET(v, 'midi_cc'))
+            else:
+                s = k.split(":")
+                text = "%s:%s" % (self.shorten_name(s[0], self.plugin_width),
+                                  self.shorten_name(s[1], self.plugin_width_medium))
             if control_type == Token.EXPRESSION:
                 exp = text
             elif control_type == Token.KNOB:
@@ -413,6 +435,9 @@ class Lcd(abstract_lcd.Lcd):
         plugin.bypass_indicator_xy = bypass_indicator_xy
         self.draw[zone].line(bypass_indicator_xy, not plugin.is_bypassed(), self.plugin_bypass_thickness)
 
+        if plugin not in self.plugins:
+            self.plugins.append(plugin)
+
         return x2
 
     def draw_bound_plugins(self, plugins, footswitches):
@@ -428,7 +453,7 @@ class Lcd(abstract_lcd.Lcd):
                     if c.parameter.symbol != ":bypass":  # TODO token
                         label = c.parameter.name
                     else:
-                        label = p.instance_id.replace('/', "")[:self.plugin_label_length]  # TODO this replacement should be done in one place higher level
+                        label = p.instance_id[:self.plugin_label_length]
                         label = label.replace("_", "")
                     self.draw_plugin(7, self.footswitch_xy[fs_id][0], self.footswitch_xy[fs_id][1], label,
                                      self.footswitch_width, False, p, True)
@@ -444,6 +469,7 @@ class Lcd(abstract_lcd.Lcd):
         self.refresh_zone(7)
 
     def draw_plugins(self, plugins):
+        self.plugins = []  # reset; draw_plugin repopulates (incl. via draw_bound_plugins)
         y = 0
         x = 0
         xwrap = 110  # scroll if exceeds this width
@@ -464,7 +490,7 @@ class Lcd(abstract_lcd.Lcd):
         for p in plugins:
             if p.has_footswitch:
                 continue
-            label = p.instance_id.replace('/', "")[:self.plugin_label_length]
+            label = p.instance_id[:self.plugin_label_length]
             label = label.replace("_", "")
             count += 1
             if count > 4:

@@ -34,6 +34,7 @@ from blend.types import (
 )
 from modalapi.parameter import Type as ParameterType
 from modalapi.pedalboard_monitor import FileChangeMonitor
+from pistomp.input.event import ControllerEvent
 
 if TYPE_CHECKING:
     from modalapi.modhandler import Modhandler
@@ -115,9 +116,11 @@ class BlendMode:
 
         input_id = self.config["input_id"]
         self.parameter_setter.reset_tracking()
-        self.input_controller.attach_to_input(
-            self.handler.hardware.analog_controls, self.handler.hardware.encoders, input_id
-        )
+        all_controls = [*self.handler.hardware.analog_controls, *self.handler.hardware.encoders]
+        control = next((c for c in all_controls if getattr(c, "id", None) == input_id), None)
+        if control is None:
+            raise ValueError(f"Input {input_id} not found in analog_controls or encoders")
+        self.input_controller.attach_to_input(control)
 
         try:
             self.input_controller.sync_current_position()
@@ -174,6 +177,16 @@ class BlendMode:
         if was_active:
             self.activate()
         logging.info("Blend mode re-prepared successfully")
+
+    def intercept(self, event: ControllerEvent) -> bool:
+        """Check if this event comes from the blend input and run interpolation.
+
+        Returns True if the event's controller matches the blend input
+        and interpolation ran. False lets normal dispatch proceed.
+        """
+        if self.input_controller is None:
+            return False
+        return self.input_controller.handle_event(event)
 
     # ----------------------------------------------------------------- helpers
 

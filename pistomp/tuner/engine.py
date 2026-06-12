@@ -2,6 +2,7 @@ import logging
 import math
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 
 import numpy as np
@@ -52,7 +53,14 @@ class TunerEngine:
     _RING_CAPACITY = 1 << FRAME_SIZE.bit_length()  # 8192
 
     DSP_RATE_HZ = 20
-    IIR_ALPHA = 0.35
+
+    # Median of the last MEDIAN_LEN raw estimates: rejects the brief octave excursions
+    # YIN throws at note attacks (an IIR would smear them across wrong notes instead).
+    # 5 @ 20 Hz = ~100 ms delay, survives 2 bad frames.
+    # TODO: median can't catch decay-tail octave flicker (period-doubling on a fading
+    # note); would need a note-lock that holds the current note against ±1200-cent jumps.
+    MEDIAN_LEN = 5
+
     SILENCE_RMS = 0.002  # ~-54 dBFS; below this we consider input silent
     ONSET_RATIO = 4.0  # RMS jump factor that signals a new note being plucked (~12 dB)
     ONSET_HOLDOFF_FRAMES = 1  # frames to skip after onset (rejects attack transient)
@@ -70,7 +78,7 @@ class TunerEngine:
         self._worker: threading.Thread | None = None
         self._lock = threading.Lock()
         self._latest: TunerReading | None = None
-        self._iir_freq: float | None = None
+        self._freq_history: deque[float] = deque(maxlen=self.MEDIAN_LEN)
         self._prev_rms: float = 0.0
         self._onset_holdoff: int = 0
 
@@ -104,7 +112,7 @@ class TunerEngine:
         rms = float(np.sqrt(np.mean(self._frame.astype(np.float64) ** 2)))
 
         if rms < self.SILENCE_RMS:
-            self._iir_freq = None
+            self._freq_history.clear()
             self._onset_holdoff = 0
             self._prev_rms = rms
             with self._lock:
@@ -114,7 +122,7 @@ class TunerEngine:
         # Amplitude onset: a sudden RMS jump means the player plucked a new note.
         # Reset IIR immediately and skip ONSET_HOLDOFF_FRAMES to let the transient pass.
         if rms > self._prev_rms * self.ONSET_RATIO:
-            self._iir_freq = None
+            self._freq_history.clear()
             self._onset_holdoff = self.ONSET_HOLDOFF_FRAMES
             with self._lock:
                 self._latest = None
@@ -130,21 +138,19 @@ class TunerEngine:
         if estimate is None:
             return
 
-        if self._iir_freq is None:
-            self._iir_freq = estimate.freq
-        else:
-            self._iir_freq = self.IIR_ALPHA * estimate.freq + (1.0 - self.IIR_ALPHA) * self._iir_freq
+        self._freq_history.append(estimate.freq)
+        freq = float(np.median(self._freq_history))
 
         try:
-            note, cents, ideal = _freq_to_note(self._iir_freq)
+            note, cents, ideal = _freq_to_note(freq)
         except Exception:
-            logging.debug("tuner: freq_to_note failed for %s", self._iir_freq)
+            logging.debug("tuner: freq_to_note failed for %s", freq)
             return
 
         reading = TunerReading(
             note=note,
             cents=cents,
-            freq_hz=self._iir_freq,
+            freq_hz=freq,
             ideal_hz=ideal,
             ts=time.monotonic(),
         )

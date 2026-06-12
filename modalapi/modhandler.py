@@ -19,18 +19,17 @@ from pistomp.audiocard import Audiocard
 import json
 import logging
 import os
+import time
 import requests as req
 from requests import Response
 import subprocess
 import sys
 import yaml
-from typing import Any
-
 from typing import cast, Any
 
 import common.token as Token
 import common.util as util
-from common.parameter import Parameter, TTL_PROPERTIES, TTL_INTEGER
+from common.parameter import Parameter
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
 import modalapi.external_midi as ExternalMidi
@@ -38,18 +37,30 @@ from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
 from pistomp.lcd320x240 import Lcd
-from pistomp.hardware import Controller, Hardware
+from pistomp.hardware import Hardware
 import pistomp.settings as Settings
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
-from pistomp.analogmidicontrol import AnalogMidiControl
-from pistomp.controller import RoutingDestination, RoutingInfo
+from pistomp.controller_manager import ControllerManager
+from pistomp.current import Current
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
+from pistomp.footswitch_chords import FootswitchChords
 from pistomp.handler import Handler
+from pistomp.input.event import (
+    AnalogEvent,
+    ControllerEvent,
+    EncoderEvent,
+    SwitchEvent,
+    SwitchEventKind,
+)
+import pistomp.switchstate as switchstate
+from pistomp.tuner import TunerEngine, TunerPanel, TunerSourceFactory
+from pistomp.tuner.source import AudioSource, build_source
+from rtmidi.midiconstants import CONTROL_CHANGE
 from pathlib import Path
 
 
@@ -84,7 +95,7 @@ class Modhandler(Handler):
         self.bypass_left = False
         self.bypass_right = False
 
-        self.current: Modhandler.Current | None = None
+        self.current: Current | None = None
         self._lcd: Lcd | None = None
         self._hardware: Hardware | None = None
         self.volume_parameter = None
@@ -109,12 +120,6 @@ class Modhandler(Handler):
         self.ethernet_manager = EthernetManager()
         self.jack_mute = JackMute()
 
-        # Tuner state
-        self._tuner_engine = None
-        self._tuner_panel = None
-        self._tuner_source_factory = None
-        self._tuner_muted = False
-
         # WebSocket bridge for MOD-UI communication
         self.ws_bridge = AsyncWebSocketBridge(
             ws_url='ws://localhost:80/websocket',
@@ -122,6 +127,14 @@ class Modhandler(Handler):
         )
         self.ws_bridge.start()
         logging.info("WebSocket bridge started")
+
+        # Tuner state
+        self._tuner_engine: TunerEngine | None = None
+        self._tuner_source_factory: TunerSourceFactory | None = None
+        self._tuner_muted: bool = False
+
+        # Full-screen panel state (tuner or generic plugin panel)
+        self._fullscreen_panel: TunerPanel | None = None
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
@@ -133,33 +146,35 @@ class Modhandler(Handler):
                           "toggle_tuner_enable": self.toggle_tuner_enable,
         }
 
+        # External MIDI device synchronization
+        self.external_midi = ExternalMidi.ExternalMidiManager()
+
         # Blend mode manager - multiple blend snapshots per pedalboard
         self.blend_modes: dict[str, Any] = {}  # {snapshot_name: BlendMode}
         self.active_blend_mode: Any | None = None  # Currently active blend mode
 
-        # External MIDI device synchronization
-        self.external_midi = None
-        try:
-            self.external_midi = ExternalMidi.ExternalMidiManager()
-        except Exception as e:
-            logging.warning(f"Failed to initialize external MIDI manager: {e}")
+        # Footswitch longpress/chord resolver (rebuilt on pedalboard change)
+        self.chord_helper = FootswitchChords()
 
     def __del__(self):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
-        if self.external_midi is not None:
-            self.external_midi.close()
         # ws_bridge.stop() lives in cleanup(), not here — join() in __del__ blows up
         # during interpreter shutdown on Py 3.14. Daemon thread dies with the process.
 
     def cleanup(self):
+        if self._tuner_engine is not None:
+            if self._tuner_muted:
+                self.audiocard.set_output_muted(False)
+            self._tuner_engine.stop()
+            self._tuner_engine = None
+            self._fullscreen_panel = None
         if self._lcd is not None:
             self._lcd.cleanup()
         if self._hardware is not None:
             self._hardware.cleanup()
-        if self.external_midi is not None:
-            self.external_midi.close()
+        self.external_midi.close()
         if self.ws_bridge is not None:
             self.ws_bridge.stop()
             logging.info("WebSocket bridge stopped")
@@ -193,37 +208,107 @@ class Modhandler(Handler):
     def add_hardware(self, hardware):
         self._hardware = hardware
         hardware.external_midi = self.external_midi
+        self._controller_manager = ControllerManager(hardware)
         self.bind_volume_encoder()
+        hardware.register_sink(self)
 
     def bind_volume_encoder(self):
+        """Bind the volume-typed encoder to an audio Parameter so it has the
+        right range and quantization. Routing of value changes to the audio
+        card happens in `handle()`, not via a callback."""
         if self.hardware is None:
             return
         for enc in self.hardware.encoders:
-            if enc.type == Token.VOLUME and isinstance(enc, EncoderController):
-                value = self.audiocard.get_volume_parameter(self.audiocard.MASTER)
-                info = {
-                    Token.NAME: "Output Volume",
-                    Token.SYMBOL: self.audiocard.MASTER,
-                    Token.RANGES: {
-                        Token.MINIMUM: -25.75,
-                        Token.MAXIMUM: 6.0
-                    }
-                }
-                volume_param = Parameter(info, value, None)
-                volume_param.unit_symbol = "dB"
-                enc.bind_to_parameter(volume_param)
-                self.volume_parameter = volume_param
+            if enc.type != Token.VOLUME or not isinstance(enc, EncoderController):
+                continue
+            value = self.audiocard.get_volume_parameter(self.audiocard.MASTER)
+            info = {
+                Token.NAME: "Output Volume",
+                Token.SYMBOL: self.audiocard.MASTER,
+                Token.RANGES: {Token.MINIMUM: -25.75, Token.MAXIMUM: 6.0},
+            }
+            volume_param = Parameter(info, value, None)
+            volume_param.unit_symbol = "dB"
+            enc.bind_to_parameter(volume_param)
+            self.volume_parameter = volume_param
+            logging.info(f"Bound volume encoder to audio parameter: {volume_param.name}")
+            break
 
-                def volume_change_callback(new_value, encoder):
-                    self.audiocard.set_volume_parameter(self.audiocard.MASTER, new_value)
-                    encoder.parameter.value = new_value
-                    d = self.lcd.draw_audio_parameter_dialog(encoder.parameter, self.audio_parameter_commit)
-                    if d is not None:
-                        d.update_value(new_value)
+    # ── InputSink: default dispatch for v3 controllers ───────────────
 
-                enc.value_change_callback = volume_change_callback
-                logging.info(f"Bound volume encoder to audio parameter: {volume_param.name}")
-                break
+    def handle(self, event: ControllerEvent) -> bool:
+        """Default sink. The LCD gets first crack (panels can intercept);
+        blend mode gets second crack; if neither consumes, dispatch by event type.
+        Returns True if handled."""
+        if self._lcd is not None and self._lcd.handle(event):
+            return True
+        if self.active_blend_mode and self.active_blend_mode.intercept(event):
+            return True
+        match event:
+            case EncoderEvent():
+                return self._handle_encoder(event)
+            case AnalogEvent():
+                return self._handle_analog(event)
+            case SwitchEvent():
+                return self._handle_switch(event)
+        return False
+
+    def _handle_encoder(self, event: EncoderEvent) -> bool:
+        c = event.controller
+        if c.type == Token.NAV:
+            self.universal_encoder_select(event.rotations)
+            return True
+        # Volume encoder bypasses the mod-host commit path — there is no
+        # backing plugin parameter, just the audio card.
+        if c.type == Token.VOLUME and c.parameter is not None:
+            self.audiocard.set_volume_parameter(self.audiocard.MASTER, event.new_value)
+            d = self.lcd.draw_audio_parameter_dialog(c.parameter, self.audio_parameter_commit)
+            if d is not None:
+                d.update_value(event.new_value)
+            return True
+
+        if c.parameter is not None:
+            self.lcd.display_parameter_value(c.parameter, event.new_value)
+            if not self.hardware.is_external(c):
+                self.parameter_value_commit(c.parameter, event.new_value)
+
+        self._emit_midi(c, event.new_midi_value)
+        return True
+
+    def _handle_analog(self, event: AnalogEvent) -> bool:
+        self._emit_midi(event.controller, event.midi_value)
+        return True
+
+    def _handle_switch(self, event: SwitchEvent) -> bool:
+        controller = event.controller
+        if isinstance(controller, EncoderController):
+            if event.kind == SwitchEventKind.LONGPRESS:
+                # Give the LCD first crack so the selected widget sees LONG_CLICK.
+                # Only run the configured callback if nothing on the LCD consumed it.
+                if self._lcd is not None and self._lcd.enc_sw(switchstate.Value.LONGPRESSED):
+                    return True
+                callback_name = controller.longpress
+                if callback_name:
+                    cb = self.get_callback(callback_name)
+                    if cb:
+                        cb()
+                return True
+            self.universal_encoder_sw(switchstate.Value.RELEASED)
+            return True
+        if isinstance(controller, Footswitch):
+            return self._handle_footswitch(controller, event.kind, event.timestamp)
+        return False
+
+    def _emit_midi(self, controller, midi_value: int) -> None:
+        """Send a CC. Tries the external port if routed; falls back to virtual."""
+        if controller.midi_CC is None:
+            return
+        cc = [controller.midi_channel | CONTROL_CHANGE, controller.midi_CC, int(midi_value)]
+        port_name = self.hardware.external_port_name(controller)
+        if port_name is not None and self.external_midi is not None:
+            if self.external_midi.send_raw(port_name, cc):
+                return
+        self.hardware.midiout.send_message(cc)
 
     def add_lcd(self, lcd):
         self._lcd = lcd
@@ -241,6 +326,7 @@ class Modhandler(Handler):
     def poll_controls(self):
         if self.hardware:
             self.hardware.poll_controls()
+        self._tick_chords()
 
     def poll_indicators(self):
         if self.hardware:
@@ -339,18 +425,18 @@ class Modhandler(Handler):
 
     @property
     def lcd_poll_divisor(self) -> int:
-        # Tick the LCD on every 10 ms main-loop pass (~100 fps) while the
-        # tuner panel is mounted. Strobe's worst-case redraw at STRIPE_W=4
-        # is ~4.3 ms of SPI, well inside the 10 ms budget; typical ticks
-        # are sub-millisecond. Fall back to the default 200 ms gate
-        # otherwise.
-        return 1 if self._tuner_panel is not None else 20
+        # Tick the LCD on every 10 ms main-loop pass (~100 fps) while a
+        # fullscreen panel (tuner or plugin) is mounted. Otherwise fall back
+        # to the SPI-clock-derived divisor computed by the LCD itself.
+        if self._lcd is not None and self._lcd.has_active_fullscreen_panel():
+            return 1
+        return self._lcd.poll_divisor if self._lcd is not None else 8
 
     def universal_encoder_select(self, direction):
         if self._lcd is not None:
             self._lcd.enc_step(direction)
 
-    def universal_encoder_sw(self, value, obj=None):
+    def universal_encoder_sw(self, value, obj=None, timestamp=None):
         if self._lcd is not None:
             self._lcd.enc_sw(value)
 
@@ -361,7 +447,7 @@ class Modhandler(Handler):
         Args:
             new_snapshot_index: Index of the new snapshot being loaded
         """
-        if not self.blend_modes:
+        if not self.blend_modes or self.current is None:
             return
 
         new_snapshot_name = self.current.presets.get(new_snapshot_index)
@@ -369,11 +455,12 @@ class Modhandler(Handler):
                      f"active_blend={self.active_blend_mode.config.get('name') if self.active_blend_mode else None}")
 
         # Deactivate current blend mode if switching away
-        if self.active_blend_mode:
-            old_name = self.active_blend_mode.config.get('name')
+        active = self.active_blend_mode
+        if active:
+            old_name = active.config.get('name')
             if old_name != new_snapshot_name:
                 logging.info(f"Deactivating blend mode '{old_name}' (switching to '{new_snapshot_name}')")
-                self.active_blend_mode.deactivate()
+                active.deactivate()
                 self.active_blend_mode = None
                 self.lcd.draw_analog_assignments(self.current.analog_controllers)
             else:
@@ -382,12 +469,13 @@ class Modhandler(Handler):
         # Activate new blend mode if switching to a blend snapshot
         if new_snapshot_name in self.blend_modes:
             logging.info(f"Activating blend mode '{new_snapshot_name}'")
-            self.active_blend_mode = self.blend_modes[new_snapshot_name]
+            new_active = self.blend_modes[new_snapshot_name]
+            self.active_blend_mode = new_active
             try:
                 # Check for snapshot changes immediately before activating
                 # to ensure we have the latest stop data (user may have just saved a snapshot)
-                self.active_blend_mode.check_for_snapshot_changes()
-                self.active_blend_mode.activate()
+                new_active.check_for_snapshot_changes()
+                new_active.activate()
                 self.lcd.draw_analog_assignments(self.current.analog_controllers)
             except Exception as e:
                 logging.error(f"Failed to activate blend mode '{new_snapshot_name}': {e}")
@@ -432,22 +520,52 @@ class Modhandler(Handler):
                 self._handle_blend_mode_snapshot_change(msg.snapshot_id)
                 self.lcd.draw_title()
 
-        elif isinstance(msg, PluginBypassMessage):
+        elif isinstance(msg, (PluginBypassMessage, AddPluginMessage)):
+            # PluginBypassMessage: live delta. AddPluginMessage: (re)connect dump
             if self.current is not None:
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
                         logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
                         plugin.set_bypass(msg.bypassed)
-                        self.lcd.refresh_plugins()
+                        self.lcd.refresh_plugin(plugin)
                         break
 
-    def poll_modui_changes(self):
-        """Poll for changes from MOD-UI: websockets and file watching"""
+        elif isinstance(msg, TransportMessage):
+            if self.hardware and self.hardware.taptempo:
+                self.hardware.taptempo.set_bpm(msg.bpm)
+                if self.hardware.taptempo.is_enabled():
+                    fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
+                    self.update_lcd_fs(footswitch=fs)
+
+        elif isinstance(msg, ParamSetMessage):
+            # Keep the cached value fresh so a later long-press edit opens at the
+            # current value. Not drawn anywhere live, so no LCD refresh.
+            if self.current is not None:
+                for plugin in self.current.pedalboard.plugins:
+                    if plugin.instance_id == msg.instance:
+                        param = plugin.parameters.get(msg.symbol)
+                        if param is not None:
+                            param.value = msg.value
+                        break
+
+        elif isinstance(msg, MidiMapMessage):
+            # MIDI learn in mod-ui assigned a hardware control to a parameter.
+            self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
+
+    def poll_ws_messages(self):
+        """Drain inbound WS messages (fast ~10ms cadence). Main-thread only.
+        Must not touch next_pedalboard_preset_index (owned by the file-watch path)."""
         for msg in self.ws_bridge.get_received_messages():
             try:
                 self._handle_ws_message(parse_message(msg))
             except Exception as e:
                 logging.error(f"Error handling WebSocket message '{msg}': {e}")
+
+    def poll_modui_changes(self):
+        """Poll for changes from MOD-UI: websockets and file watching"""
+        # Drain WS first so loading_end/snapshot lands before the file-watch
+        # reads next_pedalboard_preset_index this tick. No-op if already drained.
+        self.poll_ws_messages()
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
@@ -583,7 +701,7 @@ class Modhandler(Handler):
         del self.current
 
         # Create a new "current"
-        self.current = self.Current(pedalboard)
+        self.current = Current(pedalboard)
 
         if self.next_pedalboard_preset_index is not None:
             self.current.preset_index = self.next_pedalboard_preset_index
@@ -597,9 +715,6 @@ class Modhandler(Handler):
                 cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
         self.hardware.reinit(cfg)
 
-        # Sync current state of analog controls (expression pedals, etc.)
-        self.hardware.sync_analog_controls()
-
         # Initialize the data and draw on LCD
         self.bind_current_pedalboard()
         self.bind_volume_encoder()
@@ -607,6 +722,16 @@ class Modhandler(Handler):
         self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
         self.lcd.draw_main_panel()
         self.lcd.update_wifi(self.wifi_status)
+
+        # Send external MIDI messages for this pedalboard
+        # Config was already updated by hardware.reinit(cfg) above
+        try:
+            self.external_midi.send_messages_for_pedalboard()
+        except Exception as e:
+            logging.warning(f"Failed to send external MIDI messages: {e}")
+
+        # Sync analog controls last: after bind + external send, matching mod.py
+        self.hardware.sync_analog_controls()
 
         # Prepare blend modes if configured (snapshot-based activation)
         try:
@@ -647,94 +772,19 @@ class Modhandler(Handler):
             self.blend_modes = {}
             self.active_blend_mode = None
 
-        # Send external MIDI messages for this pedalboard
-        # Config was already updated by hardware.reinit(cfg) above
-        if self.external_midi is not None:
-            try:
-                self.external_midi.send_messages_for_pedalboard()
-            except Exception as e:
-                logging.warning(f"Failed to send external MIDI messages: {e}")
-
     def bind_current_pedalboard(self):
         # "current" being the pedalboard mod-host says is current
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
+        self._controller_manager.bind(self.current)
 
-        # Clear previous parameter bindings from all controllers except volume encoder
-        for controller in self.hardware.controllers.values():
-            if getattr(controller, 'type', None) != Token.VOLUME:
-                controller.parameter = None
 
-        # Clear analog controllers display data
-        self.current.analog_controllers = {}
-
-        footswitch_plugins = []
-        if self.current:
-            #logging.debug(self.current.pedalboard.to_json())
-            for plugin in self.current.pedalboard.plugins:
-                if plugin is None or plugin.parameters is None:
-                    continue
-                for sym, param in plugin.parameters.items():
-                    if param.binding is not None:
-                        controller = self.hardware.controllers.get(param.binding)
-                        if controller is not None:
-                            routing = controller.get_routing_info()
-
-                            # External controllers shouldn't be bound to plugin parameters
-                            if routing.destination == RoutingDestination.EXTERNAL:
-                                logging.warning(
-                                    f"Plugin parameter {plugin.name}:{param.name} is bound to external controller "
-                                    f"{param.binding} (routed to {routing.port_name}) - ignoring plugin binding"
-                                )
-                                continue
-
-                            controller.bind_to_parameter(param)
-                            plugin.controllers.append(controller)
-                            if isinstance(controller, Footswitch):
-                                plugin.has_footswitch = True
-                                footswitch_plugins.append(plugin)
-                                controller.set_category(plugin.category)
-                            else:
-                                key = "%s:%s" % (plugin.instance_id, param.name)
-                                display_info = controller.get_display_info()
-                                display_info['category'] = plugin.category
-                                self.current.analog_controllers[key] = display_info
-
-            # Special case for volume control
-            for e in self.hardware.encoders:
-                if e.type == Token.VOLUME:
-                    display_info = e.get_display_info()
-                    self.current.analog_controllers[Token.VOLUME] = display_info
-
-        # Handle all external controllers (create synthetic parameters for display)
-        for controller in self.hardware.controllers.values():
-            routing = controller.get_routing_info()
-            if routing.destination != RoutingDestination.EXTERNAL:
-                continue
-            if controller.midi_CC is None:
-                continue
-
-            # Create synthetic parameter if not already bound.
-            # AnalogMidiControl uses EXTERNAL_INSTANCE_ID so parameter_value_commit can guard it;
-            # EncoderController routes through encoder_value_changed instead.
-            if controller.parameter is None:
-                if isinstance(controller, AnalogMidiControl):
-                    controller.parameter = self.hardware._create_external_parameter(
-                        controller, routing.port_name, controller.midi_channel, controller.midi_CC
-                    )
-                else:
-                    ext_info = {
-                        Token.NAME: f"{routing.port_name} CC{controller.midi_CC}",
-                        Token.SYMBOL: f"external_{controller.midi_CC}",
-                        Token.RANGES: {Token.MINIMUM: 0, Token.MAXIMUM: 127},
-                        TTL_PROPERTIES: [TTL_INTEGER]
-                    }
-                    controller.bind_to_parameter(Parameter(ext_info, controller.midi_value, None, EXTERNAL_INSTANCE_ID))
-
-            key = f"{controller.midi_channel}:{controller.midi_CC}"
-            display_info = controller.get_display_info()
-            display_info['category'] = 'External'
-            self.current.analog_controllers[key] = display_info
+    def _redraw_after_binding(self, controller, is_footswitch):
+        if is_footswitch:
+            # Footswitch: redraw just that one switch, not the whole board.
+            self.lcd.update_footswitch(controller)
+        else:
+            self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
     def pedalboard_change(self, pedalboard=None):
         logging.info("Pedalboard change")
@@ -808,10 +858,6 @@ class Modhandler(Handler):
                     break
 
     def preset_change(self, index):
-        if self._tuner_engine is not None:
-            self.toggle_tuner_enable()
-            return
-
         if not self.current:
             logging.error("Cannot change preset since current pedalboard is not set")
             return
@@ -835,23 +881,7 @@ class Modhandler(Handler):
 
         # Update name on lcd
         self.lcd.draw_title()
-
-        # load of the preset might have changed plugin bypass status
-        self.preset_change_plugin_update()
-
-    def preset_change_plugin_update(self):
-        assert self.current is not None, "Current pedalboard is not set"
-
-        # Now that the preset has changed on the host, update plugin bypass indicators
-        for p in self.current.pedalboard.plugins:
-            uri = self.root_uri + "effect/parameter/pi_stomp_get//graph" + p.instance_id + "/:bypass"
-            resp = self._rest_get(uri)
-            if resp is None:
-                logging.error("failed to get bypass value for: %s" % p.instance_id)
-                continue
-            if resp.status_code == 200:
-                p.set_bypass(resp.text == "true")
-        self.lcd.refresh_plugins()
+        # Bypass/param changes from the snapshot arrive via the WS drain (source of truth).
 
     def preset_incr_and_change(self, *argv):
         assert self.current is not None, "Current pedalboard is not set"
@@ -875,13 +905,13 @@ class Modhandler(Handler):
             if plugin.has_footswitch:
                 for c in plugin.controllers:
                     if isinstance(c, Footswitch):
-                        c.pressed(0)
+                        self._handle_footswitch(c, SwitchEventKind.PRESS, time.monotonic())
                         return
-            # Regular (non footswitch plugin)
+            # Non-footswitch plugin: update locally then notify mod-ui.
+            # No echo arrives for WS-initiated bypass. Contrast with footswitches,
+            # which send MIDI CC → mod-host internally → feedback → msg_callback.
             value = plugin.toggle_bypass()
-            self.ws_bridge.send_parameter(plugin.instance_id, ":bypass", 1.0 if value else 0.0)
-
-            #  Indicate change on LCD
+            self.ws_bridge.send_parameter(plugin.instance_id, ":bypass", value)
             self.lcd.toggle_plugin(widget, plugin)
 
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
@@ -896,32 +926,23 @@ class Modhandler(Handler):
     def parameter_value_commit(self, param, value):
         param.value = value
 
-        # Audio parameter (volume, EQ, etc.) - no REST update needed
+        # Audio parameter (volume, EQ, etc.) - handled locally, no remote update needed
         if param.instance_id is None:
             self.audio_parameter_commit(param.symbol, value)
             return
 
-        self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
-
-        # External MIDI parameters are local-only (visual feedback), no REST update needed
+        # External MIDI parameters are local-only (visual feedback), no remote update needed
         if param.instance_id == EXTERNAL_INSTANCE_ID:
-            logging.debug("Skipping REST update for external parameter: %s" % param.symbol)
+            logging.debug("Skipping remote update for external parameter: %s" % param.symbol)
             return
 
-        url = self.root_uri + "effect/parameter/pi_stomp_set//graph%s/%s" % (param.instance_id, param.symbol)
-        self._rest_post(url, json={"value": "%.1f" % param.value})
+        self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     def parameter_midi_change(self, param, direction):
         if param:
             d = self.lcd.draw_parameter_dialog(param)
             if d:
                 self.lcd.enc_step_widget(d, direction)
-
-    def encoder_value_changed(self, param: Parameter, new_value: float, routing_info: RoutingInfo) -> None:
-        self.lcd.display_parameter_value(param, new_value)
-        if routing_info.destination == RoutingDestination.EXTERNAL:
-            return
-        self.parameter_value_commit(param, new_value)
 
     #
     # System Menu
@@ -988,7 +1009,7 @@ class Modhandler(Handler):
             logging.info("Data backup...")
             cmd = os.path.join(self.homedir, 'util', 'data-backup.sh')
             try:
-                output = subprocess.check_output([cmd, os.path.join(self.backup_dir, self.backup_file), self.data_dir])
+                subprocess.check_output([cmd, os.path.join(self.backup_dir, self.backup_file), self.data_dir])
                 self.lcd.draw_message_dialog("Backup complete", "Info")
                 logging.info("Backup complete")
             except subprocess.CalledProcessError as e:
@@ -1007,8 +1028,8 @@ class Modhandler(Handler):
             logging.info("Restoring data backup...")
             cmd = os.path.join(self.homedir, 'util', 'data-restore.sh')
             try:
-                output = subprocess.check_output(['sudo', '-u', self.username, cmd,
-                                                  os.path.join(self.backup_dir, self.backup_file), self.data_dir])
+                subprocess.check_output(['sudo', '-u', self.username, cmd,
+                                         os.path.join(self.backup_dir, self.backup_file), self.data_dir])
                 logging.info("Restore complete")
                 self.system_menu_restart_sound(None)
             except subprocess.CalledProcessError as e:
@@ -1098,15 +1119,6 @@ class Modhandler(Handler):
     def change_bypass_preference(self, pref):
         self.settings.set_setting(Token.BYPASS, pref)
 
-    def system_toggle_hotspot(self, **kwargs):
-        if util.DICT_GET(self.wifi_status, 'hotspot_active'):
-            self.wifi_manager.disable_hotspot()
-        else:
-            self.wifi_manager.enable_hotspot()
-
-    def configure_wifi_credentials(self, ssid, password):
-        return self.wifi_manager.configure_wifi(ssid, password)
-
     def _create_audio_parameter(self, name, symbol, min_val, max_val):
         value = self.audiocard.get_volume_parameter(symbol)
         info = {
@@ -1178,7 +1190,7 @@ class Modhandler(Handler):
 
     def set_mod_tap_tempo(self, bpm):
         if bpm is not None:
-            self.ws_bridge.send_bpm(bpm)
+            self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
 
     def get_bpm(self):
         url = self.root_uri + "get_bpm"
@@ -1191,16 +1203,23 @@ class Modhandler(Handler):
         self.hardware.toggle_tap_tempo_enable(self.get_bpm())
         self.lcd.update_footswitches()
 
-    def set_tuner_source_factory(self, factory) -> None:
+    def set_tuner_source_factory(self, factory: TunerSourceFactory) -> None:
         self._tuner_source_factory = factory
+
+    def _tuner_factory(self, port: str) -> AudioSource:
+        factory = self._tuner_source_factory or (lambda p, *, name: build_source("jack", p, name=name))
+        return factory(port, name=f"pistomp-tuner-{port.split('_')[-1]}")
+
+    @property
+    def _tuner_panel(self) -> TunerPanel | None:
+        """Backwards-compatible alias."""
+        return self._fullscreen_panel if isinstance(self._fullscreen_panel, TunerPanel) else None
 
     def toggle_tuner_enable(self, *argv) -> None:
         if self._tuner_engine is None:
-            from pistomp.tuner import TunerEngine, TunerPanel, build_source
-            factory = self._tuner_source_factory or (lambda port: build_source("jack", port))
             muted = bool(self.settings.get_setting(Token.TUNER_MUTE))
             input_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
-            engine = TunerEngine(factory(f"system:capture_{input_port}"))
+            engine = TunerEngine(self._tuner_factory(f"system:capture_{input_port}"))
             engine.start()
             self._tuner_engine = engine
             if muted:
@@ -1214,16 +1233,20 @@ class Modhandler(Handler):
                 muted=muted,
                 input_port=input_port,
             )
-            self._tuner_panel = panel
-            self.lcd.show_tuner_panel(panel)
+            self._fullscreen_panel = panel
+            self.lcd.show_plugin_panel(panel)
         else:
-            if self._tuner_muted:
-                self.audiocard.set_output_muted(False)
-                self._tuner_muted = False
-            self.lcd.hide_tuner_panel()
+            self._dismiss_tuner()
+
+    def _dismiss_tuner(self) -> None:
+        if self._tuner_muted:
+            self.audiocard.set_output_muted(False)
+            self._tuner_muted = False
+        self.lcd.hide_plugin_panel()
+        if self._tuner_engine is not None:
             self._tuner_engine.stop()
             self._tuner_engine = None
-            self._tuner_panel = None
+        self._fullscreen_panel = None
 
     def _toggle_tuner_mute(self) -> None:
         new_muted = not self._tuner_muted
@@ -1234,15 +1257,36 @@ class Modhandler(Handler):
             self._tuner_panel.set_muted(new_muted)
 
     def _toggle_tuner_input(self) -> None:
-        from pistomp.tuner import TunerEngine, build_source
-        factory = self._tuner_source_factory or (lambda port: build_source("jack", port))
         current_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
         new_port = 2 if current_port == 1 else 1
-        engine = TunerEngine(factory(f"system:capture_{new_port}"))
-        engine.start()  # start before stopping old — if this raises, old engine keeps running
+        old_engine = self._tuner_engine
+        engine = TunerEngine(self._tuner_factory(f"system:capture_{new_port}"))
+        engine.start()
         self.settings.set_setting(Token.TUNER_INPUT, new_port)
-        self._tuner_engine.stop()
+        if old_engine is not None:
+            old_engine.stop()
         self._tuner_engine = engine
         if self._tuner_panel is not None:
             self._tuner_panel.set_engine(engine)
             self._tuner_panel.set_input_port(new_port)
+
+    # ── generic plugin panels ──────────────────────────────────────────────
+
+    def show_plugin_panel(self, plugin, panel_cls) -> None:
+        """Open a full-screen panel for *plugin* using the registered class."""
+        if self._fullscreen_panel is not None:
+            return  # already open
+        panel = panel_cls(
+            plugin=plugin,
+            handler=self,
+            on_dismiss=self.hide_plugin_panel,
+        )
+        self._fullscreen_panel = panel
+        self.lcd.show_plugin_panel(panel)
+
+    def hide_plugin_panel(self) -> None:
+        """Dismiss the current plugin panel and clean up."""
+        if self._fullscreen_panel is None:
+            return
+        self.lcd.hide_plugin_panel()
+        self._fullscreen_panel = None

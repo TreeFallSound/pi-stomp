@@ -15,13 +15,10 @@
 
 import logging
 
-import pistomp.analogswitch as AnalogSwitch
 import pistomp.analogVU as AnalogVU
 import common.token as Token
 import common.util as Util
-import pistomp.encoder as Encoder
 import pistomp.encoder_controller as EncoderController
-import pistomp.gpioswitch as gpioswitch
 import pistomp.hardware as hardware
 import pistomp.ledstrip as Ledstrip
 
@@ -65,11 +62,10 @@ class Pistomptre(hardware.Hardware):
         Pistomptre.__single = self
 
         self.handler = handler
-        self.midiout = midiout
 
         try:
             self.ledstrip = Ledstrip.Ledstrip()
-        except Exception as e:
+        except Exception:
             self.ledstrip = None
             logging.error("Could not initialize LED Strip")
 
@@ -94,42 +90,35 @@ class Pistomptre(hardware.Hardware):
             spi_speed = 24  # Default to spec
         self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler, flip=False, spi_speed_mhz=spi_speed))
 
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc, shortpress_config=None, midiout=None):
+    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
         enc_pins = Util.DICT_GET(ENC, id)
         if enc_pins is None:
             raise ValueError("Cannot create encoder object for id:", id)
 
-        # map the id to the actual pins
         d_pin = Util.DICT_GET(enc_pins, 'D')
         clk_pin = Util.DICT_GET(enc_pins, 'CLK')
         sw_pin = Util.DICT_GET(enc_pins, 'SW')
 
-        if midiout is None:
-            midiout = self.midiout
-
+        # Volume encoders have no MIDI CC; tweak encoders are KNOB-typed.
         if type == Token.VOLUME:
-            enc = EncoderController.EncoderController(self.handler, d_pin=d_pin, clk_pin=clk_pin,
-                                                      midi_channel=midi_channel, midi_CC=None,
-                                                      midiout=midiout, type=type, id=id)
+            enc_type, enc_cc = type, None
         else:
-            enc = EncoderController.EncoderController(self.handler, d_pin=d_pin, clk_pin=clk_pin,
-                                                      midi_channel=midi_channel, midi_CC=midi_cc,
-                                                      midiout=midiout, type=Token.KNOB, id=id)
+            enc_type, enc_cc = Token.KNOB, midi_cc
 
-        if sw_pin is not None:
-            longpress = self.handler.get_callback(longpress_callback)
-            enc_sw = gpioswitch.GpioSwitch(sw_pin, None, None, callback=self.handler.universal_encoder_sw,
-                                           longpress_callback=longpress)
-            self.encoder_switches.append(enc_sw)
-            if id is not None:
-                self.encoder_switch_map[id] = enc_sw
-
-        return enc
+        return EncoderController.EncoderController(
+            d_pin=d_pin, clk_pin=clk_pin,
+            midi_channel=midi_channel, midi_CC=enc_cc,
+            type=enc_type, id=id,
+            sw_pin=sw_pin,
+            longpress=longpress_callback,  # string name; handler resolves at dispatch
+        )
 
     def init_encoders(self):
-        enc = Encoder.Encoder(NAV_PIN_D, NAV_PIN_CLK, callback=self.handler.universal_encoder_select)
+        enc = EncoderController.EncoderController(
+            NAV_PIN_D, NAV_PIN_CLK, type=Token.NAV,
+            sw_adc_chan=NAV_ADC_CHAN, spi=self.spi,
+        )
         self.encoders.append(enc)
-        # Nav encoder switch is a special case which gets initialized in init_analog_controls
 
         # Tweak encoders
         cfg = self.default_cfg.copy()
@@ -143,12 +132,6 @@ class Pistomptre(hardware.Hardware):
         cfg = self.default_cfg.copy()
         if len(self.analog_controls) == 0:
             self.create_analog_controls(cfg)
-
-        # Special case Navigation encoder switch
-        control = AnalogSwitch.AnalogSwitch(self.spi, NAV_ADC_CHAN, ENC_SW_THRESHOLD,
-                                            callback=self.handler.universal_encoder_sw)
-        self.analog_controls.append(control)
-
     def init_footswitches(self):
         # These are defined in the config file
         cfg = self.default_cfg.copy()

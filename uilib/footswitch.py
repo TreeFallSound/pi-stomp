@@ -13,57 +13,85 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from uilib.widget import *
+from uilib.config import Config
+from uilib.widget import Widget
+
 
 class FootswitchWidget(Widget):
+    """Minimal footswitch indicator: a "keycap" outline hugging a centered label.
 
-    def __init__(self, box, font, label, color, is_bypassed, **kwargs):
+    The keycap is the accent color — top edge with rounded top corners and open
+    sides, no bottom edge. Accent is the configured footswitch color when ON, or
+    DIMMED_BG when OFF. Unbound slots show "A".."D" as a placeholder.
+    """
+
+    DIMMED_BG = (90, 90, 90)  # #5a5a5a
+    DEFAULT_COLOR = (255, 255, 255)
+
+    KEYCAP_RADIUS = 4      # top-corner radius
+    KEYCAP_PAD_X = 7       # horizontal gap between label and keycap sides
+    KEYCAP_PAD_TOP = 3     # gap between keycap top and label
+    KEYCAP_PAD_BOTTOM = 3  # how far the open legs extend below the label
+
+    def __init__(self, box, num, label, color, is_bypassed, **kwargs):
         self._init_attrs(Widget.INH_ATTRS, kwargs)
-        super(FootswitchWidget,self).__init__(box, **kwargs)
-        self.font = font
+        super(FootswitchWidget, self).__init__(box, **kwargs)
+        self.font = Config().get_font("footswitch")
+        self.num = num
         self.label = label
         self.color = color
         self.is_bypassed = is_bypassed
-        self.draw = None
-        self.footswitch_ring_width = 7
-        self.background = (0, 0, 0)  # TODO get palette from parent?
-        self.foreground = (255, 255, 255)
-        self.color_plugin_bypassed = (80, 80, 80)
+
+    def _draw_erase(self, image, draw, box):
+        pass  # shroud panel owns the background; erasing here would wipe it out
 
     def _draw(self, image, draw, real_box):
-        self.xy1 = (real_box.x0, real_box.y0)
-        self.xy2 = (real_box.x0 + 60, real_box.y0 + 40)  # TODO should these offsets be here?
-        self.draw = draw
+        x0, y0 = real_box.x0, real_box.y0
+        w, h = real_box.width, real_box.height
 
-        # halo
-        self._draw_halo()
+        is_on = not self.is_bypassed
+        accent = (self.color if self.color is not None else self.DEFAULT_COLOR) if is_on else self.DIMMED_BG
 
-        # cap bottom
-        fx1 = self.xy1[0] + 10
-        fy1 = self.xy2[1] - 34
-        fx2 = self.xy2[0] - 10
-        fy2 = fy1 + 16
-        draw.ellipse(((fx1, fy1), (fx2, fy2)), fill=self.background, outline="gray", width=2)
+        assert self.font
+        text = self.label if self.label else chr(ord("A") + self.num)
+        bbox = self.font.getbbox(text)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
 
-        # cap top
-        fy1 -= 6
-        fy2 -= 6
-        draw.ellipse(((fx1, fy1), (fx2, fy2)), fill=self.background, outline="gray", width=2)
+        # Center the keycap+label block in the slot.
+        kw = tw + 2 * self.KEYCAP_PAD_X
+        kh = th + self.KEYCAP_PAD_TOP + self.KEYCAP_PAD_BOTTOM
+        kx0 = x0 + (w - kw) // 2
+        ky0 = y0 + (h - kh) // 2
+        kx1 = kx0 + kw - 1
+        ky1 = ky0 + kh - 1
 
-        # label
-        draw.text((self.xy1[0], self.xy2[1]), self.label, self.foreground, self.font)
+        bg = (0, 0, 0, 255) if not is_on else None
+        self._draw_keycap(draw, kx0, ky0, kx1, ky1, accent, bg)
 
-    def _draw_halo(self):
-        hx1 = self.xy1[0] + 2
-        hy1 = self.xy1[1] + 10
-        hx2 = self.xy2[0] - 2
-        hy2 = self.xy2[1] - 2
-        color = self.color_plugin_bypassed if self.is_bypassed else self.color
-        self.draw.ellipse(((hx1, hy1), (hx2, hy2)), fill=None, outline=color, width=self.footswitch_ring_width)
+        tx = kx0 + self.KEYCAP_PAD_X - bbox[0]
+        ty = ky0 + self.KEYCAP_PAD_TOP - bbox[1]
+        draw.text((tx, ty), text, fill=accent, font=self.font)
+
+    def _draw_keycap(self, draw, x0, y0, x1, y1, color, fill=None):
+        # Keycap outline: rounded top corners, vertical sides, open bottom.
+        if fill is not None:
+            draw.rectangle([x0, y0, x1, y1], fill=fill)
+        r = self.KEYCAP_RADIUS
+        draw.line([(x0 + r, y0), (x1 - r, y0)], fill=color, width=1)        # top
+        draw.line([(x0, y0 + r), (x0, y1)], fill=color, width=1)           # left
+        draw.line([(x1, y0 + r), (x1, y1)], fill=color, width=1)           # right
+        draw.arc([x0, y0, x0 + 2 * r, y0 + 2 * r], 180, 270, fill=color, width=1)
+        draw.arc([x1 - 2 * r, y0, x1, y0 + 2 * r], 270, 360, fill=color, width=1)
+
+    def set_selected(self, selected):
+        parent = self.parent
+        super().set_selected(selected)
+        # ShroudedPanel owns the background; incremental refresh leaves
+        # selection artefacts because _draw_erase is a no-op.  Refresh
+        # the whole panel so the shroud is re-applied cleanly.
+        if parent is not None:
+            parent.refresh()
 
     def toggle(self, is_bypassed):
         self.is_bypassed = is_bypassed
-        self._draw_halo()
-
-
-

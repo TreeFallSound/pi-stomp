@@ -4,6 +4,11 @@ import numpy as np
 import numpy.typing as npt
 
 
+# Sub-sample interpolation basin width: CMND samples within this band above the trough
+# minimum are averaged (centroid) to locate the period. See detect_pitch Step 4.
+_TROUGH_BAND = 0.05
+
+
 @dataclass(frozen=True)
 class PitchEstimate:
     freq: float
@@ -61,7 +66,8 @@ def detect_pitch(
     cumsum = np.cumsum(diff[1:tau_max + 1])
     taus = np.arange(1, tau_max + 1, dtype=np.float64)
     cmnd = np.ones(tau_max + 1, dtype=np.float64)
-    cmnd[1:tau_max + 1] = np.where(cumsum > 0.0, diff[1:tau_max + 1] * taus / cumsum, 1.0)
+    cmnd[1:tau_max + 1] = 1.0
+    np.divide(diff[1:tau_max + 1] * taus, cumsum, out=cmnd[1:tau_max + 1], where=cumsum > 0.0)
 
     # Step 3: absolute threshold — first dip below threshold, walk to its bottom.
     # No argmin fallback: a reading that doesn't pass the threshold is not published.
@@ -78,19 +84,33 @@ def detect_pitch(
     if tau_est < 1:
         return None
 
-    # Step 4: parabolic interpolation for sub-sample accuracy.
-    if tau_min < tau_est < tau_max:
+    # Step 4: sub-sample period = cmnd-weighted centroid of the trough basin. The
+    # textbook 3-point parabola is degenerate on a flat trough bottom (two ~equal
+    # adjacent samples, true minimum between them): it snaps ±1 sample rather than
+    # landing between, a bistable ~12-cent waver at guitar-string frequencies. The
+    # centroid averages the basin; a sharp single-sample trough falls back to parabola.
+    cmin = cmnd[tau_est]
+    band = cmin + _TROUGH_BAND
+    lo = hi = tau_est
+    while lo - 1 >= tau_min and cmnd[lo - 1] <= band:
+        lo -= 1
+    while hi + 1 <= tau_max and cmnd[hi + 1] <= band:
+        hi += 1
+
+    if hi > lo:
+        basin = np.arange(lo, hi + 1, dtype=np.float64)
+        weights = band - cmnd[lo:hi + 1]  # >= 0 by construction; peaks at the minimum
+        tau_refined = float(np.sum(basin * weights) / np.sum(weights))
+    elif tau_min < tau_est < tau_max:
+        # Single-sample basin (ultra-sharp trough): fall back to the 3-point parabola.
         s0, s1, s2 = cmnd[tau_est - 1], cmnd[tau_est], cmnd[tau_est + 1]
         denom = 2.0 * (2.0 * s1 - s0 - s2)
-        if abs(denom) > 1e-10:
-            correction = (s0 - s2) / denom
-            tau_refined = tau_est + correction if abs(correction) < 1.0 else float(tau_est)
-        else:
-            tau_refined = float(tau_est)
+        correction = (s0 - s2) / denom if abs(denom) > 1e-10 else 0.0
+        tau_refined = tau_est + (correction if abs(correction) < 1.0 else 0.0)
     else:
         tau_refined = float(tau_est)
 
     if tau_refined <= 0.0:
         return None
 
-    return PitchEstimate(freq=sample_rate / tau_refined, yin_error=cmnd[tau_est])
+    return PitchEstimate(freq=sample_rate / tau_refined, yin_error=cmin)

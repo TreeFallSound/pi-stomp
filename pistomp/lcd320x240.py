@@ -26,12 +26,16 @@ import pistomp.switchstate as switchstate
 from PIL import Image, ImageColor
 
 from uilib import *
+from uilib.gridpanel import GridPanel
 from uilib.lcd_ili9341 import *
+from modalapi.layout import build_layout
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
 from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
 from pistomp.encoder_controller import EncoderController
 from blend.manager import BlendMode
+from plugins.base import PluginPanel
+from plugins import PANELS
 
 # Parameter dialog auto-dismiss timeout (seconds)
 PARAMETER_DIALOG_TIMEOUT = 1.0
@@ -97,11 +101,11 @@ class Lcd(abstract_lcd.Lcd):
         self.plugin_width = 78
         self.plugin_height = 29
         self.plugin_label_length = 7
-        self.footswitch_height = 60
-        self.footswitch_width = 56
+        self.footswitch_height = 32
+        self.footswitch_width = 80
         # space between footswitch icons where index is the footswitch count
         #                                0    1    2    3    4   5   6   7
-        self.footswitch_pitch_options = [120, 120, 120, 128, 86, 65, 65, 65]
+        self.footswitch_pitch_options = [120, 120, 120, 128, 80, 65, 65, 65]
         self.footswitch_pitch = None
         self.footswitch_slots = {}
 
@@ -124,6 +128,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_colon = None
         self.w_preset = None
         self.w_plugins = []
+        self.grid_panel: Optional[GridPanel] = None
         self.w_footswitches = []
         self.w_controls = []
         self.w_splash = None
@@ -131,14 +136,14 @@ class Lcd(abstract_lcd.Lcd):
         self.w_parameter_dialogs = {}
 
         # panels
-        self.pstack = PanelStack(display, image_format='RGB', use_dimming=True)  # TODO use dimming without loosing FS's
+        self.pstack = PanelStack(display, image_format='RGB', use_dimming=True)
         self.splash_panel = Panel(box=Box.xywh(0, 0, self.display_width, self.display_height))
         self.pstack.push_panel(self.splash_panel, refresh=False)
-        self.main_panel = Panel(box=Box.xywh(0, 0, self.display_width, 170))
+        self.main_panel = Panel(box=Box.xywh(0, 0, self.display_width, self.display_height))
         self.main_panel_pushed = False
-        self.footswitch_panel = Panel(box=Box.xywh(0, 176, self.display_width, 64))
-        self.pstack.push_panel(self.footswitch_panel, refresh=False)
-        self._tuner_panel = None
+        self.footswitch_panel = ShroudedPanel(box=Box.xywh(0, 208, self.display_width, self.footswitch_height),
+                                              shroud_alpha=224, no_dim=True, accepts_input=False)
+        self._fullscreen_panel: Panel | None = None
 
         self.pedalboards = {}
 
@@ -168,9 +173,10 @@ class Lcd(abstract_lcd.Lcd):
 
     def enc_sw(self, v):
         if v == switchstate.Value.RELEASED:
-            self.pstack.input_event(InputEvent.CLICK)
+            return self.pstack.input_event(InputEvent.CLICK)
         elif v == switchstate.Value.LONGPRESSED:
-            self.pstack.input_event(InputEvent.LONG_CLICK)
+            return self.pstack.input_event(InputEvent.LONG_CLICK)
+        return False
 
     #
     # Main
@@ -188,18 +194,51 @@ class Lcd(abstract_lcd.Lcd):
         self.draw_analog_assignments(self.current.analog_controllers)
         self.draw_plugins()
         self.draw_unbound_footswitches()
+        if self.footswitch_panel in self.main_panel.sel_list:
+            self.main_panel.sel_list.remove(self.footswitch_panel)
+        self.main_panel.add_sel_widget(self.footswitch_panel)
+        if self.footswitch_panel.sel_ref is not None:
+            self.footswitch_panel.sel_ref.set_selected(False)
+        self.footswitch_panel.sel_ref = None
         if not self.main_panel_pushed:
-            self.pstack.push_panel(self.main_panel)
+            self.pstack.push_panel(self.main_panel, refresh=False)
+            self.pstack.push_panel(self.footswitch_panel, refresh=False)
             self.main_panel_pushed = True
+            self.pstack.refresh()
         #self.main_panel.refresh()
+
+    def handle(self, event: ControllerEvent) -> bool:
+        # When a fullscreen panel is top-most and is an InputSink, ask it first.
+        # It returns True to stop the event from reaching the normal handler cascade.
+        if self._fullscreen_panel is not None and self.pstack.current is self._fullscreen_panel:
+            if self._fullscreen_panel.handle(event):
+                return True
+        return False
 
     def poll_updates(self):
         for d in self.w_parameter_dialogs.values():
             d.tick()
 
         self.pstack.poll_updates()
-        if self._tuner_panel is not None and self.pstack.current == self._tuner_panel:
-            self._tuner_panel.tick()
+        if self._fullscreen_panel is not None and self.pstack.current is self._fullscreen_panel:
+            self._fullscreen_panel.tick()
+
+    def show_plugin_panel(self, panel: Panel) -> None:
+        self._fullscreen_panel = panel
+        self.pstack.push_panel(panel)
+        panel.refresh()
+
+    def hide_plugin_panel(self) -> None:
+        if self._fullscreen_panel is not None:
+            self.pstack.pop_panel(self._fullscreen_panel)
+        self._fullscreen_panel = None
+
+    def has_active_fullscreen_panel(self) -> bool:
+        return self._fullscreen_panel is not None
+
+    @property
+    def plugin_panel(self) -> PluginPanel | None:
+        return self._fullscreen_panel if isinstance(self._fullscreen_panel, PluginPanel) else None
 
         if self.pstack.current == self.main_panel:
             # Update control progress bars (analog controls and encoders)
@@ -239,19 +278,6 @@ class Lcd(abstract_lcd.Lcd):
                 self.w_preset.tick()
             if self.w_pedalboard:
                 self.w_pedalboard.tick()
-
-    def show_tuner_panel(self, panel) -> None:
-        self._tuner_panel = panel
-        self.pstack.push_panel(panel)
-        # push_panel composes the (still-blank) panel image onto the stack but
-        # doesn't draw the panel's children. Force a full redraw so bg, rules,
-        # header and hint are on screen before tick()'s partial refreshes start.
-        panel.refresh()
-
-    def hide_tuner_panel(self) -> None:
-        if self._tuner_panel is not None:
-            self.pstack.pop_panel(self._tuner_panel)
-            self._tuner_panel = None
 
     #
     # Toolbar
@@ -408,35 +434,45 @@ class Lcd(abstract_lcd.Lcd):
     # Plugins
     #
     def draw_plugins(self):
-        x = 0
-        y = 78
-        per_row = 4
-        i = 1
-        # erase currently rendered plugins and footswitches first
+        # Tear down the previous render. The GridPanel destroys its tile
+        # children; the outer panel's sel traversal stops yielding them
+        # because GridPanel.sel_children() reads its (now-empty) tile_order.
         for w in self.w_footswitches:
             w.destroy()
         self.w_footswitches = []
-        for w in self.w_plugins:
-            w.destroy()
+        if self.grid_panel is not None:
+            self.main_panel.del_sel_widget(self.grid_panel)
+            self.grid_panel.destroy()
+            self.grid_panel = None
         self.w_plugins = []
 
-        for plugin in self.current.pedalboard.plugins:
-            label = plugin.instance_id.replace('/', "")[:self.plugin_label_length]
+        plugins = self.current.pedalboard.plugins
+        plugins_by_id = {p.instance_id.lstrip("/"): p for p in plugins}
+        layout = build_layout(plugins_by_id.keys(), self.current.pedalboard.connections)
+
+        def tile_factory(node, box, parent):
+            plugin = plugins_by_id[node.id]
+            label = plugin.instance_id[:self.plugin_label_length]
             label = label.replace("_", "")
-            label = self.shorten_name(label, self.plugin_width)
-            p = TextWidget(box=Box.xywh(x, y, self.plugin_width, self.plugin_height), text=label, outline_radius=5,
-                           parent=self.main_panel, action=self.plugin_event, object=plugin)
-            p.set_font(self.small_font)
-            self.color_plugin(p, plugin)
-            self.main_panel.add_sel_widget(p)
-            self.w_plugins.append(p)
+            label = self.shorten_name(label, box.width)
+            # parent MUST be passed in ctor: attaching later wipes the
+            # explicit colors color_plugin() sets via inherited-attr resolution.
+            tile = TextWidget(box=box, text=label, outline_radius=5,
+                              parent=parent, action=self.plugin_event, object=plugin)
+            tile.set_font(self.small_font)
+            self.color_plugin(tile, plugin)
+            self.w_plugins.append(tile)
+            return tile
 
-            pos = (i % per_row)
-            x = (self.plugin_width + 2) * pos
-            if pos == 0:
-                y = y + self.plugin_height + 2
-            i += 1
+        # Grid area: below title (y=78), above footswitch panel (y=208).
+        self.grid_panel = GridPanel(
+            layout, tile_factory,
+            box=Box.xywh(0, 78, self.display_width, 130),
+            parent=self.main_panel,
+        )
+        self.main_panel.add_sel_widget(self.grid_panel)
 
+        for plugin in plugins:
             if plugin.has_footswitch:
                 self.draw_footswitch(plugin)
 
@@ -447,7 +483,11 @@ class Lcd(abstract_lcd.Lcd):
         if event == InputEvent.CLICK:
             self.handler.toggle_plugin_bypass(widget, plugin)
         elif event == InputEvent.LONG_CLICK:
-            self.draw_parameter_menu(plugin)
+            panel_cls = PANELS.get(plugin.uri)
+            if panel_cls is not None:
+                self.handler.show_plugin_panel(plugin, panel_cls)
+            else:
+                self.draw_parameter_menu(plugin)
 
 
     def color_plugin(self, widget, plugin):
@@ -467,9 +507,16 @@ class Lcd(abstract_lcd.Lcd):
             self.color_plugin(w, plugin)
         self.main_panel.refresh()
 
+    def refresh_plugin(self, plugin):
+        for w in self.w_plugins:
+            if w.object is plugin:
+                self.color_plugin(w, plugin)
+                w.refresh()
+                break
+
     def toggle_plugin(self, widget, plugin):
         self.color_plugin(widget, plugin)
-        self.main_panel.refresh()
+        widget.refresh()
 
     # Try to map color to a valid displayable color, if not use foreground
     def valid_color(self, color):
@@ -543,25 +590,32 @@ class Lcd(abstract_lcd.Lcd):
     #
     # Footswitches
     #
+    def footswitch_label(self, footswitch):
+        """Label for a footswitch bound to a plugin param: the param name, or the plugin instance for a :bypass binding."""
+        param = footswitch.parameter
+        if param is None:
+            return None
+        if param.symbol != ":bypass":  # TODO token
+            return param.name
+        return self.shorten_name(param.instance_id, self.footswitch_width)
+
     def draw_footswitch(self, plugin):
         for c in plugin.controllers:
             if isinstance(c, Footswitch):
                 fs_id = c.id
                 #fss[fs_id] = None
-                if c.parameter.symbol != ":bypass":  # TODO token
-                    label = c.parameter.name
-                else:
-                    label = self.shorten_name(plugin.instance_id, self.footswitch_width)
+                label = self.footswitch_label(c)
                 c.set_display_label(label)
 
                 y = 0
                 x = self.get_footswitch_pitch() * fs_id
                 self.footswitch_slots[fs_id] = label
                 color = self.get_plugin_color(plugin)
-                p = FootswitchWidget(Box.xywh(x, y, self.plugin_width, self.plugin_height), self.small_font,
-                             label, color, plugin.is_bypassed(), parent=self.footswitch_panel, object=c)
+                p = FootswitchWidget(Box.xywh(x, y, self.footswitch_width, self.footswitch_height),
+                             fs_id, label, color, plugin.is_bypassed(),
+                             parent=self.footswitch_panel, action=self.plugin_event, object=plugin)
                 self.w_footswitches.append(p)
-                self.footswitch_panel.add_widget(p)
+                self.footswitch_panel.add_sel_widget(p)
                 break
 
     def draw_unbound_footswitches(self):
@@ -573,22 +627,23 @@ class Lcd(abstract_lcd.Lcd):
             label = "" if dl is None else dl
             y = 0
             x = self.get_footswitch_pitch() * slot
-            p = FootswitchWidget(Box.xywh(x, y, self.plugin_width, self.plugin_height), self.small_font,
-                                 label, None, True, parent=self.footswitch_panel, object=fs)
+            p = FootswitchWidget(Box.xywh(x, y, self.footswitch_width, self.footswitch_height),
+                                 slot, label, None, True, parent=self.footswitch_panel, object=fs)
             self.w_footswitches.append(p)
-            self.footswitch_panel.add_widget(p)
+            self.footswitch_panel.add_sel_widget(p)
         self.footswitch_panel.refresh()
 
     def update_footswitch(self, footswitch):
         for wfs in self.w_footswitches:
             if wfs.object == footswitch:
+                if footswitch.parameter is not None:
+                    # Binding may be new (e.g. MIDI learn) — reflect label + color.
+                    footswitch.set_display_label(self.footswitch_label(footswitch))
+                    wfs.color = self.get_category_color(footswitch.category)
                 wfs.toggle(footswitch.toggled == False)
-                label = footswitch.get_display_label()
-                if label:
-                    wfs.label = label
+                wfs.label = footswitch.get_display_label() or ""
+                wfs.refresh()
                 break
-        self.footswitch_panel.refresh()
-        self.refresh_plugins()  # TODO maybe not the most efficient, does exhibit some lag time
 
     def update_footswitches(self):
         for fs in self.footswitches:
@@ -610,12 +665,12 @@ class Lcd(abstract_lcd.Lcd):
     def draw_system_menu(self, event, widget):
         items = [("System info", self.draw_system_info_dialog, None),
                  ("Tuner", self._toggle_tuner_from_menu, None),
-                 ("LCD Speed >", self.draw_lcd_speed_menu, None),
                  ("System shutdown", self.handler.system_menu_shutdown, None),
                  ("System reboot",  self.handler.system_menu_reboot, None),
                  ("Restart sound engine", self.handler.system_menu_restart_sound, None),
                  ("Bank Select >", self.draw_bank_menu, None),
-                 ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None)]
+                 ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None),
+                 ("LCD Speed >", self.draw_lcd_speed_menu, None)]
         self.draw_selection_menu(items, "System Menu")
 
     def _toggle_tuner_from_menu(self, arg):

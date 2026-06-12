@@ -21,8 +21,8 @@
 #
 # A new version with different controls should have a new separate subclass
 
-import pistomp.encoder as Encoder
-import pistomp.gpioswitch as gpioswitch
+import common.token as Token
+import pistomp.encoder_controller as EncoderController
 import pistomp.hardware as hardware
 import pistomp.relay as Relay
 
@@ -55,7 +55,6 @@ class Pistompcore(hardware.Hardware):
         Pistompcore.__single = self
 
         self.mod = mod
-        self.midiout = midiout
         self.debounce_map = DEBOUNCE_MAP
 
         self.init_spi()
@@ -80,12 +79,12 @@ class Pistompcore(hardware.Hardware):
         self.mod.add_lcd(Lcd.Lcd(self.mod.homedir, self.mod, flip=True, spi_speed_mhz=spi_speed))
 
     def init_encoders(self):
-        top_enc = Encoder.Encoder(TOP_ENC_PIN_D, TOP_ENC_PIN_CLK, callback=self.mod.universal_encoder_select)
-        self.encoders.append(top_enc)
-        enc_sw = gpioswitch.GpioSwitch(
-            1, None, None, callback=self.mod.universal_encoder_sw, longpress_callback=self.mod.universal_encoder_sw
+        top_enc = EncoderController.EncoderController(
+            TOP_ENC_PIN_D, TOP_ENC_PIN_CLK,
+            type=Token.NAV,
+            sw_pin=1,
         )
-        self.encoder_switches.append(enc_sw)
+        self.encoders.append(top_enc)
         # XXX: user-added encoders via config are not supported here yet (see v3).
 
     def init_relays(self):
@@ -108,6 +107,6 @@ class Pistompcore(hardware.Hardware):
     def test(self):
         pass
 
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc, shortpress_config=None, midiout=None):
+    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
         # Pistompcore currently doesn't support configurable tweak encoders
         raise NotImplementedError("Pistompcore does not support add_encoder")

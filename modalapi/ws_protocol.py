@@ -89,6 +89,46 @@ class PluginBypassMessage:
 
 
 @dataclass
+class TransportMessage:
+    """Transport state changed (transport {rolling} {beatsPerBar} {bpm} {syncMode})."""
+
+    rolling: bool
+    bpm: float
+
+
+@dataclass
+class AddPluginMessage:
+    """Plugin present in a (re)connect/load dump (add ...)."""
+
+    instance: str  # canonical bare form, e.g. "CollisionDrive"
+    bypassed: bool
+
+
+@dataclass
+class ParamSetMessage:
+    """A plugin control-port value changed (param_set, non-:bypass)."""
+
+    instance: str  # canonical bare form, e.g. "HotBox"
+    symbol: str  # e.g. "gain"
+    value: float
+
+
+@dataclass
+class MidiMapMessage:
+    """A MIDI binding was learned/assigned in mod-ui (midi_map ...)."""
+
+    instance: str  # canonical bare form, e.g. "CollisionDrive"
+    symbol: str  # e.g. "gain" or ":bypass"
+    channel: int
+    controller: int
+
+    @property
+    def binding(self) -> str:
+        # Matches Parameter.binding's "channel:controller" form.
+        return "%d:%d" % (self.channel, self.controller)
+
+
+@dataclass
 class UnknownMessage:
     """Message type we don't handle yet."""
 
@@ -105,6 +145,10 @@ WebSocketMessage = Union[
     RemoveHwPortMessage,
     TrueBypassMessage,
     PluginBypassMessage,
+    TransportMessage,
+    AddPluginMessage,
+    ParamSetMessage,
+    MidiMapMessage,
     UnknownMessage,
 ]
 
@@ -167,6 +211,11 @@ def parse_message(raw_message: str) -> WebSocketMessage:
             case ["add_hw_port", port_name]:
                 return AddHwPortMessage(port_name=port_name, port_type="", is_output=False, title="", index=0)
 
+            # Format: add {instance} {uri} {x} {y} {bypassed} {sversion} {buildEnv}
+            case ["add", instance_path, rest]:
+                bypassed = int(rest.split()[3])
+                return AddPluginMessage(instance=instance_path.removeprefix("/graph/"), bypassed=bypassed != 0)
+
             # Format: remove_hw_port /graph/{name}
             case ["remove_hw_port", port_name, *_]:
                 return RemoveHwPortMessage(port_name=port_name)
@@ -179,6 +228,22 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                 value_str = rest.split(" ", 1)[1]
                 return PluginBypassMessage(instance=instance, bypassed=float(value_str) != 0.0)
 
+            # Format: param_set /graph/{instance} {symbol} {value}  (must follow :bypass arm)
+            case ["param_set", path, rest]:
+                instance = path.removeprefix("/graph/")
+                symbol, value_str = rest.split(" ", 1)
+                return ParamSetMessage(instance=instance, symbol=symbol, value=float(value_str))
+
+            # Format: midi_map /graph/{instance} {symbol} {channel} {controller} {min} {max}
+            case ["midi_map", path, rest]:
+                symbol, ch, ctrl = rest.split(" ")[:3]
+                return MidiMapMessage(
+                    instance=path.removeprefix("/graph/"),
+                    symbol=symbol,
+                    channel=int(ch),
+                    controller=int(ctrl),
+                )
+
             # Format: truebypass {left} {right}
             case ["truebypass", left, right_trailing]:
                 return TrueBypassMessage(left=int(left), right=int(right_trailing.split()[0]))
@@ -186,6 +251,11 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                 return TrueBypassMessage(left=int(left), right=0)
             case ["truebypass"]:
                 return TrueBypassMessage(left=0, right=0)
+
+            # Format: transport {rolling} {beatsPerBar} {bpm} {syncMode}
+            case ["transport", rolling, rest]:
+                bpm = float(rest.split()[1])
+                return TransportMessage(rolling=rolling != "0", bpm=bpm)
 
     except (ValueError, IndexError) as e:
         logging.warning(f"Failed to parse WebSocket message '{raw_message}': {e}")

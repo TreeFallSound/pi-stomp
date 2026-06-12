@@ -4,7 +4,6 @@ import time
 from unittest.mock import patch
 
 import pistomp.switchstate as switchstate
-from pistomp.footswitch import Footswitch
 from tests.types import SystemFixture
 
 
@@ -14,9 +13,9 @@ def test_v3_preset_change_via_footswitch_longpress(v3_system: SystemFixture, sna
     hw = v3_system.hw
     mock_get = v3_system.mock_get
 
-    hw.footswitches[0].pressed(switchstate.Value.LONGPRESSED)
+    hw.footswitches[0]._on_switch(switchstate.Value.LONGPRESSED, timestamp=time.monotonic())
     with patch("time.monotonic", return_value=time.monotonic() + 1.0):
-        Footswitch.check_longpress_events()
+        handler._tick_chords()
 
     assert any("snapshot/load" in u for u in get_urls(mock_get))
     snapshot()

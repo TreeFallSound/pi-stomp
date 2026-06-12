@@ -42,6 +42,9 @@ import pistomp.handlerfactory as Handlerfactory
 import pistomp.hardwarefactory as Hardwarefactory
 from pistomp.tuner.source import build_source
 
+# Force plugin panel registration so PANELS is populated at startup
+import plugins.eq.panel  # noqa: F401
+
 EMULATOR_HOSTS = ("emulator_v1", "emulator_v2", "emulator_v3")
 
 def main():
@@ -179,7 +182,7 @@ def main():
 
     if not is_emulator and args.tuner_source:
         tuner_spec = args.tuner_source
-        handler.set_tuner_source_factory(lambda port: build_source(tuner_spec, port))
+        handler.set_tuner_source_factory(lambda port, *, name: build_source(tuner_spec, port, name=name))
 
     logging.info("Entering main loop. Press Control-C to exit.")
     period = 0
@@ -190,6 +193,7 @@ def main():
         # main loop
         while True:
             handler.poll_controls()
+            handler.poll_ws_messages()  # drain inbound WS every tick for instant bypass/snapshot indicators
             time.sleep(0.01)  # lower to increase responsiveness, but can cause conflict with LCD if too low
 
             # For less frequent events

@@ -20,6 +20,7 @@ Provides a thread-safe bridge between the synchronous main loop and
 async WebSocket communication with mod-ui.
 """
 
+import os
 import asyncio
 import logging
 import queue
@@ -27,11 +28,11 @@ import sys
 import threading
 from typing import Optional
 
-try:
-    import websockets
-except ImportError:
-    logging.error("websockets library not installed. Run: pip install websockets")
-    raise
+import websockets
+import uvloop
+
+# Service will restart after this
+MAX_RECONNECT_ATTEMPTS = 4
 
 
 class WebSocketWorker:
@@ -43,7 +44,9 @@ class WebSocketWorker:
     reconnection and backpressure monitoring.
     """
 
-    def __init__(self, ws_url: str, backpressure_threshold: int, command_queue: queue.Queue, received_queue: queue.Queue):
+    def __init__(
+        self, ws_url: str, backpressure_threshold: int, command_queue: queue.Queue, received_queue: queue.Queue
+    ):
         self.ws_url = ws_url
         self.backpressure_threshold = backpressure_threshold
         self.command_queue = command_queue
@@ -59,18 +62,21 @@ class WebSocketWorker:
 
     def run(self):
         """Entry point for the background thread."""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        logging.info("Using uvloop for WebSocket bridge")
+
         try:
-            loop.run_until_complete(self._async_worker())
+            uvloop.run(self._async_worker())
         except Exception as e:
-            logging.error(f"WebSocket worker crashed: {e}", exc_info=True)
-        finally:
-            loop.close()
+            # uvloop.run raises if the loop was cancelled or crashed
+            if self.running:
+                logging.error(f"WebSocket worker crashed: {e}", exc_info=True)
+            else:
+                logging.debug(f"WebSocket worker stopped: {e}")
 
     async def _async_worker(self):
         """Connects and drives the message loop, with exponential-backoff reconnection."""
         retry_delay = 1.0
+        reconnect_attempts = 0
 
         while self.running:
             try:
@@ -84,6 +90,7 @@ class WebSocketWorker:
                     self.ws = ws
                     logging.info(f"WebSocket connected to {self.ws_url}")
                     retry_delay = 1.0  # Reset on successful connect
+                    reconnect_attempts = 0  # Reset attempts on success
 
                     # Flush stale messages from before the disconnect.
                     # After a reconnect, mod-ui sends a fresh loading_end which re-syncs state.
@@ -102,8 +109,16 @@ class WebSocketWorker:
             except (websockets.exceptions.WebSocketException, OSError, ConnectionRefusedError) as e:
                 logging.error(f"WebSocket connection error: {e}")
                 self.ws = None
+
+                reconnect_attempts += 1
+                if reconnect_attempts > MAX_RECONNECT_ATTEMPTS:
+                    logging.critical(
+                        f"WebSocket failed to reconnect after {MAX_RECONNECT_ATTEMPTS} attempts. Restarting service..."
+                    )
+                    os._exit(1)
+
                 if self.running:
-                    logging.info(f"Reconnecting in {retry_delay}s...")
+                    logging.info(f"Reconnecting ({reconnect_attempts}/{MAX_RECONNECT_ATTEMPTS}) in {retry_delay}s...")
                     await asyncio.sleep(retry_delay)
                     retry_delay = min(retry_delay * 2, 30.0)
             except Exception as e:
@@ -167,6 +182,8 @@ class WebSocketWorker:
                 elif message.startswith("data_ready "):
                     await ws.send(message)
                     continue
+                elif message.startswith("output_set "):
+                    continue  # audio-meter flood; nothing consumes it, drop before it floods the queue
                 self.received_queue.put(message)
                 self.messages_received += 1
                 logging.debug(f"Received message from server: {message[:100]}")
@@ -218,16 +235,20 @@ class AsyncWebSocketBridge:
             self._thread.join(timeout=2.0)
         logging.info(f"WebSocket worker stopped (sent={self._worker.messages_sent})")
 
-    def send_bpm(self, bpm: float) -> None:
-        """Queue a BPM change (fire-and-forget)."""
+    def send_bpm(self, bpm: float) -> bool:
+        """Queue a BPM change. Returns False if backpressure is active."""
+        if self._worker.backpressure_active:
+            return False
         self.command_queue.put_nowait(f"transport-bpm {bpm}")
+        return True
 
-    def send_parameter(self, instance_id: str, symbol: str, value: float) -> None:
-        """Queue a parameter update (fire-and-forget). instance_id should be canonical (no leading slash)."""
-        if instance_id.startswith("/"):
-            logging.warning(f"send_parameter received non-canonical instance_id {instance_id!r}; stripping leading slash")
-            instance_id = instance_id.lstrip("/")
+    def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
+        """Queue a parameter update. instance_id should be canonical (no leading slash).
+        Returns False if backpressure is active."""
+        if self._worker.backpressure_active:
+            return False
         self.command_queue.put_nowait(f"param_set /graph/{instance_id}/{symbol} {value}")
+        return True
 
     def get_received_messages(self) -> list:
         """Drain all pending inbound messages (non-blocking). Called from main thread."""

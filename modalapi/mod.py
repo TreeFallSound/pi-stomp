@@ -1,3 +1,4 @@
+# pyright: reportGeneralTypeIssues=false, reportAttributeAccessIssue=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportArgumentType=false, reportOptionalSubscript=false
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
@@ -16,6 +17,7 @@
 import json
 import logging
 import os
+import time
 import requests as req
 import subprocess
 import sys
@@ -28,19 +30,23 @@ import pistomp.switchstate as switchstate
 import modalapi.pedalboard as Pedalboard
 import common.parameter as Parameter
 import modalapi.wifi as Wifi
-
-from blend.snapshot import SnapshotManager
 import modalapi.external_midi as ExternalMidi
+from pistomp.encoder_controller import EncoderController
+from pistomp.input.event import AnalogEvent, ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
+from rtmidi.midiconstants import CONTROL_CHANGE
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
 from typing import Optional
+
+from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
-from pistomp.analogmidicontrol import AnalogMidiControl
-from pistomp.controller import RoutingDestination
+from pistomp.controller_manager import ControllerManager
+from pistomp.current import Current
 from pistomp.footswitch import Footswitch
+from pistomp.footswitch_chords import FootswitchChords
 from pistomp.handler import Handler
 from enum import Enum
 from pathlib import Path
@@ -132,7 +138,7 @@ class Mod(Handler):
 
         self.plugin_dict = {}
 
-        self.hardware = None
+        self._hardware = None
 
         self.top_encoder_mode = TopEncoderMode.DEFAULT
         self.bot_encoder_mode = BotEncoderMode.DEFAULT
@@ -143,7 +149,7 @@ class Mod(Handler):
         self.software_version = None
         self.git_describe = None
 
-        self.current = None  # pointer to Current class
+        self.current: Current | None = None
         self.deep = None     # pointer to current Deep class
 
         # Stores snapshot index from loading_end until pedalboard change is detected
@@ -166,12 +172,7 @@ class Mod(Handler):
         logging.info("WebSocket bridge started")
 
         # External MIDI device synchronization
-        self.external_midi = None
-        try:
-            self.external_midi = ExternalMidi.ExternalMidiManager()
-        except Exception as e:
-            logging.warning(f"Failed to initialize external MIDI manager: {e}")
-
+        self.external_midi = ExternalMidi.ExternalMidiManager()
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
@@ -179,6 +180,9 @@ class Mod(Handler):
                           "next_snapshot": self.preset_incr_and_change,
                           "previous_snapshot": self.preset_decr_and_change
         }
+
+        # Footswitch longpress/chord resolver (rebuilt on pedalboard change)
+        self.chord_helper = FootswitchChords()
 
         # Blend mode manager - multiple blend snapshots per pedalboard
         self.blend_modes: dict[str, Any] = {}  # {snapshot_name: BlendMode}
@@ -188,31 +192,18 @@ class Mod(Handler):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
-        if self.external_midi is not None:
-            self.external_midi.close()
-        if self.ws_bridge is not None:
-            self.ws_bridge.stop()
+        self.ws_bridge.stop()
 
     def cleanup(self):
         if self.lcd is not None:
             self.lcd.cleanup()
-        if self.external_midi is not None:
-            self.external_midi.close()
-        if self.ws_bridge is not None:
-            self.ws_bridge.stop()
-            logging.info("WebSocket bridge stopped")
+        self.external_midi.close()
+        self.ws_bridge.stop()
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
     # replaced when a different pedalboard is made current (old Current object
     # gets deleted and a new one added via self.set_current_pedalboard()
-    class Current:
-        def __init__(self, pedalboard):
-            self.pedalboard = pedalboard
-            self.presets = {}
-            self.preset_index = 0  # Assumes pedalboard loads at snapshot 0 (default behavior)
-            self.analog_controllers = {}  # { type: (plugin_name, param_name) }
-
     class Deep:
         def __init__(self, plugin):
             self.plugin = plugin
@@ -225,9 +216,72 @@ class Mod(Handler):
     # Hardware
     #
 
+    @property
+    def hardware(self):
+        assert self._hardware is not None, "Hardware has not been initialized"
+        return self._hardware
+
     def add_hardware(self, hardware):
-        self.hardware = hardware
+        self._hardware = hardware
         hardware.external_midi = self.external_midi
+        self._controller_manager = ControllerManager(hardware, reorder_footswitch_plugins=True)
+        hardware.register_sink(self)
+
+    def handle(self, event: ControllerEvent) -> bool:
+        if self.active_blend_mode and self.active_blend_mode.intercept(event):
+            return True
+        match event:
+            case EncoderEvent():
+                c = event.controller
+                if c.type == Token.NAV:
+                    if getattr(c, 'id', None) == 0:
+                        self.top_encoder_select(event.rotations)
+                    else:
+                        self.bot_encoder_select(event.rotations)
+                    return True
+                if c.parameter is not None:
+                    self.lcd.display_parameter_value(c.parameter, event.new_value)
+                self._emit_midi(c, event.new_midi_value)
+                return True
+            case AnalogEvent():
+                self._emit_midi(event.controller, event.midi_value)
+                return True
+            case SwitchEvent():
+                return self._handle_switch_v1(event)
+        return False
+
+    def _handle_switch_v1(self, event: SwitchEvent) -> bool:
+        c = event.controller
+        if isinstance(c, EncoderController):
+            if event.kind == SwitchEventKind.LONGPRESS:
+                name = getattr(c, 'longpress', None)
+                if name:
+                    cb = self.get_callback(name)
+                    if cb:
+                        cb()
+                return True
+            # Short press on nav encoder button
+            if getattr(c, 'id', None) == 0:
+                self.top_encoder_sw(switchstate.Value.RELEASED)
+            else:
+                self.bottom_encoder_sw(switchstate.Value.RELEASED)
+            return True
+        if isinstance(c, Footswitch):
+            return self._handle_footswitch(c, event.kind, event.timestamp)
+        return False
+
+    def _emit_midi(self, controller, midi_value: int) -> None:
+        if controller.midi_CC is None:
+            return
+        cc = [controller.midi_channel | CONTROL_CHANGE, controller.midi_CC, int(midi_value)]
+        port_name = self.hardware.external_port_name(controller)
+        if port_name is not None and self.external_midi is not None:
+            try:
+                if self.external_midi.send_raw(port_name, cc):
+                    return
+            except Exception as e:
+                logging.warning("External CC send failed on %s: %s", port_name, e)
+        self.hardware.midiout.send_message(cc)
 
     def add_lcd(self, lcd):
         self.lcd = lcd
@@ -239,7 +293,7 @@ class Mod(Handler):
     # Assumption that the top encoder actions can be executed regardless of bottom encoder mode
     # Bottom encoder actions should be ignored while the system menu is active to avoid corrupting the LCD
 
-    def top_encoder_sw(self, value):
+    def top_encoder_sw(self, value, timestamp=None):
         # State machine for top rotary encoder
         mode = self.top_encoder_mode
         if value == switchstate.Value.RELEASED:
@@ -299,7 +353,7 @@ class Mod(Handler):
         elif mode == TopEncoderMode.INPUT_GAIN:
             self.parameter_value_change(direction, self.input_gain_commit)
 
-    def bottom_encoder_sw(self, value):
+    def bottom_encoder_sw(self, value, timestamp=None):
         # State machine for bottom rotary encoder switch
         if (self.top_encoder_mode == TopEncoderMode.SYSTEM_MENU or
                 self.top_encoder_mode == TopEncoderMode.HEADPHONE_VOLUME or
@@ -338,7 +392,7 @@ class Mod(Handler):
     # Universal Encoder State Machine (single encoder navigation for pi-Stomp Core)
     #
 
-    def universal_encoder_sw(self, value):
+    def universal_encoder_sw(self, value, timestamp=None):
         # State machine for universal rotary encoder switch
         mode = self.universal_encoder_mode
         if value == switchstate.Value.RELEASED:
@@ -487,6 +541,7 @@ class Mod(Handler):
         # this is called many times per second.  Only critical updates should be here
         if self.universal_encoder_mode is not UniversalEncoderMode.LOADING:
             self.hardware.poll_controls()
+            self._tick_chords()
 
     def poll_wifi(self):
         self.wifi_manager.poll()
@@ -521,7 +576,8 @@ class Mod(Handler):
                 self.current.preset_index = msg.snapshot_id
                 self.update_lcd_title()
 
-        elif isinstance(msg, PluginBypassMessage):
+        elif isinstance(msg, (PluginBypassMessage, AddPluginMessage)):
+            # PluginBypassMessage: live delta. AddPluginMessage: (re)connect dump
             if self.current is not None:
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
@@ -530,13 +586,39 @@ class Mod(Handler):
                         self.lcd.refresh_plugins()
                         break
 
-    def poll_modui_changes(self):
-        """Poll for changes from MOD-UI: websockets and file watching"""
+        elif isinstance(msg, TransportMessage):
+            if self.hardware and self.hardware.taptempo:
+                self.hardware.taptempo.set_bpm(msg.bpm)
+                if self.hardware.taptempo.is_enabled():
+                    fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
+                    self.update_lcd_fs(footswitch=fs)
+
+        elif isinstance(msg, ParamSetMessage):
+            # Keep the cached value fresh so a later edit opens at the current
+            # value. Not drawn anywhere live, so no LCD refresh.
+            if self.current is not None:
+                for plugin in self.current.pedalboard.plugins:
+                    if plugin.instance_id == msg.instance:
+                        param = plugin.parameters.get(msg.symbol)
+                        if param is not None:
+                            param.value = msg.value
+                        break
+
+        elif isinstance(msg, MidiMapMessage):
+            # MIDI learn in mod-ui assigned a hardware control to a parameter.
+            self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
+
+    def poll_ws_messages(self):
+        """Drain and dispatch inbound WebSocket messages (fast ~10ms cadence)."""
         for msg in self.ws_bridge.get_received_messages():
             try:
                 self._handle_ws_message(parse_message(msg))
             except Exception as e:
                 logging.error(f"Error handling WebSocket message '{msg}': {e}")
+
+    def poll_modui_changes(self):
+        """Poll for changes from MOD-UI: websockets and file watching"""
+        self.poll_ws_messages()
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
@@ -611,7 +693,7 @@ class Mod(Handler):
         del self.current
 
         # Create a new "current"
-        self.current = self.Current(pedalboard)
+        self.current = Current(pedalboard)
 
         if self.next_pedalboard_preset_index is not None:
             self.current.preset_index = self.next_pedalboard_preset_index
@@ -629,6 +711,16 @@ class Mod(Handler):
         self.bind_current_pedalboard()
         self.load_current_presets()
         self.update_lcd()
+
+        # Send external MIDI messages for this pedalboard
+        # Config was already updated by hardware.reinit(cfg) above
+        try:
+            self.external_midi.send_messages_for_pedalboard()
+        except Exception as e:
+            logging.warning(f"Failed to send external MIDI messages: {e}")
+
+        # Sync current state of analog controls (expression pedals, etc.)
+        self.hardware.sync_analog_controls()
 
         # Prepare blend modes if configured (snapshot-based activation)
         try:
@@ -676,17 +768,6 @@ class Mod(Handler):
             self.blend_modes = {}
             self.active_blend_mode = None
 
-        # Send external MIDI messages for this pedalboard
-        # Config was already updated by hardware.reinit(cfg) above
-        if self.external_midi is not None:
-            try:
-                self.external_midi.send_messages_for_pedalboard()
-            except Exception as e:
-                logging.warning(f"Failed to send external MIDI messages: {e}")
-
-        # Sync current state of analog controls (expression pedals, etc.)
-        self.hardware.sync_analog_controls()
-
         # Selection info
         self.selectable_items.clear()
         self.selectable_items.append((SelectedType.PEDALBOARD, None))
@@ -705,55 +786,12 @@ class Mod(Handler):
         # "current" being the pedalboard mod-host says is current
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
+        self._controller_manager.bind(self.current)
 
-        # Clear previous parameter bindings from all controllers
-        # TODO: modhandler.py skips volume encoders here — align these two once we understand why
-        for controller in self.hardware.controllers.values():
-            controller.parameter = None
-
-        # Clear analog controllers display data
-        self.current.analog_controllers = {}
-
-        footswitch_plugins = []
-        if self.current.pedalboard:
-            #logging.debug(self.current.pedalboard.to_json())
-            for plugin in self.current.pedalboard.plugins:
-                if plugin is None or plugin.parameters is None:
-                    continue
-                for sym, param in plugin.parameters.items():
-                    if param.binding is not None:
-                        controller = self.hardware.controllers.get(param.binding)
-                        if controller is not None:
-                            routing = controller.get_routing_info()
-
-                            # External controllers shouldn't be bound to plugin parameters
-                            if routing.destination == RoutingDestination.EXTERNAL:
-                                logging.warning(
-                                    f"Plugin parameter {plugin.name}:{param.name} is bound to external controller "
-                                    f"{param.binding} (routed to {routing.port_name}) - ignoring plugin binding"
-                                )
-                                continue
-
-                            # TODO possibly use a setter instead of accessing var directly
-                            # What if multiple params could map to the same controller?
-                            controller.parameter = param
-                            controller.set_value(param.value)
-                            plugin.controllers.append(controller)
-                            if isinstance(controller, Footswitch):
-                                # TODO sort this list so selection orders correctly (sort on midi_CC?)
-                                plugin.has_footswitch = True
-                                footswitch_plugins.append(plugin)
-                                controller.set_category(plugin.category)
-                            elif isinstance(controller, AnalogMidiControl):
-                                key = "%s:%s" % (plugin.instance_id, param.name)
-                                controller.cfg[Token.CATEGORY] = plugin.category  # somewhat LAME adding to cfg dict
-                                controller.cfg[Token.TYPE] = controller.type
-                                self.current.analog_controllers[key] = controller.cfg
-
-            # Move Footswitch controlled plugins to the end of the list
-            self.current.pedalboard.plugins = [elem for elem in self.current.pedalboard.plugins
-                                               if elem.has_footswitch is False]
-            self.current.pedalboard.plugins += footswitch_plugins
+    def _redraw_after_binding(self, controller, is_footswitch):
+        # draw_plugins/draw_bound_plugins place by has_footswitch, so no reorder
+        # is needed here — the redraw alone moves the plugin to the footswitch row.
+        self.update_lcd()
 
     def pedalboard_select(self, direction):
         # 0 means the pedalboard field is selected but a new pedalboard hasn't been scrolled to yet
@@ -874,8 +912,7 @@ class Mod(Handler):
             logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
         self.current.preset_index = index
 
-        #load of the preset might have changed plugin bypass status
-        self.preset_change_plugin_update()
+        # Bypass/param changes from the snapshot arrive via the WS drain (source of truth).
         self.bot_encoder_mode = BotEncoderMode.DEFAULT
 
     def preset_incr_and_change(self):
@@ -901,23 +938,6 @@ class Mod(Handler):
         if self.preset_select_index(index):
             self.preset_change()
         self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
-
-    def preset_change_plugin_update(self):
-        # Now that the preset has changed on the host, update plugin bypass indicators
-        for p in self.current.pedalboard.plugins:
-            uri = self.root_uri + "effect/parameter/pi_stomp_get//graph" + p.instance_id + "/:bypass"
-            try:
-                resp = req.get(uri)
-                if resp.status_code == 200:
-                    p.set_bypass(resp.text == "true")
-            except:
-                logging.error("failed to get bypass value for: %s" % p.instance_id)
-                continue
-        self.lcd.draw_tools(SelectedType.WIFI, SelectedType.EQ, SelectedType.BYPASS, SelectedType.SYSTEM)
-        self.lcd.draw_analog_assignments(self.current.analog_controllers)
-        self.lcd.draw_plugins(self.current.pedalboard.plugins)
-        self.lcd.draw_bound_plugins(self.current.pedalboard.plugins, self.hardware.footswitches)
-        self.lcd.draw_plugin_select()
 
     #
     # Plugin Stuff
@@ -949,15 +969,12 @@ class Mod(Handler):
             if inst.has_footswitch:
                 for c in inst.controllers:
                     if isinstance(c, Footswitch):
-                        c.pressed(0)
+                        self._handle_footswitch(c, SwitchEventKind.PRESS, time.monotonic())
                         return
-            # Regular (non footswitch plugin)
-            value = inst.toggle_bypass()
-            self.ws_bridge.send_parameter(inst.instance_id, ":bypass", 1.0 if value else 0.0)
-
-            #  Indicate change on LCD, and redraw selection(highlight)
-            self.update_lcd_plugins()
-            self.lcd.draw_plugin_select(inst)  # Not strictly required for original pi-stomp
+            # Non-footswitch plugin: emit only; the inbound echo updates state and LCD.
+            target_bypass = not inst.is_bypassed()
+            self.ws_bridge.send_parameter(inst.instance_id, ":bypass", 1.0 if target_bypass else 0.0)
+            self.lcd.draw_plugin_select(inst)  # selection highlight (navigation, not bypass)
 
     #
     # Generic Menu functions
@@ -1183,7 +1200,7 @@ class Mod(Handler):
             else:
                 logging.debug("saved")
         except:
-            logging.error("status %s" % resp.status_code)
+            logging.error("status %s" % resp.status_code)  # pyright: ignore[reportPossiblyUnboundVariable]
             return
 
     def system_menu_reload(self):
@@ -1358,7 +1375,7 @@ class Mod(Handler):
 
     def set_mod_tap_tempo(self, bpm):
         if bpm is not None:
-            self.ws_bridge.send_bpm(bpm)
+            req.post(self.root_uri + "set_bpm", json={"value": bpm})
 
     #
     # Parameter Edit
@@ -1370,7 +1387,7 @@ class Mod(Handler):
         self.deep.selected_parameter_index = 0
         self.menu_items = {0: {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back}}
         i = 1
-        for p in self.deep.parameters:
+        for p in self.deep.parameters:  # pyright: ignore[reportOptionalIterable]
             if p.symbol == ":bypass":
                 continue
             self.menu_items[i] = {Token.NAME: p.name,

@@ -8,43 +8,53 @@ import numpy.typing as npt
 
 
 class AudioSource(Protocol):
-    sample_rate: int
-
+    @property
+    def sample_rate(self) -> int: ...
     def start(self, on_samples: Callable[[npt.NDArray[np.float32]], Any]) -> None: ...
     def stop(self) -> None: ...
 
 
+class TunerSourceFactory(Protocol):
+    def __call__(self, port: str, *, name: str) -> AudioSource: ...
+
+
 class JackSource:
-    """Reads audio from JACK system:capture_1."""
+    """Reads audio from a JACK capture port."""
 
-    sample_rate: int
-
-    def __init__(self, capture_port: str = "system:capture_1") -> None:
+    def __init__(self, capture_port: str = "system:capture_1", *, name: str = "pistomp-tuner") -> None:
         self._capture_port = capture_port
+        self._client_name = name
         self._client = None
         self._on_samples: Callable[[npt.NDArray[np.float32]], None] | None = None
-        self.sample_rate = 48000  # updated after connect
+        self._sample_rate: int = 48000  # placeholder; overwritten in start()
+
+    @property
+    def sample_rate(self) -> int:
+        if self._client is None:
+            raise RuntimeError("sample_rate is not available until start() is called")
+        return self._sample_rate
 
     def start(self, on_samples: Callable[[npt.NDArray[np.float32]], None]) -> None:
         import jack  # type: ignore[import-untyped]
 
         self._on_samples = on_samples
-        self._client = jack.Client("pistomp-tuner", no_start_server=True)
-        self.sample_rate = self._client.samplerate
+        self._client = jack.Client(self._client_name, no_start_server=True)
+        self._sample_rate = self._client.samplerate
 
         port = self._client.inports.register("in")
 
         @self._client.set_process_callback
         def process(frames: int) -> None:
             if self._on_samples is not None:
-                block = port.get_array().copy().astype(np.float32)  # type: ignore[union-attr]
-                self._on_samples(block)
+                self._on_samples(port.get_array())  # pyright: ignore[reportAttributeAccessIssue]
 
         self._client.activate()
         self._client.connect(self._capture_port, port)
 
     def stop(self) -> None:
         if self._client is not None:
+            # Silence the process callback before teardown (prevents deadlock w/JACK)
+            self._on_samples = None
             try:
                 self._client.deactivate()
                 self._client.close()
@@ -59,10 +69,14 @@ class _ToneBase:
     BLOCK_SIZE = 256
 
     def __init__(self, sample_rate: int = 48000) -> None:
-        self.sample_rate = sample_rate
+        self._sample_rate = sample_rate
         self._thread: threading.Thread | None = None
         self._running = False
         self._on_samples: Callable[[npt.NDArray[np.float32]], Any] | None = None
+
+    @property
+    def sample_rate(self) -> int:
+        return self._sample_rate
 
     def _freq_at(self, t_elapsed: float) -> float:
         raise NotImplementedError
@@ -130,11 +144,18 @@ class ToneSweepSource(_ToneBase):
         return self._center * math.pow(2.0, cents / 1200.0)
 
 
-def build_source(spec: str, capture_port: str = "system:capture_1") -> AudioSource:
-    """Parse a source spec string ('jack' or 'tone:<hz>') and return an AudioSource."""
+def build_source(spec: str, capture_port: str = "system:capture_1", *, name: str = "pistomp-tuner") -> AudioSource:
+    """Parse a source spec string and return an AudioSource.
+
+    Specs: 'jack', 'tone:<hz>', 'sweep:<hz>' (ToneSweepSource centered at hz, default 440).
+    """
     if spec == "jack":
-        return JackSource(capture_port)
+        return JackSource(capture_port, name=name)
     if spec.startswith("tone:"):
         hz = float(spec[5:])
         return ToneSource(hz)
+    if spec.startswith("sweep"):
+        _, _, rest = spec.partition(":")
+        center = float(rest) if rest else 440.0
+        return ToneSweepSource(center_hz=center)
     raise ValueError(f"Unknown tuner source spec: {spec!r}")

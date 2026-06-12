@@ -1,22 +1,18 @@
 """Unit tests for EncoderController speed amplification (_compute_multiplier)."""
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from pistomp.encoder_controller import EncoderController
 
 
 @pytest.fixture
-def enc(monkeypatch):
-    """Build an EncoderController without GPIO (d_pin=None skips Button setup)."""
+def enc():
+    """Build an EncoderController without GPIO (gpiozero is stubbed in conftest)."""
     return EncoderController(
-        handler=MagicMock(),
         d_pin=None,
         clk_pin=None,
         midi_CC=70,
         midi_channel=0,
-        midiout=MagicMock(),
     )
 
 

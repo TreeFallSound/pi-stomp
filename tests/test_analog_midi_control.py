@@ -1,45 +1,51 @@
-"""Regression test for AnalogMidiControl.value_change_callback wiring.
+"""Regression test for AnalogMidiControl sink dispatch.
 
-Blend mode relies on `value_change_callback` being invoked from `refresh()`
+Blend mode relies on the sink receiving an AnalogEvent from refresh()
 when the ADC reading crosses the tolerance threshold. A merge once stripped
-this invocation while leaving the constructor parameter in place, silently
+this dispatch while leaving the constructor parameter in place, silently
 breaking expression-pedal blend. This guards against that regression.
 """
 
 from unittest.mock import MagicMock
 
 from pistomp.analogmidicontrol import AnalogMidiControl
+from pistomp.input.event import AnalogEvent
 
 
-def test_refresh_invokes_value_change_callback_on_change():
-    spi = MagicMock()
-    adc_value = 800
-    spi.xfer2.return_value = [0, (adc_value >> 8) & 0x03, adc_value & 0xFF]
-    callback = MagicMock()
+def _make_control(spi, *, midi_CC=75, midi_channel=14, last_read=0):
     control = AnalogMidiControl(
         spi=spi,
         adc_channel=0,
         tolerance=16,
-        midi_CC=75,
-        midi_channel=14,
-        midiout=MagicMock(),
+        midi_CC=midi_CC,
+        midi_channel=midi_channel,
         type="EXPRESSION",
         id=0,
-        value_change_callback=callback,
     )
-    control.last_read = 0
+    sink = MagicMock()
+    control.sink = sink
+    control.last_read = last_read
+    return control, sink
+
+
+def test_refresh_dispatches_analog_event_on_change():
+    spi = MagicMock()
+    adc_value = 800
+    spi.xfer2.return_value = [0, (adc_value >> 8) & 0x03, adc_value & 0xFF]
+    control, sink = _make_control(spi, last_read=0)
 
     control.refresh()
 
-    callback.assert_called_once()
-    value_arg, control_arg = callback.call_args[0]
-    assert value_arg == 800
-    assert control_arg is control
+    sink.handle.assert_called_once()
+    event = sink.handle.call_args[0][0]
+    assert isinstance(event, AnalogEvent)
+    assert event.raw_value == 800
+    assert event.controller is control
 
 
-def test_callback_observes_updated_normalized_value():
+def test_sink_observes_updated_last_read():
     """Slamming the pedal to a new position in one polling tick must let the
-    callback observe the NEW position via get_normalized_value(). Blend mode
+    sink observe the NEW position via get_normalized_value(). Blend mode
     re-reads the control inside handle_value_change; if last_read isn't updated
     before the callback fires, the final interpolation is computed at the
     *previous* position and the audio never reaches the new stop (even though
@@ -47,24 +53,14 @@ def test_callback_observes_updated_normalized_value():
     """
     spi = MagicMock()
     spi.xfer2.return_value = [0, 0, 0]  # ADC reads 0 — heel slam
-    observed: list[float] = []
+    control, sink = _make_control(spi, last_read=1023)
 
-    def callback(_value, control):
-        observed.append(control.get_normalized_value())
+    observed = []
 
-    control = AnalogMidiControl(
-        spi=spi,
-        adc_channel=0,
-        tolerance=16,
-        midi_CC=75,
-        midi_channel=14,
-        midiout=MagicMock(),
-        type="EXPRESSION",
-        id=0,
-        value_change_callback=callback,
-    )
-    control.last_read = 1023  # pedal was at toe
+    def capture(event):
+        observed.append(event.controller.get_normalized_value())
 
+    sink.handle.side_effect = capture
     control.refresh()
 
     assert observed == [0.0]

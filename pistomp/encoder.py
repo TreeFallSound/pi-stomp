@@ -13,57 +13,28 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import threading
+from __future__ import annotations
 
-from functools import partial
+import threading
+from typing import Any
+
 
 class Encoder:
+    """Pure hardware quadrature decoder. Owns GPIO pins and direction state.
+    No controller concerns (no sink, no quantizer, no parameter).
 
-    def _process_gpios(self):
-        # This decode/debouce algorithm adapted from
-        # https://www.best-microcontroller-projects.com/rotary-encoder.html
+    Public API: read_rotary() -> int (returns accumulated direction, clears accumulator).
+    """
 
-        self.prevNextCode <<= 2
-        if self.get_data():
-            self.prevNextCode |= 0x02
-        if self.get_clk():
-            self.prevNextCode |= 0x01
-        self.prevNextCode &= 0x0f
-
-        direction = 0
-        # Check for valid code
-        if self.rot_enc_table[self.prevNextCode]:
-            self.store <<= 4
-            self.store |= self.prevNextCode
-            # Check last two codes (end of detent transition)
-            if (self.store & 0xff) == 0x2b:  # code 2 followed by code 11 (full sequence is 13,4,2,11)
-                direction = 1  # Clockwise
-            if (self.store & 0xff) == 0x17:  # code 1 followed by code 7 (full sequence is 14,8,1,7)
-                direction = -1  # Counter Clockwise
-        if direction != 0:
-            self.store = self.prevNextCode
-        return direction
-
-    def _gpio_callback(self, channel):
-        d = self._process_gpios()
-        if d != 0:
-            with self._lock:
-                self.direction += d
-
-    def __init__(self, d_pin, clk_pin, callback, type=None, id=None, **kw):
+    def __init__(self, d_pin: int | None, clk_pin: int | None):
         self.d_pin = d_pin
         self.clk_pin = clk_pin
-        self.callback = callback
-        self.type = type
-        self.id = id
-
-        # It works fine without a lock since this is just dumb UI, but let's be correct..
         self._lock = threading.Lock()
-
-        self.data = None
-        self.clk = None
+        self.data: Any = None
+        self.clk: Any = None
         if d_pin is not None:
-            from gpiozero import Button   # TODO consider using Encoder class instead
+            from gpiozero import Button  # pyright: ignore[reportMissingImports]
+
             self.data = Button(d_pin)
             self.data.when_pressed = self._gpio_callback
             self.data.when_released = self._gpio_callback
@@ -74,11 +45,8 @@ class Encoder:
         self.prevNextCode = 0
         self.store = 0
         self.direction = 0
-
-        # 16 possible grey codes.  1=Valid, 0=Invalid (bounce)
+        # 16 grey codes; 1 = valid transition, 0 = bounce.
         self.rot_enc_table = [0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0]
-
-        super(Encoder, self).__init__(**kw)
 
     def __del__(self):
         if self.data is not None:
@@ -86,17 +54,43 @@ class Encoder:
         if self.clk is not None:
             self.clk.close()
 
-    def get_data(self):
-        return self.data.value
+    def _process_gpios(self) -> int:
+        # https://www.best-microcontroller-projects.com/rotary-encoder.html
+        self.prevNextCode <<= 2
+        if self.data.value:
+            self.prevNextCode |= 0x02
+        if self.clk.value:
+            self.prevNextCode |= 0x01
+        self.prevNextCode &= 0x0F
 
-    def get_clk(self):
-        return self.clk.value
+        direction = 0
+        if self.rot_enc_table[self.prevNextCode]:
+            self.store <<= 4
+            self.store |= self.prevNextCode
+            if (self.store & 0xFF) == 0x2B:
+                direction = 1
+            if (self.store & 0xFF) == 0x17:
+                direction = -1
+        if direction != 0:
+            self.store = self.prevNextCode
+        return direction
 
-    def read_rotary(self):
-        with self._lock:
-            d = self.direction
-            self.direction = 0
-        if d == 0:
+    def _gpio_callback(self, channel):
+        d = self._process_gpios()
+        if d != 0:
+            with self._lock:
+                self.direction += d
+
+    def read_rotary(self) -> int:
+        """Return accumulated direction (+1, -1, or 0) and clear the accumulator."""
+        d = 0
+        if self.direction != 0:
+            with self._lock:
+                if self.direction > 0:
+                    d = 1
+                elif self.direction < 0:
+                    d = -1
+                self.direction -= d
+        else:
             d = self._process_gpios()
-        if d != 0 and self.callback is not None:
-            self.callback(d)
+        return d

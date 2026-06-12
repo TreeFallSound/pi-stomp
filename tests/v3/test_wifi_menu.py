@@ -12,6 +12,7 @@ from tests.v3.conftest import make_saved, make_scanned
 from ui.wifi_menu import Row, WifiMenu, _PassphraseEditor
 from uilib.dialog import Dialog, MessageDialog
 from uilib.misc import InputEvent
+from uilib.text import LetterSelector, TextEditor, TextWidget
 from pistomp.lcd320x240 import Lcd
 
 
@@ -71,9 +72,11 @@ def test_nearby_loading_then_populated(v3_system, wifi_state, snapshot):
 
     # Defer scan callbacks instead of firing inline.
     pending: list = []
+
     def _defer(cmd, on_done):
         pending.append((cmd, on_done))
         return True
+
     wm_mock.queue.submit_scan.side_effect = _defer
 
     wm, lcd = _open(v3_system)
@@ -272,9 +275,7 @@ def test_error_dialog_snapshot(v3_system, wifi_state, snapshot):
     """Auth failure error dialog — one snapshot covers the shared visual layout."""
     nets = [make_scanned("Net", signal=70)]
     wifi_state(scanned=nets, saved=[])
-    v3_system.handler.wifi_manager.connect_scanned.return_value = (
-        b"secrets were required, but none were provided"
-    )
+    v3_system.handler.wifi_manager.connect_scanned.return_value = b"secrets were required, but none were provided"
 
     _wm, lcd = _open(v3_system)
     _click(lcd)
@@ -325,6 +326,7 @@ def test_multiple_profiles_same_ssid_name_without_ssid():
     """If a profile name doesn't contain the SSID (e.g. the OEM 'preconfigured'),
     append the SSID in parens for clarity."""
     from ui.wifi_menu import WifiMenu
+
     ts = int(time.time())
     profiles = [
         make_saved("BELL592", name="preconfigured", timestamp=ts - 1000),
@@ -332,8 +334,7 @@ def test_multiple_profiles_same_ssid_name_without_ssid():
     ]
     rows = []
     for p in profiles:
-        row: Row = {"ssid": "BELL592", "signal": None, "security": None,
-                    "saved": True, "profile": p, "active": False}
+        row: Row = {"ssid": "BELL592", "signal": None, "security": None, "saved": True, "profile": p, "active": False}
         WifiMenu._maybe_disambiguate(row, profiles)
         rows.append(row)
 
@@ -344,9 +345,9 @@ def test_multiple_profiles_same_ssid_name_without_ssid():
 def test_disambiguate_skipped_when_single_profile():
     """Single saved profile for an SSID: no disambiguator (show plain SSID)."""
     from ui.wifi_menu import WifiMenu
+
     profile = make_saved("Home", name="anything", timestamp=1)
-    row: Row = {"ssid": "Home", "signal": None, "security": None,
-                "saved": True, "profile": profile, "active": False}
+    row: Row = {"ssid": "Home", "signal": None, "security": None, "saved": True, "profile": profile, "active": False}
     WifiMenu._maybe_disambiguate(row, [profile])
     assert "display_name" not in row
 
@@ -395,8 +396,11 @@ def test_forget_active_falls_back_to_best_saved(v3_system, wifi_state, snapshot)
     wm_mock.get_cached_saved.return_value = [make_saved("Cafe")]
     wm_mock.scan_networks.return_value = [make_scanned("Cafe", signal=60, in_use=True)]
     v3_system.handler.wifi_status = {
-        "wifi_supported": True, "wifi_connected": True, "hotspot_active": False,
-        "ssid": "Cafe", "connection": "Cafe",
+        "wifi_supported": True,
+        "wifi_connected": True,
+        "hotspot_active": False,
+        "ssid": "Cafe",
+        "connection": "Cafe",
     }
     _click(lcd)  # confirm Forget
     snapshot("root_after_fallback")
@@ -693,3 +697,59 @@ def test_join_other_empty_ssid_blocked(v3_system, wifi_state, snapshot):
     snapshot("join_empty_ssid")
 
     assert isinstance(lcd.pstack.current, Dialog)
+
+
+# ---------------------------------------------------------------------------
+# 5.21  test_join_other_with_space_in_ssid  (github #122)
+# ---------------------------------------------------------------------------
+
+
+def test_join_other_with_space_in_ssid(v3_system, wifi_state, type_in_editor, snapshot):
+    """github #122: SSIDs with spaces are enterable, and the space renders as ␣ (U+2423)."""
+    wifi_state(scanned=[], saved=[])
+
+    wm_mock = v3_system.handler.wifi_manager
+    wm_mock.connect_scanned.return_value = None
+
+    _wm, lcd = _open(v3_system)
+    lcd.enc_step(1)  # Nearby networks... → Join other network...
+    _click(lcd)
+
+    dialog = lcd.pstack.current
+    assert isinstance(dialog, Dialog)
+
+    _click(lcd)  # ssid_field → TextEditor
+    editor = lcd.pstack.current
+    assert isinstance(editor, TextEditor), type(editor)
+
+    type_in_editor(lcd, "My")
+
+    # Land the selector on the space character to verify the ␣ glyph renders.
+    assert editor.sel_ref is not None
+    selector = editor.sel_ref
+    assert isinstance(selector, LetterSelector)
+    selector.l_idx = 3  # a non-control char: long-click cycles the charset
+    while selector.mode != LetterSelector.MODE_SP:
+        _long_click(lcd)
+    selector.l_idx = LetterSelector.specials.index(" ")
+    snapshot("space_char_selected")
+
+    type_in_editor(lcd, " Wifi")
+
+    # Commit the text back to the SSID field.
+    selector.l_idx = selector.ctrl_OK
+    _click(lcd)
+
+    dialog = lcd.pstack.current
+    assert isinstance(dialog, Dialog)
+    ssid_field = dialog.sel_list[0]
+    assert isinstance(ssid_field, TextWidget)
+    assert ssid_field.text == "My Wifi"
+    snapshot("join_dialog_ssid_with_space")
+
+    # Selectable widgets: [0]=ssid_field, [1]=pw_field, [2]=cancel_btn, [3]=ok_btn
+    dialog.sel_widget(dialog.sel_list[3])  # ok_btn
+    _click(lcd)
+
+    wm_mock.connect_scanned.assert_called_once()
+    assert wm_mock.connect_scanned.call_args[0][0] == "My Wifi"
