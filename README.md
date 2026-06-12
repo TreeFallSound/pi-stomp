@@ -1,4 +1,5 @@
 # pi-Stomp!
+[![License: AGPL v3+](https://img.shields.io/badge/License-AGPL%20v3%2B-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 #### pi-Stomp is a DIY high definition, multi-effects stompbox platform for guitar, bass and keyboards
 For more info about what it is and what it can do, go to [treefallsound.com](https://treefallsound.com)
 
@@ -10,6 +11,9 @@ The pi-Stomp hardware requires drivers to interface with the LCD, potentiometers
 
 A pi-Stomp software service, mod-ala-pi-stomp, uses the drivers to monitor all input devices, to drive the LCD
 and to, among other things, send commands to mod-host for reading/writing pedalboard configuration information. 
+
+## License
+This project is licensed under `AGPL-3.0-or-later`. See `LICENSE` for the full license text.
 
 This repository includes:
 * the pi-Stomp hardware drivers ('pistomp' module)

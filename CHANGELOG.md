@@ -4,6 +4,11 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [v3.0.5] - 2026-06-12
+No functional changes relative to v3.0.4
+Prior releases did not correctly declare AGPL-3.0 licensing in accordance with included components.
+This release corrects that. We have superseded prior releases accordingly.
+
 ## [v3.0.4] - 2026-04-09
 ### Added
 - Add GUIDE.md for developer documentation
