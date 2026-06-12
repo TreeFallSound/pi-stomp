@@ -38,6 +38,9 @@ class ContainerWidget(Widget):
         kwargs.pop("virtual", None)
         kwargs.pop("content_height", None)
 
+        # Selectable children for flattened selection traversal
+        self.sel_list = []
+
         # Inheritable attributes
         self._init_attrs(ContainerWidget.INH_ATTRS, kwargs)
 
@@ -54,6 +57,22 @@ class ContainerWidget(Widget):
         # A container doesn't need a parent to be setup so ensure that happens
         self._setup_act_attrs()
         self._setup()
+
+    def sel_children(self):
+        """Expand this container's sel_list entries into a flat list of leaf widgets."""
+        flat = []
+        for entry in self.sel_list:
+            flat.extend(entry.sel_children())
+        return flat
+
+    def add_sel_widget(self, widget):
+        """Add a widget to the selectable list. The widget may be a leaf
+           or a container that exposes its own selectables via sel_children()."""
+        assert widget.visible
+        if widget in self.sel_list:
+            return
+        self.sel_list.append(widget)
+        widget.selectable = True
 
     def _setup(self):
         # May adjust boundary box

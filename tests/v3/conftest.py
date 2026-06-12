@@ -200,8 +200,8 @@ def type_in_editor():
     def _type_char(lcd, ch):
         editor = lcd.pstack.current
         assert isinstance(editor, (TextEditor, _PassphraseEditor)), type(editor)
-        assert editor.sel is not None
-        selector = editor.sel_list[editor.sel]
+        assert editor.sel_ref is not None
+        selector = editor.sel_ref
         assert isinstance(selector, LetterSelector)
 
         for mode_idx, charset in enumerate(LetterSelector.charsets):

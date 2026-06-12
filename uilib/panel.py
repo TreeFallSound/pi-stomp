@@ -38,7 +38,7 @@ class Panel(ContainerWidget):
 
     def __init__(self, auto_destroy=False, decorator=None, **kwargs):
         self.sel_list = []
-        self.sel = None
+        self.sel_ref = None
         self.auto_destroy = auto_destroy
         if decorator:
             self.decorator = decorator(self)
@@ -46,51 +46,58 @@ class Panel(ContainerWidget):
             self.decorator = None
         super(Panel, self).__init__(**kwargs)
 
+    def sel_children(self):
+        """Expand this panel's sel_list entries into a flat list of leaf widgets."""
+        flat = []
+        for entry in self.sel_list:
+            flat.extend(entry.sel_children())
+        return flat
+
+    def _flat_sel(self):
+        return self.sel_children()
+
     def del_sel_widget(self, widget):
-        if self.sel is None or self.sel_list[self.sel] == widget:
-            old_sel = None
-        else:
-            old_sel = self.sel_list[self.sel]
         previously_selectable = widget.selectable
         widget.selectable = False
-        self.sel_list.remove(widget)
-        if old_sel is not None:
-            self.sel = self.sel_list.index(old_sel)
-        else:
-            self.sel = None
-            if len(self.sel_list) != 0:
-                if previously_selectable:
-                    self._select_widget_idx(0)
+        if widget in self.sel_list:
+            self.sel_list.remove(widget)
+        flat = self._flat_sel()
+        if self.sel_ref not in flat:
+            self.sel_ref = None
+            if flat and previously_selectable:
+                self._select_widget_ref(flat[0])
 
     def add_sel_widget(self, widget):
-        """Add a widget to the selectable list"""
+        """Add a widget to the selectable list. The widget may be a leaf
+           or a container that exposes its own selectables via sel_children()."""
         assert widget.visible
+        if widget in self.sel_list:
+            return
         self.sel_list.append(widget)
         widget.selectable = True
-        if self.sel is None:
-            self._select_widget_idx(0)
+        if self.sel_ref is None:
+            flat = self._flat_sel()
+            if flat:
+                self._select_widget_ref(flat[0])
 
     def add_widget(self, widget):
         assert widget.visible
         widget.selectable = False
         self.sel_list.append(widget)  # TODO if a widget is not selectable, adding to sel_list seems wrong
 
-    def _select_widget_idx(self, idx):
-        if self.sel is not None:
-            old = self.sel_list[self.sel]
-            old.set_selected(False)
-        self.sel = idx
-        new = self.sel_list[idx]
-        new.set_selected(True)
+    def _select_widget_ref(self, w):
+        if self.sel_ref is not None and self.sel_ref is not w:
+            self.sel_ref.set_selected(False)
+        self.sel_ref = w
+        w.set_selected(True)
 
     def _notify_detach(self, widget):
         if widget in self.sel_list:
             self.del_sel_widget(widget)
 
     def input_event(self, event):
-        if self.sel is not None:
-            w = self.sel_list[self.sel]
-            if w.input_event(event):
+        if self.sel_ref is not None:
+            if self.sel_ref.input_event(event):
                 return True
         if event == InputEvent.LEFT:
             self.sel_prev()
@@ -100,27 +107,26 @@ class Panel(ContainerWidget):
             return True
         return False
 
-    def sel_next(self):
-        if len(self.sel_list) == 0:
+    def _step_sel(self, delta):
+        flat = self._flat_sel()
+        if not flat:
             return
-        if self.sel is None:
-            new_sel = 0
+        if self.sel_ref in flat:
+            idx = (flat.index(self.sel_ref) + delta) % len(flat)
         else:
-            new_sel = (self.sel + 1) % len(self.sel_list)
-        self._select_widget_idx(new_sel)
+            idx = 0 if delta >= 0 else len(flat) - 1
+        self._select_widget_ref(flat[idx])
+
+    def sel_next(self):
+        self._step_sel(1)
 
     def sel_prev(self):
-        if len(self.sel_list) == 0:
-            return
-        if self.sel is None:
-            new_sel = len(self.sel_list) - 1
-        else:
-            new_sel = (self.sel - 1) % len(self.sel_list)
-        self._select_widget_idx(new_sel)
+        self._step_sel(-1)
 
     def sel_widget(self, w):
-        i = self.sel_list.index(w)
-        self._select_widget_idx(i)
+        flat = self._flat_sel()
+        if w in flat:
+            self._select_widget_ref(w)
 
     def attach(self, parent):
         assert isinstance(parent, PanelStack)

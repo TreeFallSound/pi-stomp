@@ -71,7 +71,7 @@ def test_navigating_back_to_back_arrow_scrolls(long_menu):
     menu, _ = long_menu
     # sel_prev from the default selection (index 0) wraps to the last item.
     menu.sel_prev()
-    assert menu.sel == len(menu.sel_list) - 1
+    assert menu.sel_ref is menu.sel_list[-1]
     # The menu must have scrolled — the back arrow's layout y is far below
     # max_height (15 items * item_h), so a non-scrolled menu would leave it
     # invisible.

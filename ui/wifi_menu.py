@@ -255,11 +255,11 @@ class WifiMenu:
 
     @staticmethod
     def _current_label(menu: 'Menu') -> Optional[str]:
-        sel = getattr(menu, 'sel', None)
-        if sel is None:
+        sel_ref = getattr(menu, 'sel_ref', None)
+        if sel_ref is None:
             return None
         try:
-            return menu.sel_list[sel].data[0]
+            return sel_ref.data[0]
         except (IndexError, AttributeError):
             return None
 

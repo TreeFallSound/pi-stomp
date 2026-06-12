@@ -725,8 +725,8 @@ def test_join_other_with_space_in_ssid(v3_system, wifi_state, type_in_editor, sn
     type_in_editor(lcd, "My")
 
     # Land the selector on the space character to verify the ␣ glyph renders.
-    assert editor.sel is not None
-    selector = editor.sel_list[editor.sel]
+    assert editor.sel_ref is not None
+    selector = editor.sel_ref
     assert isinstance(selector, LetterSelector)
     selector.l_idx = 3  # a non-control char: long-click cycles the charset
     while selector.mode != LetterSelector.MODE_SP:

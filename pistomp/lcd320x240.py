@@ -119,6 +119,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_pedalboard = None
         self.w_preset = None
         self.w_plugins = []
+        self.plugin_panel = None
         self.w_footswitches = []
         self.w_controls = []
         self.w_splash = None
@@ -334,7 +335,7 @@ class Lcd(abstract_lcd.Lcd):
     #
     def draw_plugins(self):
         x = 0
-        y = 78
+        y = 0
         per_row = 4
         i = 1
         # erase currently rendered plugins and footswitches first
@@ -344,16 +345,43 @@ class Lcd(abstract_lcd.Lcd):
         for w in self.w_plugins:
             w.destroy()
         self.w_plugins = []
+        if self.plugin_panel is not None:
+            self.plugin_panel.destroy()
+            self.plugin_panel = None
 
-        for plugin in self.current.pedalboard.plugins:
+        plugins = self.current.pedalboard.plugins
+        if not plugins:
+            self.main_panel.refresh()
+            self.footswitch_panel.refresh()
+            return
+
+        # Calculate content height needed for all plugin rows
+        num_plugins = len(plugins)
+        num_rows = (num_plugins + per_row - 1) // per_row
+        content_height = num_rows * (self.plugin_height + 2)
+        viewport_height = 170 - 78  # main_panel height minus top area
+
+        # Use a virtual panel if content exceeds viewport, otherwise plain
+        virtual = content_height > viewport_height
+        content_h = content_height if virtual else viewport_height
+
+        self.plugin_panel = ContainerWidget(
+            box=Box.xywh(0, 78, self.display_width, viewport_height),
+            virtual=virtual,
+            content_height=content_h if virtual else None,
+            parent=self.main_panel,
+        )
+        self.main_panel.add_sel_widget(self.plugin_panel)
+
+        for plugin in plugins:
             label = plugin.instance_id[:self.plugin_label_length]
             label = label.replace("_", "")
             label = self.shorten_name(label, self.plugin_width)
             p = TextWidget(box=Box.xywh(x, y, self.plugin_width, self.plugin_height), text=label, outline_radius=5,
-                           parent=self.main_panel, action=self.plugin_event, object=plugin)
+                           parent=self.plugin_panel, action=self.plugin_event, object=plugin)
             p.set_font(self.small_font)
             self.color_plugin(p, plugin)
-            self.main_panel.add_sel_widget(p)
+            self.plugin_panel.add_sel_widget(p)
             self.w_plugins.append(p)
 
             pos = (i % per_row)
@@ -365,6 +393,10 @@ class Lcd(abstract_lcd.Lcd):
             if plugin.has_footswitch:
                 self.draw_footswitch(plugin)
 
+        # Rebuild the whole panel surface: children added across the loop may
+        # have baked a partial cache, which main_panel's dirty-gated redraw
+        # would otherwise skip.
+        self.plugin_panel.refresh()
         self.main_panel.refresh()
         self.footswitch_panel.refresh()
 
@@ -390,6 +422,8 @@ class Lcd(abstract_lcd.Lcd):
         for w in self.w_plugins:
             plugin = w.object
             self.color_plugin(w, plugin)
+        if self.plugin_panel is not None:
+            self.plugin_panel.refresh()
         self.main_panel.refresh()
 
     def refresh_plugin(self, plugin):
