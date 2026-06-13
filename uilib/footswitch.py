@@ -25,12 +25,12 @@ class FootswitchWidget(Widget):
     DIMMED_BG when OFF. Unbound slots show "A".."D" as a placeholder.
     """
 
-    DIMMED_BG = (90, 90, 90)  # #5a5a5a
+    DIMMED_BG = (50, 50, 50)
     DEFAULT_COLOR = (255, 255, 255)
 
-    KEYCAP_RADIUS = 4      # top-corner radius
-    KEYCAP_PAD_X = 7       # horizontal gap between label and keycap sides
-    KEYCAP_PAD_TOP = 3     # gap between keycap top and label
+    KEYCAP_RADIUS = 4  # top-corner radius
+    KEYCAP_PAD_X = 7  # horizontal gap between label and keycap sides
+    KEYCAP_PAD_TOP = 3  # gap between keycap top and label
     KEYCAP_PAD_BOTTOM = 3  # how far the open legs extend below the label
 
     def __init__(self, box, num, label, color, is_bypassed, **kwargs):
@@ -78,9 +78,9 @@ class FootswitchWidget(Widget):
         if fill is not None:
             draw.rectangle([x0, y0, x1, y1], fill=fill)
         r = self.KEYCAP_RADIUS
-        draw.line([(x0 + r, y0), (x1 - r, y0)], fill=color, width=1)        # top
-        draw.line([(x0, y0 + r), (x0, y1)], fill=color, width=1)           # left
-        draw.line([(x1, y0 + r), (x1, y1)], fill=color, width=1)           # right
+        draw.line([(x0 + r, y0), (x1 - r, y0)], fill=color, width=1)  # top
+        draw.line([(x0, y0 + r), (x0, y1)], fill=color, width=1)  # left
+        draw.line([(x1, y0 + r), (x1, y1)], fill=color, width=1)  # right
         draw.arc([x0, y0, x0 + 2 * r, y0 + 2 * r], 180, 270, fill=color, width=1)
         draw.arc([x1 - 2 * r, y0, x1, y0 + 2 * r], 270, 360, fill=color, width=1)
 

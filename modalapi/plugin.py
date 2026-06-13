@@ -37,6 +37,10 @@ class Plugin:
     ) -> None:
         self.instance_id: str = instance_id.lstrip("/")
         self.parameters: dict[str, Parameter] = parameters
+        # MOD-UI canvas position (ingen:canvasX/Y). Drives a We sstable, audio-flow
+        # ordering of pb.plugins independent of lilv's hash-randomised iteration.
+        self.canvas_x: float = 0.0
+        self.canvas_y: float = 0.0
         self.bypass_indicator_xy: tuple[Point, Point] = ((0, 0), (0, 0))
         self.lcd_xyz: LcdPosition | None = None
         self.controllers: list[Footswitch] = []

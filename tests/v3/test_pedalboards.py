@@ -84,3 +84,4 @@ def test_v3_pedalboard_change_via_lcd(v3_system: SystemFixture, make_plugin, sna
     assert handler.current
     assert handler.current.pedalboard.title == "New Rig"
     snapshot()
+

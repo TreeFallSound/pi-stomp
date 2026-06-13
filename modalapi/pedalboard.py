@@ -16,7 +16,6 @@
 import json
 import lilv  # pyright: ignore[reportMissingImports] -- lilv is system-installed
 import logging
-import operator
 import os
 import requests as req
 import sys
@@ -47,6 +46,8 @@ class Pedalboard:
 
         self.uri_arc = self.world.new_uri("http://drobilla.net/ns/ingen#arc")
         self.uri_block = self.world.new_uri("http://drobilla.net/ns/ingen#block")
+        self.uri_canvas_x = self.world.new_uri("http://drobilla.net/ns/ingen#canvasX")
+        self.uri_canvas_y = self.world.new_uri("http://drobilla.net/ns/ingen#canvasY")
         self.uri_head = self.world.new_uri("http://drobilla.net/ns/ingen#head")
         self.uri_port = self.world.new_uri("http://lv2plug.in/ns/lv2core#port")
         self.uri_tail = self.world.new_uri("http://drobilla.net/ns/ingen#tail")
@@ -99,23 +100,15 @@ class Pedalboard:
 
         return json.loads(resp.text)
 
-    def chase_tail(self, block, conn):
-        if block is None:
-            return
-        conn.append(block)
-
-        ports = self.world.find_nodes(block, self.uri_port, None)
-        for port in ports:
-            tail = self.world.get(None, self.uri_tail, port)
-            if tail is None:
-                continue
-            head = self.world.get(tail, self.uri_head, None)
-            if head is not None:
-                block = self.world.get(None, self.uri_port, head)
-                if block is not None and block not in conn:
-                    self.chase_tail(block, conn)
-            break
-        return conn
+    def _coord(self, block, uri) -> float:
+        """Read an ingen canvas coordinate (float literal) off a block."""
+        node = self.world.get(block, uri, None)
+        if node is None:
+            return 0.0
+        try:
+            return float(str(node))
+        except ValueError:
+            return 0.0
 
     # Get info from an lv2 bundle
     # @a bundle is a string, consisting of a directory in the filesystem (absolute pathname).
@@ -134,26 +127,9 @@ class Pedalboard:
         if "http://moddevices.com/ns/modpedal#Pedalboard" not in plugin_types:
             raise Exception("get_pedalboard_info(%s) - plugin has no mod:Pedalboard type".format(bundlepath))
 
-        # Walk ports starting from capture1 to determine general plugin order
-        # TODO can this be generalized to use the chase_tail function?
-        plugin_order = []
-        ports = plugin.get_value(self.uri_port)
-        for port in ports:
-            if port is None:
-                continue
-            tail = self.world.get(None, self.uri_tail, port)  # TODO could end up being capture2
-            if tail is None:
-                continue
-            head = self.world.get(tail, self.uri_head, None)
-            if head is not None:
-                block = self.world.get(None, self.uri_port, head)
-                if block is not None:
-                    self.chase_tail(block, plugin_order)
-            break
-
-        # Iterate blocks (plugins)
-        plugins_unordered = {}
-        plugins_extra = []
+        # Iterate blocks (plugins). Order is imposed afterward from canvas
+        # coordinates (see below), so block iteration order doesn't matter.
+        all_plugins: list[Plugin.Plugin] = []
         instance_to_info: dict[str, Optional[dict]] = {}
         blocks = plugin.get_value(self.uri_block)
         for block in blocks:
@@ -235,36 +211,27 @@ class Pedalboard:
 
                     # logging.debug("  Label: %s" % label)
             inst = Plugin.Plugin(instance_id, parameters, plugin_info, category, uri=plugin_uri)
+            inst.canvas_x = self._coord(block, self.uri_canvas_x)
+            inst.canvas_y = self._coord(block, self.uri_canvas_y)
             instance_to_info[instance_id.lstrip("/")] = plugin_info
-
-            try:
-                index = plugin_order.index(block)
-                plugins_unordered[index] = inst
-            except:
-                plugins_extra.append(inst)
+            all_plugins.append(inst)
             # logging.debug("dump: %s" % inst.to_json())
 
-        # Add "extra" plugins (those not part of the tail_chase order) to the plugins_unordered dict
-        max_index = len(plugins_unordered)
-        for e in plugins_extra:
-            plugins_unordered[max_index] = e
-            max_index = max_index + 1
-
-        # Sort the dictionary based on their order index and add to the pedalboard.plugin list
-        # TODO improve the creation (tail chasing, sorting, dict>list conversion)
-        if max_index > 0:
-            sorted_dict = dict(sorted(plugins_unordered.items(), key=operator.itemgetter(0)))
-            for i in range(0, len(sorted_dict)):
-                val = sorted_dict.get(i)
-                if val is not None:
-                    # Capture parse-time snapshot of all parameter values for Reset
-                    val.pedalboard_snapshot = {
-                        sym: float(p.value) if p.value is not None else 0.0
-                        for sym, p in val.parameters.items()
-                    }
-                    self.plugins.append(val)
+        # Order by MOD-UI canvas position: left-to-right (audio flow), then
+        # top-to-bottom. Deterministic regardless of lilv's block iteration
+        # order; instance_id breaks any exact-coordinate tie.
+        self.plugins = sorted(
+            all_plugins, key=lambda p: (p.canvas_x, p.canvas_y, p.instance_id)
+        )
 
         self.connections = self._extract_connections(plugin, bundlepath, instance_to_info)
+
+        # Capture parse-time snapshot of all parameter values for Reset
+        for plugin in self.plugins:
+            plugin.pedalboard_snapshot = {
+                sym: float(p.value) if p.value is not None else 0.0
+                for sym, p in plugin.parameters.items()
+            }
 
         # Done obtaining relevant lilv for the pedalboard
         return

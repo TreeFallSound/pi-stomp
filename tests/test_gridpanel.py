@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from PIL import Image
 
-from modalapi.layout import build_layout
+from modalapi.layout import build_layout_compress
 from modalapi.connections import Connection, Endpoint, EndpointKind
 from uilib.box import Box
 from uilib.gridpanel import (
@@ -120,7 +120,7 @@ def test_iteration_order_is_column_major(panel_stack) -> None:
         _conn("A", "C"),
         _conn("B", "C"),
     ]
-    layout = build_layout(["A", "B", "C"], conns)
+    layout = build_layout_compress(["A", "B", "C"], conns)
     panel = _make_panel(layout, panel_stack)
 
     # Only plugins get widgets — sources/sinks/dummies skipped.
@@ -139,7 +139,7 @@ def test_holes_and_dummies_excluded_from_selection(panel_stack) -> None:
         _conn("B", "D"),
         _conn("A", "D"),  # spans 2 columns -> dummy in B's column
     ]
-    layout = build_layout(["A", "B", "D"], conns)
+    layout = build_layout_compress(["A", "B", "D"], conns)
     panel = _make_panel(layout, panel_stack)
     # Only A, B, D are selectable. The dummy in B's column is not.
     ids = sorted(w.text for w in panel.sel_children())  # pyright: ignore[reportAttributeAccessIssue]
@@ -148,7 +148,7 @@ def test_holes_and_dummies_excluded_from_selection(panel_stack) -> None:
 
 def test_widget_for_returns_tile(panel_stack) -> None:
     conns = [_conn("A", "B")]
-    layout = build_layout(["A", "B"], conns)
+    layout = build_layout_compress(["A", "B"], conns)
     panel = _make_panel(layout, panel_stack)
     assert panel.widget_for("A") is not None
     assert panel.widget_for("nonexistent") is None
@@ -170,7 +170,7 @@ def test_gridpanel_tiles_traverse_via_outer_panel(panel_stack) -> None:
         _conn("A", "C"),
         _conn("B", "C"),
     ]
-    layout = build_layout(["A", "B", "C"], conns)
+    layout = build_layout_compress(["A", "B", "C"], conns)
     grid = GridPanel(
         layout,
         lambda node, box, parent: TextWidget(box=box, text=node.id, parent=parent),
@@ -186,14 +186,16 @@ def test_gridpanel_tiles_traverse_via_outer_panel(panel_stack) -> None:
     main.add_sel_widget(after)
 
     main.sel_widget(before)
-    # Outer flat list: before, A, B, C, after
-    expected_texts = ["<", "A", "B", "C", ">"]
+    # Outer flat list: before, then plugins in column-major order, then after
+    plugin_cols = [[n.id for n in c if n and n.kind == "plugin"] for c in layout.cols]
+    expected_plugin_order = [pid for col in plugin_cols for pid in col]
+    expected_texts = ["<"] + expected_plugin_order + [">"]
     actual = [w.text for w in main._flat_sel()]
     assert actual == expected_texts
 
     assert main.sel_ref is not None
     seen = [main.sel_ref.text]
-    for _ in range(4):
+    for _ in range(len(expected_texts) - 1):
         main.sel_next()
         seen.append(main.sel_ref.text)
     assert seen == expected_texts
@@ -204,7 +206,7 @@ def test_detaching_a_tile_prunes_it_from_selection(panel_stack) -> None:
     sel_children. If a tile detaches at runtime, GridPanel must scrub its own
     bookkeeping so the outer panel's flat traversal stops yielding it."""
     conns = [_conn("A", "B")]
-    layout = build_layout(["A", "B"], conns)
+    layout = build_layout_compress(["A", "B"], conns)
     panel = _make_panel(layout, panel_stack)
     a_tile = panel.widget_for("A")
     assert a_tile is not None and a_tile in panel.sel_children()
@@ -225,7 +227,7 @@ def test_routing_edge_uses_correct_lane_and_port_y(panel_stack) -> None:
         Connection(src=Endpoint(EndpointKind.PLUGIN, "S", "", 0), dst=Endpoint(EndpointKind.PLUGIN, "T", "", 0)),
         Connection(src=Endpoint(EndpointKind.PLUGIN, "S", "", 1), dst=Endpoint(EndpointKind.PLUGIN, "T", "", 1)),
     ]
-    layout = build_layout(["S", "T"], conns)
+    layout = build_layout_compress(["S", "T"], conns)
     panel = _make_panel(layout, panel_stack)
 
     out_edges = {e.src_port: e for e in layout.edges if e.src.id == "S"}
@@ -250,7 +252,7 @@ def test_dummy_passes_wire_straight_through(panel_stack) -> None:
             dst=Endpoint(EndpointKind.PLUGIN, "D", "", 1),
         ),
     ]
-    layout = build_layout(["A", "B", "D"], conns)
+    layout = build_layout_compress(["A", "B", "D"], conns)
     panel = _make_panel(layout, panel_stack)
 
     # The two edges in the dummy chain

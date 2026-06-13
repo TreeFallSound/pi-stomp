@@ -61,3 +61,4 @@ def test_v1_add_dump_reseeds_bypass_on_reconnect(make_plugin):
     handler.poll_ws_messages()
 
     assert plugin.is_bypassed()
+

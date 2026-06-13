@@ -127,6 +127,15 @@ def build_connection(
 
 
 def audio_connections(connections: Iterable[Connection]) -> list[Connection]:
-    """Filter to audio-only connections (drop midi/HW ports)."""
+    """Audio-only connections (drop midi/HW ports), in a canonical order.
+
+    lilv enumerates ingen:arc objects in a hash-randomised order, so the raw
+    connection list varies run-to-run. The layout pipeline (dummy numbering,
+    barycentric row tie-breaks) is order-sensitive, so we sort to a stable key
+    here — the single chokepoint every layout consumer funnels through.
+    """
     audio = {EndpointKind.PLUGIN, EndpointKind.SOURCE, EndpointKind.SINK}
-    return [c for c in connections if c.src.kind in audio and c.dst.kind in audio]
+    return sorted(
+        (c for c in connections if c.src.kind in audio and c.dst.kind in audio),
+        key=lambda c: (c.src.id, c.src.port_idx, c.dst.id, c.dst.port_idx),
+    )

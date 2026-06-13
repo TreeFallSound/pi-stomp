@@ -182,14 +182,33 @@ class GridPanel(ContainerWidget):
         lane_x = self.gutter_lane_x(src.layer, lane_idx)
         return src_xy, dst_xy, lane_x
 
+    def _draw_vertical_edge(self, draw, edge: LayoutEdge, ox: int, oy: int) -> None:
+        """Serpentine neighbour (same column): draw a direct vertical line at
+        the column's horizontal centre. The runs behind the src/dst tiles are
+        hidden, so the visible wire sits in the row gap — and stacked chain
+        links line up into one clean vertical spine. Stereo pairs nudge apart
+        by port so the two wires don't coincide."""
+        port = self._clamp_port(edge.src_port)
+        x0, _ = self.cell_xy(edge.src.layer, 0)
+        cx = x0 + TILE_W // 2 + (3 if port else 0)
+        _, sy = self.cell_xy(edge.src.layer, edge.src.row)
+        _, dy = self.cell_xy(edge.dst.layer, edge.dst.row)
+        sy += TILE_H // 2
+        dy += TILE_H // 2
+        draw.line([(ox + cx, oy + sy), (ox + cx, oy + dy)], fill=self.wire_colors[port], width=1)
+
     def _draw(self, image, draw, real_box) -> None:
         """Draw the routing wires under any child tiles. Manhattan routing:
         out-stub right -> vertical in gutter at lane[src_port] -> in-stub
-        right into dst. Opaque so shared segments render cleanly regardless
-        of draw order."""
+        right into dst. Vertical-only edges (same column) route in the
+        right-hand gutter instead. Opaque so shared segments render cleanly
+        regardless of draw order."""
         super()._draw(image, draw, real_box)
         ox, oy = real_box.topleft
         for edge in self.layout.edges:
+            if edge.src.layer == edge.dst.layer:
+                self._draw_vertical_edge(draw, edge, ox, oy)
+                continue
             (sx, sy), (dx, dy), lane_x = self._edge_endpoints(edge)
             color = self.wire_colors[self._clamp_port(edge.src_port)]
             # Three segments. Coords are panel-local; offset by real_box origin.

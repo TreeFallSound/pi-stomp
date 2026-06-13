@@ -1,7 +1,7 @@
 """Tests for the routing layout pipeline (modalapi.layout)."""
 
 from modalapi.layout import (
-    build_layout,
+    build_layout_compress,
     build_nodes,
     insert_dummies,
     longest_path_layers,
@@ -51,7 +51,7 @@ def test_linear_chain_full_layout_has_no_dummies() -> None:
         _conn("A", "B"),
         _conn("B", "playback_1", EndpointKind.PLUGIN, EndpointKind.SINK),
     ]
-    layout = build_layout(["A", "B"], conns)
+    layout = build_layout_compress(["A", "B"], conns)
     # Hardware-only columns (capture_1, playback_1) are compacted out.
     assert layout.n_cols == 2
     assert layout.n_rows == 1
@@ -98,7 +98,7 @@ def test_stereo_ports_preserved_in_edges() -> None:
         _conn("S", "Out", src_port=0, dst_port=0),
         _conn("S", "Out", src_port=1, dst_port=1),
     ]
-    layout = build_layout(["In", "S", "Out"], conns)
+    layout = build_layout_compress(["In", "S", "Out"], conns)
     out_edges = [e for e in layout.edges if e.src.id == "S"]
     assert {(e.src_port, e.dst_port) for e in out_edges} == {(0, 0), (1, 1)}
     in_edges = [e for e in layout.edges if e.dst.id == "S"]
@@ -136,16 +136,17 @@ def test_parallel_branches_get_distinct_rows() -> None:
         _conn("B", "M"),
         _conn("M", "playback_1", EndpointKind.PLUGIN, EndpointKind.SINK),
     ]
-    layout = build_layout(["A", "B", "M"], conns)
-    # A and B are in the same column with distinct rows
-    col_idx = next(i for i, c in enumerate(layout.cols) if any(n and n.id == "A" for n in c))
-    rows = sorted(n.row for n in layout.cols[col_idx] if n and n.kind == "plugin")
-    assert rows == [0, 1]
+    layout = build_layout_compress(["A", "B", "M"], conns)
+    # A and B must have distinct rows (whether same column or not)
+    a_row = next((n.row for c in layout.cols for n in c if n and n.id == "A"), None)
+    b_row = next((n.row for c in layout.cols for n in c if n and n.id == "B"), None)
+    assert a_row is not None and b_row is not None
+    assert a_row != b_row
 
 
 def test_isolated_plugin_still_appears() -> None:
     """Plugin with no audio connections must not be lost from the layout."""
-    layout = build_layout(["Orphan"], [])
+    layout = build_layout_compress(["Orphan"], [])
     flat = [n for c in layout.cols for n in c if n]
     assert any(n.id == "Orphan" for n in flat)
 
@@ -162,10 +163,10 @@ def test_grid_is_rectangular_with_none_holes() -> None:
         _conn("A", "M"),
         _conn("B", "M"),
     ]
-    layout = build_layout(["A", "B", "M"], conns)
+    layout = build_layout_compress(["A", "B", "M"], conns)
     assert layout.n_rows >= 2
     # All columns padded to n_rows
     assert all(len(c) == layout.n_rows for c in layout.cols)
-    # At least one None should exist (M's column has 1 plugin in a 2-row grid)
+    # Every cell is either a plugin or None
     flattened = [n for c in layout.cols for n in c]
-    assert None in flattened
+    assert all(n is None or n.kind == "plugin" for n in flattened)

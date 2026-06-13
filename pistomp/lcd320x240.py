@@ -28,7 +28,7 @@ from PIL import Image, ImageColor
 from uilib import *
 from uilib.gridpanel import GridPanel
 from uilib.lcd_ili9341 import *
-from modalapi.layout import build_layout
+from modalapi.layout import build_layout_compress
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
 from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
@@ -448,7 +448,7 @@ class Lcd(abstract_lcd.Lcd):
 
         plugins = self.current.pedalboard.plugins
         plugins_by_id = {p.instance_id.lstrip("/"): p for p in plugins}
-        layout = build_layout(plugins_by_id.keys(), self.current.pedalboard.connections)
+        layout = build_layout_compress(plugins_by_id.keys(), self.current.pedalboard.connections)
 
         def tile_factory(node, box, parent):
             plugin = plugins_by_id[node.id]
@@ -497,7 +497,7 @@ class Lcd(abstract_lcd.Lcd):
             widget.set_background(self.background)
             widget.set_foreground(self.foreground)
         else:
-            widget.set_outline(2, self.background)
+            widget.set_outline(1, self.background)
             widget.set_background(color)
             widget.set_foreground(self.background)
 
