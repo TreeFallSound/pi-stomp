@@ -156,8 +156,6 @@ class Mod(Handler):
         logging.info("WebSocket bridge started")
 
         # Suppress outbound WebSocket messages while a pedalboard change is in flight.
-        # Set on loading_start (inbound from MOD-UI) and on file-watch detection.
-        # Cleared after set_current_pedalboard() completes.
         self._suppress_outbound_ws = False
 
         # Callback function map.  Key is the user specified name, value is function from this handler
@@ -175,15 +173,12 @@ class Mod(Handler):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
-        if self.ws_bridge is not None:
-            self.ws_bridge.stop()
 
     def cleanup(self):
         if self.lcd is not None:
             self.lcd.cleanup()
-        if self.ws_bridge is not None:
-            self.ws_bridge.stop()
-            logging.info("WebSocket bridge stopped")
+        self.ws_bridge.stop()
+        logging.info("WebSocket bridge stopped")
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -486,12 +481,10 @@ class Mod(Handler):
     def _handle_ws_message(self, msg: WebSocketMessage):
         """Handle incoming WebSocket message from MOD-UI"""
         if isinstance(msg, LoadingStartMessage):
-            logging.debug("WebSocket: Pedalboard loading started - suppressing outbound messages")
             self._suppress_outbound_ws = True
-            if self.ws_bridge is not None:
-                cleared = self.ws_bridge.clear_queue()
-                if cleared:
-                    logging.debug(f"Cleared {cleared} stale outbound messages on loading_start")
+            cleared = self.ws_bridge.clear_queue()
+            if cleared:
+                logging.debug(f"Cleared {cleared} stale outbound messages on loading_start")
 
         elif isinstance(msg, LoadingEndMessage):
             logging.debug(f"WebSocket: Pedalboard loading finished, snapshot={msg.snapshot_id}")
@@ -648,6 +641,9 @@ class Mod(Handler):
         self.load_current_presets()
         self.update_lcd()
 
+        # Resume outbound WebSocket messages now that the new pedalboard is fully set up.
+        self._suppress_outbound_ws = False
+
         # Prepare blend modes if configured (snapshot-based activation)
         try:
             blend_configs = cfg.get('blend_snapshots', []) if cfg else []
@@ -693,9 +689,6 @@ class Mod(Handler):
             logging.error(f"Failed to prepare blend modes: {e}")
             self.blend_modes = {}
             self.active_blend_mode = None
-
-        # Resume outbound WebSocket messages now that the new pedalboard is fully set up.
-        self._suppress_outbound_ws = False
 
         # Selection info
         self.selectable_items.clear()

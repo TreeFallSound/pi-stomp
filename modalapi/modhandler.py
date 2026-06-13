@@ -108,8 +108,6 @@ class Modhandler(Handler):
         logging.info("WebSocket bridge started")
 
         # Suppress outbound WebSocket messages while a pedalboard change is in flight.
-        # Set on loading_start (inbound from MOD-UI) and on file-watch detection.
-        # Cleared after set_current_pedalboard() completes.
         self._suppress_outbound_ws = False
 
         # Tuner state
@@ -136,8 +134,6 @@ class Modhandler(Handler):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
-        # ws_bridge.stop() lives in cleanup(), not here — join() in __del__ blows up
-        # during interpreter shutdown on Py 3.14. Daemon thread dies with the process.
 
     def cleanup(self):
         if self._tuner_engine is not None:
@@ -150,9 +146,8 @@ class Modhandler(Handler):
             self._lcd.cleanup()
         if self._hardware is not None:
             self._hardware.cleanup()
-        if self.ws_bridge is not None:
-            self.ws_bridge.stop()
-            logging.info("WebSocket bridge stopped")
+        self.ws_bridge.stop()
+        logging.info("WebSocket bridge stopped")
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -343,12 +338,10 @@ class Modhandler(Handler):
     def _handle_ws_message(self, msg: WebSocketMessage):
         """Handle incoming WebSocket message from MOD-UI."""
         if isinstance(msg, LoadingStartMessage):
-            logging.debug("WebSocket: Pedalboard loading started - suppressing outbound messages")
             self._suppress_outbound_ws = True
-            if self.ws_bridge is not None:
-                cleared = self.ws_bridge.clear_queue()
-                if cleared:
-                    logging.debug(f"Cleared {cleared} stale outbound messages on loading_start")
+            cleared = self.ws_bridge.clear_queue()
+            if cleared:
+                logging.debug(f"Cleared {cleared} stale outbound messages on loading_start")
 
         elif isinstance(msg, LoadingEndMessage):
             logging.debug(f"WebSocket: Pedalboard loading finished, snapshot={msg.snapshot_id}")
