@@ -19,6 +19,7 @@ fi
 scp -r common pistomp@pistomp.local:/home/pistomp/pi-stomp/
 scp -r fonts pistomp@pistomp.local:/home/pistomp/pi-stomp/
 scp -r images pistomp@pistomp.local:/home/pistomp/pi-stomp/
+scp -r plugins pistomp@pistomp.local:/home/pistomp/pi-stomp/
 scp -r ui pistomp@pistomp.local:/home/pistomp/pi-stomp/
 scp -r uilib pistomp@pistomp.local:/home/pistomp/pi-stomp/
 scp -r util pistomp@pistomp.local:/home/pistomp/pi-stomp/
