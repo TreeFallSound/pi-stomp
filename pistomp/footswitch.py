@@ -259,10 +259,11 @@ class Footswitch(controller.Controller):
             logging.debug("Sending CC event: %d" % self.midi_CC)
             self.midiout.send_message(cc)
             self._set_led(self.toggled)
-
-        # Update indicators optimistically
-        # (mod-host bypass feedback / param_set) reconciles if it ever differs
-        self.refresh_callback(footswitch=self)
+            # LCD / plugin state is updated only when the echo arrives, so unbound
+            # footswitches (tap-tempo / relay / preset) still refresh immediately.
+            if self.parameter is None:
+                self.refresh_callback(footswitch=self)
+            return
 
     def set_display_label(self, label):
         self.display_label = label
