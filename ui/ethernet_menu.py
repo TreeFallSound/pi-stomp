@@ -65,9 +65,9 @@ class EthernetMenu:
         self._role_widgets: dict[str, object] = {}
 
     def _capture_selected_role(self) -> None:
-        if self._panel is None or self._panel.sel is None:
+        if self._panel is None or self._panel.sel_ref is None:
             return
-        sel = self._panel.sel_list[self._panel.sel]
+        sel = self._panel.sel_ref
         for role, w in self._role_widgets.items():
             if w is sel:
                 self._last_selected_role = role

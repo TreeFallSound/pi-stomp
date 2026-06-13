@@ -894,9 +894,9 @@ class EqPanel(PluginPanel[EqState]):
 
     @property
     def selected_band(self) -> Optional[Band]:
-        if self.sel is None:
+        if self.sel_ref is None:
             return None
-        w = self.sel_list[self.sel]
+        w = self.sel_ref
         return w.band if isinstance(w, _BandSelectable) else None
 
     def _replace_band(self, band: Band, **changes) -> None:
@@ -909,7 +909,7 @@ class EqPanel(PluginPanel[EqState]):
         self._update_readout()
 
     def _update_readout(self) -> None:
-        sel_w = self.sel_list[self.sel] if self.sel is not None else None
+        sel_w = self.sel_ref
         if isinstance(sel_w, _BandSelectable):
             p = self._state.bands.get(sel_w.band.name)
             if p is None:
@@ -928,10 +928,9 @@ class EqPanel(PluginPanel[EqState]):
 
     # ── selection routing ───────────────────────────────────────────────────
 
-    def _select_widget_idx(self, idx):  # type: ignore[override]
-        super()._select_widget_idx(idx)
-        new = self.sel_list[idx]
-        band_name = new.band.name if isinstance(new, _BandSelectable) else None
+    def _select_widget_ref(self, w):  # type: ignore[override]
+        super()._select_widget_ref(w)
+        band_name = w.band.name if isinstance(w, _BandSelectable) else None
         self._graph.set_selected(band_name)
         self._update_readout()
 
