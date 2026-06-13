@@ -95,8 +95,8 @@ def linear_chain() -> MockPedalboard:
 def parallel_branches() -> MockPedalboard:
     """Splitter feeds two parallel chains that merge at the output:
 
-        capture_1 ─┬─ A ─ B ─┐
-                   └─ C ─ D ─┴─ playback_{1,2}
+    capture_1 ─┬─ A ─ B ─┐
+               └─ C ─ D ─┴─ playback_{1,2}
     """
     plugins = [
         MockPlugin("A", "Filter"),
@@ -115,6 +115,23 @@ def parallel_branches() -> MockPedalboard:
     return MockPedalboard(title="Parallel", plugins=plugins, connections=conns)
 
 
+def tall_parallel() -> MockPedalboard:
+    """Five parallel branches — forces more than 4 rows, exercising vertical
+    overflow past the old 130px plugin area and into the footswitch overlay zone.
+
+        capture_1 ─┬─ A ─┐
+                   ├─ B ─┤
+                   ├─ C ─┼─ playback_{1,2}
+                   ├─ D ─┤
+                   └─ E ─┘
+    """
+    ids = list("ABCDE")
+    plugins = [MockPlugin(pid, "Delay") for pid in ids]
+    conns = [Connection(src=_source_ep(1), dst=_plugin_ep(pid)) for pid in ids]
+    conns += [Connection(src=_plugin_ep(pid), dst=_sink_ep(1)) for pid in ids]
+    return MockPedalboard(title="Tall Parallel", plugins=plugins, connections=conns)
+
+
 def stereo_split() -> MockPedalboard:
     """Stereo plugin S sends OUT1 → playback_1 and OUT2 → playback_2."""
     plugins = [MockPlugin("S", "Utility")]
@@ -131,4 +148,5 @@ REGISTRY: dict[str, Callable[[], MockPedalboard]] = {
     "linear": linear_chain,
     "parallel": parallel_branches,
     "stereo": stereo_split,
+    "tall_parallel": tall_parallel,
 }

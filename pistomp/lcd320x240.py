@@ -464,10 +464,12 @@ class Lcd(abstract_lcd.Lcd):
             self.w_plugins.append(tile)
             return tile
 
-        # Grid area: below title (y=78), above footswitch panel (y=208).
+        # Grid area: below title (y=78) to bottom of LCD (y=240).
+        # footswitch_panel is pushed on top of pstack and renders over this.
         self.grid_panel = GridPanel(
             layout, tile_factory,
-            box=Box.xywh(0, 78, self.display_width, 130),
+            box=Box.xywh(0, 78, self.display_width, self.display_height - 78),
+            bottom_inset=self.footswitch_height,
             parent=self.main_panel,
         )
         self.main_panel.add_sel_widget(self.grid_panel)
@@ -488,6 +490,12 @@ class Lcd(abstract_lcd.Lcd):
                 self.handler.show_plugin_panel(plugin, panel_cls)
             else:
                 self.draw_parameter_menu(plugin)
+
+    def footswitch_event(self, event, widget, footswitch):
+        if event == InputEvent.CLICK:
+            footswitch.pressed(switchstate.Value.RELEASED)
+        elif event == InputEvent.LONG_CLICK:
+            footswitch.pressed(switchstate.Value.LONGPRESSED)
 
 
     def color_plugin(self, widget, plugin):
@@ -613,7 +621,7 @@ class Lcd(abstract_lcd.Lcd):
                 color = self.get_plugin_color(plugin)
                 p = FootswitchWidget(Box.xywh(x, y, self.footswitch_width, self.footswitch_height),
                              fs_id, label, color, plugin.is_bypassed(),
-                             parent=self.footswitch_panel, action=self.plugin_event, object=plugin)
+                             parent=self.footswitch_panel, action=self.footswitch_event, object=c)
                 self.w_footswitches.append(p)
                 self.footswitch_panel.add_sel_widget(p)
                 break
@@ -628,7 +636,7 @@ class Lcd(abstract_lcd.Lcd):
             y = 0
             x = self.get_footswitch_pitch() * slot
             p = FootswitchWidget(Box.xywh(x, y, self.footswitch_width, self.footswitch_height),
-                                 slot, label, None, True, parent=self.footswitch_panel, object=fs)
+                                 slot, label, None, not fs.toggled, parent=self.footswitch_panel, object=fs)
             self.w_footswitches.append(p)
             self.footswitch_panel.add_sel_widget(p)
         self.footswitch_panel.refresh()

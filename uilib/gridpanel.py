@@ -63,11 +63,13 @@ class GridPanel(ContainerWidget):
         tile_factory: TileFactory,
         box: Box,
         wire_colors: tuple[tuple[int, int, int], tuple[int, int, int]] = DEFAULT_WIRE_COLORS,
+        bottom_inset: int = 0,
         **kwargs,
     ) -> None:
         super().__init__(box=box, **kwargs)
         self.layout = layout
         self.wire_colors = wire_colors
+        self.bottom_inset = bottom_inset
         self.tile_widgets: dict[str, Widget] = {}
         self.tile_order: list[Widget] = []  # column-major insertion order
         self._build(tile_factory)
@@ -149,6 +151,10 @@ class GridPanel(ContainerWidget):
 
     def widget_for(self, node_id: str) -> Optional[Widget]:
         return self.tile_widgets.get(node_id)
+
+    def _viewport_size(self) -> tuple[int, int]:
+        w, h = super()._viewport_size()
+        return w, h - self.bottom_inset
 
     # ------------------------------------------------------------------ #
     # Routing render pass.

@@ -80,6 +80,7 @@ def setup_main_ui(instance):
     plugins = [
         MockObject(
             instance_id="distortion",
+            uri="mock://distortion",
             is_bypassed=lambda: False,
             category="Distortion",
             has_footswitch=True,
@@ -88,6 +89,7 @@ def setup_main_ui(instance):
         ),
         MockObject(
             instance_id="delay",
+            uri="mock://delay",
             is_bypassed=lambda: False,
             category="Delay",
             has_footswitch=True,
@@ -96,6 +98,7 @@ def setup_main_ui(instance):
         ),
         MockObject(
             instance_id="reverb",
+            uri="mock://reverb",
             is_bypassed=lambda: True,
             category="Reverb",
             has_footswitch=True,
@@ -104,6 +107,7 @@ def setup_main_ui(instance):
         ),
         MockObject(
             instance_id="chorus",
+            uri="mock://chorus",
             is_bypassed=lambda: False,
             category="Modulator",
             has_footswitch=False,
@@ -379,8 +383,20 @@ def _setup_pedalboard(instance, pb):
     instance.draw_main_panel()
 
 
-@pytest.mark.parametrize("topology", ["blank", "linear", "parallel", "stereo"])
+@pytest.mark.parametrize("topology", ["blank", "linear", "parallel", "stereo", "tall_parallel"])
 def test_routing_snapshot(lcd, snapshot, topology):
     instance, _ = lcd
     _setup_pedalboard(instance, pedalboard_fixtures.REGISTRY[topology]())
     snapshot(topology)
+
+
+def test_tall_parallel_scrolled_to_last(lcd, snapshot):
+    """Selecting the last plugin in a 5-row tall pedalboard must scroll it
+    clear of the footswitch bar (bottom_inset ensures this)."""
+    instance, _ = lcd
+    pb = pedalboard_fixtures.tall_parallel()
+    _setup_pedalboard(instance, pb)
+    snapshot("initial")
+    for _ in range(len(pb.plugins) + 2):
+        instance.main_panel.sel_next()
+    snapshot("scrolled_to_last")

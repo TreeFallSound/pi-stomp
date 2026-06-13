@@ -7,8 +7,10 @@ MIDI / preset logic lives in the handler (see tests/input_router/).
 """
 
 from contextlib import contextmanager
+from typing import Optional, cast
 from unittest.mock import MagicMock
 
+from common.parameter import Parameter
 from pistomp.footswitch import Footswitch
 from pistomp.input.event import SwitchEvent, SwitchEventKind
 import pistomp.switchstate as switchstate
@@ -102,6 +104,50 @@ class TestHardwareMethods:
         with _make_footswitch() as fs:
             fs.toggled = True
             assert fs.current_toggle_state() is True
+
+
+class TestSetValue:
+    @staticmethod
+    def _param(symbol: str, value: float, minimum: Optional[float] = 0, maximum: Optional[float] = 1) -> Parameter:
+        return cast(Parameter, MagicMock(symbol=symbol, value=value, minimum=minimum, maximum=maximum))
+
+    def test_bypass_engaged_when_not_bypassed(self):
+        with _make_footswitch() as fs:
+            fs.parameter = self._param(":bypass", 0)
+            fs.set_value(0)
+            assert fs.toggled is True
+
+    def test_bypass_off_when_bypassed(self):
+        with _make_footswitch() as fs:
+            fs.parameter = self._param(":bypass", 1)
+            fs.set_value(1)
+            assert fs.toggled is False
+
+    def test_non_bypass_off_value_is_off(self):
+        with _make_footswitch() as fs:
+            fs.parameter = self._param("solo", 0)
+            fs.set_value(0)
+            assert fs.toggled is False
+
+    def test_non_bypass_on_value_is_on(self):
+        with _make_footswitch() as fs:
+            fs.parameter = self._param("solo", 1)
+            fs.set_value(1)
+            assert fs.toggled is True
+
+    def test_non_bypass_handles_missing_range(self):
+        with _make_footswitch() as fs:
+            fs.parameter = self._param("gain", 1, minimum=None, maximum=None)
+            fs.set_value(1)
+            assert fs.toggled is True
+
+    def test_no_parameter_uses_bypass_logic(self):
+        with _make_footswitch() as fs:
+            fs.parameter = None
+            fs.set_value(0)
+            assert fs.toggled is True
+            fs.set_value(1)
+            assert fs.toggled is False
 
 
 class TestClearPedalboardInfo:

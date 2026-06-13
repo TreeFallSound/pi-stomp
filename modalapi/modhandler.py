@@ -285,7 +285,8 @@ class Modhandler(Handler):
             if event.kind == SwitchEventKind.LONGPRESS:
                 # Give the LCD first crack so the selected widget sees LONG_CLICK.
                 # Only run the configured callback if nothing on the LCD consumed it.
-                if self._lcd is not None and self._lcd.enc_sw(switchstate.Value.LONGPRESSED):
+                # Only the nav encoder button routes through the LCD panel stack.
+                if controller.type == Token.NAV and self._lcd is not None and self._lcd.enc_sw(switchstate.Value.LONGPRESSED):
                     return True
                 callback_name = controller.longpress
                 if callback_name:
@@ -538,14 +539,14 @@ class Modhandler(Handler):
                     self.update_lcd_fs(footswitch=fs)
 
         elif isinstance(msg, ParamSetMessage):
-            # Keep the cached value fresh so a later long-press edit opens at the
-            # current value. Not drawn anywhere live, so no LCD refresh.
+            # Mirror mod-ui's live value: refresh the cache (so a later edit opens
+            # at the current value) and sync any bound control. The connect-dump
+            # delivers the real mod-ui state here — :bypass aside, nothing else
+            # repaints a non-bypass footswitch.
             if self.current is not None:
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
-                        param = plugin.parameters.get(msg.symbol)
-                        if param is not None:
-                            param.value = msg.value
+                        plugin.set_param_value(msg.symbol, msg.value)
                         break
 
         elif isinstance(msg, MidiMapMessage):

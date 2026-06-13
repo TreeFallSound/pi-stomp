@@ -187,11 +187,14 @@ class ContainerWidget(Widget):
             dy = -self.offset[1]
         return dx, dy
 
+    def _viewport_size(self) -> tuple[int, int]:
+        return self.box.width, self.box.height
+
     def _scroll_into_view(self, box: Box):
         orig_box = box
         box = box.deoffset(self.offset)
         x0, y0, x1, y1 = box.rect
-        brx, bry = self.box.width, self.box.height
+        brx, bry = self._viewport_size()
         movex = x0 if x0 < 0 else (x1 - brx if x1 > brx else 0)
         movey = y0 if y0 < 0 else (y1 - bry if y1 > bry else 0)
         if not (movex or movey):

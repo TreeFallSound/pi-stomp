@@ -90,7 +90,14 @@ class Footswitch(controller.Controller):
 
     @override
     def set_value(self, value: float):
-        self.toggled = (value < 1)
+        param = self.parameter
+        if param is not None and param.symbol != Token.COLON_BYPASS:
+            # Non-:bypass binding: "on" is the max end, so compare against midpoint.
+            lo = param.minimum if param.minimum is not None else 0
+            hi = param.maximum if param.maximum is not None else 1
+            self.toggled = value >= (lo + hi) / 2
+        else:
+            self.toggled = (value < 1)
         self.set_led(self.toggled)
         self.refresh_callback(footswitch=self)
 
