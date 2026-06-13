@@ -16,6 +16,9 @@
 from enum import Enum
 import json
 import logging
+from typing import Optional
+
+from common.parameter import Parameter
 
 
 class Controller:
@@ -25,7 +28,7 @@ class Controller:
         self.midi_CC = midi_CC
         self.minimum = None
         self.maximum = None
-        self.parameter = None
+        self.parameter: Optional[Parameter] = None
         self.hardware_name = None
         #self.type = None  # this will conflict with encoder.type for EncoderMidiControl
         self.midi_min = 0

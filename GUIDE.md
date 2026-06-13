@@ -363,8 +363,8 @@ Outbound behaviour depends on the initiator:
 
 - **Footswitch press** → MIDI CC (absolute `toggled` intent) → mod-host processes
   internally → mod-host emits `param_set` feedback on port 5556 → `msg_callback` to
-  ALL clients (including us). piStomp updates its LED/LCD **optimistically on press**
-  from local intent; the feedback echo arrives later and reconciles if it differs.
+  ALL clients (including us). piStomp updates its **LED optimistically on press**;
+  the feedback echo drives the LCD/plugin state update and reconciles if it differs.
   Waiting for the echo would lag the switch whenever mod-host's feedback stream is
   gated on a slow client — the `data_finish`/`output_data_ready` handshake stalls when
   a mod-ui browser tab is backgrounded (see `../mod-ui/docs/output-data-flow.md`).
@@ -463,7 +463,7 @@ changes (not for commands mod-ui itself issued). This determines who sees what:
 ```
 Path A — Footswitch (MIDI CC):
   poll_controls() → Footswitch.pressed()
-    → flip toggled, _set_led(), refresh_callback()  # optimistic local update
+    → flip toggled, _set_led()                      # LED-only optimistic update
     → midiout.send_message([CC, midi_CC, 127/0])   # direct to ALSA
       → JACK → mod-host:midi_in                    # bypasses mod-ui WS entirely
         → mod-host applies change

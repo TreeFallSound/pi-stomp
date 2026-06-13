@@ -4,8 +4,10 @@ Tests for Footswitch — pure logic, no hardware required.
 
 from contextlib import contextmanager
 import time
+from typing import Optional, cast
 from unittest.mock import MagicMock, patch
 
+from common.parameter import Parameter
 from pistomp.footswitch import Footswitch
 import pistomp.switchstate as switchstate
 
@@ -32,7 +34,7 @@ def _make_footswitch(**kwargs):
     )
     defaults.update(kwargs)
     fs = Footswitch(**defaults)
-    fs._set_led = MagicMock()
+    fs._set_led = MagicMock()  # type: ignore[method-assign]
     yield fs
     Footswitch.callbacks = {}
     Footswitch.all_longpress_groups = {}
@@ -131,7 +133,10 @@ class TestPressed:
             taptempo.is_enabled.assert_called_once()
             assert fs.toggled is False
             fs.midiout.send_message.assert_not_called()
+            assert isinstance(fs.refresh_callback, MagicMock)
             fs.refresh_callback.assert_not_called()
+            assert isinstance(fs._set_led, MagicMock)
+            fs._set_led.assert_not_called()
 
     def test_unbound_footswitch_refresh_callback_on_press(self):
         """A footswitch with MIDI but no bound parameter still refreshes the LCD immediately."""
@@ -139,6 +144,7 @@ class TestPressed:
             fs.pressed(switchstate.Value.RELEASED)
 
             assert fs.toggled is True
+            assert isinstance(fs.refresh_callback, MagicMock)
             fs.refresh_callback.assert_called_once_with(footswitch=fs)
 
     def test_longpress_logs_timestamp(self):
@@ -175,24 +181,11 @@ class TestPressed:
             fs.pressed(switchstate.Value.LONGPRESSED)
             relay.disable.assert_called_once()
 
-    def test_taptempo_short_press_does_not_toggle(self):
-        with _make_footswitch(midi_CC=42) as fs:
-            taptempo = MagicMock()
-            taptempo.is_enabled.return_value = True
-            fs.taptempo = taptempo
-
-            fs.pressed(switchstate.Value.RELEASED)
-
-            taptempo.is_enabled.assert_called_once()
-            assert fs.toggled is False
-            fs.midiout.send_message.assert_not_called()
-            fs.refresh_callback.assert_not_called()
-
 
 class TestSetValue:
     @staticmethod
-    def _param(symbol, value, minimum=0, maximum=1):
-        return MagicMock(symbol=symbol, value=value, minimum=minimum, maximum=maximum)
+    def _param(symbol: str, value: float, minimum: Optional[int] = 0, maximum: Optional[int] = 1) -> Parameter:
+        return cast(Parameter, MagicMock(symbol=symbol, value=value, minimum=minimum, maximum=maximum))
 
     def test_bypass_engaged_when_not_bypassed(self):
         with _make_footswitch() as fs:
@@ -229,9 +222,10 @@ class TestSetValue:
         with _make_footswitch() as fs:
             fs.parameter = self._param(":bypass", 0)
             fs.set_value(0)
+            assert isinstance(fs._set_led, MagicMock)
             fs._set_led.assert_any_call(True)
+            assert isinstance(fs.refresh_callback, MagicMock)
             fs.refresh_callback.assert_called_once_with(footswitch=fs)
-
 
 
 class TestLongpressEventPolling:
@@ -281,6 +275,7 @@ class TestClearPedalboardInfo:
             fs.set_longpress_groups(["next_snapshot"])
             fs.add_relay(MagicMock())
             fs.add_preset(MagicMock())
+            fs.parameter = MagicMock()  # set last: add_relay needs parameter=None
 
             fs.clear_pedalboard_info()
 
@@ -290,3 +285,4 @@ class TestClearPedalboardInfo:
             assert fs.category is None
             assert fs.preset_callback is None
             assert len(fs.relay_list) == 0
+            assert fs.parameter is None

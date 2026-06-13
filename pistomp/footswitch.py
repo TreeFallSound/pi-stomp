@@ -16,6 +16,7 @@
 import logging
 import time
 import sys
+from typing import Any, Callable
 from rtmidi.midiconstants import CONTROL_CHANGE
 
 import common.token as Token
@@ -91,8 +92,8 @@ class Footswitch(controller.Controller):
         self.display_label = None
         self.toggled = False
         self.led = None
-        self.midiout = midiout
-        self.refresh_callback = refresh_callback
+        self.midiout: Any = midiout
+        self.refresh_callback: Callable[..., Any] = refresh_callback
         self.relay_list = []
         self.preset_callback = None
         self.preset_callback_arg = None
@@ -211,11 +212,7 @@ class Footswitch(controller.Controller):
             info.timestamps.update({self.id: now})
 
     def pressed(self, state):
-        # If a footswitch can be mapped to control a relay, preset, MIDI or all 3
-        #
-        # The footswitch will only "toggle" if it's associated with a relay
-        # (in which case it will toggle with the relay) or with a Midi message
-        #
+        """Handle a footswitch press: route to relay, preset, or MIDI CC as configured."""
         new_toggled = not self.toggled
 
         # First handle Longpress Events
@@ -270,7 +267,7 @@ class Footswitch(controller.Controller):
 
     def add_relay(self, relay):
         self.relay_list.append(relay)
-        self.set_value(not relay.init_state())
+        self.set_value(0.0 if relay.init_state() else 1.0)
 
     def clear_relays(self):
         self.relay_list.clear()
@@ -283,6 +280,7 @@ class Footswitch(controller.Controller):
         self.toggled = False
         self.disabled = False
         self.display_label = None
+        self.parameter = None
         self.set_category(None)
         self.preset_callback = None
         self.clear_relays()
