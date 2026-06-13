@@ -342,9 +342,12 @@ never authoritatively sets its own copy. A persistent daemon-thread bridge
 (`poll_ws_messages`, ~10ms). `output_set` meter/scope spam is dropped at the bridge.
 
 Inbound (`parse_message` → typed messages → each handler's `_handle_ws_message`):
-- `param_set …/:bypass v` — live bypass delta → set bypass + redraw.
-- `param_set …/{sym} v` — control value → refresh cached `Parameter.value` (a later
-  edit opens at current); no live redraw.
+- `param_set …/:bypass v` — live bypass delta → set bypass + redraw. Routed through
+  `Plugin.set_param_value`, which also reconciles any bound footswitch's indicators.
+- `param_set …/{sym} v` — control value → `Plugin.set_param_value` refreshes the cached
+  `Parameter.value` (a later edit opens at current) and mirrors it onto any control
+  bound to that param: a footswitch redraws its LED/keycap; a knob/encoder updates its
+  cached position. Params bound to nothing do no work.
 - `add {inst} {uri} … {bypassed} …` — appears **only** in the (re)connect/load dump;
   bypass rides in field 4 — its sole arrival point on connect. Same bypass dispatch.
 - `loading_start` / `loading_end {snapshot}` — bracket a dump; `loading_end` stashes
@@ -360,8 +363,11 @@ Outbound behaviour depends on the initiator:
 
 - **Footswitch press** → MIDI CC (absolute `toggled` intent) → mod-host processes
   internally → mod-host emits `param_set` feedback on port 5556 → `msg_callback` to
-  ALL clients (including us). Emit-only is correct here; the feedback echo drives the
-  LCD/LED update.
+  ALL clients (including us). piStomp updates its LED/LCD **optimistically on press**
+  from local intent; the feedback echo arrives later and reconciles if it differs.
+  Waiting for the echo would lag the switch whenever mod-host's feedback stream is
+  gated on a slow client — the `data_finish`/`output_data_ready` handshake stalls when
+  a mod-ui browser tab is backgrounded (see `../mod-ui/docs/output-data-flow.md`).
 - **Non-footswitch UI tap** → WS `send_parameter` → mod-ui calls `host.bypass()` →
   `msg_callback_broadcast` **skips the origin socket** (us), and mod-host does NOT
   generate `param_set` feedback for `bypass` commands it received from mod-ui. No echo
@@ -457,6 +463,7 @@ changes (not for commands mod-ui itself issued). This determines who sees what:
 ```
 Path A — Footswitch (MIDI CC):
   poll_controls() → Footswitch.pressed()
+    → flip toggled, _set_led(), refresh_callback()  # optimistic local update
     → midiout.send_message([CC, midi_CC, 127/0])   # direct to ALSA
       → JACK → mod-host:midi_in                    # bypasses mod-ui WS entirely
         → mod-host applies change
@@ -464,8 +471,10 @@ Path A — Footswitch (MIDI CC):
             → mod-ui process_read_message_body
               → msg_callback("param_set /graph/X :bypass V")  # ALL clients, no skip
                 → pi-stomp poll_ws_messages() receives it
-                  → plugin.set_bypass() + lcd.refresh_plugins()
-  Emit-only is correct: pi-stomp waits for the feedback echo to update LCD/LED.
+                  → plugin.set_bypass() + lcd.refresh_plugins()  # reconciles
+  Optimistic update keeps the switch responsive even when the echo is delayed by
+  mod-host's data_finish/output_data_ready handshake (stalls on a backgrounded
+  mod-ui browser tab); the later echo is authoritative and corrects any divergence.
 
 Path B — Non-footswitch UI tap (LCD plugin widget click):
   toggle_plugin_bypass(widget, plugin)

@@ -139,15 +139,6 @@ class Footswitch(controller.Controller):
     def set_midi_channel(self, midi_channel):
         self.midi_channel = midi_channel
 
-    @property
-    def drives_display(self) -> bool:
-        """True unless an inbound WS echo will repaint this switch on press.
-        Only a plugin :bypass binding gets that echo (mod-host bypass feedback);
-        unbound switches and non-:bypass param bindings must update their own
-        indicators since their param_set echo carries no LCD redraw."""
-        param = self.parameter
-        return param is None or param.symbol != Token.COLON_BYPASS
-
     def set_value(self, value: float):
         param = self.parameter
         if param is not None and param.symbol != Token.COLON_BYPASS:
@@ -267,11 +258,11 @@ class Footswitch(controller.Controller):
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.toggled else 0]
             logging.debug("Sending CC event: %d" % self.midi_CC)
             self.midiout.send_message(cc)
-            if self.drives_display:
-                self._set_led(self.toggled)
+            self._set_led(self.toggled)
 
-        if self.drives_display:
-            self.refresh_callback(footswitch=self)
+        # Update indicators optimistically
+        # (mod-host bypass feedback / param_set) reconciles if it ever differs
+        self.refresh_callback(footswitch=self)
 
     def set_display_label(self, label):
         self.display_label = label

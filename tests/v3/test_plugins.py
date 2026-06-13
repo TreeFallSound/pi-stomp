@@ -154,10 +154,10 @@ def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_p
     assert hw.footswitches[0].toggled is True
 
 
-def test_v3_bound_footswitch_emits_absolute_values_without_display(v3_system: SystemFixture, make_plugin):
+def test_v3_bound_footswitch_emits_absolute_values_and_updates_display(v3_system: SystemFixture, make_plugin):
     """A bound :bypass footswitch sends alternating absolute CC values from local
-    intent — so rapid presses that outrun the echo stay correct — and leaves its
-    indicators and parameter for the inbound echo to update."""
+    intent — so rapid presses that outrun the echo stay correct — and updates its
+    indicators optimistically, while leaving the cached parameter for the echo."""
     hw = v3_system.hw
     fs = hw.footswitches[0]
     fs.refresh_callback = MagicMock()
@@ -165,7 +165,6 @@ def test_v3_bound_footswitch_emits_absolute_values_without_display(v3_system: Sy
 
     plugin = make_plugin("fuzz")
     fs.parameter = plugin.parameters[":bypass"]
-    assert not fs.drives_display
 
     bypass_before = fs.parameter.value
     for _ in range(3):
@@ -173,8 +172,8 @@ def test_v3_bound_footswitch_emits_absolute_values_without_display(v3_system: Sy
 
     sent = [c.args[0][2] for c in fs.midiout.send_message.call_args_list]
     assert sent == [127, 0, 127]
-    fs.refresh_callback.assert_not_called()
-    assert fs.parameter.value == bypass_before
+    assert fs.refresh_callback.call_count == 3  # display updates on each press
+    assert fs.parameter.value == bypass_before  # cached value still echo-authoritative
 
 
 def test_v3_preset_change_leans_on_ws_drain_not_rest(v3_system: SystemFixture, make_plugin, get_urls):
