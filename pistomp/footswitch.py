@@ -148,8 +148,18 @@ class Footswitch(controller.Controller):
         param = self.parameter
         return param is None or param.symbol != Token.COLON_BYPASS
 
-    def set_value(self, bypass_value: float):
-        self.toggled = (bypass_value < 1)
+    def set_value(self, value: float):
+        param = self.parameter
+        if param is not None and param.symbol != Token.COLON_BYPASS:
+            # Non-:bypass binding: "on" is the max end (the value an on-press
+            # sends), so compare against the range midpoint. The bypass
+            # inversion below would light the LED for an OFF param.
+            lo = param.minimum if param.minimum is not None else 0
+            hi = param.maximum if param.maximum is not None else 1
+            self.toggled = value >= (lo + hi) / 2
+        else:
+            # :bypass (or relay, param is None): engaged when not bypassed.
+            self.toggled = (value < 1)
         self._set_led(self.toggled)
         self.refresh_callback(footswitch=self)
 

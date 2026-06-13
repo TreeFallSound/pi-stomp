@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 
 from common.parameter import Parameter
-from pistomp.footswitch import Footswitch
+from pistomp.controller import Controller
 
 Point = tuple[int, int]
 
@@ -38,7 +38,7 @@ class Plugin:
         self.parameters: dict[str, Parameter] = parameters
         self.bypass_indicator_xy: tuple[Point, Point] = ((0, 0), (0, 0))
         self.lcd_xyz: LcdPosition | None = None
-        self.controllers: list[Footswitch] = []
+        self.controllers: list[Controller] = []
         self.has_footswitch: bool = False
         self.category: str | None = category
 
@@ -56,15 +56,20 @@ class Plugin:
         param.value = new_value
         return new_value
 
-    def set_bypass(self, bypass: bool) -> None:
-        param = self.parameters.get(":bypass")
+    def set_param_value(self, symbol: str, value: float) -> None:
+        """Cache a param's value and mirror it onto any control bound to it, so
+        a footswitch's LED/keycap (or a knob/encoder's cached position) tracks
+        mod-ui's live value. set_value is polymorphic per control type."""
+        param = self.parameters.get(symbol)
         if param is None:
             return
-        param.value = 1.0 if bypass else 0.0
-        if self.has_footswitch:
-            for c in self.controllers:
-                if isinstance(c, Footswitch):
-                    c.set_value(param.value)
+        param.value = value
+        for c in self.controllers:
+            if c.parameter is param:
+                c.set_value(value)
+
+    def set_bypass(self, bypass: bool) -> None:
+        self.set_param_value(":bypass", 1.0 if bypass else 0.0)
 
     def to_json(self) -> str:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)

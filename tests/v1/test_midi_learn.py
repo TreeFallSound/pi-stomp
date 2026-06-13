@@ -30,6 +30,35 @@ def test_v1_midi_learn_binds_footswitch_live(v1_system: SystemFixtureLegacy, mak
     snapshot("bound")
 
 
+def test_v1_param_set_syncs_bound_footswitch(v1_system: SystemFixtureLegacy, make_plugin, make_parameter):
+    """A non-:bypass param_set syncs the footswitch bound to that param — its
+    toggled state mirrors mod-ui's value (no :bypass inversion)."""
+    handler = v1_system.handler
+    hw = v1_system.hw
+    ws_bridge = v1_system.ws_bridge
+
+    assert handler.current
+
+    binding, fs0 = next((k, v) for k, v in hw.controllers.items() if isinstance(v, Footswitch))
+    channel, cc = binding.split(":")
+
+    solo = make_parameter("Solo", "mixer", value=0.0)
+    plugin = make_plugin("mixer", bypassed=False, has_footswitch=False,
+                         parameters={"solo": solo})
+    handler.current.pedalboard.plugins = [plugin]
+    handler.update_lcd()
+
+    ws_bridge.inject(f"midi_map /graph/mixer solo {channel} {cc} 0.0 1.0")
+    handler.poll_ws_messages()
+    assert fs0.parameter is solo
+    assert fs0.toggled is False  # value 0.0 → off
+
+    ws_bridge.inject("param_set /graph/mixer solo 1.0")
+    handler.poll_ws_messages()
+    assert solo.value == 1.0
+    assert fs0.toggled is True  # synced on
+
+
 def test_v1_midi_learn_replay_is_idempotent(v1_system: SystemFixtureLegacy, make_plugin):
     """A replayed midi_map matching the current binding is a no-op (no duplicate controllers)."""
     handler = v1_system.handler

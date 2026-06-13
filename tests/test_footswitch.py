@@ -125,6 +125,43 @@ class TestPressed:
             relay.enable.assert_called_once()
 
 
+class TestSetValue:
+    @staticmethod
+    def _param(symbol, value, minimum=0, maximum=1):
+        return MagicMock(symbol=symbol, value=value, minimum=minimum, maximum=maximum)
+
+    def test_bypass_engaged_when_not_bypassed(self):
+        with _make_footswitch() as fs:
+            fs.parameter = self._param(":bypass", 0)
+            fs.set_value(0)  # bypass off → effect active
+            assert fs.toggled is True
+
+    def test_bypass_off_when_bypassed(self):
+        with _make_footswitch() as fs:
+            fs.parameter = self._param(":bypass", 1)
+            fs.set_value(1)  # bypassed → effect inactive
+            assert fs.toggled is False
+
+    def test_non_bypass_off_value_is_off(self):
+        # Regression: an OFF toggle param (value 0) must not light the switch.
+        with _make_footswitch() as fs:
+            fs.parameter = self._param("solo", 0)
+            fs.set_value(0)
+            assert fs.toggled is False
+
+    def test_non_bypass_on_value_is_on(self):
+        with _make_footswitch() as fs:
+            fs.parameter = self._param("solo", 1)
+            fs.set_value(1)
+            assert fs.toggled is True
+
+    def test_non_bypass_handles_missing_range(self):
+        with _make_footswitch() as fs:
+            fs.parameter = self._param("gain", 1, minimum=None, maximum=None)
+            fs.set_value(1)
+            assert fs.toggled is True
+
+
 class TestClearPedalboardInfo:
     def test_clears_state(self):
         with _make_footswitch() as fs:
