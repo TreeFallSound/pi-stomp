@@ -141,9 +141,12 @@ class Footswitch(controller.Controller):
 
     @property
     def drives_display(self) -> bool:
-        """True when unbound: no inbound echo will arrive, so the press updates
-        indicators itself. When bound to a plugin :bypass, the WS broadcast does."""
-        return self.parameter is None
+        """True unless an inbound WS echo will repaint this switch on press.
+        Only a plugin :bypass binding gets that echo (mod-host bypass feedback);
+        unbound switches and non-:bypass param bindings must update their own
+        indicators since their param_set echo carries no LCD redraw."""
+        param = self.parameter
+        return param is None or param.symbol != Token.COLON_BYPASS
 
     def set_value(self, bypass_value: float):
         self.toggled = (bypass_value < 1)
