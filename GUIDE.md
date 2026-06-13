@@ -10,7 +10,7 @@ The software is structured around a polling loop that reads hardware at a 10ms c
 
 Three hardware variants (v1/v2/v3) share a common `Hardware` base class (switched via YAML). The "business logic" brain of the app for v1 is the (legacy/unsupported) `mod.py`; for v2/v3, `modhandler.py` is the modern version. Both suclass `Handler`.
 
-MOD-UI is the single writer of plugin bypass and parameter values. pi-Stomp emits changes (MIDI CC for footswitches, WebSocket `param_set` for other toggles) and waits for the echo to update its own state. This avoids dual-source drift.
+MOD-UI is the single writer of plugin bypass and parameter values. pi-Stomp emits changes (MIDI CC for footswitches, WebSocket `param_set` for other toggles) and updates its own indicators optimistically, then reconciles against MOD-UI's echo — which carries the absolute current value, so it overwrites rather than compounds. This keeps the UI responsive while avoiding dual-source drift.
 
 ## OS & Deployment
 
@@ -159,21 +159,23 @@ The WebSocket bridge (`AsyncWebSocketBridge`) runs a daemon thread with exponent
 | Pattern | Typed message | Effect |
 |---------|---------------|--------|
 | `param_set …/:bypass v` | `PluginBypassMessage` | Set bypass, redraw |
-| `param_set …/{sym} v` | `ParamSetMessage` | Cache parameter value (no live redraw) |
+| `param_set …/{sym} v` | `ParamSetMessage` | `Plugin.set_param_value`: cache value + mirror onto any bound control (footswitch LED/keycap, knob/encoder position) |
 | `add {inst} … {bypassed} …` | `AddPluginMessage` | Connect/reconnect dump only; bypass in field 4 |
 | `loading_end {snapshot}` | `LoadingEndMessage` | Stash snapshot index for file-watch path |
 | `pedal_snapshot {id} {name}` | `PedalSnapshotMessage` | In-board snapshot change |
 
 Snapshot loads from mod-ui broadcast only deltas vs its own cache; pedalboard loads and connect dumps rebroadcast unconditionally. This means reselecting a board is a full resync, but reselecting a snapshot is not.
 
-#### Outbound: emit and echo back
+#### Outbound: emit, then reconcile
 
-piStomp usually defers to WS messages from MOD-UI to bring state updates, even when we initiated them:
+MOD-UI stays authoritative for bypass/parameter state, but pi-Stomp updates its own indicators optimistically so the UI stays responsive; the inbound echo carries the absolute current value and reconciles if it ever differs.
 
-- **Footswitch**: `pressed()` sets local `toggled` state and sends absolute MIDI CC immediately. The bypass display (plugin state, LCD) updates only when mod-ui echoes the change back over WebSocket. For unbound footswitches (`drives_display` == true), the local LED updates immediately.
+- **Footswitch**: `pressed()` flips local `toggled`, updates its LED/LCD immediately, and sends an absolute MIDI CC. mod-host applies it and echoes `param_set` to all clients (including us), where `plugin.set_param_value()` reconciles the cached state. Optimism matters because mod-host gates its feedback stream on the `data_finish`/`output_data_ready` handshake — a backgrounded mod-ui browser tab can delay that echo by seconds, which would otherwise lag the switch.
 - **Tap tempo**: Sends `transport-bpm` via WebSocket bridge.
 
-This single-writer discipline keeps rapid presses correct and avoids dual-source drift, at the expense of ~10ms delay (our poll rate). The outlier is footswitches in non-MIDI mode:
+Because the echo is absolute (not a delta), a wrong optimistic prediction is overwritten rather than compounded, and rapid presses stay correct since the CC alternates from locally-advancing `toggled`.
+
+The outlier is a **non-footswitch UI bypass** (e.g. tapping a plugin on the LCD):
 
 1. WS `send_parameter`
 2. mod-ui calls `host.bypass()`
@@ -290,12 +292,12 @@ MOD-UI writes /home/pistomp/data/last.json
 poll_controls()
   → Footswitch.pressed(state)
     → self.toggled = not self.toggled
+    → _set_led() + refresh_callback()              # optimistic, every switch
     → midiout.send_message([ch|CC, CC, 127 if toggled else 0])
-    → if unbound: update LED locally (drives_display == true)
 
 mod-ui applies bypass, broadcasts via WebSocket
   → poll_ws_messages() → parse_message()
-    → PluginBypassMessage → plugin.set_bypass(v)
+    → PluginBypassMessage → plugin.set_bypass(v)   # → set_param_value, reconciles switch
     → lcd.refresh_plugins()
 ```
 
@@ -306,7 +308,7 @@ For controls that go through WebSocket rather than MIDI (e.g., parameter edits f
 ```
 UI interaction → ws_bridge.send_parameter(instance_id, symbol, value)
   → ... no local state change ...
-mod-ui echoes back → ParamSetMessage → param.value = value
+mod-ui echoes back → ParamSetMessage → plugin.set_param_value()  # caches value, mirrors to any bound control
 ```
 
 ## Key Files
@@ -363,7 +365,7 @@ mod-ui echoes back → ParamSetMessage → param.value = value
 - **Polling over events** — Fixed-frequency loops for predictable timing; 10ms critical path
 - **Explicit version routing** — Factory pattern with known version checks, not capability detection
 - **Overlay, don't replace** — Per-pedalboard config merges with defaults at field level
-- **Single writer** — MOD-UI owns bypass/parameter state; pi-Stomp emits and waits for echo
+- **Single writer** — MOD-UI owns bypass/parameter state; pi-Stomp emits, paints optimistically, and reconciles against the absolute echo
 - **Incremental updates** — `reinit()` updates objects in-place; blend diff maps are pre-computed
 - **Trust MOD for audio** — pi-Stomp is a controller; audio processing lives in mod-host
 - **Fail gracefully** — Log warnings, continue operation where possible
