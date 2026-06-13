@@ -2,17 +2,21 @@
 
 ## Concepts
 
-piStomp is a hardware controller for MOD-UI (a web frontend for mod-host, an LV2 plugin host). It reads physical controls (footswitches, encoders, knobs, expression pedals), sends them as MIDI CCs via ALSA's virtual MIDIThrough port, and reflects plugin state from MOD-UI's WebSocket back to an LCD.
+pi-Stomp is python software that runs on a raspberry pi and acts as a hardware controller for MOD-UI. MOD-UI is a virtual pedalboard webapp that wraps mod-host, which hosts LV2 plugins (effects). It runs all this on top of JACK (audio routing).
+
+In addition to displaying graphics on a 320x240 16-bit LCD, it also reads physical controls (footswitches, encoders, knobs, expression pedals), sends them as MIDI CCs via ALSA's virtual MIDIThrough port, and reflects state back from MOD-UI to the LCD.
 
 The software is structured around a polling loop that reads hardware at a 10ms cadence, drains inbound WebSocket messages at the same rate, and delegates slower work (LCD refresh, MOD sync, WiFi) to progressively-longer intervals.
 
-Three hardware variants (v1/v2/v3) share a common `Hardware` base class and diverge via a version float in YAML config that routes through factory classes to version-specific subclasses. The v2 and v3 hardware both use the `Modhandler` business-logic handler; v1 uses the legacy `Mod` handler.
+Three hardware variants (v1/v2/v3) share a common `Hardware` base class (switched via YAML). The "business logic" brain of the app for v1 is the (legacy/unsupported) `mod.py`; for v2/v3, `modhandler.py` is the modern version. Both suclass `Handler`.
 
 MOD-UI is the single writer of plugin bypass and parameter values. pi-Stomp emits changes (MIDI CC for footswitches, WebSocket `param_set` for other toggles) and waits for the echo to update its own state. This avoids dual-source drift.
 
 ## OS & Deployment
 
-pi-Stomp runs on a custom Arch Linux ARM image built by the `pistomp-arch` repository. The image includes JACK2, mod-host, MOD-UI, an ALSA MIDI Through daemon (`amidithru`), LCD splash utilities, and all Python dependencies in a virtual environment.
+pi-Stomp runs on a custom Arch Linux ARM image built by the `pistomp-arch` repository. The image includes JACK2, mod-host, MOD-UI, other system dependencies, and all Python dependencies are maintained in a virtual environment.
+
+> __The built-in system python is used for base packages, as they are not packaged on PyPI.__
 
 | Path | Purpose |
 |------|---------|
@@ -200,6 +204,14 @@ blend_snapshots:
 ```
 
 On pedalboard load, `SnapshotManager.sync_blend_snapshots()` creates or updates the snapshot entries in MOD, then `BlendMode.prepare()` pre-computes diff maps for every parameter between stops. During the 10ms polling loop, the active `BlendMode` reads its input controller and sends only parameters whose values have actually changed — MIDI-bound parameters are automatically excluded to prevent conflicts with CC control.
+
+```
+# Tempo
+GET  /get_bpm                            # Get current BPM
+POST /set_bpm                            # Sets curent BPM
+```
+
+REST covers pedalboard and snapshot operations the current BPM. Plugin bypass/parameters and outgoing tap tempo use WebSocket.
 
 The blend system is in `blend/`: `manager.py` (lifecycle, input wiring), `snapshot.py` (creation/sync), `parameter_setter.py` (WS diff sender), `input_controller.py` (analog input adapter), `easing.py` (interpolation curves), `stop.py` (diff map computation).
 
