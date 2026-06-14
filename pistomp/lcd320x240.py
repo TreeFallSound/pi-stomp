@@ -15,6 +15,7 @@
 
 import logging
 import os
+import time
 from typing import Optional
 import common.token as Token
 import common.parameter as Parameter
@@ -493,9 +494,9 @@ class Lcd(abstract_lcd.Lcd):
 
     def footswitch_event(self, event, widget, footswitch):
         if event == InputEvent.CLICK:
-            footswitch.pressed(switchstate.Value.RELEASED)
+            footswitch._on_switch(switchstate.Value.RELEASED, time.monotonic())
         elif event == InputEvent.LONG_CLICK:
-            footswitch.pressed(switchstate.Value.LONGPRESSED)
+            footswitch._on_switch(switchstate.Value.LONGPRESSED, time.monotonic())
 
 
     def color_plugin(self, widget, plugin):
