@@ -207,10 +207,14 @@ class PanelStack(ContainerWidget):
         self._setup()
 
         self.lcd_needs_update = False
+        self.capture_callback = None
 
     def poll_updates(self):
         if self.lcd_needs_update:
             self.refresh()
+
+    def set_capture_callback(self, callback):
+        self.capture_callback = callback
 
     def _compose(self, widget, orig_box, real_box):
         # This always called with widget = a Panel which is a direct
@@ -252,6 +256,9 @@ class PanelStack(ContainerWidget):
         # Update LCD
         trace(self, "updating lcd with image", self.image, "box=", box)
         self.lcd.update(self.image, box)
+
+        if self.capture_callback:
+            self.capture_callback(self.image)
 
     def _do_draw(self, image, draw, real_box):
         assert False

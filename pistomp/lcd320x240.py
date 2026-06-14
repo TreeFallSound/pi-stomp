@@ -15,6 +15,7 @@
 
 import logging
 import os
+import socket
 from typing import Optional
 import common.token as Token
 import common.parameter as Parameter
@@ -33,6 +34,7 @@ from pistomp.tuner.panel import TunerPanel
 #import traceback
 
 class Lcd(abstract_lcd.Lcd):
+    CAPTURE_SOCKET_PATH = "/tmp/pistomp-lcd.sock"
 
     def __init__(self, cwd, handler=None, flip=False, display=None, spi_speed_mhz=24):
         self.cwd = cwd
@@ -41,6 +43,9 @@ class Lcd(abstract_lcd.Lcd):
         self.handler = handler
         self.flip = flip
         self.spi_speed_mhz = spi_speed_mhz
+
+        self._capture_socket = None
+        self._capture_check_tick = 0
 
         # Calculate optimal polling divisor based on LCD speed
         # 24MHz: 78ms/frame → poll every 80ms (divisor=8)
@@ -191,6 +196,55 @@ class Lcd(abstract_lcd.Lcd):
         self.pstack.poll_updates()
         if self._tuner_panel is not None and self.pstack.current == self._tuner_panel:
             self._tuner_panel.tick()
+        self._poll_capture_socket()
+
+    def _poll_capture_socket(self):
+        self._capture_check_tick += 1
+        if self._capture_socket is None:
+            # Check for socket existence every ~2 seconds (assuming 10-20ms poll rate)
+            if self._capture_check_tick % 100 == 0:
+                if os.path.exists(self.CAPTURE_SOCKET_PATH):
+                    try:
+                        self._capture_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                        self._capture_socket.connect(self.CAPTURE_SOCKET_PATH)
+                        # Increase buffer size to handle full 230KB frames
+                        self._capture_socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 512 * 1024)
+                        # We don't want to block the main loop if the consumer is slow
+                        self._capture_socket.setblocking(False)
+                        self.pstack.set_capture_callback(self._send_capture_frame)
+                        logging.info("LCD capture connected")
+                    except Exception:
+                        if self._capture_socket:
+                            self._capture_socket.close()
+                        self._capture_socket = None
+        elif self._capture_check_tick % 500 == 0:
+            # Periodically check if the socket is still valid
+            try:
+                self._capture_socket.send(b"", socket.MSG_DONTWAIT)
+            except (socket.error, BrokenPipeError):
+                self._disconnect_capture()
+
+    def _send_capture_frame(self, image):
+        if self._capture_socket:
+            try:
+                # Send raw RGB data. 320x240x3 = 230,400 bytes.
+                # Use sendall with non-blocking - if it fails, we drop and disconnect
+                self._capture_socket.sendall(image.tobytes())
+            except (socket.error, BrokenPipeError, BlockingIOError):
+                # BlockingIOError means the recorder can't keep up - we disconnect
+                # to avoid slowing down pi-stomp
+                logging.warning("LCD capture disconnected or buffer full")
+                self._disconnect_capture()
+
+    def _disconnect_capture(self):
+        if self._capture_socket:
+            try:
+                self._capture_socket.close()
+            except Exception:
+                pass
+        self._capture_socket = None
+        self.pstack.set_capture_callback(None)
+        logging.info("LCD capture disabled")
 
     def show_tuner_panel(self, panel: TunerPanel) -> None:
         self._tuner_panel = panel
