@@ -199,17 +199,13 @@ def test_v3_bound_footswitch_emits_absolute_values_without_display(v3_system: Sy
     deltas), so rapid presses that outrun the echo stay correct. refresh_callback is
     not invoked — display is driven by update_lcd_fs, not the old direct path."""
     hw = v3_system.hw
-    ws_bridge = v3_system.ws_bridge
     fs = hw.footswitches[0]
     fs.refresh_callback = MagicMock()
     hw.midiout.send_message.reset_mock()
 
     plugin = make_plugin("fuzz")
     fs.parameter = plugin.parameters[":bypass"]
-    plugin.controllers.append(fs)
-    handler.current.pedalboard.plugins = [plugin]
-    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
-    handler.lcd.draw_main_panel()
+    assert not fs.drives_display
 
     for _ in range(3):
         fs._on_switch(switchstate.Value.RELEASED)
@@ -707,8 +703,8 @@ def test_v3_footswitch_states_snapshot(v3_system: SystemFixture, make_plugin, sn
     snapshot("initial")
 
     # Toggle one bound and one unbound footswitch.
-    fs1.pressed(switchstate.Value.RELEASED)  # bound delay: off -> on (MIDI sent)
-    fs3.pressed(switchstate.Value.RELEASED)  # unbound: off -> on (immediate)
+    fs1._on_switch(switchstate.Value.RELEASED)  # bound delay: off -> on (MIDI sent)
+    fs3._on_switch(switchstate.Value.RELEASED)  # unbound: off -> on (immediate)
 
     # Simulate mod-host echoing the bypass change for the bound footswitch.
     ws_bridge.inject("param_set /graph/delay :bypass 0.0")
