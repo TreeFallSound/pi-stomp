@@ -207,12 +207,14 @@ class Lcd(abstract_lcd.Lcd):
                     try:
                         self._capture_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                         self._capture_socket.connect(self.CAPTURE_SOCKET_PATH)
-                        # Increase buffer size to handle full 230KB frames
-                        self._capture_socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 512 * 1024)
+                        # Increase buffer size to handle multiple 300KB frames (4MB = ~13 frames)
+                        self._capture_socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4 * 1024 * 1024)
                         # We don't want to block the main loop if the consumer is slow
                         self._capture_socket.setblocking(False)
                         self.pstack.set_capture_callback(self._send_capture_frame)
                         logging.info("LCD capture connected")
+                        # Force a full refresh so the recorder gets a frame immediately
+                        self.pstack.refresh()
                     except Exception:
                         if self._capture_socket:
                             self._capture_socket.close()

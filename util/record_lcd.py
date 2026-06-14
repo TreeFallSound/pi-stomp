@@ -12,7 +12,7 @@ import argparse
 SOCKET_PATH = "/tmp/pistomp-lcd.sock"
 WIDTH = 320
 HEIGHT = 240
-BPP = 3
+BPP = 4
 FRAME_SIZE = WIDTH * HEIGHT * BPP
 FPS = 60
 
@@ -28,7 +28,7 @@ class LcdRecorder:
             "ffmpeg",
             "-y",
             "-f", "rawvideo",
-            "-pixel_format", "rgb24",
+            "-pixel_format", "rgba",
             "-video_size", f"{WIDTH}x{HEIGHT}",
             "-framerate", str(FPS),
             "-i", "-", # input from pipe
@@ -53,7 +53,7 @@ class LcdRecorder:
         server_sock.listen(1)
         try:
             conn, _ = server_sock.accept()
-            conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 512 * 1024)
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
             print("Connected to pi-stomp!")
             with conn:
                 while self.running:
@@ -100,6 +100,13 @@ class LcdRecorder:
 
         print(f"Recording to {self.output_path}")
         print("Press Ctrl+C to stop.")
+
+        # Wait for the first frame before starting the clock
+        while self.running and not self.frame_received.is_set():
+            self.frame_received.wait(0.1)
+
+        if not self.running:
+            return
 
         interval = 1.0 / FPS
         next_tick = time.time() + interval
