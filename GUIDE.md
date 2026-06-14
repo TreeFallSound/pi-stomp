@@ -455,7 +455,7 @@ changes (not for commands mod-ui itself issued). This determines who sees what:
 
 ```
 Path A — Footswitch (MIDI CC):
-  poll_controls() → Footswitch.pressed()
+  poll_controls() → Footswitch._on_switch()
     → flip toggled, _set_led()                      # LED-only optimistic update
     → midiout.send_message([CC, midi_CC, 127/0])   # direct to ALSA
       → JACK → mod-host:midi_in                    # bypasses mod-ui WS entirely
