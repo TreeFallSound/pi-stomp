@@ -672,6 +672,82 @@ def test_v3_footswitch_states_snapshot(v3_system: SystemFixture, make_plugin, sn
 
 
 # ---------------------------------------------------------------------------
+# Pedalboard switch: non-bypass footswitch colour regression
+# ---------------------------------------------------------------------------
+
+
+def test_v3_pedalboard_switch_multi_fs_same_plugin_show_bound_off_color(
+    v3_system: SystemFixture, make_plugin, make_parameter, snapshot
+):
+    """After a pedalboard switch, all footswitches bound to params of the same plugin
+    must show BOUND_OFF_BG — not UNBOUND_BG — immediately, without a WS echo.
+
+    Regression: draw_footswitch broke after the first footswitch per plugin due to
+    an unconditional `break`, leaving subsequent ones as unbound (color=None).
+    Additionally, the initial is_bypassed state was taken from plugin.is_bypassed()
+    which is wrong for non-bypass params; mod-ui only broadcasts param_set on change
+    so at-default (OFF) values never arrive via WS on a pedalboard switch.
+    """
+    handler = v3_system.handler
+    hw = v3_system.hw
+    assert handler.current
+
+    fs0 = hw.footswitches[0]
+    fs1 = hw.footswitches[1]
+    fs2 = hw.footswitches[2]
+    binding0 = next(k for k, v in hw.controllers.items() if v is fs0)
+    binding1 = next(k for k, v in hw.controllers.items() if v is fs1)
+    binding2 = next(k for k, v in hw.controllers.items() if v is fs2)
+
+    # --- "Beths": only fs0 bound to :bypass ---
+    beths = make_plugin("beths", category="Distortion", bypassed=False)
+    beths.parameters[":bypass"].binding = binding0
+
+    handler.current.pedalboard.plugins = [beths]
+    handler.bind_current_pedalboard()
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+    snapshot("beths")
+
+    # --- "Doom Bass": fs0/1/2 bound to non-bypass params of the SAME plugin ---
+    solo1 = make_parameter("Solo1", "doom", value=0.0, minimum=0.0, maximum=1.0)
+    solo2 = make_parameter("Solo2", "doom", value=0.0, minimum=0.0, maximum=1.0)
+    solo3 = make_parameter("Solo3", "doom", value=0.0, minimum=0.0, maximum=1.0)
+    solo1.binding = binding0
+    solo2.binding = binding1
+    solo3.binding = binding2
+
+    doom = make_plugin(
+        "doom",
+        category="Delay",
+        parameters={
+            "solo1": solo1,
+            "solo2": solo2,
+            "solo3": solo3,
+        },
+    )
+
+    handler.current.pedalboard.plugins = [doom]
+    hw.reinit(None)
+    handler.bind_current_pedalboard()
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+    snapshot("doom_bass")
+
+    # All three should have a non-None color (bound-but-off, not unbound).
+    for fs in (fs0, fs1, fs2):
+        wfs = next((w for w in handler.lcd.w_footswitches if w.object is fs), None)
+        assert wfs is not None, f"No widget for footswitch {fs.id}"
+        assert wfs.color is not None, (
+            f"Footswitch {fs.id} shows UNBOUND_BG — expected BOUND_OFF_BG after pedalboard switch"
+        )
+        # All three solos are OFF (value=0.0 < midpoint); widget must reflect that.
+        assert wfs.is_bypassed is True, (
+            f"Footswitch {fs.id} is_bypassed should be True (solo is off) but is {wfs.is_bypassed}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Instance ID normalization
 # ---------------------------------------------------------------------------
 
