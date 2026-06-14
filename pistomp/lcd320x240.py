@@ -608,23 +608,20 @@ class Lcd(abstract_lcd.Lcd):
         return self.shorten_name(param.instance_id, self.footswitch_width)
 
     def draw_footswitch(self, plugin):
+        color = self.get_plugin_color(plugin)
         for c in plugin.controllers:
             if isinstance(c, Footswitch):
                 fs_id = c.id
-                #fss[fs_id] = None
                 label = self.footswitch_label(c)
                 c.set_display_label(label)
-
                 y = 0
                 x = self.get_footswitch_pitch() * fs_id
                 self.footswitch_slots[fs_id] = label
-                color = self.get_plugin_color(plugin)
                 p = FootswitchWidget(Box.xywh(x, y, self.footswitch_width, self.footswitch_height),
-                             fs_id, label, color, plugin.is_bypassed(),
+                             fs_id, label, color, not c.toggled,
                              parent=self.footswitch_panel, action=self.footswitch_event, object=c)
                 self.w_footswitches.append(p)
                 self.footswitch_panel.add_sel_widget(p)
-                break
 
     def draw_unbound_footswitches(self):
         for fs in self.footswitches:
