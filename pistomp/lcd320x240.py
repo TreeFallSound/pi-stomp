@@ -112,7 +112,6 @@ class Lcd(abstract_lcd.Lcd):
         #                                0    1    2    3    4   5   6   7
         self.footswitch_pitch_options = [120, 120, 120, 128, 80, 65, 65, 65]
         self.footswitch_pitch = None
-        self.footswitch_slots = {}
 
         # widgets
         self.w_wifi = None
@@ -192,13 +191,12 @@ class Lcd(abstract_lcd.Lcd):
         self.footswitches = footswitches
 
     def draw_main_panel(self):
-        self.footswitch_slots = {}
         self.draw_tools(None, None, None, None)
         self.main_panel.sel_widget(self.w_wrench)  # Make the System tool (wrench) the initial selected item
         self.draw_title()
         self.draw_analog_assignments(self.current.analog_controllers)
         self.draw_plugins()
-        self.draw_unbound_footswitches()
+        self.draw_footswitches()
         if self.footswitch_panel in self.main_panel.sel_list:
             self.main_panel.sel_list.remove(self.footswitch_panel)
         self.main_panel.add_sel_widget(self.footswitch_panel)
@@ -509,8 +507,7 @@ class Lcd(abstract_lcd.Lcd):
 
         def tile_factory(node, box, parent):
             plugin = plugins_by_id[node.id]
-            label = plugin.instance_id[:self.plugin_label_length]
-            label = label.replace("_", "")
+            label = plugin.display_name[:self.plugin_label_length]
             label = self.shorten_name(label, box.width)
             # parent MUST be passed in ctor: attaching later wipes the
             # explicit colors color_plugin() sets via inherited-attr resolution.
@@ -531,12 +528,7 @@ class Lcd(abstract_lcd.Lcd):
         )
         self.main_panel.add_sel_widget(self.grid_panel)
 
-        for plugin in plugins:
-            if plugin.has_footswitch:
-                self.draw_footswitch(plugin)
-
         self.main_panel.refresh()
-        self.footswitch_panel.refresh()
 
     def plugin_event(self, event, widget, plugin):
         if event == InputEvent.CLICK:
@@ -664,33 +656,25 @@ class Lcd(abstract_lcd.Lcd):
             return param.name
         return self.shorten_name(param.instance_id, self.footswitch_width)
 
-    def draw_footswitch(self, plugin):
-        color = self.get_plugin_color(plugin)
-        for c in plugin.controllers:
-            if isinstance(c, Footswitch):
-                fs_id = c.id
-                label = self.footswitch_label(c)
-                c.set_display_label(label)
-                y = 0
-                x = self.get_footswitch_pitch() * fs_id
-                self.footswitch_slots[fs_id] = label
-                p = FootswitchWidget(Box.xywh(x, y, self.footswitch_width, self.footswitch_height),
-                             fs_id, label, color, not c.toggled,
-                             parent=self.footswitch_panel, action=self.footswitch_event, object=c)
-                self.w_footswitches.append(p)
-                self.footswitch_panel.add_sel_widget(p)
-
-    def draw_unbound_footswitches(self):
-        for fs in self.footswitches:
-            if fs.id in self.footswitch_slots:
-                continue
-            slot = fs.id
-            dl = fs.get_display_label()
-            label = "" if dl is None else dl
-            y = 0
-            x = self.get_footswitch_pitch() * slot
-            p = FootswitchWidget(Box.xywh(x, y, self.footswitch_width, self.footswitch_height),
-                                 slot, label, None, not fs.toggled, parent=self.footswitch_panel, object=fs)
+    def draw_footswitches(self):
+        # One slot-ordered pass over the physical switches, so selection order is
+        # the stable physical order regardless of plugin/pedalboard ordering.
+        # Bound switches (parameter set) get a colored, labeled, actionable keycap;
+        # unbound slots get a placeholder that only toggles its indicator.
+        for fs in sorted(self.footswitches, key=lambda f: f.id):
+            x = self.get_footswitch_pitch() * fs.id
+            if fs.parameter is not None:
+                label = self.footswitch_label(fs)
+                fs.set_display_label(label)
+                color = self.get_category_color(fs.category)
+                action = self.footswitch_event
+            else:
+                label = fs.get_display_label() or ""
+                color = None
+                action = None
+            p = FootswitchWidget(Box.xywh(x, 0, self.footswitch_width, self.footswitch_height),
+                                 fs.id, label, color, not fs.toggled,
+                                 parent=self.footswitch_panel, action=action, object=fs)
             self.w_footswitches.append(p)
             self.footswitch_panel.add_sel_widget(p)
         self.footswitch_panel.refresh()

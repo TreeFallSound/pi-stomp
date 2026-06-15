@@ -81,6 +81,7 @@ def setup_main_ui(instance):
         MockObject(
             instance_id="distortion",
             uri="mock://distortion",
+            display_name="distortion",
             is_bypassed=lambda: False,
             category="Distortion",
             has_footswitch=True,
@@ -90,6 +91,7 @@ def setup_main_ui(instance):
         MockObject(
             instance_id="delay",
             uri="mock://delay",
+            display_name="delay",
             is_bypassed=lambda: False,
             category="Delay",
             has_footswitch=True,
@@ -99,6 +101,10 @@ def setup_main_ui(instance):
         MockObject(
             instance_id="reverb",
             uri="mock://reverb",
+        ),
+        MockObject(
+            instance_id="reverb",
+            display_name="reverb",
             is_bypassed=lambda: True,
             category="Reverb",
             has_footswitch=True,
@@ -108,6 +114,10 @@ def setup_main_ui(instance):
         MockObject(
             instance_id="chorus",
             uri="mock://chorus",
+        ),
+        MockObject(
+            instance_id="chorus",
+            display_name="chorus",
             is_bypassed=lambda: False,
             category="Modulator",
             has_footswitch=False,
@@ -132,7 +142,7 @@ def setup_main_ui(instance):
             "exp:pedal": {Token.ID: 0, Token.TYPE: Token.EXPRESSION, Token.COLOR: "Red", Token.NAME: "Wah"},
         },
     )
-    mock_footswitches = [MockObject(id=i, toggled=False, get_display_label=lambda: "") for i in range(4)]
+    mock_footswitches = [MockObject(id=i, toggled=False, get_display_label=lambda: "", parameter=None) for i in range(4)]
     instance.link_data(pedalboards=[mock_pedalboard], current=mock_current, footswitches=mock_footswitches)
     instance.draw_main_panel()
 
@@ -378,7 +388,7 @@ def _setup_pedalboard(instance, pb):
         preset_index=0,
         analog_controllers={},
     )
-    mock_footswitches = [MockObject(id=i, toggled=False, get_display_label=lambda: "") for i in range(4)]
+    mock_footswitches = [MockObject(id=i, toggled=False, get_display_label=lambda: "", parameter=None) for i in range(4)]
     instance.link_data(pedalboards=[pb], current=mock_current, footswitches=mock_footswitches)
     instance.draw_main_panel()
 
