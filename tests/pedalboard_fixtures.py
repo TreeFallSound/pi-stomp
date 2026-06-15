@@ -27,6 +27,10 @@ class MockPlugin:
     bypassed: bool = False
     controllers: list = field(default_factory=list)
 
+    @property
+    def display_name(self) -> str:
+        return self.instance_id.replace("_", "")
+
     def is_bypassed(self) -> bool:
         return self.bypassed
 
