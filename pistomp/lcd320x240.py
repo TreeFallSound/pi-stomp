@@ -278,25 +278,8 @@ class Lcd(abstract_lcd.Lcd):
 
         self._poll_capture_socket()
 
-    def show_plugin_panel(self, panel: Panel) -> None:
-        self._fullscreen_panel = panel
-        self.pstack.push_panel(panel)
-        panel.refresh()
-
-    def hide_plugin_panel(self) -> None:
-        if self._fullscreen_panel is not None:
-            self.pstack.pop_panel(self._fullscreen_panel)
-        self._fullscreen_panel = None
-
-    def has_active_fullscreen_panel(self) -> bool:
-        return self._fullscreen_panel is not None
-
-    @property
-    def plugin_panel(self) -> PluginPanel | None:
-        return self._fullscreen_panel if isinstance(self._fullscreen_panel, PluginPanel) else None
-
+        # Update control progress bars (analog controls and encoders)
         if self.pstack.current == self.main_panel:
-            # Update control progress bars (analog controls and encoders)
             for icon in self.w_controls:
                 if icon.object is None:
                     continue
@@ -333,6 +316,26 @@ class Lcd(abstract_lcd.Lcd):
                 self.w_preset.tick()
             if self.w_pedalboard:
                 self.w_pedalboard.tick()
+
+    def show_plugin_panel(self, panel: Panel) -> None:
+        self._fullscreen_panel = panel
+        self.pstack.push_panel(panel)
+        # push_panel composes the (still-blank) panel onto the stack but
+        # doesn't draw the panel's children. Force a full redraw so bg, rules,
+        # header and hint are on screen before tick()'s partial refreshes start.
+        panel.refresh()
+
+    def hide_plugin_panel(self) -> None:
+        if self._fullscreen_panel is not None:
+            self.pstack.pop_panel(self._fullscreen_panel)
+        self._fullscreen_panel = None
+
+    def has_active_fullscreen_panel(self) -> bool:
+        return self._fullscreen_panel is not None
+
+    @property
+    def plugin_panel(self) -> PluginPanel | None:
+        return self._fullscreen_panel if isinstance(self._fullscreen_panel, PluginPanel) else None
 
     #
     # Toolbar
@@ -508,6 +511,7 @@ class Lcd(abstract_lcd.Lcd):
         def tile_factory(node, box, parent):
             plugin = plugins_by_id[node.id]
             label = plugin.display_name[:self.plugin_label_length]
+            label = label.replace("_", "")
             label = self.shorten_name(label, box.width)
             # parent MUST be passed in ctor: attaching later wipes the
             # explicit colors color_plugin() sets via inherited-attr resolution.
@@ -989,6 +993,19 @@ class Lcd(abstract_lcd.Lcd):
             if isinstance(icon_object, BlendMode):
                 text_color = self.default_plugin_color
                 color = self.default_plugin_color
+                # Initialize the label to the closest blend stop snapshot so it
+                # never briefly shows "none" for an unbound blend input slot.
+                input_ctrl = icon_object.input_controller.controlled_input
+                if input_ctrl:
+                    if isinstance(input_ctrl, EncoderController):
+                        position = input_ctrl.midi_value / 127.0
+                    else:
+                        position = input_ctrl.last_read / 1023.0
+                    stops = icon_object.input_controller.stops
+                    closest_stop = min(stops, key=lambda s: abs(s.position - position))
+                    snapshot_name = self.handler.current.presets.get(closest_stop.snapshot_index, "")
+                    if snapshot_name:
+                        name = snapshot_name
 
             if control_type == Token.KNOB:
                 w = Icon(
