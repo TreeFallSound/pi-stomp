@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import json
+import re
+from functools import cached_property
 
 from common.parameter import Parameter
 from pistomp.controller import Controller
@@ -36,6 +38,7 @@ class Plugin:
         uri: str | None = None,
     ) -> None:
         self.instance_id: str = instance_id.lstrip("/")
+        self.name: str = (info or {}).get("name") or self.instance_id
         self.parameters: dict[str, Parameter] = parameters
         # MOD-UI canvas position (ingen:canvasX/Y). Drives a We sstable, audio-flow
         # ordering of pb.plugins independent of lilv's hash-randomised iteration.
@@ -52,6 +55,12 @@ class Plugin:
         # Snapshot of parameter values at pedalboard parse time. Cleared on
         # pedalboard reload. Serves as the baseline for panel Reset.
         self.pedalboard_snapshot: dict[str, float] = {}
+
+    @cached_property
+    def display_name(self) -> str:
+        id_base = re.sub(r'_?\d+$', '', self.instance_id).lower()
+        raw = self.name if len(self.name) < len(self.instance_id) or id_base in ('mono', 'stereo') else self.instance_id
+        return raw.replace("_", "")
 
     def is_bypassed(self) -> bool:
         param = self.parameters.get(":bypass")
