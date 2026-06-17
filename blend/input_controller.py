@@ -48,6 +48,15 @@ class InputController:
         self.controlled_input = control
         logging.info(f"Attached blend mode to {type(control).__name__} {control.id}")
 
+    def handle_value_change(self, _raw: int, control: BlendInputProtocol) -> None:
+        """Critical-path callback from expression pedal or encoder."""
+        try:
+            _, _, segment_idx, local_pct = self._resolve_position(control)
+            self._send_diff_map(self.segment_diff_maps[segment_idx], local_pct)
+        except Exception as e:
+            # Don't crash the polling loop.
+            logging.error(f"Error in blend interpolation: {e}", exc_info=True)
+
     def detach_from_input(self) -> None:
         if self.controlled_input:
             input_type = type(self.controlled_input).__name__
