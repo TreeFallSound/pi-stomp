@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Basic v1/v2 (mod.py) coverage for source-of-truth bypass.
 
 Drives Mod.toggle_plugin_bypass directly with a hand-wired handler (no hardware,
@@ -17,7 +18,7 @@ def _make_handler(selected_plugin):
     handler.ws_bridge = FakeWebSocketBridge()
     handler.lcd = MagicMock()
     handler.get_selected_instance = lambda: selected_plugin
-    handler._suppress_outbound_ws = False
+    handler._is_pedalboard_loading = False
     return handler
 
 
@@ -28,7 +29,7 @@ def _make_drain_handler(plugins):
     handler.ws_bridge = FakeWebSocketBridge()
     handler.lcd = MagicMock()
     handler.current = SimpleNamespace(pedalboard=SimpleNamespace(plugins=plugins))
-    handler._suppress_outbound_ws = False
+    handler._is_pedalboard_loading = False
     return handler
 
 
@@ -70,7 +71,7 @@ def test_v1_outbound_ws_suppressed_during_pedalboard_change(make_plugin):
     plugin = make_plugin("fuzz", bypassed=False, has_footswitch=False)
     handler = _make_handler(plugin)
     handler.current = SimpleNamespace(pedalboard=SimpleNamespace(plugins=[plugin]))
-    handler._suppress_outbound_ws = True
+    handler._is_pedalboard_loading = True
 
     handler.toggle_plugin_bypass()
 
@@ -83,7 +84,7 @@ def test_v1_outbound_ws_suppressed_during_pedalboard_change(make_plugin):
 def test_v1_loading_start_suppresses_outbound_ws():
     """Receiving loading_start from MOD-UI sets the suppression flag."""
     handler = _make_drain_handler([])
-    assert not getattr(handler, "_suppress_outbound_ws", False)
+    assert not getattr(handler, "_is_pedalboard_loading", False)
     handler.ws_bridge.inject("loading_start 0")
     handler.poll_ws_messages()
-    assert handler._suppress_outbound_ws is True
+    assert handler._is_pedalboard_loading is True

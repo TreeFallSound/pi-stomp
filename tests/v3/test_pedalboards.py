@@ -93,6 +93,7 @@ def test_v3_outbound_ws_suppressed_during_pedalboard_change(v3_system: SystemFix
 
     # Start with a loaded pedalboard
     old_plugin = make_plugin("old_fuzz", category="Distortion", bypassed=False)
+    assert handler.current is not None
     handler.current.pedalboard.plugins = [old_plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, handler.hardware.footswitches)
     handler.lcd.draw_main_panel()
@@ -100,7 +101,7 @@ def test_v3_outbound_ws_suppressed_during_pedalboard_change(v3_system: SystemFix
     ws_bridge.sent.clear()
 
     # Simulate a user tapping the bypass on the old pedalboard while a change is in flight
-    handler._suppress_outbound_ws = True
+    handler._is_pedalboard_loading = True
     handler.toggle_plugin_bypass(widget, old_plugin)
 
     # The bypass should flip locally, but NO ws message should be sent
@@ -108,7 +109,7 @@ def test_v3_outbound_ws_suppressed_during_pedalboard_change(v3_system: SystemFix
     assert ws_bridge.sent_values_for("old_fuzz", ":bypass") == []
 
     # After clearing suppression, sends resume
-    handler._suppress_outbound_ws = False
+    handler._is_pedalboard_loading = False
     handler.toggle_plugin_bypass(widget, old_plugin)
     assert not old_plugin.is_bypassed()
     assert ws_bridge.sent_values_for("old_fuzz", ":bypass") == [0.0]
@@ -119,16 +120,17 @@ def test_v3_loading_start_suppresses_outbound_ws(v3_system: SystemFixture):
     handler = v3_system.handler
     ws_bridge = v3_system.ws_bridge
 
-    assert not getattr(handler, "_suppress_outbound_ws", False)
+    assert not getattr(handler, "_is_pedalboard_loading", False)
     ws_bridge.inject("loading_start 0")
     handler.poll_ws_messages()
-    assert handler._suppress_outbound_ws is True
+    assert handler._is_pedalboard_loading is True
 
 
 def test_v3_set_current_pedalboard_clears_suppression(v3_system: SystemFixture, make_plugin):
     """After set_current_pedalboard completes, suppression is cleared so normal operation resumes."""
     handler = v3_system.handler
-    handler._suppress_outbound_ws = True
+    handler._is_pedalboard_loading = True
+    assert handler.current is not None
 
     pb = handler.current.pedalboard
     new_plugin = make_plugin("new_fuzz", category="Distortion", bypassed=False)
@@ -136,4 +138,4 @@ def test_v3_set_current_pedalboard_clears_suppression(v3_system: SystemFixture, 
 
     handler.set_current_pedalboard(pb)
 
-    assert handler._suppress_outbound_ws is False
+    assert handler._is_pedalboard_loading is False

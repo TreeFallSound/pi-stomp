@@ -108,7 +108,7 @@ class Modhandler(Handler):
         logging.info("WebSocket bridge started")
 
         # Suppress outbound WebSocket messages while a pedalboard change is in flight.
-        self._suppress_outbound_ws = False
+        self._is_pedalboard_loading = False
 
         # Tuner state
         self._tuner_engine: TunerEngine | None = None
@@ -338,7 +338,7 @@ class Modhandler(Handler):
     def _handle_ws_message(self, msg: WebSocketMessage):
         """Handle incoming WebSocket message from MOD-UI."""
         if isinstance(msg, LoadingStartMessage):
-            self._suppress_outbound_ws = True
+            self._is_pedalboard_loading = True
             cleared = self.ws_bridge.clear_queue()
             if cleared:
                 logging.debug(f"Cleared {cleared} stale outbound messages on loading_start")
@@ -427,7 +427,7 @@ class Modhandler(Handler):
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
-            self._suppress_outbound_ws = True
+            self._is_pedalboard_loading = True
             self.lcd.draw_info_message("Loading...")
             mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
             if mod_bundle and self.current and mod_bundle != self.current.pedalboard.bundle:
@@ -617,7 +617,7 @@ class Modhandler(Handler):
             self.active_blend_mode = None
 
         # Resume outbound WebSocket messages now that the new pedalboard is fully set up.
-        self._suppress_outbound_ws = False
+        self._is_pedalboard_loading = False
 
     def bind_current_pedalboard(self):
         # "current" being the pedalboard mod-host says is current
@@ -780,7 +780,7 @@ class Modhandler(Handler):
             # No echo arrives for WS-initiated bypass. Contrast with footswitches,
             # which send MIDI CC → mod-host internally → feedback → msg_callback.
             value = plugin.toggle_bypass()
-            if not self._suppress_outbound_ws:
+            if not self._is_pedalboard_loading:
                 self.ws_bridge.send_parameter(plugin.instance_id, ":bypass", value)
             self.lcd.toggle_plugin(widget, plugin)
 
@@ -801,7 +801,7 @@ class Modhandler(Handler):
             self.audio_parameter_commit(param.symbol, value)
             return
 
-        if not self._suppress_outbound_ws:
+        if not self._is_pedalboard_loading:
             self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     def parameter_midi_change(self, param, direction):

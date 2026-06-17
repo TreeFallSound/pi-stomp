@@ -156,7 +156,7 @@ class Mod(Handler):
         logging.info("WebSocket bridge started")
 
         # Suppress outbound WebSocket messages while a pedalboard change is in flight.
-        self._suppress_outbound_ws: bool = False
+        self._is_pedalboard_loading: bool = False
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
@@ -481,7 +481,7 @@ class Mod(Handler):
     def _handle_ws_message(self, msg: WebSocketMessage):
         """Handle incoming WebSocket message from MOD-UI"""
         if isinstance(msg, LoadingStartMessage):
-            self._suppress_outbound_ws = True
+            self._is_pedalboard_loading = True
             cleared = self.ws_bridge.clear_queue()
             if cleared:
                 logging.debug(f"Cleared {cleared} stale outbound messages on loading_start")
@@ -550,7 +550,7 @@ class Mod(Handler):
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
-            self._suppress_outbound_ws = True
+            self._is_pedalboard_loading = True
             self.lcd.draw_info_message("Loading...")
             mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
             if mod_bundle and mod_bundle != self.current.pedalboard.bundle:
@@ -642,7 +642,7 @@ class Mod(Handler):
         self.update_lcd()
 
         # Resume outbound WebSocket messages now that the new pedalboard is fully set up.
-        self._suppress_outbound_ws = False
+        self._is_pedalboard_loading = False
 
         # Prepare blend modes if configured (snapshot-based activation)
         try:
@@ -911,7 +911,7 @@ class Mod(Handler):
                         return
             # Non-footswitch plugin: emit only; the inbound echo updates state and LCD.
             target_bypass = not inst.is_bypassed()
-            if not self._suppress_outbound_ws:
+            if not self._is_pedalboard_loading:
                 self.ws_bridge.send_parameter(inst.instance_id, ":bypass", 1.0 if target_bypass else 0.0)
             self.lcd.draw_plugin_select(inst)  # selection highlight (navigation, not bypass)
 
@@ -1367,7 +1367,7 @@ class Mod(Handler):
 
     def parameter_value_commit(self):
         param = self.deep.selected_parameter
-        if not self._suppress_outbound_ws:
+        if not self._is_pedalboard_loading:
             self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     #
