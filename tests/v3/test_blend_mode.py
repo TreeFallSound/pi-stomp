@@ -227,8 +227,8 @@ def test_snapshots_file_change_triggers_reprepare(blend_system: SystemFixture):
 # ---------------------------------------------------------------------------
 
 
-def test_lcd_reflects_blend_activation(blend_system: SystemFixture, snapshot):
-    """When the user switches to the Blend preset, the LCD updates without errors."""
+def test_lcd_reflects_blend_activation(blend_system_exp: SystemFixture, snapshot):
+    """Expression pedal blend: LCD shows pedal icon with half-drawn progress bar at 50%."""
     snapshot("blend_active")
 
 
@@ -439,6 +439,7 @@ def test_switching_between_blend_modes_applies_correct_initial_values(
     assert tone_values and abs(tone_values[-1] - 0.5) < 1e-6
     assert level_values and abs(level_values[-1] - 0.7) < 1e-6
 
+    handler.poll_lcd_updates()
     snapshot("blend_b_full")
 
     # Roll the encoder back to ~50% — Blend B should interpolate between Clean and Crunch
@@ -454,7 +455,16 @@ def test_switching_between_blend_modes_applies_correct_initial_values(
     assert tone_values and abs(tone_values[-1] - expected_tone) < 1e-5
     assert level_values and abs(level_values[-1] - expected_level) < 1e-5
 
+    handler.poll_lcd_updates()
     snapshot("blend_b_half")
+
+    # Roll encoder to 0% — Blend B should show Clean stop with empty progress bar
+    enc.current_step = 0
+    test_ws.sent.clear()
+    handler.active_blend_mode.input_controller.handle_value_change(0, enc)
+
+    handler.poll_lcd_updates()
+    snapshot("blend_b_zero")
 
 
 # ---------------------------------------------------------------------------
