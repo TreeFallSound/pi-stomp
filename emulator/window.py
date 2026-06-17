@@ -35,8 +35,9 @@ Keyboard shortcuts (availability depends on hardware version)
 
 import os
 import pygame
-import pygame._freetype as _freetype
 import pistomp.switchstate as switchstate
+
+from uilib.pygame_init import font as _make_font
 
 _FONTS_DIR  = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fonts")
 _FONT_MONO      = os.path.join(_FONTS_DIR, "DejaVuSansMono.ttf")
@@ -47,7 +48,7 @@ class _FTFont:
     """Wraps pygame._freetype.Font to match the pygame.font.Font render API."""
 
     def __init__(self, path, size):
-        self._ft = _freetype.Font(path, size)
+        self._ft = _make_font(path, size)
 
     def render(self, text, antialias, color):
         surf, _ = self._ft.render(text, color)

@@ -14,7 +14,12 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import json
-from PIL import ImageFont
+import os
+from pathlib import Path
+
+from uilib.pygame_init import font as _make_font
+
+_FONTS_DIR = Path(__file__).resolve().parent.parent / "fonts"
 
 
 class Config:
@@ -53,8 +58,13 @@ class Config:
             self.add_color("default_title_bkgnd", (63, 63, 63))
 
     def add_font(self, label, file_name, size):
-        f = ImageFont.truetype(file_name, size)
-        # XXX Add some error handling
+        # Resolve bare filenames against the bundled fonts directory.
+        path = file_name
+        if not os.path.isabs(file_name) and not os.path.exists(file_name):
+            candidate = _FONTS_DIR / file_name
+            if candidate.exists():
+                path = str(candidate)
+        f = _make_font(path, size)
         self.fonts[label] = f
 
     def get_font(self, label) -> ImageFont.FreeTypeFont | None:

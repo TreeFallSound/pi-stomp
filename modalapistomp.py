@@ -186,6 +186,14 @@ def main():
 
     logging.info("Entering main loop. Press Control-C to exit.")
     period = 0
+    # Fixed 10 ms base cadence (100 Hz) for the control critical path. The loop is
+    # paced to an absolute deadline grid — work runs first, then we sleep only the
+    # remainder — so the rate stays at 100 Hz regardless of per-iteration draw cost
+    # instead of sagging as draw is added on top of a flat sleep. Steady cadence
+    # also means a constant dt for the strobe, so its phase advances evenly (no
+    # judder). Per-SPI display rate is handled separately by lcd_poll_divisor.
+    BASE_PERIOD_S = 0.01
+    next_tick = time.monotonic()
     try:
         # startup actions
         handler.poll_system_info()
@@ -194,7 +202,6 @@ def main():
         while True:
             handler.poll_controls()
             handler.poll_ws_messages()  # drain inbound WS every tick for instant bypass/snapshot indicators
-            time.sleep(0.01)  # lower to increase responsiveness, but can cause conflict with LCD if too low
 
             # For less frequent events
             period += 1
@@ -211,6 +218,15 @@ def main():
             if period > 6000:  # every 60 seconds (when sleep = 0.01)
                 handler.poll_system_info()
                 period = 0
+
+            # Sleep only the remainder of the period; if a heavy iteration overran,
+            # resync to now so lag never accumulates into a backlog.
+            next_tick += BASE_PERIOD_S
+            sleep = next_tick - time.monotonic()
+            if sleep > 0:
+                time.sleep(sleep)
+            else:
+                next_tick = time.monotonic()
 
     except KeyboardInterrupt:
         logging.info("keyboard interrupt")

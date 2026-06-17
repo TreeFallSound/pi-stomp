@@ -12,7 +12,11 @@ from unittest.mock import MagicMock
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 import pytest
-from PIL import Image, ImageFont
+
+# Initialize pygame headlessly before any uilib import so SDL is ready.
+from uilib.pygame_init import init as _pg_init
+_pg_init()
+import pygame
 
 from uilib.panel import LcdBase
 
@@ -50,29 +54,6 @@ for _mod in _PI_MODULES:
 
 
 # ---------------------------------------------------------------------------
-# Force consistent font rendering across platforms (Linux / MacOS)
-# ---------------------------------------------------------------------------
-
-
-_FONTS_DIR = PROJECT_ROOT / "fonts"
-
-
-@pytest.fixture(autouse=True)
-def force_basic_layout(monkeypatch):
-    original = ImageFont.truetype
-
-    def patched(font, size=10, **kwargs):
-        if isinstance(font, str) and not Path(font).is_absolute() and not Path(font).exists():
-            candidate = _FONTS_DIR / font
-            if candidate.exists():
-                font = str(candidate)
-        kwargs["layout_engine"] = ImageFont.Layout.BASIC
-        return original(font, size, **kwargs)
-
-    monkeypatch.setattr(ImageFont, "truetype", patched)
-
-
-# ---------------------------------------------------------------------------
 # Snapshot helpers
 # ---------------------------------------------------------------------------
 
@@ -88,29 +69,39 @@ def snapshot_update(request):
     return request.config.getoption("--snapshot-update")
 
 
-def assert_snapshot(image: Image.Image, name: str, *, update: bool = False):
+def _surface_to_rgb_bytes(surface) -> tuple[bytes, tuple[int, int]]:
+    # v3 LCDs render to pygame Surfaces; v1/v2 hardware renders to PIL Images.
+    if isinstance(surface, pygame.Surface):
+        return pygame.image.tobytes(surface, "RGB"), surface.get_size()
+    rgb = surface.convert("RGB")
+    return rgb.tobytes(), rgb.size
+
+
+def assert_snapshot(surface: pygame.Surface, name: str, *, update: bool = False):
     path = _SNAPSHOT_DIR / f"{name}.png"
-    rgb = image.convert("RGB")
+    rgb_bytes, size = _surface_to_rgb_bytes(surface)
     if update or not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
-        rgb.save(path)
+        # Use pygame to write the PNG so reads and writes share the same encoder.
+        rgb_surface = pygame.image.frombytes(rgb_bytes, size, "RGB")
+        pygame.image.save(rgb_surface, str(path))
         return
-    expected = Image.open(path).convert("RGB")
-    assert rgb.tobytes() == expected.tobytes(), f"Snapshot mismatch: {name}  (re-run with --snapshot-update to accept)"
+    expected_surface = pygame.image.load(str(path)).convert(24)
+    expected_bytes = pygame.image.tobytes(expected_surface, "RGB")
+    assert rgb_bytes == expected_bytes, (
+        f"Snapshot mismatch: {name}  (re-run with --snapshot-update to accept)"
+    )
 
 
 @pytest.fixture
 def snapshot(request, fake_lcd, snapshot_update):
     """Assert the latest LCD frame matches a stored PNG snapshot.
 
-    Path is auto-derived from the test file and function name so no manual
-    string is needed.  Call snapshot() for an auto-numbered frame or
-    snapshot("label") for a named one.  Re-use the same label to assert the
-    screen returned to an earlier state.
+    Path is auto-derived from the test file and function name.
     """
     counter = [0]
     rel = Path(request.fspath).relative_to(_TESTS_DIR)
-    module = str(rel.with_suffix(""))  # e.g. "v3/test_startup"
+    module = str(rel.with_suffix(""))
     test = request.node.name
 
     def _assert(suffix=None):
@@ -173,7 +164,7 @@ def fake_ws_bridge():
 
 class FakeLcd(LcdBase):
     def __init__(self):
-        self.frames: list[Image.Image] = []
+        self.frames: list[pygame.Surface] = []
 
     def dimensions(self):
         return (320, 240)
@@ -184,8 +175,12 @@ class FakeLcd(LcdBase):
     def clear(self):
         pass
 
-    def update(self, image: Image.Image, box=None):
-        self.frames.append(image.copy())
+    def update(self, surface: pygame.Surface, box=None):
+        # Always capture a 24-bit RGB snapshot so per-frame format never drifts.
+        size = surface.get_size()
+        rgb_bytes = pygame.image.tobytes(surface, "RGB")
+        snap = pygame.image.frombytes(rgb_bytes, size, "RGB")
+        self.frames.append(snap)
 
     def update_bypass(self, enabled: bool, latched: bool):
         pass

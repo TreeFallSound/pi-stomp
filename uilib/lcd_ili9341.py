@@ -13,6 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+import pygame
+from PIL import Image
+
 from uilib.panel import LcdBase, Box
 from functools import cached_property
 import logging
@@ -23,22 +26,19 @@ INIT_STAMP = "/run/lcd.init"
 
 
 class LcdIli9341(LcdBase):
-    # XXX
     # TODO: Turn "flip" into all 90deg angle combinations
     def __init__(self, spi, cs_pin, dc_pin, reset_pin, baudrate, flip=True):
         import adafruit_rgb_display.ili9341 as ili9341
         rst = reset_pin if not self.has_system_splash else None
         self.disp = ili9341.ILI9341(spi, cs=cs_pin, dc=dc_pin, rst=rst, baudrate=baudrate)
 
-        # Use this to assure we don't have multiple threads trying to change the screen
-        # All methods which do change the screen (eg. dist. calls) should acquire/release
         self.lock = threading.Lock()
 
         if not self.has_system_splash:
             self.clear()
             self._set_stamp()
 
-        # Test full screen image
+        # Portrait dimensions (the panel itself is landscape; we rotate at push).
         self.width = self.disp.height
         self.height = self.disp.width
         self.flip = flip
@@ -66,35 +66,39 @@ class LcdIli9341(LcdBase):
         self.disp.fill(0)
         self.lock.release()
 
-    def update(self, image, box = None):
+    def update(self, surface: pygame.Surface, box=None):
+        """Push (a sub-rect of) the composed pygame surface to the LCD.
+
+        Converts surface → packed RGB888 bytes → PIL.Image at the seam and
+        hands it to adafruit_rgb_display, which handles the SPI bulk write."""
         if self.lock.locked():
             logging.debug("LCD update was locked by another thread")
         self.lock.acquire()
-        # LCD coordinates
-        #
-        # portrait mode, connector = bottom
-        #
-        # on pi-stomp, X=0 is "bottom" (away from jacks)
-        #              Y=0 is "left" (out jack side)
-        #
-        img_width, img_height = image.size
-        if box is None:
-            box = Box(0, 0, img_width, img_height)
+        try:
+            img_width, img_height = surface.get_size()
+            if box is None:
+                box = Box(0, 0, img_width, img_height)
 
-        # Check if we need to crop the image to the LCD size
-        x1, y1, x2, y2 = box.rect
-        if x2 > self.width:
-            x2 = self.width
-        if y2 > self.height:
-            y2 = self.height
-        if x1 != 0 or y1 != 0 or x2 != img_width or y2 != img_width:
-            image = image.crop((x1, y1, x2, y2))
-            if self.flip:
-                x = self.height - y2
-                y = x1
+            x1, y1, x2, y2 = box.rect
+            x1 = max(0, min(x1, img_width))
+            y1 = max(0, min(y1, img_height))
+            x2 = max(x1, min(x2, img_width))
+            y2 = max(y1, min(y2, img_height))
+
+            cropped = x1 != 0 or y1 != 0 or x2 != img_width or y2 != img_height
+            if cropped:
+                sub_rect = pygame.Rect(x1, y1, x2 - x1, y2 - y1)
+                sub = surface.subsurface(sub_rect)
+                if self.flip:
+                    x, y = self.height - y2, x1
+                else:
+                    x, y = y1, self.width - x2
             else:
-                x = y1
-                y = self.width - x2
-        self.disp.image(image, 270 if self.flip else 90, x, y)
-        self.lock.release()
+                sub = surface
+                x, y = 0, 0
 
+            rgb_bytes = pygame.image.tobytes(sub, "RGB")
+            pil_img = Image.frombytes("RGB", sub.get_size(), rgb_bytes)
+            self.disp.image(pil_img, 270 if self.flip else 90, x, y)
+        finally:
+            self.lock.release()

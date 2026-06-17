@@ -14,7 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
-from PIL import ImageColor
+import pygame
 import common.util as util
 
 
@@ -39,8 +39,9 @@ def valid_color(color):
     if color is None:
         return None
     try:
-        return ImageColor.getrgb(color)
-    except ValueError:
+        c = pygame.Color(color)
+        return (c.r, c.g, c.b)
+    except (ValueError, TypeError):
         logging.error("Cannot convert color name: %s" % color)
         return None
 

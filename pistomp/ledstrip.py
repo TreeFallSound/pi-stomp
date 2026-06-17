@@ -14,7 +14,8 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
-from PIL import ImageColor
+
+import pygame
 
 import common.util as Util
 import pistomp.category as Category
@@ -74,7 +75,8 @@ class Pixel:
             c = Util.DICT_GET(self.color_cache, color)
             if c is None:
                 c = matplotlib.colors.cnames[color]
-                c = ImageColor.getcolor(c, "RGB")
+                pc = pygame.Color(c)
+                c = (pc.r, pc.g, pc.b)
                 self.color_cache[color] = c
         except:
             c = color

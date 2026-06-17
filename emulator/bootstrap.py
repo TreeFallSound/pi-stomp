@@ -35,8 +35,7 @@ _CONFIG_TEMPLATES = {
 
 def bootstrap_emulator(version: EmulatorVersion, cwd: str):
     """Initialize pygame, build the emulator handler/hardware, and return (handler, midiout)."""
-    import pygame
-    import pygame._freetype as _freetype
+    from uilib.pygame_init import init as pygame_init
     from emulator.window import EmulatorWindow
 
     match version:
@@ -50,8 +49,7 @@ def bootstrap_emulator(version: EmulatorVersion, cwd: str):
             from emulator.hardware_v3 import EmulatorHardwareV3 as EmuHW
             from emulator.modhandler import EmulatorModhandler as EmuHandler
 
-    pygame.init()
-    _freetype.init()
+    pygame_init()
 
     try:
         midiout, _port_name = open_midioutput(0)

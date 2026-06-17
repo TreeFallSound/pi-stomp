@@ -15,14 +15,16 @@
 
 import functools
 import textwrap
+from typing_extensions import override
 
-from PIL import ImageDraw
+import pygame
 
 from uilib.box import Box
+from uilib.radius import Radius
 from uilib.config import Config
-from uilib.panel import Panel, PanelDecorator
-from uilib.text import WidgetAlign, TextWidget, TextHAlign, get_text_size
-from uilib.misc import trace
+from uilib.panel import PanelDecorator, RoundedPanel
+from uilib.text import TextWidget
+from uilib.misc import WidgetAlign, TextHAlign, get_text_size, trace
 
 
 class DialogDecorator(PanelDecorator):
@@ -56,40 +58,57 @@ class DialogDecorator(PanelDecorator):
         self.title.set_box(tbox, refresh=False)
         self.title.show(refresh=False)
 
-    def _draw(self, image, draw, real_box):
-        trace(self, "DialogDecorator draw, real_box=", real_box, "self.box=", self.box)
-        line_xy = (real_box.x0, real_box.y0 + self.th + 1, real_box.x1 - self.outline, real_box.y0 + self.th + 1)
+    @override
+    def _draw_erase(self, ctx):
+        # Paint only the titlebar strip — the panel body owns its own pixels,
+        # and filling under it would leak through any transparent areas.
+        titlebar_h = self.panel.box.y0 - self.box.y0  # decorator-local
+        strip = Box(0, 0, self.box.width, titlebar_h)
+        ctx.draw_rectangle(strip, fill=self.bkgnd_color, radius=Radius.top(self.outline_radius))
+
+    def _draw(self, ctx):
+        trace(self, "DialogDecorator draw, self.box=", self.box)
+        y = self.th + 1
         # The +2 here is magic ... need to figure out what's up, otherwise we get only 1 pixel
-        draw.line(line_xy, fill=self.fgnd_color, width=self.outline + 2)
+        ctx.draw_line(((0, y), (ctx.width - self.outline, y)), fill=self.fgnd_color, width=self.outline + 2)
 
+class Dialog(RoundedPanel):
+    """A pop-up dialog with a title decorator.
 
-class Dialog(Panel):
+    Only the BOTTOM corners are rounded on the panel itself — the titlebar
+    decorator sits above with its own rounded top, so the panel's top corners
+    must stay square (otherwise we'd clip the top of the first content widget).
+    """
+
     def __init__(self, width, height, title, title_font=None, **kwargs):
         box = Box.xywh(0, 0, width, height)
-        # Fixed radius for now
         radius = 10
         if title_font is None:
-            title_font = Config().get_font("default_title")
+            title_font = Config().get_font('default_title')
         deco = functools.partial(DialogDecorator, title=title, title_font=title_font, outline_radius=radius)
-        if "mask_format" not in kwargs:
-            kwargs["mask_format"] = "1"
-        super(Dialog, self).__init__(box=box, align=WidgetAlign.CENTRE, radius=radius, decorator=deco, **kwargs)
-        # Setup mask
-        mdraw = ImageDraw.Draw(self.mask)  # FIXME: self.mask can be None
-        # Base is a rounded rectangle
-        b = self.box.norm()  # FIXME: self.box can be None
-        mdraw.rounded_rectangle(b.PIL_rect, radius, 1, None, 0)
-        # Fill up the top corners
-        b.height = int(b.height / 2)
-        mdraw.rectangle(b.PIL_rect, 1, None, 0)
+        super(Dialog, self).__init__(box=box, align=WidgetAlign.CENTRE, radius=radius,
+                                     decorator=deco, **kwargs)
+
+    @override
+    def _build_shape_mask(self) -> pygame.Surface:
+        # Only the bottom corners round — the titlebar decorator owns the top
+        # corners and the panel's top edge must stay square to meet it
+        # seamlessly.
+        size = (int(self.box.width), int(self.box.height))
+        mask = pygame.Surface(size, pygame.SRCALPHA)
+        mask.fill((0, 0, 0, 0))
+        pygame.draw.rect(mask, (255, 255, 255, 255),
+                         pygame.Rect(0, 0, size[0], size[1]), 0,
+                         **Radius.bottom(self.radius).as_pygame_kwargs())
+        return mask
 
 
 class MessageDialog(Dialog):
     def __init__(self, panelstack, message, title="Error", width=200, height=90):
         super(MessageDialog, self).__init__(width=width, height=height, title=title, auto_destroy=True)
 
-        bbox = Config().get_font("default_title").getbbox("a")  # FIXME: font type safety
-        chars_per_line = width // int(bbox[2] - bbox[0])
+        char_w = Config().get_font('default_title').get_rect("a").width
+        chars_per_line = width // max(1, int(char_w))
         chunks = textwrap.wrap(message, width=chars_per_line)
         wrapped = "\n".join(chunks)
 

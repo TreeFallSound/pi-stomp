@@ -13,8 +13,15 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from typing import TYPE_CHECKING, Optional, Tuple
+
 from uilib.box import Box
 from uilib.misc import InputEvent, WidgetAlign, trace
+from uilib.paint import PaintContext
+
+if TYPE_CHECKING:
+    from uilib.container import ContainerWidget
+    from uilib.panel import PanelStack
 
 # This is the root of all evil: the Widget class, parent of all things
 # displayed on the screen.
@@ -104,6 +111,8 @@ class Widget:
         self.object = object
         self.selected = False
         self.selectable = False
+        self._painted = False
+        self._dirty = False
 
         # Non-inherited attributes
         self.label = self._get_arg(kwargs, "label", None)
@@ -224,36 +233,54 @@ class Widget:
     # box is established early and thus rely on the stack bounding box. When a
     # panel is popped off the stack, it still keeps its reference to said stack
 
-    def _focus(self, box):
-        """Prepare for drawing. Called by children of this
-           box   : Box object to draw relative to self origin
-           Returns a tuple (image, draw, box) where:
-           image : The image to draw into
-           draw  : An ImageDraw instance for it
-           box   : The box parameter translated into image coordinates
-        """
-        if not self.visible:
-            return None, None, None
-        return self.parent._focus(box.offset(self.box))
+    def _build_paint_target(self, dirty: Box) -> Tuple["ContainerWidget", Box, Box] | Tuple[None, None, None]:
+        """Walk up to the nearest ContainerWidget, accumulating frame offset.
 
-    def _unfocus(self, box):
-        """Child finished drawing, handles updates of parent container or
-           screen as needed
+        Returns (container, frame, clip) where:
+          container : the nearest ContainerWidget ancestor (owns the image)
+          frame     : self.box translated into container-local coords
+          clip      : dirty translated into container-local coords, clipped to container bounds
+        Returns (None, None, None) if no visible ContainerWidget ancestor found.
         """
-        if self.visible:
-            self.parent._unfocus(box.offset(self.box))
+        from uilib.container import ContainerWidget
 
-    def _compose(self, widget, orig_box, real_box):
-        """ContainerWidget child updated itself"""
-        if self.visible:
-            self.parent._compose(widget, orig_box, real_box.offset(self.box))
+        off_x, off_y = 0, 0
+        curr = self
+        while curr is not None:
+            if not curr.visible:
+                return None, None, None
+            
+            off_x += curr.box.x0
+            off_y += curr.box.y0
+            
+            parent = curr.parent
+            if isinstance(parent, ContainerWidget):
+                # We found our backing image owner.
+                # frame = where we are in container local coords
+                frame = Box.xywh(off_x, off_y, self.box.width, self.box.height)
+                # clip = the dirty region re-anchored to the same container coords
+                clip = dirty.offset((off_x - self.box.x0, off_y - self.box.y0))
+                return (parent, frame, clip.intersection(parent._content_bounds()))
+                
+            curr = parent
+            
+        return (None, None, None)
+
+    def _invalidate_self(self):
+        """Mark this widget's own region stale and bubble it up."""
+        self._dirty = True
+        if self.parent is not None and self.box is not None:
+            self.parent._invalidate_cache(self.box)
 
     def set_outline(self, width, color=None):
         self.outline = width
         self.outline_color = color
+        self._invalidate_self()
 
     def set_selected(self, selected):
-        self.selected = selected
+        if self.selected is not selected:
+            self.selected = selected
+            self._dirty = True
         if selected:
             if self.scroll_into_view():
                 # Don't refresh if scroll has made it happen
@@ -261,12 +288,12 @@ class Widget:
         self.refresh()
 
     def set_background(self, color):
-        # Need an explicit refresh call
         self.bkgnd_color = color
+        self._invalidate_self()
 
     def set_foreground(self, color):
-        # Need an explicit refresh call
         self.fgnd_color = color
+        self._invalidate_self()
 
     def set_action(self, action):
         self.action = action
@@ -321,14 +348,24 @@ class Widget:
         if self.visible:
             self._setup_act_attrs()
             self._setup()
+        parent._invalidate_cache()
 
     def detach(self):
         """Detach a widget from the parent"""
         trace(self, "Widget detach, parent=", self.parent)
         if self.parent is not None:
+            parent = self.parent
             self.parent.children.remove(self)
             self.parent._notify_detach(self)
             self.parent = None
+            parent._invalidate_cache()
+
+    def _invalidate_cache(self, box=None):
+        """Bubble cache invalidation up. Containers override to accumulate
+        a dirty region before bubbling further. `box` is in self-local coords
+        (or None ⇒ fully invalidate)."""
+        if self.parent is not None:
+            self.parent._invalidate_cache(box)
 
     def _adjust_box(self):
         trace(self, "adjusting box, parent=", self.parent)
@@ -372,8 +409,13 @@ class Widget:
         if self.parent:
             self.parent._notify_detach(widget)
 
-    def refresh(self, box: Box | None = None):
-        """Refresh widget (and children)"""
+    def refresh(self, box=None):
+        """Refresh widget (and children).
+
+        SDL clipping (set in PaintContext.painting) keeps any out-of-frame
+        primitives from leaking past the widget's frame, so we draw straight
+        into the container's surface — no temp buffer.
+        """
         trace(self, "Widget.refresh: vis=", self.visible, "parent=", self.parent)
         if self.parent is None or not self.visible:
             return
@@ -381,10 +423,19 @@ class Widget:
             box = self.box
         if box is None:
             return
-        image, draw, real_box = self.parent._focus(box)
-        if image is not None:
-            self._do_draw(image, draw, real_box)
-            self.parent._unfocus(box)
+        container, frame, clip = self._build_paint_target(box)
+        if container is None:
+            return
+        if clip.is_empty():
+            return
+        if container.virtual and not container._viewport().intersects(frame):
+            self._dirty = True
+            return
+        ctx = PaintContext(container.surface, clip, frame=frame)
+        self.do_draw(ctx, frame)
+        self._painted = True
+        self._dirty = False
+        container.propagate_dirty(clip)
 
     def scroll_into_view(self):
         """Scroll parent if necessary to ensure this object is into view. Only works
@@ -399,55 +450,51 @@ class Widget:
             return self.parent._scroll_into_view(box.offset(self.box))
         return False
 
-    def _do_draw(self, image, draw, real_box):
-        """Draw self and children, internal use only"""
-        # Note: This erase becomes redudant when refreshing a whole hierarchy,
-        #       not sure it's worth optimizing though
-        self._draw_erase(image, draw, real_box)
-        self._draw(image, draw, real_box)
-        for c in self.children:
-            if c.visible:
-                crb = c.box.offset(real_box)
-                c._do_draw(image, draw, crb)
-        self._draw_outline(image, draw, real_box)
-        self._draw_selection(image, draw, real_box)
+    def do_draw(self, ctx: PaintContext, frame: Box):
+        """Draw self and children. frame is self's rect in ctx.image coords."""
+        if ctx.clip.intersection(frame).is_empty():
+            return
+        with ctx.painting(frame) as pctx:
+            assert pctx.frame is not None
+            self._draw_erase(pctx)
+            self._draw(pctx)
+            child_origin = pctx.frame.topleft
+            for c in self.children:
+                if c.visible:
+                    c.do_draw(pctx, c.box.offset(child_origin))
+            self._draw_outline(pctx)
+            self._draw_selection(pctx)
 
-    # Draw helpers
-    def _draw_erase(self, image, draw, box):
-        # Workaround Pillow rectangle off-by-one bug
-        if self.outline_radius is None:
-            draw.rectangle(box.PIL_rect, self.bkgnd_color, None, 0)
+    def _draw_erase(self, ctx: PaintContext):
+        erase = ctx.dirty_bounds
+        if erase.is_empty():
+            return
+        if self.outline_radius is not None and erase == ctx.bounds:
+            ctx.draw_rectangle(ctx.bounds, fill=self.bkgnd_color, radius=self.outline_radius)
         else:
-            draw.rounded_rectangle(box.PIL_rect, self.outline_radius, self.bkgnd_color, None, 0)
+            ctx.draw_rectangle(erase, fill=self.bkgnd_color)
 
-    def _draw_outline(self, image, draw, real_box):
+    def _draw_outline(self, ctx: PaintContext):
         if self.outline != 0:
-            if self.outline_color is not None:
-                color = self.outline_color
-            else:
-                color = self.fgnd_color
-            if self.outline_radius is None:
-                draw.rectangle(real_box.PIL_rect, None, color, self.outline)
-            else:
-                draw.rounded_rectangle(real_box.PIL_rect, self.outline_radius, None, color, self.outline)
+            color = self.outline_color if self.outline_color is not None else self.fgnd_color
+            ctx.draw_rectangle(ctx.bounds, None, color, self.outline, radius=self.outline_radius)
 
-    def _draw_selection(self, image, draw, real_box):
+    def _draw_selection(self, ctx: PaintContext):
         if self.selected:
             radius = self.sel_radius
             if radius is None:
                 radius = self.outline_radius
-            if radius is None or radius == 0:
-                draw.rectangle(real_box.PIL_rect, None, self.sel_color, self.sel_width)
-            else:
-                draw.rounded_rectangle(real_box.PIL_rect, radius, None, self.sel_color, self.sel_width)
+            if radius == 0:
+                radius = None
+            ctx.draw_rectangle(ctx.bounds, None, self.sel_color, self.sel_width, radius=radius)
 
-    def _draw(self, image, draw, real_box):
-        # It's ok for widgets to not have anything to draw, some are pure rectangles
+    def _draw(self, ctx: PaintContext):
         pass
 
     def sel_children(self):
         """Selection-tree expansion. Default: only self.
         Return a list of children in desired iteration order.
+        Container subclasses override to expose their own selectables.
         """
         return [self]
 
@@ -460,7 +507,7 @@ class Widget:
             return True
         return False
 
-    def _get_stack(self):
+    def _get_stack(self) -> PanelStack | None:
         """Helper to return the top-level panel stack. Useful for creating pop-up dialogs
            such as text editing helpers
         """

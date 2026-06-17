@@ -109,5 +109,5 @@ class EmulatorMod(Mod):
 
     def cleanup(self):
         super().cleanup()
-        import pygame
-        pygame.quit()
+        from uilib.pygame_init import quit as pygame_quit
+        pygame_quit()

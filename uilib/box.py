@@ -63,6 +63,11 @@ class Box:
        self.y1 = self.y0 + int(value)
 
     @property
+    def size(self):
+        """Return width and height as a tuple"""
+        return (self.width, self.height)
+
+    @property
     def topleft(self):
         x0,y0,x1,y1 = self.box
         return (x0,y0)
@@ -171,10 +176,23 @@ class Box:
         y1 = min(self.box[3], box.box[3])
         return Box(x0,y0,x1,y1)
 
-    def union(self, other: "Box") -> "Box":
-        """Return the smallest Box that contains both self and other."""
-        return Box(min(self.x0, other.x0), min(self.y0, other.y0),
-                   max(self.x1, other.x1), max(self.y1, other.y1))
+    def union(self, box):
+        """Returns the bounding rectangle that contains both rectangles.
+        Empty boxes are skipped (treated as the identity)."""
+        if self.is_empty():
+            return box
+        if box.is_empty():
+            return self
+        x0 = min(self.box[0], box.box[0])
+        y0 = min(self.box[1], box.box[1])
+        x1 = max(self.box[2], box.box[2])
+        y1 = max(self.box[3], box.box[3])
+        return Box(x0,y0,x1,y1)
+
+    def contains(self, other):
+        """Returns True if other is fully contained within this box"""
+        return (other.box[0] >= self.box[0] and other.box[1] >= self.box[1] and
+                other.box[2] <= self.box[2] and other.box[3] <= self.box[3])
 
     def is_empty(self):
         return self.box[0] >= self.box[2] or self.box[1] >= self.box[3]

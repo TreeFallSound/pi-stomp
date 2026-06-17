@@ -13,13 +13,16 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from PIL import ImageDraw, Image
+from typing import Optional, Tuple
+from abc import ABC
+
+import pygame
 
 from uilib.box import Box
 from uilib.container import ContainerWidget
-from uilib.misc import InputEvent, trace
 from uilib.widget import Widget
-from abc import ABC
+from uilib.misc import InputEvent, trace
+from uilib.paint import PaintContext, _pg_rect
 
 #
 # Note about coordinates:
@@ -31,10 +34,7 @@ from abc import ABC
 
 
 class Panel(ContainerWidget):
-    """A Panel. This is kind of a 'window' in the traditional sense and holds
-    a bunch of widgets. It also can track selectable widgets and can be
-    placed into a PanelStack
-    """
+    """A Panel. Holds widgets, tracks selectable items, can be pushed onto a PanelStack."""
 
     def __init__(self, auto_destroy=False, decorator=None, no_dim=False, accepts_input=True, **kwargs):
         self.sel_list = []
@@ -76,7 +76,7 @@ class Panel(ContainerWidget):
     def add_sel_widget(self, widget):
         """Add a widget to the selectable list. The widget may be a leaf
            or a container that exposes its own selectables via sel_children()."""
-        assert(widget.visible)
+        assert widget.visible
         if widget in self.sel_list:
             return
         self.sel_list.append(widget)
@@ -210,23 +210,66 @@ class ShroudedPanel(Panel):
 
 
 class RoundedPanel(Panel):
-    def __init__(self, radius=10, **kwargs):
-        if "mask_format" not in kwargs:
-            kwargs["mask_format"] = "1"
-        super(RoundedPanel, self).__init__(**kwargs)
+    """A panel with rounded corners.
+
+    Non-virtual panels pre-multiply the rounded mask into the cached surface
+    in `_finalize_cache()` so steady-state blits are plain. Virtual panels
+    apply the mask at blit time since the mask tracks the viewport (which
+    moves through the tall content surface on scroll)."""
+
+    def __init__(self, radius: int = 10, **kwargs):
+        # Set radius *before* super().__init__() — ContainerWidget.__init__
+        # calls _setup() which calls _build_shape_mask(); the mask builder
+        # reads self.radius. The shape mask itself is populated by _setup().
         self.radius = radius
+        self._shape_mask: Optional[pygame.Surface] = None
+        kwargs['image_format'] = 'RGBA'
+        super(RoundedPanel, self).__init__(**kwargs)
 
-        # Setup mask plans
-        mdraw = ImageDraw.Draw(self.mask)
-        mdraw.rounded_rectangle(self.box.norm().PIL_rect, radius, 1, None, 0)
+    def _build_shape_mask(self) -> pygame.Surface:
+        """Build the per-corner viewport-sized alpha mask for this panel's outline shape."""
+        size = (int(self.box.width), int(self.box.height))
+        mask = pygame.Surface(size, pygame.SRCALPHA)
+        mask.fill((0, 0, 0, 0))
+        pygame.draw.rect(mask, (255, 255, 255, 255),
+                         pygame.Rect(0, 0, size[0], size[1]), 0,
+                         border_radius=self.radius)
+        return mask
 
-    def _draw_outline(self, image, draw, real_box):
+    def _setup(self):
+        super()._setup()
+        # _setup may have just (re)allocated the backing surface; rebuild the
+        # mask so it matches the current box.
+        if self.surface is not None:
+            self._shape_mask = self._build_shape_mask()
+
+    def _finalize_cache(self) -> None:
+        if self.virtual or self._shape_mask is None or self.surface is None:
+            return
+        self.surface.blit(self._shape_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+    def _blit_into(self, target_surface: pygame.Surface, local_clip: Box, dst_topleft: Tuple[int, int]) -> None:
+        if not self.virtual:
+            super()._blit_into(target_surface, local_clip, dst_topleft)
+            return
+        # Virtual: mask follows the viewport, so we composite per-blit off a
+        # viewport-local view of the tall cache. local_clip may extend past
+        # the surface (viewport-clamped); clip rect intersected with view.
+        assert self._shape_mask is not None
+        view = self._viewport_view()
+        view_rect = view.get_rect()
+        clip_rect = _pg_rect(local_clip).clip(view_rect)
+        if clip_rect.width <= 0 or clip_rect.height <= 0:
+            return
+        tmp = view.subsurface(clip_rect).copy()
+        tmp.blit(self._shape_mask, (0, 0), area=clip_rect, special_flags=pygame.BLEND_RGBA_MULT)
+        target_surface.blit(tmp, (int(dst_topleft[0]), int(dst_topleft[1])))
+
+    def _draw_outline(self, ctx):
         if self.outline != 0:
-            if self.outline_color is not None:
-                color = self.outline_color
-            else:
-                color = self.fgnd_color
-            draw.rounded_rectangle(real_box.PIL_rect, self.radius, None, color, self.outline)
+            color = self.outline_color if self.outline_color is not None else self.fgnd_color
+            ctx.draw_rectangle(ctx.bounds, None, color, self.outline, radius=self.radius)
+
 
 
 class LcdBase(ABC):
@@ -242,27 +285,26 @@ class LcdBase(ABC):
 
 
 class PanelStack(ContainerWidget):
-    def __init__(self, lcd, box=None, image_format=None, use_dimming=True):
+    def __init__(self, lcd, box: Optional[Box] = None, image_format: Optional[str] = None, use_dimming: bool = True):
         # XXX This implementation currently assumes box is at (0,0) in the LCD
-        #     and the offset remains 0,0 (dont' try to scroll)
+        #     and the offset remains 0,0 (don't try to scroll)
         if box is None:
             box = Box((0, 0), lcd.dimensions())
         if image_format is None:
             image_format = lcd.default_format()
-
-        trace(self, "Panel stack initializing with box=", box)
-        # Dimming, when enabled, causes panels below the frontmost one to
-        # be "dimmed" (the further back the more they get dimmed)
         if use_dimming:
             image_format = "RGBA"
+
+        trace(self, "Panel stack initializing with box=", box)
         super(PanelStack, self).__init__(box=box, image_format=image_format)
         self.stack = []
         self.current = None
         self.lcd = lcd
         self.visible = True
         if use_dimming:
-            size = (box.width, box.height)
-            self.dimmer = Image.new("RGBA", size, (0, 0, 0, 64))
+            size = (int(box.width), int(box.height))
+            self.dimmer: Optional[pygame.Surface] = pygame.Surface(size, pygame.SRCALPHA)
+            self.dimmer.fill((0, 0, 0, 64))
         else:
             self.dimmer = None
 
@@ -280,51 +322,39 @@ class PanelStack(ContainerWidget):
     def set_capture_callback(self, callback):
         self.capture_callback = callback
 
-    def _compose(self, widget, orig_box, real_box):
-        # This always called with widget = a Panel which is a direct
-        # child of the stack, so we can drop orig_box
-        real_box = real_box.intersection(self.box.norm())
-        if not real_box.is_empty():
-            self._do_refresh(widget, real_box)
 
     def refresh(self):
-        self._do_refresh(None, self.box)
+        self.propagate_dirty(self.box.norm())
         self.lcd_needs_update = False
 
-    def _do_refresh(self, panel, box):
-        # XXX TODO: Optimize the case where there is only one panel,
-        # or the refreshed box only intersects the top level one:
-        # go straight to LCD ! (If we want to do stacked panels with
-        # alpha this can get complicated...)
+    def propagate_dirty(self, local_clip: Box):
+        """Recompose the dirty clip region from all stacked panels, then push to LCD."""
+        assert self.surface is not None
+        clip = local_clip
+        erase_ctx = PaintContext(self.surface, clip, frame=clip)
+        self._draw_erase(erase_ctx)
 
-        # Erase image
-        self._draw_erase(self.image, self.draw, box)
-
-        # XXX Do some alpha blending to "dim" inactive panels ?
-
-        # Compose panels
         for p in self.stack:
             if self.dimmer is not None and not p.no_dim:
-                self.image.alpha_composite(self.dimmer, box.topleft, box.rect)
+                self.surface.blit(self.dimmer, clip.topleft, area=_pg_rect(clip))
             d = p.decorator
             if d is not None:
-                inter = box.intersection(d.box)
+                inter = clip.intersection(d.box)
                 if not inter.is_empty():
-                    d.refresh(inter)
-            inter = box.intersection(p.box)
+                    ctx = PaintContext(self.surface, inter)
+                    d.do_draw(ctx, d.box)
+            inter = clip.intersection(p.box)
             if not inter.is_empty():
-                # Get intersection in panel local coordinates
-                local_inter = inter.deoffset(p.box)
-                super(PanelStack, self)._compose(p, local_inter, inter)
+                ctx = PaintContext(self.surface, inter)
+                p.do_draw(ctx, p.box)
 
-        # Update LCD
-        trace(self, "updating lcd with image", self.image, "box=", box)
-        self.lcd.update(self.image, box)
+        trace(self, "updating lcd with surface", self.surface, "box=", clip)
+        self.lcd.update(self.surface, clip)
 
         if self.capture_callback:
-            self.capture_callback(self.image)
+            self.capture_callback(self.surface)
 
-    def _do_draw(self, image, draw, real_box):
+    def do_draw(self, ctx: PaintContext, frame: Box):
         assert False
 
     def _get_stack(self):
@@ -346,7 +376,6 @@ class PanelStack(ContainerWidget):
             self.refresh()
 
     def pop_panel(self, panel):
-        # panel == None is a special case meaning just pop the current panel
         if panel is None:
             panel = self.current
         assert panel in self.stack
@@ -360,10 +389,8 @@ class PanelStack(ContainerWidget):
                     current = p
                     break
             self.current = current
-        # queue a refresh
         self.lcd_needs_update = True
         if panel.auto_destroy:
-            # panel.detach()
             panel.destroy()
 
     def find_panel_type(self, type):

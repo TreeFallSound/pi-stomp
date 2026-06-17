@@ -9,19 +9,18 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pygame
-import pygame._freetype as _freetype
 import pytest
 
 import pistomp.switchstate as switchstate
 from emulator.window import EmulatorWindow
+from uilib.pygame_init import init as pygame_init, quit as pygame_quit
 
 
 @pytest.fixture(scope="module", autouse=True)
 def _pygame_init():
-    pygame.init()
-    _freetype.init()
+    pygame_init()
     yield
-    pygame.quit()
+    pygame_quit()
 
 
 def _fake_lcd():

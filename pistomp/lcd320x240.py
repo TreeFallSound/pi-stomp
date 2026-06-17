@@ -24,10 +24,11 @@ from ui.wifi_menu import WifiMenu
 import pistomp.category as Category
 import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
-from PIL import Image, ImageColor
+import pygame
 
 from uilib import *
 from uilib.gridpanel import GridPanel
+from uilib.pygame_init import font as _make_font
 from uilib.lcd_ili9341 import *
 from modalapi.layout import build_layout_compress
 
@@ -96,10 +97,12 @@ class Lcd(abstract_lcd.Lcd):
         }
 
         # TODO get fonts from config.json
-        self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 26)
-        self.splash_font = ImageFont.truetype('DejaVuSans.ttf', 48)
-        self.small_font = ImageFont.truetype("DejaVuSans.ttf", 20)
-        self.tiny_font = ImageFont.truetype("DejaVuSans.ttf", 16)
+        from pathlib import Path
+        _fonts_dir = Path(__file__).resolve().parent.parent / "fonts"
+        self.title_font = _make_font(_fonts_dir / "DejaVuSans-Bold.ttf", 26)
+        self.splash_font = _make_font(_fonts_dir / "DejaVuSans.ttf", 48)
+        self.small_font = _make_font(_fonts_dir / "DejaVuSans.ttf", 20)
+        self.tiny_font = _make_font(_fonts_dir / "DejaVuSans.ttf", 16)
         self.title_split_orig = 190
         self.title_split = self.title_split_orig
         self.display_width = 320
@@ -107,8 +110,8 @@ class Lcd(abstract_lcd.Lcd):
         self.plugin_width = 78
         self.plugin_height = 29
         self.plugin_label_length = 7
-        self.footswitch_height = 32
-        self.footswitch_width = 80
+        self.footswitch_height = 64
+        self.footswitch_width = 60
         # space between footswitch icons where index is the footswitch count
         #                                0    1    2    3    4   5   6   7
         self.footswitch_pitch_options = [120, 120, 120, 128, 80, 65, 65, 65]
@@ -116,12 +119,10 @@ class Lcd(abstract_lcd.Lcd):
 
         # widgets
         self.w_wifi = None
-        self._wifi_frames: list[Image.Image] = [
-            Image.open(os.path.join(self.imagedir, f'wifi_processing_{i}.png'))
+        self._wifi_frames: list[pygame.Surface] = [
+            load_surface(os.path.join(self.imagedir, f'wifi_processing_{i}.png'))
             for i in range(1, 4)
         ]
-        for frame in self._wifi_frames:
-            frame.load()
         self._wifi_tick = 0
         self._wifi_ticks_per_frame = 2
         self.wifi_menu: Optional[WifiMenu] = None
@@ -134,6 +135,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_preset = None
         self.w_plugins = []
         self.grid_panel: Optional[GridPanel] = None
+        self.plugin_panel = None
         self.w_footswitches = []
         self.w_controls = []
         self.w_splash = None
@@ -512,6 +514,9 @@ class Lcd(abstract_lcd.Lcd):
             self.grid_panel.destroy()
             self.grid_panel = None
         self.w_plugins = []
+        if self.plugin_panel is not None:
+            self.plugin_panel.destroy()
+            self.plugin_panel = None
 
         plugins = self.current.pedalboard.plugins
         plugins_by_id = {p.instance_id.lstrip("/"): p for p in plugins}
@@ -575,6 +580,8 @@ class Lcd(abstract_lcd.Lcd):
         for w in self.w_plugins:
             plugin = w.object
             self.color_plugin(w, plugin)
+        if self.plugin_panel is not None:
+            self.plugin_panel.refresh()
         self.main_panel.refresh()
 
     def refresh_plugin(self, plugin):
@@ -593,8 +600,9 @@ class Lcd(abstract_lcd.Lcd):
         if color is None:
             return self.foreground
         try:
-            return ImageColor.getrgb(color)
-        except ValueError:
+            c = pygame.Color(color)
+            return (c.r, c.g, c.b)
+        except (ValueError, TypeError):
             logging.error("Cannot convert color name: %s" % color)
             return self.foreground
 
@@ -1068,9 +1076,8 @@ class Lcd(abstract_lcd.Lcd):
         text = ""
         for x in name.lower().replace('_', '').replace('/', '').replace(' ', ''):
             test = text + x
-            test_bbox = self.small_font.getbbox(test)
-            test_size = test_bbox[2] - test_bbox[0]
-            if test_size >= width:
+            tw, _ = get_text_size(test, self.small_font)
+            if tw >= width:
                 break
             text = test
         return text

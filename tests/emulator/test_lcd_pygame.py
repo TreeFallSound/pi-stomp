@@ -3,27 +3,26 @@ queued updates, even when the SPI worker thread is throttled."""
 
 import pygame
 import pytest
-from PIL import Image, ImageDraw
 
 from emulator.lcd_pygame import LcdPygame
 from uilib.box import Box
+from uilib.pygame_init import init as pygame_init, quit as pygame_quit
 
 
 @pytest.fixture(scope="module", autouse=True)
 def _pygame_init():
-    pygame.init()
+    pygame_init()
     yield
-    pygame.quit()
+    pygame_quit()
 
 
 def _full_screen_with_stripes(width, height, stripes):
-    """Build a full-screen image with coloured vertical stripes, matching
-    the real PanelStack._do_refresh() calling convention (full image + box)."""
-    img = Image.new("RGB", (width, height))
-    draw = ImageDraw.Draw(img)
+    """Build a full-screen Surface with coloured vertical stripes, matching
+    the real PanelStack refresh calling convention (full surface + box)."""
+    surf = pygame.Surface((width, height))
     for x0, y0, x1, y1, color in stripes:
-        draw.rectangle([x0, y0, x1, y1], fill=color)
-    return img
+        surf.fill(color, pygame.Rect(x0, y0, x1 - x0, y1 - y0))
+    return surf
 
 
 def test_blit_scaled_reflects_all_queued_updates():
@@ -66,7 +65,8 @@ def test_wrap_around_stripe_both_halves_visible():
     lcd = LcdPygame(width=320, height=240, spi_hz=10_000_000)
 
     # Erase the stripe row to background
-    bg = Image.new("RGB", (320, 240), (0, 0, 0))
+    bg = pygame.Surface((320, 240))
+    bg.fill((0, 0, 0))
     lcd.update(bg, Box(0, 80, 320, 100))
 
     # Draw a red stripe: right half (310→320) and wrap half (0→10)

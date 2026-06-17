@@ -13,46 +13,56 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+import pygame
+
 from uilib.widget import Widget
-from PIL import Image
+
+
+def load_surface(path: str) -> pygame.Surface:
+    """Load an image file as a pygame Surface.
+
+    convert_alpha needs a video surface; under SDL_VIDEODRIVER=dummy a
+    display surface exists after pygame.init(), so this is safe."""
+    surf = pygame.image.load(path)
+    try:
+        return surf.convert_alpha()
+    except pygame.error:
+        return surf
 
 
 class ImageWidget(Widget):
-    """A simple widget with an image"""
+    """A simple widget that paints a pygame.Surface centered in its frame.
 
-    image: Image.Image
+    Accepts a file path (loaded + cached, with same-path dedup on replace) or a
+    pre-built Surface (used directly, deduped by identity).
+    """
+
+    image: pygame.Surface
     _image_path: str | None
 
-    def __init__(self, image: str | Image.Image, **kwargs):
+    def __init__(self, image: str | pygame.Surface, **kwargs):
         self._init_attrs(Widget.INH_ATTRS, kwargs)
         super(ImageWidget, self).__init__(**kwargs)
-
         if isinstance(image, str):
             self._image_path = image
-            self.image = Image.open(self._image_path)
+            self.image = load_surface(image)
         else:
             self._image_path = None
             self.image = image
 
-    def _draw(self, image, draw, real_box):
-        # XXX TODO Centre and crop it ? For now just centre. XXX Assume box > image size,
-        # this needs to be cleaned up and made shinnier, possibly with a Box() helper
-        width, height = self.image.size
-        offx = int((real_box.width - width) / 2)
-        offy = int((real_box.height - height) / 2)
-        loc = real_box.offset((offx, offy)).topleft
+    def _draw(self, ctx):
+        width, height = self.image.get_size()
+        offx = int((ctx.width - width) / 2)
+        offy = int((ctx.height - height) / 2)
+        ctx.paste(self.image, (offx, offy))
 
-        # Draw image
-        mask = self.image if self.image.mode == "RGBA" else None
-        image.paste(self.image, loc, mask)
-
-    def replace_img(self, image: str | Image.Image):
+    def replace_img(self, image: str | pygame.Surface):
         # XXX Note that the new image must be the same size as the original
         if isinstance(image, str):
             if image == self._image_path:
                 return
             self._image_path = image
-            self.image = Image.open(image)
+            self.image = load_surface(image)
         else:
             if self.image is image:
                 return
