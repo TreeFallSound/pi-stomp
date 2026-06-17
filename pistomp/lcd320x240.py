@@ -149,6 +149,7 @@ class Lcd(abstract_lcd.Lcd):
         self.footswitch_panel = ShroudedPanel(box=Box.xywh(0, 208, self.display_width, self.footswitch_height),
                                               shroud_alpha=224, no_dim=True, accepts_input=False)
         self._fullscreen_panel: Panel | None = None
+        self._tuner_panel = None
 
         self.pedalboards = {}
 

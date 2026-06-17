@@ -108,11 +108,12 @@ class MockFootswitch(footswitch.Footswitch):
 class MockAnalogControl(analogcontrol.AnalogControl):
     """Expression pedal / knob with no SPI/ADC.  Value set externally."""
 
-    def __init__(self, midi_CC, midi_channel, control_type=None, id=None, cfg=None):
+    def __init__(self, midi_CC, midi_channel, control_type=None, id=None, cfg=None, midiout=None):
         # AnalogControl.__init__ only stores spi/channel/tolerance — safe with None
         super().__init__(spi=None, adc_channel=None, tolerance=0)
         self.midi_CC = midi_CC
         self.midi_channel = midi_channel
+        self.midiout = midiout
         self.type = control_type
         self.id = id
         self.cfg = cfg or {"type": control_type, "id": id}
