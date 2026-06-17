@@ -35,6 +35,7 @@ from pistomp.footswitch import Footswitch  # TODO would like to avoid this modul
 from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
 from pistomp.encoder_controller import EncoderController
 from blend.manager import BlendMode
+from pistomp.tuner.panel import TunerPanel
 from plugins.base import PluginPanel
 from plugins import PANELS
 
@@ -218,6 +219,47 @@ class Lcd(abstract_lcd.Lcd):
                 return True
         return False
 
+    def poll_updates(self):
+        for d in self.w_parameter_dialogs.values():
+            d.tick()
+
+        self.pstack.poll_updates()
+        if self._fullscreen_panel is not None and self.pstack.current is self._fullscreen_panel:
+            self._fullscreen_panel.tick()
+        if self._tuner_panel is not None and self.pstack.current == self._tuner_panel:
+            self._tuner_panel.tick()
+        self._poll_capture_socket()
+
+        # Update control progress bars (analog controls and encoders)
+        if self.pstack.current == self.main_panel:
+            for icon in self.w_controls:
+                if icon.object is None:
+                    continue
+
+                midi_value = None
+                if isinstance(icon.object, AnalogMidiControl):
+                    midi_value = as_midi_value(icon.object.last_read)
+                elif isinstance(icon.object, EncoderController):
+                    midi_value = icon.object.midi_value
+                elif isinstance(icon.object, BlendMode):
+                    input_ctrl = icon.object.input_controller.controlled_input
+                    if input_ctrl:
+                        position = input_ctrl.get_normalized_value()
+                        midi_value = int(position * 127)
+
+                        stops = icon.object.input_controller.stops
+                        closest_stop = min(stops, key=lambda s: abs(s.position - position))
+                        snapshot_name = self.handler.current.presets.get(closest_stop.snapshot_index, "")
+                        if snapshot_name and snapshot_name != icon.text:
+                            icon.set_text(snapshot_name)
+                    else:
+                        logging.warning("BlendMode icon has no associated input controller")
+
+                if midi_value is not None:
+                    progress = midi_value / 127.0
+                    if icon.progress != progress:
+                        icon.set_progress(progress)
+
     def _poll_capture_socket(self):
         self._capture_check_tick += 1
         if self._capture_socket is None:
@@ -268,61 +310,17 @@ class Lcd(abstract_lcd.Lcd):
         self.pstack.set_capture_callback(None)
         logging.info("LCD capture disabled")
 
-    def poll_updates(self):
-        for d in self.w_parameter_dialogs.values():
-            d.tick()
-
-        self.pstack.poll_updates()
-        if self._fullscreen_panel is not None and self.pstack.current is self._fullscreen_panel:
-            self._fullscreen_panel.tick()
-
-        self._poll_capture_socket()
-
-        # Update control progress bars (analog controls and encoders)
-        if self.pstack.current == self.main_panel:
-            for icon in self.w_controls:
-                if icon.object is None:
-                    continue
-
-                midi_value = None
-                if isinstance(icon.object, AnalogMidiControl):
-                    midi_value = as_midi_value(icon.object.last_read)
-                elif isinstance(icon.object, EncoderController):
-                    midi_value = icon.object.midi_value
-                elif isinstance(icon.object, BlendMode):
-                    input_ctrl = icon.object.input_controller.controlled_input
-                    if input_ctrl:
-                        if isinstance(input_ctrl, EncoderController):
-                            position = input_ctrl.midi_value / 127.0
-                        else:
-                            position = input_ctrl.last_read / 1023.0
-                        midi_value = int(position * 127)
-
-                        stops = icon.object.input_controller.stops
-                        closest_stop = min(stops, key=lambda s: abs(s.position - position))
-                        snapshot_name = self.handler.current.presets.get(closest_stop.snapshot_index, "")
-                        if snapshot_name and snapshot_name != icon.text:
-                            icon.set_text(snapshot_name)
-                    else:
-                        logging.warning("BlendMode icon has no associated input controller")
-
-                if midi_value is not None:
-                    progress = midi_value / 127.0
-                    if icon.progress != progress:
-                        icon.set_progress(progress)
-
-            # Tick text widgets (scrolling animation if needed)
-            if self.w_preset:
-                self.w_preset.tick()
-            if self.w_pedalboard:
-                self.w_pedalboard.tick()
-
-    def show_plugin_panel(self, panel: Panel) -> None:
-        self._fullscreen_panel = panel
+    def show_tuner_panel(self, panel: TunerPanel) -> None:
+        self._tuner_panel = panel
         self.pstack.push_panel(panel)
         # push_panel composes the (still-blank) panel onto the stack but
         # doesn't draw the panel's children. Force a full redraw so bg, rules,
         # header and hint are on screen before tick()'s partial refreshes start.
+        panel.refresh()
+
+    def show_plugin_panel(self, panel: Panel) -> None:
+        self._fullscreen_panel = panel
+        self.pstack.push_panel(panel)
         panel.refresh()
 
     def hide_plugin_panel(self) -> None:
@@ -337,7 +335,17 @@ class Lcd(abstract_lcd.Lcd):
     def plugin_panel(self) -> PluginPanel | None:
         return self._fullscreen_panel if isinstance(self._fullscreen_panel, PluginPanel) else None
 
+        # Tick text widgets (scrolling animation if needed)
+        if self.pstack.current == self.main_panel:
+            if self.w_preset:
+                self.w_preset.tick()
+            if self.w_pedalboard:
+                self.w_pedalboard.tick()
+
     #
+    # Toolbar
+    #
+
     # Toolbar
     #
     def draw_tools(self, wifi_type=None, eq_type=None, bypass_type=None, system_type=None):
@@ -945,7 +953,7 @@ class Lcd(abstract_lcd.Lcd):
             # Look up the actual control instance for progress bar tracking
             analog_control = None
             for ac in self.handler.hardware.analog_controls + self.handler.hardware.encoders:
-                if hasattr(ac, "id") and ac.id == i:
+                if hasattr(ac, "id") and ac.id == i and getattr(ac, "type", None) != Token.NAV:
                     analog_control = ac
                     break
 
@@ -990,19 +998,16 @@ class Lcd(abstract_lcd.Lcd):
                         else:
                             text_color = color
 
+            blend_initial_progress = None
             if isinstance(icon_object, BlendMode):
                 text_color = self.default_plugin_color
                 color = self.default_plugin_color
-                # Initialize the label to the closest blend stop snapshot so it
-                # never briefly shows "none" for an unbound blend input slot.
+                # Initialize label and progress bar from the current input position.
                 input_ctrl = icon_object.input_controller.controlled_input
                 if input_ctrl:
-                    if isinstance(input_ctrl, EncoderController):
-                        position = input_ctrl.midi_value / 127.0
-                    else:
-                        position = input_ctrl.last_read / 1023.0
+                    blend_initial_progress = input_ctrl.get_normalized_value()
                     stops = icon_object.input_controller.stops
-                    closest_stop = min(stops, key=lambda s: abs(s.position - position))
+                    closest_stop = min(stops, key=lambda s: abs(s.position - blend_initial_progress))
                     snapshot_name = self.handler.current.presets.get(closest_stop.snapshot_index, "")
                     if snapshot_name:
                         name = snapshot_name
@@ -1018,6 +1023,8 @@ class Lcd(abstract_lcd.Lcd):
                 )
                 w.set_foreground(color)
                 w.add_knob()
+                if blend_initial_progress is not None:
+                    w.set_progress(blend_initial_progress)
                 self.w_controls.append(w)
             elif control_type == Token.EXPRESSION:
                 w = Icon(
@@ -1030,6 +1037,8 @@ class Lcd(abstract_lcd.Lcd):
                 )
                 w.set_foreground(color)
                 w.add_pedal()
+                if blend_initial_progress is not None:
+                    w.set_progress(blend_initial_progress)
                 self.w_controls.append(w)
 
             x += width_per_control

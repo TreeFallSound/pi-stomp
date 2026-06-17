@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 import common.token as Token
+from emulator.controls import MockAnalogControl
 from modalapi.wifi import SavedConnection, ScannedNetwork
 from tests.conftest import FakeWebSocketBridge
 from tests.integration.conftest import _v3_stack
@@ -59,38 +60,46 @@ _BLEND_CONFIG = {
     ]
 }
 
+_BLEND_CONFIG_EXP = {
+    "blend_snapshots": [
+        {
+            "name": "Blend",
+            "input_id": 0,  # expression pedal
+            "interpolation": "linear",
+            "stops": ["Clean", "Lead"],
+        }
+    ]
+}
 
-@pytest.fixture
-def blend_system(
-    v3_system: SystemFixture, tmp_path, make_plugin, make_parameter
-) -> Generator[SystemFixture, None, None]:
+
+def _build_blend_system(
+    v3_system: SystemFixture,
+    tmp_path,
+    make_plugin,
+    make_parameter,
+    blend_config: dict,
+    bundle_name: str,
+    pre_setup=None,
+) -> SystemFixture:
     """
-    v3 stack with a fully prepared and activated blend mode.
+    Shared setup for blend-mode fixtures.
 
-    Bundle layout in tmp_path:
-      blend_rig.pedalboard/
-        snapshots.json   — Clean (0) and Lead (1)
-        config.yml       — blend_snapshots config using encoder id=1
-
-    Pedalboard contains a single BigMuff plugin (Tone, Level, :bypass).
-
-    After setup:
-      handler.blend_modes["Blend"]  — prepared BlendMode
-      handler.active_blend_mode     — activated, encoder id=1 hijacked
-      handler.ws_bridge.sent        — cleared (ready for test assertions)
+    pre_setup(hw) is called before the pedalboard loads — use it to inject
+    hardware controls (e.g. a MockAnalogControl for the expression pedal).
     """
     handler = v3_system.handler
     hw = v3_system.hw
-    lcd = v3_system.lcd
     mock_get = v3_system.mock_get
-    mock_post = v3_system.mock_post
 
-    bundle_dir = tmp_path / "blend_rig.pedalboard"
+    if pre_setup:
+        pre_setup(hw)
+
+    bundle_dir = tmp_path / bundle_name
     bundle_dir.mkdir()
     (bundle_dir / "snapshots.json").write_text(json.dumps(_BLEND_SNAPSHOTS))
-    (bundle_dir / "config.yml").write_text(yaml.dump(_BLEND_CONFIG))
+    (bundle_dir / "config.yml").write_text(yaml.dump(blend_config))
 
-    def get_side_effect(url, **kwargs):
+    def get_side_effect(url, **_kwargs):
         resp = MagicMock()
         resp.status_code = 200
         if "pedalboard/list" in url:
@@ -101,7 +110,6 @@ def blend_system(
                 ]
             )
         elif "snapshot/list" in url:
-            # Index 2 is the blend snapshot created by sync_blend_snapshots
             resp.text = json.dumps({"0": "Clean", "1": "Lead", "2": "Blend"})
         elif "snapshot/name" in url:
             resp.text = json.dumps({"name": "Clean"})
@@ -126,25 +134,59 @@ def blend_system(
 
     handler.set_current_pedalboard(pb)
 
-    # Clear WS captures and dedup tracking from initial sync so tests start with a clean slate
     cast(FakeWebSocketBridge, handler.ws_bridge).sent.clear()
     if handler.active_blend_mode and handler.active_blend_mode.parameter_setter:
         handler.active_blend_mode.parameter_setter.reset_tracking()
 
-    yield SystemFixture(handler, hw, lcd, mock_get, mock_post, v3_system.ws_bridge)
+    return SystemFixture(handler, hw, v3_system.lcd, mock_get, v3_system.mock_post, v3_system.ws_bridge)
+
+
+@pytest.fixture
+def blend_system(
+    v3_system: SystemFixture, tmp_path, make_plugin, make_parameter
+) -> Generator[SystemFixture, None, None]:
+    """v3 stack with blend mode on encoder id=1."""
+    yield _build_blend_system(v3_system, tmp_path, make_plugin, make_parameter, _BLEND_CONFIG, "blend_rig.pedalboard")
+
+
+@pytest.fixture
+def blend_system_exp(
+    v3_system: SystemFixture, tmp_path, make_plugin, make_parameter
+) -> Generator[SystemFixture, None, None]:
+    """v3 stack with blend mode on expression pedal (id=0, last_read=512 ≈ 50%)."""
+
+    def _add_exp_pedal(hw):
+        exp_pedal = MockAnalogControl(
+            midi_CC=75,
+            midi_channel=0,
+            midiout=None,
+            control_type=Token.EXPRESSION,
+            id=0,
+        )
+        exp_pedal.last_read = 512
+        hw.analog_controls.append(exp_pedal)
+
+    yield _build_blend_system(
+        v3_system,
+        tmp_path,
+        make_plugin,
+        make_parameter,
+        _BLEND_CONFIG_EXP,
+        "blend_rig_exp.pedalboard",
+        pre_setup=_add_exp_pedal,
+    )
 
 
 # ---------------------------------------------------------------------------
 # WiFi test helpers
 # ---------------------------------------------------------------------------
 
-def make_scanned(ssid: str, signal: int = 60, security: str = "WPA2",
-                 in_use: bool = False) -> ScannedNetwork:
+
+def make_scanned(ssid: str, signal: int = 60, security: str = "WPA2", in_use: bool = False) -> ScannedNetwork:
     return ScannedNetwork(ssid=ssid, signal=signal, security=security, in_use=in_use)
 
 
-def make_saved(ssid: str, name: str | None = None,
-               timestamp: int | None = None) -> SavedConnection:
+def make_saved(ssid: str, name: str | None = None, timestamp: int | None = None) -> SavedConnection:
     return SavedConnection(
         name=name or ssid,
         ssid=ssid,
@@ -162,6 +204,7 @@ def wifi_state(v3_system):
     command synchronously and invoke the callback immediately, so tests
     don't need to drive a poll loop.
     """
+
     def _set(scanned=(), saved=(), active=None, hotspot=False, supported=True):
         wm = v3_system.handler.wifi_manager
         wm.scan_networks.return_value = list(scanned)
@@ -175,6 +218,7 @@ def wifi_state(v3_system):
                 result = e
             on_done(result)
             return True
+
         wm.queue.submit.side_effect = _run_inline
         wm.queue.submit_scan.side_effect = _run_inline
         wm.queue.pending_op_count.return_value = 0
@@ -187,6 +231,7 @@ def wifi_state(v3_system):
             "connection": active,
         }
         v3_system.handler.wifi_status = status
+
     return _set
 
 
@@ -197,6 +242,7 @@ def type_in_editor():
     Returns a ``type(lcd, text)`` helper that, for each character, switches the
     selector into the matching charset mode (via long-click) and clicks it.
     """
+
     def _type_char(lcd, ch):
         editor = lcd.pstack.current
         assert isinstance(editor, (TextEditor, _PassphraseEditor)), type(editor)
