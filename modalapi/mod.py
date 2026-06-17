@@ -156,7 +156,7 @@ class Mod(Handler):
         logging.info("WebSocket bridge started")
 
         # Suppress outbound WebSocket messages while a pedalboard change is in flight.
-        self._suppress_outbound_ws = False
+        self._suppress_outbound_ws: bool = False
 
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
