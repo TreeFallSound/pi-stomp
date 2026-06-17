@@ -16,6 +16,7 @@
 import time
 from math import log
 from typing import Optional
+import pygame
 from PIL import Image, ImageDraw, ImageFont
 
 from uilib.pygame_init import font as _make_font
@@ -187,6 +188,8 @@ class TextEditor(RoundedPanel):
 # XXX TODO: Add alignment features
 class TextWidget(Widget):
     """A simple widget with a text string"""
+    SPLIT_SEP = ''  # if present in text exactly once, renders as left + right halves
+
     def __init__(self, box, text='', font = None, edit_message = None, h_margin = None, v_margin = None,
                  text_halign = None, **kwargs):
         self.text = text
@@ -269,6 +272,16 @@ class TextWidget(Widget):
         if hroom < 0 or vroom < 0:
             return
 
+        if self.SPLIT_SEP in self.text:
+            parts = self.text.split(self.SPLIT_SEP)
+            if len(parts) == 2:
+                left, right = parts
+                lw, _ = get_text_size(left, self.font)
+                rw, _ = get_text_size(right, self.font)
+                ctx.draw_text((h_margin, v_margin), left, fill=self.fgnd_color, font=self.font)
+                ctx.draw_text((ctx.width - h_margin - rw, v_margin), right, fill=self.fgnd_color, font=self.font)
+                return
+
         tw, th = self._get_text_size()
         if tw > hroom:
             tw = hroom
@@ -321,8 +334,8 @@ class ScrollingText(TextWidget):
         self.cached_text_width: int = 0
 
     def _render_text_to_cache(self) -> None:
-        """Pre-render full text to a PIL Image for efficient scrolling."""
-        if self.text is None or len(self.text) == 0:
+        """Pre-render full text to a pygame Surface for efficient scrolling."""
+        if not self.text:
             self.cached_text_image = None
             self.cached_text_width = 0
             return
@@ -330,9 +343,19 @@ class ScrollingText(TextWidget):
         tw, th = self._get_text_size()
         self.cached_text_width = tw
 
-        self.cached_text_image = Image.new('RGB', (tw, th), self.bkgnd_color)
-        draw = ImageDraw.Draw(self.cached_text_image)
-        draw.text((0, 0), self.text, fill=self.fgnd_color, font=self.font)
+        surf = pygame.Surface((max(1, tw), max(1, th)), pygame.SRCALPHA)
+        surf.fill((0, 0, 0, 0))
+        color = self.fgnd_color
+        if isinstance(color, (list, tuple)) and len(color) == 3:
+            color = tuple(color) + (255,)
+        asc = int(self.font.get_sized_ascender())
+        prev = self.font.origin
+        self.font.origin = True
+        try:
+            self.font.render_to(surf, (0, asc), self.text, fgcolor=color)
+        finally:
+            self.font.origin = prev
+        self.cached_text_image = surf
 
     def _should_scroll(self) -> bool:
         if self.cached_text_image is None:
@@ -397,11 +420,11 @@ class ScrollingText(TextWidget):
         super().set_text(text)
         self._clear_cache_and_restart()
 
-    def set_font(self, font: ImageFont.FreeTypeFont) -> None:
+    def set_font(self, font) -> None:
         super().set_font(font)
         self._clear_cache_and_restart()
 
-    def _draw(self, image: Image.Image, draw: ImageDraw.ImageDraw, real_box) -> None:
+    def _draw(self, ctx) -> None:
         if self.cached_text_image is None:
             self._render_text_to_cache()
         if self.cached_text_image is None:
@@ -410,11 +433,14 @@ class ScrollingText(TextWidget):
         h_margin, v_margin = self._get_margins()
         tw, th = self._get_text_size()
         extra = self.outline
-        hroom = real_box.width - h_margin - extra
-        vroom = real_box.height - v_margin - extra
+        hroom = ctx.width - h_margin - extra
+        vroom = ctx.height - v_margin - extra
 
         if hroom <= 0 or vroom <= 0:
             return
+
+        th = min(th, vroom)
+        ox, oy = ctx._f().topleft
 
         if not self._should_scroll():
             if self.text_halign == TextHAlign.LEFT:
@@ -423,13 +449,9 @@ class ScrollingText(TextWidget):
                 hoffset = hroom - tw
             else:
                 hoffset = int((hroom - tw) / 2)
-            x_pos = real_box.x0 + h_margin + hoffset
-            y_pos = real_box.y0 + v_margin
-            crop_box = (0, 0, tw, th)
-            image.paste(self.cached_text_image.crop(crop_box), (x_pos, y_pos))
+            src_rect = pygame.Rect(0, 0, min(tw, hroom), th)
+            ctx.surface.blit(self.cached_text_image, (h_margin + hoffset + ox, v_margin + oy), src_rect)
         else:
-            x_pos = real_box.x0 + h_margin
-            y_pos = real_box.y0 + v_margin
             crop_width = min(hroom, self.cached_text_width - self.scroll_offset)
-            crop_box = (self.scroll_offset, 0, self.scroll_offset + crop_width, th)
-            image.paste(self.cached_text_image.crop(crop_box), (x_pos, y_pos))
+            src_rect = pygame.Rect(self.scroll_offset, 0, crop_width, th)
+            ctx.surface.blit(self.cached_text_image, (h_margin + ox, v_margin + oy), src_rect)

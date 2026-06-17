@@ -136,7 +136,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_preset = None
         self.w_plugins = []
         self.grid_panel: Optional[GridPanel] = None
-        self.plugin_panel = None
+        self._fullscreen_panel = None
         self.w_footswitches = []
         self.w_controls = []
         self.w_splash = None
@@ -339,13 +339,6 @@ class Lcd(abstract_lcd.Lcd):
     def plugin_panel(self) -> PluginPanel | None:
         return self._fullscreen_panel if isinstance(self._fullscreen_panel, PluginPanel) else None
 
-        # Tick text widgets (scrolling animation if needed)
-        if self.pstack.current == self.main_panel:
-            if self.w_preset:
-                self.w_preset.tick()
-            if self.w_pedalboard:
-                self.w_pedalboard.tick()
-
     #
     # Toolbar
     #
@@ -398,7 +391,7 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.refresh()
 
     def draw_pedalboard(self, pedalboard_name):
-        text_width = self.title_font.getmask(pedalboard_name).getbbox()[2]
+        text_width = get_text_size(pedalboard_name, self.title_font)[0]
         spacing = 2  # Default sel_width for selectable widgets
         min_box_width = text_width + (spacing * 2)
         self.title_split = min(min_box_width, self.title_split_orig)
@@ -417,7 +410,7 @@ class Lcd(abstract_lcd.Lcd):
             )
             self.main_panel.add_sel_widget(self.w_pedalboard)
 
-        colon_width = self.title_font.getmask(":").getbbox()[2]
+        colon_width = get_text_size(":", self.title_font)[0]
         colon_x = self.title_split + spacing
         if self.w_colon is not None:
             self.w_colon.set_box(box=Box.xywh(colon_x, 20, colon_width, 36), realign=True, refresh=True)
@@ -431,7 +424,7 @@ class Lcd(abstract_lcd.Lcd):
             )
 
     def draw_preset(self, preset_name):
-        colon_width = self.title_font.getmask(":").getbbox()[2]
+        colon_width = get_text_size(":", self.title_font)[0]
         padding = 2  # Must match padding in draw_pedalboard
         x = self.title_split + padding + colon_width + padding
         width = self.display_width - x
@@ -517,7 +510,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_plugins = []
         if self.plugin_panel is not None:
             self.plugin_panel.destroy()
-            self.plugin_panel = None
+            self._fullscreen_panel = None
 
         plugins = self.current.pedalboard.plugins
         plugins_by_id = {p.instance_id.lstrip("/"): p for p in plugins}

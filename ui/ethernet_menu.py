@@ -15,7 +15,10 @@
 
 from typing import TYPE_CHECKING, Optional, Protocol, cast
 
-from PIL import ImageFont
+from pathlib import Path
+from uilib.pygame_init import font as _make_font
+
+_FONTS_DIR = Path(__file__).resolve().parent.parent / "fonts"
 
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
@@ -141,7 +144,7 @@ class EthernetMenu:
         active = self._manager.service_active
 
         d = Dialog(width=DIALOG_W, height=DIALOG_H, title="Ethernet Audio Interface", auto_destroy=True)
-        font = ImageFont.truetype("DejaVuSans.ttf", 14)
+        font = _make_font(_FONTS_DIR / "DejaVuSans.ttf", 14)
 
         rows: list[tuple[str, str]] = [("IP:", self._manager.read_ipv4() or "—")]
         if active:

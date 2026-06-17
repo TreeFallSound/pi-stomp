@@ -188,12 +188,9 @@ class GridPanel(ContainerWidget):
         lane_x = self.gutter_lane_x(src.layer, lane_idx)
         return src_xy, dst_xy, lane_x
 
-    def _draw_vertical_edge(self, draw, edge: LayoutEdge, ox: int, oy: int) -> None:
+    def _draw_vertical_edge(self, ctx, edge: LayoutEdge) -> None:
         """Serpentine neighbour (same column): draw a direct vertical line at
-        the column's horizontal centre. The runs behind the src/dst tiles are
-        hidden, so the visible wire sits in the row gap — and stacked chain
-        links line up into one clean vertical spine. Stereo pairs nudge apart
-        by port so the two wires don't coincide."""
+        the column's horizontal centre."""
         port = self._clamp_port(edge.src_port)
         x0, _ = self.cell_xy(edge.src.layer, 0)
         cx = x0 + TILE_W // 2 + (3 if port else 0)
@@ -201,23 +198,20 @@ class GridPanel(ContainerWidget):
         _, dy = self.cell_xy(edge.dst.layer, edge.dst.row)
         sy += TILE_H // 2
         dy += TILE_H // 2
-        draw.line([(ox + cx, oy + sy), (ox + cx, oy + dy)], fill=self.wire_colors[port], width=1)
+        ctx.draw_line([(cx, sy), (cx, dy)], fill=self.wire_colors[port], width=1)
 
-    def _draw(self, image, draw, real_box) -> None:
+    def _draw(self, ctx) -> None:
         """Draw the routing wires under any child tiles. Manhattan routing:
         out-stub right -> vertical in gutter at lane[src_port] -> in-stub
         right into dst. Vertical-only edges (same column) route in the
-        right-hand gutter instead. Opaque so shared segments render cleanly
-        regardless of draw order."""
-        super()._draw(image, draw, real_box)
-        ox, oy = real_box.topleft
+        right-hand gutter instead."""
+        super()._draw(ctx)
         for edge in self.layout.edges:
             if edge.src.layer == edge.dst.layer:
-                self._draw_vertical_edge(draw, edge, ox, oy)
+                self._draw_vertical_edge(ctx, edge)
                 continue
             (sx, sy), (dx, dy), lane_x = self._edge_endpoints(edge)
             color = self.wire_colors[self._clamp_port(edge.src_port)]
-            # Three segments. Coords are panel-local; offset by real_box origin.
-            draw.line([(ox + sx, oy + sy), (ox + lane_x, oy + sy)], fill=color, width=1)
-            draw.line([(ox + lane_x, oy + sy), (ox + lane_x, oy + dy)], fill=color, width=1)
-            draw.line([(ox + lane_x, oy + dy), (ox + dx, oy + dy)], fill=color, width=1)
+            ctx.draw_line([(sx, sy), (lane_x, sy)], fill=color, width=1)
+            ctx.draw_line([(lane_x, sy), (lane_x, dy)], fill=color, width=1)
+            ctx.draw_line([(lane_x, dy), (dx, dy)], fill=color, width=1)

@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from uilib.box import Box
 from uilib.config import Config
 from uilib.widget import Widget
 

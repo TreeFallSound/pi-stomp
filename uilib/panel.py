@@ -159,54 +159,42 @@ class Panel(ContainerWidget):
 class ShroudedPanel(Panel):
     """A Panel that overlaps underlying panels with a semi-transparent dark shroud.
 
-    The panel's own backing image is transparent, so whatever the PanelStack
-    has already composited shows through — then the shroud darkens it, and
-    child widgets are drawn on top of the shroud.
+    The panel does not erase its background (so underlying PanelStack content
+    shows through), then darkens it with a gradient shroud, and child widgets
+    are drawn on top.
     """
 
     def __init__(self, shroud_alpha=64, gradient_start: float | None = None, gradient_pos=1.0, **kwargs):
-        if "image_format" not in kwargs:
-            kwargs["image_format"] = "RGBA"
+        kwargs.pop("image_format", None)  # no longer used; silently ignored
         super(ShroudedPanel, self).__init__(**kwargs)
         self.gradient_start = gradient_start if gradient_start is not None else shroud_alpha
         self.gradient_end = shroud_alpha
         self.gradient_pos = gradient_pos
-        self._shroud = None
+        self._shroud_surf: Optional[pygame.Surface] = None
+        self._shroud_size: Optional[tuple] = None
 
-    def _draw_erase(self, image, draw, box):
-        # Bypass inherited bkgnd_color (which would be opaque RGB); PIL draws
-        # RGBA (0,0,0,0) as truly transparent on RGBA images.
-        draw.rectangle(box.PIL_rect, (0, 0, 0, 0))
+    def _draw_erase(self, ctx: PaintContext):
+        pass  # don't erase: underlying PanelStack content shows through
 
-    def _make_shroud(self):
-        w, h = self.image.size
-        shroud = Image.new("RGBA", (w, h))
+    def _make_shroud(self, w: int, h: int) -> pygame.Surface:
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        surf.fill((0, 0, 0, 0))
         end_y = max(int(h * self.gradient_pos), 1)
         for y in range(h):
             t = min(y / end_y, 1.0)
             alpha = int(self.gradient_start + t * (self.gradient_end - self.gradient_start))
-            shroud.paste((0, 0, 0, alpha), (0, y, w, y + 1))
-        return shroud
+            pygame.draw.line(surf, (0, 0, 0, alpha), (0, y), (w - 1, y))
+        return surf
 
-    def _do_draw(self, image, draw, real_box):
-        # Clear to transparent so the underlying PanelStack content shows through
-        self._draw_erase(image, draw, real_box)
-        # Lay shroud down before children so widgets appear on top of it
-        # can skip if the gradient is fully transparent
-        if self.gradient_start > 0 or self.gradient_end > 0:
-            if self._shroud is None or self._shroud.size != self.image.size:
-                self._shroud = self._make_shroud()
-            self.image.alpha_composite(self._shroud)
-        # Draw children on top of the shroud
-        off_real_box = real_box.deoffset(self.offset)
-        self._draw(image, draw, off_real_box)
-        for c in self.children:
-            crb = c.box.offset(off_real_box)
-            c._do_draw(image, draw, crb)
-        self._draw_outline(image, draw, real_box)
-        self._draw_selection(image, draw, real_box)
-        if image is not self.image:
-            image.paste(self.image, real_box.rect)
+    def _draw(self, ctx: PaintContext):
+        if self.gradient_start <= 0 and self.gradient_end <= 0:
+            return
+        w, h = ctx.width, ctx.height
+        if self._shroud_surf is None or self._shroud_size != (w, h):
+            self._shroud_surf = self._make_shroud(w, h)
+            self._shroud_size = (w, h)
+        ox, oy = ctx._f().topleft
+        ctx.surface.blit(self._shroud_surf, (ox, oy))
 
 
 class RoundedPanel(Panel):

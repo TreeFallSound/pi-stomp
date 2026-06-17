@@ -287,6 +287,8 @@ class ContainerWidget(Widget):
         return self.box.width, self.box.height
 
     def _scroll_into_view(self, box: Box):
+        if not self.virtual:
+            return super()._scroll_into_view(box)
         orig_box = box
         box = box.deoffset(self.offset)
         x0, y0, x1, y1 = box.rect

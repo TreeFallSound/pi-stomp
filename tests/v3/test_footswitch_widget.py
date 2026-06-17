@@ -23,7 +23,7 @@ def _render(configs, is_on):
             parent=panel,
         )
     panel.refresh()
-    return panel.image
+    return panel.surface
 
 
 def test_v3_footswitch_widget_on_configs(fake_lcd, snapshot):

@@ -1,0 +1,15 @@
+base: pistomp-v3
+branches:
+  "release/current":
+    - feat/blend-control-viz
+    - feat/lcd-text-scroll
+    - feat/plugin-x42-eq
+    - feat/ethernet-audio
+    - experiment/pedalboard-topology
+    - fix/websocket-cpu
+    - feat/record-lcd
+    - plugin/rename
+    - fix/config-set-defaults
+    - fix/websocket-cpu
+    - fix/ws-suppress-pedalboard-load
+    - feat/tuner-hd

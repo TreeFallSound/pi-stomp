@@ -421,34 +421,35 @@ class GraphWidget(Widget):
 
     # ── paint ───────────────────────────────────────────────────────────────
 
-    def _draw_erase(self, image, draw, real_box) -> None:
-        pass  # _draw handles its own background, clipped to real_box
+    def _draw_erase(self, ctx) -> None:
+        pass  # _draw handles its own background, clipped to dirty_bounds
 
-    def _draw(self, image, draw, real_box) -> None:
-        # Widget is at panel origin (0, GRAPH_Y0) so image x == local x.
-        rx0, ry0 = real_box.x0, real_box.y0
-        rx1, ry1 = real_box.x1, real_box.y1
+    def _draw(self, ctx) -> None:
+        # Widget box: Box.xywh(0, GRAPH_Y0, _W, GRAPH_H).
+        # ctx coords are widget-relative: (0,0) = (0, GRAPH_Y0) in image space.
+        # All image-space y values (GRAPH_Y0, _ZERO_DB_Y, etc.) must be shifted
+        # by -GRAPH_Y0 to become widget-relative.
+        db = ctx.dirty_bounds  # widget-relative dirty rect
+        rx0, ry0 = db.x0, db.y0
+        rx1, ry1 = db.x1, db.y1
 
         # Background fill — only the dirty rect
-        draw.rectangle([rx0, ry0, rx1 - 1, ry1 - 1], fill=BG_BLACK)
+        ctx.draw_rectangle(db, fill=BG_BLACK)
 
         # Vertical grid lines that fall in [rx0, rx1)
         for x in _FREQ_GRID_X:
             if rx0 <= x < rx1:
-                draw.line([(x, max(ry0, GRAPH_Y0)), (x, min(ry1, GRAPH_Y1) - 1)], fill=GRID_DIM)
+                ctx.draw_line([(x, max(ry0, 0)), (x, min(ry1, GRAPH_H) - 1)], fill=GRID_DIM, width=1)
 
-        # Horizontal grid lines — clip x extent to the dirty rect. Vertical
-        # is intentionally unclipped: refreshes are always full graph height,
-        # and the -18 dB grid line lands exactly on GRAPH_Y1 (the widget's
-        # exclusive bottom edge) — Pillow paints the row, the panel-stack
-        # blit captures it.
+        # Horizontal grid lines — clip x extent to the dirty rect.
         hx0 = max(rx0, 0)
         hx1 = min(rx1, _W)
+        zero_y = _ZERO_DB_Y - GRAPH_Y0  # widget-relative 0 dB line
         if hx0 < hx1:
-            for db in _DB_GRID:
-                y = _db_to_y_scalar(db)
-                draw.line([(hx0, y), (hx1 - 1, y)], fill=GRID_DIM)
-            draw.line([(hx0, _ZERO_DB_Y), (hx1 - 1, _ZERO_DB_Y)], fill=GRID_0DB)
+            for db_val in _DB_GRID:
+                y = _db_to_y_scalar(db_val) - GRAPH_Y0
+                ctx.draw_line([(hx0, y), (hx1 - 1, y)], fill=GRID_DIM, width=1)
+            ctx.draw_line([(hx0, zero_y), (hx1 - 1, zero_y)], fill=GRID_0DB, width=1)
 
         # Curve + comet-tail smear — only columns within the dirty rect.
         # Smear paints first (so curve and nodes land on top); each smear
@@ -467,11 +468,16 @@ class GraphWidget(Widget):
             smear_intensity = self._smear_intensity
             has_smear = smear_colors is not None and smear_intensity is not None
             cr, cg, cb = curve_color
-            yz = float(_ZERO_DB_Y)
+            # _ZERO_DB_Y is in image space; convert to widget-relative float
+            yz = float(_ZERO_DB_Y - GRAPH_Y0)
+            ox, oy = ctx._f().topleft
+            surf = ctx.surface
             for x in range(cx0, cx1):
-                base_y = int(ys[x])
+                # ys[x] is in image-space; widget-relative = ys[x] - GRAPH_Y0
+                base_y = int(ys[x]) - GRAPH_Y0
                 if has_smear and ys_f is not None:
-                    yf = float(ys_f[x])
+                    # ys_f[x] is image-space float; convert to widget-relative
+                    yf = float(ys_f[x]) - GRAPH_Y0
                     raw_length = abs(yz - yf)
                     # Cap the on-screen tail so HP/LP doesn't blow up the per-
                     # frame pixel-write count. The opacity ramp still falls
@@ -499,10 +505,10 @@ class GraphWidget(Widget):
                         inv_2len = 0.5 / length
                         R = int(math.floor(y_top))
                         R_end = int(math.floor(y_bot))
-                        while R <= R_end and R < GRAPH_Y1:
+                        while R <= R_end and R < GRAPH_H:
                             a = float(R) if float(R) > y_top else y_top
                             b = float(R + 1) if float(R + 1) < y_bot else y_bot
-                            if b > a and R >= GRAPH_Y0:
+                            if b > a and R >= 0:
                                 if yf <= yz:
                                     u_a = a - yf
                                     u_b = b - yf
@@ -511,10 +517,11 @@ class GraphWidget(Widget):
                                     u_b = yf - a
                                 alpha = top_alpha * ((u_b - u_a) - (u_b * u_b - u_a * u_a) * inv_2len)
                                 if alpha > 0.0:
-                                    br, bg_, bb = bg_color(x, R)
-                                    draw.point(
-                                        (x, R),
-                                        fill=(
+                                    # bg_color uses image-space x,y
+                                    br, bg_, bb = bg_color(x, R + GRAPH_Y0)
+                                    surf.set_at(
+                                        (x + ox, R + oy),
+                                        (
                                             int(br + (sr - br) * alpha),
                                             int(bg_ + (sg - bg_) * alpha),
                                             int(bb + (sb - bb) * alpha),
@@ -530,8 +537,9 @@ class GraphWidget(Widget):
                 # steep slopes don't visually thin out. Each pixel is then
                 # alpha-blended against bg_color so the grid bleeds through.
                 if y_lo is not None and y_hi is not None:
-                    yl = float(y_lo[x])
-                    yh = float(y_hi[x])
+                    # y_lo/y_hi are image-space floats; convert to widget-relative
+                    yl = float(y_lo[x]) - GRAPH_Y0
+                    yh = float(y_hi[x]) - GRAPH_Y0
                     mid = (yl + yh) * 0.5
                     half_extent = math.sqrt(1.0 + (yh - yl) ** 2) * (CURVE_THICKNESS * 0.5)
                     y_lo_ext = mid - half_extent
@@ -539,23 +547,24 @@ class GraphWidget(Widget):
                     r_lo = int(math.floor(y_lo_ext))
                     r_hi = int(math.floor(y_hi_ext))
                     for ry in range(r_lo, r_hi + 1):
-                        if ry < GRAPH_Y0 or ry >= GRAPH_Y1:
+                        if ry < 0 or ry >= GRAPH_H:
                             continue
                         overlap = min(ry + 1, y_hi_ext) - max(ry, y_lo_ext)
                         if overlap <= 0.0:
                             continue
                         a = overlap if overlap < 1.0 else 1.0
-                        br, bg_, bb = bg_color(x, ry)
-                        draw.point(
-                            (x, ry),
-                            fill=(
+                        # bg_color uses image-space coords
+                        br, bg_, bb = bg_color(x, ry + GRAPH_Y0)
+                        surf.set_at(
+                            (x + ox, ry + oy),
+                            (
                                 int(br + (cr - br) * a),
                                 int(bg_ + (cg - bg_) * a),
                                 int(bb + (cb - bb) * a),
                             ),
                         )
                 else:
-                    draw.point((x, base_y), fill=curve_color)
+                    surf.set_at((x + ox, base_y + oy), curve_color)
 
         # Band nodes — skip those whose bbox misses the dirty rect.
         # Draw selected last so the halo lands on top.
@@ -572,27 +581,28 @@ class GraphWidget(Widget):
                 cx, cy, color, _enabled = pos
                 if cx + node_r <= rx0 or cx - node_r >= rx1:
                     continue
-                self._paint_node(draw, cx, cy, color, band.name == self._selected_band)
+                # cx, cy are image-space; convert cy to widget-relative
+                self._paint_node(ctx, cx, cy - GRAPH_Y0, color, band.name == self._selected_band)
 
         # Axis labels (small font). Clipped to the dirty rect so they only
         # repaint when their columns are part of the refresh.
         if self._axis_font is not None:
-            self._paint_axis_labels(draw, rx0, rx1)
+            self._paint_axis_labels(ctx, rx0, rx1)
 
-    def _paint_axis_labels(self, draw, rx0: int, rx1: int) -> None:
+    def _paint_axis_labels(self, ctx, rx0: int, rx1: int) -> None:
         font = self._axis_font
-        # dB labels at the left edge.
-        for text, db in _DB_LABELS:
+        # dB labels at the left edge (widget-relative y coords).
+        for text, db_val in _DB_LABELS:
             tw, th = get_text_size(text, font)
             x = 2
             if x + tw <= rx0 or x >= rx1:
                 continue
-            y = _db_to_y_scalar(db)
-            if db > 0:
+            y = _db_to_y_scalar(db_val) - GRAPH_Y0  # widget-relative
+            if db_val > 0:
                 ty = y + 1
             else:
                 ty = y - th - 1
-            draw.text((x, ty), text, fill=_AXIS_LABEL_COLOR, font=font)
+            ctx.draw_text((x, ty), text, fill=_AXIS_LABEL_COLOR, font=font)
         # Freq labels along the bottom, placed to the right of each major
         # gridline so the line itself stays unobscured.
         for text, fx in _FREQ_LABELS:
@@ -600,20 +610,20 @@ class GraphWidget(Widget):
             tx = fx + 2
             if tx + tw <= rx0 or tx >= rx1:
                 continue
-            ty = GRAPH_Y1 - th - 1
-            draw.text((tx, ty), text, fill=_AXIS_LABEL_COLOR, font=font)
+            ty = GRAPH_H - th - 1  # widget-relative bottom
+            ctx.draw_text((tx, ty), text, fill=_AXIS_LABEL_COLOR, font=font)
 
-    def _paint_node(self, draw, cx: int, cy: int, color: tuple[int, int, int], selected: bool) -> None:
+    def _paint_node(self, ctx, cx: int, cy: int, color: tuple[int, int, int], selected: bool) -> None:
         r = self.NODE_R
         # 2px black ring sits between the coloured node (r=3) and the halo
         # (inner edge r=5). Painting it for every band turns the previously
         # transparent gap into a solid outline; for the selected band the
         # halo lands flush on top of it.
-        draw.ellipse([cx - r - 2, cy - r - 2, cx + r + 2, cy + r + 2], fill=BG_BLACK)
-        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=color)
+        ctx.draw_ellipse(Box(cx - r - 2, cy - r - 2, cx + r + 2, cy + r + 2), fill=BG_BLACK)
+        ctx.draw_ellipse(Box(cx - r, cy - r, cx + r, cy + r), fill=color)
         if selected:
             hr = self.HALO_R
-            draw.ellipse([cx - hr, cy - hr, cx + hr, cy + hr], outline=HALO_COLOR, width=1)
+            ctx.draw_ellipse(Box(cx - hr, cy - hr, cx + hr, cy + hr), outline=HALO_COLOR, width=1)
 
 
 # ── ReadoutWidget ────────────────────────────────────────────────────────────
@@ -658,22 +668,22 @@ class ReadoutWidget(Widget):
         self._message = text
         self.refresh()
 
-    def _draw_erase(self, image, draw, real_box) -> None:
-        draw.rectangle(real_box.PIL_rect, fill=BG_BLACK)
+    def _draw_erase(self, ctx) -> None:
+        ctx.draw_rectangle(ctx.bounds, fill=BG_BLACK)
 
-    def _draw(self, image, draw, real_box) -> None:
+    def _draw(self, ctx) -> None:
         if self._message is not None:
-            draw.text((real_box.x0 + 6, real_box.y0 + 1), self._message, fill=READOUT_COLOR, font=self._font)
+            ctx.draw_text((6, 1), self._message, fill=READOUT_COLOR, font=self._font)
             return
         for key, x in _READOUT_COLS_LEFT:
             text = self._fields.get(key, "")
             if text:
-                draw.text((real_box.x0 + x, real_box.y0 + 1), text, fill=READOUT_COLOR, font=self._font)
+                ctx.draw_text((x, 1), text, fill=READOUT_COLOR, font=self._font)
         gain = self._fields.get("gain", "")
         if gain:
             tw, _ = get_text_size(gain, self._font)
-            x = real_box.x0 + _READOUT_GAIN_RIGHT - tw
-            draw.text((x, real_box.y0 + 1), gain, fill=READOUT_COLOR, font=self._font)
+            x = _READOUT_GAIN_RIGHT - tw
+            ctx.draw_text((x, 1), gain, fill=READOUT_COLOR, font=self._font)
 
 
 # ── invisible band selectable ────────────────────────────────────────────────
@@ -705,13 +715,13 @@ class _BandSelectable(Widget):
     def scroll_into_view(self) -> bool:
         return False
 
-    def _draw(self, image, draw, real_box) -> None:
+    def _draw(self, ctx) -> None:
         pass
 
-    def _draw_erase(self, image, draw, real_box) -> None:
+    def _draw_erase(self, ctx) -> None:
         pass
 
-    def _draw_selection(self, image, draw, real_box) -> None:
+    def _draw_selection(self, ctx) -> None:
         # Suppress the base Widget's selection rectangle — our visual is the
         # halo painted by the GraphWidget on the band's node. Without this
         # override, the 1×1 widget box would paint a tiny selection square at
