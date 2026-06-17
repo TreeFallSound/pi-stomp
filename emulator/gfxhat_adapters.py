@@ -19,6 +19,7 @@ GfxLcd renders to a LcdPygame backend via set_pixel/show.
 GfxBacklight and GfxTouch are no-ops.
 """
 
+import pygame
 from PIL import Image
 
 
@@ -38,9 +39,11 @@ class GfxLcd:
 
     def show(self):
         # Production code stores pixels with both axes inverted (hardware orientation).
-        # Rotate 180° to recover the correct image for pygame display.
-        img = self._buf.transpose(Image.ROTATE_180)
-        self._pygame.update(img.convert('RGB'))
+        # Rotate 180° to recover the correct image, then hand the pygame backend
+        # a Surface (its update() contract matches the real LCD: surface in).
+        img = self._buf.transpose(Image.ROTATE_180).convert('RGB')
+        surf = pygame.image.frombytes(img.tobytes(), img.size, 'RGB')
+        self._pygame.update(surf)
 
     def clear(self):
         self._buf.paste(0, (0, 0, self._w, self._h))

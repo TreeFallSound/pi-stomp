@@ -14,8 +14,8 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import json
-from PIL import ImageFont
 
+from uilib.pygame_init import font as _make_font
 from uilib.panel import *
 from uilib.dialog import *
 from uilib.icon import *
@@ -35,8 +35,8 @@ class UiBuilder:
         if key == 'font' or key == 'title_font':
             if isinstance(value, list):
                 fname, size = tuple(value)
-                return ImageFont.TrueType(fname, size)
-            return Config().get_font(kv)
+                return _make_font(fname, size)
+            return Config().get_font(value)
         if (key == 'fgnd' or key == 'bkgnd' or key == 'sel_color' or
             key == 'outline_color' or key == 'title_color'):
             if isinstance(value, list):

@@ -41,7 +41,7 @@ from pistomp.hardware import Hardware
 import pistomp.settings as Settings
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, LoadingStartMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.controller_manager import ControllerManager
@@ -128,6 +128,9 @@ class Modhandler(Handler):
         self.ws_bridge.start()
         logging.info("WebSocket bridge started")
 
+        # Suppress outbound WebSocket messages while a pedalboard change is in flight.
+        self._is_pedalboard_loading = False
+
         # Tuner state
         self._tuner_engine: TunerEngine | None = None
         self._tuner_source_factory: TunerSourceFactory | None = None
@@ -160,8 +163,6 @@ class Modhandler(Handler):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
-        # ws_bridge.stop() lives in cleanup(), not here — join() in __del__ blows up
-        # during interpreter shutdown on Py 3.14. Daemon thread dies with the process.
 
     def cleanup(self):
         if self._tuner_engine is not None:
@@ -175,9 +176,8 @@ class Modhandler(Handler):
         if self._hardware is not None:
             self._hardware.cleanup()
         self.external_midi.close()
-        if self.ws_bridge is not None:
-            self.ws_bridge.stop()
-            logging.info("WebSocket bridge stopped")
+        self.ws_bridge.stop()
+        logging.info("WebSocket bridge stopped")
         self.ethernet_manager.shutdown()
 
     # Container for dynamic data which is unique to the "current" pedalboard
@@ -486,7 +486,13 @@ class Modhandler(Handler):
 
     def _handle_ws_message(self, msg: WebSocketMessage):
         """Handle incoming WebSocket message from MOD-UI."""
-        if isinstance(msg, LoadingEndMessage):
+        if isinstance(msg, LoadingStartMessage):
+            self._is_pedalboard_loading = True
+            cleared = self.ws_bridge.clear_queue()
+            if cleared:
+                logging.debug(f"Cleared {cleared} stale outbound messages on loading_start")
+
+        elif isinstance(msg, LoadingEndMessage):
             logging.debug(f"WebSocket: Pedalboard loading finished, snapshot={msg.snapshot_id}")
             # Sometimes mod-ui sends us -1 for preset index, but shows 0 anyway ("Default")
             self.next_pedalboard_preset_index = max(0, msg.snapshot_id)
@@ -570,6 +576,7 @@ class Modhandler(Handler):
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
+            self._is_pedalboard_loading = True
             self.lcd.draw_info_message("Loading...")
             mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
             if mod_bundle and self.current and mod_bundle != self.current.pedalboard.bundle:
@@ -773,6 +780,9 @@ class Modhandler(Handler):
             self.blend_modes = {}
             self.active_blend_mode = None
 
+        # Resume outbound WebSocket messages now that the new pedalboard is fully set up.
+        self._is_pedalboard_loading = False
+
     def bind_current_pedalboard(self):
         # "current" being the pedalboard mod-host says is current
         # The pedalboard data has already been loaded, but this will overlay
@@ -912,7 +922,8 @@ class Modhandler(Handler):
             # No echo arrives for WS-initiated bypass. Contrast with footswitches,
             # which send MIDI CC → mod-host internally → feedback → msg_callback.
             value = plugin.toggle_bypass()
-            self.ws_bridge.send_parameter(plugin.instance_id, ":bypass", value)
+            if not self._is_pedalboard_loading:
+                self.ws_bridge.send_parameter(plugin.instance_id, ":bypass", value)
             self.lcd.toggle_plugin(widget, plugin)
 
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
@@ -937,7 +948,8 @@ class Modhandler(Handler):
             logging.debug("Skipping remote update for external parameter: %s" % param.symbol)
             return
 
-        self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
+        if not self._is_pedalboard_loading:
+            self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     def parameter_midi_change(self, param, direction):
         if param:

@@ -1,4 +1,5 @@
 from uilib.box import Box
+from uilib.misc import get_text_bbox
 from uilib.widget import Widget
 
 _PAD = 1  # px around bbox to absorb anti-aliasing fringe
@@ -30,7 +31,7 @@ class Label(Widget):
         return self._text
 
     def _measure(self, text: str, x: int, y: int) -> Box:
-        tb = self._font.getbbox(text)
+        tb = get_text_bbox(text, self._font)
         return Box(x + tb[0] - _PAD, y + tb[1] - _PAD, x + tb[2] + _PAD, y + tb[3] + _PAD)
 
     def set_text(self, text: str | None, color: tuple, *, x: int | None = None) -> None:
@@ -64,23 +65,22 @@ class Label(Widget):
         self.refresh()
         self.box = new_box
 
-    def _draw_erase(self, image, draw, box) -> None:
+    def _draw_erase(self, ctx) -> None:
         # Skip the rounded-rect path in the default _draw_erase; a zero-area
         # box would still trigger a one-pixel artifact.
-        if box.width <= 0 or box.height <= 0:
+        erase = ctx.dirty_bounds
+        if erase.width <= 0 or erase.height <= 0:
             return
-        draw.rectangle(box.PIL_rect, fill=self.bkgnd_color)
+        ctx.draw_rectangle(erase, fill=self.bkgnd_color)
 
-    def _draw(self, image, draw, real_box) -> None:
+    def _draw(self, ctx) -> None:
         if not self._text:
             return
-        # Translate parent-relative anchor → image coordinates via the
-        # offset between self.box (parent-rel) and real_box (image-rel).
-        ox = real_box.x0 - self.box.x0
-        oy = real_box.y0 - self.box.y0
-        draw.text(
-            (self._anchor_x + ox, self._anchor_y + oy),
+        # ctx is frame-relative (0,0 = self.box top-left); the anchor is stored
+        # in parent coords, so shift it by the frame origin.
+        ctx.draw_text(
+            (self._anchor_x - self.box.x0, self._anchor_y - self.box.y0),
             self._text,
-            font=self._font,
             fill=self._color,
+            font=self._font,
         )

@@ -47,11 +47,13 @@ class Lcd(lcdcolor.Lcdcolor):
         self.disp = None
         self.init_spi_display()
 
-        # Fonts
-        self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 26)
-        self.splash_font = ImageFont.truetype('DejaVuSans.ttf', 48)
-        self.small_font = ImageFont.truetype("DejaVuSans.ttf", 20)
-        self.tiny_font = ImageFont.truetype("DejaVuSans.ttf", 16)
+        # Fonts from the bundled fonts dir (PIL won't find bare names on
+        # systems without DejaVu installed system-wide).
+        fonts_dir = os.path.join(cwd, "fonts")
+        self.title_font = ImageFont.truetype(os.path.join(fonts_dir, "DejaVuSans-Bold.ttf"), 26)
+        self.splash_font = ImageFont.truetype(os.path.join(fonts_dir, "DejaVuSans.ttf"), 48)
+        self.small_font = ImageFont.truetype(os.path.join(fonts_dir, "DejaVuSans.ttf"), 20)
+        self.tiny_font = ImageFont.truetype(os.path.join(fonts_dir, "DejaVuSans.ttf"), 16)
         #self.tiny_font = ImageFont.truetype(os.path.join(cwd, "fonts", "EtBt6001-JO47.ttf"), 12)
 
         # Colors

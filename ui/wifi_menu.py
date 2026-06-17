@@ -15,10 +15,11 @@
 
 from typing import TYPE_CHECKING, Callable, NotRequired, Optional, Protocol, TypedDict, cast
 
-from PIL import ImageFont
+from pathlib import Path
 
 import common.util as util
 from modalapi.ethernet import EthernetManager
+from uilib.pygame_init import font as _make_font
 from modalapi.wifi import (
     ConnectSavedCmd,
     ConnectScannedCmd,
@@ -42,13 +43,13 @@ from uilib import (
     InputEvent,
     LetterSelector,
     MessageDialog,
-    PillGlyph,
     RoundedPanel,
-    SignalBarsGlyph,
     TextWidget,
     WidgetAlign,
 )
-from uilib.menu import Menu
+from uilib.glyphs import PillGlyph, SignalBarsGlyph
+from uilib.menu import Menu, MenuItem
+from uilib.rich_text import IconSeg, Segment, Spacer, TextSeg
 
 if TYPE_CHECKING:
     from pistomp.lcd320x240 import Lcd
@@ -89,7 +90,6 @@ class Row(TypedDict):
 
 
 PasswordCallback = Callable[[str], None]
-MenuItem = tuple  # (label, callback, arg) or (label, callback, arg, is_active)
 
 
 class _PassphraseEditor(RoundedPanel):
@@ -104,7 +104,8 @@ class _PassphraseEditor(RoundedPanel):
         self._on_submit = on_submit
         self._curline = ''
 
-        font = ImageFont.truetype("DejaVuSans.ttf", 18)
+        _fonts = Path(__file__).resolve().parent.parent / "fonts"
+        font = _make_font(_fonts / "DejaVuSans.ttf", 18)
         box = Box(0, 0, 300, 80)
         box = box.centre(pstack.box)
         super().__init__(box=box, parent=pstack, auto_destroy=True)
@@ -139,9 +140,9 @@ class _PassphraseEditor(RoundedPanel):
         self._edit.set_text(self._curline + '\u2588')
 
 
-def signal_bars(signal: int) -> str:
-    levels = max(1, min(4, (signal + 12) // 25))
-    return SIGNAL_GLYPHS[levels]
+def signal_bars_level(signal: int) -> int:
+    """0..4-bar bucket for the given dBm-ish signal value."""
+    return max(1, min(4, (signal + 12) // 25))
 
 
 def is_open_network(security: Optional[str]) -> bool:
@@ -238,8 +239,7 @@ class WifiMenu:
         title = self._title(wifi_status, active_name)
         items = self._build_items(rows, hotspot_active, supported)
         self._root_menu = self.lcd.draw_selection_menu(
-            items, title, dismiss_option=True,
-            font=_make_badge_font(), default_item=default_label)
+            items, title, dismiss_option=True, default_item=default_label)
 
     def _render_nearby_menu(self, default_label: Optional[str] = None) -> None:
         scanned = self._cached_scanned
@@ -248,12 +248,11 @@ class WifiMenu:
         active_name = util.DICT_GET(self._wifi_status, 'connection')
         _, nearby = self._build_rows(scanned, saved_by_ssid, scanned_ssids, active_name)
         if nearby:
-            items: list[MenuItem] = [(self._row_label(r), self._on_network_tap, r) for r in nearby]
+            items: list[MenuItem] = [(self._row_segments(r), self._on_network_tap, r) for r in nearby]
         else:
             items = [("Scanning...", None, None)]
         self._nearby_menu = self.lcd.draw_selection_menu(
-            items, "Nearby Networks", dismiss_option=True,
-            font=_make_badge_font(), default_item=default_label)
+            items, "Nearby Networks", dismiss_option=True, default_item=default_label)
 
     def notify_status_change(self) -> None:
         """Handler hook after wifi_status changes. Rebuilds the root menu
@@ -268,11 +267,11 @@ class WifiMenu:
 
     @staticmethod
     def _current_label(menu: 'Menu') -> Optional[str]:
-        sel = getattr(menu, 'sel', None)
-        if sel is None:
+        sel_ref = getattr(menu, 'sel_ref', None)
+        if sel_ref is None:
             return None
         try:
-            return menu.sel_list[sel].data[0]
+            return sel_ref.data[0]
         except (IndexError, AttributeError):
             return None
 
@@ -361,13 +360,19 @@ class WifiMenu:
             return "WiFi %s %s" % (SEP, ssid)
         return "WiFi " + SEP + " Disconnected"
 
-    def _row_label(self, row: Row) -> str:
+    def _row_segments(self, row: Row) -> list[Segment]:
         label = row.get('display_name') or row['ssid']
-        badge = (' ' + PUBLIC_GLYPH) if (not row.get('saved') and is_open_network(row.get('security'))) else ''
-        active_mark = (' ' + ACTIVE_GLYPH) if row.get('active') else ''
-        left = label + badge + active_mark
-        right = signal_bars(row['signal']) if row.get('signal') is not None else ''
-        return left + SPLIT + right
+        h = _glyph_height()
+        segs: list[Segment] = [TextSeg(label)]
+        if not row.get('saved') and is_open_network(row.get('security')):
+            segs.append(TextSeg(' '))
+            segs.append(IconSeg(PillGlyph('P', height=h)))
+        if row.get('active'):
+            segs.append(TextSeg(' ' + ACTIVE_GLYPH))
+        segs.append(Spacer())
+        if row.get('signal') is not None:
+            segs.append(IconSeg(SignalBarsGlyph(signal_bars_level(row['signal']), height=h)))
+        return segs
 
     @staticmethod
     def _pick_profile(profiles: list[SavedConnection],
@@ -541,12 +546,20 @@ class WifiMenu:
 
     def _open_join_dialog(self, _: object = None) -> None:
         d = Dialog(width=240, height=120, auto_destroy=True, title='Join other network')
-        ssid_w = TextWidget(box=Box.xywh(0, 0, 190, 0), text='', prompt='SSID :', parent=d,
+        font = Config().get_font('default')
+        from uilib.misc import get_text_size  # local import — uilib.__init__ doesn't re-export
+        ssid_label_w = get_text_size('SSID :', font)[0]
+        pw_label_w = get_text_size('Passwd :', font)[0]
+        TextWidget(box=Box.xywh(0, 0, ssid_label_w, 0), text='SSID :', parent=d,
+                   h_margin=0, v_margin=3, align=WidgetAlign.NONE)
+        ssid_w = TextWidget(box=Box.xywh(ssid_label_w, 0, 190, 0), text='', parent=d,
                             outline=1, sel_width=3, outline_radius=5,
                             align=WidgetAlign.NONE, name='ssid_field',
                             edit_message='WiFi SSID')
         d.add_sel_widget(ssid_w)
-        pw_w = TextWidget(box=Box.xywh(0, 30, 169, 0), text='', prompt='Passwd :', parent=d,
+        TextWidget(box=Box.xywh(0, 30, pw_label_w, 0), text='Passwd :', parent=d,
+                   h_margin=0, v_margin=3, align=WidgetAlign.NONE)
+        pw_w = TextWidget(box=Box.xywh(pw_label_w, 30, 169, 0), text='', parent=d,
                           outline=1, sel_width=3, outline_radius=5,
                           align=WidgetAlign.NONE, name='pw_field',
                           edit_message='Password')

@@ -40,7 +40,7 @@ from typing import Optional
 
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, LoadingStartMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.controller_manager import ControllerManager
@@ -174,6 +174,9 @@ class Mod(Handler):
         # External MIDI device synchronization
         self.external_midi = ExternalMidi.ExternalMidiManager()
 
+        # Suppress outbound WebSocket messages while a pedalboard change is in flight.
+        self._is_pedalboard_loading: bool = False
+
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
         self.callbacks = {"set_mod_tap_tempo": self.set_mod_tap_tempo,
@@ -192,13 +195,13 @@ class Mod(Handler):
         logging.info("Handler cleanup")
         if self.wifi_manager:
             del self.wifi_manager
-        self.ws_bridge.stop()
 
     def cleanup(self):
         if self.lcd is not None:
             self.lcd.cleanup()
         self.external_midi.close()
         self.ws_bridge.stop()
+        logging.info("WebSocket bridge stopped")
 
     # Container for dynamic data which is unique to the "current" pedalboard
     # The self.current pointed above will point to this object which gets
@@ -558,7 +561,13 @@ class Mod(Handler):
 
     def _handle_ws_message(self, msg: WebSocketMessage):
         """Handle incoming WebSocket message from MOD-UI"""
-        if isinstance(msg, LoadingEndMessage):
+        if isinstance(msg, LoadingStartMessage):
+            self._is_pedalboard_loading = True
+            cleared = self.ws_bridge.clear_queue()
+            if cleared:
+                logging.debug(f"Cleared {cleared} stale outbound messages on loading_start")
+
+        elif isinstance(msg, LoadingEndMessage):
             logging.debug(f"WebSocket: Pedalboard loading finished, snapshot={msg.snapshot_id}")
             self.next_pedalboard_preset_index = msg.snapshot_id
 
@@ -622,6 +631,7 @@ class Mod(Handler):
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
+            self._is_pedalboard_loading = True
             self.lcd.draw_info_message("Loading...")
             mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
             if mod_bundle and mod_bundle != self.current.pedalboard.bundle:
@@ -721,6 +731,9 @@ class Mod(Handler):
 
         # Sync current state of analog controls (expression pedals, etc.)
         self.hardware.sync_analog_controls()
+
+        # Resume outbound WebSocket messages now that the new pedalboard is fully set up.
+        self._is_pedalboard_loading = False
 
         # Prepare blend modes if configured (snapshot-based activation)
         try:
@@ -973,7 +986,8 @@ class Mod(Handler):
                         return
             # Non-footswitch plugin: emit only; the inbound echo updates state and LCD.
             target_bypass = not inst.is_bypassed()
-            self.ws_bridge.send_parameter(inst.instance_id, ":bypass", 1.0 if target_bypass else 0.0)
+            if not self._is_pedalboard_loading:
+                self.ws_bridge.send_parameter(inst.instance_id, ":bypass", 1.0 if target_bypass else 0.0)
             self.lcd.draw_plugin_select(inst)  # selection highlight (navigation, not bypass)
 
     #
@@ -1428,7 +1442,8 @@ class Mod(Handler):
 
     def parameter_value_commit(self):
         param = self.deep.selected_parameter
-        self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
+        if not self._is_pedalboard_loading:
+            self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     #
     # LCD Stuff

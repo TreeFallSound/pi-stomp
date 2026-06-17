@@ -293,15 +293,14 @@ def test_update_wifi_pending_shows_frame(lcd, mock_handler, status):
 
 def test_wifi_frames_are_preloaded(lcd):
     """Frames are decoded once at draw_tools time, not opened on every update."""
+    import pygame
+
     instance, _ = lcd
     instance.draw_tools()
     assert len(instance._wifi_frames) == 3
-    from PIL import Image as PILImage
-
     for f in instance._wifi_frames:
-        assert isinstance(f, PILImage.Image)
-        # .load() populates the .im attribute; absence means lazy/closed.
-        assert f.im is not None
+        assert isinstance(f, pygame.Surface)
+        assert f.get_width() > 0 and f.get_height() > 0
 
 
 def test_update_wifi_noop_when_path_unchanged(lcd, mock_handler):

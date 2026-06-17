@@ -53,4 +53,12 @@ case "$_version" in
     *) _version="v3" ;;
 esac
 
+# pygame runs in headless mode by default; set an appropriate video driver
+# for the current platform so we can see the emulator.
+case "$(uname -s)" in
+    Darwin) export SDL_VIDEODRIVER="cocoa" ;;
+    Linux)  export SDL_VIDEODRIVER="x11" ;;
+    *)      export SDL_VIDEODRIVER="windib" ;;
+esac
+
 exec uv run python3 modalapistomp.py --host "emulator_${_version}" "$@"
