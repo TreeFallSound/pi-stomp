@@ -16,21 +16,30 @@
 import json
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from uilib.pygame_init import font as _make_font
 
+if TYPE_CHECKING:
+    import pygame._freetype
+
 _FONTS_DIR = Path(__file__).resolve().parent.parent / "fonts"
+
+Color = tuple[int, int, int]
 
 
 class Config:
-    _instance = None
+    _instance: "Config | None" = None
 
-    def __new__(cls, *args, **kwargs):
+    fonts: dict[str, "pygame._freetype.Font"]
+    colors: dict[str, Color]
+
+    def __new__(cls, _config_json: str | None = None) -> "Config":
         if Config._instance is None:
             Config._instance = super().__new__(cls)
         return Config._instance
 
-    def __init__(self, config_json=None):
+    def __init__(self, config_json: str | None = None) -> None:
         if not hasattr(self, "fonts"):
             print("Adding empty fonts...")
             self.fonts = {}
@@ -41,7 +50,7 @@ class Config:
             self.load_config(config_json)
         self._set_defaults()
 
-    def _set_defaults(self):
+    def _set_defaults(self) -> None:
         if "default" not in self.fonts:
             self.add_font("default", "DejaVuSans.ttf", 16)
         if "default_title" not in self.fonts:
@@ -57,58 +66,52 @@ class Config:
         if "default_title_bkgnd" not in self.colors:
             self.add_color("default_title_bkgnd", (63, 63, 63))
 
-    def add_font(self, label, file_name, size):
+    def add_font(self, label: str, file_name: str, size: int) -> None:
         # Resolve bare filenames against the bundled fonts directory.
-        path = file_name
+        path: str = file_name
         if not os.path.isabs(file_name) and not os.path.exists(file_name):
             candidate = _FONTS_DIR / file_name
             if candidate.exists():
                 path = str(candidate)
-        f = _make_font(path, size)
-        self.fonts[label] = f
+        self.fonts[label] = _make_font(path, size)
 
-    def get_font(self, label) -> ImageFont.FreeTypeFont | None:
-        if label not in self.fonts:
-            return None
-        return self.fonts[label]
+    def get_font(self, label: str) -> "pygame._freetype.Font | None":
+        return self.fonts.get(label)
 
-    def has_font(self, label):
+    def has_font(self, label: str) -> bool:
         return label in self.fonts
 
-    def add_color(self, label, rgb):
+    def add_color(self, label: str, rgb: Color) -> None:
         self.colors[label] = rgb
 
-    def get_color(self, label):
+    def get_color(self, label: str) -> Color:
         return self.colors[label]
 
-    def has_color(self, label):
+    def has_color(self, label: str) -> bool:
         return label in self.colors
 
-    def load_config(self, json_file, reset_old=True):
+    def load_config(self, json_file: str, reset_old: bool = True) -> None:
         if reset_old:
             self.fonts = {}
             self.colors = {}
         with open(json_file, "r") as f:
-            data = json.load(f)
+            data: dict = json.load(f)
         if "fonts" in data:
-            fonts = data["fonts"]
-            for font_def in fonts:
+            for font_def in data["fonts"]:
                 try:
-                    l = font_def["label"]
-                    n = font_def["name"]
-                    s = font_def["size"]
+                    label: str = font_def["label"]
+                    name: str = font_def["name"]
+                    size: int = font_def["size"]
                 except KeyError as e:
                     print("Error loading font:", e)
                 else:
-                    self.add_font(l, n, s)
+                    self.add_font(label, name, size)
         if "colors" in data:
-            colors = data["colors"]
-            for color_def in colors:
+            for color_def in data["colors"]:
                 try:
-                    l = color_def["label"]
-                    c = color_def["rgb"]
+                    label = color_def["label"]
+                    rgb: Color = tuple(color_def["rgb"])
                 except KeyError as e:
-                    print("Error loading color:", e, colors)
+                    print("Error loading color:", e, data["colors"])
                 else:
-                    c = tuple(c)
-                    self.add_color(l, c)
+                    self.add_color(label, rgb)
