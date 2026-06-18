@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Unit and integration tests with test harness
 - `deploy.sh` to deploy your local code to the device
 - `update.sh` for git pull + uv sync on-device
-- `./run_emulator.sh` for a v1/v2/v3; requires [MOD Desktop](https://mod.audio/desktop/)
+- `./run_emulator.sh [v1|v2|v3]`; v3 default; requires [MOD Desktop](https://mod.audio/desktop/)
 
 ### Fixed
 - Users can now enter spaces in the letter selector (used for wifi config)
