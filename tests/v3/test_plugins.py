@@ -146,8 +146,8 @@ def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_p
 
     assert handler.current
 
-    plugin = make_plugin("fuzz", has_footswitch=True)
-    plugin.controllers = [hw.footswitches[0]]
+    plugin = make_plugin("fuzz")
+    handler._bind_controller_to_param(plugin, plugin.parameters[":bypass"], hw.footswitches[0])
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -155,14 +155,14 @@ def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_p
     handler.toggle_plugin_bypass(None, plugin)
 
     assert not any("pi_stomp_set" in u for u in get_urls(mock_post))
-    assert hw.footswitches[0].toggled is True  # local intent only
-    assert plugin.is_bypassed() is False  # echo not yet received
+    assert hw.footswitches[0].toggled is False  # bypass intent, echo not yet received
+    assert plugin.is_bypassed() is False  # plugin state unchanged until echo
 
     # Simulate mod-host broadcasting the bypass change back.
     ws_bridge.inject("param_set /graph/fuzz :bypass 0.0")
     handler.poll_ws_messages()
     assert plugin.is_bypassed() is False
-    assert hw.footswitches[0].toggled is True
+    assert hw.footswitches[0].toggled is True  # echo confirmed: plugin active
 
 
 def test_v3_bound_footswitch_emits_absolute_values_and_updates_on_echo(v3_system: SystemFixture, make_plugin):
@@ -172,6 +172,8 @@ def test_v3_bound_footswitch_emits_absolute_values_and_updates_on_echo(v3_system
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
+    assert handler.current
+
     fs = hw.footswitches[0]
     fs.refresh_callback = MagicMock()
     fs.midiout.send_message.reset_mock()
@@ -750,7 +752,6 @@ def test_v3_pedalboard_switch_multi_fs_same_plugin_show_bound_off_color(
 # ---------------------------------------------------------------------------
 # Instance ID normalization
 # ---------------------------------------------------------------------------
-
 
 
 def test_v3_websocket_bypass_event_with_multiword_id(v3_system):
