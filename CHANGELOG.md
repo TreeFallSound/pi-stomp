@@ -4,6 +4,34 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [v3.1.0]
+### Added
+- On-device (LCD) strobe tuner with mute.  defaults to longpress on footswitch C
+- Sync LCD and MOD-UI using WebSocket bridge (replaces last.json polling)
+- Blend mode for parameter blending between snapshots
+- Optional autosync for one-time send of MIDI CCs to current analog positions
+- New wifi menu with scanning, multiple saved networks and in-progress animation
+- Configurable LCD SPI speed via system menu
+- Unit and integration tests with test harness
+- `deploy.sh` to deploy your local code to the device
+- `update.sh` for git pull + uv sync on-device
+- `./run_emulator.sh` for a v1/v2/v3; requires [MOD Desktop](https://mod.audio/desktop/)
+
+### Fixed
+- Users can now enter spaces in the letter selector (used for wifi config)
+- Reduced footswitch and encoder burst latency
+- Fix pedalboard reload detection crash
+- Fix analog endpoint clamping
+- Fix WiFi open networks and hotspot switching
+- Fix menu scrolling for long lists
+- Various type safety and dependency fixes (pillow, numpy, pi deps)
+
+### Changed
+- Upgrade Neural Amp Modeler plugin to version 2.0 which includes support for A2 models (and quality scaling)
+- Migrate dev dependencies to dependency-groups (uv)
+- Add pyright type checking, ruff linting
+- Move fonts to `fonts/` directory (DejaVu)
+
 ## [v3.0.5] - 2026-06-12
 No functional changes relative to v3.0.4
 Prior releases did not correctly declare AGPL-3.0 licensing in accordance with included components.
