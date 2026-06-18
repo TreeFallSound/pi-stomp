@@ -689,7 +689,7 @@ class Lcd(abstract_lcd.Lcd):
             if fs.parameter is not None:
                 label = self.footswitch_label(fs)
                 fs.set_display_label(label)
-                color = self.get_category_color(fs.category)
+                color = Category.get_category_color(fs.category)
                 action = self.footswitch_event
             else:
                 label = fs.get_display_label() or ""
@@ -708,7 +708,7 @@ class Lcd(abstract_lcd.Lcd):
                 if footswitch.parameter is not None:
                     # Binding may be new (e.g. MIDI learn) — reflect label + color.
                     footswitch.set_display_label(self.footswitch_label(footswitch))
-                    wfs.color = self.get_category_color(footswitch.category)
+                    wfs.color = Category.get_category_color(footswitch.category)
                 wfs.toggle(footswitch.toggled == False)
                 wfs.label = footswitch.get_display_label() or ""
                 wfs.refresh()

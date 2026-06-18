@@ -19,18 +19,18 @@ import common.util as util
 
 
 category_color_map = {
-    'Delay': "MediumVioletRed",
-    'Distortion': (0, 176, 0),
-    'Dynamics': (200, 80, 0),
-    'Filter': (170, 140, 0),
-    'Generator': "Indigo",
-    'Midiutility': "Gray",
-    'Modulator': (50, 50, 255),
-    'Reverb': (20, 140, 180),
-    'Simulator': "SaddleBrown",
-    'Spacial': "Gray",
-    'Spectral': (230, 0, 0),
-    'Utility': "Gray"
+    "Delay": "MediumVioletRed",
+    "Distortion": (0, 176, 0),
+    "Dynamics": (200, 80, 0),
+    "Filter": (170, 140, 0),
+    "Generator": "Indigo",
+    "Midiutility": (200, 200, 200),
+    "Modulator": (50, 50, 255),
+    "Reverb": (20, 140, 180),
+    "Simulator": "SaddleBrown",
+    "Spacial": "Gray",
+    "Spectral": (230, 0, 0),
+    "Utility": (200, 200, 200),
 }
 
 
