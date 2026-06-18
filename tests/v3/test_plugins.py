@@ -52,10 +52,7 @@ def test_v3_bind_encoder_midi_to_plugin(v3_system: SystemFixture, make_plugin):
         (v for v in hw.controllers.values() if isinstance(v, Encoder) and v.midi_CC is not None),
         None,
     )
-    if enc is None:
-        import pytest
-
-        pytest.skip("No MIDI-bound Encoder in default config")
+    assert enc is not None, "default v3 config must define at least one MIDI-bound encoder"
 
     binding_key = next(k for k, v in hw.controllers.items() if v is enc)
 
@@ -72,7 +69,6 @@ def test_v3_bind_encoder_midi_to_plugin(v3_system: SystemFixture, make_plugin):
 def test_v3_bind_volume_encoder_populates_analog_controllers(v3_system: SystemFixture):
     """The VOLUME-type encoder always appears in analog_controllers after binding."""
     handler = v3_system.handler
-    hw = v3_system.hw
 
     assert handler.current
     handler.current.pedalboard.plugins = []
@@ -296,8 +292,6 @@ def test_v3_parameter_edit(v3_system: SystemFixture, make_parameter, snapshot):
 
 def test_v3_parameter_midi_change(v3_system: SystemFixture, make_parameter, snapshot):
     """Rotating a tweak encoder steps the bound value and draws the dialog."""
-    import pytest
-
     hw = v3_system.hw
 
     enc = next(e for e in hw.encoders if isinstance(e, Encoder) and e.midi_CC is not None)
@@ -516,20 +510,12 @@ def test_v3_reconnect_dump_reseeds_bypass_via_poll(v3_system: SystemFixture, mak
     snapshot("delay_bypassed")
 
 
-@pytest.mark.skip(
-    reason="""
-    If the board changes during a WS disconnect onto a non-default snapshot AND the connect
-    dump drains in the same poll tick as the last.json reload, the dump applies to the OLD
-    board (per-instance no-op) and is then lost to the reloaded board's .ttl default.
-    Display-only (audio stays correct — mod-ui is source of truth); recover live by reselecting
-    the pedalboard (unconditional rebroadcast resyncs).
-    """
-)
-def test_v3_reconnect_after_board_change_loses_nondefault_snapshot(v3_system: SystemFixture, make_plugin):
-    """
-    Same-tick reconnect race: board B reloads to its .ttl default while the
-    connect dump (B's live snapshot — delay bypassed) is drained against the old board.
-    The asserted behavior (delay bypassed) is what gets out-of-sync today
+def test_v3_reconnect_after_board_change_same_tick_applies_dump(v3_system: SystemFixture, make_plugin):
+    """Same-tick race: connect dump drains before last.json reload; bypass must survive.
+
+    _pending_dump_bypass buffers AddPluginMessage bypass values during the loading
+    sequence and flushes them into the new board in set_current_pedalboard, so delay
+    ends up bypassed even though the dump was processed against the old board.
     """
     handler = v3_system.handler
     mock_get = v3_system.mock_get

@@ -103,6 +103,11 @@ class Modhandler(Handler):
         # Stores snapshot index from loading_end until pedalboard change is detected
         self.next_pedalboard_preset_index = None
 
+        # Bypass values from the connect dump (loading_start … loading_end); keyed by
+        # instance_id.  Applied after the new board loads when the dump and the
+        # last.json reload land in the same poll tick.
+        self._pending_dump_bypass: dict[str, bool] = {}
+
         # Backup
         self.backup_dir = "/media/usb0/backups"
         self.backup_file = "pistomp_backup.zip"
@@ -488,6 +493,7 @@ class Modhandler(Handler):
         """Handle incoming WebSocket message from MOD-UI."""
         if isinstance(msg, LoadingStartMessage):
             self._is_pedalboard_loading = True
+            self._pending_dump_bypass.clear()
             cleared = self.ws_bridge.clear_queue()
             if cleared:
                 logging.debug(f"Cleared {cleared} stale outbound messages on loading_start")
@@ -528,7 +534,11 @@ class Modhandler(Handler):
                 self.lcd.draw_title()
 
         elif isinstance(msg, (PluginBypassMessage, AddPluginMessage)):
-            # PluginBypassMessage: live delta. AddPluginMessage: (re)connect dump
+            # PluginBypassMessage: live delta. AddPluginMessage: (re)connect dump.
+            # Buffer add-dump bypass values in case the new board hasn't loaded yet
+            # (same-tick race: dump drains before last.json reload sets current).
+            if isinstance(msg, AddPluginMessage):
+                self._pending_dump_bypass[msg.instance] = msg.bypassed
             if self.current is not None:
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
@@ -714,6 +724,14 @@ class Modhandler(Handler):
         if self.next_pedalboard_preset_index is not None:
             self.current.preset_index = self.next_pedalboard_preset_index
             self.next_pedalboard_preset_index = None
+
+        # Flush any buffered connect-dump bypass values from the same-tick race
+        # (dump drained before last.json reload switched the board).
+        if self._pending_dump_bypass:
+            for plugin in pedalboard.plugins:
+                if plugin.instance_id in self._pending_dump_bypass:
+                    plugin.set_bypass(self._pending_dump_bypass[plugin.instance_id])
+            self._pending_dump_bypass.clear()
 
         # Load Pedalboard specific config (overrides default set during initial hardware init)
         config_file = Path(pedalboard.bundle) / "config.yml"
