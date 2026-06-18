@@ -40,7 +40,7 @@ These are the core audio/MIDI services and supporting tools built from source an
 
 ## Python Dependencies
 
-Python packages installed in the runtime environment, extracted via `pip-licenses`. 57 runtime packages are listed below; 24 additional packages used only for development, linting, or documentation are listed separately and are not part of the distributed runtime image.
+Python packages installed in the runtime environment, extracted via `pip-licenses`. Runtime packages are listed below; additional packages used only for development, linting, or documentation are listed separately and are not part of the distributed runtime image.
 
 ### Runtime Dependencies
 
