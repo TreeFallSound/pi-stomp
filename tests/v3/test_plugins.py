@@ -112,6 +112,7 @@ def test_v3_toggle_plugin_bypass_via_footswitch_sends_midi_cc(v3_system: SystemF
     """Footswitch-bound plugin: toggle_plugin_bypass() sends MIDI CC, not a WebSocket message.
 
     MOD-UI receives the bypass change via its MIDI input; ws_bridge is not involved.
+    Plugin starts active (toggled=True after bind), so first press sends CC=0 (bypass intent).
     """
     handler = v3_system.handler
     hw = v3_system.hw
@@ -122,8 +123,8 @@ def test_v3_toggle_plugin_bypass_via_footswitch_sends_midi_cc(v3_system: SystemF
     fs = hw.footswitches[0]
     assert fs.midi_CC is not None, "test requires a footswitch with a midi_CC binding"
 
-    plugin = make_plugin("fuzz", has_footswitch=True)
-    plugin.controllers = [fs]
+    plugin = make_plugin("fuzz")
+    handler._bind_controller_to_param(plugin, plugin.parameters[":bypass"], fs)
     handler.current.pedalboard.plugins = [plugin]
 
     handler.toggle_plugin_bypass(None, plugin)
@@ -131,6 +132,7 @@ def test_v3_toggle_plugin_bypass_via_footswitch_sends_midi_cc(v3_system: SystemF
     hw.midiout.send_message.assert_called_once()
     sent_cc = hw.midiout.send_message.call_args[0][0]
     assert sent_cc[1] == fs.midi_CC
+    assert sent_cc[2] == 0  # active→bypass: toggled goes True→False, CC value = 0
     assert ws_bridge.sent_values_for("fuzz", ":bypass") == []
 
 
@@ -185,6 +187,24 @@ def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_p
     assert plugin.is_bypassed() is True  # optimistically updated via fs.parameter.value
 
     # Simulate mod-host broadcasting the bypass change back.
+    ws_bridge.inject("param_set /graph/fuzz :bypass 0.0")
+    handler.poll_ws_messages()
+    assert plugin.is_bypassed() is False
+    assert hw.footswitches[0].toggled is True  # echo confirmed: plugin active
+
+    # Reverse: put the plugin into bypassed state via echo, then activate via footswitch.
+    ws_bridge.inject("param_set /graph/fuzz :bypass 1.0")
+    handler.poll_ws_messages()
+    assert plugin.is_bypassed() is True
+    assert hw.footswitches[0].toggled is False  # bypassed state
+
+    handler.toggle_plugin_bypass(None, plugin)
+
+    sent_ccs = [c.args[0][2] for c in v3_system.hw.midiout.send_message.call_args_list]
+    assert sent_ccs[-1] == 127  # bypass→active: toggled goes False→True, CC value = 127
+    assert hw.footswitches[0].toggled is True  # activate intent, echo not yet received
+    assert plugin.is_bypassed() is False  # optimistically updated
+
     ws_bridge.inject("param_set /graph/fuzz :bypass 0.0")
     handler.poll_ws_messages()
     assert plugin.is_bypassed() is False
