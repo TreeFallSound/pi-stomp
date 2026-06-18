@@ -187,7 +187,7 @@ class Pistomp(hardware.Hardware):
                     return True
 
             encoders = [["Turn the PBoard Knob", TOP_ENC_PIN_D, TOP_ENC_PIN_CLK],
-                        ["Turn the Effect Knob", BOT_ENC_PIN_D, BOT_ENC_CLK]]
+                        ["Turn the Effect Knob", BOT_ENC_PIN_D, BOT_ENC_PIN_CLK]]
             for e in encoders:
                 enc = EncoderController.EncoderController(e[1], e[2], type=Token.NAV)
                 enc.sink = _TestSink(lambda: setattr(self, "test_pass", True))

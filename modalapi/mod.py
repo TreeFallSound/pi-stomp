@@ -824,19 +824,29 @@ class Mod(Handler):
             self.lcd.draw_info_message("Loading...")
 
             resp1 = req.get(self.root_uri + "reset")
-            if resp1.status_code != 200:
+            ok = resp1.status_code == 200
+            if not ok:
                 logging.error("Bad Reset request")
 
             uri = self.root_uri + "pedalboard/load_bundle/"
             bundlepath = self.pedalboard_list[self.selected_pedalboard_index].bundle
             data = {"bundlepath": bundlepath}
             resp2 = req.post(uri, data)
-            if resp2.status_code != 200:
+            ok = ok and resp2.status_code == 200
+            if not ok:
                 logging.error("Bad Rest request: %s %s  status: %d" % (uri, data, resp2.status_code))
 
             # Now that it's presumably changed, load the dynamic "current" data
             self.set_current_pedalboard(self.pedalboard_list[self.selected_pedalboard_index])
             self.bot_encoder_mode = BotEncoderMode.DEFAULT
+
+            # Stamp as known-good — only stamp when mod-host confirmed success
+            if ok:
+                bundlepath = self.pedalboard_list[self.selected_pedalboard_index].bundle
+                try:
+                    subprocess.run(["pistomp-stamp", "stamp", bundlepath], check=False)
+                except Exception:
+                    logging.debug("pistomp-stamp failed", exc_info=True)
 
     #
     # Preset Stuff

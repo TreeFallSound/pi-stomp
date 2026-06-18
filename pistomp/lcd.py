@@ -16,10 +16,10 @@
 from abc import ABC, abstractmethod
 
 from pistomp.input.event import ControllerEvent
+from plugins.base import PluginPanel
 
 
 class Lcd(ABC):
-
     def __init__(self, cwd, handler=None, flip=False):
         # expects cwd (current working directory)
         pass
@@ -122,7 +122,7 @@ class Lcd(ABC):
 
     # Panels
     @abstractmethod
-    def shorten_name(self, name, width):
+    def shorten_name(self, name, width) -> str:
         pass
 
     @abstractmethod
@@ -134,10 +134,10 @@ class Lcd(ABC):
         pass
 
     @abstractmethod
-    def has_active_fullscreen_panel(self):
+    def has_active_fullscreen_panel(self) -> bool:
         pass
 
     @property
     @abstractmethod
-    def plugin_panel(self):
+    def plugin_panel(self) -> PluginPanel | None:
         pass

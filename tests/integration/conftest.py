@@ -12,10 +12,12 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 import yaml
-from PIL import Image
+import pygame
+from uilib.panel import LcdBase
 
+from typing import cast
 from tests.conftest import FakeWebSocketBridge
-from tests.types import SystemFixture, SystemFixtureLegacy
+from tests.types import CapturedLcd, SystemFixture, SystemFixtureLegacy
 import common.token as Token
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -34,31 +36,33 @@ with patch("pistomp.settings.Settings.load_settings"), patch("pistomp.settings.S
 # ---------------------------------------------------------------------------
 
 
-class FakeMonoLcd:
-    """Stand-in for the gfxhat lcd module. lcdgfx.Lcd draws into its own PIL
-    images then pushes pixels here via set_pixel/show. Each show() snapshots
-    the current buffer into an L-mode frame."""
+class FakeMonoLcd(LcdBase):
+    """Stand-in for the gfxhat lcd module. lcdgfx.Lcd draws into pygame Surfaces
+    then pushes pixels here via set_pixel/show. Each show() snapshots the current
+    buffer into a pygame Surface frame."""
 
     WIDTH = 128
     HEIGHT = 64
 
     def __init__(self):
-        self._buf = Image.new("L", (self.WIDTH, self.HEIGHT))
-        self.frames: list[Image.Image] = []
+        self._buf = pygame.Surface((self.WIDTH, self.HEIGHT), pygame.SRCALPHA)
+        self.frames: list[pygame.Surface] = []
 
     def dimensions(self):
         return (self.WIDTH, self.HEIGHT)
 
     def set_pixel(self, x, y, value):
         if 0 <= x < self.WIDTH and 0 <= y < self.HEIGHT:
-            self._buf.putpixel((x, y), 255 if value else 0)
+            # Monochrome LCD: lit pixels are white, background is black
+            color = (255, 255, 255, 255) if value else (0, 0, 0, 255)
+            self._buf.set_at((x, y), color)
 
     def show(self):
         # lcdgfx flips coordinates for the upside-down panel; un-rotate for readable baselines.
-        self.frames.append(self._buf.copy().transpose(Image.Transpose.ROTATE_180))
+        self.frames.append(pygame.transform.rotate(self._buf, 180))
 
     def clear(self):
-        self._buf.paste(0, (0, 0, self.WIDTH, self.HEIGHT))
+        self._buf.fill((0, 0, 0, 255))
 
 
 # ---------------------------------------------------------------------------
@@ -66,7 +70,12 @@ class FakeMonoLcd:
 # ---------------------------------------------------------------------------
 
 
-def _build_stack(hw_class: type[Hardware], cfg_path: Path, fake_lcd, tmp_path) -> Generator[SystemFixture, None, None]:
+def _build_stack(
+    hw_class: type[Hardware],
+    fake_lcd: CapturedLcd,
+    cfg_path: Path,
+    tmp_path: Path,
+) -> Generator[SystemFixture, None, None]:
     cwd = str(PROJECT_ROOT)
 
     data_dir = tmp_path / "data"
@@ -129,6 +138,7 @@ def _build_stack(hw_class: type[Hardware], cfg_path: Path, fake_lcd, tmp_path) -
         mock_audiocard = MagicMock()
         mock_audiocard.get_volume_parameter.return_value = 0.0
         handler = Modhandler(mock_audiocard, cwd, data_dir=str(data_dir))
+        assert isinstance(handler.settings, MagicMock)
         handler.settings.get_setting.return_value = None
 
         midiout = MagicMock()
@@ -156,12 +166,12 @@ def _build_stack(hw_class: type[Hardware], cfg_path: Path, fake_lcd, tmp_path) -
 
 def _v2_stack(fake_lcd, tmp_path) -> Generator[SystemFixture, None, None]:
     cfg_path = PROJECT_ROOT / "setup" / "config_templates" / "default_config_pistompcore.yml"
-    yield from _build_stack(Pistompcore, cfg_path, fake_lcd, tmp_path)
+    yield from _build_stack(Pistompcore, fake_lcd, cfg_path, tmp_path)
 
 
 def _v3_stack(fake_lcd, tmp_path) -> Generator[SystemFixture, None, None]:
     cfg_path = PROJECT_ROOT / "setup" / "config_templates" / "default_config_pistomptre.yml"
-    yield from _build_stack(Pistomptre, cfg_path, fake_lcd, tmp_path)
+    yield from _build_stack(Pistomptre, fake_lcd, cfg_path, tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +200,7 @@ def _v1_stack(tmp_path) -> Generator[SystemFixtureLegacy, None, None]:
         cfg = yaml.safe_load(f)
 
     fake_bridge = FakeWebSocketBridge()
-    fake_dev = FakeMonoLcd()
+    fake_dev = cast(CapturedLcd, FakeMonoLcd())
 
     # Inject a real lcdgfx.Lcd backed by the capturing fake device. Patching the
     # module-level Lcd would break its internal __single self-reference, so we

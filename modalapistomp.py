@@ -19,6 +19,7 @@
 import logging
 import sys
 from typing import Any
+import shutil
 
 # Set up logging with format that works well with systemd journal
 logging.basicConfig(
@@ -46,6 +47,7 @@ from pistomp.tuner.source import build_source
 import plugins.eq.panel  # noqa: F401
 
 EMULATOR_HOSTS = ("emulator_v1", "emulator_v2", "emulator_v3")
+
 
 def main():
     sys.settrace
@@ -90,7 +92,7 @@ def main():
         logging.getLogger().setLevel(log_level)
 
     # Disable websockets library debug logging (too noisy)
-    logging.getLogger('websockets').setLevel(logging.WARNING)
+    logging.getLogger("websockets").setLevel(logging.WARNING)
 
     # Current Working Dir
     cwd = os.path.dirname(os.path.realpath(__file__))
@@ -129,6 +131,9 @@ def main():
         cfg = config.load_default_cfg()
 
     if args.host[0] == "mod":
+        if shutil.which("pistomp-stamp") is None:
+            logging.warning("pistomp-stamp not found on PATH — stamping disabled")
+
         # Create singleton Mod handler
         handlerfactory = Handlerfactory.Handlerfactory()
         handler = handlerfactory.create(cfg, audiocard, cwd)
@@ -176,6 +181,7 @@ def main():
 
     elif is_emulator:
         from emulator.bootstrap import bootstrap_emulator
+
         handler, midiout = bootstrap_emulator(args.host[0], cwd)
 
     assert handler is not None

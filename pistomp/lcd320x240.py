@@ -33,6 +33,7 @@ from uilib.pygame_init import font as _make_font
 from uilib.lcd_ili9341 import *
 from modalapi.layout import build_layout_compress
 
+from pistomp.input.event import ControllerEvent
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
 from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
 from pistomp.encoder_controller import EncoderController

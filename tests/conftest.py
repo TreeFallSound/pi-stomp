@@ -15,6 +15,7 @@ import pytest
 
 # Initialize pygame headlessly before any uilib import so SDL is ready.
 from uilib.pygame_init import init as _pg_init
+
 _pg_init()
 import pygame
 
@@ -70,7 +71,7 @@ def snapshot_update(request):
 
 
 def _surface_to_rgb_bytes(surface) -> tuple[bytes, tuple[int, int]]:
-    # v3 LCDs render to pygame Surfaces; v1/v2 hardware renders to PIL Images.
+    # LCDs render to pygame Surfaces (both color and monochrome).
     if isinstance(surface, pygame.Surface):
         return pygame.image.tobytes(surface, "RGB"), surface.get_size()
     rgb = surface.convert("RGB")
@@ -88,9 +89,7 @@ def assert_snapshot(surface: pygame.Surface, name: str, *, update: bool = False)
         return
     expected_surface = pygame.image.load(str(path)).convert(24)
     expected_bytes = pygame.image.tobytes(expected_surface, "RGB")
-    assert rgb_bytes == expected_bytes, (
-        f"Snapshot mismatch: {name}  (re-run with --snapshot-update to accept)"
-    )
+    assert rgb_bytes == expected_bytes, f"Snapshot mismatch: {name}  (re-run with --snapshot-update to accept)"
 
 
 @pytest.fixture
@@ -149,7 +148,7 @@ class FakeWebSocketBridge:
 
     def sent_values_for(self, instance_id: str, symbol: str) -> list[float]:
         prefix = f"param_set /graph/{instance_id}/{symbol} "
-        return [float(m[len(prefix):]) for m in self.sent if m.startswith(prefix)]
+        return [float(m[len(prefix) :]) for m in self.sent if m.startswith(prefix)]
 
 
 @pytest.fixture
@@ -175,10 +174,10 @@ class FakeLcd(LcdBase):
     def clear(self):
         pass
 
-    def update(self, surface: pygame.Surface, box=None):
+    def update(self, image: pygame.Surface, box=None):
         # Always capture a 24-bit RGB snapshot so per-frame format never drifts.
-        size = surface.get_size()
-        rgb_bytes = pygame.image.tobytes(surface, "RGB")
+        size = image.get_size()
+        rgb_bytes = pygame.image.tobytes(image, "RGB")
         snap = pygame.image.frombytes(rgb_bytes, size, "RGB")
         self.frames.append(snap)
 
