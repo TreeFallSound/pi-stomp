@@ -37,6 +37,7 @@ def test_modhandler_init_propagates_ws_bridge_construction_failure(tmp_path):
         patch("modalapi.pedalboard.Pedalboard.load_bundle"),
         patch("modalapi.wifi.WifiManager"),
         patch("subprocess.check_output", return_value=b"SystemState=running"),
+
         patch("modalapi.modhandler.AsyncWebSocketBridge", side_effect=RuntimeError("bridge boom")),
     ):
         with pytest.raises(RuntimeError, match="bridge boom"):
@@ -57,6 +58,7 @@ def test_modhandler_init_propagates_ws_bridge_start_failure(tmp_path):
         patch("modalapi.pedalboard.Pedalboard.load_bundle"),
         patch("modalapi.wifi.WifiManager"),
         patch("subprocess.check_output", return_value=b"SystemState=running"),
+
         patch("modalapi.modhandler.AsyncWebSocketBridge", return_value=failing_bridge),
     ):
         with pytest.raises(RuntimeError, match="start boom"):

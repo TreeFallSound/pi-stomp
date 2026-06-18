@@ -25,6 +25,7 @@ from requests import Response
 import subprocess
 import sys
 import yaml
+from functools import cached_property
 from typing import cast, Any
 
 import common.token as Token
@@ -1019,6 +1020,13 @@ class Modhandler(Handler):
             self.bypass_right = self.audiocard.get_bypass_right()
             self.lcd.update_bypass(self.bypass_left, self.bypass_right)
 
+    @cached_property
+    def recovery_available(self) -> bool:
+        return subprocess.call(
+            ["systemctl", "cat", "pistomp-recovery"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        ) == 0
+
     def system_menu_shutdown(self, arg):
         self.lcd.splash_show(False)
         logging.info("System Shutdown")
@@ -1028,6 +1036,11 @@ class Modhandler(Handler):
         self.lcd.splash_show(False)
         logging.info("System Reboot")
         os.system('sudo systemctl reboot')
+
+    def system_menu_recovery_mode(self, arg):
+        self.lcd.draw_info_message("Entering recovery mode...", refresh=True)
+        logging.info("Entering recovery mode")
+        os.system('sudo systemctl --no-block start pistomp-recovery')
 
     def check_usb(self):
         self.usbflash = False

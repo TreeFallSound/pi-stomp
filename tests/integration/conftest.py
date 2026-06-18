@@ -138,6 +138,7 @@ def _build_stack(
         mock_audiocard = MagicMock()
         mock_audiocard.get_volume_parameter.return_value = 0.0
         handler = Modhandler(mock_audiocard, cwd, data_dir=str(data_dir))
+        handler.recovery_available = False  # no pistomp-recovery in test env
         assert isinstance(handler.settings, MagicMock)
         handler.settings.get_setting.return_value = None
 

@@ -741,6 +741,8 @@ class Lcd(abstract_lcd.Lcd):
                  ("Bank Select >", self.draw_bank_menu, None),
                  ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None),
                  ("LCD Speed >", self.draw_lcd_speed_menu, None)]
+        if self.handler.recovery_available:
+            items.insert(4, ("Recovery Mode...", self.handler.system_menu_recovery_mode, None))
         self.draw_selection_menu(items, "System Menu")
 
     def _toggle_tuner_from_menu(self, arg):
