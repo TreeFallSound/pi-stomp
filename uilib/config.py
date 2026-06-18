@@ -16,7 +16,7 @@
 import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Literal, TYPE_CHECKING, cast
 
 from uilib.pygame_init import font as _make_font
 
@@ -27,25 +27,31 @@ _FONTS_DIR = Path(__file__).resolve().parent.parent / "fonts"
 
 Color = tuple[int, int, int]
 
+FontName = Literal[
+    "default",
+    "default_title",
+    "footswitch",
+    "big_bold",
+    "small",
+    "tiny",
+]
+
 
 class Config:
     _instance: "Config | None" = None
 
-    fonts: dict[str, "pygame._freetype.Font"]
+    fonts: dict[FontName, "pygame._freetype.Font"]
     colors: dict[str, Color]
 
     def __new__(cls, _config_json: str | None = None) -> "Config":
-        if Config._instance is None:
-            Config._instance = super().__new__(cls)
-        return Config._instance
+        if cls._instance is None:
+            instance = super().__new__(cls)
+            instance.fonts = {}
+            instance.colors = {}
+            cls._instance = instance
+        return cls._instance
 
     def __init__(self, config_json: str | None = None) -> None:
-        if not hasattr(self, "fonts"):
-            print("Adding empty fonts...")
-            self.fonts = {}
-        if not hasattr(self, "colors"):
-            print("Adding empty colors...")
-            self.colors = {}
         if config_json is not None:
             self.load_config(config_json)
         self._set_defaults()
@@ -66,7 +72,7 @@ class Config:
         if "default_title_bkgnd" not in self.colors:
             self.add_color("default_title_bkgnd", (63, 63, 63))
 
-    def add_font(self, label: str, file_name: str, size: int) -> None:
+    def add_font(self, label: FontName, file_name: str, size: int) -> None:
         # Resolve bare filenames against the bundled fonts directory.
         path: str = file_name
         if not os.path.isabs(file_name) and not os.path.exists(file_name):
@@ -75,10 +81,10 @@ class Config:
                 path = str(candidate)
         self.fonts[label] = _make_font(path, size)
 
-    def get_font(self, label: str) -> "pygame._freetype.Font | None":
+    def get_font(self, label: FontName) -> "pygame._freetype.Font | None":
         return self.fonts.get(label)
 
-    def has_font(self, label: str) -> bool:
+    def has_font(self, label: FontName) -> bool:
         return label in self.fonts
 
     def add_color(self, label: str, rgb: Color) -> None:
@@ -99,7 +105,7 @@ class Config:
         if "fonts" in data:
             for font_def in data["fonts"]:
                 try:
-                    label: str = font_def["label"]
+                    label = cast(FontName, font_def["label"])
                     name: str = font_def["name"]
                     size: int = font_def["size"]
                 except KeyError as e:
@@ -109,9 +115,9 @@ class Config:
         if "colors" in data:
             for color_def in data["colors"]:
                 try:
-                    label = color_def["label"]
+                    color_label: str = color_def["label"]
                     rgb: Color = tuple(color_def["rgb"])
                 except KeyError as e:
                     print("Error loading color:", e, data["colors"])
                 else:
-                    self.add_color(label, rgb)
+                    self.add_color(color_label, rgb)
