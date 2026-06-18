@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import numpy as np
+
 # Run pygame headlessly in tests so the emulator suite doesn't pop a window.
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
@@ -87,9 +89,24 @@ def assert_snapshot(surface: pygame.Surface, name: str, *, update: bool = False)
         rgb_surface = pygame.image.frombytes(rgb_bytes, size, "RGB")
         pygame.image.save(rgb_surface, str(path))
         return
+
     expected_surface = pygame.image.load(str(path)).convert(24)
     expected_bytes = pygame.image.tobytes(expected_surface, "RGB")
-    assert rgb_bytes == expected_bytes, f"Snapshot mismatch: {name}  (re-run with --snapshot-update to accept)"
+    if rgb_bytes == expected_bytes:
+        return
+
+    # Find dirty rectangle via numpy
+    a = np.frombuffer(rgb_bytes, dtype=np.uint8).reshape(size[1], size[0], 3)
+    b = np.frombuffer(expected_bytes, dtype=np.uint8).reshape(size[1], size[0], 3)
+    diff = np.any(a != b, axis=2)  # (H, W) bool mask of differing pixels
+    ys, xs = np.where(diff)
+    min_x, max_x = int(xs.min()), int(xs.max())
+    min_y, max_y = int(ys.min()), int(ys.max())
+    raise AssertionError(
+        f"Snapshot mismatch: {name} - dirty rect ({min_x}, {min_y})-({max_x}, {max_y}) "
+        f"[{max_x - min_x + 1}x{max_y - min_y + 1}px] "
+        f"(re-run with --snapshot-update to accept)"
+    )
 
 
 @pytest.fixture
