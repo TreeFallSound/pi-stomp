@@ -238,6 +238,27 @@ class PaintContext:
         finally:
             font.origin = prev_origin
 
+    def draw_arc_aa(self, cx: int, cy: int, r: int, clip: Box, color: ColorLike) -> None:
+        """AA circle arc clipped to a quadrant box (widget-relative).
+
+        Renders on a fresh SRCALPHA surface so alpha composites correctly
+        regardless of the destination format, then blits the clip region.
+        """
+        size = 2 * r + 1
+        tmp = pygame.Surface((size, size), pygame.SRCALPHA)
+        tmp.fill((0, 0, 0, 0))
+        gfxdraw.aacircle(tmp, r, r, r, _color(color))
+        abs_cx, abs_cy = self._abs_xy((cx, cy))
+        abs_clip = _pg_rect(self._abs_box(clip))
+        src = pygame.Rect(
+            abs_clip.x - (abs_cx - r),
+            abs_clip.y - (abs_cy - r),
+            abs_clip.width,
+            abs_clip.height,
+        ).clip(pygame.Rect(0, 0, size, size))
+        if src.width > 0 and src.height > 0:
+            self.surface.blit(tmp, (abs_clip.x, abs_clip.y), area=src)
+
     def paste(self, src: pygame.Surface, pos: Sequence[int], mask: Optional[pygame.Surface] = None) -> None:
         """Blit a surface onto self.surface at widget-relative coords."""
         self.surface.blit(src, _ipt(self._abs_xy(pos)))

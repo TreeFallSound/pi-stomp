@@ -35,8 +35,10 @@ class ContainerWidget(Widget):
         # Non-inherited attributes
         self.virtual = self._get_arg(kwargs, "virtual", False)
         self._content_height = self._get_arg(kwargs, "content_height", None)
+        self._content_width = self._get_arg(kwargs, "content_width", None)
         kwargs.pop("virtual", None)
         kwargs.pop("content_height", None)
+        kwargs.pop("content_width", None)
 
         # Selectable children for flattened selection traversal
         self.sel_list = []
@@ -78,16 +80,17 @@ class ContainerWidget(Widget):
         # May adjust boundary box
         super(ContainerWidget, self)._setup()
 
-        w = self.box.width
+        w = self._content_width if (self.virtual and self._content_width) else self.box.width
         h = self._content_height if (self.virtual and self._content_height) else self.box.height
 
         # Check if we are already setup for this box
         if (
             self.surface is not None
             and self.old_box is not None
-            and self.old_box.width == w
+            and self.old_box.width == self.box.width
             and self.old_box.height == self.box.height
-            and self.surface.get_height() == h
+            and self.surface.get_width() == int(w)
+            and self.surface.get_height() == int(h)
         ):
             return
 

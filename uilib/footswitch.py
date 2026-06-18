@@ -13,24 +13,30 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+import pygame
+import pygame.gfxdraw as gfxdraw
+
 from uilib.box import Box
 from uilib.config import Config
+from uilib.misc import get_text_size
 from uilib.widget import Widget
 
 
 class FootswitchWidget(Widget):
+    """Footswitch indicator: a keycap outline (rounded top, open bottom) centered in the slot.
 
-    # Visual constants, top-anchored so the label area lives inside the frame
-    # (SDL clips to the widget frame; the old PIL renderer let text bleed past).
-    CAP_INSET_X = 10
-    CAP_HEIGHT = 16
-    CAP_STACK_OFFSET = 6
-    CAP_TOP_Y = 0           # top edge of upper cap
-    CAP_BOTTOM_Y = 6        # top edge of lower cap (= CAP_TOP_Y + CAP_STACK_OFFSET)
-    HALO_INSET_X = 2
-    HALO_TOP = 10
-    HALO_BOTTOM = 38        # bottom of halo, just under the lower cap
-    LABEL_Y = 40            # baseline-area for the label, below the cap
+    Accent color is ON when bound and active, dimmed otherwise.
+    """
+
+    UNBOUND_BG = (50, 50, 50)
+    BOUND_OFF_BG = (90, 90, 90)
+    DEFAULT_COLOR = (255, 255, 255)
+
+    KEYCAP_RADIUS = 4
+    KEYCAP_PAD_X = 7
+    KEYCAP_PAD_TOP = 3
+    KEYCAP_PAD_BOTTOM = 3
+    KEYCAP_HEIGHT = 20
 
     def __init__(self, box, num, label, color, is_bypassed, **kwargs):
         self._init_attrs(Widget.INH_ATTRS, kwargs)
@@ -40,46 +46,109 @@ class FootswitchWidget(Widget):
         self.label = label
         self.color = color
         self.is_bypassed = is_bypassed
-        self.footswitch_ring_width = 7
-        self.background = (0, 0, 0)
-        self.foreground = (255, 255, 255)
-        self.color_plugin_bypassed = (80, 80, 80)
+        self._corner_cache: dict = {}
+
+    def _fit(self, text, max_w):
+        """Largest leading substring fitting max_w px."""
+        if not text:
+            return text
+        tw, _ = get_text_size(text, self.font)
+        if tw <= max_w:
+            return text
+        out = ""
+        for ch in text:
+            tw, _ = get_text_size(out + ch, self.font)
+            if tw > max_w:
+                break
+            out += ch
+        return out
+
+    def _draw_erase(self, ctx):
+        pass  # parent.refresh() clears the RGBA surface and re-applies shroud before drawing us
 
     def _draw(self, ctx):
-        w = ctx.width
+        w, h = ctx.width, ctx.height
+        is_on = not self.is_bypassed
 
-        self._draw_halo(ctx)
+        if is_on:
+            accent = self.color if self.color is not None else self.DEFAULT_COLOR
+        else:
+            accent = self.BOUND_OFF_BG if self.color is not None else self.UNBOUND_BG
 
-        cap_x0 = self.CAP_INSET_X
-        cap_x1 = w - self.CAP_INSET_X
+        text = self.label if self.label else chr(ord("A") + self.num)
+        text = self._fit(text, w - 2 * self.KEYCAP_PAD_X)
 
-        # cap bottom
-        ctx.draw_ellipse(Box(cap_x0, self.CAP_BOTTOM_Y, cap_x1, self.CAP_BOTTOM_Y + self.CAP_HEIGHT),
-                         fill=self.background, outline="gray", width=2)
-        # cap top
-        ctx.draw_ellipse(Box(cap_x0, self.CAP_TOP_Y, cap_x1, self.CAP_TOP_Y + self.CAP_HEIGHT),
-                         fill=self.background, outline="gray", width=2)
+        tw, _ = get_text_size(text, self.font)
+        kw = tw + 2 * self.KEYCAP_PAD_X
+        kh = self.KEYCAP_HEIGHT
+        kx0 = (w - kw) // 2
+        ky0 = (h - kh) // 2
+        kx1 = kx0 + kw - 1
+        ky1 = ky0 + kh - 1
 
-        # Label sits below the cap, inside the frame.
-        ctx.draw_text((0, self.LABEL_Y), self.label, self.foreground, self.font)
+        fill = None if is_on else (0, 0, 0)
+        self._draw_keycap(ctx, kx0, ky0, kx1, ky1, accent, fill)
 
-    def _draw_halo(self, ctx):
-        # When an unbound footswitch toggles active, self.color is None. PIL's
-        # ImageDraw silently fell back to its default ink (white); pygame skips
-        # the draw entirely. Fall back to foreground to preserve the look.
-        color = self.color_plugin_bypassed if self.is_bypassed else (self.color or self.foreground)
-        ctx.draw_ellipse(
-            Box(self.HALO_INSET_X, self.HALO_TOP,
-                ctx.width - self.HALO_INSET_X, self.HALO_BOTTOM),
-            fill=None, outline=color, width=self.footswitch_ring_width,
-        )
+        tx = kx0 + self.KEYCAP_PAD_X
+        ty = ky0 + self.KEYCAP_PAD_TOP
+        ctx.draw_text((tx, ty), text, fill=accent, font=self.font)
+
+    _CORNER_SSAA = 4  # supersampling scale factor
+
+    def _corner_surfs(self, r: int, color) -> tuple:
+        """Cached (tl, tr) SRCALPHA surfaces for rounded corners.
+
+        Renders the arc at SSAA× scale on a transparent surface, then
+        smoothscales down — gfxdraw.aacircle is discontinuous on SRCALPHA
+        at small radii, so supersampling gives genuine smooth anti-aliasing.
+        tr is a horizontal flip of tl.
+        """
+        if isinstance(color, pygame.Color):
+            key = (color.r, color.g, color.b, color.a)
+        elif isinstance(color, (list, tuple)):
+            key = tuple(color) if len(color) == 4 else (color[0], color[1], color[2], 255)
+        else:
+            key = (255, 255, 255, 255)
+        if key not in self._corner_cache:
+            s = self._CORNER_SSAA
+            size = r + 1
+            big = pygame.Surface((size * s, size * s), pygame.SRCALPHA)
+            big.fill((0, 0, 0, 0))
+            gfxdraw.aacircle(big, r * s, r * s, r * s, key)
+            tl = pygame.transform.smoothscale(big, (size, size))
+            tr = pygame.transform.flip(tl, True, False)
+            self._corner_cache[key] = (tl, tr)
+        return self._corner_cache[key]
+
+    def _draw_keycap(self, ctx, kx0, ky0, kx1, ky1, color, fill=None):
+        """Keycap outline: rounded top corners, vertical sides, open bottom."""
+        r = self.KEYCAP_RADIUS
+        if fill is not None:
+            ctx.draw_rectangle(Box(kx0, ky0, kx1 + 1, ky1 + 1), fill=fill)
+
+        # Straight edges
+        ctx.draw_line([(kx0 + r, ky0), (kx1 - r, ky0)], fill=color, width=1)  # top
+        ctx.draw_line([(kx0, ky0 + r), (kx0, ky1)], fill=color, width=1)       # left
+        ctx.draw_line([(kx1, ky0 + r), (kx1, ky1)], fill=color, width=1)       # right
+
+        # AA corners: blit cached (r+1)×(r+1) surfaces rendered on transparent background
+        tl, tr = self._corner_surfs(r, color)
+        ox, oy = ctx._f().topleft
+        ctx.surface.blit(tl, (kx0 + ox, ky0 + oy))
+        ctx.surface.blit(tr, (kx1 - r + ox, ky0 + oy))
+
+    def refresh(self, box=None):
+        # Delegate to parent so the ShroudedPanel re-applies its shroud gradient
+        # before drawing children — a widget-only refresh would leave the slot
+        # area transparent (no shroud) where we cleared for the previous keycap.
+        if self.parent is not None:
+            self.parent.refresh()
+        else:
+            super().refresh(box)
 
     def set_selected(self, selected):
         parent = self.parent
         super().set_selected(selected)
-        # ShroudedPanel owns the background; incremental refresh leaves
-        # selection artefacts because _draw_erase is a no-op.  Refresh
-        # the whole panel so the shroud is re-applied cleanly.
         if parent is not None:
             parent.refresh()
 

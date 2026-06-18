@@ -165,7 +165,9 @@ class ShroudedPanel(Panel):
     """
 
     def __init__(self, shroud_alpha=64, gradient_start: float | None = None, gradient_pos=1.0, **kwargs):
-        kwargs.pop("image_format", None)  # no longer used; silently ignored
+        # RGBA is required: shroud compositing depends on per-pixel alpha.
+        # Callers cannot override this; RGB would bake alpha against black.
+        kwargs['image_format'] = 'RGBA'
         super(ShroudedPanel, self).__init__(**kwargs)
         self.gradient_start = gradient_start if gradient_start is not None else shroud_alpha
         self.gradient_end = shroud_alpha
@@ -174,7 +176,9 @@ class ShroudedPanel(Panel):
         self._shroud_size: Optional[tuple] = None
 
     def _draw_erase(self, ctx: PaintContext):
-        pass  # don't erase: underlying PanelStack content shows through
+        # Clear to transparent so the shroud gradient composites correctly
+        # over whatever the PanelStack has underneath.
+        ctx.surface.fill((0, 0, 0, 0), ctx.surface.get_clip())
 
     def _make_shroud(self, w: int, h: int) -> pygame.Surface:
         surf = pygame.Surface((w, h), pygame.SRCALPHA)

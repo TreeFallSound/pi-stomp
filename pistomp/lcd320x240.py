@@ -111,8 +111,8 @@ class Lcd(abstract_lcd.Lcd):
         self.plugin_width = 78
         self.plugin_height = 29
         self.plugin_label_length = 7
-        self.footswitch_height = 64
-        self.footswitch_width = 60
+        self.footswitch_height = 32
+        self.footswitch_width = 80
         # space between footswitch icons where index is the footswitch count
         #                                0    1    2    3    4   5   6   7
         self.footswitch_pitch_options = [120, 120, 120, 128, 80, 65, 65, 65]
@@ -149,7 +149,8 @@ class Lcd(abstract_lcd.Lcd):
         self.pstack.push_panel(self.splash_panel, refresh=False)
         self.main_panel = Panel(box=Box.xywh(0, 0, self.display_width, self.display_height))
         self.main_panel_pushed = False
-        self.footswitch_panel = ShroudedPanel(box=Box.xywh(0, 208, self.display_width, self.footswitch_height),
+        self.footswitch_panel = ShroudedPanel(box=Box.xywh(0, self.display_height - self.footswitch_height,
+                                                            self.display_width, self.footswitch_height),
                                               shroud_alpha=224, no_dim=True, accepts_input=False)
         self._fullscreen_panel: Panel | None = None
         self._tuner_panel = None
@@ -226,6 +227,10 @@ class Lcd(abstract_lcd.Lcd):
     def poll_updates(self):
         for d in self.w_parameter_dialogs.values():
             d.tick()
+        if self.w_pedalboard is not None:
+            self.w_pedalboard.tick()
+        if self.w_preset is not None:
+            self.w_preset.tick()
 
         self.pstack.poll_updates()
         if self._fullscreen_panel is not None and self.pstack.current is self._fullscreen_panel:

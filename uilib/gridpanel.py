@@ -66,7 +66,11 @@ class GridPanel(ContainerWidget):
         bottom_inset: int = 0,
         **kwargs,
     ) -> None:
-        super().__init__(box=box, **kwargs)
+        n_cols = len(layout.cols)
+        n_rows = max((len(col) for col in layout.cols), default=0)
+        content_w = n_cols * (TILE_W + CHANNEL) - CHANNEL if n_cols > 0 else int(box.width)
+        content_h = n_rows * (TILE_H + ROW_GAP) - ROW_GAP if n_rows > 0 else int(box.height)
+        super().__init__(box=box, virtual=True, content_width=content_w, content_height=content_h, **kwargs)
         self.layout = layout
         self.wire_colors = wire_colors
         self.bottom_inset = bottom_inset

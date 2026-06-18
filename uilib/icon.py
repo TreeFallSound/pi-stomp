@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+import pygame
+
 from uilib.text import *
 
 
@@ -104,13 +106,29 @@ class Icon(TextWidget):
             ctx.draw_text((text_x, text_y), self.text, fill=self.text_color, font=self.font)
             return
 
-        # Progress bar: fill behind text, then draw text on top
+        # Progress bar: fill behind text, then draw text in two clipped passes
+        # so the filled region gets inverted text and the unfilled region gets normal text.
         bar_width = ctx.width - self.height - (h_margin * 4)
         bar_height = ctx.height - (h_margin * 4)
         fill_width = int(bar_width * self.progress)
         if fill_width > 0:
             fill_box = Box(self.height + h_margin, 0, self.height + h_margin + fill_width, bar_height)
             ctx.draw_rectangle(fill_box, fill=self.text_color)
+
+            ox, oy = ctx._f().topleft
+            fill_x1_abs = ox + self.height + h_margin + fill_width
+            cur_clip = ctx.surface.get_clip()
+
+            # text over unfilled region
+            r = pygame.Rect(fill_x1_abs, cur_clip.y, cur_clip.right - fill_x1_abs, cur_clip.height)
+            ctx.surface.set_clip(cur_clip.clip(r))
+            ctx.draw_text((text_x, text_y), self.text, fill=self.text_color, font=self.font)
+
+            # text over filled region (inverted)
+            r = pygame.Rect(cur_clip.x, cur_clip.y, fill_x1_abs - cur_clip.x, cur_clip.height)
+            ctx.surface.set_clip(cur_clip.clip(r))
             ctx.draw_text((text_x, text_y), self.text, fill=self.bkgnd_color, font=self.font)
+
+            ctx.surface.set_clip(cur_clip)
         else:
             ctx.draw_text((text_x, text_y), self.text, fill=self.text_color, font=self.font)
