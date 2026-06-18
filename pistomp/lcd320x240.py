@@ -545,6 +545,9 @@ class Lcd(abstract_lcd.Lcd):
         )
         self.main_panel.add_sel_widget(self.grid_panel)
 
+        # Repaint the grid's backing surface with the final tile colors before main_panel blits it
+        self.grid_panel.refresh()
+
         self.main_panel.refresh()
 
     def plugin_event(self, event, widget, plugin):
