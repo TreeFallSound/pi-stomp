@@ -90,7 +90,7 @@ class FootswitchWidget(Widget):
         self._draw_keycap(ctx, kx0, ky0, kx1, ky1, accent, fill)
 
         tx = kx0 + self.KEYCAP_PAD_X
-        ty = ky0 + self.KEYCAP_PAD_TOP
+        ty = ky0 + self.KEYCAP_PAD_TOP - 1
         ctx.draw_text((tx, ty), text, fill=accent, font=self.font)
 
     def _corner_surfs(self, r: int, color) -> tuple:
