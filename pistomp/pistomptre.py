@@ -22,8 +22,7 @@ import pistomp.encoder_controller as EncoderController
 import pistomp.hardware as hardware
 import pistomp.ledstrip as Ledstrip
 
-#import pistomp.lcdili9341 as Lcd   # pistompcore UI
-import pistomp.lcd320x240 as Lcd   # Tre UI
+import pistomp.lcd320x240 as Lcd
 
 # This subclass defines hardware specific to pi-Stomp Tre
 # 4 Encoders (one for Navigation, 3 for tweaking)
