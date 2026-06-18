@@ -15,6 +15,7 @@
 
 import pygame
 
+from uilib.glyphs import ExpressionPedalGlyph, KnobGlyph
 from uilib.text import *
 
 
@@ -25,13 +26,18 @@ from uilib.text import *
 
 
 class Icon(TextWidget):
-    """A simple icon with a text string"""
+    """A simple icon with a text string.
+
+    The icon graphic is a cached `Glyph` (`KnobGlyph` or `ExpressionPedalGlyph`)
+    rendered into an RGBA surface and blitted at the left of the widget. Color
+    is baked into the glyph at `add_knob()`/`add_pedal()` time (the widget's
+    `fgnd_color` at that moment). Text is drawn to the right of the icon.
+    """
 
     def __init__(self, box, text="", text_color=None, height=13, outline_width=2, **kwargs):
         self.height = height
         self.outline_width = outline_width
-        self.lines = []
-        self.ellipses = []
+        self._glyph = None  # set by add_knob/add_pedal
         self.progress = None  # Progress value 0.0-1.0 for progress bar fill
 
         super(Icon, self).__init__(box, text=text, **kwargs)
@@ -39,42 +45,10 @@ class Icon(TextWidget):
         self.text_color = text_color if text_color is not None else self.fgnd_color
 
     def add_knob(self):
-        # Widget-relative coords from (0, 0).
-        loc = (0, 2)
-        e = {
-            'box': Box(loc[0], loc[1], loc[0] + self.height, loc[1] + self.height),
-            'fill': self.bkgnd_color,
-            'outline': self.fgnd_color,
-            'height': self.outline_width,
-        }
-        self.ellipses.append(e)
-
-        pointer_fudge = 2  # trim the upper right of the pointer
-        l = {
-            "xy": (
-                (loc[0] + self.height - pointer_fudge, loc[1] + pointer_fudge),
-                (loc[0] + int(self.height / 2), loc[1] + int(self.height / 2)),
-            ),
-            "fill": self.fgnd_color,
-            "height": self.outline_width,
-        }
-        self.lines.append(l)
+        self._glyph = KnobGlyph(self.height)
 
     def add_pedal(self):
-        loc = (0, -1)
-        l = {
-            "xy": ((loc[0], loc[1] + self.height), (loc[0] + self.height, loc[1] + int(self.height / 3))),
-            "fill": self.fgnd_color,
-            "height": self.outline_width,
-        }
-        self.lines.append(l)
-
-        l = {
-            "xy": ((loc[0], loc[1] + self.height), (loc[0] + self.height, loc[1] + self.height)),
-            "fill": self.fgnd_color,
-            "height": self.outline_width + 2,
-        }
-        self.lines.append(l)
+        self._glyph = ExpressionPedalGlyph(self.height)
 
     def set_progress(self, progress):
         """Set progress value (0.0-1.0) for progress bar fill effect"""
@@ -93,11 +67,22 @@ class Icon(TextWidget):
         h_margin = 1
         loc = (h_margin, v_margin)
 
-        for e in self.ellipses:
-            ctx.draw_ellipse(e['box'], fill=e['fill'], outline=e['outline'], width=e['height'])
-
-        for l in self.lines:
-            ctx.draw_line(l['xy'], fill=l['fill'], width=l['height'])
+        # Blit the cached glyph alpha-mask (knob or expression pedal) at the
+        # left, vertically centered in the widget, tinted to the icon colour.
+        if self._glyph is not None:
+            mask = self._glyph.render()
+            ox, oy = ctx._f().topleft
+            # Vertically center the square glyph in the widget height.
+            gy = loc[1] + (ctx.height - mask.get_height()) // 2
+            # Tint the white mask into the fgnd colour: blit a solid colour
+            # fill onto a copy of the mask using BLEND_RGBA_MULT, then blit
+            # the tinted copy onto the target. A plain MULT against the mask
+            # in-place would corrupt the cached surface.
+            tinted = mask.copy()
+            color_surf = pygame.Surface(mask.get_size(), pygame.SRCALPHA)
+            color_surf.fill(self.fgnd_color)
+            tinted.blit(color_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            ctx.surface.blit(tinted, (loc[0] + ox, gy + oy))
 
         text_x = loc[0] + self.height + h_margin
         text_y = loc[1]

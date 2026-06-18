@@ -21,7 +21,9 @@ DEFAULT_COLOR: tuple[int, int, int] = (255, 255, 255)
 
 # Re-export glyphs for convenience
 from uilib.glyphs.ethernet_cable import EthernetCableGlyph
+from uilib.glyphs.expression_pedal import ExpressionPedalGlyph
 from uilib.glyphs.keycap_corner import KeycapCornerGlyph
+from uilib.glyphs.knob import KnobGlyph
 from uilib.glyphs.pill import PillGlyph
 from uilib.glyphs.signal_bars import SignalBarsGlyph
 
@@ -29,7 +31,9 @@ __all__ = [
     "DEFAULT_COLOR",
     "FONTS_DIR",
     "EthernetCableGlyph",
+    "ExpressionPedalGlyph",
     "KeycapCornerGlyph",
+    "KnobGlyph",
     "PillGlyph",
     "SignalBarsGlyph",
 ]
