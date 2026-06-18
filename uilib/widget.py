@@ -15,9 +15,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Tuple
 
 from uilib.box import Box
+from uilib.config import Color
 from uilib.misc import InputEvent, WidgetAlign, trace
 from uilib.paint import PaintContext
 
@@ -89,7 +90,43 @@ class Widget:
         "sel_radius": None,
     }
 
-    def __init__(self, box: Box, align=None, parent=None, visible=True, object=None, **kwargs):
+    # Core attributes
+    box: Box | None
+    parent: "Widget | None"
+    align: WidgetAlign
+    children: "list[Widget]"
+    object: object
+    selected: bool
+    selectable: bool
+    visible: bool
+
+    # Non-inherited attributes (set from kwargs in __init__)
+    label: str | None
+    outline: int
+    outline_radius: int | None
+    outline_color: Color | None
+    action: Callable | None
+
+    # Inheritable attributes (set via _setup_act_attrs / INH_ATTRS)
+    bkgnd_color: Color
+    fgnd_color: Color
+    sel_color: Color
+    sel_width: int
+    sel_radius: int | None
+
+    # Bookkeeping for the attribute-inheritance machinery
+    default_attrs: dict
+    explicit_attrs: dict
+
+    def __init__(
+        self,
+        box: Box,
+        align: WidgetAlign | None = None,
+        parent: "Widget | None" = None,
+        visible: bool = True,
+        object: object = None,
+        **kwargs,
+    ):
         """box    : Box object relative to parent
         parent : parent widget
         """
@@ -235,14 +272,14 @@ class Widget:
     # box is established early and thus rely on the stack bounding box. When a
     # panel is popped off the stack, it still keeps its reference to said stack
 
-    def _build_paint_target(self, dirty: Box) -> Tuple["ContainerWidget", Box, Box] | Tuple[None, None, None]:
+    def _build_paint_target(self, dirty: Box) -> 'Tuple["ContainerWidget", Box, Box] | None':
         """Walk up to the nearest ContainerWidget, accumulating frame offset.
 
         Returns (container, frame, clip) where:
           container : the nearest ContainerWidget ancestor (owns the image)
           frame     : self.box translated into container-local coords
           clip      : dirty translated into container-local coords, clipped to container bounds
-        Returns (None, None, None) if no visible ContainerWidget ancestor found.
+        Returns None if no visible ContainerWidget ancestor found.
         """
         from uilib.container import ContainerWidget
 
@@ -250,11 +287,13 @@ class Widget:
         curr = self
         while curr is not None:
             if not curr.visible:
-                return None, None, None
-            
+                return None
+            # Invariant: a visible widget always has a box.
+            assert curr.box is not None and self.box is not None
+
             off_x += curr.box.x0
             off_y += curr.box.y0
-            
+
             parent = curr.parent
             if isinstance(parent, ContainerWidget):
                 # We found our backing image owner.
@@ -263,10 +302,10 @@ class Widget:
                 # clip = the dirty region re-anchored to the same container coords
                 clip = dirty.offset((off_x - self.box.x0, off_y - self.box.y0))
                 return (parent, frame, clip.intersection(parent._content_bounds()))
-                
+
             curr = parent
-            
-        return (None, None, None)
+
+        return None
 
     def _invalidate_self(self):
         """Mark this widget's own region stale and bubble it up."""
@@ -318,6 +357,7 @@ class Widget:
         if self.visible:
             self.visible = False
             if refresh:
+                assert self.parent is not None
                 self.parent.refresh()
 
     def set_box(self, box, realign=False, refresh=True):
@@ -341,7 +381,7 @@ class Widget:
     def get_object(self):
         return self.object
 
-    def attach(self, parent):
+    def attach(self, parent: "Widget"):
         """Attach a widget to a parent"""
         trace(self, "attaching to parent", parent)
         assert self.parent is None
@@ -369,11 +409,18 @@ class Widget:
         if self.parent is not None:
             self.parent._invalidate_cache(box)
 
+    def propagate_dirty(self, local_clip: Box):
+        """Bubble a dirty region up to the parent. Containers override to
+        recompose their cache; the base just forwards to the parent."""
+        if self.parent is not None:
+            self.parent.propagate_dirty(local_clip)
+
     def _adjust_box(self):
         trace(self, "adjusting box, parent=", self.parent)
         # We can only do this if we have a parent
         if self.parent is None:
             return
+        assert self.box is not None and self.parent.box is not None
         if self.align & WidgetAlign.CENTRE_H:
             if self.box.width >= self.parent.box.width:
                 self.box.x0 = 0
@@ -411,7 +458,7 @@ class Widget:
         if self.parent:
             self.parent._notify_detach(widget)
 
-    def refresh(self, box=None):
+    def refresh(self, box: Box | None = None):
         """Refresh widget (and children).
 
         SDL clipping (set in PaintContext.painting) keeps any out-of-frame
@@ -425,14 +472,16 @@ class Widget:
             box = self.box
         if box is None:
             return
-        container, frame, clip = self._build_paint_target(box)
-        if container is None:
+        target = self._build_paint_target(box)
+        if target is None:
             return
+        container, frame, clip = target
         if clip.is_empty():
             return
         if container.virtual and not container._viewport().intersects(frame):
             self._dirty = True
             return
+        assert container.surface is not None
         ctx = PaintContext(container.surface, clip, frame=frame)
         self.do_draw(ctx, frame)
         self._painted = True
@@ -441,14 +490,16 @@ class Widget:
 
     def scroll_into_view(self):
         """Scroll parent if necessary to ensure this object is into view. Only works
-           on a visible object attached to a parent
+        on a visible object attached to a parent
         """
         if self.visible and self.parent:
+            assert self.box is not None
             return self.parent._scroll_into_view(self.box)
         return False
 
-    def _scroll_into_view(self, box):
+    def _scroll_into_view(self, box: Box) -> bool:
         if self.visible and self.parent:
+            assert self.box is not None
             return self.parent._scroll_into_view(box.offset(self.box))
         return False
 
@@ -463,6 +514,7 @@ class Widget:
             child_origin = pctx.frame.topleft
             for c in self.children:
                 if c.visible:
+                    assert c.box is not None
                     c.do_draw(pctx, c.box.offset(child_origin))
             self._draw_outline(pctx)
             self._draw_selection(pctx)
@@ -500,7 +552,7 @@ class Widget:
         """
         return [self]
 
-    def input_event(self, event):
+    def input_event(self, event: InputEvent):
         if (event == InputEvent.CLICK or event == InputEvent.LONG_CLICK) and self.action is not None:
             if self.object is not None:
                 self.action(event, self, self.object)
@@ -511,22 +563,20 @@ class Widget:
 
     def _get_stack(self) -> PanelStack | None:
         """Helper to return the top-level panel stack. Useful for creating pop-up dialogs
-           such as text editing helpers
+        such as text editing helpers
         """
         if self.parent is None:
             return None
         return self.parent._get_stack()
 
     def _get_panel(self):
-        """Helper to return the top-level panel. Used mostly by the UI builder
-        """
+        """Helper to return the top-level panel. Used mostly by the UI builder"""
         if self.parent is None:
             return None
         return self.parent._get_panel()
 
     def find(self, label):
-        """Search the widget hierarchy (including this one) for a labelled widget
-        """
+        """Search the widget hierarchy (including this one) for a labelled widget"""
         if self.label == label:
             return self
         for c in self.children:

@@ -15,36 +15,41 @@
 
 import time
 from math import log
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+from typing_extensions import override
 import pygame
-from PIL import Image, ImageDraw, ImageFont
 
 from uilib.pygame_init import font as _make_font
-from uilib.panel import *
-from uilib.misc import *
-from uilib.config import *
+from uilib.box import Box
+from uilib.widget import Widget
+from uilib.panel import RoundedPanel
+from uilib.misc import InputEvent, TextHAlign, get_text_size, trace
+from uilib.config import Config
 
-CHAR_TO_DISPLAY = {' ': '\u2423'}
+if TYPE_CHECKING:
+    import pygame._freetype
+
+CHAR_TO_DISPLAY = {" ": "\u2423"}
 
 
 class LetterSelector(Widget):
     ctrl_BKSP, ctrl_CANCEL, ctrl_OK = 0, 1, 2
-    controls = '\u232b\u2718\u2713'
-    numbers = '0123456789'
-    lo_chars = controls + 'abcdefghijklmnopqrstuvwxyz' + numbers
-    hi_chars = controls + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' + numbers
-    specials = controls + ' `~!@#$%^&*()-_=+[]{}\\|;:\'",<>./?'
-    MODE_LO, MODE_HI, MODE_SP = 0,1,2
-    charsets = [ lo_chars, hi_chars, specials ]
+    controls = "\u232b\u2718\u2713"
+    numbers = "0123456789"
+    lo_chars = controls + "abcdefghijklmnopqrstuvwxyz" + numbers
+    hi_chars = controls + "ABCDEFGHIJKLMNOPQRSTUVWXYZ" + numbers
+    specials = controls + " `~!@#$%^&*()-_=+[]{}\\|;:'\",<>./?"
+    MODE_LO, MODE_HI, MODE_SP = 0, 1, 2
+    charsets: list[str] = [lo_chars, hi_chars, specials]
 
     def __init__(self, box, font, **kwargs):
         self._init_attrs(Widget.INH_ATTRS, kwargs)
-        super(LetterSelector,self).__init__(box, **kwargs)
+        super(LetterSelector, self).__init__(box, **kwargs)
         self.font = font
         self.l_idx = self.ctrl_CANCEL
         self.__set_mode(self.MODE_LO)
 
-    def __set_mode(self, mode):
+    def __set_mode(self, mode: int):
         self.mode = mode
         cs = self.charsets[mode]
         mw, mh = 0, 0
@@ -66,35 +71,38 @@ class LetterSelector(Widget):
         self.l_w = mw
         self.l_h = mh
         self.l_idx %= len(cs)
+        assert self.box is not None
         self.l_count = self.box.width // self.l_w
         if self.l_count % 1 == 0:
             self.l_count -= 1
         self.l_half = self.l_count // 2
 
+    @override
     def _draw(self, ctx):
         loc = (self.l_w // 2, self.l_h // 2)
         cs = self.charsets[self.mode]
         for i in range(self.l_idx - self.l_half, self.l_idx + self.l_half):
             ci = i % len(cs)
             if ci == self.ctrl_OK:
-                color = (0,255,0)
+                color = (0, 255, 0)
             elif ci == self.ctrl_CANCEL:
-                color = (255,0,0)
+                color = (255, 0, 0)
             else:
                 color = self.fgnd_color
             if i != self.l_idx:
                 a = log(abs(self.l_idx - i) + 1) + 1
-                color = (int(color[0]/a),int(color[1]/a),int(color[2]/a))
+                color = (int(color[0] / a), int(color[1] / a), int(color[2] / a))
             ch = CHAR_TO_DISPLAY.get(cs[ci], cs[ci])
-            ctx.draw_text(loc, ch, fill=color, font=self.font, anchor='mm')
+            ctx.draw_text(loc, ch, fill=color, font=self.font, anchor="mm")
             loc = (loc[0] + self.l_w, loc[1])
 
+    @override
     def _draw_selection(self, ctx):
-        l = self.l_w * self.l_half
+        l = self.l_w * self.l_half  # noqa: E741
         b = Box(l, 0, l + self.l_w, ctx.height)
         ctx.draw_rectangle(b, None, self.sel_color, 1, radius=self.l_w // 4)
 
-
+    @override
     def input_event(self, event):
         cs = self.charsets[self.mode]
         if event == InputEvent.RIGHT:
@@ -110,6 +118,7 @@ class LetterSelector(Widget):
             self.refresh()
             return True
         elif event == InputEvent.CLICK or event == InputEvent.LONG_CLICK:
+            assert self.action is not None  # always constructed with an action
             if self.l_idx == self.ctrl_CANCEL:
                 self.action(InputEvent.CANCEL, None)
             elif self.l_idx == self.ctrl_OK:
@@ -126,7 +135,8 @@ class LetterSelector(Widget):
                 else:
                     self.action(InputEvent.LETTER, self.charsets[self.mode][self.l_idx])
         return False
-        
+
+
 class TextEditor(RoundedPanel):
     def __init__(self, widget):
         self.editable = widget
@@ -140,32 +150,34 @@ class TextEditor(RoundedPanel):
         #
         # XXX FIXME: Try to use the font passed as argument
         #
-        box = Box(0,0,300,80)
+        box = Box(0, 0, 300, 80)
         box = box.centre(stack.box)
-        super(TextEditor,self).__init__(box = box, parent = stack, auto_destroy = True)
-        self.set_outline(2, (255,255,255))
+        super(TextEditor, self).__init__(box=box, parent=stack, auto_destroy=True)
+        self.set_outline(2, (255, 255, 255))
         self.outline = 2
         self.curline = widget.text
         from pathlib import Path
+
         _fonts = Path(__file__).resolve().parent.parent / "fonts"
         self.font = _make_font(_fonts / "DejaVuSans.ttf", 18)
         msg_w, msg_h = get_text_size(widget.edit_message, self.font)
         msg_box = Box.xywh(10, 10, msg_w, msg_h)
-        self.msg = TextWidget(box = msg_box, text = widget.edit_message, font = self.font, parent = self)
-        edit_box = Box.xywh(10,30,280,20)
-        self.edit = TextWidget(box = edit_box, text = self.curline + '\u2588', font = self.font, parent = self)
-        self.edit.set_background((64,64,64))
+        self.msg = TextWidget(box=msg_box, text=widget.edit_message, font=self.font, parent=self)
+        edit_box = Box.xywh(10, 30, 280, 20)
+        self.edit = TextWidget(box=edit_box, text=self.curline + "\u2588", font=self.font, parent=self)
+        self.edit.set_background((64, 64, 64))
         sel_box = Box.xywh(10, 50, 280, 22)
-        selector = LetterSelector(box = sel_box, font = self.font, parent = self, action = self.__input_action)
+        selector = LetterSelector(box=sel_box, font=self.font, parent=self, action=self.__input_action)
         self.add_sel_widget(selector)
         stack.push_panel(self)
         self.refresh()
 
     def __update(self):
-        self.edit.set_text(self.curline + '\u2588')
+        self.edit.set_text(self.curline + "\u2588")
 
     def __done(self):
         stack = self._get_stack()
+        assert stack is not None
         stack.pop_panel(self)
 
     def __input_action(self, event, data):
@@ -177,7 +189,7 @@ class TextEditor(RoundedPanel):
         elif event == InputEvent.LETTER:
             self.curline += str(data)
         elif event == InputEvent.CLEAR:
-            self.curline = ''
+            self.curline = ""
         elif event == InputEvent.OK:
             self.editable.set_text(self.curline)
             if self.editable.action is not None:
@@ -185,16 +197,22 @@ class TextEditor(RoundedPanel):
             self.__done()
         self.__update()
 
+
 # XXX TODO: Add alignment features
 class TextWidget(Widget):
     """A simple widget with a text string"""
-    SPLIT_SEP = ''  # if present in text exactly once, renders as left + right halves
 
-    def __init__(self, box, text='', font = None, edit_message = None, h_margin = None, v_margin = None,
-                 text_halign = None, **kwargs):
+    SPLIT_SEP = ""  # if present in text exactly once, renders as left + right halves
+
+    font: "pygame._freetype.Font"
+
+    def __init__(
+        self, box, text="", font=None, edit_message=None, h_margin=None, v_margin=None, text_halign=None, **kwargs
+    ):
         self.text = text
-        if font == None:
-            font = Config().get_font('default')
+        if font is None:
+            font = Config().get_font("default")
+        assert font is not None  # the 'default' font is always registered
         self.font = font
         self.edit_message = edit_message
         self.h_margin = h_margin
@@ -202,7 +220,7 @@ class TextWidget(Widget):
         self.text_halign = text_halign
         self.font_metrics = None  # legacy field, pygame.freetype encodes size in get_rect
         self.text_size_valid = False
-        super(TextWidget,self).__init__(box, **kwargs)
+        super(TextWidget, self).__init__(box, **kwargs)
 
     def _get_text_size(self):
         if not self.text_size_valid:
@@ -219,15 +237,17 @@ class TextWidget(Widget):
             def_margin = self.sel_width
         else:
             def_margin = self.outline
-        if h_margin == None:
+        if h_margin is None:
             h_margin = def_margin
-        if v_margin == None:
+        if v_margin is None:
             v_margin = def_margin
 
         return (h_margin, v_margin)
 
+    @override
     def _adjust_box(self):
         # Auto-sizing feature
+        assert self.box is not None  # only called once a box is established
         trace(self, "text adjust box, width=", self.box.width, "height=", self.box.height)
         if self.box.width != 0 and self.box.height != 0:
             return
@@ -236,7 +256,7 @@ class TextWidget(Widget):
         # Always use at least a full line height so short / empty text doesn't
         # collapse the widget. pygame's get_text_size('', font) returns
         # (0, asc+desc) — reuse it instead of PIL-style font.getmetrics().
-        _, line_h = get_text_size('', self.font)
+        _, line_h = get_text_size("", self.font)
         th = max(th, line_h)
         # Add outline to account for PIL rectangles being "inset"
         extra = self.outline
@@ -246,7 +266,7 @@ class TextWidget(Widget):
         if self.box.height == 0:
             self.box.height = 1.2 * th + v_margin * 2 + extra
         trace(self, "resulting box=", self.box)
-        super(TextWidget,self)._adjust_box()
+        super(TextWidget, self)._adjust_box()
 
     def set_text(self, text):
         if self.text == text:
@@ -264,6 +284,7 @@ class TextWidget(Widget):
         self.text_size_valid = False
         self.refresh()
 
+    @override
     def _draw(self, ctx):
         h_margin, v_margin = self._get_margins()
         extra = self.outline
@@ -300,25 +321,34 @@ class TextWidget(Widget):
         """Override in subclasses for animation."""
         pass
 
+    @override
     def input_event(self, event):
         if self.edit_message is not None:
             if event == InputEvent.CLICK or event == InputEvent.LONG_CLICK:
                 TextEditor(self)
                 return True
-        super(TextWidget,self).input_event(event)
+        return super(TextWidget, self).input_event(event)
+
 
 class Button(TextWidget):
     def __init__(self, **kwargs):
-        self.outline_radius = self._get_arg(kwargs, 'outline_radius', 5)
-        self.outline = self._get_arg(kwargs, 'outline', 1)
-        self.sel_width = self._get_arg(kwargs, 'sel_width', 2)
-        super(Button,self).__init__(**kwargs)
+        self.outline_radius = self._get_arg(kwargs, "outline_radius", 5)
+        self.outline = self._get_arg(kwargs, "outline", 1)
+        self.sel_width = self._get_arg(kwargs, "sel_width", 2)
+        super(Button, self).__init__(**kwargs)
 
 
 class ScrollingText(TextWidget):
     """TextWidget with horizontal ping-pong scrolling for overflow text."""
 
-    def __init__(self, pixels_per_second: float = 50.0, pause_start_sec: float = 2.0, pause_end_sec: float = 1.0, lcd_poll_divisor: int = 8, **kwargs):
+    def __init__(
+        self,
+        pixels_per_second: float = 50.0,
+        pause_start_sec: float = 2.0,
+        pause_end_sec: float = 1.0,
+        lcd_poll_divisor: int = 8,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.pixels_per_second: float = pixels_per_second
         self.pause_start_sec: float = pause_start_sec
@@ -330,7 +360,7 @@ class ScrollingText(TextWidget):
         self._last_tick_time: Optional[float] = None
 
         # Cached rendering
-        self.cached_text_image: Optional[Image.Image] = None
+        self.cached_text_image: Optional[pygame.Surface] = None
         self.cached_text_width: int = 0
 
     def _render_text_to_cache(self) -> None:
@@ -360,10 +390,12 @@ class ScrollingText(TextWidget):
     def _should_scroll(self) -> bool:
         if self.cached_text_image is None:
             return False
+        assert self.box is not None
         h_margin, _ = self._get_margins()
         available_width = self.box.width - h_margin - self.outline
         return self.cached_text_width > available_width
 
+    @override
     def tick(self) -> None:
         if self.cached_text_image is None:
             self._render_text_to_cache()
@@ -376,6 +408,7 @@ class ScrollingText(TextWidget):
                 self.refresh()
             return
 
+        assert self.box is not None
         h_margin, _ = self._get_margins()
         available_width = self.box.width - 2 * h_margin - self.outline
         max_offset = self.cached_text_width - available_width
@@ -388,8 +421,7 @@ class ScrollingText(TextWidget):
         now = time.monotonic()
         # On first tick, or after a wild gap (process paused, panel hidden),
         # re-anchor so we start a fresh cycle at the initial pause.
-        if (self._anchor_time is None
-                or (self._last_tick_time is not None and now - self._last_tick_time > 0.25)):
+        if self._anchor_time is None or (self._last_tick_time is not None and now - self._last_tick_time > 0.25):
             self._anchor_time = now
         self._last_tick_time = now
 
@@ -416,14 +448,17 @@ class ScrollingText(TextWidget):
         self._anchor_time = None
         self._last_tick_time = None
 
+    @override
     def set_text(self, text: str) -> None:
         super().set_text(text)
         self._clear_cache_and_restart()
 
+    @override
     def set_font(self, font) -> None:
         super().set_font(font)
         self._clear_cache_and_restart()
 
+    @override
     def _draw(self, ctx) -> None:
         if self.cached_text_image is None:
             self._render_text_to_cache()

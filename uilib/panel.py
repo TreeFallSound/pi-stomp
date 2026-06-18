@@ -14,6 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from typing import Optional, Tuple
+from typing_extensions import override
 from abc import ABC
 
 import pygame
@@ -57,10 +58,9 @@ class Panel(ContainerWidget):
 
     def _flat_sel(self):
         """Lazy-expand sel_list via each entry's sel_children() into a flat
-           list of leaf widgets. Rebuilt on every nav — cheap for ≤30 items
-           and keeps us correct when subtrees change between calls."""
+        list of leaf widgets. Rebuilt on every nav — cheap for ≤30 items
+        and keeps us correct when subtrees change between calls."""
         return self.sel_children()
-
 
     def del_sel_widget(self, widget):
         previously_selectable = widget.selectable
@@ -75,7 +75,7 @@ class Panel(ContainerWidget):
 
     def add_sel_widget(self, widget):
         """Add a widget to the selectable list. The widget may be a leaf
-           or a container that exposes its own selectables via sel_children()."""
+        or a container that exposes its own selectables via sel_children()."""
         assert widget.visible
         if widget in self.sel_list:
             return
@@ -167,7 +167,7 @@ class ShroudedPanel(Panel):
     def __init__(self, shroud_alpha=64, gradient_start: float | None = None, gradient_pos=1.0, **kwargs):
         # RGBA is required: shroud compositing depends on per-pixel alpha.
         # Callers cannot override this; RGB would bake alpha against black.
-        kwargs['image_format'] = 'RGBA'
+        kwargs["image_format"] = "RGBA"
         super(ShroudedPanel, self).__init__(**kwargs)
         self.gradient_start = gradient_start if gradient_start is not None else shroud_alpha
         self.gradient_end = shroud_alpha
@@ -215,7 +215,7 @@ class RoundedPanel(Panel):
         # reads self.radius. The shape mask itself is populated by _setup().
         self.radius = radius
         self._shape_mask: Optional[pygame.Surface] = None
-        kwargs['image_format'] = 'RGBA'
+        kwargs["image_format"] = "RGBA"
         super(RoundedPanel, self).__init__(**kwargs)
 
     def _build_shape_mask(self) -> pygame.Surface:
@@ -223,9 +223,7 @@ class RoundedPanel(Panel):
         size = (int(self.box.width), int(self.box.height))
         mask = pygame.Surface(size, pygame.SRCALPHA)
         mask.fill((0, 0, 0, 0))
-        pygame.draw.rect(mask, (255, 255, 255, 255),
-                         pygame.Rect(0, 0, size[0], size[1]), 0,
-                         border_radius=self.radius)
+        pygame.draw.rect(mask, (255, 255, 255, 255), pygame.Rect(0, 0, size[0], size[1]), 0, border_radius=self.radius)
         return mask
 
     def _setup(self):
@@ -261,7 +259,6 @@ class RoundedPanel(Panel):
         if self.outline != 0:
             color = self.outline_color if self.outline_color is not None else self.fgnd_color
             ctx.draw_rectangle(ctx.bounds, None, color, self.outline, radius=self.radius)
-
 
 
 class LcdBase(ABC):
@@ -314,11 +311,11 @@ class PanelStack(ContainerWidget):
     def set_capture_callback(self, callback):
         self.capture_callback = callback
 
-
-    def refresh(self):
+    def refresh(self, box=None):
         self.propagate_dirty(self.box.norm())
         self.lcd_needs_update = False
 
+    @override
     def propagate_dirty(self, local_clip: Box):
         """Recompose the dirty clip region from all stacked panels, then push to LCD."""
         assert self.surface is not None
@@ -370,7 +367,7 @@ class PanelStack(ContainerWidget):
     def pop_panel(self, panel):
         if panel is None:
             panel = self.current
-        assert panel in self.stack
+        assert panel is not None and panel in self.stack
         self.stack.remove(panel)
         panel.hide(refresh=False)
         if panel == self.current:

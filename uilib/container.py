@@ -14,6 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from typing import Optional, Tuple
+from typing_extensions import override
 
 import pygame
 
@@ -30,6 +31,18 @@ class ContainerWidget(Widget):
 
     # Inherited attributes with defaults
     INH_ATTRS = {"image_format": "RGB"}
+
+    # A container is always constructed with a box (never box-less, unlike leaf
+    # widgets that are sized after construction via set_box). Narrowing the base
+    # Box | None to Box trips pyright's mutable-invariance check, hence the ignore.
+    box: Box  # type: ignore[reportIncompatibleVariableOverride]
+    surface: Optional[pygame.Surface]
+    old_box: Optional[Box]
+    offset: Tuple[int, int]
+    virtual: bool
+    has_alpha: bool
+    image_format: str  # inherited via INH_ATTRS / _setup_act_attrs
+    _dirty_region: Optional[Box]
 
     def __init__(self, box, **kwargs):
         # Non-inherited attributes
@@ -69,7 +82,7 @@ class ContainerWidget(Widget):
 
     def add_sel_widget(self, widget):
         """Add a widget to the selectable list. The widget may be a leaf
-           or a container that exposes its own selectables via sel_children()."""
+        or a container that exposes its own selectables via sel_children()."""
         assert widget.visible
         if widget in self.sel_list:
             return
@@ -120,7 +133,7 @@ class ContainerWidget(Widget):
             return False
         return box.intersects(self.box.norm())
 
-    def refresh(self):
+    def refresh(self, box=None):
         """Redraw the container's backing surface and notify the parent of the change."""
         trace(self, "ContainerWidget.refresh: vis=", self.visible, "parent=", self.parent)
         if self.surface is None:
@@ -133,6 +146,7 @@ class ContainerWidget(Widget):
             self._draw(ctx)
             for c in self.children:
                 if c.visible:
+                    assert c.box is not None  # visible ⇒ box set
                     if viewport.intersects(c.box):
                         c.do_draw(ctx, c.box)
                         c._painted = True
@@ -153,6 +167,7 @@ class ContainerWidget(Widget):
             self._draw(ctx)
             for c in self.children:
                 if c.visible:
+                    assert c.box is not None  # visible ⇒ box set
                     c.do_draw(ctx, c.box.offset(local_frame))
             self._draw_outline(ctx)
             self._draw_selection(ctx)
@@ -189,6 +204,7 @@ class ContainerWidget(Widget):
                     self._draw(full_ctx)
                     for c in self.children:
                         if c.visible:
+                            assert c.box is not None  # visible ⇒ box set
                             cf = c.box.offset(local_frame)
                             if cf.intersects(dirty):
                                 c.do_draw(full_ctx, cf)
@@ -216,6 +232,7 @@ class ContainerWidget(Widget):
         """Copy the viewport-local clip from our cache into target_surface."""
         target_surface.blit(self._viewport_view(), _ipt(dst_topleft), area=_pg_rect(local_clip))
 
+    @override
     def propagate_dirty(self, local_clip: Box):
         """Bubble a dirty region (in our local coords) up to our parent.
 
@@ -257,7 +274,10 @@ class ContainerWidget(Widget):
         content_frame = self._content_bounds()
         ctx = PaintContext(self.surface, content_frame, frame=content_frame)
         for c in self.children:
-            if c.visible and viewport.intersects(c.box):
+            if not c.visible:
+                continue
+            assert c.box is not None  # visible ⇒ box set
+            if viewport.intersects(c.box):
                 if not c._painted or c._dirty:
                     c.do_draw(ctx, c.box)
                     c._painted = True

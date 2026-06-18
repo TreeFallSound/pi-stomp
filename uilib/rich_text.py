@@ -22,6 +22,7 @@ baked in), has an intrinsic size, and is positioned vertically by the layout.
 
 from dataclasses import dataclass
 from typing import Protocol, Sequence, runtime_checkable
+from typing_extensions import override
 
 import pygame
 
@@ -126,6 +127,7 @@ class RichTextWidget(Widget):
         self.segments: list[Segment] = list(segments)
         if font is None:
             font = Config().get_font("default")
+        assert font is not None  # the 'default' font is always registered
         self.font = font
         self.h_margin = h_margin
         self.v_margin = v_margin
@@ -142,7 +144,9 @@ class RichTextWidget(Widget):
         v = def_margin if self.v_margin is None else self.v_margin
         return (h, v)
 
+    @override
     def _adjust_box(self) -> None:
+        assert self.box is not None  # only called once a box is established
         if self.box.width != 0 and self.box.height != 0:
             return
         h_margin, v_margin = self._get_margins()
@@ -160,6 +164,7 @@ class RichTextWidget(Widget):
             self.box.height = max_h + v_margin * 2 + self.outline
         super()._adjust_box()
 
+    @override
     def _draw(self, ctx: PaintContext) -> None:
         h_margin, v_margin = self._get_margins()
         extra = self.outline
