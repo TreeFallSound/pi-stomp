@@ -14,10 +14,10 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import pygame
-import pygame.gfxdraw as gfxdraw
 
 from uilib.box import Box
 from uilib.config import Config
+from uilib.glyphs import KeycapCornerGlyph
 from uilib.misc import get_text_size
 from uilib.widget import Widget
 
@@ -93,15 +93,13 @@ class FootswitchWidget(Widget):
         ty = ky0 + self.KEYCAP_PAD_TOP
         ctx.draw_text((tx, ty), text, fill=accent, font=self.font)
 
-    _CORNER_SSAA = 4  # supersampling scale factor
-
     def _corner_surfs(self, r: int, color) -> tuple:
         """Cached (tl, tr) SRCALPHA surfaces for rounded corners.
 
-        Renders the arc at SSAA× scale on a transparent surface, then
-        smoothscales down — gfxdraw.aacircle is discontinuous on SRCALPHA
-        at small radii, so supersampling gives genuine smooth anti-aliasing.
-        tr is a horizontal flip of tl.
+        Returns an (r+1)x(r+1) surface with the top-left arc drawn on a
+        transparent background (analytic AA via `KeycapCornerGlyph`),
+        plus a horizontal flip for the top-right. Composites correctly
+        on RGBA — the 1px stroke aligns with the keycap's straight edges.
         """
         if isinstance(color, pygame.Color):
             key = (color.r, color.g, color.b, color.a)
@@ -110,12 +108,8 @@ class FootswitchWidget(Widget):
         else:
             key = (255, 255, 255, 255)
         if key not in self._corner_cache:
-            s = self._CORNER_SSAA
-            size = r + 1
-            big = pygame.Surface((size * s, size * s), pygame.SRCALPHA)
-            big.fill((0, 0, 0, 0))
-            gfxdraw.aacircle(big, r * s, r * s, r * s, key)
-            tl = pygame.transform.smoothscale(big, (size, size))
+            rgb = (key[0], key[1], key[2])
+            tl = KeycapCornerGlyph(r, rgb).render()
             tr = pygame.transform.flip(tl, True, False)
             self._corner_cache[key] = (tl, tr)
         return self._corner_cache[key]
@@ -128,10 +122,10 @@ class FootswitchWidget(Widget):
 
         # Straight edges
         ctx.draw_line([(kx0 + r, ky0), (kx1 - r, ky0)], fill=color, width=1)  # top
-        ctx.draw_line([(kx0, ky0 + r), (kx0, ky1)], fill=color, width=1)       # left
-        ctx.draw_line([(kx1, ky0 + r), (kx1, ky1)], fill=color, width=1)       # right
+        ctx.draw_line([(kx0, ky0 + r), (kx0, ky1)], fill=color, width=1)  # left
+        ctx.draw_line([(kx1, ky0 + r), (kx1, ky1)], fill=color, width=1)  # right
 
-        # AA corners: blit cached (r+1)×(r+1) surfaces rendered on transparent background
+        # AA corners: blit cached (r+1)x(r+1) surfaces rendered on transparent background
         tl, tr = self._corner_surfs(r, color)
         ox, oy = ctx._f().topleft
         ctx.surface.blit(tl, (kx0 + ox, ky0 + oy))
