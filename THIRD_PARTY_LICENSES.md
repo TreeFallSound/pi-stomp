@@ -2,7 +2,11 @@
 
 This document lists third-party software components included in or distributed with this project's Raspberry Pi OS image and software stack, along with their respective licenses. It is provided to satisfy attribution and license-disclosure obligations for all bundled open source components.
 
+> **Scope:** This file covers the contents of the **pi-gen-pistomp built OS image** released for download — the full system that runs on the device, including the OS, system services (jack2, mod-host, mod-ui, etc.), Python runtime dependencies, and LV2 plugins. It does **not** describe the contents of this Git repository, which contains only this project's own Python source code, licensed under AGPL-3.0-or-later. The components below are not part of the repository itself; they are installed, built, or bundled into the image by the pi-gen-pistomp build process.
+
 **This project's own code is licensed under AGPL-3.0-or-later.** Components below are run as independent system services or separate processes (communicating via IPC, D-Bus, sockets, or HTTP) rather than linked into this project's codebase, except where noted.
+
+> **A note on accuracy:** This file was compiled largely through automated extraction — `pip-licenses` for Python dependencies, `lilv`/TTL metadata inspection for LV2 plugins, and manual verification where automated tools returned incomplete or ambiguous results. Open source metadata is not always accurate or complete at the source, and errors or omissions may exist despite best efforts to verify each entry. If you are a rights holder or maintainer and believe an entry here is missing, incorrect, or needs attribution changes, please [open an issue](../../issues) or contact the maintainer of this repository.
 
 ## Contents
 
@@ -98,7 +102,7 @@ Python packages installed in the runtime environment, extracted via `pip-license
 | urllib3 | 1.26.12 | MIT License | [link](https://urllib3.readthedocs.io/) |
 | websockets | 16.0 | BSD-3-Clause | [link](https://github.com/python-websockets/websockets) |
 | Werkzeug | 3.1.8 | BSD-3-Clause | [link](https://github.com/pallets/werkzeug/) |
-| zeroconf | 0.47.3 | GNU Lesser General Public License v2 (LGPLv2); Other/Proprietary License | [link](https://github.com/python-zeroconf/python-zeroconf) |
+| zeroconf | 0.47.3 | LGPL-2.1-or-later | [link](https://github.com/python-zeroconf/python-zeroconf) |
 
 ### Development / Build / Documentation Tools (not distributed at runtime)
 
@@ -149,7 +153,7 @@ Python packages installed in the runtime environment, extracted via `pip-license
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| abGate | 2.0 | lgpl |
+| abGate | 2.0 | LGPL |
 
 ### Artican
 
@@ -158,18 +162,30 @@ Python packages installed in the runtime environment, extracted via `pip-license
 | The Function | 2.0 | — |
 | The Pilgrim | 2.0 | — |
 
+ ### Aurelien Leblond
+| Plugin | Version | License |
+|--------|---------|---------|
+| AMS VCF | 1.0 | isc |
+| Granulator - Mono | 0.0 | isc |
+
 ### Bernhard Rusch
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Molot Lite Mono | 0.1 | gpl |
+| Molot Lite Mono | 0.1 | GPL |
+
+### Blokas Labs
+| Plugin | Version | License |
+|--------|---------|---------|
+| Invada Compressor (mono) | 2.1 | GPL v2 |
+| Invada Test Tones | 2.1 | GPL v2 |
 
 ### Bollie
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Bollie Delay | 2.6 | gpl |
-| Bollie Delay XT | 0.1 | gpl |
+| Bollie Delay | 2.6 | GPL |
+| Bollie Delay XT | 0.1 | GPL |
 
 ### brummer
 
@@ -207,7 +223,7 @@ Python packages installed in the runtime environment, extracted via `pip-license
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Calf Gate | — | lgpl |
+| Calf Gate | — | LGPL |
 
 ### Creative Intent
 
@@ -241,11 +257,33 @@ Python packages installed in the runtime environment, extracted via `pip-license
 |--------|---------|---------|
 | Obxd | 2.0 | — |
 
-### dcoredump, dcoredump
+### David Robillard (FOMP)
+| Plugin | Version | License |
+|--------|---------|---------|
+| 4-Band Parametric Filter | 0.0 | GPL-2.0 |
+| CS Phaser 1 | 0.0 | GPL-2.0 |
+| Moog High-Pass Filter 1 | 0.0 | GPL-2.0 |
+| Moog Low-Pass Filter 1 | 0.0 | GPL-2.0 |
+| Moog Low-Pass Filter 2 | 0.0 | GPL-2.0 |
+| Moog Low-Pass Filter 3 | 0.0 | GPL-2.0 |
+| Moog Low-Pass Filter 4 | 0.0 | GPL-2.0 |
+| Pulse VCO | 0.0 | GPL-2.0 |
+| Rec VCO | 0.0 | GPL-2.0 |
+| reverb | 0.0 | GPL-2.0 |
+| reverb-amb | 0.0 | GPL-2.0 |
+| Saw VCO | 0.0 | GPL-2.0 |
+| Square | 0.0 | GPL-2.0 |
+
+### dcoredump
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Dexed | 0.2 | gpl |
+| Dexed | 0.2 | GPL |
+
+### devcurmudgeon
+| Plugin | Version | License |
+|--------|---------|---------|
+| ALO | 0.9 | MIT |
 
 ### DISTRHO
 
@@ -253,12 +291,17 @@ Python packages installed in the runtime environment, extracted via `pip-license
 |--------|---------|---------|
 | 3 Band EQ | 2.0 | LGPL |
 | 3 Band Splitter | 2.0 | LGPL |
-| DIE Fluid Synth | 2.2 | gpl |
+| DIE Fluid Synth | 2.2 | GPL |
 | MaBitcrush | 0.1 | ISC |
 | MaFreeverb | 0.1 | ISC |
 | MaGigaverb | 0.1 | ISC |
 | MaPitchshift | 0.1 | ISC |
 | Ping Pong Pan | 2.0 | LGPL |
+
+### Dougal-s
+| Plugin | Version | License |
+|--------|---------|---------|
+| Aether | 2.1 | MIT |
 
 ### dRowAudio
 
@@ -274,7 +317,7 @@ Python packages installed in the runtime environment, extracted via `pip-license
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| [SimSam](https://gitlab.com/edwillys/simsam) | 0.1 | gpl |
+| [SimSam](https://gitlab.com/edwillys/simsam) | 0.1 | GPL |
 
 ### falkTX
 
@@ -307,7 +350,13 @@ Python packages installed in the runtime environment, extracted via `pip-license
 | Kars | 2.1 | ISC |
 | MIDI File | 150.22 | GPL-2.0 |
 | Portal Sink | — | http://spdx.org/licenses/ISC.html |
-| Rubberband (Mono) | 8.2 | gpl |
+| Rubberband (Mono) | 8.2 | GPL |
+
+### geraldmwangi
+
+| Plugin | Version | License |
+|--------|---------|---------|
+| Guitar Midi | 0.0 | LGPL |
 
 ### Guitarix team
 
@@ -428,7 +477,7 @@ Python packages installed in the runtime environment, extracted via `pip-license
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| TS-M1N3 | 2.1 | — |
+| TS-M1N3 | 2.1 | GPL-3.0 |
 
 ### Hannes Braun
 
@@ -463,11 +512,16 @@ Python packages installed in the runtime environment, extracted via `pip-license
 | StarChild | 2.0 | MIT |
 | Vibrato | 2.0 | MIT |
 
+### Hanspeter Portner
+| Plugin | Version | License |
+|--------|---------|---------|
+| Notes | 2.0 | Artistic-2.0 |
+
 ### Igor Brkic
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| VocProc | — | gpl |
+| VocProc | 0.2 | GPLv2 |
 
 ### J.Velcl@seznam.cz
 
@@ -478,14 +532,14 @@ Python packages installed in the runtime environment, extracted via `pip-license
 ### Janos Buttgereit
 
 | Plugin | Version | License |
-|--------|---------|---------|
-| Schrammel OJD | 8.9 | — |
+|--------|---------|---------
+| Schrammel OJD | 8.9 | GPL v3 |
 
 ### Jatin Chowdhury
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| ChowCentaur | 2.4 | — |
+| ChowCentaur | 2.4 | BSD-3-Clause |
 
 ### Jean Pierre Cimalando
 
@@ -501,14 +555,14 @@ Python packages installed in the runtime environment, extracted via `pip-license
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Luftikus | — | — |
+| Luftikus | 1.2.1 | GPL v2 |
 | ReFine | 2.1 | — |
 
 ### LSP LV2
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| LSP IR Mono | 0.2 | lgpl |
+| LSP IR Mono | 0.2 | LGPL |
 
 ### Luciano Dato
 
@@ -526,39 +580,39 @@ Python packages installed in the runtime environment, extracted via `pip-license
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Helm | — | — |
+| Helm | v0.9.0 | GPL v3 |
 
 ### Mayank Sanganeria
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Granulator | 1.0 | gpl |
+| Granulator | 1.0 | GPL |
 
 ### Micah John
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Amp Profiler | — | isc |
+| Amp Profiler | — | GPL v3 |
 
 ### Michael Willis
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Dragonfly Early Reflections | 4.6 | gpl-3.0.html |
-| Dragonfly Plate Reverb | 4.6 | gpl-3.0.html |
-| Dragonfly Room Reverb | 4.6 | gpl-3.0.html |
+| Dragonfly Early Reflections | 4.6 | GPL-3.0 |
+| Dragonfly Plate Reverb | 4.6 | GPL-3.0 |
+| Dragonfly Room Reverb | 4.6 | GPL-3.0 |
 
 ### Michael Willis and Rob vd Berg
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Dragonfly Hall Reverb | 4.6 | gpl-3.0.html |
+| Dragonfly Hall Reverb | 4.6 | GPL-3.0 |
 
 ### Mike Oliphant
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Neural Amp Modeler | 2.0 | gpl-3-0 |
+| Neural Amp Modeler | 2.0 | GPL-3-0 |
 
 ### Milk Brewster
 
@@ -578,31 +632,31 @@ Python packages installed in the runtime environment, extracted via `pip-license
 | Control to CV | 3.0 | GPL v2+ |
 | Convolution Loader | 2.0 | http://spdx.org/licenses/ISC.html |
 | CV ABS | 1.0 | GPL v2+ |
-| CV Clock | 3.0 | — |
+| CV Clock | 3.0 | GPL v2+ |
 | CV Gate | 1.0 | GPL v2+ |
 | CV meter | 1.0 | GPL v2+ |
 | CV Parameter Modulation | 1.0 | GPL v2+ |
 | CV Range Divider | 3.0 | GPL v2+ |
 | CV Round | 1.0 | GPL v2+ |
-| CV Switchbox 1-2 | 1.0 | — |
-| CV Switchbox 1-3 | 1.0 | — |
-| CV Switchbox 2-1 | 1.0 | — |
-| CV Switchbox 3-1 | 1.0 | — |
+| CV Switchbox 1-2 | 1.0 | GPL v2+ |
+| CV Switchbox 1-3 | 1.0 | GPL v2+ |
+| CV Switchbox 2-1 | 1.0 | GPL v2+ |
+| CV Switchbox 3-1 | 1.0 | GPL v2+ |
 | IR loader cabsim | 1.0 | isc |
-| Logic Operators | 2.0 | Custom |
+| Logic Operators | 2.0 | GPL v2+ |
 | MIDI SwitchBox 1-2 2C | 2.0 | GPLv2+ |
 | MIDI SwitchBox 1-3 | 2.0 | GPLv2+ |
 | MIDI SwitchBox 2-1 | 2.0 | GPLv2+ |
 | MIDI SwitchBox 2-1 2C | 2.0 | GPLv2+ |
 | MIDI SwitchBox 3-1 | 2.0 | GPLv2+ |
-| MIDI to CV Poly | 1.1 | — |
+| MIDI to CV Poly | 1.1 | GPL v2+ |
 | Mixer | 2.0 | GPLv3.0 |
 | Mixer Stereo | 2.0 | GPLv3.0 |
 | Random Generator | 1.0 | GPL v2+ |
-| Slew Rate Limiter | 1.0 | — |
-| Switchbox 1-2 ST | 1.1 | file:///home/pistomp/.lv2/switchbox_1-2_st.lv2/GPL |
-| Switchbox 2-1 | 1.1 | file:///home/pistomp/.lv2/switchbox_2-1.lv2/GPL |
-| Switchbox 2-1 ST | 1.1 | file:///home/pistomp/.lv2/switchbox_2-1_st.lv2/GPL |
+| Slew Rate Limiter | 1.0 | GPL v2+ |
+| Switchbox 1-2 ST | 1.1 | GPL v2+ |
+| Switchbox 2-1 | 1.1 | GPL v2+ |
+| Switchbox 2-1 ST | 1.1 | GPL v2+ |
 | Volume | 1.0 | GPL v2+ |
 | Volume 2x2 | 1.0 | GPL v2+ |
 
@@ -622,31 +676,31 @@ Python packages installed in the runtime environment, extracted via `pip-license
 |--------|---------|---------|
 | 2Voices | 0.4 | GPL |
 | BandPassFilter | 0.0 | GPL |
-| C* AmpVTS - Tube amp + Tone stack | 9.24 | gpl |
-| C* AutoFilter | 9.24 | gpl |
-| C* CabinetIII - Idealised loudspeaker cabinet emulation | 9.24 | gpl |
-| C* CabinetIV - Idealised loudspeaker cabinet emulation | 9.24 | gpl |
-| C* CEO - Chief Executive Oscillator | 9.24 | gpl |
-| C* ChorusI - Mono chorus/flanger | 9.24 | gpl |
-| C* Click - Metronome | 9.24 | gpl |
-| C* Compress - Mono compressor | 9.24 | gpl |
-| C* CompressX2 - Stereo compressor | 9.24 | gpl |
-| C* Eq10 - 10-band equalizer | 9.24 | gpl |
-| C* Eq10X2 - 10-band equalizer | 9.24 | gpl |
-| C* Fractal - Audio stream from deterministic chaos | 9.24 | gpl |
-| C* Narrower - Stereo image width reduction | 9.24 | gpl |
-| C* Noisegate - Attenuate noise resident in silence | 9.24 | gpl |
-| C* PhaserII - Mono phaser modulated by a Lorenz fractal | 9.24 | gpl |
-| C* Plate - Versatile plate reverb | 9.24 | gpl |
-| C* PlateX2 - Stereo in/out Versatile plate reverb | 9.24 | gpl |
-| C* Saturate | 9.24 | gpl |
-| C* Scape - Stereo delay + Filters | 9.24 | gpl |
-| C* Sin - Sine wave generator | 9.24 | gpl |
-| C* Spice | 9.24 | gpl |
-| C* SpiceX2 | 9.24 | gpl |
-| C* ToneStack - Tone stack emulation | 9.24 | gpl |
-| C* White - White noise generator | 9.24 | gpl |
-| C* Wider - Stereo image Synthesis | 9.24 | gpl |
+| C* AmpVTS - Tube amp + Tone stack | 9.24 | GPL |
+| C* AutoFilter | 9.24 | GPL |
+| C* CabinetIII - Idealised loudspeaker cabinet emulation | 9.24 | GPL |
+| C* CabinetIV - Idealised loudspeaker cabinet emulation | 9.24 | GPL |
+| C* CEO - Chief Executive Oscillator | 9.24 | GPL |
+| C* ChorusI - Mono chorus/flanger | 9.24 | GPL |
+| C* Click - Metronome | 9.24 | GPL |
+| C* Compress - Mono compressor | 9.24 | GPL |
+| C* CompressX2 - Stereo compressor | 9.24 | GPL |
+| C* Eq10 - 10-band equalizer | 9.24 | GPL |
+| C* Eq10X2 - 10-band equalizer | 9.24 | GPL |
+| C* Fractal - Audio stream from deterministic chaos | 9.24 | GPL |
+| C* Narrower - Stereo image width reduction | 9.24 | GPL |
+| C* Noisegate - Attenuate noise resident in silence | 9.24 | GPL |
+| C* PhaserII - Mono phaser modulated by a Lorenz fractal | 9.24 | GPL |
+| C* Plate - Versatile plate reverb | 9.24 | GPL |
+| C* PlateX2 - Stereo in/out Versatile plate reverb | 9.24 | GPL |
+| C* Saturate | 9.24 | GPL |
+| C* Scape - Stereo delay + Filters | 9.24 | GPL |
+| C* Sin - Sine wave generator | 9.24 | GPL |
+| C* Spice | 9.24 | GPL |
+| C* SpiceX2 | 9.24 | GPL |
+| C* ToneStack - Tone stack emulation | 9.24 | GPL |
+| C* White - White noise generator | 9.24 | GPL |
+| C* Wider - Stereo image Synthesis | 9.24 | GPL |
 | Capo | 0.4 | GPL |
 | CrossOver 2 | 1.0 | GPL |
 | CrossOver 3 | 1.0 | GPL |
@@ -659,35 +713,70 @@ Python packages installed in the runtime environment, extracted via `pip-license
 | HarmonizerCS | — | GPL |
 | HighPassFilter | 0.0 | GPL |
 | LowPassFilter | 0.0 | GPL |
+| MDA Ambience | 0.3 | GPL |
+| MDA Bandisto | 0.5 | GPL |
+| MDA BeatBox | 0.2 | GPL |
+| MDA Combo | 0.4 | GPL |
+| MDA De-ess | 0.2 | GPL |
+| MDA Degrade | 0.2 | GPL |
+| MDA Delay | 0.4 | GPL |
+| MDA Detune | 0.4 | GPL |
+| MDA Dither | 0.2 | GPL |
+| MDA DubDelay | 0.7 | GPL |
+| MDA DX10 | 0.3 | GPL |
+| MDA Dynamics | 0.2 | GPL |
+| MDA ePiano | 0.4 | GPL |
+| MDA Image | 0.3 | GPL |
+| MDA JX10 | 0.2 | GPL |
+| MDA Leslie | 0.3 | GPL |
+| MDA Limiter | 0.2 | GPL |
+| MDA Loudness | 0.1 | GPL |
+| MDA MultiBand | 0.3 | GPL |
+| MDA Overdrive | 0.4 | GPL |
+| MDA Piano | 0.1 | GPL |
+| MDA RePsycho! | 0.1 | GPL |
+| MDA RezFilter | 0.1 | GPL |
+| MDA RingMod | 0.2 | GPL |
+| MDA RoundPan | 0.2 | GPL |
+| MDA Shepard | 0.4 | GPL |
+| MDA Splitter | 0.2 | GPL |
+| MDA Stereo | 0.2 | GPL |
+| MDA SubSynth | 0.3 | GPL |
+| MDA TalkBox | 0.2 | GPL |
+| MDA TestTone | 0.2 | GPL |
+| MDA ThruZero | 0.3 | GPL |
+| MDA Transient | 0.1 | GPL |
+| MDA VocInput | 0.2 | GPL |
+| MDA Vocoder | 0.4 | GPL |
 | MIDI SwitchBox 1-2 | 2.0 | GPLv2+ |
 | MIDI to CV mono | 3.1 | — |
 | Open Big Muff | 0.0 | GPL |
 | Peak To CC | 0.0 | GPLv2+ |
-| SooperLooper | 0.9 | gpl |
-| SooperLooper 2x2 | 0.9 | gpl |
+| SooperLooper | 0.9 | GPL |
+| SooperLooper 2x2 | 0.9 | GPL |
 | Super Capo | — | GPL |
 | Super Whammy | — | GPL |
 | Switchbox 1-2 | 1.1 | GPL |
 | SwitchTrigger4 | 1.1 | GPL |
-| TAP AutoPanner | 7.2 | gpl |
-| TAP Chorus/Flanger | 7.2 | gpl |
-| TAP DeEsser | 7.2 | gpl |
-| TAP Equalizer | 7.2 | gpl |
-| TAP Equalizer/BW | 7.2 | gpl |
-| TAP Fractal Doubler | 7.2 | gpl |
-| TAP Mono Dynamics | 7.2 | gpl |
-| TAP Pink/Fractal Noise | 7.2 | gpl |
-| TAP Pitch Shifter | 7.2 | gpl |
-| TAP Reflector | 7.3 | gpl |
-| TAP Reverberator | 7.2 | gpl |
-| TAP Rotary Speaker | 7.3 | gpl |
-| TAP Scaling Limiter | 7.2 | gpl |
-| TAP Sigmoid Booster | 7.2 | gpl |
-| TAP Stereo Dynamics | 7.2 | gpl |
-| TAP Stereo Echo | 7.3 | gpl |
-| TAP Tremolo | 7.3 | gpl |
-| TAP Tubewarmth | 7.2 | gpl |
-| TAP Vibrato | 7.2 | gpl |
+| TAP AutoPanner | 7.2 | GPL |
+| TAP Chorus/Flanger | 7.2 | GPL |
+| TAP DeEsser | 7.2 | GPL |
+| TAP Equalizer | 7.2 | GPL |
+| TAP Equalizer/BW | 7.2 | GPL |
+| TAP Fractal Doubler | 7.2 | GPL |
+| TAP Mono Dynamics | 7.2 | GPL |
+| TAP Pink/Fractal Noise | 7.2 | GPL |
+| TAP Pitch Shifter | 7.2 | GPL |
+| TAP Reflector | 7.3 | GPL |
+| TAP Reverberator | 7.2 | GPL |
+| TAP Rotary Speaker | 7.3 | GPL |
+| TAP Scaling Limiter | 7.2 | GPL |
+| TAP Sigmoid Booster | 7.2 | GPL |
+| TAP Stereo Dynamics | 7.2 | GPL |
+| TAP Stereo Echo | 7.3 | GPL |
+| TAP Tremolo | 7.3 | GPL |
+| TAP Tubewarmth | 7.2 | GPL |
+| TAP Vibrato | 7.2 | GPL |
 | ToggleSwitch | 1.1 | GPL |
 
 ### ndc Plugs
@@ -702,19 +791,26 @@ Python packages installed in the runtime environment, extracted via `pip-license
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Vocoder | — | gpl |
+| Vocoder | — | GPL |
+
+### Nick Bailey
+| Plugin | Version | License |
+|--------|---------|---------|
+| Triceratops | 0.0 | GPL-3.0 |
 
 ### Nick Dowell
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| amsynth | 1.5 | gpl |
+| amsynth | 1.5 | GPL |
 
 ### OpenAV
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Sorcer | 2.0 | — |
+| Bitta | 2.0 | GPL v2 |
+| Filta | 2.0 | GPL |
+| Sorcer | 2.0 | GPL v3 |
 
 ### Paul Ferrand
 
@@ -726,15 +822,56 @@ Python packages installed in the runtime environment, extracted via `pip-license
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| [Freakclip](https://github.com/pjotrompet) | 1.2 | gpl |
-| [Freaktail](https://github.com/pjotrompet) | 1.0 | gpl |
-| [Prefreak](https://github.com/pjotrompet) | 0.1 | gpl |
+| [Freakclip](https://github.com/pjotrompet) | 1.2 | GPL |
+| [Freaktail](https://github.com/pjotrompet) | 1.0 | GPL |
+| [Prefreak](https://github.com/pjotrompet) | 0.1 | GPL |
 
 ### Plainweave Software
 
 | Plugin | Version | License |
 |--------|---------|---------|
 | JuceOPL | 2.0 | — |
+
+### Rakarrack Team
+
+| Plugin | Version | License |
+|--------|---------|---------|
+| rkr AlienWah | 0.0 | GPL v2 |
+| rkr Analog Phaser | 0.0 | GPL v2 |
+| rkr Arpie | 0.0 | GPL v2 |
+| rkr Cabinet | 0.0 | GPL v2 |
+| rkr Coil Crafter | 0.0 | GPL v2 |
+| rkr CompBand | 0.0 | GPL v2 |
+| rkr Compressor | 0.0 | GPL v2 |
+| rkr Derelict | 0.0 | GPL v2 |
+| rkr Distortion | 0.0 | GPL v2 |
+| rkr DistBand | 0.0 | GPL v2 |
+| rkr Dual Flange | 0.0 | GPL v2 |
+| rkr EQ | 0.0 | GPL v2 |
+| rkr Echo | 0.0 | GPL v2 |
+| rkr Echotron | 0.0 | GPL v2 |
+| rkr Echoverse | 0.0 | GPL v2 |
+| rkr Exciter | 0.0 | GPL v2 |
+| rkr Expander | 0.0 | GPL v2 |
+| rkr Flanger/Chorus | 0.0 | GPL v2 |
+| rkr Harmonizer (no midi) | 0.0 | GPL v2 |
+| rkr Infinity | 0.0 | GPL v2 |
+| rkr MuTroMojo | 0.0 | GPL v2 |
+| rkr Musical Delay | 0.0 | GPL v2 |
+| rkr OpticalTrem | 0.0 | GPL v2 |
+| rkr Parametric EQ | 0.0 | GPL v2 |
+| rkr Reverb | 0.0 | GPL v2 |
+| rkr Shelf Boost | 0.0 | GPL v2 |
+| rkr Shuffle | 0.0 | GPL v2 |
+| rkr StereoHarmonizer (no midi) | 0.0 | GPL v2 |
+| rkr StompBox | 0.0 | GPL v2 |
+| rkr Sustainer | 0.0 | GPL v2 |
+| rkr Synthfilter | 0.0 | GPL v2 |
+| rkr Valve | 0.0 | GPL v2 |
+| rkr VaryBand | 0.0 | GPL v2 |
+| rkr Vibe | 0.0 | GPL v2 |
+| rkr Vocoder | 0.0 | GPL v2 |
+| rkr WahWah | 0.0 | GPL v2 |
 
 ### remaincalm.org
 
@@ -755,29 +892,30 @@ Python packages installed in the runtime environment, extracted via `pip-license
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Instrument Tuner | 0.0 | gpl |
-| Level Meter | 0.0 | gpl |
-| MIDI Clock Generator | 0.0 | gpl |
-| MIDI Generator | 512.0 | gpl |
-| MIDI Step Sequencer16x8 | 777.5 | gpl |
-| MIDI Step Sequencer32x8 | 777.5 | gpl |
-| MIDI Step Sequencer8x16 | 777.5 | gpl |
-| MIDI Step Sequencer8x4 | 777.5 | gpl |
-| MIDI Step Sequencer8x8 | 777.5 | gpl |
-| MIDI Timecode (MTC) Generator | 0.0 | gpl |
-| No Delay Line | 514.0 | gpl |
-| setBfree DSP Tonewheel Organ | 2058.0 | gpl |
-| setBfree Organ Overdrive | 2058.0 | gpl |
-| setBfree Organ Reverb | 2058.0 | gpl |
-| setBfree Whirl Speaker | 2058.0 | gpl |
-| setBfree Whirl Speaker (Old version) | 2058.0 | gpl |
-| setBfree Whirl Speaker - Extended Version | 2058.0 | gpl |
-| Spectrum Analyzer | 517.21 | gpl |
-| Stereo Balance Control | 1538.0 | gpl |
-| Stereo X-Fade | 516.0 | gpl |
-| TinyGain Mono | 770.0 | gpl |
-| x42-Autotune | 2049.11 | gpl |
-| x42-eq - Parametric Equalizer Mono | 1.1 | gpl |
+| Instrument Tuner | 0.0 | GPL |
+| Level Meter | 0.0 | GPL |
+| MIDI Chord | 1033.31 | GPL |
+| MIDI Clock Generator | 0.0 | GPL |
+| MIDI Generator | 512.0 | GPL |
+| MIDI Step Sequencer16x8 | 777.5 | GPL |
+| MIDI Step Sequencer32x8 | 777.5 | GPL |
+| MIDI Step Sequencer8x16 | 777.5 | GPL |
+| MIDI Step Sequencer8x4 | 777.5 | GPL |
+| MIDI Step Sequencer8x8 | 777.5 | GPL |
+| MIDI Timecode (MTC) Generator | 0.0 | GPL |
+| No Delay Line | 514.0 | GPL |
+| setBfree DSP Tonewheel Organ | 2058.0 | GPL |
+| setBfree Organ Overdrive | 2058.0 | GPL |
+| setBfree Organ Reverb | 2058.0 | GPL |
+| setBfree Whirl Speaker | 2058.0 | GPL |
+| setBfree Whirl Speaker (Old version) | 2058.0 | GPL |
+| setBfree Whirl Speaker - Extended Version | 2058.0 | GPL |
+| Spectrum Analyzer | 517.21 | GPL |
+| Stereo Balance Control | 1538.0 | GPL |
+| Stereo X-Fade | 516.0 | GPL |
+| TinyGain Mono | 770.0 | GPL |
+| x42-Autotune | 2049.11 | GPL |
+| x42-eq - Parametric Equalizer Mono | 1.1 | GPL |
 
 ### Sean Bolton, falkTX
 
@@ -816,24 +954,24 @@ Python packages installed in the runtime environment, extracted via `pip-license
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| AM pitchshifter | — | gpl |
-| Bode frequency shifter | — | gpl |
-| Comb delay line, noninterpolating | — | gpl |
-| Crossover distortion | — | gpl |
-| Decimator | — | gpl |
-| Gate | — | gpl |
-| Glame Bandpass Analog Filter | — | gpl |
-| Glame Bandpass Filter | — | gpl |
-| GLAME Butterworth Lowpass | — | gpl |
-| GVerb | — | gpl |
-| Karaoke | — | gpl |
-| Multivoice Chorus | — | gpl |
-| Reverse Delay | — | gpl |
-| Ringmod with LFO | — | gpl |
-| SC1 | — | gpl |
-| State Variable Filter | — | gpl |
-| Tape Delay Simulation | — | gpl |
-| Valve saturation | — | gpl |
+| AM pitchshifter | — | GPL |
+| Bode frequency shifter | — | GPL |
+| Comb delay line, noninterpolating | — | GPL |
+| Crossover distortion | — | GPL |
+| Decimator | — | GPL |
+| Gate | — | GPL |
+| Glame Bandpass Analog Filter | — | GPL |
+| Glame Bandpass Filter | — | GPL |
+| GLAME Butterworth Lowpass | — | GPL |
+| GVerb | — | GPL |
+| Karaoke | — | GPL |
+| Multivoice Chorus | — | GPL |
+| Reverse Delay | — | GPL |
+| Ringmod with LFO | — | GPL |
+| SC1 | — | GPL |
+| State Variable Filter | — | GPL |
+| Tape Delay Simulation | — | GPL |
+| Valve saturation | — | GPL |
 
 ### TAL
 
@@ -876,7 +1014,7 @@ Python packages installed in the runtime environment, extracted via `pip-license
 
 | Plugin | Version | License |
 |--------|---------|---------|
-| Crypt | 0.3 | — |
+| Crypt | 0.3 | GPL v3 |
 
 ### ZynAddSubFX Team
 
@@ -892,266 +1030,16 @@ Python packages installed in the runtime environment, extracted via `pip-license
 | ZynReverb | 7.0 | GPL v2 |
 
 ### Unknown / Unattributed
-
 | Plugin | Version | License |
 |--------|---------|---------|
-| Aether | 2.1 | MIT |
-| ALO | 0.9 | isc |
-| AMS VCF | 1.0 | isc |
-| Analogue Oscillator | — | gpl |
-| Bitta | 2.0 | gpl |
-| Delayorama | — | gpl |
-| DIE Compressor | 2.2 | gpl |
+| Analogue Oscillator | — | GPL |
+| Delayorama | — | GPL |
+| DIE Compressor | 2.2 | GPL |
 | DIE Delay | 4.2 | GPL v2+ |
 | DIE EQ | 2.2 | GPL v2+ |
-| DIE Expander | 2.2 | gpl |
-| DIE Reverb | 2.4 | gpl |
-| Filta | 2.0 | gpl |
-| Fuzz | 0.0 | — |
-| Granulator - Mono | — | isc |
-| Guitar Midi | — | isc |
-| Invada Compressor (mono) | 2.1 | gpl |
-| Invada Test Tones | 2.1 | gpl |
+| DIE Expander | 2.2 | GPL |
+| DIE Reverb | 2.4 | GPL |
 | Loopor | — | isc |
-| MDA Ambience | 0.3 | gpl |
-| MDA Bandisto | 0.5 | gpl |
-| MDA BeatBox | 0.2 | gpl |
-| MDA Combo | 0.4 | gpl |
-| MDA De-ess | 0.2 | gpl |
-| MDA Degrade | 0.2 | gpl |
-| MDA Delay | 0.4 | gpl |
-| MDA Detune | 0.4 | gpl |
-| MDA Dither | 0.2 | gpl |
-| MDA DubDelay | 0.7 | gpl |
-| MDA DX10 | 0.3 | gpl |
-| MDA Dynamics | 0.2 | gpl |
-| MDA ePiano | 0.4 | gpl |
-| MDA Image | 0.3 | gpl |
-| MDA JX10 | 0.2 | gpl |
-| MDA Leslie | 0.3 | gpl |
-| MDA Limiter | 0.2 | gpl |
-| MDA Loudness | 0.1 | gpl |
-| MDA MultiBand | 0.3 | gpl |
-| MDA Overdrive | 0.4 | gpl |
-| MDA Piano | 0.1 | gpl |
-| MDA RePsycho! | 0.1 | gpl |
-| MDA RezFilter | 0.1 | gpl |
-| MDA RingMod | 0.2 | gpl |
-| MDA RoundPan | 0.2 | gpl |
-| MDA Shepard | 0.4 | gpl |
-| MDA Splitter | 0.2 | gpl |
-| MDA Stereo | 0.2 | gpl |
-| MDA SubSynth | 0.3 | gpl |
-| MDA TalkBox | 0.2 | gpl |
-| MDA TestTone | 0.2 | gpl |
-| MDA ThruZero | 0.3 | gpl |
-| MDA Transient | 0.1 | gpl |
-| MDA VocInput | 0.2 | gpl |
-| MDA Vocoder | 0.4 | gpl |
-| MIDI Chord | 1033.31 | gpl |
 | MIDI display | 1.0 | GPLv3+ |
-| Notes | 2.0 | Artistic-2.0 |
-| Rec VCO | 0.0 | gpl-2.0 |
-| reverb | 0.0 | gpl-2.0 |
-| rkr EQ | 0.0 | — |
-| setBfree MIDI controller | 1.0 | GPLv2+ |
-| Square | 0.0 | — |
-| Triceratops | — | gpl-3.0 |
-| x42 - IR Convolver Mono | 1.1 | gpl |
-
-<details>
-<summary>Full plugin list by project (bundle variants)</summary>
-
-**AMS VCF**: AMS Envelope, AMS LFO2 - Freq, AMS VCA Exp, AMS VCA Lin, AMS VCF, AMS VCO3
-
-**Audio Capture**: Audio Capture, Audio Playback
-
-**Audio Gain (Mono)**: Audio Gain (Mono), Audio Gain (Stereo)
-
-**Calf Gate**: Calf Bass Enhancer, Calf Compensation Delay Line, Calf Compressor, Calf Crusher, Calf Envelope Filter, Calf Equalizer 5 Band, Calf Exciter, Calf Filter, Calf Flanger, Calf Gate, Calf Mono Compressor, Calf Monosynth, Calf Multi Chorus, Calf Organ, Calf Phaser, Calf Pulsator, Calf Reverb, Calf Saturator, Calf Vintage Delay, Calf Wavetable
-
-**Comb delay line, noninterpolating**: Comb delay line, cubic spline interpolation, Comb delay line, linear interpolation, Comb delay line, noninterpolating
-
-**DIE Compressor**: DIE Compressor, DIE Compressor (stereo)
-
-**DIE Expander**: DIE Expander, DIE Expander (stereo)
-
-**Filta**: Filta, Kuiza, Roomy
-
-**Fuzz**: Fuzz, rkr Distortion, rkr Flanger/Chorus, rkr Parametric EQ, rkr Reverb
-
-**GLAME Butterworth Lowpass**: GLAME Butterworth Highpass, GLAME Butterworth Lowpass, Glame Butterworth X-over Filter
-
-**Granulator - Mono**: Downsampler - Mono, Downsampler - Stereo, Granulator - Mono, Granulator - Stereo
-
-**Invada Compressor (mono)**: Invada Compressor (mono), Invada Compressor (stereo), Invada Delay Munge (mono in), Invada Delay Munge (sum L+R in), Invada Stereo Phaser (mono in), Invada Stereo Phaser (stereo in), Invada Stereo Phaser (sum L+R in)
-
-**Invada Test Tones**: Invada Early Reflection Reverb (mono in), Invada Early Reflection Reverb (sum L+R in), Invada High Pass Filter (mono), Invada High Pass Filter (stereo), Invada Input Module, Invada Low Pass Filter (mono), Invada Low Pass Filter (stereo), Invada Test Tones, Invada Tube Distortion (mono), Invada Tube Distortion (stereo)
-
-**LSP IR Mono**: LSP IR Mono, LSP IR Stereo
-
-**MIDI Chord**: MIDI CC Map, MIDI CC to Note, MIDI Channel Filter, MIDI Channel Map, MIDI Channel Unisono, MIDI Chord, MIDI Chromatic Transpose, MIDI Delayline, MIDI Duplicate Blocker, MIDI Enforce Scale, MIDI Event Filter, MIDI Key-Range Filter, MIDI Keysplit, MIDI Monophonic Legato, MIDI N-Tap Delay, MIDI Note Toggle, MIDI Note Transpose, MIDI Note to CC, MIDI Note/Channel Map, MIDI Quantization, MIDI Remove Active Sensing, MIDI Scale CC Value, MIDI Simple Channel Filter, MIDI Sostenuto, MIDI Strum, MIDI Velocity Adjust, MIDI Velocity Randomization, MIDI Velocity-Range Filter
-
-**MIDI File**: Audio File, MIDI File
-
-**MIDI Gain**: MIDI Channel A/B, MIDI Channel Filter, MIDI Channelize, MIDI Gain, MIDI Join, MIDI Split, MIDI Transpose
-
-**Portal Sink**: Portal Sink, Portal Source
-
-**Rec VCO**: 4-Band Parametric Filter, CS Phaser 1, Moog High-Pass Filter 1, Moog Low-Pass Filter 1, Moog Low-Pass Filter 2, Moog Low-Pass Filter 3, Moog Low-Pass Filter 4, Pulse VCO, Rec VCO, Saw VCO, reverb-amb
-
-**Record-Mono**: Record-Mono, Record-Quad, Record-Stereo
-
-**Record-Mono Mini**: Record-Mono Mini, Record-Quad Mini, Record-Stereo Mini
-
-**reverb**: Auto-wah, CS Chorus 1, CS Chorus 2, CS Phaser 1 with LFO, Triple chorus, reverb
-
-**Ringmod with LFO**: Ringmod with LFO, Ringmod with two inputs
-
-**rkr EQ**: rkr AlienWah, rkr Analog Phaser, rkr Arpie, rkr Cabinet, rkr Coil Crafter, rkr CompBand, rkr Compressor, rkr Derelict, rkr DistBand, rkr Dual Flange, rkr EQ, rkr Echo, rkr Echotron, rkr Echoverse, rkr Exciter, rkr Expander, rkr Harmonizer (no midi), rkr Infinity, rkr MuTroMojo, rkr Musical Delay, rkr OpticalTrem, rkr Shelf Boost, rkr Shuffle, rkr StereoHarmonizer (no midi), rkr StompBox, rkr Sustainer, rkr Synthfilter, rkr Valve, rkr VaryBand, rkr Vibe, rkr Vocoder, rkr WahWah
-
-**Rubberband (Mono)**: Rubberband (Mono), Rubberband (Stereo)
-
-**Square**: Sawtooth, Square, Triangle
-
-**the infamous stuck**: the infamous stuck, the infamous stuck stacker
-
-**TinyGain Mono**: TinyGain Mono, TinyGain Stereo
-
-**x42 - IR Convolver Mono**: x42 - IR Convolver Mono, x42 - IR Convolver Stereo
-
-**x42-Autotune**: x42-Autotune, x42-Autotune (microtonal), x42-Autotune (scales)
-
-**x42-eq - Parametric Equalizer Mono**: x42-eq - Parametric Equalizer Mono, x42-eq - Parametric Equalizer Stereo
-
-</details>
-
-### ⚠️ Plugins with no license declared (56)
-
-These require manual license verification:
-
-- The Function
-- The Pilgrim
-- bluesbreaker
-- PowerAmpImpulses
-- PowerAmpTubes
-- PreAmpImpulses
-- PreAmpTubes
-- CollisionDrive
-- Harmonic Exciter
-- MetalTone
-- Rumor
-- VintageAC30
-- Temper
-- Obxd
-- dRowAudio Tremolo
-- dRowAudio: Distortion
-- dRowAudio: Distortion Shaper
-- dRowAudio: Flanger
-- dRowAudio: Reverb
-- TS-M1N3
-- WOW
-- Schrammel OJD
-- ChowCentaur
-- Luftikus
-- ReFine
-- Helm
-- MIDI Gain
-- Audio to CV
-- CV Clock
-- CV Switchbox 1-2
-- CV Switchbox 1-3
-- CV Switchbox 2-1
-- CV Switchbox 3-1
-- MIDI to CV Poly
-- Slew Rate Limiter
-- Noise Maker - ME
-- MIDI to CV mono
-- Sorcer
-- JuceOPL
-- Swanky Amp
-- TAL-Reverb-II
-- Tal-Dub-3
-- Tal-Filter
-- Tal-Filter-2
-- Tal-Reverb
-- Tal-Reverb-III
-- Tal-Vocoder-II
-- Wolpertinger
-- Bass Cabinets
-- British 1960A
-- Cabinet
-- Compressor
-- Crypt
-- Fuzz
-- rkr EQ
-- Square
-
-### ⚠️ Plugins with no author declared (63)
-
-- Aether
-- ALO
-- AMS VCF
-- Analogue Oscillator
-- Bitta
-- Delayorama
-- DIE Compressor
-- DIE Delay
-- DIE EQ
-- DIE Expander
-- DIE Reverb
-- Filta
-- Fuzz
-- Granulator - Mono
-- Guitar Midi
-- Invada Compressor (mono)
-- Invada Test Tones
-- Loopor
-- MDA Ambience
-- MDA Bandisto
-- MDA BeatBox
-- MDA Combo
-- MDA De-ess
-- MDA Degrade
-- MDA Delay
-- MDA Detune
-- MDA Dither
-- MDA DubDelay
-- MDA DX10
-- MDA Dynamics
-- MDA ePiano
-- MDA Image
-- MDA JX10
-- MDA Leslie
-- MDA Limiter
-- MDA Loudness
-- MDA MultiBand
-- MDA Overdrive
-- MDA Piano
-- MDA RePsycho!
-- MDA RezFilter
-- MDA RingMod
-- MDA RoundPan
-- MDA Shepard
-- MDA Splitter
-- MDA Stereo
-- MDA SubSynth
-- MDA TalkBox
-- MDA TestTone
-- MDA ThruZero
-- MDA Transient
-- MDA VocInput
-- MDA Vocoder
-- MIDI Chord
-- MIDI display
-- Notes
-- Rec VCO
-- reverb
-- rkr EQ
-- setBfree MIDI controller
-- Square
-- Triceratops
-- x42 - IR Convolver Mono
 
 ---
-_662 plugin variants across 510 projects from 62 authors/vendors._
