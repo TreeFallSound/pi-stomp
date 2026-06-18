@@ -90,10 +90,12 @@ The loop runs every 10ms, with slower tasks at multiples:
 | 10ms | `poll_controls()` | Read all hardware inputs |
 | 10ms | `poll_ws_messages()` | Drain inbound WebSocket |
 | 20ms | `poll_indicators()` | Update LEDs, VU meters |
-| 200ms | `poll_lcd_updates()` | Render LCD |
+| ~80ms* | `poll_lcd_updates()` | Render LCD |
 | 1000ms | `poll_modui_changes()` | Check `last.json` mtime, banks mtime |
-| 2000ms | `poll_wifi()` | WiFi status |
+| 2000ms | `poll_wifi()`, `poll_ethernet()` | Network status |
 | 60s | `poll_system_info()` | CPU throttling, temperature |
+
+\* LCD cadence is `period % handler.lcd_poll_divisor`, where the divisor derives from the SPI clock (≈8 ticks). A mounted fullscreen panel (tuner or plugin editor) drops it to every tick (10ms) for smooth animation.
 
 ### Hardware Version Selection
 
@@ -111,10 +113,12 @@ The LCD is created by each hardware subclass in `init_lcd()` and injected into t
 
 ### MIDI Routing
 
-All hardware controls send MIDI CCs to a single ALSA virtual port. On the deployed system, rtmidi port 0 resolves to the "Midi Through Port-0" created by `amidithru` (ALSA client 14:0). JACK bridges this via `-X seq`:
+Sending MIDI is not something a control does on its own — it is one possible *outcome* of input dispatch (see [Input Dispatch](#input-dispatch-pistompinput)). A control turns its raw reading into an event; the handler's cascade decides what that event means, and for most rotations/presses that means emitting a MIDI CC via `_emit_midi()`. (Other outcomes: a WebSocket param, audio-card volume, UI navigation, or a panel swallowing the event entirely.) This section is the transport *downstream* of that decision.
+
+Emitted CCs go to a single ALSA virtual port. On the deployed system, rtmidi port 0 resolves to the "Midi Through Port-0" created by `amidithru` (ALSA client 14:0). JACK bridges this via `-X seq`:
 
 ```
-Hardware Controls (footswitches, encoders, expression pedals)
+Handler `_emit_midi()`  ← chosen by input dispatch
     ↓ MIDI CC via rtmidi
 ALSA Midi Through (amidithru, typically client 14:0)
     ↓ JACK (-X seq)
@@ -129,7 +133,9 @@ Controls that send MIDI:
 | Footswitches | CC 60–63 | Configurable per pedalboard |
 | Encoder rotation (v3) | CC 70, 71 | Tweak encoders send on rotate |
 | Expression pedal | CC 75 | When `autosync: true`, sends initial position on pedalboard load |
-| Encoder buttons | — | Short press calls handler callback (e.g. `universal_encoder_sw`), not MIDI |
+| Encoder buttons | — | Press dispatches a `SwitchEvent`; handler routes nav/short-press to UI, not MIDI |
+
+By default every control emits to the virtual Through port. A control can instead be routed to an external hardware MIDI port — `hardware.external_routing` is the sole routing authority (configured per-pedalboard), consulted by the handler's `_emit_midi()` at dispatch time (`ExternalMidiManager` resolves the rtmidi port). See `modalapi/external_midi.py`.
 
 ### Configuration Overlay
 
@@ -219,21 +225,19 @@ The blend system is in `blend/`: `manager.py` (lifecycle, input wiring), `snapsh
 
 ## Core Components
 
+### Input Dispatch (`pistomp/input/`)
+
+Every hardware input — footswitch, encoder, knob, expression pedal — flows through one path on all hardware versions. A `Controller` reads its detector, advances its own state, packages what happened into an immutable event, and hands it to a single sink — the handler — whose `handle` cascades LCD → blend mode → its own logic. That final stage is where an event becomes an effect: **emit a MIDI CC** (`_emit_midi`, see [MIDI Routing](#midi-routing)), send a WebSocket param, set audio-card volume, or drive UI navigation. MIDI is thus an output of dispatch, not a parallel path. There is no router class; the "router" is the sink field plus the code each sink writes. **Design in `pistomp/input/README.md`.**
+
 ### Footswitches (`pistomp/footswitch.py`)
 
-A footswitch can be bound to one of: **MIDI CC** (default), **Relay Bypass** (toggles a hardware relay on longpress), **Preset Change** (calls an increment/decrement callback), or **Tap Tempo** (intercepts presses when enabled). Priority order on press: tap tempo > preset > MIDI CC. Relay bypass fires on longpress regardless.
+A footswitch is a Controller that emits a switch event; the handler decides what the press means — relay bypass, preset change, tap tempo, or the optimistic MIDI-CC toggle described above. Config overlay per pedalboard can change MIDI CC, relay binding, preset, color, and longpress groups.
 
-**Longpress groups** (`Footswitch.all_longpress_groups`): class-level dict of group names → timestamp lists. When two footswitches in the same group are pressed within 400ms, the group callback fires (e.g. `next_snapshot`, `previous_snapshot`, `toggle_bypass`). A single footswitch in a group fires its callback after 400ms hold.
+**Longpress groups** let two footswitches held together fire a shared action (`next_snapshot`, `toggle_tuner_enable`, …) within a 400ms window. The resolver is `FootswitchChords`, owned by the handler.
 
-Physical input comes from `GpioSwitch` (GPIO pin, debounced) or `AnalogSwitch` (ADC threshold). `GpioSwitch` calls `callback(state)` on release and `longpress_callback(state)` on long press — both receive a `switchstate.Value` enum (`RELEASED`, `LONGPRESSED`), with no extra args. `AnalogSwitch` uses a single `callback(state)` where `state` can be `PRESSED`, `LONGPRESSED`, or `RELEASED`.
+### Encoders (`pistomp/encoder.py`, `pistomp/encoder_controller.py`)
 
-Config overlay per pedalboard can change MIDI CC, relay binding, preset, color, and longpress groups.
-
-### Encoders (`pistomp/encoder.py`, `pistomp/encodermidicontrol.py`)
-
-`Encoder` is GPIO-based quadrature decoding with direction callback. `EncoderMidiControl` extends it to send MIDI CC on rotation (v3 tweak encoders). Encoder buttons are `GpioSwitch` instances with `callback=handler.universal_encoder_sw` and configurable `longpress_callback` (a handler method name from config, e.g. `previous_snapshot`).
-
-The v1/v2 handler (`Mod`) manages encoder state explicitly via `TopEncoderMode`, `BotEncoderMode`, `UniversalEncoderMode` enums. The v3 handler (`Modhandler`) delegates navigation to the LCD (`lcd.enc_step()`, `lcd.enc_sw()`).
+`Encoder` is the raw quadrature decoder; `EncoderController` is the Controller wrapping it (quantizer, parameter, absorbed push-button). The handler routes each encoder by its type: navigation, audio-card volume, or a plugin parameter.
 
 ### Analog Controls (`pistomp/analogmidicontrol.py`)
 
@@ -252,9 +256,18 @@ Types: `KNOB` and `EXPRESSION` (config-driven). When `autosync: true`, `initiali
 - **Outbound**: `command_queue` (unbounded — never drops blend-mode messages). `send_parameter(instance_id, symbol, value)` and `send_bpm(bpm)` enqueue typed commands. Backpressure monitoring: if the TCP write buffer exceeds 8KB, outbound sends return `False` until it drains.
 - **Inbound**: `received_queue`, drained by `get_received_messages()` on every 10ms tick. `output_set` messages (audio meters) are dropped at reception.
 
-`ws_protocol.py` parses raw text into typed dataclasses: `PluginBypassMessage`, `ParamSetMessage`, `AddPluginMessage`, `LoadingEndMessage`, `PedalSnapshotMessage`.
+`ws_protocol.py` parses raw text into typed dataclasses — the ones the handler acts on are `PluginBypassMessage`, `ParamSetMessage`, `AddPluginMessage`, `LoadingEndMessage`, `PedalSnapshotMessage`, `TransportMessage` (BPM) — plus several recognized-but-mostly-ignored kinds (`LoadingStartMessage`, `SizeMessage`, `AddHwPortMessage`, `TrueBypassMessage`, `MidiMapMessage`, …); anything else becomes `UnknownMessage`.
 
 `ping` messages receive a `pong` reply; `data_ready` messages are echoed back.
+
+### Auxiliary Subsystems
+
+Smaller pieces the loop drives, each self-contained — start at the named file:
+
+- **Tuner** (`pistomp/tuner/`) — a fullscreen LCD panel showing pitch; YIN pitch detection over a JACK audio source. Toggled by a footswitch longpress group.
+- **Local-monitor mute** (`modalapi/jack_mute.py`) — disconnects mod-monitor from `system:playback` to silence the pi's output while other JACK clients still get signal.
+- **Network managers** (`modalapi/wifi/`, `modalapi/ethernet/`) — nmcli-backed status/config polled at 2s. Blocking subprocess work runs off the UI thread.
+- **Audio cards** (`pistomp/audiocard*.py`, `hifiberry.py`, `iqaudiocodec.py`) — per-card init/volume behind `audiocardfactory`.
 
 ## Data Flow
 
@@ -262,9 +275,9 @@ Types: `KNOB` and `EXPRESSION` (config-driven). When `autosync: true`, `initiali
 
 ```
 poll_controls() (10ms)
-  → AnalogMidiControl.refresh()
-    → ADC read → _clamp_endpoints() → as_midi_value()
-      → midiout.send_message([0xB0|ch, CC, value])
+  → AnalogMidiControl.poll_hw()
+    → ADC read → _clamp_endpoints() → as_midi_value() → AnalogEvent
+      → handler.handle(event) → _emit_midi()
         → rtmidi port 0 → ALSA Midi Through (amidithru)
           → JACK (-X seq)
             ├→ mod-host:midi_in
@@ -281,7 +294,7 @@ MOD-UI writes /home/pistomp/data/last.json
         → set_current_pedalboard(pb)
           → Load {bundle}/config.yml
           → hardware.reinit(cfg) — overlay config
-          → bind_current_pedalboard() — map controllers to parameters
+          → ControllerManager.bind() — map controllers to parameters
           → lcd.link_data() → lcd.draw_main_panel()
           → Prepare blend modes if configured
 ```
@@ -290,10 +303,9 @@ MOD-UI writes /home/pistomp/data/last.json
 
 ```
 poll_controls()
-  → Footswitch.pressed(state)
-    → self.toggled = not self.toggled
-    → _set_led()                                    # LED-only optimistic update
-    → midiout.send_message([ch|CC, CC, 127 if toggled else 0])
+  → Footswitch emits SwitchEvent → handler._handle_footswitch()
+    → flip toggled, set LED                         # optimistic update
+    → emit absolute MIDI CC (127 if toggled else 0)
 
 mod-ui applies bypass, broadcasts via WebSocket
   → poll_ws_messages() → parse_message()
@@ -327,13 +339,14 @@ mod-ui echoes back → ParamSetMessage → plugin.set_param_value()  # caches va
 - `pistomp/hardware.py` — Base class, config overlay, controller dict
 - `pistomp/pistomp.py`, `pistompcore.py`, `pistomptre.py` — v1/v2/v3 subclasses
 
-**Controls**:
-- `pistomp/footswitch.py` — Footswitch modes, longpress groups
-- `pistomp/encoder.py` — Quadrature decoding
-- `pistomp/encodermidicontrol.py` — Encoder → MIDI CC
+**Input & Controls** (see `pistomp/input/README.md`):
+- `pistomp/input/` — Event dataclasses + `InputSink` protocol
+- `pistomp/controller.py`, `controller_manager.py` — Controller base + pedalboard binding
+- `pistomp/footswitch.py`, `footswitch_chords.py` — Footswitch Controller + chord resolver
+- `pistomp/encoder.py`, `encoder_controller.py` — Quadrature decoder + Controller wrapper
 - `pistomp/analogmidicontrol.py` — ADC → MIDI CC with endpoint clamping
-- `pistomp/gpioswitch.py` — GPIO button with press/longpress detection
-- `pistomp/analogswitch.py` — ADC button with threshold detection
+- `pistomp/gpioswitch.py`, `analogswitch.py` — Raw GPIO/ADC button detectors
+- `modalapi/external_midi.py` — External MIDI port routing
 
 **Blend**:
 - `blend/manager.py` — Lifecycle, input wiring
@@ -358,7 +371,12 @@ mod-ui echoes back → ParamSetMessage → plugin.set_param_value()  # caches va
 **Display**:
 - `pistomp/lcd320x240.py` — Color LCD (v2/v3)
 - `pistomp/lcdgfx.py` — Mono LCD (v1)
-- `uilib/` — Widget library (panels, text, icons, menus, dialogs)
+- `uilib/` — Widget library (see `uilib/README.md` for the paint system)
+
+**Auxiliary**:
+- `pistomp/tuner/` — YIN pitch-detection tuner panel
+- `modalapi/jack_mute.py` — Local-monitor mute
+- `modalapi/wifi/`, `modalapi/ethernet/` — Network managers
 
 ## Design Principles
 

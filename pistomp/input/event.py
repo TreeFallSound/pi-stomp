@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Event dataclasses dispatched into InputSinks. See INPUT_ROUTER.md."""
+"""Event dataclasses dispatched into InputSinks. See input/README.md."""
 
 from __future__ import annotations
 

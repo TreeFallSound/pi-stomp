@@ -27,7 +27,7 @@ class Lcd(ABC):
     def handle(self, event: ControllerEvent) -> bool:
         """Input dispatch hook. Default returns False (LCD doesn't intercept).
         Panels override or wrap this when they want to consume controller
-        events for their own UI. See INPUT_ROUTER.md."""
+        events for their own UI. See input/README.md."""
         del event
         return False
 

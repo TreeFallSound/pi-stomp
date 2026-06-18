@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""InputSink protocol. See INPUT_ROUTER.md.
+"""InputSink protocol. See input/README.md.
 
 One method. Returning True means "I fully handled this event; do nothing
 further." Returning False is informational only — there is no automatic
