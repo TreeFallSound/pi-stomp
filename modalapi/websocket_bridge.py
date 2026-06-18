@@ -53,6 +53,8 @@ class WebSocketWorker:
         self.received_queue = received_queue
         self.running = False
         self.ws = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._stop_event: asyncio.Event = asyncio.Event()
 
         # Metrics
         self.messages_sent = 0
@@ -73,8 +75,26 @@ class WebSocketWorker:
             else:
                 logging.debug(f"WebSocket worker stopped: {e}")
 
+    def signal_stop(self):
+        """Thread-safe: interrupt any sleeping reconnect wait or active receive loop."""
+        if self._loop is None:
+            return
+        self._loop.call_soon_threadsafe(self._stop_event.set)
+        ws = self.ws
+        if ws is not None:
+            asyncio.run_coroutine_threadsafe(ws.close(), self._loop)
+
+    async def _interruptible_sleep(self, delay: float) -> bool:
+        """Sleep for delay seconds; returns True if stop was signaled before the delay elapsed."""
+        try:
+            await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
+            return True
+        except asyncio.TimeoutError:
+            return False
+
     async def _async_worker(self):
         """Connects and drives the message loop, with exponential-backoff reconnection."""
+        self._loop = asyncio.get_event_loop()
         retry_delay = 1.0
         reconnect_attempts = 0
 
@@ -119,12 +139,14 @@ class WebSocketWorker:
 
                 if self.running:
                     logging.info(f"Reconnecting ({reconnect_attempts}/{MAX_RECONNECT_ATTEMPTS}) in {retry_delay}s...")
-                    await asyncio.sleep(retry_delay)
+                    if await self._interruptible_sleep(retry_delay):
+                        return
                     retry_delay = min(retry_delay * 2, 30.0)
             except Exception as e:
                 logging.error(f"Unexpected WebSocket error: {e}", exc_info=True)
                 self.ws = None
-                await asyncio.sleep(retry_delay)
+                if await self._interruptible_sleep(retry_delay):
+                    return
 
     async def _process_queue(self, ws):
         """Drain the queue and send messages; exits on connection close."""
@@ -231,6 +253,7 @@ class AsyncWebSocketBridge:
             return
 
         self._worker.running = False
+        self._worker.signal_stop()
         if self._thread and not sys.is_finalizing():
             self._thread.join(timeout=2.0)
         logging.info(f"WebSocket worker stopped (sent={self._worker.messages_sent})")

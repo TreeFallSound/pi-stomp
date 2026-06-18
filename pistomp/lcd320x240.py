@@ -850,9 +850,11 @@ class Lcd(abstract_lcd.Lcd):
     # General
     #
     def splash_show(self, boot=True):
-        self.w_splash = TextWidget(box=Box.xywh(12, 80, self.display_width, self.display_height),
-                       text="pi Stomp!", font=self.splash_font, parent=self.splash_panel)
-        self.w_splash.set_foreground(self.color_splash_up if boot is True else self.color_splash_down)
+        color = self.color_splash_up if boot else self.color_splash_down
+        if self.w_splash is None:
+            self.w_splash = TextWidget(box=Box.xywh(12, 80, self.display_width, self.display_height),
+                           text="pi Stomp!", font=self.splash_font, parent=self.splash_panel)
+        self.w_splash.set_foreground(color)
         self.splash_panel.refresh()
 
     def cleanup(self):
@@ -862,9 +864,7 @@ class Lcd(abstract_lcd.Lcd):
             self.pstack.pop_panel(self.footswitch_panel)
         if self.main_panel_pushed and self.main_panel in self.pstack.stack:
             self.pstack.pop_panel(self.main_panel)
-        if self.w_splash is not None:
-            self.w_splash.set_foreground(self.color_splash_down)
-            self.splash_panel.refresh()
+        self.splash_show(False)
 
     def clear(self):
         pass

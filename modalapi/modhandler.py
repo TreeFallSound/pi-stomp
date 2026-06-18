@@ -1020,7 +1020,7 @@ class Modhandler(Handler):
             self.lcd.update_bypass(self.bypass_left, self.bypass_right)
 
     def system_menu_shutdown(self, arg):
-        self.lcd.cleanup()
+        self.lcd.splash_show(False)
         logging.info("System Shutdown")
         os.system('sudo systemctl --no-wall poweroff')
 
