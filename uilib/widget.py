@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from uilib.box import Box
