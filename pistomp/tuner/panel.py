@@ -1,3 +1,18 @@
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 import statistics
 import time
 from collections import deque
@@ -299,8 +314,7 @@ class StrobeWidget(Widget):
         self.refresh(Box(cs, bx.y0, ce, bx.y1))
 
     def _stripe_spans_at(self, phase_int: int) -> list[tuple[int, int]]:
-        return [((phase_int + i * self.STRIPE_P) % _W, self.STRIPE_W)
-                for i in range(self.N_STRIPES)]
+        return [((phase_int + i * self.STRIPE_P) % _W, self.STRIPE_W) for i in range(self.N_STRIPES)]
 
     # ── tick ─────────────────────────────────────────────────────────────────
 
@@ -341,8 +355,7 @@ class StrobeWidget(Widget):
         if abs(k) >= self.STRIPE_W:
             # Old and new stripe positions don't overlap; coalescing still merges
             # any that landed within a stripe width of each other.
-            self._flush_spans(self._stripe_spans_at(old_phase_int)
-                              + self._stripe_spans_at(int(self._phase)))
+            self._flush_spans(self._stripe_spans_at(old_phase_int) + self._stripe_spans_at(int(self._phase)))
             return
 
         ak = abs(k)
@@ -375,7 +388,7 @@ class TunerPanel(Panel, InputSink):
         muted: bool = False,
         input_port: int = 1,
     ) -> None:
-        super().__init__(box=Box.xywh(0, 0, _W, 240), auto_destroy=True)
+        super().__init__(box=Box.xywh(0, 0, _W, 240), auto_destroy=True, no_dim=True)
         self._engine = engine
 
         note_font = make_font(str(_FONTS_DIR / "DejaVuSans-Bold.ttf"), 56)

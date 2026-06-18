@@ -469,7 +469,9 @@ class TestMenuSnapshot:
     def _make_stack(self, fake_lcd):
         from uilib.panel import PanelStack
 
-        return PanelStack(fake_lcd)
+        stack = PanelStack(fake_lcd)
+        fake_lcd.flush_callback = stack.poll_updates
+        return stack
 
     def _make_menu(self, stack):
         from uilib.menu import Menu

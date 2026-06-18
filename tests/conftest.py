@@ -124,6 +124,7 @@ def snapshot(request, fake_lcd, snapshot_update):
         if suffix is None:
             suffix = str(counter[0])
             counter[0] += 1
+        fake_lcd.flush()
         assert_snapshot(fake_lcd.frames[-1], f"{module}/{test}/{suffix}", update=snapshot_update)
 
     return _assert
@@ -181,6 +182,9 @@ def fake_ws_bridge():
 class FakeLcd(LcdBase):
     def __init__(self):
         self.frames: list[pygame.Surface] = []
+        # Set by the pstack when constructed with this LCD, so the snapshot
+        # fixture can flush deferred LCD pushes before capturing a frame.
+        self.flush_callback = None
 
     def dimensions(self):
         return (320, 240)
@@ -200,6 +204,11 @@ class FakeLcd(LcdBase):
 
     def update_bypass(self, enabled: bool, latched: bool):
         pass
+
+    def flush(self):
+        """Flush any pending deferred LCD push so frames is up to date."""
+        if self.flush_callback is not None:
+            self.flush_callback()
 
 
 @pytest.fixture

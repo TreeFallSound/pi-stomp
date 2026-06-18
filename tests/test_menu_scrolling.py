@@ -34,6 +34,7 @@ def long_menu(fake_lcd):
     handler.throttled = "None"
     with patch("pistomp.lcd320x240.LcdIli9341", return_value=fake_lcd):
         lcd = Lcd(cwd=str(PROJECT_ROOT), handler=handler)
+    fake_lcd.flush_callback = lcd.pstack.poll_updates
     items = [(f"Item {i:02d}", None, None) for i in range(15)]
     menu = lcd.draw_selection_menu(items, title="Long", auto_dismiss=False, dismiss_option=True)
     return menu, fake_lcd

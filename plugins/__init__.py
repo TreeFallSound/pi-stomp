@@ -7,10 +7,12 @@ via this registry.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
     from plugins.base import PluginPanel
+
+_PanelT = TypeVar("_PanelT", bound="type[PluginPanel]")
 
 PANELS: dict[str, type[PluginPanel]] = {}
 
@@ -25,7 +27,7 @@ def register_panel(*uris: str):
             ...
     """
 
-    def decorator(cls: type[PluginPanel]) -> type[PluginPanel]:
+    def decorator(cls: _PanelT) -> _PanelT:
         for u in uris:
             PANELS[u] = cls
         return cls

@@ -43,6 +43,7 @@ def mock_handler():
 def lcd(fake_lcd, mock_handler):
     with patch("pistomp.lcd320x240.LcdIli9341", return_value=fake_lcd):
         instance = Lcd(cwd=str(PROJECT_ROOT), handler=mock_handler)
+    fake_lcd.flush_callback = instance.pstack.poll_updates
     return instance, fake_lcd
 
 
@@ -149,6 +150,7 @@ def setup_main_ui(instance):
 
 def test_splash_snapshot(lcd, snapshot):
     _, fake = lcd
+    fake.flush()
     assert len(fake.frames) > 0, "expected at least one frame from splash_show during __init__"
     snapshot()
 

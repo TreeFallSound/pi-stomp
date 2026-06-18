@@ -156,6 +156,11 @@ def _build_stack(
         mock_post.reset_mock()
         mock_post.side_effect = post_side_effect
 
+        # Wire the FakeLcd's flush callback to the pstack so the snapshot
+        # fixture can flush deferred LCD pushes before capturing a frame.
+        pstack = handler._lcd.pstack
+        fake_lcd.flush_callback = pstack.poll_updates
+
         yield SystemFixture(handler, hw, fake_lcd, mock_get, mock_post, fake_bridge)
 
 

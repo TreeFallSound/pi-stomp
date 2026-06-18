@@ -27,6 +27,8 @@ from collections.abc import Callable
 from typing import Generic, TypeVar
 
 import common.token as Token
+from modalapi.plugin import Plugin
+from pistomp.handler import Handler
 from pistomp.input.event import ControllerEvent, EncoderEvent
 from pistomp.input.sink import InputSink
 from uilib.box import Box
@@ -61,6 +63,7 @@ def _build_btn(text: str, x: int, font, v_margin, parent, action):
 
 # ── base class ──────────────────────────────────────────────────────────────
 
+
 class PluginPanel(Panel, InputSink, Generic[TState]):
     """Full-screen UI for a specific LV2 plugin type.
 
@@ -78,8 +81,8 @@ class PluginPanel(Panel, InputSink, Generic[TState]):
     def __init__(
         self,
         *,
-        plugin: object,
-        handler: object,
+        plugin: Plugin,
+        handler: Handler,
         on_dismiss: Callable[[], None],
     ) -> None:
         self.plugin = plugin
@@ -87,7 +90,7 @@ class PluginPanel(Panel, InputSink, Generic[TState]):
         self._on_dismiss = on_dismiss
         self._param_queue: dict[str, float] = {}
 
-        Panel.__init__(self, box=Box.xywh(0, 0, _W, _H))
+        Panel.__init__(self, box=Box.xywh(0, 0, _W, _H), no_dim=True)
 
         # Chrome buttons (created now, appended to nav *after* subclass widgets)
         cfg = Config()
@@ -97,15 +100,27 @@ class PluginPanel(Panel, InputSink, Generic[TState]):
         self._btn_v_margin = max(0, (_BTN_H - btn_text_h) // 2)
 
         self._btn_back = _build_btn(
-            "Back", _BTN_GAP, self._btn_font, self._btn_v_margin, self,
+            "Back",
+            _BTN_GAP,
+            self._btn_font,
+            self._btn_v_margin,
+            self,
             lambda *_: self._on_dismiss(),
         )
         self._btn_bypass = _build_btn(
-            "Bypass", _BTN_GAP * 2 + _BTN_W, self._btn_font, self._btn_v_margin, self,
+            "Bypass",
+            _BTN_GAP * 2 + _BTN_W,
+            self._btn_font,
+            self._btn_v_margin,
+            self,
             lambda *_: self._on_toggle_bypass(),
         )
         self._btn_reset = _build_btn(
-            "Reset", _BTN_GAP * 3 + _BTN_W * 2, self._btn_font, self._btn_v_margin, self,
+            "Reset",
+            _BTN_GAP * 3 + _BTN_W * 2,
+            self._btn_font,
+            self._btn_v_margin,
+            self,
             lambda *_: self._on_reset(),
         )
 

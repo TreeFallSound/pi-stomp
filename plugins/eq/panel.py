@@ -1,24 +1,33 @@
-"""Full-screen EQ panel for fil4 / x42-eq.
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-Built on top of PluginPanel[EqState]; the base class provides the chrome
-row (Back / Bypass / Reset), param coalescing, and InputSink wiring.
-The subclass owns the graph, readout, band selectables, and tweak mapping.
-"""
+"""Full-screen EQ panel for fil4 / x42-eq."""
 
 from __future__ import annotations
 
-import math
 from dataclasses import replace
 from typing import Optional
 
 import numpy as np
+import pygame
 
 from plugins.base import PluginPanel
 from plugins import register_panel
 from plugins.eq import FIL4_URIS
 from plugins.eq.bands import BANDS, BAND_COLORS, Band, PLUGIN_ENABLE_SYM
 from plugins.eq.curve import (
-    GRAPH_FREQS,
     GRAPH_W,
     BandParams,
     CurveCache,
@@ -30,8 +39,6 @@ from plugins.eq.curve import (
 from uilib.box import Box
 from uilib.config import Config
 from uilib.misc import InputEvent, get_text_size
-from uilib.panel import Panel
-from uilib.text import Button
 from uilib.widget import Widget
 
 
@@ -144,6 +151,21 @@ def bg_color(x: int, y: int) -> tuple[int, int, int]:
     if x in _FREQ_GRID_X:
         return GRID_DIM
     return BG_BLACK
+
+
+# Precomputed background array in widget-relative coordinates.
+_BG_ZERO_Y = _ZERO_DB_Y - GRAPH_Y0  # widget-relative 0 dB row
+_BG_DB_GRID_Y = frozenset(y - GRAPH_Y0 for y in _DB_GRID_Y)  # widget-relative
+_BG_ARRAY: np.ndarray = np.zeros((GRAPH_W, GRAPH_H, 3), dtype=np.uint8)
+_BG_ARRAY[:] = BG_BLACK
+for _y in _BG_DB_GRID_Y:
+    if 0 <= _y < GRAPH_H:
+        _BG_ARRAY[:, _y, :] = GRID_DIM
+for _x in _FREQ_GRID_X:
+    if 0 <= _x < GRAPH_W:
+        _BG_ARRAY[_x, :, :] = GRID_DIM
+if 0 <= _BG_ZERO_Y < GRAPH_H:
+    _BG_ARRAY[:, _BG_ZERO_Y, :] = GRID_0DB
 
 
 # ── smear (comet-tail) helpers ──────────────────────────────────────────────
@@ -452,119 +474,94 @@ class GraphWidget(Widget):
             ctx.draw_line([(hx0, zero_y), (hx1 - 1, zero_y)], fill=GRID_0DB, width=1)
 
         # Curve + comet-tail smear — only columns within the dirty rect.
-        # Smear paints first (so curve and nodes land on top); each smear
-        # pixel is alpha-blended against bg_color(x, y) so grid lines bleed
-        # through the tail rather than getting erased.
+        # Vectorized over the dirty column range via pygame.surfarray.pixels3d
+        # (a zero-copy view into the surface pixel buffer). The per-pixel math
+        # is identical to the previous set_at loop; it's just computed in bulk
+        # as dense (N, H) arrays. See tools/bench_eq_raster.py — this is ~7.7x
+        # faster than set_at on a Pi 3 (7ms → 0.9ms for a full refresh).
         if self._curve_y is not None:
             shade = INACTIVE_SHADE if self._bypassed else 1.0
             curve_color = tuple(int(c * shade) for c in CURVE_COLOR)
             cx0 = max(rx0, 0)
             cx1 = min(rx1, GRAPH_W)
-            ys = self._curve_y
-            ys_f = self._curve_y_float
-            y_lo = self._curve_y_lo
-            y_hi = self._curve_y_hi
-            smear_colors = self._smear_colors
-            smear_intensity = self._smear_intensity
-            has_smear = smear_colors is not None and smear_intensity is not None
-            cr, cg, cb = curve_color
-            # _ZERO_DB_Y is in image space; convert to widget-relative float
-            yz = float(_ZERO_DB_Y - GRAPH_Y0)
-            ox, oy = ctx._f().topleft
-            surf = ctx.surface
-            for x in range(cx0, cx1):
-                # ys[x] is in image-space; widget-relative = ys[x] - GRAPH_Y0
-                base_y = int(ys[x]) - GRAPH_Y0
-                if has_smear and ys_f is not None:
-                    # ys_f[x] is image-space float; convert to widget-relative
-                    yf = float(ys_f[x]) - GRAPH_Y0
-                    raw_length = abs(yz - yf)
-                    # Cap the on-screen tail so HP/LP doesn't blow up the per-
-                    # frame pixel-write count. The opacity ramp still falls
-                    # linearly to 0 over `length` — we just truncate the tail
-                    # before it reaches zero when the curve sits far away.
-                    length = raw_length if raw_length < SMEAR_LENGTH_MAX else float(SMEAR_LENGTH_MAX)
-                    intensity = float(smear_intensity[x])  # type: ignore[index]
-                    if length >= 0.5 and intensity > 0.0:
-                        sr, sg, sb = smear_colors[x]  # type: ignore[index]
-                        sr *= shade
-                        sg *= shade
-                        sb *= shade
+            if cx1 > cx0:
+                ox, oy = ctx._f().topleft
+                surf = ctx.surface
+                px = None
+                try:
+                    px = pygame.surfarray.pixels3d(surf)  # locks surface
+                    # Surface slice for the dirty columns: (N, GRAPH_H, 3) view.
+                    sub = px[ox + cx0 : ox + cx1, oy : oy + GRAPH_H, :]
+                    bg = _BG_ARRAY[cx0:cx1, :].astype(np.float32)  # (N, H, 3)
+                    result = bg.copy()
+
+                    # ── smear (comet tail) ──
+                    ys_f = self._curve_y_float
+                    smear_colors = self._smear_colors
+                    smear_intensity = self._smear_intensity
+                    if smear_colors is not None and smear_intensity is not None and ys_f is not None:
+                        yf = ys_f[cx0:cx1].astype(np.float32) - GRAPH_Y0  # (N,)
+                        yz_f = float(_ZERO_DB_Y - GRAPH_Y0)
+                        raw_len = np.abs(yz_f - yf)
+                        length = np.minimum(raw_len, float(SMEAR_LENGTH_MAX))
+                        intensity = smear_intensity[cx0:cx1].astype(np.float32)  # (N,)
                         top_alpha = SMEAR_ALPHA * intensity
-                        # Linear opacity ramp from top_alpha at the curve to 0
-                        # at distance `length` from the curve, in the
-                        # direction of the 0 dB line (boost: downward; cut:
-                        # upward). Per-row alpha is the integral over [R, R+1]
-                        # of α(u) = top_alpha · (1 − u/length).
-                        if yf <= yz:
-                            y_top = yf
-                            y_bot = yf + length
-                        else:
-                            y_top = yf - length
-                            y_bot = yf
-                        inv_2len = 0.5 / length
-                        R = int(math.floor(y_top))
-                        R_end = int(math.floor(y_bot))
-                        while R <= R_end and R < GRAPH_H:
-                            a = float(R) if float(R) > y_top else y_top
-                            b = float(R + 1) if float(R + 1) < y_bot else y_bot
-                            if b > a and R >= 0:
-                                if yf <= yz:
-                                    u_a = a - yf
-                                    u_b = b - yf
-                                else:
-                                    u_a = yf - b
-                                    u_b = yf - a
-                                alpha = top_alpha * ((u_b - u_a) - (u_b * u_b - u_a * u_a) * inv_2len)
-                                if alpha > 0.0:
-                                    # bg_color uses image-space x,y
-                                    br, bg_, bb = bg_color(x, R + GRAPH_Y0)
-                                    surf.set_at(
-                                        (x + ox, R + oy),
-                                        (
-                                            int(br + (sr - br) * alpha),
-                                            int(bg_ + (sg - bg_) * alpha),
-                                            int(bb + (sb - bb) * alpha),
-                                        ),
-                                    )
-                            R += 1
-                # Analytical line rasterization for column x. The line is
-                # treated as having unit thickness PERPENDICULAR to its
-                # direction; projected onto the column that's a vertical
-                # extent of sqrt(1 + slope²) centred on the column's mean y.
-                # Each row's coverage is its overlap with that extent (capped
-                # at 1), so fully-crossed rows always sit at full alpha and
-                # steep slopes don't visually thin out. Each pixel is then
-                # alpha-blended against bg_color so the grid bleeds through.
-                if y_lo is not None and y_hi is not None:
-                    # y_lo/y_hi are image-space floats; convert to widget-relative
-                    yl = float(y_lo[x]) - GRAPH_Y0
-                    yh = float(y_hi[x]) - GRAPH_Y0
-                    mid = (yl + yh) * 0.5
-                    half_extent = math.sqrt(1.0 + (yh - yl) ** 2) * (CURVE_THICKNESS * 0.5)
-                    y_lo_ext = mid - half_extent
-                    y_hi_ext = mid + half_extent
-                    r_lo = int(math.floor(y_lo_ext))
-                    r_hi = int(math.floor(y_hi_ext))
-                    for ry in range(r_lo, r_hi + 1):
-                        if ry < 0 or ry >= GRAPH_H:
-                            continue
-                        overlap = min(ry + 1, y_hi_ext) - max(ry, y_lo_ext)
-                        if overlap <= 0.0:
-                            continue
-                        a = overlap if overlap < 1.0 else 1.0
-                        # bg_color uses image-space coords
-                        br, bg_, bb = bg_color(x, ry + GRAPH_Y0)
-                        surf.set_at(
-                            (x + ox, ry + oy),
-                            (
-                                int(br + (cr - br) * a),
-                                int(bg_ + (cg - bg_) * a),
-                                int(bb + (cb - bb) * a),
-                            ),
-                        )
-                else:
-                    surf.set_at((x + ox, base_y + oy), curve_color)
+                        valid = (length >= 0.5) & (intensity > 0.0)
+                        down = yf <= yz_f  # smear downward (boost)
+                        y_top = np.where(down, yf, yf - length)  # (N,)
+                        y_bot = np.where(down, yf + length, yf)  # (N,)
+                        inv_2len = 0.5 / np.where(length > 0, length, 1.0)  # avoid div0
+                        rows = np.arange(GRAPH_H, dtype=np.float32)  # (H,)
+                        a = np.maximum(rows[None, :], y_top[:, None])  # (N, H)
+                        b = np.minimum(rows[None, :] + 1.0, y_bot[:, None])  # (N, H)
+                        pix_valid = (b > a) & valid[:, None]
+                        u_a = np.where(down[:, None], a - yf[:, None], yf[:, None] - b)
+                        u_b = np.where(down[:, None], b - yf[:, None], yf[:, None] - a)
+                        smear_alpha = top_alpha[:, None] * (
+                            (u_b - u_a) - (u_b * u_b - u_a * u_a) * inv_2len[:, None]
+                        )  # (N, H)
+                        smear_alpha = np.where(pix_valid & (smear_alpha > 0.0), smear_alpha, 0.0)
+                        sc = smear_colors[cx0:cx1].astype(np.float32) * shade  # (N, 3)
+                        smear_blend = bg + (sc[:, None, :] - bg) * smear_alpha[:, :, None]  # (N, H, 3)
+                        smear_mask = smear_alpha > 0.0
+                        result[smear_mask] = smear_blend[smear_mask]
+
+                    # ── curve line ──
+                    y_lo = self._curve_y_lo
+                    y_hi = self._curve_y_hi
+                    if y_lo is not None and y_hi is not None:
+                        yl = y_lo[cx0:cx1].astype(np.float32) - GRAPH_Y0  # (N,)
+                        yh = y_hi[cx0:cx1].astype(np.float32) - GRAPH_Y0  # (N,)
+                        mid = (yl + yh) * 0.5
+                        half_extent = np.sqrt(1.0 + (yh - yl) ** 2) * (CURVE_THICKNESS * 0.5)
+                        y_lo_ext = mid - half_extent  # (N,)
+                        y_hi_ext = mid + half_extent  # (N,)
+                        rows = np.arange(GRAPH_H, dtype=np.float32)  # (H,)
+                        overlap = np.minimum(rows[None, :] + 1.0, y_hi_ext[:, None]) - np.maximum(
+                            rows[None, :], y_lo_ext[:, None]
+                        )  # (N, H)
+                        curve_alpha = np.clip(overlap, 0.0, 1.0)  # (N, H)
+                        cc = np.array(curve_color, dtype=np.float32)  # (3,)
+                        curve_blend = bg + (cc - bg) * curve_alpha[:, :, None]  # (N, H, 3)
+                        curve_mask = curve_alpha > 0.0
+                        result[curve_mask] = curve_blend[curve_mask]
+                    else:
+                        # Fallback: single-pixel curve (no AA extent).
+                        ys = self._curve_y
+                        base_y = ys[cx0:cx1].astype(np.int32) - GRAPH_Y0  # (N,)
+                        in_range = (base_y >= 0) & (base_y < GRAPH_H)
+                        xs_idx = np.where(in_range)[0]
+                        if xs_idx.size > 0:
+                            result[xs_idx, base_y[xs_idx], :] = curve_color
+
+                    # numpy astype rounds half-to-even; the original set_at
+                    # path used Python int() (truncate). The ±1 difference on
+                    # blended pixels is visually imperceptible and we accept
+                    # it for the speed win of bulk uint8 conversion.
+                    np.clip(result, 0, 255, out=result)
+                    sub[:] = result.astype(np.uint8)
+                finally:
+                    del px  # release surface lock
 
         # Band nodes — skip those whose bbox misses the dirty rect.
         # Draw selected last so the halo lands on top.
@@ -695,7 +692,7 @@ class _BandSelectable(Widget):
 
     def __init__(self, panel: "EqPanel", band: Band) -> None:
         super().__init__(box=Box.xywh(0, 0, 1, 1), parent=panel, visible=True)
-        self._panel = panel
+        self._panel: "EqPanel" = panel
         self.band = band
 
     def set_selected(self, selected: bool) -> None:  # type: ignore[override]
@@ -759,19 +756,6 @@ _Q_STEP = 0.05
 
 # Speed multipliers mirror EncoderController.refresh — keep behaviour
 # consistent between MIDI-bound use and panel-bound use.
-_FAST_THRESHOLD = 4
-_MEDIUM_THRESHOLD = 2
-_FAST_MULT = 8
-_MEDIUM_MULT = 4
-
-
-def _speed_multiplier(rotations: int) -> int:
-    n = abs(rotations)
-    if n >= _FAST_THRESHOLD:
-        return _FAST_MULT
-    if n >= _MEDIUM_THRESHOLD:
-        return _MEDIUM_MULT
-    return 1
 
 
 def _clip(v: float, lo: float, hi: float) -> float:
@@ -855,7 +839,7 @@ class EqPanel(PluginPanel[EqState]):
             # Chrome selected: consume Tweak1/2 silently, let Tweak3 (volume)
             # fall through to normal handler dispatch.
             return encoder_id != 3
-        delta = rotations * _speed_multiplier(rotations)
+        delta = rotations
         p = self._state.bands[band.name]
         if encoder_id == 1:
             if band.gain_sym is None:

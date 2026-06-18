@@ -39,7 +39,7 @@ hardware = [
     "rpi-ws281x>=5.0; sys_platform == 'linux'",
     "spidev>=3.0; sys_platform == 'linux'",
     "adafruit-circuitpython-neopixel>=6.3",
-    "adafruit-circuitpython-rgb-display>=3.10",
+    "adafruit-circuitpython-rgb-display==3.14.3",
     "adafruit-circuitpython-mcp3xxx>=1.4",
     "lgpio>=0.2; sys_platform == 'linux'",
     "rpi-lgpio>=0.4; sys_platform == 'linux'",

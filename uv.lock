@@ -989,7 +989,7 @@ requires-dist = [
     { name = "adafruit-blinka-raspberry-pi5-neopixel", marker = "platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'hardware'", specifier = ">=1.0.0rc2" },
     { name = "adafruit-circuitpython-mcp3xxx", marker = "extra == 'hardware'", specifier = ">=1.4" },
     { name = "adafruit-circuitpython-neopixel", marker = "extra == 'hardware'", specifier = ">=6.3" },
-    { name = "adafruit-circuitpython-rgb-display", marker = "extra == 'hardware'", specifier = ">=3.10" },
+    { name = "adafruit-circuitpython-rgb-display", marker = "extra == 'hardware'", specifier = "==3.14.3" },
     { name = "gfxhat", marker = "sys_platform == 'linux' and extra == 'hardware'", specifier = ">=0.0.1" },
     { name = "gpiozero", marker = "sys_platform == 'linux'", specifier = ">=2.0" },
     { name = "jack-client", specifier = ">=0.5.5" },

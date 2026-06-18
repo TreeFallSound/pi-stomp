@@ -302,22 +302,46 @@ class PanelStack(ContainerWidget):
         self._setup()
 
         self.lcd_needs_update = False
+        self._pending_lcd_clip: Optional[Box] = None  # None = full screen or nothing pending
         self.capture_callback = None
 
     def poll_updates(self):
         if self.lcd_needs_update:
-            self.refresh()
+            self._flush_lcd()
+
+    def _flush_lcd(self):
+        """Compose the pending dirty region and push to the LCD in one transfer.
+
+        ``_pending_lcd_clip`` semantics:
+          * Box       — compose that clip (if not already composed) and push it
+          * None      — full screen: compose everything, push full screen
+        """
+        assert self.surface is not None
+        clip = self._pending_lcd_clip
+        if clip is None:
+            clip = self.box.norm()
+            self.propagate_dirty(clip)
+        self.lcd.update(self.surface, clip)
+        self._pending_lcd_clip = None
+        self.lcd_needs_update = False
 
     def set_capture_callback(self, callback):
         self.capture_callback = callback
 
     def refresh(self, box=None):
-        self.propagate_dirty(self.box.norm())
+        clip = self.box.norm() if box is None else box
+        self.propagate_dirty(clip)
+        self.lcd.update(self.surface, clip)
+        self._pending_lcd_clip = None
         self.lcd_needs_update = False
 
     @override
     def propagate_dirty(self, local_clip: Box):
-        """Recompose the dirty clip region from all stacked panels, then push to LCD."""
+        """Recompose the dirty clip region from all stacked panels.
+
+        Composes the panels into the root surface immediately (cheap
+        memory-to-memory blits) but defers the LCD push.
+        """
         assert self.surface is not None
         clip = local_clip
         erase_ctx = PaintContext(self.surface, clip, frame=clip)
@@ -337,11 +361,17 @@ class PanelStack(ContainerWidget):
                 ctx = PaintContext(self.surface, inter)
                 p.do_draw(ctx, p.box)
 
-        trace(self, "updating lcd with surface", self.surface, "box=", clip)
-        self.lcd.update(self.surface, clip)
+        trace(self, "deferring lcd update for surface", self.surface, "box=", clip)
 
         if self.capture_callback:
             self.capture_callback(self.surface)
+
+        # Union this clip into the pending LCD push instead of pushing now.
+        # None means a full-screen redraw is pending (from push/pop) — don't
+        # shrink it back to a partial clip.
+        if self._pending_lcd_clip is not None:
+            self._pending_lcd_clip = self._pending_lcd_clip.union(clip)
+        self.lcd_needs_update = True
 
     def do_draw(self, ctx: PaintContext, frame: Box):
         assert False
@@ -363,6 +393,10 @@ class PanelStack(ContainerWidget):
         panel.show(refresh=False)
         if refresh:
             self.refresh()
+        else:
+            # Stack changed structurally; force full-screen redraw on next flush.
+            self._pending_lcd_clip = None
+            self.lcd_needs_update = True
 
     def pop_panel(self, panel):
         if panel is None:
@@ -378,6 +412,7 @@ class PanelStack(ContainerWidget):
                     current = p
                     break
             self.current = current
+        self._pending_lcd_clip = None  # force full-screen redraw on next flush
         self.lcd_needs_update = True
         if panel.auto_destroy:
             panel.destroy()

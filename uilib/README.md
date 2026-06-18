@@ -32,7 +32,7 @@ Cache invalidation happens two ways:
 
 The first method `propagate_dirty(clip)` is called after pixels have been written somewhere (e.g. a leaf called `Widget.refresh(box)`). New pixels exist, but every cached composite is stale (for a certain rectangle) up to the tree root. The new "dirty rectangle" is unioned (after coordinate translation) with ancestors' existing `_dirty_rect`s.
 
-The chain terminates at `PanelStack.propagate_dirty`, which is the only `propagate_dirty` that actually does something visible: it composes the stacked panels into the root surface and pushes the result to the LCD.
+The chain terminates at `PanelStack.propagate_dirty`, which is the only `propagate_dirty` that actually does something visible: it composes the stacked panels into the root surface. The LCD push is deferred — the dirty clip is unioned into `_pending_lcd_clip` and flushed as a single `lcd.update()` call by `poll_updates()` (or immediately by `refresh()`). This collapses N `propagate_dirty` calls in one tick into one SPI transfer instead of N. Structural changes (`push_panel`/`pop_panel`) set `_pending_lcd_clip = None` to request a full-screen recompose on the next flush; `propagate_dirty` treats `None` as "full screen already pending" and won't shrink it back to a partial clip.
 
 The second method `_invalidate_cache(box)` is called when a widget is attached or detached from the widget tree; it uses the same logic to mark that area as stale.
 
