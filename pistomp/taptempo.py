@@ -15,17 +15,18 @@
 
 from collections import deque
 
-TAP_TEMPO_SAMPLES = 4       # number of samples to consider in calculation, higher can skew the average for higher tempos
-TAP_TEMPO_RESET_TIME = 1.5    # seconds between samples after which we should consider clearing the (likely stale) samples
+TAP_TEMPO_SAMPLES = 4  # number of samples to consider in calculation, higher can skew the average for higher tempos
+TAP_TEMPO_RESET_TIME = 1.5  # seconds between samples after which we should consider clearing the (likely stale) samples
 TAP_TEMPO_MINIMUM = 60 / TAP_TEMPO_RESET_TIME
 
-class TapTempo:
 
+class TapTempo:
     def __init__(self, callback=None):
         self.timestamps = deque()
         self.taptempo = 0
         self.callback = callback
         self.enabled = False
+        self.anchor = 0.0  # monotonic time of last tap, for phase-locking animations
 
     def __calc_tempo(self):
         if len(self.timestamps) < 2:
@@ -74,8 +75,8 @@ class TapTempo:
     def stamp(self, t):
         if not self.enabled:
             return
+        self.anchor = t
         self.timestamps.append(t)
         if len(self.timestamps) > TAP_TEMPO_SAMPLES:
             self.timestamps.popleft()
         self.__calc_tempo()
-

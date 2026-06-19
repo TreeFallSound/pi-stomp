@@ -232,6 +232,8 @@ class Lcd(abstract_lcd.Lcd):
             self.w_pedalboard.tick()
         if self.w_preset is not None:
             self.w_preset.tick()
+        for wfs in self.w_footswitches:
+            wfs.tick()
 
         self.pstack.poll_updates()
         if self._fullscreen_panel is not None and self.pstack.current is self._fullscreen_panel:
@@ -707,7 +709,7 @@ class Lcd(abstract_lcd.Lcd):
                 action = None
             p = FootswitchWidget(Box.xywh(x, 0, slot_w, self.footswitch_height),
                                  fs.id, label, color, not fs.toggled,
-                                 small_font=self.tiny_font,
+                                 small_font=self.tiny_font, taptempo=getattr(fs, 'taptempo', None),
                                  parent=self.footswitch_panel, action=action, object=fs)
             self.w_footswitches.append(p)
             self.footswitch_panel.add_sel_widget(p)

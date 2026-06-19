@@ -10,6 +10,7 @@ import pytest
 from tests.conftest import PROJECT_ROOT
 from tests import pedalboard_fixtures
 from pistomp.lcd320x240 import Lcd
+from pistomp.taptempo import TapTempo
 import common.token as Token
 from uilib.misc import InputEvent
 from modalapi.connections import Connection, Endpoint, EndpointKind
@@ -322,7 +323,10 @@ def test_update_wifi_noop_when_path_unchanged(lcd, mock_handler):
 
 def test_tap_tempo_snapshot(lcd, snapshot):
     instance, _ = lcd
-    mock_fs = MockObject(id=2, toggled=True, get_display_label=lambda: "120", parameter=None)
+    tt = TapTempo()
+    tt.enable(True)
+    tt.set_bpm(120.0)
+    mock_fs = MockObject(id=2, toggled=True, get_display_label=lambda: "120", parameter=None, taptempo=tt)
     mock_current = MockObject(
         pedalboard=MockObject(title="BPM Test", plugins=[], connections=[]),
         presets={0: "Clean"},
@@ -337,8 +341,17 @@ def test_tap_tempo_snapshot(lcd, snapshot):
 
 def test_tap_tempo_disable_clears_label(lcd, snapshot):
     instance, _ = lcd
-    labels = ["120"]
-    mock_fs = MockObject(id=2, toggled=True, get_display_label=lambda: labels[0], parameter=None)
+    tt = TapTempo()
+    tt.enable(True)
+    tt.set_bpm(120.0)
+    # Mirrors Footswitch.get_display_label(): BPM when enabled, empty when not.
+    mock_fs = MockObject(
+        id=2,
+        toggled=True,
+        get_display_label=lambda: str(round(tt.get_bpm())) if tt.is_enabled() else "",
+        parameter=None,
+        taptempo=tt,
+    )
     mock_current = MockObject(
         pedalboard=MockObject(title="BPM Test", plugins=[], connections=[]),
         presets={0: "Clean"},
@@ -350,7 +363,7 @@ def test_tap_tempo_disable_clears_label(lcd, snapshot):
     instance.update_footswitch(mock_fs)
     snapshot("tap_tempo_enabled")
 
-    labels[0] = ""
+    tt.enable(False)
     mock_fs.toggled = False  # pyright: ignore[reportAttributeAccessIssue]
     instance.update_footswitch(mock_fs)
     snapshot("tap_tempo_disabled")

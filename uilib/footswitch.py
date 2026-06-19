@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+import time
+
 import pygame
 
 from uilib.box import Box
@@ -52,7 +54,10 @@ def _tint_mask(mask: pygame.Surface, color: tuple[int, int, int]) -> pygame.Surf
 
 class FootswitchWidget(Widget):
     """Footswitch indicator: a colored dot (the "LED") with a label below,
-    or a letter badge when unassigned."""
+    or a letter badge when unassigned.  When the underlying footswitch is the
+    tap-tempo switch and tap tempo is enabled, the widget switches to a
+    dedicated tap view: an amber pulsing border, a "TAP" header, and the
+    current BPM in larger digits."""
 
     # Bound switches: bright when active, dim ring when off.
     UNBOUND_OFF_BG = (40, 40, 40)
@@ -63,7 +68,16 @@ class FootswitchWidget(Widget):
     BADGE_OFF_FILL = (30, 30, 30)
     DEFAULT_COLOR = (255, 255, 255)
 
-    def __init__(self, box, num, label, color, is_bypassed, small_font=None, **kwargs):
+    TAP_COLOR = (255, 180, 0)  # amber — beat on / header text
+    TAP_DIM_COLOR = (110, 78, 0)  # dim amber — beat off
+    TAP_BPM_COLOR = (255, 255, 255)  # BPM digits are always white
+
+    # Vertical layout within the 36px strip (draw_text places the line-box top,
+    # which sits ~2px above cap tops for DejaVu at these sizes).
+    _TAP_Y_LABEL = 2  # "TAP" header (14pt Bold)
+    _TAP_Y_BPM = 17  # BPM digits (16pt Bold)
+
+    def __init__(self, box, num, label, color, is_bypassed, small_font=None, taptempo=None, **kwargs):
         self._init_attrs(Widget.INH_ATTRS, kwargs)
         super(FootswitchWidget, self).__init__(box, **kwargs)
         self.font = Config().get_font("footswitch")
@@ -72,6 +86,11 @@ class FootswitchWidget(Widget):
         self.label = label
         self.color = color
         self.is_bypassed = is_bypassed
+        self.taptempo = taptempo
+        self._pulse_on = True
+
+    def _tap_active(self):
+        return self.taptempo is not None and self.taptempo.is_enabled()
 
     def _slot_font(self):
         """Pick the largest font that comfortably fits the slot width."""
@@ -98,6 +117,10 @@ class FootswitchWidget(Widget):
         pass  # parent.refresh() clears the RGBA surface and re-applies shroud before drawing us
 
     def _draw(self, ctx):
+        if self._tap_active():
+            self._draw_tap(ctx)
+            return
+
         w, _h = ctx.width, ctx.height
         is_on = not self.is_bypassed
         has_label = bool(self.label)
@@ -106,6 +129,27 @@ class FootswitchWidget(Widget):
             self._draw_dot_and_label(ctx, w, is_on)
         else:
             self._draw_letter_badge(ctx, w, is_on)
+
+    def _draw_tap(self, ctx):
+        w, h = ctx.width, ctx.height
+        border_color = self.TAP_COLOR if self._pulse_on else self.TAP_DIM_COLOR
+
+        ctx.draw_rectangle(Box.xywh(1, 0, w - 2, h), outline=border_color, width=2, radius=5)
+
+        label_font = Config().get_font("footswitch_badge")
+        bpm_font = Config().get_font("footswitch_tap_bpm")
+
+        # "TAP" header centered, color tracks the pulse
+        if label_font is not None:
+            lw, _ = get_text_size("TAP", label_font)
+            ctx.draw_text(((w - lw) // 2, self._TAP_Y_LABEL), "TAP", fill=border_color, font=label_font)
+
+        # BPM digits centered, always white
+        bpm = self.taptempo.get_bpm() if self.taptempo is not None else 0
+        digits = str(round(bpm)) if bpm else "--"
+        if bpm_font is not None:
+            dw, _ = get_text_size(digits, bpm_font)
+            ctx.draw_text(((w - dw) // 2, self._TAP_Y_BPM), digits, fill=self.TAP_BPM_COLOR, font=bpm_font)
 
     def _draw_dot_and_label(self, ctx, w, is_on):
         """Small dot on top, label centered below."""
@@ -169,6 +213,24 @@ class FootswitchWidget(Widget):
                 self.parent.refresh()
         else:
             super().refresh(box)
+
+    def tick(self):
+        """Blink the tap border at tempo, phase-locked to the last tap."""
+        if not self._tap_active():
+            return
+        bpm = self.taptempo.get_bpm() if self.taptempo is not None else 0
+        if not bpm:
+            # No tempo yet — show steady amber
+            if not self._pulse_on:
+                self._pulse_on = True
+                self.refresh()
+            return
+        period = 60.0 / bpm
+        phase = (time.monotonic() - self.taptempo.anchor) % period
+        on = phase < period / 4
+        if on != self._pulse_on:
+            self._pulse_on = on
+            self.refresh()
 
     def toggle(self, is_bypassed):
         self.is_bypassed = is_bypassed
