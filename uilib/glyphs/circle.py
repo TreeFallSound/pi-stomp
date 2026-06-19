@@ -13,19 +13,25 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Filled circle glyph with analytic anti-aliasing.
+"""Filled and ring circle glyphs with analytic anti-aliasing.
 
-Renders as an **alpha mask**: white RGB with coverage in the alpha channel.
+Both render as **alpha masks**: white RGB with coverage in the alpha channel.
 Callers tint at blit time (see `uilib.icon.Icon._draw` for the
-BLEND_RGBA_MULT pattern). This keeps the glyph cache keyed only on radius,
+BLEND_RGBA_MULT pattern). This keeps the glyph cache keyed only on geometry,
 not colour, and produces genuinely smooth circle edges at small sizes —
 `gfxdraw.filled_circle`/`draw.circle` are jaggy or discontinuous at the
-6–10px radii the footswitch dots use.
+6-10px radii the footswitch dots use.
 
-The circle is sampled at pixel corners (integer coordinates) with a linear
-coverage falloff of width 1px about the analytic boundary, so a circle of
-radius r covers a (2r+1)×(2r+1) footprint with full coverage at the centre
-and 1px AA on the perimeter.
+Coverage is sampled with a 1px linear falloff about each analytic boundary.
+
+CircleGlyph — filled disc of radius r:
+  Surface (2r+1)×(2r+1), centre at (r, r).
+  Blit at (cx - r, cy - r).
+
+RingGlyph — centered-stroke ring, matching the KnobGlyph aesthetic:
+  Surface (2*(r+1)+1)×(2*(r+1)+1), centre at (r+1, r+1); ring at distance r.
+  The 1px pad gives the outer AA edge room (same convention as KnobGlyph).
+  Blit at (cx - half_size, cy - half_size) where half_size = r + 1.
 """
 
 from functools import lru_cache
@@ -36,7 +42,7 @@ import pygame
 
 @lru_cache(maxsize=64)
 def _circle_surface(radius: int) -> pygame.Surface:
-    """Cached filled-circle alpha mask of size (2r+1)×(2r+1).
+    """Cached filled-circle alpha mask of size (2r+1)x(2r+1).
 
     White RGB, coverage in alpha. The circle is centred at (r, r) with
     analytic radius r; coverage = clip(0.5 - |d - r|, 0, 1) sampled at
@@ -66,11 +72,40 @@ def _circle_surface(radius: int) -> pygame.Surface:
     return surf
 
 
+@lru_cache(maxsize=64)
+def _ring_surface(radius: int, ring_half: float) -> pygame.Surface:
+    """Cached ring alpha mask, (2*(r+1)+1)×(2*(r+1)+1), centred at (r+1, r+1).
+
+    Centered stroke of half-width ring_half at distance r from the centre.
+    Same formula as KnobGlyph: coverage = clip(ring_half + 0.5 - |d - r|, 0, 1).
+    """
+    half = radius + 1
+    size = 2 * half + 1
+    xs = np.arange(size)
+    ys = np.arange(size)
+    X, Y = np.meshgrid(xs, ys)
+    d = np.sqrt((X - half) ** 2 + (Y - half) ** 2)
+    cov = np.clip(ring_half + 0.5 - np.abs(d - radius), 0.0, 1.0)
+    alpha = (cov * 255).astype(np.uint8)
+
+    surf = pygame.Surface((size, size), pygame.SRCALPHA)
+    pixels = pygame.surfarray.pixels3d(surf)
+    pixels[:, :, 0] = 255
+    pixels[:, :, 1] = 255
+    pixels[:, :, 2] = 255
+    del pixels
+    pa = pygame.surfarray.pixels_alpha(surf)
+    pa[:] = alpha.T
+    del pa
+    return surf
+
+
 class CircleGlyph:
     """Filled circle with analytic anti-aliased edges.
 
-    `render()` returns a `(2r+1)×(2r+1)` RGBA **alpha mask** (white RGB,
+    `render()` returns a `(2r+1)x(2r+1)` RGBA **alpha mask** (white RGB,
     coverage in alpha). Callers tint at blit time via BLEND_RGBA_MULT.
+    Blit at (cx - radius, cy - radius) to centre on (cx, cy).
     """
 
     def __init__(self, radius: int) -> None:
@@ -90,3 +125,38 @@ class CircleGlyph:
 
     def render(self) -> pygame.Surface:
         return _circle_surface(self._radius)
+
+
+class RingGlyph:
+    """Centered-stroke ring matching the KnobGlyph aesthetic.
+
+    Stroke of half-width `ring_half` (default 0.75 → 1.5px visual, same as
+    KnobGlyph) centred at `radius` pixels from the surface centre.
+
+    `render()` returns a `(2*(r+1)+1)×(2*(r+1)+1)` RGBA **alpha mask**.
+    Callers tint at blit time via BLEND_RGBA_MULT.
+    Blit at (cx - half_size, cy - half_size) to centre on (cx, cy).
+    """
+
+    def __init__(self, radius: int, ring_half: float = 0.75) -> None:
+        self._radius = int(radius)
+        self._ring_half = ring_half
+
+    @property
+    def radius(self) -> int:
+        return self._radius
+
+    @property
+    def half_size(self) -> int:
+        return self._radius + 1
+
+    @property
+    def width(self) -> int:
+        return 2 * self.half_size + 1
+
+    @property
+    def height(self) -> int:
+        return 2 * self.half_size + 1
+
+    def render(self) -> pygame.Surface:
+        return _ring_surface(self._radius, self._ring_half)
