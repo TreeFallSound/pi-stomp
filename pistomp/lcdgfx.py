@@ -463,7 +463,7 @@ class Lcd(abstract_lcd.Lcd):
                     if c.parameter.symbol != ":bypass":  # TODO token
                         label = c.parameter.name
                     else:
-                        label = p.instance_id[: self.plugin_label_length]
+                        label = p.display_name[: self.plugin_label_length]
                         label = label.replace("_", "")
                     self.draw_plugin(
                         7,

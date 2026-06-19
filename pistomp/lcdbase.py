@@ -161,7 +161,6 @@ class Lcdbase(abstract_lcd.Lcd):
             draw.text((x, y), preset, text_color, font)
 
     def base_draw_bound_plugins(self, zone, plugins, footswitches):
-        bypass_label = "byps"
         fss = footswitches.copy()
         for p in plugins:
             if p.has_footswitch is False:
@@ -173,7 +172,7 @@ class Lcdbase(abstract_lcd.Lcd):
                     if c.parameter.symbol != ":bypass":  # TODO token
                         label = c.parameter.name
                     else:
-                        label = self.shorten_name(p.instance_id, self.footswitch_width)
+                        label = self.shorten_name(p.display_name, self.footswitch_width)
                     color = Category.valid_color(c.lcd_color) if c.lcd_color else self.get_plugin_color(p)
                     x = self.footswitch_pitch[len(fss)] * fs_id
                     self.draw_plugin(zone, x, 0, label, self.footswitch_width, False, p, True, color)

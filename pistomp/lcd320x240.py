@@ -672,14 +672,17 @@ class Lcd(abstract_lcd.Lcd):
     # Footswitches
     #
     def footswitch_label(self, footswitch, slot_width=None):
-        """Label for a footswitch bound to a plugin param: the param name, or the plugin instance for a :bypass binding."""
+        """Label for a footswitch bound to a plugin param"""
         param = footswitch.parameter
         if param is None:
             return None
         if param.symbol != ":bypass":  # TODO token
             return param.name
         width = slot_width if slot_width is not None else self.footswitch_width
-        return self.shorten_name(param.instance_id, width)
+        plugin = next((p for p in self.current.pedalboard.plugins
+                       if p.instance_id == param.instance_id), None)
+        name = plugin.display_name if plugin is not None else param.instance_id
+        return self.shorten_name(name, width)
 
     def draw_footswitches(self):
         # One slot-ordered pass over the physical switches, so selection order is
