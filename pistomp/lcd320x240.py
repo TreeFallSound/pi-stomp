@@ -62,12 +62,9 @@ class Lcd(abstract_lcd.Lcd):
         self._capture_socket = None
         self._capture_check_tick = 0
 
-        # UI poll cadence, scaled with SPI speed so scrolling/flush stay smooth
-        # on faster panels (24MHz→8, 48MHz→4, 56MHz→3, 80MHz→2). A taste-tuned
-        # rate, deliberately separate from the calibrated push gate (which lives
-        # in the driver's transfer_ms).
-        frame_time_ms = (56.0 / spi_speed_mhz) * 33.6
-        self.poll_divisor = max(1, round(frame_time_ms / 10.0))
+        # UI poll cadence: 24 MHz (actual ~20 MHz) → 8, 56 MHz (actual ~50 MHz) → 2.
+        # Both are the only supported speeds; anything else falls back to 2.
+        self.poll_divisor = 8 if spi_speed_mhz <= 24 else 2
 
         # TODO would be good to decouple the actual LCD hardware.  This file should work for any 320x240 display
         if display is None:
@@ -797,10 +794,8 @@ class Lcd(abstract_lcd.Lcd):
     def draw_lcd_speed_menu(self, event):
         current_speed = self.spi_speed_mhz
         items = [
-            ("24 MHz (safe)", self.handler.set_lcd_speed, 24, current_speed==24),
-            ("48 MHz (experimental)", self.handler.set_lcd_speed, 48, current_speed==48),
-            ("56 MHz (experimental)", self.handler.set_lcd_speed, 56, current_speed==56),
-            ("80 MHz (experimental)", self.handler.set_lcd_speed, 80, current_speed==80),
+            ("24 MHz (~20 MHz actual)", self.handler.set_lcd_speed, 24, current_speed==24),
+            ("56 MHz (~50 MHz actual)", self.handler.set_lcd_speed, 56, current_speed==56),
         ]
         self.draw_selection_menu(items, "LCD SPI Speed", auto_dismiss=False)
 
