@@ -30,6 +30,7 @@ logging.basicConfig(
 
 import argparse
 import os
+import signal
 import time
 
 from rtmidi.midiutil import open_midioutput
@@ -200,6 +201,10 @@ def main():
     # judder). Per-SPI display rate is handled separately by lcd_poll_divisor.
     BASE_PERIOD_S = 0.01
     next_tick = time.monotonic()
+
+    # respond quickly to signal handler
+    signal.signal(signal.SIGTERM, lambda sig, frame: sys.exit(0))
+
     try:
         # startup actions
         handler.poll_system_info()
