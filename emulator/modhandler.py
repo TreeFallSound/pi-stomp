@@ -32,7 +32,6 @@ from emulator.stubs import StubEthernetManager, StubJackMute, StubWifiManager, V
 
 
 class EmulatorModhandler(Modhandler):
-
     def __init__(self, homedir):
         super().__init__(VirtualAudiocard(), homedir)
 
@@ -61,10 +60,7 @@ class EmulatorModhandler(Modhandler):
 
         # Replace the :80 bridge created by super().__init__() with the emulator port
         self.ws_bridge.stop()
-        self.ws_bridge = AsyncWebSocketBridge(
-            ws_url='ws://127.0.0.1:18181/websocket',
-            backpressure_threshold=8192
-        )
+        self.ws_bridge = AsyncWebSocketBridge(ws_url="ws://127.0.0.1:18181/websocket", backpressure_threshold=8192)
         self.ws_bridge.start()
 
         self._window = None
@@ -109,6 +105,10 @@ class EmulatorModhandler(Modhandler):
 
     def system_menu_reload(self, arg):
         logging.info("Emulator: reload configs is a no-op")
+
+    @property
+    def recovery_available(self) -> bool:
+        return False  # no systemctl/recovery service on a dev machine
 
     # -------------------------------------------------------------------------
     # Window integration — drain events every tick for input responsiveness,
