@@ -161,19 +161,14 @@ class FootswitchWidget(Widget):
             font.origin = prev
 
     def refresh(self, box=None):
-        # Delegate to parent so the ShroudedPanel re-applies its shroud gradient
-        # before drawing children — a widget-only refresh would leave the slot
-        # area transparent (no shroud) where we cleared for the previous dot.
         if self.parent is not None:
-            self.parent.refresh()
+            if hasattr(self.parent, "refresh_child"):
+                # XXX: fast path for shrouded panel; kinda gross coupling
+                self.parent.refresh_child(self)  # pyright: ignore[reportAttributeAccessIssue]
+            else:
+                self.parent.refresh()
         else:
             super().refresh(box)
-
-    def set_selected(self, selected):
-        parent = self.parent
-        super().set_selected(selected)
-        if parent is not None:
-            parent.refresh()
 
     def toggle(self, is_bypassed):
         self.is_bypassed = is_bypassed

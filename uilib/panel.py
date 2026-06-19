@@ -200,6 +200,27 @@ class ShroudedPanel(Panel):
         ox, oy = ctx._f().topleft
         ctx.surface.blit(self._shroud_surf, (ox, oy))
 
+    def refresh_child(self, child: "Widget") -> None:
+        """Redraw one child without touching the other slots.
+
+        Restores the shroud gradient for only that child's area, then redraws
+        the child into the panel surface and propagates just that dirty rect.
+        Callers should use this instead of parent.refresh() when only a single
+        child has changed (e.g. footswitch LED toggle or selection change).
+        """
+        if self.surface is None or child.box is None or not child.visible:
+            return
+        cbox = child.box  # panel-local coordinates
+
+        # Restore background for just this slot.
+        self.surface.fill((0, 0, 0, 0), _pg_rect(cbox))
+        if self._shroud_surf is not None:
+            self.surface.blit(self._shroud_surf, cbox.topleft, area=_pg_rect(cbox))
+
+        ctx = PaintContext(self.surface, cbox, frame=self.box.norm())
+        child.do_draw(ctx, cbox)
+        self.propagate_dirty(cbox)
+
 
 class RoundedPanel(Panel):
     """A panel with rounded corners.
