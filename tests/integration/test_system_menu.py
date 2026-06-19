@@ -7,16 +7,18 @@ from tests.types import SystemFixture
 
 def test_system_menu_shutdown(modhandler_system: SystemFixture):
     handler = modhandler_system.handler
-    with patch.object(handler.lcd, "cleanup"), patch("os.system") as mock_os:
+    with patch.object(handler.lcd, "cleanup"), patch("os.system") as mock_os, patch("os._exit") as mock_exit:
         handler.system_menu_shutdown(None)
     mock_os.assert_called_once_with("sudo systemctl --no-wall poweroff")
+    mock_exit.assert_called_once_with(0)
 
 
 def test_system_menu_reboot(modhandler_system: SystemFixture):
     handler = modhandler_system.handler
-    with patch("os.system") as mock_os:
+    with patch("os.system") as mock_os, patch("os._exit") as mock_exit:
         handler.system_menu_reboot(None)
     mock_os.assert_called_once_with("sudo systemctl reboot")
+    mock_exit.assert_called_once_with(0)
 
 
 def test_system_menu_reload(modhandler_system: SystemFixture):
