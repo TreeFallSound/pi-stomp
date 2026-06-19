@@ -51,7 +51,7 @@ WIFI_SPINNER_HZ = 1.5
 class Lcd(abstract_lcd.Lcd):
     CAPTURE_SOCKET_PATH = "/tmp/pistomp-lcd.sock"
 
-    def __init__(self, cwd, handler=None, flip=False, display=None, spi_speed_mhz=24):
+    def __init__(self, cwd, handler=None, flip=False, display=None, spi_speed_mhz=50):
         self.cwd = cwd
         self.imagedir = os.path.join(cwd, "images")
         Config(os.path.join(cwd, 'ui', 'config.json'))
@@ -62,8 +62,7 @@ class Lcd(abstract_lcd.Lcd):
         self._capture_socket = None
         self._capture_check_tick = 0
 
-        # UI poll cadence: 24 MHz (actual ~20 MHz) → 8, 56 MHz (actual ~50 MHz) → 2.
-        # Both are the only supported speeds; anything else falls back to 2.
+        # UI poll cadence scales with SPI speed: slower clock → more ticks per frame push.
         self.poll_divisor = 8 if spi_speed_mhz <= 24 else 2
 
         # TODO would be good to decouple the actual LCD hardware.  This file should work for any 320x240 display
@@ -751,8 +750,7 @@ class Lcd(abstract_lcd.Lcd):
                  ("System reboot",  self.handler.system_menu_reboot, None),
                  ("Restart sound engine", self.handler.system_menu_restart_sound, None),
                  ("Bank Select >", self.draw_bank_menu, None),
-                 ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None),
-                 ("LCD Speed >", self.draw_lcd_speed_menu, None)]
+                 ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None)]
         if self.handler.recovery_available:
             items.insert(4, ("Recovery Mode...", self.handler.system_menu_recovery_mode, None))
         self.draw_selection_menu(items, "System Menu")
@@ -789,20 +787,6 @@ class Lcd(abstract_lcd.Lcd):
             self.handler.temperature,
             self.handler.throttled)
         d = MessageDialog(self.pstack, msg, title="System Info", width=300, height=130)
-        self.pstack.push_panel(d)
-
-    def draw_lcd_speed_menu(self, event):
-        current_speed = self.spi_speed_mhz
-        items = [
-            ("24 MHz (~20 MHz actual)", self.handler.set_lcd_speed, 24, current_speed==24),
-            ("56 MHz (~50 MHz actual)", self.handler.set_lcd_speed, 56, current_speed==56),
-        ]
-        self.draw_selection_menu(items, "LCD SPI Speed", auto_dismiss=False)
-
-    def show_lcd_speed_message(self, speed_mhz):
-        adc_speed = "240 kHz" if speed_mhz <= 24 else "1 MHz"
-        msg = f"LCD: {speed_mhz} MHz / ADC: {adc_speed}\n\nRestarting..."
-        d = MessageDialog(self.pstack, msg, title="SPI Speed", width=280, height=140)
         self.pstack.push_panel(d)
 
     def draw_bank_menu(self, event):

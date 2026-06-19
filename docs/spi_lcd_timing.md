@@ -1,4 +1,4 @@
-# SPI LCD Timing Analysis — Pi 5 / BCM2712
+# SPI LCD Timing Analysis — Pi 5 / RP1
 
 Investigation of the full kernel path for pushing a 320×240 16-bit frame to
 the ILI9341 display over SPI on Raspberry Pi 5.  All measurements were taken
@@ -8,83 +8,130 @@ on-device with a PREEMPT_RT kernel (`linux 6.18.33-3-rpi-rt-v8-rt`).
 
 ## Hardware architecture
 
+The Pi 5 is not a BCM2835/6/7 system.  All I/O (SPI, GPIO, USB, etc.) lives
+in the **RP1** chip, a secondary I/O die connected to the BCM2712 main SoC via
+**PCIe Gen 2**.  This PCIe hop is the dominant source of non-obvious overhead.
+
 ```
-BCM2712 (main SoC)
-┌──────────────────────────────────────┐
-│  CPU / DRAM                          │
-│  kernel tx_buf (spidev bounce)       │
-│  BCM SPI master (107d004000)         │
-│    ↓ wire → GPIO pins                │
-│  ILI9341 display                     │
-└──────────────────────────────────────┘
+BCM2712 (main SoC)              RP1 (I/O die)
+┌──────────────────┐  PCIe G2  ┌─────────────────────────────┐
+│  CPU / DRAM      │◄─────────►│  rp1_dma (dw_axi_dmac)      │
+│  kernel tx_buf   │           │    ↓ reads host DRAM        │
+│  (spidev bounce) │           │  rp1_spi0 (DW APB SSI)      │
+└──────────────────┘           │    ↓ FIFO → wire            │
+                               │  ILI9341 display (CE0)      │
+                               │  MCP3008 ADC     (CE1)      │
+                               └─────────────────────────────┘
 ```
 
-**SPI controller**: `spi-bcm2835` driver, hardware at `107d004000`.
+**SPI driver**: `spi_dw_mmio` → `spi_dw` (Synopsys DesignWare APB SSI,
+`snps,dw-apb-ssi`).  The RP1's SPI peripheral (`rp1_spi0`) is a generic DW IP
+block clocked from `RP1_CLK_SYS`.
 
-**Device nodes**:
+**DMA driver**: `dw_axi_dmac_platform` (RP1's internal AXI DMA,
+`snps,axi-dma-1.01a`) — reads source data from BCM2712 DRAM via PCIe inbound
+window.
+
+**Device nodes** (both on the same `rp1_spi0` controller, `/dev/spidev0.x`):
 - `/dev/spidev0.0` — ILI9341 LCD (CE0)
 - `/dev/spidev0.1` — MCP3008 ADC (CE1)
 
-Both share the same SPI controller.  The RP1 DW APB SSI at `1f00050000`
-(`spi10`) is a separate controller not used by either the display or the ADC.
-
-The BCM SPI controller lives at `107d004000`, which is in BCM2712's own
-peripheral address space — **not** inside the PCIe BAR (`1f00000000`).
-There is no PCIe hop in the SPI data path.
+**Note**: `spidev10.0` (`spi@7d004000`, `brcm,bcm2835-spi`, `clk_vpu` 750 MHz)
+is a separate BCM2712 firmware SPI peripheral limited to 20 MHz by its DT
+node.  It is not used by pi-stomp for the LCD or ADC.
 
 ---
 
-## Clock control
+## The clock divisor constraint
 
-The BCM SPI controller receives its clock from `vpu-clock` (750 MHz).  Speed
-is controlled by the clock tree — the CDIV register at offset `0x08` is
-always `4` regardless of the requested rate; the driver calls `clk_set_rate()`
-on the parent clock and the clock tree snaps to the nearest achievable rate.
+The DW APB SSI forces the SPI clock divisor (BAUDR) to an even number
+(`spi-dw-core.c`: `clk_div = ALIGN(DIV_ROUND_UP(clk_hz, speed_hz), 2)`).
+The RP1 `ssi_clk` source is `RP1_CLK_SYS` = **200 MHz**.
 
-Measured actual speeds (on-device, full-frame wire time, spidev0.0):
+Achievable speeds near the range of interest:
 
-| Requested range | Actual speed | Full-frame wire time |
-|-----------------|-------------|----------------------|
-| ≤ ~40 MHz       | ~33 MHz     | ~37 ms               |
-| ~41–99 MHz      | 50 MHz      | ~25 ms               |
-| ≥ 100 MHz       | 75 MHz      | ~16 ms — **display garbled** |
+| Requested | BAUDR | **Actual speed** | Full-frame wire time |
+|-----------|-------|------------------|----------------------|
+| ≤ 99 MHz  | 4     | **50 MHz**       | 24.6 ms              |
+| ≥ 100 MHz | 2     | **100 MHz**      | 12.3 ms              |
 
-The ILI9341 write cycle minimum is 15 ns (66.7 MHz maximum).  At 75 MHz
-actual the display receives out-of-spec timing and renders garbage.  **Do not
-request ≥ 100 MHz.**
+**Requesting 81 MHz gives 50 MHz** (`ceil(200/81)=3` → rounds to BAUDR=4).
+Requesting 100 MHz (or any value 100–200) gives 100 MHz — the fastest
+achievable.
 
-The practical maximum is any value in `41–99 MHz` (all land on the same 50 MHz
-actual clock).
+**Do not request ≥ 100 MHz.** The ILI9341 write cycle minimum is 15 ns
+(66.7 MHz maximum).  At 100 MHz actual the display receives out-of-spec timing
+and renders garbage.
+
+66.7 MHz is not achievable: it would require BAUDR=3 (odd), which the
+hardware forbids.  The safe maximum is **50 MHz** (any request in 56–99 MHz).
+
+---
+
+## Full write() path — one full-frame push
+
+Path for a single `os.write(fd, data)` call of 153,600 bytes (320×240 @ 16 bpp).
+
+| Stage | Kernel location | Scales with clock? | Scales with bytes? | Approx. time |
+|-------|----------------|--------------------|--------------------|-------------|
+| syscall + VFS + `spidev` mutex | `spidev.c:188` | No | No | ~3 µs |
+| `copy_from_user(tx_buffer, buf, N)` — userspace→kernel bounce | `spidev.c:193` | No | Yes (fast) | ~30 µs |
+| `spi_sync` fast path → `transfer_one_message` | `spi.c:4552` | No | No | ~2 µs |
+| `dma_map_sgtable` — ARM64 cache flush of bounce buffer | `spi.c:1186` | No | Yes | ~5 µs |
+| `dw_spi_transfer_one`: CS + CTRLR0 + BAUDR config (PCIe MMIO writes) | `spi-dw-core.c:523` | No | No | ~5 µs |
+| DMA descriptor build (`dw_axi_dma_chan_prep_slave_sg`) | `dw-axi-dmac-platform.c:946` | No | No (1 descriptor) | ~3 µs |
+| `dma_async_issue_pending` — kick DMA via PCIe MMIO | `spi-dw-dma.c:537` | No | No | ~5 µs |
+| **Wire time** (bits on clock) | hardware | **Yes, inversely** | Yes | **24.6 ms @ 50 MHz** |
+| **PCIe DMA stall** (see below) | hardware | No | Yes | **~0 ms @ 50 MHz** |
+| DMA completion IRQ + `complete()` wakeup (PREEMPT_RT thread) | `spi-dw-dma.c` | No | No | ~20–50 µs |
+| `dma_unmap_sgtable` | `spi.c:1207` | No | Yes | ~5 µs |
+| `mutex_unlock` + return to userspace | kernel | No | No | ~2 µs |
+
+**Total at 50 MHz actual: ~25 ms.**  Fixed overhead is ~100 µs; wire time
+dominates and the PCIe stall is near-zero at 50 MHz.
+
+---
+
+## The PCIe DMA stall
+
+At 100 MHz SPI clock (BAUDR=2), the TX FIFO drains 16 bytes in **1.28 µs**.
+The RP1 DMA fetches the next 16-byte burst from BCM2712 DRAM over PCIe with
+a round-trip latency of ~**400 ns**.  Since 400 ns > 0 but < 1.28 µs the FIFO
+occasionally starves mid-transfer.
+
+Measured overhead at 100 MHz ≈ **31% of wire time** (≈ 3.8 ms on top of
+12.3 ms wire).  At 50 MHz the 16-byte drain takes 2.56 µs — DMA has time to
+pipeline and stall is near-zero.
+
+This stall is why 100 MHz would measure ~16 ms total despite 12.3 ms wire
+time — **but 100 MHz garbles the ILI9341 regardless**, so this is academic.
 
 ---
 
 ## Effect of chunk size (`spidev.bufsiz`)
 
-`spidev` limits each `os.write()` to `bufsiz` bytes.  On this device
-`bufsiz` is **4096** (`cat /sys/module/spidev/parameters/bufsiz`).  A full
-frame (320×240×2 = 153,600 bytes) requires 38 chunks.
+Each `os.write()` is limited to `bufsiz` bytes.  Default is 4096; a full frame
+requires 38 chunks.  Each chunk costs ~38 µs fixed overhead (syscall + copy +
+CS toggle), adding ~1.5 ms per frame.
 
-Each additional `write()` call costs ~38 µs of fixed overhead (syscall + kernel
-copy + CS toggle).  38 chunks adds ~1.5 ms of overhead per frame on top of
-wire time.
-
-Measured at 50 MHz actual (81 MHz requested):
+Setting `spidev.bufsiz=163840` on the kernel command line (in
+`pistomp-arch/files/cmdline.txt`) reduces this to a single write per frame.
+Measured improvement at 50 MHz actual:
 
 | Chunk size | Writes | Total time |
 |------------|--------|------------|
 | 4,096 B    | 38     | ~26.5 ms   |
+| 153,600 B  | 1      | ~25.0 ms   |
 
-Increasing `spidev.bufsiz` (e.g. via `spidev.bufsiz=163840` on the kernel
-command line) would reduce this to a single write and drop the total to ~25 ms.
 The gain is ~1.5 ms — modest given the 25 ms wire time dominates.
 
 ---
 
 ## Making the transfer async
 
-The ~26 ms that `write()` blocks Python is the dominant cost for the poll
-loop.  Wire time is hardware-fixed and cannot be eliminated, but it can be
-hidden by decoupling the LCD push from the main thread.
+The ~25–26 ms that `write()` blocks Python is the dominant cost for the poll
+loop.  Wire time is hardware-fixed, but it can be hidden by decoupling the LCD
+push from the main thread.
 
 ### Background thread
 
@@ -101,7 +148,7 @@ poll loop (10 ms cadence)
 _do_update()                              # runs on worker thread
   lock.acquire()
   numpy pack + rot90   (~1 ms)
-  os.write(spidev_fd, data)              # blocks ~26 ms on worker thread
+  os.write(spidev_fd, data)              # blocks ~25 ms on worker thread
   lock.release()
 ```
 
@@ -112,15 +159,11 @@ body onto a thread and making the call-site non-blocking.
 
 | Metric | Before | After |
 |--------|--------|-------|
-| Poll loop blocked per frame | ~26 ms | ~0 ms (lock check only) |
-| Wall-clock frame latency | ~26 ms | ~26 ms (unchanged — same hardware) |
+| Poll loop blocked per frame | ~25 ms | ~0 ms (lock check only) |
+| Wall-clock frame latency | ~25 ms | ~25 ms (unchanged — same hardware) |
 | Visible tearing risk | None (sequential) | Low — drop-frame policy means LCD always shows a complete frame |
 | Kernel / boot changes | None | None |
 | Partial update (`box=`) | Works as-is | Works as-is |
-
-This is the lowest-risk path: no changes outside `uilib/lcd_ili9341.py`, no
-kernel driver verification, and the existing dirty-rect and partial-update
-infrastructure is unaffected.
 
 ---
 
@@ -131,16 +174,16 @@ framebuffer (`/dev/fb0`).  A `write()` to `/dev/fb0` copies the pixel data into
 a kernel-managed framebuffer and returns immediately; the actual SPI transfer
 runs in a DRM worker thread.
 
-**Hardware path is identical.**  `panel-mipi-dbi-spi` programs the same BCM
-SPI controller.  Wire time (~25 ms) is unchanged.
+**Hardware path is identical.**  Wire time (~24.6 ms) and PCIe stall
+(near-zero at 50 MHz) are unchanged.
 
 **What changes:**
 
 | Metric | spidev (`os.write`) | `/dev/fb0` (mipi-dbi) |
 |--------|--------------------|-----------------------|
-| `write()` blocks caller for | ~26 ms | ~30 µs (kernel copy only) |
+| `write()` blocks caller for | ~25 ms | ~30 µs (kernel copy only) |
 | SPI transfer runs on | caller's thread | DRM worker thread |
-| Wire time | ~25 ms | ~25 ms (same hardware) |
+| Wire time | ~24.6 ms | ~24.6 ms (same hardware) |
 | Partial update | ILI9341 address window | DRM damage rect → full flush |
 | Double-buffer / tearing | N/A (sequential) | Needed for clean frames |
 
@@ -184,9 +227,30 @@ simpler and has no boot-infrastructure cost.
 
 ---
 
+## Shared bus: LCD and ADC interaction
+
+Both the ILI9341 (CE0) and MCP3008 (CE1) share `rp1_spi0`.  The DW SSI
+driver reconfigures BAUDR per-transfer per chip-select, so the two devices
+run at their own speeds without interfering:
+
+| Device | `spi-max-frequency` | BAUDR | Actual clock | Transfer time |
+|--------|---------------------|-------|-------------|---------------|
+| ILI9341 LCD | 56–99 MHz | 4 | 50 MHz | ~25 ms (full frame) |
+| MCP3008 ADC | 1 MHz | 200 | 1 MHz | ~24 µs (24 bits) |
+
+The shared bus is a **serialising mutex** — an LCD frame push and an ADC read
+cannot overlap; one blocks until the other releases the controller.  In
+practice this is not an issue: ADC reads are ~24 µs, so even if one lands
+mid-frame-push it queues and completes within microseconds of the frame
+finishing.  The 10 ms ADC poll cadence is far slower than either transfer.
+
+The MCP3008 is rated to 1.35 MHz max at 3.3V.  Operating at 1 MHz (BAUDR=200)
+is within spec; the previous 240 kHz setting (BAUDR=834) was conservative and
+buys nothing in a low-noise on-board trace environment.
+
 ## Primary optimization lever: dirty-rect culling
 
-Both wire time and chunk count scale linearly with pixels pushed.  Culling to
+Both wire time and PCIe stall scale linearly with pixels pushed.  Culling to
 only the changed region of the screen is the most impactful software-side
 optimization and requires no kernel or boot changes.
 
@@ -196,15 +260,17 @@ optimization and requires no kernel or boot changes.
 
 | What | Value |
 |------|-------|
-| SPI driver | `spi-bcm2835` |
-| SPI controller address | `107d004000` |
-| LCD device node | `/dev/spidev0.0` (CE0) |
-| ADC device node | `/dev/spidev0.1` (CE1) |
-| PCIe in SPI path | **No** |
-| Clock source | `vpu-clock` (750 MHz); speed via `clk_set_rate`, CDIV frozen at 4 |
-| 81 MHz requested → actual | **50 MHz** |
-| ≥ 100 MHz requested → actual | **~75 MHz — exceeds ILI9341 max, display garbled** |
+| SPI driver | `spi_dw_mmio` + `spi_dw` (DesignWare APB SSI) |
+| DMA driver | `dw_axi_dmac_platform` (inside RP1, reads host DRAM via PCIe) |
+| LCD device node | `/dev/spidev0.0` (rp1_spi0, CE0) |
+| ADC device node | `/dev/spidev0.1` (rp1_spi0, CE1) |
+| RP1 SPI source clock | `RP1_CLK_SYS` = 200 MHz |
+| Clock divisor constraint | Even only (`ALIGN(DIV_ROUND_UP(...), 2)`) |
+| 81 MHz requested → actual | **50 MHz** (BAUDR=4) — `ceil(200/81)=3` → rounds to 4 |
+| ≥ 100 MHz requested → actual | **100 MHz** (BAUDR=2) — **display garbled** (ILI9341 max 66.7 MHz) |
+| 66.7 MHz achievable? | **No** — requires BAUDR=3 (odd, forbidden) |
 | Safe maximum setting | Any value 56–99 MHz (all give 50 MHz actual) |
-| `spidev.bufsiz` on this device | 4096 (38 chunks per frame) |
-| Full-frame time @ 50 MHz actual | ~26.5 ms (25 ms wire + 1.5 ms chunk overhead) |
+| Full-frame time @ 50 MHz | ~25 ms (24.6 ms wire + ~0 PCIe stall + ~0.4 ms overhead) |
+| DMA/IRQ crossover | 128 bytes (FIFO depth × 2-byte words) |
+| Optimal `spidev.bufsiz` | ≥153,600 (set to 163,840 in `pistomp-arch/files/cmdline.txt`) |
 | Primary optimization lever | Dirty-rect culling (linear in pixel count) |

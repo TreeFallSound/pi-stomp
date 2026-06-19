@@ -68,11 +68,7 @@ class Pistompcore(hardware.Hardware):
         # self.reinit(None)
 
     def init_lcd(self):
-        # LCD SPI speed: 24 MHz (spec), 56 MHz tested stable (opt-in via system menu)
-        spi_speed = self.mod.settings.get_setting('lcd.spi_speed_mhz')
-        if spi_speed is None:
-            spi_speed = 24  # Default to spec
-        self.mod.add_lcd(Lcd.Lcd(self.mod.homedir, self.mod, flip=True, spi_speed_mhz=spi_speed))
+        self.mod.add_lcd(Lcd.Lcd(self.mod.homedir, self.mod, flip=True, spi_speed_mhz=50))
 
     def init_encoders(self):
         top_enc = EncoderController.EncoderController(

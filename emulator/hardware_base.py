@@ -30,7 +30,6 @@ from emulator.stubs import StubRelay
 
 
 class EmulatorHardwareBase(hardware.Hardware):
-
     VERSION_LABEL = ""
     lcd_flip = False
 
@@ -52,13 +51,11 @@ class EmulatorHardwareBase(hardware.Hardware):
 
     def init_lcd(self):
         import pistomp.lcd320x240 as Lcd
-        spi_speed = self.handler.settings.get_setting('lcd.spi_speed_mhz') or 24
-        # Same clock to backend and Lcd so simulated transfer time and the
-        # inline-push gate agree.
-        self.lcd_pygame = LcdPygame(320, 240, spi_hz=spi_speed * 1_000_000)
-        self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler,
-                                     flip=self.lcd_flip, display=self.lcd_pygame,
-                                     spi_speed_mhz=spi_speed))
+
+        self.lcd_pygame = LcdPygame(320, 240, spi_hz=50_000_000)
+        self.handler.add_lcd(
+            Lcd.Lcd(self.handler.homedir, self.handler, flip=self.lcd_flip, display=self.lcd_pygame, spi_speed_mhz=50)
+        )
 
     def init_footswitches(self):
         cfg = self.default_cfg.copy()
@@ -72,8 +69,7 @@ class EmulatorHardwareBase(hardware.Hardware):
                 continue
             id_ = Util.DICT_GET(f, Token.ID)
             midi_cc = Util.DICT_GET(f, Token.MIDI_CC)
-            fs = MockFootswitch(id_, midi_cc, midi_channel,
-                                self.refresh_callback)
+            fs = MockFootswitch(id_, midi_cc, midi_channel, self.refresh_callback)
             self.footswitches.append(fs)
             if midi_cc is not None:
                 key = "%d:%d" % (midi_channel, midi_cc)
@@ -95,8 +91,7 @@ class EmulatorHardwareBase(hardware.Hardware):
             control_type = Util.DICT_GET(c, Token.TYPE)
             if midi_cc is None:
                 continue
-            ctrl = MockAnalogControl(midi_cc, midi_channel,
-                                     control_type, id_, c)
+            ctrl = MockAnalogControl(midi_cc, midi_channel, control_type, id_, c)
             self.analog_controls.append(ctrl)
             key = "%d:%d" % (midi_channel, midi_cc)
             self.controllers[key] = ctrl
@@ -106,6 +101,7 @@ class EmulatorHardwareBase(hardware.Hardware):
 
     def cleanup(self):
         from uilib.pygame_init import quit as pygame_quit
+
         pygame_quit()
 
     def test(self):
