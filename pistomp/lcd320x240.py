@@ -712,7 +712,7 @@ class Lcd(abstract_lcd.Lcd):
                                  small_font=self.tiny_font, taptempo=getattr(fs, 'taptempo', None),
                                  parent=self.footswitch_panel, action=action, object=fs)
             self.w_footswitches.append(p)
-            self.footswitch_panel.add_sel_widget(p)
+            # self.footswitch_panel.add_sel_widget(p)  # TODO: re-enable footswitch selection
         self.footswitch_panel.refresh()
 
     def update_footswitch(self, footswitch):
