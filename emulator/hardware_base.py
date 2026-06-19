@@ -52,8 +52,10 @@ class EmulatorHardwareBase(hardware.Hardware):
 
     def init_lcd(self):
         import pistomp.lcd320x240 as Lcd
-        self.lcd_pygame = LcdPygame(320, 240)
         spi_speed = self.handler.settings.get_setting('lcd.spi_speed_mhz') or 24
+        # Same clock to backend and Lcd so simulated transfer time and the
+        # inline-push gate agree.
+        self.lcd_pygame = LcdPygame(320, 240, spi_hz=spi_speed * 1_000_000)
         self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler,
                                      flip=self.lcd_flip, display=self.lcd_pygame,
                                      spi_speed_mhz=spi_speed))

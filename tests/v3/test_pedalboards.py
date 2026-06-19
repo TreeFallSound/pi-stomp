@@ -45,7 +45,7 @@ def test_v3_pedalboard_change_via_modui(v3_system: SystemFixture, make_plugin, s
     snapshot()
 
 
-def test_v3_pedalboard_change_via_lcd(v3_system: SystemFixture, make_plugin, snapshot, get_urls):
+def test_v3_pedalboard_change_via_lcd(v3_system: SystemFixture, nav_handler, make_plugin, snapshot, get_urls):
     """Encoder selects the second board → POST load_bundle fires, MOD-UI confirms via last.json."""
     handler = v3_system.handler
     mock_get = v3_system.mock_get
@@ -53,9 +53,9 @@ def test_v3_pedalboard_change_via_lcd(v3_system: SystemFixture, make_plugin, sna
 
     handler.pedalboards["/path/to/new.pedalboard"].plugins = [make_plugin("fuzz")]
 
-    handler.universal_encoder_select(1)
+    nav_handler(1)
     handler.universal_encoder_sw(switchstate.Value.RELEASED)
-    handler.universal_encoder_select(1)
+    nav_handler(1)
     handler.universal_encoder_sw(switchstate.Value.RELEASED)
 
     assert any("pedalboard/load_bundle" in u for u in get_urls(mock_post))

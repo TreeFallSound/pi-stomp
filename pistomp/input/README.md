@@ -27,3 +27,16 @@ For every controller on every version the sink is the handler — `Modhandler` (
 Push/pop semantics live on the LCD, next to the only thing that needs them: a panel pushes itself when it opens and pops when it closes, and the LCD's `handle` walks that stack top-down. Blend mode likewise intercepts at the handler instead of hijacking a controller callback — `intercept(event)` reads the source controller's normalized position and sends its diff map.
 
 Encoders are split to keep this clean: `Encoder` is the pure quadrature decoder, `EncoderController` is the `Controller` that owns it plus the quantizer and the absorbed push-button. The nav encoder's button is not a standalone switch — it lives inside its controller and dispatches a `SwitchEvent` like any other. Footswitch chords (longpress groups) are the one piece of genuinely cross-controller, timing-deferred state, so they live in `footswitch_chords.py` as a handler-owned helper rather than a sink: `observe()` records a press, `tick()` resolves the 400ms window once per poll and names the callbacks that fired.
+
+## LCD push: the adaptive size gate
+
+The push to the LCD is **synchronous and blocking** (`lcd_ili9341.update` → `disp.image`), and its cost scales with the dirty-rect area: a selection highlight (~78×29px) is ~2ms — well inside the 10ms tick — while the EQ curve (up to 320×178px) is tens of ms at 24MHz, which on its own overruns the tick. Because the write blocks, *deferring* a too-large transfer to a later slot can't make it cheaper; it only moves when you pay it.
+
+So `PanelStack.propagate_dirty` always composes the change to its in-memory surface (cheap), then asks the LCD how long the push would take — `lcd.transfer_ms(clip)` — and gates on `PanelStack.INLINE_BUDGET_MS` (8ms, headroom under the tick):
+
+- **`transfer_ms ≤ budget`** → push inline, right now. Each change is its own frame. Nav selection clips are small, so a fast spin scans visibly; param dialogs render their progress immediately.
+- **`transfer_ms > budget`** → coalesce into `_pending_lcd_clip` (union) and let the next `poll_updates` flush slot push it once. Intermediate states are skipped to the latest — the EQ curve "jumps to the end" instead of grinding through every interstitial.
+
+Each LCD driver answers `transfer_ms` from its own SPI clock (`LcdIli9341` from `baudrate`, the emulator's `LcdPygame` from `spi_hz`); the `LcdBase` default is 0 (stub LCDs are free → always inline). **A faster SPI clock means cheaper transfers, so more interstitial frames clear the budget and get drawn** — exactly the "draw more when we can afford it" goal.
+
+The nav encoder is capped at one detent per tick (`max_drain=1` in `pistomptre.init_encoders`); tweak encoders keep the default 8. So `enc_step` applies one selector step per detent and the small-clip gate paces the scan naturally — no separate queue or divisor override. Fullscreen plugin panels still drop `lcd_poll_divisor` to 1 so their coalesced redraws flush promptly.

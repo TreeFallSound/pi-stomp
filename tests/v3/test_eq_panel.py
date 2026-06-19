@@ -93,11 +93,11 @@ def open_eq(v3_system: SystemFixture) -> Plugin:
     return plugin
 
 
-def nav(handler, steps: int) -> None:
+def nav(nav_handler, steps: int) -> None:
     """Move Nav by `steps` (positive = forward)."""
     direction = 1 if steps > 0 else -1
     for _ in range(abs(steps)):
-        handler.universal_encoder_select(direction)
+        nav_handler(direction)
 
 
 def tweak(handler, idx: int, rotations: int) -> bool:
@@ -135,14 +135,14 @@ def test_eq_initial_render(v3_system: SystemFixture, snapshot):
 # ---------------------------------------------------------------------------
 
 
-def test_eq_nav_cycles_bands(v3_system: SystemFixture, snapshot):
+def test_eq_nav_cycles_bands(v3_system: SystemFixture, nav_handler, snapshot):
     """Forward-nav through every band; the halo + readout must follow."""
     handler = v3_system.handler
     open_eq(v3_system)
     snapshot(BANDS[0].name)
 
     for band in BANDS[1:]:
-        nav(handler, 1)
+        nav(nav_handler, 1)
         handler.poll_lcd_updates()
         snapshot(band.name)
 
@@ -152,13 +152,13 @@ def test_eq_nav_cycles_bands(v3_system: SystemFixture, snapshot):
 # ---------------------------------------------------------------------------
 
 
-def test_eq_tweak_gain_freq_q(v3_system: SystemFixture, snapshot):
+def test_eq_tweak_gain_freq_q(v3_system: SystemFixture, nav_handler, snapshot):
     """Nav to B1 (peaking), enable it, then move each parameter."""
     handler = v3_system.handler
     plugin = open_eq(v3_system)
 
     # HP, LS, B1 — three forward nav steps
-    nav(handler, 2)
+    nav(nav_handler, 2)
     handler.poll_lcd_updates()
     snapshot("b1_disabled")
 
@@ -199,12 +199,12 @@ def test_eq_tweak_gain_freq_q(v3_system: SystemFixture, snapshot):
 # ---------------------------------------------------------------------------
 
 
-def test_eq_enable_disable_band(v3_system: SystemFixture, snapshot):
+def test_eq_enable_disable_band(v3_system: SystemFixture, nav_handler, snapshot):
     """Nav to B2, enable it, tweak gain so the curve is visible, then disable."""
     handler = v3_system.handler
     plugin = open_eq(v3_system)
 
-    nav(handler, 3)  # HP, LS, B1, B2
+    nav(nav_handler, 3)  # HP, LS, B1, B2
     short_press(handler)  # enable B2
     for _ in range(16):
         tweak(handler, 1, 1)  # +8 dB
@@ -254,13 +254,13 @@ def test_eq_hp_no_gain_axis(v3_system: SystemFixture, snapshot):
 # ---------------------------------------------------------------------------
 
 
-def test_eq_bypass_button_saga(v3_system: SystemFixture, snapshot):
+def test_eq_bypass_button_saga(v3_system: SystemFixture, nav_handler, snapshot):
     """Nav to Bypass chrome, short-press to bypass, again to re-enable."""
     handler = v3_system.handler
     plugin = open_eq(v3_system)
 
     # Enable + boost a band so the curve is visible for the bypass-dim check
-    nav(handler, 2)  # HP, LS, B1
+    nav(nav_handler, 2)  # HP, LS, B1
     short_press(handler)
     for _ in range(12):
         tweak(handler, 1, 1)
@@ -269,7 +269,7 @@ def test_eq_bypass_button_saga(v3_system: SystemFixture, snapshot):
 
     # Nav past the remaining bands to Bypass (chrome order: Back, Bypass, Reset)
     # After B1: B2, B3, B4, HS, LP, Back, Bypass — 7 steps
-    nav(handler, 7)
+    nav(nav_handler, 7)
     handler.poll_lcd_updates()
     snapshot("bypass_focused")
 
@@ -291,18 +291,18 @@ def test_eq_bypass_button_saga(v3_system: SystemFixture, snapshot):
 # ---------------------------------------------------------------------------
 
 
-def test_eq_reset_restores_pedalboard(v3_system: SystemFixture, snapshot):
+def test_eq_reset_restores_pedalboard(v3_system: SystemFixture, nav_handler, snapshot):
     """Tweak B1 + B3, then Reset; final state should match opened baseline."""
     handler = v3_system.handler
     open_eq(v3_system)
     snapshot("opened")  # baseline
 
-    nav(handler, 2)  # B1
+    nav(nav_handler, 2)  # B1
     short_press(handler)
     for _ in range(10):
         tweak(handler, 1, 1)
 
-    nav(handler, 2)  # B3
+    nav(nav_handler, 2)  # B3
     short_press(handler)
     for _ in range(8):
         tweak(handler, 1, -1)
@@ -311,7 +311,7 @@ def test_eq_reset_restores_pedalboard(v3_system: SystemFixture, snapshot):
 
     # Nav to Reset: after B3 we're at sel index for B3.  Forward nav cycles
     # B4, HS, LP, Back, Bypass, Reset → 6 steps.
-    nav(handler, 6)
+    nav(nav_handler, 6)
     handler.poll_lcd_updates()
     snapshot("reset_focused")
 
@@ -327,25 +327,25 @@ def test_eq_reset_restores_pedalboard(v3_system: SystemFixture, snapshot):
 # ---------------------------------------------------------------------------
 
 
-def test_eq_multi_band_cumulative_curve(v3_system: SystemFixture, snapshot):
+def test_eq_multi_band_cumulative_curve(v3_system: SystemFixture, nav_handler, snapshot):
     """Enable + boost B1/B3, cut B2 — verify the composed magnitude curve."""
     handler = v3_system.handler
     open_eq(v3_system)
 
     # B1: +6 dB
-    nav(handler, 2)
+    nav(nav_handler, 2)
     short_press(handler)
     for _ in range(12):
         tweak(handler, 1, 1)
 
     # B2: -6 dB
-    nav(handler, 1)
+    nav(nav_handler, 1)
     short_press(handler)
     for _ in range(12):
         tweak(handler, 1, -1)
 
     # B3: +9 dB
-    nav(handler, 1)
+    nav(nav_handler, 1)
     short_press(handler)
     for _ in range(18):
         tweak(handler, 1, 1)
@@ -359,7 +359,7 @@ def test_eq_multi_band_cumulative_curve(v3_system: SystemFixture, snapshot):
 # ---------------------------------------------------------------------------
 
 
-def test_eq_volume_passthrough_on_chrome(v3_system: SystemFixture):
+def test_eq_volume_passthrough_on_chrome(v3_system: SystemFixture, nav_handler):
     """When Back/Bypass/Reset is focused, the panel does NOT consume Tweak3
     (volume encoder falls through to handler), but Tweak1/2 are silently
     absorbed so they don't leak MIDI from the chrome context."""
@@ -375,7 +375,7 @@ def test_eq_volume_passthrough_on_chrome(v3_system: SystemFixture):
     assert _lcd_consumes(3) is True
 
     # Nav past all 8 bands to Back (HP→LS→B1→B2→B3→B4→HS→LP→Back = 8 steps)
-    nav(handler, 8)
+    nav(nav_handler, 8)
 
     # On chrome: Tweak3 falls through (panel does NOT consume it)
     assert _lcd_consumes(3) is False

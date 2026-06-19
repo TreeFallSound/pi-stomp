@@ -263,7 +263,7 @@ def test_v3_preset_change_leans_on_ws_drain_not_rest(v3_system: SystemFixture, m
 # ---------------------------------------------------------------------------
 
 
-def test_v3_parameter_edit(v3_system: SystemFixture, make_parameter, snapshot):
+def test_v3_parameter_edit(v3_system: SystemFixture, nav_handler, make_parameter, snapshot):
     """Full parameter-edit flow: navigate to plugin, open dialog, tweak, close."""
     handler = v3_system.handler
     hw = v3_system.hw
@@ -286,9 +286,9 @@ def test_v3_parameter_edit(v3_system: SystemFixture, make_parameter, snapshot):
     handler.lcd.draw_main_panel()
 
     # wrench → pedalboard → preset → plugin
-    handler.universal_encoder_select(1)
-    handler.universal_encoder_select(1)
-    handler.universal_encoder_select(1)
+    nav_handler(1)
+    nav_handler(1)
+    nav_handler(1)
 
     handler.universal_encoder_sw(switchstate.Value.LONGPRESSED)
     snapshot("param_menu")
@@ -296,9 +296,9 @@ def test_v3_parameter_edit(v3_system: SystemFixture, make_parameter, snapshot):
     handler.universal_encoder_sw(switchstate.Value.RELEASED)
     snapshot("param_dialog")
 
-    handler.universal_encoder_select(1)
-    handler.universal_encoder_select(1)
-    handler.universal_encoder_select(1)
+    nav_handler(1)
+    nav_handler(1)
+    nav_handler(1)
     snapshot("param_tweaked")
 
     handler.universal_encoder_sw(switchstate.Value.RELEASED)
@@ -311,7 +311,7 @@ def test_v3_parameter_edit(v3_system: SystemFixture, make_parameter, snapshot):
     assert sent[-1] == gain_param.value
 
 
-def test_v3_parameter_midi_change(v3_system: SystemFixture, make_parameter, snapshot):
+def test_v3_tweak_encoder_refresh(v3_system: SystemFixture, make_parameter, snapshot):
     """Rotating a tweak encoder steps the bound value and draws the dialog."""
     hw = v3_system.hw
 

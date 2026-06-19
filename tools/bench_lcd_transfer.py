@@ -95,6 +95,15 @@ def image_to_data_no_pil(rgb_bytes: bytes, w: int, h: int) -> bytes:
     return out.tobytes()
 
 
+def image_to_data_no_pil_opt(rgb_bytes: bytes, w: int, h: int) -> bytes:
+    """Highly optimized no-PIL variant avoiding uint16 upcasting and column_stack."""
+    arr = np.frombuffer(rgb_bytes, dtype=np.uint8).reshape(h, w, 3)
+    out = np.empty((h, w, 2), dtype=np.uint8)
+    out[:, :, 0] = (arr[:, :, 0] & 0xF8) | (arr[:, :, 1] >> 5)
+    out[:, :, 1] = ((arr[:, :, 1] & 0x1C) << 3) | (arr[:, :, 2] >> 3)
+    return out.tobytes()
+
+
 # ---------------------------------------------------------------------------
 # Correctness check — make sure all variants produce identical output.
 # ---------------------------------------------------------------------------
@@ -112,9 +121,11 @@ def _assert_variants_match(seed: int = 42) -> None:
     a = image_to_data_tobytes(pil)
     b = image_to_data_tobytes_contiguous(pil)
     c = image_to_data_no_pil(rgb_bytes, w, h)
+    d = image_to_data_no_pil_opt(rgb_bytes, w, h)
     assert a == ref, f"tobytes variant mismatch: {a[:20]} vs {ref[:20]}"
     assert b == ref, f"tobytes_contiguous variant mismatch"
     assert c == ref, f"no_pil variant mismatch"
+    assert d == ref, f"no_pil_opt variant mismatch"
     # Sanity: byte length is w*h*2
     assert len(ref) == w * h * 2, f"bad length {len(ref)} vs {w * h * 2}"
 
@@ -257,10 +268,8 @@ def stage_end_to_end_no_pil(surf: pygame.Surface, w: int, h: int, rotation: int)
     """Bypasses PIL entirely. Rotation is done in numpy.
 
     This is the theoretical floor: pygame -> 565 bytes, no PIL.
-    Rotation handled via np.rot90 + np.flip for 270 (the v3 flip case).
     """
     if rotation == 270:
-        # 270 CW = transpose then flip rows, or equivalently rot90(k=3)
         rot = lambda a: np.rot90(a, k=3)
     elif rotation == 90:
         rot = lambda a: np.rot90(a, k=1)
@@ -273,12 +282,11 @@ def stage_end_to_end_no_pil(surf: pygame.Surface, w: int, h: int, rotation: int)
 
     def go() -> None:
         rgb = pygame.image.tobytes(surf, "RGB")
-        arr = np.frombuffer(rgb, dtype=np.uint8).reshape(h, w, 3).astype("uint16")
+        arr = np.frombuffer(rgb, dtype=np.uint8).reshape(h, w, 3)
         arr = rot(arr)
-        color = ((arr[:, :, 0] & 0xF8) << 8) | ((arr[:, :, 1] & 0xFC) << 3) | (arr[:, :, 2] >> 3)
-        hi = ((color >> 8) & 0xFF).astype(np.uint8)
-        lo = (color & 0xFF).astype(np.uint8)
-        out = np.column_stack((hi.ravel(), lo.ravel())).reshape(color.shape[0], color.shape[1], 2)
+        out = np.empty((arr.shape[0], arr.shape[1], 2), dtype=np.uint8)
+        out[:, :, 0] = (arr[:, :, 0] & 0xF8) | (arr[:, :, 1] >> 5)
+        out[:, :, 1] = ((arr[:, :, 1] & 0x1C) << 3) | (arr[:, :, 2] >> 3)
         _ = out.tobytes()
 
     return go

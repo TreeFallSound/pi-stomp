@@ -5,7 +5,7 @@ from uilib.misc import InputEvent
 
 
 @pytest.mark.usefixtures("v3_system")
-def test_wifi_menu_navigation(v3_system, wifi_state, snapshot):
+def test_wifi_menu_navigation(v3_system, wifi_state, nav_lcd, snapshot):
     instance = v3_system.handler._lcd
     wifi_state(
         scanned=[
@@ -25,7 +25,7 @@ def test_wifi_menu_navigation(v3_system, wifi_state, snapshot):
     instance.pstack.input_event(InputEvent.CLICK)
 
     # Act: Navigate down to NetB
-    instance.enc_step(1)
+    nav_lcd(1)
 
     # Assert selection (NetB selected in nearby submenu)
     snapshot("navigated_down")

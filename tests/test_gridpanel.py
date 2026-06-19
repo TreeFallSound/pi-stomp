@@ -21,11 +21,11 @@ from uilib.gridpanel import (
     TILE_W,
     GridPanel,
 )
-from uilib.panel import PanelStack
+from uilib.panel import LcdBase, PanelStack
 from uilib.text import TextWidget
 
 
-class _StubLcd:
+class _StubLcd(LcdBase):
     def dimensions(self):
         return (320, 240)
 

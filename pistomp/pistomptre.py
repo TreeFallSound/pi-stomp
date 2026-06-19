@@ -116,6 +116,7 @@ class Pistomptre(hardware.Hardware):
         enc = EncoderController.EncoderController(
             NAV_PIN_D, NAV_PIN_CLK, type=Token.NAV,
             sw_adc_chan=NAV_ADC_CHAN, spi=self.spi,
+            max_drain=1,  # one detent per tick → visible selector scanning
         )
         self.encoders.append(enc)
 

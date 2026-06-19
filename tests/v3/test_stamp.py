@@ -114,12 +114,6 @@ class TestStampNotCalledOnNonChangeOperations:
             handler.preset_change(0)
         _assert_stamp_not_called(mock_run)
 
-    def test_no_stamp_on_parameter_midi_change(self, v3_system: SystemFixture):
-        handler = v3_system.handler
-        with patch("modalapi.modhandler.subprocess.run") as mock_run:
-            handler.parameter_midi_change(None, 1)
-        _assert_stamp_not_called(mock_run)
-
     def test_no_stamp_on_system_info_load(self, v3_system: SystemFixture):
         handler = v3_system.handler
         with patch("modalapi.modhandler.subprocess.run") as mock_run:

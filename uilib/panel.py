@@ -268,13 +268,27 @@ class LcdBase(ABC):
 
     def update(self, image, box=None) -> None: ...
 
+    def transfer_ms(self, box: Optional[Box] = None) -> float:
+        """Estimated ms to push a clip of this box's size. 0 = no cost."""
+        return 0.0
+
     @property
     def has_system_splash(self) -> bool:
         return False
 
 
 class PanelStack(ContainerWidget):
-    def __init__(self, lcd, box: Optional[Box] = None, image_format: Optional[str] = None, use_dimming: bool = True):
+    # A push estimated to take longer than this is coalesced rather than pushed
+    # inline, leaving headroom under the 10ms tick.
+    INLINE_BUDGET_MS = 8.0
+
+    def __init__(
+        self,
+        lcd: LcdBase,
+        box: Optional[Box] = None,
+        image_format: Optional[str] = None,
+        use_dimming: bool = True,
+    ):
         # XXX This implementation currently assumes box is at (0,0) in the LCD
         #     and the offset remains 0,0 (don't try to scroll)
         if box is None:
@@ -337,10 +351,12 @@ class PanelStack(ContainerWidget):
 
     @override
     def propagate_dirty(self, local_clip: Box):
-        """Recompose the dirty clip region from all stacked panels.
+        """Recompose the dirty clip, then push or coalesce by estimated cost.
 
-        Composes the panels into the root surface immediately (cheap
-        memory-to-memory blits) but defers the LCD push.
+        Compose is always cheap. Pushes the LCD can transfer within the tick
+        go inline (a frame per change — selection scan, param dialogs); larger
+        ones (the EQ curve) coalesce into _pending_lcd_clip and flush once in
+        the poll slot, skipping to the latest state.
         """
         assert self.surface is not None
         clip = local_clip
@@ -361,14 +377,15 @@ class PanelStack(ContainerWidget):
                 ctx = PaintContext(self.surface, inter)
                 p.do_draw(ctx, p.box)
 
-        trace(self, "deferring lcd update for surface", self.surface, "box=", clip)
-
         if self.capture_callback:
             self.capture_callback(self.surface)
 
-        # Union this clip into the pending LCD push instead of pushing now.
-        # None means a full-screen redraw is pending (from push/pop) — don't
-        # shrink it back to a partial clip.
+        if self.lcd.transfer_ms(clip) <= self.INLINE_BUDGET_MS:
+            self.lcd.update(self.surface, clip)
+            return
+
+        # Coalesce into the pending push; None means a full-screen redraw is
+        # already pending (from push/pop).
         if self._pending_lcd_clip is not None:
             self._pending_lcd_clip = self._pending_lcd_clip.union(clip)
         self.lcd_needs_update = True

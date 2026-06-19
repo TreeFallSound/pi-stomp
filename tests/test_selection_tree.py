@@ -14,12 +14,12 @@ import pytest
 
 from uilib.box import Box
 from uilib.misc import InputEvent
-from uilib.panel import Panel, PanelStack
+from uilib.panel import LcdBase, Panel, PanelStack
 from uilib.text import TextWidget
 from uilib.widget import Widget
 
 
-class _StubLcd:
+class _StubLcd(LcdBase):
     def dimensions(self):
         return (320, 240)
 

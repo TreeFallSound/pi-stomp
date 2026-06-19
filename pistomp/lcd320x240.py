@@ -45,6 +45,9 @@ from plugins import PANELS
 # Parameter dialog auto-dismiss timeout (seconds)
 PARAMETER_DIALOG_TIMEOUT = 1.0
 
+# Wifi "processing" spinner full-cycle rate (Hz), wall-clock paced.
+WIFI_SPINNER_HZ = 1.5
+
 class Lcd(abstract_lcd.Lcd):
     CAPTURE_SOCKET_PATH = "/tmp/pistomp-lcd.sock"
 
@@ -59,10 +62,10 @@ class Lcd(abstract_lcd.Lcd):
         self._capture_socket = None
         self._capture_check_tick = 0
 
-        # Calculate optimal polling divisor based on LCD speed
-        # 24MHz: 78ms/frame → poll every 80ms (divisor=8)
-        # 48MHz: 39ms/frame → poll every 40ms (divisor=4)
-        # 56MHz: 34ms/frame → poll every 30ms (divisor=3)
+        # UI poll cadence, scaled with SPI speed so scrolling/flush stay smooth
+        # on faster panels (24MHz→8, 48MHz→4, 56MHz→3, 80MHz→2). A taste-tuned
+        # rate, deliberately separate from the calibrated push gate (which lives
+        # in the driver's transfer_ms).
         frame_time_ms = (56.0 / spi_speed_mhz) * 33.6
         self.poll_divisor = max(1, round(frame_time_ms / 10.0))
 
@@ -125,8 +128,7 @@ class Lcd(abstract_lcd.Lcd):
             load_surface(os.path.join(self.imagedir, f'wifi_processing_{i}.png'))
             for i in range(1, 4)
         ]
-        self._wifi_tick = 0
-        self._wifi_ticks_per_frame = 2
+        self._wifi_frame_idx = -1  # -1 = static (not spinning)
         self.wifi_menu: Optional[WifiMenu] = None
         self.ethernet_menu: EthernetMenu = EthernetMenu(self)
         self.w_eq = None
@@ -178,6 +180,8 @@ class Lcd(abstract_lcd.Lcd):
     def enc_step(self, d):
         if d == 0:
             return
+        # One selector step per detent; small selection clips push inline (see
+        # PanelStack.propagate_dirty), so a turn scans rather than jumps.
         event = InputEvent.RIGHT if d > 0 else InputEvent.LEFT
         for _ in range(abs(d)):
             self.pstack.input_event(event)
@@ -893,12 +897,13 @@ class Lcd(abstract_lcd.Lcd):
         if self.w_wifi is None:
             return
         if self.handler.wifi_manager.queue.pending_op_count() > 0:
-            period = self._wifi_ticks_per_frame * len(self._wifi_frames)
-            self._wifi_tick = (self._wifi_tick + 1) % period
-            idx = self._wifi_tick // self._wifi_ticks_per_frame
-            self.w_wifi.replace_img(self._wifi_frames[idx])
+            # Wall-clock spin so the rate is independent of the poll divisor.
+            idx = int(time.monotonic() * WIFI_SPINNER_HZ) % len(self._wifi_frames)
+            if idx != self._wifi_frame_idx:
+                self._wifi_frame_idx = idx
+                self.w_wifi.replace_img(self._wifi_frames[idx])
         else:
-            self._wifi_tick = 0
+            self._wifi_frame_idx = -1
             self.w_wifi.replace_img(self._resolved_wifi_png(wifi_status))
 
     def _resolved_wifi_png(self, wifi_status):

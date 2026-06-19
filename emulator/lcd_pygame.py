@@ -19,6 +19,7 @@ import time
 
 import pygame
 from uilib.panel import LcdBase
+from uilib.spi_timing import transfer_ms as spi_transfer_ms
 
 
 class LcdPygame(LcdBase):
@@ -28,9 +29,6 @@ class LcdPygame(LcdBase):
     (pygame event polling + encoder handling) stays responsive during long
     transfers, which block for a simulated amount of time on the SPI thread.
     """
-
-    # Bits per pixel clocked over SPI: the ILI9341 takes RGB565 on the wire.
-    _BPP = 16
 
     # time.sleep() on macOS has ~1 ms granularity, so sleeping for values
     # smaller than this just burns wall-clock time waking up. Below the
@@ -63,6 +61,10 @@ class LcdPygame(LcdBase):
     def default_format(self):
         return "RGB"
 
+    def transfer_ms(self, box=None):
+        w, h = (self.width, self.height) if box is None else (box.width, box.height)
+        return spi_transfer_ms(w * h, self.spi_hz)
+
     def update(self, surface: pygame.Surface, box=None):
         img_w, img_h = surface.get_size()
 
@@ -83,7 +85,7 @@ class LcdPygame(LcdBase):
         # the worker only ever touches this detached snapshot.
         pg_surf = surface.copy()
         w, h = pg_surf.get_size()
-        transfer_s = (w * h * self._BPP) / self.spi_hz
+        transfer_s = spi_transfer_ms(w * h, self.spi_hz) / 1000
         self._queue.put((pg_surf, dest, transfer_s, time.perf_counter()))
 
     def blit_scaled(self, dest_surface, dest_rect):

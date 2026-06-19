@@ -26,12 +26,14 @@ class Encoder:
     Public API: read_rotary() -> int (returns accumulated direction, clears accumulator).
     """
 
-    # Cap on how many detents are drained per poll tick.
-    MAX_DRAIN = 8
+    # Default per-tick detent cap. Tweak encoders coalesce fast spins (8);
+    # the nav encoder overrides to 1 so each detent is its own selector step.
+    DEFAULT_MAX_DRAIN = 8
 
-    def __init__(self, d_pin: int | None, clk_pin: int | None):
+    def __init__(self, d_pin: int | None, clk_pin: int | None, max_drain: int = DEFAULT_MAX_DRAIN):
         self.d_pin = d_pin
         self.clk_pin = clk_pin
+        self.max_drain = max_drain
         self._lock = threading.Lock()
         self.data: Any = None
         self.clk: Any = None
@@ -85,18 +87,18 @@ class Encoder:
                 self.direction += d
 
     def read_rotary(self) -> int:
-        """Return accumulated direction since the last call, capped to ±MAX_DRAIN.
+        """Return accumulated direction since the last call, capped to ±max_drain.
 
-        Drains the full accumulator (up to MAX_DRAIN) so that fast spins
-        deliver a batched count in one EncoderEvent rather than ±1 per tick.
+        Drains the accumulator (up to max_drain) so that fast spins deliver a
+        batched count in one EncoderEvent rather than ±1 per tick.
         Returns 0 when no ISR edges have fired since the last call.
         """
         if self.direction != 0:
             with self._lock:
                 if self.direction > 0:
-                    d = min(self.direction, self.MAX_DRAIN)
+                    d = min(self.direction, self.max_drain)
                 else:
-                    d = max(self.direction, -self.MAX_DRAIN)
+                    d = max(self.direction, -self.max_drain)
                 self.direction -= d
         else:
             d = 0

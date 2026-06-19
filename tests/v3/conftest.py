@@ -270,3 +270,42 @@ def type_in_editor():
             _type_char(lcd, ch)
 
     return _type
+
+
+# ---------------------------------------------------------------------------
+# Nav-encoder fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def nav_lcd(v3_system):
+    """nav_lcd(d) — step the LCD nav selector by ``d`` detents, then poll.
+
+    Mirrors the main loop's step-then-poll: enc_step advances the selector
+    (small clips push inline), poll_updates ticks dialogs and flushes any
+    coalesced large clips.
+    """
+    lcd = v3_system.handler._lcd
+
+    def _nav(d: int) -> None:
+        lcd.enc_step(d)
+        lcd.poll_updates()
+
+    return _nav
+
+
+@pytest.fixture
+def nav_handler(v3_system):
+    """nav_handler(d) — step the handler nav selector by ``d`` detents, then poll.
+
+    Mirrors the main loop's step-then-poll: universal_encoder_select advances
+    the selector via the LCD, poll_lcd_updates ticks dialogs and flushes any
+    coalesced large clips (e.g. the EQ curve).
+    """
+    handler = v3_system.handler
+
+    def _nav(d: int) -> None:
+        handler.universal_encoder_select(d)
+        handler.poll_lcd_updates()
+
+    return _nav

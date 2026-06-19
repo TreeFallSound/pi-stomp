@@ -11,20 +11,20 @@ from uilib.footswitch import FootswitchWidget
 SLOT_CC = {0: 60, 1: 61, 2: 62, 3: 63}
 
 
-def _footswitch_nav_order(handler, lcd):
+def _footswitch_nav_order(lcd, nav_handler):
     """Rotate the universal encoder once around the main panel's selection ring
     and return the footswitch slot ids in the order the selection visits them."""
     flat = lcd.main_panel._flat_sel()
     order = []
     for _ in range(len(flat)):
-        handler.universal_encoder_select(1)
+        nav_handler(1)
         sel = lcd.main_panel.sel_ref
         if isinstance(sel, FootswitchWidget):
             order.append(sel.num)
     return order
 
 
-def test_footswitch_order_stable_across_reload(v3_system, make_plugin, snapshot):
+def test_footswitch_order_stable_across_reload(v3_system, nav_handler, make_plugin, snapshot):
     handler = v3_system.handler
     lcd = handler.lcd
     ch = v3_system.hw.midi_channel
@@ -42,7 +42,7 @@ def test_footswitch_order_stable_across_reload(v3_system, make_plugin, snapshot)
     board.plugins = [bound("Echo", 3, "Delay"), bound("Fuzz", 1, "Distortion")]
     handler.set_current_pedalboard(board)
     snapshot("pb1")
-    assert _footswitch_nav_order(handler, lcd) == [0, 1, 2, 3]
+    assert _footswitch_nav_order(lcd, nav_handler) == [0, 1, 2, 3]
 
     # PB2: all four bound, scrambled plugin order. A regression that built widgets
     # in plugin order would navigate 2,0,3,1 here; slot order must stay 0,1,2,3.
@@ -54,4 +54,4 @@ def test_footswitch_order_stable_across_reload(v3_system, make_plugin, snapshot)
     ]
     handler.set_current_pedalboard(board)
     snapshot("pb2")
-    assert _footswitch_nav_order(handler, lcd) == [0, 1, 2, 3]
+    assert _footswitch_nav_order(lcd, nav_handler) == [0, 1, 2, 3]

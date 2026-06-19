@@ -21,19 +21,19 @@ def test_v3_preset_change_via_footswitch_longpress(v3_system: SystemFixture, sna
     snapshot()
 
 
-def test_v3_preset_change_via_lcd(v3_system: SystemFixture, snapshot, get_urls):
+def test_v3_preset_change_via_lcd(v3_system: SystemFixture, nav_handler, snapshot, get_urls):
     """Encoder navigates to preset widget, opens menu, selects 'Lead', fires snapshot/load."""
     handler = v3_system.handler
     mock_get = v3_system.mock_get
 
     snapshot("nav_A")
 
-    handler.universal_encoder_select(1)
-    handler.universal_encoder_select(1)
+    nav_handler(1)
+    nav_handler(1)
     handler.universal_encoder_sw(switchstate.Value.RELEASED)
     snapshot("nav_B")
 
-    handler.universal_encoder_select(1)
+    nav_handler(1)
     snapshot("nav_C")
 
     handler.universal_encoder_sw(switchstate.Value.RELEASED)

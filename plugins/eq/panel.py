@@ -277,7 +277,7 @@ class GraphWidget(Widget):
             self._smear_intensity = new_smear_intensity
             return
 
-        x_min, x_max = self._dirty_extent_for_curve(old_curve, new_curve_y)
+        x_min, x_max = self._dirty_extent_for_curve(old_curve, new_curve_y, self._curve_y_float, new_curve_y_float)
         x_min, x_max = self._extend_extent_for_smear(
             x_min,
             x_max,
@@ -295,13 +295,34 @@ class GraphWidget(Widget):
             # until it eventually crosses the visibility threshold.
             return
 
-        self._curve_y = new_curve_y
-        self._curve_y_float = new_curve_y_float
-        self._curve_y_lo = new_y_lo
-        self._curve_y_hi = new_y_hi
+        # Slice-commit: only the columns inside [x_min, x_max) were repainted,
+        # so only those columns' committed state now matches the screen. The
+        # columns outside the refresh range keep their previous committed
+        # values — which equal the values that produced the pixels still on
+        # the LCD. This keeps the next call's diff honest about staleness:
+        # if a column's float Y has drifted from what's on screen, the diff
+        # catches it instead of silently advancing the baseline.
+        #
+        # old_curve is non-None here (we passed the `old_curve is None`
+        # early-return above), and it aliases self._curve_y, so the slice
+        # targets are non-None too. Cast to satisfy pyright.
+        assert self._curve_y is not None
+        assert self._curve_y_float is not None
+        assert self._curve_y_lo is not None
+        assert self._curve_y_hi is not None
+        self._curve_y[x_min:x_max] = new_curve_y[x_min:x_max]
+        self._curve_y_float[x_min:x_max] = new_curve_y_float[x_min:x_max]
+        self._curve_y_lo[x_min:x_max] = new_y_lo[x_min:x_max]
+        self._curve_y_hi[x_min:x_max] = new_y_hi[x_min:x_max]
+        if new_smear_colors is not None and self._smear_colors is not None:
+            self._smear_colors[x_min:x_max] = new_smear_colors[x_min:x_max]
+        else:
+            self._smear_colors = new_smear_colors
+        if new_smear_intensity is not None and self._smear_intensity is not None:
+            self._smear_intensity[x_min:x_max] = new_smear_intensity[x_min:x_max]
+        else:
+            self._smear_intensity = new_smear_intensity
         self._node_positions = new_nodes
-        self._smear_colors = new_smear_colors
-        self._smear_intensity = new_smear_intensity
         self._refresh_x_range(x_min, x_max)
 
     def set_selected(self, band_name: Optional[str]) -> None:  # type: ignore[override]
@@ -310,16 +331,33 @@ class GraphWidget(Widget):
         old = self._selected_band
         self._selected_band = band_name
 
-        x_min: Optional[int] = None
-        x_max: Optional[int] = None
+        # Selection only flips the halo on two nodes — nothing else on the
+        # graph changes (curve, smear, grid are untouched). Repaint each
+        # affected node's tight bbox in isolation; the rasterizer restores
+        # the halo-ring pixels the previously-selected node left behind, and
+        # the newly-selected node paints its halo on top. This avoids the
+        # full-height strip (and the inter-node gap columns) that
+        # `_refresh_x_range` would repaint via the value-change path.
         for name in (old, band_name):
-            ext = self._node_x_extent(name)
-            if ext is None:
-                continue
-            nx0, nx1 = ext
-            x_min = nx0 if x_min is None else min(x_min, nx0)
-            x_max = nx1 if x_max is None else max(x_max, nx1)
-        self._refresh_x_range(x_min, x_max)
+            self._refresh_node_bbox(name)
+
+    def _refresh_node_bbox(self, name: Optional[str]) -> None:
+        if name is None:
+            return
+        pos = self._node_positions.get(name)
+        if pos is None:
+            return
+        cx, cy, _, _ = pos
+        r = self.HALO_R + 1  # covers the halo outline (HALO_R) + 1px margin
+        bx = self.box
+        if bx is None:
+            return
+        x0 = max(bx.x0, cx - r)
+        x1 = min(bx.x1, cx + r + 1)
+        y0 = max(bx.y0, cy - r)
+        y1 = min(bx.y1, cy + r + 1)
+        if x0 < x1 and y0 < y1:
+            self.refresh(Box(x0, y0, x1, y1))
 
     def set_bypassed(self, bypassed: bool) -> None:
         if self._bypassed == bypassed:
@@ -331,10 +369,22 @@ class GraphWidget(Widget):
 
     @staticmethod
     def _dirty_extent_for_curve(
-        old: np.ndarray,
-        new: np.ndarray,
+        old_int: np.ndarray,
+        new_int: np.ndarray,
+        old_f: Optional[np.ndarray] = None,
+        new_f: Optional[np.ndarray] = None,
     ) -> tuple[Optional[int], Optional[int]]:
-        diff = np.flatnonzero(old != new)
+        # Int-level diff catches whole-pixel moves; float diff (with a
+        # sub-pixel epsilon) catches AA-blend drift where the rounded y
+        # didn't change but the float y moved enough to shift the alpha
+        # blend at the curve's edge rows. Without the float comparison,
+        # those columns keep stale pixels until some other refresh (e.g.
+        # a full-strip nav repaint) accidentally touches them.
+        diff = np.flatnonzero(old_int != new_int)
+        if old_f is not None and new_f is not None:
+            f_eps = 0.1  # ~10% of a pixel — below visible AA step on 8-bit
+            float_diff = np.flatnonzero(np.abs(old_f - new_f) > f_eps)
+            diff = np.union1d(diff, float_diff)
         if diff.size == 0:
             return None, None
         return int(diff[0]), int(diff[-1]) + 1
@@ -466,12 +516,16 @@ class GraphWidget(Widget):
         # Horizontal grid lines — clip x extent to the dirty rect.
         hx0 = max(rx0, 0)
         hx1 = min(rx1, _W)
+        hy0 = max(ry0, 0)
+        hy1 = min(ry1, GRAPH_H)
         zero_y = _ZERO_DB_Y - GRAPH_Y0  # widget-relative 0 dB line
-        if hx0 < hx1:
+        if hx0 < hx1 and hy0 < hy1:
             for db_val in _DB_GRID:
                 y = _db_to_y_scalar(db_val) - GRAPH_Y0
-                ctx.draw_line([(hx0, y), (hx1 - 1, y)], fill=GRID_DIM, width=1)
-            ctx.draw_line([(hx0, zero_y), (hx1 - 1, zero_y)], fill=GRID_0DB, width=1)
+                if hy0 <= y < hy1:
+                    ctx.draw_line([(hx0, y), (hx1 - 1, y)], fill=GRID_DIM, width=1)
+            if hy0 <= zero_y < hy1:
+                ctx.draw_line([(hx0, zero_y), (hx1 - 1, zero_y)], fill=GRID_0DB, width=1)
 
         # Curve + comet-tail smear — only columns within the dirty rect.
         # Vectorized over the dirty column range via pygame.surfarray.pixels3d
@@ -484,15 +538,21 @@ class GraphWidget(Widget):
             curve_color = tuple(int(c * shade) for c in CURVE_COLOR)
             cx0 = max(rx0, 0)
             cx1 = min(rx1, GRAPH_W)
-            if cx1 > cx0:
+            # Clamp the rasterized y-range to the dirty rect so a small bbox
+            # (e.g. a single band node from set_selected) doesn't recompute
+            # the full graph height. The per-row math is unaffected — we just
+            # slice fewer rows from the (GRAPH_W,) column arrays.
+            cy0 = max(ry0, 0)
+            cy1 = min(ry1, GRAPH_H)
+            if cx1 > cx0 and cy1 > cy0:
                 ox, oy = ctx._f().topleft
                 surf = ctx.surface
                 px = None
                 try:
                     px = pygame.surfarray.pixels3d(surf)  # locks surface
-                    # Surface slice for the dirty columns: (N, GRAPH_H, 3) view.
-                    sub = px[ox + cx0 : ox + cx1, oy : oy + GRAPH_H, :]
-                    bg = _BG_ARRAY[cx0:cx1, :].astype(np.float32)  # (N, H, 3)
+                    # Surface slice for the dirty rect: (N, H_dirty, 3) view.
+                    sub = px[ox + cx0 : ox + cx1, oy + cy0 : oy + cy1, :]
+                    bg = _BG_ARRAY[cx0:cx1, cy0:cy1].astype(np.float32)  # (N, H, 3)
                     result = bg.copy()
 
                     # ── smear (comet tail) ──
@@ -511,7 +571,7 @@ class GraphWidget(Widget):
                         y_top = np.where(down, yf, yf - length)  # (N,)
                         y_bot = np.where(down, yf + length, yf)  # (N,)
                         inv_2len = 0.5 / np.where(length > 0, length, 1.0)  # avoid div0
-                        rows = np.arange(GRAPH_H, dtype=np.float32)  # (H,)
+                        rows = np.arange(cy0, cy1, dtype=np.float32)  # (H,)
                         a = np.maximum(rows[None, :], y_top[:, None])  # (N, H)
                         b = np.minimum(rows[None, :] + 1.0, y_bot[:, None])  # (N, H)
                         pix_valid = (b > a) & valid[:, None]
@@ -536,7 +596,7 @@ class GraphWidget(Widget):
                         half_extent = np.sqrt(1.0 + (yh - yl) ** 2) * (CURVE_THICKNESS * 0.5)
                         y_lo_ext = mid - half_extent  # (N,)
                         y_hi_ext = mid + half_extent  # (N,)
-                        rows = np.arange(GRAPH_H, dtype=np.float32)  # (H,)
+                        rows = np.arange(cy0, cy1, dtype=np.float32)  # (H,)
                         overlap = np.minimum(rows[None, :] + 1.0, y_hi_ext[:, None]) - np.maximum(
                             rows[None, :], y_lo_ext[:, None]
                         )  # (N, H)
@@ -549,10 +609,10 @@ class GraphWidget(Widget):
                         # Fallback: single-pixel curve (no AA extent).
                         ys = self._curve_y
                         base_y = ys[cx0:cx1].astype(np.int32) - GRAPH_Y0  # (N,)
-                        in_range = (base_y >= 0) & (base_y < GRAPH_H)
+                        in_range = (base_y >= cy0) & (base_y < cy1)
                         xs_idx = np.where(in_range)[0]
                         if xs_idx.size > 0:
-                            result[xs_idx, base_y[xs_idx], :] = curve_color
+                            result[xs_idx, base_y[xs_idx] - cy0, :] = curve_color
 
                     # numpy astype rounds half-to-even; the original set_at
                     # path used Python int() (truncate). The ±1 difference on

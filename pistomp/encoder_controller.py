@@ -72,9 +72,10 @@ class EncoderController(controller.Controller):
         sw_adc_chan: Optional[int] = None,
         spi: Optional[object] = None,
         longpress: Optional[str] = None,  # string name; resolved by handler at dispatch
+        max_drain: int = Encoder.DEFAULT_MAX_DRAIN,
     ):
         controller.Controller.__init__(self, midi_channel, midi_CC)
-        self._hw_encoder = Encoder(d_pin, clk_pin)
+        self._hw_encoder = Encoder(d_pin, clk_pin, max_drain=max_drain)
         self.type = type
         self.id = id
 
