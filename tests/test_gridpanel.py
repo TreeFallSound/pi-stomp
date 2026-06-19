@@ -231,8 +231,8 @@ def test_routing_edge_uses_correct_lane_and_port_y(panel_stack) -> None:
     panel = _make_panel(layout, panel_stack)
 
     out_edges = {e.src_port: e for e in layout.edges if e.src.id == "S"}
-    (sx0, sy0), (dx0, dy0), lane0 = panel._edge_endpoints(out_edges[0])
-    (sx1, sy1), (dx1, dy1), lane1 = panel._edge_endpoints(out_edges[1])
+    (sx0, sy0), (dx0, dy0), lane0 = panel._edge_endpoints(out_edges[0], single_lane_gutters=set())
+    (sx1, sy1), (dx1, dy1), lane1 = panel._edge_endpoints(out_edges[1], single_lane_gutters=set())
 
     # Same source x (right edge of S), but different y per port.
     assert sx0 == sx1
@@ -259,7 +259,7 @@ def test_dummy_passes_wire_straight_through(panel_stack) -> None:
     chain = [e for e in layout.edges if e.src.kind == "dummy" or e.dst.kind == "dummy"]
     assert len(chain) == 2
     for edge in chain:
-        (_, sy), (_, dy), _ = panel._edge_endpoints(edge)
+        (_, sy), (_, dy), _ = panel._edge_endpoints(edge, single_lane_gutters=set())
         # Both endpoints at the OUT1 y (PORT_OFFSETS_Y[1]) within their cells
         assert sy % (TILE_H + ROW_GAP) == PORT_OFFSETS_Y[1]
         assert dy % (TILE_H + ROW_GAP) == PORT_OFFSETS_Y[1]

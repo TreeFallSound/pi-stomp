@@ -6,10 +6,11 @@ and dummy nodes are not selectable. Horizontal scrolling is handled by
 the ContainerWidget base class' built-in scroll-into-view mechanism.
 
 Geometry follows the locked design parameters:
-  - Tile size:      74 x 24
-  - Channel gap:    7 px (asymmetric: 1 + 1 + 3 + 1 + 1)
-  - Lane offsets:   1 (port 0) and 5 (port 1) within the 7px channel
-  - Port y offsets: 8 (port 0) and 16 (port 1) within the 24h tile
+  - Tile size:      74 x 28
+  - Channel gap:    7 px
+  - Lane offsets:   2 (port 0) and 4 (port 1) within the 7px channel;
+                    single-lane gutters center at offset 3 instead
+  - Port y offsets: 8 (port 0) and 18 (port 1) within the 28px tile
 """
 
 from __future__ import annotations
@@ -31,8 +32,8 @@ PORT_OFFSETS_Y: tuple[int, int] = (8, 18)
 
 # Default wire colors keyed on src_port (overridable via constructor).
 DEFAULT_WIRE_COLORS: tuple[tuple[int, int, int], tuple[int, int, int]] = (
-    (0, 200, 255),  # port 0 — cyan
-    (255, 160, 0),  # port 1 — amber
+    (70, 150, 200),  # port 0 — steel blue
+    (200, 130, 50),  # port 1 — muted gold
 )
 
 TileFactory = Callable[[LayoutNode, Box, Widget], Widget]
@@ -104,9 +105,15 @@ class GridPanel(ContainerWidget):
         return (x, y + PORT_OFFSETS_Y[port_idx])
 
     @classmethod
-    def gutter_lane_x(cls, layer: int, port_idx: int) -> int:
-        """X coord of the vertical lane in the gap to the right of `layer`."""
-        return (TILE_W + CHANNEL) * layer + TILE_W + LANE_OFFSETS[port_idx]
+    def gutter_lane_x(cls, layer: int, port_idx: int, single_lane: bool = False) -> int:
+        """X coord of the vertical lane in the gap to the right of `layer`.
+
+        When only one port is active in this gutter, center the wire instead
+        of using the static lane offset."""
+        gutter_start = (TILE_W + CHANNEL) * layer + TILE_W
+        if single_lane:
+            return gutter_start + CHANNEL // 2
+        return gutter_start + LANE_OFFSETS[port_idx]
 
     # ------------------------------------------------------------------ #
     # Build tiles from layout.
@@ -171,7 +178,9 @@ class GridPanel(ContainerWidget):
         so rendering doesn't crash."""
         return 0 if idx <= 0 else 1
 
-    def _edge_endpoints(self, edge: LayoutEdge) -> tuple[tuple[int, int], tuple[int, int], int]:
+    def _edge_endpoints(
+        self, edge: LayoutEdge, single_lane_gutters: set[int]
+    ) -> tuple[tuple[int, int], tuple[int, int], int]:
         """Resolve (src_xy, dst_xy, vertical_lane_x) for one column-spanning
         edge. Dummies use carried_src_port as both their in and out port.
 
@@ -189,7 +198,7 @@ class GridPanel(ContainerWidget):
             dst_xy = self.out_port_xy(dst.layer, dst.row, dst_y_idx)
         else:
             dst_xy = self.in_port_xy(dst.layer, dst.row, dst_y_idx)
-        lane_x = self.gutter_lane_x(src.layer, lane_idx)
+        lane_x = self.gutter_lane_x(src.layer, lane_idx, single_lane=src.layer in single_lane_gutters)
         return src_xy, dst_xy, lane_x
 
     def _draw_vertical_edge(self, ctx, edge: LayoutEdge) -> None:
@@ -210,11 +219,18 @@ class GridPanel(ContainerWidget):
         right into dst. Vertical-only edges (same column) route in the
         right-hand gutter instead."""
         super()._draw(ctx)
+        # Gutters that carry only one distinct port get their wire centered.
+        gutter_ports: dict[int, set[int]] = {}
+        for edge in self.layout.edges:
+            if edge.src.layer != edge.dst.layer:
+                gutter_ports.setdefault(edge.src.layer, set()).add(self._clamp_port(edge.src_port))
+        single_lane_gutters = {layer for layer, ports in gutter_ports.items() if len(ports) == 1}
+
         for edge in self.layout.edges:
             if edge.src.layer == edge.dst.layer:
                 self._draw_vertical_edge(ctx, edge)
                 continue
-            (sx, sy), (dx, dy), lane_x = self._edge_endpoints(edge)
+            (sx, sy), (dx, dy), lane_x = self._edge_endpoints(edge, single_lane_gutters)
             color = self.wire_colors[self._clamp_port(edge.src_port)]
             ctx.draw_line([(sx, sy), (lane_x, sy)], fill=color, width=1)
             ctx.draw_line([(lane_x, sy), (lane_x, dy)], fill=color, width=1)

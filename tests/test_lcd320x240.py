@@ -143,7 +143,9 @@ def setup_main_ui(instance):
             "exp:pedal": {Token.ID: 0, Token.TYPE: Token.EXPRESSION, Token.COLOR: "Red", Token.NAME: "Wah"},
         },
     )
-    mock_footswitches = [MockObject(id=i, toggled=False, get_display_label=lambda: "", parameter=None) for i in range(4)]
+    mock_footswitches = [
+        MockObject(id=i, toggled=False, get_display_label=lambda: "", parameter=None) for i in range(4)
+    ]
     instance.link_data(pedalboards=[mock_pedalboard], current=mock_current, footswitches=mock_footswitches)
     instance.draw_main_panel()
 
@@ -389,12 +391,14 @@ def _setup_pedalboard(instance, pb):
         preset_index=0,
         analog_controllers={},
     )
-    mock_footswitches = [MockObject(id=i, toggled=False, get_display_label=lambda: "", parameter=None) for i in range(4)]
+    mock_footswitches = [
+        MockObject(id=i, toggled=False, get_display_label=lambda: "", parameter=None) for i in range(4)
+    ]
     instance.link_data(pedalboards=[pb], current=mock_current, footswitches=mock_footswitches)
     instance.draw_main_panel()
 
 
-@pytest.mark.parametrize("topology", ["blank", "linear", "parallel", "stereo", "tall_parallel"])
+@pytest.mark.parametrize("topology", ["blank", "linear", "parallel", "tall_parallel", "stereo_chain", "split_merge"])
 def test_routing_snapshot(lcd, snapshot, topology):
     instance, _ = lcd
     _setup_pedalboard(instance, pedalboard_fixtures.REGISTRY[topology]())
@@ -402,12 +406,14 @@ def test_routing_snapshot(lcd, snapshot, topology):
 
 
 def test_tall_parallel_scrolled_to_last(lcd, snapshot):
-    """Selecting the last plugin in a 5-row tall pedalboard must scroll it
-    clear of the footswitch bar (bottom_inset ensures this)."""
+    """Selecting the last plugin in col 0 must scroll it clear of the footswitch bar."""
     instance, _ = lcd
     pb = pedalboard_fixtures.tall_parallel()
     _setup_pedalboard(instance, pb)
     snapshot("initial")
-    for _ in range(len(pb.plugins) + 2):
+    tiles = instance.grid_panel.tile_order
+    col0_x = tiles[0].box.x0
+    col0_count = sum(1 for t in tiles if t.box.x0 == col0_x)
+    for _ in range(col0_count - 1 + 3):
         instance.main_panel.sel_next()
     snapshot("scrolled_to_last")

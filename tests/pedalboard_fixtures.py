@@ -120,37 +120,113 @@ def parallel_branches() -> MockPedalboard:
 
 
 def tall_parallel() -> MockPedalboard:
-    """Five parallel branches — forces more than 4 rows, exercising vertical
-    overflow past the old 130px plugin area and into the footswitch overlay zone.
+    """Five parallel lanes of varying depth coalescing into x42-eq.
+    Five rows in col 0 exercises footswitch-panel occlusion; shorter lanes
+    skip ahead via dummies, producing vertical segments in the merge gutters.
 
-        capture_1 ─┬─ A ─┐
-                   ├─ B ─┤
-                   ├─ C ─┼─ playback_{1,2}
-                   ├─ D ─┤
-                   └─ E ─┘
+    Lane 1 (depth 3): Gate → Amp → Cab ────────────────────────┐
+    Lane 2 (depth 2): Comp → Drive ──────────(dummy)───────────┤
+    Lane 3 (depth 2): EQ   → Delay ──────────(dummy)───────────┤→ x42-eq → playback
+    Lane 4 (depth 1): Reverb ────────────────(dummies)─────────┤
+    Lane 5 (depth 1): Chorus ────────────────(dummies)─────────┘
     """
-    ids = list("ABCDE")
-    plugins = [MockPlugin(pid, "Delay") for pid in ids]
-    conns = [Connection(src=_source_ep(1), dst=_plugin_ep(pid)) for pid in ids]
-    conns += [Connection(src=_plugin_ep(pid), dst=_sink_ep(1)) for pid in ids]
+    plugins = [
+        MockPlugin("gate", "Dynamics", has_footswitch=True),
+        MockPlugin("amp", "Amplifier", has_footswitch=True),
+        MockPlugin("cab", "Utility"),
+        MockPlugin("comp", "Dynamics", has_footswitch=True),
+        MockPlugin("drive", "Distortion", has_footswitch=True),
+        MockPlugin("eq", "EQ"),
+        MockPlugin("delay", "Delay", has_footswitch=True),
+        MockPlugin("reverb", "Reverb", has_footswitch=True),
+        MockPlugin("chorus", "Modulator", has_footswitch=True),
+        MockPlugin("x42-eq", "EQ"),
+    ]
+    conns = [
+        # Lane 1 (depth 3)
+        Connection(src=_source_ep(1), dst=_plugin_ep("gate")),
+        Connection(src=_plugin_ep("gate"), dst=_plugin_ep("amp")),
+        Connection(src=_plugin_ep("amp"), dst=_plugin_ep("cab")),
+        Connection(src=_plugin_ep("cab"), dst=_plugin_ep("x42-eq")),
+        # Lane 2 (depth 2)
+        Connection(src=_source_ep(1), dst=_plugin_ep("comp")),
+        Connection(src=_plugin_ep("comp"), dst=_plugin_ep("drive")),
+        Connection(src=_plugin_ep("drive"), dst=_plugin_ep("x42-eq")),
+        # Lane 3 (depth 2)
+        Connection(src=_source_ep(1), dst=_plugin_ep("eq")),
+        Connection(src=_plugin_ep("eq"), dst=_plugin_ep("delay")),
+        Connection(src=_plugin_ep("delay"), dst=_plugin_ep("x42-eq")),
+        # Lane 4 (depth 1)
+        Connection(src=_source_ep(1), dst=_plugin_ep("reverb")),
+        Connection(src=_plugin_ep("reverb"), dst=_plugin_ep("x42-eq")),
+        # Lane 5 (depth 1)
+        Connection(src=_source_ep(1), dst=_plugin_ep("chorus")),
+        Connection(src=_plugin_ep("chorus"), dst=_plugin_ep("x42-eq")),
+        # Output
+        Connection(src=_plugin_ep("x42-eq"), dst=_sink_ep(1)),
+        Connection(src=_plugin_ep("x42-eq"), dst=_sink_ep(2)),
+    ]
     return MockPedalboard(title="Tall Parallel", plugins=plugins, connections=conns)
 
 
-def stereo_split() -> MockPedalboard:
-    """Stereo plugin S sends OUT1 → playback_1 and OUT2 → playback_2."""
-    plugins = [MockPlugin("S", "Utility")]
-    conns = [
-        Connection(src=_source_ep(1), dst=_plugin_ep("S")),
-        Connection(src=Endpoint(EndpointKind.PLUGIN, "S", "", 0), dst=_sink_ep(1)),
-        Connection(src=Endpoint(EndpointKind.PLUGIN, "S", "", 1), dst=_sink_ep(2)),
+def stereo_chain() -> MockPedalboard:
+    """Full stereo signal through three plugins — both lanes occupied in every gutter:
+
+    capture_1 → EQ(0) → Comp(0) → Limit(0) → playback_1
+    capture_2 → EQ(1) → Comp(1) → Limit(1) → playback_2
+    """
+    plugins = [
+        MockPlugin("eq", "EQ", has_footswitch=True),
+        MockPlugin("comp", "Dynamics", has_footswitch=True),
+        MockPlugin("limit", "Dynamics"),
     ]
-    return MockPedalboard(title="Stereo", plugins=plugins, connections=conns)
+    conns = [
+        Connection(src=_source_ep(1), dst=_plugin_ep("eq")),
+        Connection(src=_source_ep(2), dst=_plugin_ep("eq", 1)),
+        Connection(src=_plugin_ep("eq"), dst=_plugin_ep("comp")),
+        Connection(src=_plugin_ep("eq", 1), dst=_plugin_ep("comp", 1)),
+        Connection(src=_plugin_ep("comp"), dst=_plugin_ep("limit")),
+        Connection(src=_plugin_ep("comp", 1), dst=_plugin_ep("limit", 1)),
+        Connection(src=_plugin_ep("limit"), dst=_sink_ep(1)),
+        Connection(src=_plugin_ep("limit", 1), dst=_sink_ep(2)),
+    ]
+    return MockPedalboard(title="Stereo Chain", plugins=plugins, connections=conns)
+
+
+def split_merge() -> MockPedalboard:
+    """A splitter plugin fans out to two parallel processors that merge back.
+    This is the minimal topology that produces vertical wire segments.
+
+    capture → Split(0) → Delay(0) → Merge(0) → playback_1
+              Split(1) → Reverb(0) → Merge(1) → playback_2
+
+    Gutter 0: two-lane (port 0 straight, port 1 drops to row 1).
+    Gutter 1: single-lane centered (both sources on port 0, rises from row 1 back to row 0).
+    """
+    plugins = [
+        MockPlugin("split", "Utility"),
+        MockPlugin("delay", "Delay", has_footswitch=True),
+        MockPlugin("reverb", "Reverb", has_footswitch=True),
+        MockPlugin("merge", "Utility"),
+    ]
+    conns = [
+        Connection(src=_source_ep(1), dst=_plugin_ep("split")),
+        Connection(src=_plugin_ep("split"), dst=_plugin_ep("delay")),
+        Connection(src=_plugin_ep("split", 1), dst=_plugin_ep("reverb")),
+        Connection(src=_plugin_ep("delay"), dst=_plugin_ep("merge")),
+        Connection(src=_plugin_ep("reverb"), dst=_plugin_ep("merge", 1)),
+        Connection(src=_plugin_ep("merge"), dst=_sink_ep(1)),
+        Connection(src=_plugin_ep("merge", 1), dst=_sink_ep(2)),
+    ]
+    return MockPedalboard(title="Split Merge", plugins=plugins, connections=conns)
+
 
 
 REGISTRY: dict[str, Callable[[], MockPedalboard]] = {
     "blank": blank,
     "linear": linear_chain,
     "parallel": parallel_branches,
-    "stereo": stereo_split,
     "tall_parallel": tall_parallel,
+    "stereo_chain": stereo_chain,
+    "split_merge": split_merge,
 }
