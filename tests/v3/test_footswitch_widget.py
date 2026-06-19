@@ -1,17 +1,18 @@
 """FootswitchWidget snapshot coverage — 8 configurations across 2 frames.
 
-Each frame mimics the v3 footswitch strip (4 slots) so a single snapshot
-exercises four widget configurations at once.
+Each frame mimics the v3 footswitch strip (4 slots, 320x36) so a single
+snapshot exercises four widget configurations at once.
 """
 from uilib.box import Box
 from uilib.footswitch import FootswitchWidget
 from uilib.panel import Panel
 
 
-SLOT_PITCH = 80
-SLOT_WIDTH = 80
-PANEL_W = SLOT_PITCH * 4
-PANEL_H = 32
+NUM_SLOTS = 4
+PANEL_W = 320
+PANEL_H = 36
+SLOT_PITCH = PANEL_W // NUM_SLOTS  # 80
+SLOT_WIDTH = SLOT_PITCH
 
 
 def _render(configs, is_on):
@@ -28,10 +29,10 @@ def _render(configs, is_on):
 
 def test_v3_footswitch_widget_on_configs(fake_lcd, snapshot):
     configs = [
-        ((255, 235, 59),  "BRIGHT"),   # light pill → LUT picks black FG
-        ((26, 58, 138),   "NIGHT"),    # dark pill  → LUT picks white FG
-        (None,            "DFLT"),     # no color → explicit white default
-        (None,            None),       # chassis only, no label
+        ((255, 235, 59),  "BRIGHT"),   # bound + on, light category color
+        ((26, 58, 138),   "NIGHT"),    # bound + on, dark category color
+        (None,            "DFLT"),     # bound + on, no color → white dot
+        (None,            None),       # unassigned → letter badge "D"
     ]
     fake_lcd.frames.append(_render(configs, is_on=True))
     snapshot()
@@ -39,10 +40,10 @@ def test_v3_footswitch_widget_on_configs(fake_lcd, snapshot):
 
 def test_v3_footswitch_widget_off_configs(fake_lcd, snapshot):
     configs = [
-        ((220, 40, 40),   "DIM"),
-        (None,            "OFF"),
-        ((220, 40, 40),   None),
-        (None,            None),
+        ((220, 40, 40),   "DIM"),      # bound + off, red category
+        (None,            "OFF"),      # bound + off, no color
+        ((220, 40, 40),   None),       # unassigned → letter badge "C"
+        (None,            None),       # unassigned → letter badge "D"
     ]
     fake_lcd.frames.append(_render(configs, is_on=False))
     snapshot()
@@ -52,9 +53,9 @@ def test_v3_footswitch_widget_all_states(fake_lcd, snapshot):
     # All four visual states side-by-side for comparison.
     configs = [
         ((220, 40, 40),  "ON"),    # bound + on
-        (None,           "on"),    # unbound + on
-        ((220, 40, 40),  "OFF"),   # bound-but-off
-        (None,           "off"),   # unbound + off
+        (None,           "on"),    # bound + on, no color
+        ((220, 40, 40),  "OFF"),   # bound + off
+        (None,           None),    # unassigned → letter badge
     ]
     fake_lcd.frames.append(_render(configs, is_on=False))
     snapshot()

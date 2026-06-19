@@ -17,47 +17,78 @@ import pygame
 
 from uilib.box import Box
 from uilib.config import Config
-from uilib.glyphs import KeycapCornerGlyph
+from uilib.glyphs import CircleGlyph
 from uilib.misc import get_text_size
 from uilib.widget import Widget
 
+# Layout constants (pixels). The strip is 36px tall.
+DOT_RADIUS = 6
+DOT_TOP = 4
+DOT_DIAMETER = 2 * DOT_RADIUS
+LABEL_TOP = DOT_TOP + DOT_DIAMETER + 2  # 18
+
+# Letter badge: bigger dot centered vertically with the letter inside.
+BADGE_RADIUS = 10
+BADGE_DIAMETER = 2 * BADGE_RADIUS
+BADGE_CENTER_Y = 18  # vertically centers the 20px badge in the 36px strip
+
+# Font threshold: below this slot width the label won't fit at 18pt, so
+# drop to the small font.
+SMALL_FONT_THRESHOLD = 60
+
+# Title white — same (255,255,255) used for pedalboard/snapshot titles.
+TITLE_WHITE = (255, 255, 255)
+BADGE_LETTER_COLOR = (0, 0, 0)
+
+
+def _tint_mask(mask: pygame.Surface, color: tuple[int, int, int]) -> pygame.Surface:
+    """Tint a white alpha-mask glyph into `color` (BLEND_RGBA_MULT on a copy)."""
+    tinted = mask.copy()
+    color_surf = pygame.Surface(mask.get_size(), pygame.SRCALPHA)
+    color_surf.fill(color)
+    tinted.blit(color_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+    return tinted
+
 
 class FootswitchWidget(Widget):
-    """Footswitch indicator: a keycap outline (rounded top, open bottom) centered in the slot.
+    """Footswitch indicator: a colored dot (the "LED") with a label below,
+    or a letter badge when unassigned."""
 
-    Accent color is ON when bound and active, dimmed otherwise.
-    """
-
-    UNBOUND_BG = (50, 50, 50)
+    # Bound switches: bright when active, dim ring when off.
+    UNBOUND_OFF_BG = (40, 40, 40)
     BOUND_OFF_BG = (90, 90, 90)
+    # Unassigned badges: deliberately dim so they don't compete with bound
+    # indicators. On is a muted gray, off is near-black.
+    BADGE_ON_FILL = (130, 130, 130)
+    BADGE_OFF_FILL = (30, 30, 30)
     DEFAULT_COLOR = (255, 255, 255)
 
-    KEYCAP_RADIUS = 4
-    KEYCAP_PAD_X = 7
-    KEYCAP_PAD_TOP = 3
-    KEYCAP_PAD_BOTTOM = 3
-    KEYCAP_HEIGHT = 20
-
-    def __init__(self, box, num, label, color, is_bypassed, **kwargs):
+    def __init__(self, box, num, label, color, is_bypassed, small_font=None, **kwargs):
         self._init_attrs(Widget.INH_ATTRS, kwargs)
         super(FootswitchWidget, self).__init__(box, **kwargs)
         self.font = Config().get_font("footswitch")
+        self.small_font = small_font
         self.num = num
         self.label = label
         self.color = color
         self.is_bypassed = is_bypassed
-        self._corner_cache: dict = {}
 
-    def _fit(self, text, max_w):
+    def _slot_font(self):
+        """Pick the largest font that comfortably fits the slot width."""
+        if self.box is not None and self.box.width < SMALL_FONT_THRESHOLD and self.small_font is not None:
+            return self.small_font
+        return self.font
+
+    def _fit(self, text, max_w, font):
         """Largest leading substring fitting max_w px."""
         if not text:
             return text
-        tw, _ = get_text_size(text, self.font)
+        tw, _ = get_text_size(text, font)
         if tw <= max_w:
             return text
         out = ""
         for ch in text:
-            tw, _ = get_text_size(out + ch, self.font)
+            tw, _ = get_text_size(out + ch, font)
             if tw > max_w:
                 break
             out += ch
@@ -67,74 +98,72 @@ class FootswitchWidget(Widget):
         pass  # parent.refresh() clears the RGBA surface and re-applies shroud before drawing us
 
     def _draw(self, ctx):
-        w, h = ctx.width, ctx.height
+        w, _h = ctx.width, ctx.height
         is_on = not self.is_bypassed
+        has_label = bool(self.label)
+
+        if has_label:
+            self._draw_dot_and_label(ctx, w, is_on)
+        else:
+            self._draw_letter_badge(ctx, w, is_on)
+
+    def _draw_dot_and_label(self, ctx, w, is_on):
+        """Small dot on top, label centered below."""
+        cx = w // 2
+        cy = DOT_TOP + DOT_RADIUS
 
         if is_on:
-            accent = self.color if self.color is not None else self.DEFAULT_COLOR
+            dot_color = self.color if self.color is not None else self.DEFAULT_COLOR
+            mask = CircleGlyph(DOT_RADIUS).render()
+            tinted = _tint_mask(mask, dot_color)
+            ox, oy = ctx._f().topleft
+            ctx.surface.blit(tinted, (cx - DOT_RADIUS + ox, cy - DOT_RADIUS + oy))
+            label_color = TITLE_WHITE
         else:
-            accent = self.BOUND_OFF_BG if self.color is not None else self.UNBOUND_BG
+            ring_color = self.BOUND_OFF_BG if self.color is not None else self.UNBOUND_OFF_BG
+            dot_box = Box.xywh(cx - DOT_RADIUS, cy - DOT_RADIUS, DOT_DIAMETER, DOT_DIAMETER)
+            ctx.draw_ellipse(dot_box, outline=ring_color, width=1)
+            label_color = self.BOUND_OFF_BG if self.color is not None else self.UNBOUND_OFF_BG
 
-        text = self.label if self.label else chr(ord("A") + self.num)
-        text = self._fit(text, w - 2 * self.KEYCAP_PAD_X)
+        font = self._slot_font()
+        text = self._fit(self.label, w - 2, font)
+        tw, _ = get_text_size(text, font)
+        tx = (w - tw) // 2
+        ctx.draw_text((tx, LABEL_TOP), text, fill=label_color, font=font)
 
-        tw, _ = get_text_size(text, self.font)
-        kw = tw + 2 * self.KEYCAP_PAD_X
-        kh = self.KEYCAP_HEIGHT
-        kx0 = (w - kw) // 2
-        ky0 = (h - kh) // 2
-        kx1 = kx0 + kw - 1
-        ky1 = ky0 + kh - 1
+    def _draw_letter_badge(self, ctx, w, is_on):
+        """Filled dot with the slot letter inside in bold black (on and off)."""
+        fill = self.BADGE_ON_FILL if is_on else self.BADGE_OFF_FILL
+        cx = w // 2
+        cy = BADGE_CENTER_Y
 
-        fill = None if is_on else (0, 0, 0)
-        self._draw_keycap(ctx, kx0, ky0, kx1, ky1, accent, fill)
-
-        tx = kx0 + self.KEYCAP_PAD_X
-        ty = ky0 + self.KEYCAP_PAD_TOP - 1
-        ctx.draw_text((tx, ty), text, fill=accent, font=self.font)
-
-    def _corner_surfs(self, r: int, color) -> tuple:
-        """Cached (tl, tr) SRCALPHA surfaces for rounded corners.
-
-        Returns an (r+1)x(r+1) surface with the top-left arc drawn on a
-        transparent background (analytic AA via `KeycapCornerGlyph`),
-        plus a horizontal flip for the top-right. Composites correctly
-        on RGBA — the 1px stroke aligns with the keycap's straight edges.
-        """
-        if isinstance(color, pygame.Color):
-            key = (color.r, color.g, color.b, color.a)
-        elif isinstance(color, (list, tuple)):
-            key = tuple(color) if len(color) == 4 else (color[0], color[1], color[2], 255)
-        else:
-            key = (255, 255, 255, 255)
-        if key not in self._corner_cache:
-            rgb = (key[0], key[1], key[2])
-            tl = KeycapCornerGlyph(r, rgb).render()
-            tr = pygame.transform.flip(tl, True, False)
-            self._corner_cache[key] = (tl, tr)
-        return self._corner_cache[key]
-
-    def _draw_keycap(self, ctx, kx0, ky0, kx1, ky1, color, fill=None):
-        """Keycap outline: rounded top corners, vertical sides, open bottom."""
-        r = self.KEYCAP_RADIUS
-        if fill is not None:
-            ctx.draw_rectangle(Box(kx0, ky0, kx1 + 1, ky1 + 1), fill=fill)
-
-        # Straight edges
-        ctx.draw_line([(kx0 + r, ky0), (kx1 - r, ky0)], fill=color, width=1)  # top
-        ctx.draw_line([(kx0, ky0 + r), (kx0, ky1)], fill=color, width=1)  # left
-        ctx.draw_line([(kx1, ky0 + r), (kx1, ky1)], fill=color, width=1)  # right
-
-        # AA corners: blit cached (r+1)x(r+1) surfaces rendered on transparent background
-        tl, tr = self._corner_surfs(r, color)
+        mask = CircleGlyph(BADGE_RADIUS).render()
+        tinted = _tint_mask(mask, fill)
         ox, oy = ctx._f().topleft
-        ctx.surface.blit(tl, (kx0 + ox, ky0 + oy))
-        ctx.surface.blit(tr, (kx1 - r + ox, ky0 + oy))
+        ctx.surface.blit(tinted, (cx - BADGE_RADIUS + ox, cy - BADGE_RADIUS + oy))
+
+        # Bold letter, centered on the dot centre via ink-bbox centering
+        # (origin=False → get_rect returns the ink bbox; render_to's pen is
+        # the top-left of that bbox, matching the PillGlyph approach).
+        letter = chr(ord("A") + self.num)
+        font = Config().get_font("footswitch_badge")
+        assert font is not None, "footswitch_badge font not registered"
+        prev = font.origin
+        font.origin = False
+        try:
+            rect = font.get_rect(letter)
+            tx = cx - rect.width // 2
+            ty = cy - rect.height // 2
+            if letter == "D":
+                tx += 1
+            font.render_to(ctx.surface, (tx + ox, ty + oy), letter, fgcolor=BADGE_LETTER_COLOR)
+        finally:
+            font.origin = prev
 
     def refresh(self, box=None):
         # Delegate to parent so the ShroudedPanel re-applies its shroud gradient
         # before drawing children — a widget-only refresh would leave the slot
-        # area transparent (no shroud) where we cleared for the previous keycap.
+        # area transparent (no shroud) where we cleared for the previous dot.
         if self.parent is not None:
             self.parent.refresh()
         else:

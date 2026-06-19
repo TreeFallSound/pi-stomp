@@ -112,7 +112,7 @@ class Lcd(abstract_lcd.Lcd):
         self.plugin_width = 78
         self.plugin_height = 29
         self.plugin_label_length = 7
-        self.footswitch_height = 32
+        self.footswitch_height = 36
         self.footswitch_width = 80
         # space between footswitch icons where index is the footswitch count
         #                                0    1    2    3    4   5   6   7
@@ -671,24 +671,30 @@ class Lcd(abstract_lcd.Lcd):
     #
     # Footswitches
     #
-    def footswitch_label(self, footswitch):
+    def footswitch_label(self, footswitch, slot_width=None):
         """Label for a footswitch bound to a plugin param: the param name, or the plugin instance for a :bypass binding."""
         param = footswitch.parameter
         if param is None:
             return None
         if param.symbol != ":bypass":  # TODO token
             return param.name
-        return self.shorten_name(param.instance_id, self.footswitch_width)
+        width = slot_width if slot_width is not None else self.footswitch_width
+        return self.shorten_name(param.instance_id, width)
 
     def draw_footswitches(self):
         # One slot-ordered pass over the physical switches, so selection order is
         # the stable physical order regardless of plugin/pedalboard ordering.
-        # Bound switches (parameter set) get a colored, labeled, actionable keycap;
+        # Bound switches (parameter set) get a colored, labeled, actionable dot;
         # unbound slots get a placeholder that only toggles its indicator.
+        # Dots are evenly spaced across the 320px strip so the row reads as a
+        # linear LED strip mirroring the physical hardware, regardless of count.
+        num_fs = self.handler.get_num_footswitches() if self.handler else len(self.footswitches)
+        pitch = self.get_footswitch_pitch(num_fs)
+        slot_w = pitch
         for fs in sorted(self.footswitches, key=lambda f: f.id):
-            x = self.get_footswitch_pitch() * fs.id
+            x = pitch * fs.id
             if fs.parameter is not None:
-                label = self.footswitch_label(fs)
+                label = self.footswitch_label(fs, slot_w)
                 fs.set_display_label(label)
                 color = Category.get_category_color(fs.category)
                 action = self.footswitch_event
@@ -696,8 +702,9 @@ class Lcd(abstract_lcd.Lcd):
                 label = fs.get_display_label() or ""
                 color = None
                 action = None
-            p = FootswitchWidget(Box.xywh(x, 0, self.footswitch_width, self.footswitch_height),
+            p = FootswitchWidget(Box.xywh(x, 0, slot_w, self.footswitch_height),
                                  fs.id, label, color, not fs.toggled,
+                                 small_font=self.tiny_font,
                                  parent=self.footswitch_panel, action=action, object=fs)
             self.w_footswitches.append(p)
             self.footswitch_panel.add_sel_widget(p)
@@ -708,7 +715,8 @@ class Lcd(abstract_lcd.Lcd):
             if wfs.object == footswitch:
                 if footswitch.parameter is not None:
                     # Binding may be new (e.g. MIDI learn) — reflect label + color.
-                    footswitch.set_display_label(self.footswitch_label(footswitch))
+                    slot_w = wfs.box.width if wfs.box is not None else self.footswitch_width
+                    footswitch.set_display_label(self.footswitch_label(footswitch, slot_w))
                     wfs.color = Category.get_category_color(footswitch.category)
                 wfs.toggle(footswitch.toggled == False)
                 wfs.label = footswitch.get_display_label() or ""
@@ -719,15 +727,15 @@ class Lcd(abstract_lcd.Lcd):
         for fs in self.footswitches:
             self.update_footswitch(fs)
 
-    def get_footswitch_pitch(self):
-        if self.footswitch_pitch is not None:
-            return self.footswitch_pitch
-        if self.handler:
-            num_fs = self.handler.get_num_footswitches()
-            if num_fs <= len(self.footswitch_pitch_options):
-                self.footswitch_pitch = self.footswitch_pitch_options[self.handler.get_num_footswitches()]
-                return self.footswitch_pitch
-        return self.footswitch_pitch_options[-1]
+    def get_footswitch_pitch(self, num_fs: int | None = None):
+        # Evenly spread the footswitch dots across the 320px strip so the row
+        # mirrors the physical LED strip's left-to-right layout and scales
+        # cleanly to any switch count (1-8) without overflow.
+        if num_fs is None:
+            num_fs = self.handler.get_num_footswitches() if self.handler else len(self.footswitches)
+        if num_fs <= 0:
+            return self.footswitch_pitch_options[-1]
+        return self.display_width // num_fs
 
     #
     # System Menu

@@ -31,6 +31,7 @@ FontName = Literal[
     "default",
     "default_title",
     "footswitch",
+    "footswitch_badge",
     "big_bold",
     "small",
     "tiny",
@@ -63,6 +64,8 @@ class Config:
             self.add_font("default_title", "DejaVuSans-Bold.ttf", 16)
         if "footswitch" not in self.fonts:
             self.add_font("footswitch", "DejaVuSans.ttf", 18)
+        if "footswitch_badge" not in self.fonts:
+            self.add_font("footswitch_badge", "DejaVuSans-Bold.ttf", 14)
         if "default_fgnd" not in self.colors:
             self.add_color("default_fgnd", (255, 255, 255))
         if "default_bkgnd" not in self.colors:

@@ -13,6 +13,27 @@ import pytest
 import common.token as Token
 
 
+@pytest.fixture(autouse=True)
+def _restore_global_pygame_state():
+    """Re-init pygame and drop cached fonts after each emulator test.
+
+    Emulator teardown quits pygame — hardware `cleanup()` (the clean-exit path
+    exercised by test_bootstrap) and the window-close tests both call
+    `pygame_quit()`. That invalidates every `Font` cached in the Config
+    singleton ("freetype module quit since freetype font created") for the rest
+    of the session, breaking later suites. Restoring state here contains the
+    teardown to the suite that causes it rather than leaking it process-wide.
+    """
+    yield
+    from uilib.config import Config
+    from uilib.pygame_init import init as pygame_init
+
+    pygame_init()
+    if Config._instance is not None:
+        # Cleared, not rebuilt: Config().__init__ re-adds defaults on next use.
+        Config._instance.fonts = {}
+
+
 def _mod_get(url, **_):
     resp = MagicMock()
     resp.status_code = 200
