@@ -1031,11 +1031,13 @@ class Modhandler(Handler):
         self.lcd.splash_show(False)
         logging.info("System Shutdown")
         os.system('sudo systemctl --no-wall poweroff')
+        os._exit(0)
 
     def system_menu_reboot(self, arg):
         self.lcd.splash_show(False)
         logging.info("System Reboot")
         os.system('sudo systemctl reboot')
+        os._exit(0)
 
     def system_menu_recovery_mode(self, arg):
         self.lcd.draw_info_message("Entering recovery mode...", refresh=True)

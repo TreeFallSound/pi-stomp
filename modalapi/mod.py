@@ -1240,11 +1240,13 @@ class Mod(Handler):
         self.lcd.splash_show(False)
         logging.info("System Shutdown")
         os.system('sudo systemctl --no-wall poweroff')
+        os._exit(0)
 
     def system_menu_reboot(self):
         self.lcd.splash_show(False)
         logging.info("System Reboot")
         os.system('sudo systemctl reboot')
+        os._exit(0)
 
     def check_usb(self):
         self.usbflash = False
