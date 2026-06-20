@@ -27,6 +27,7 @@ import os
 
 import modalapi.pedalboard as Pedalboard
 from modalapi.modhandler import Modhandler
+from modalapi.pedalboard_monitor import FileChangeMonitor
 from modalapi.websocket_bridge import AsyncWebSocketBridge
 import pistomp.settings as Settings
 from emulator.stubs import StubEthernetManager, StubJackMute, StubWifiManager, VirtualAudiocard
@@ -41,6 +42,7 @@ class EmulatorModhandler(Modhandler):
         self.data_dir = emu_data_dir
         self.banks_file = os.path.join(emu_data_dir, "banks.json")
         self.pedalboard_modification_file = os.path.join(emu_data_dir, "last.json")
+        self.last_json_monitor = FileChangeMonitor(os.path.join(emu_data_dir, "last.json"))
         self.pedalboard_change_timestamp = 0
         self.banks_file_timestamp = 0
 
