@@ -164,6 +164,8 @@ class ShroudedPanel(Panel):
     are drawn on top.
     """
 
+    INV_GAMMA = 1 / 2.2
+
     def __init__(self, shroud_alpha=64, gradient_start: float | None = None, gradient_pos=1.0, **kwargs):
         # RGBA is required: shroud compositing depends on per-pixel alpha.
         # Callers cannot override this; RGB would bake alpha against black.
@@ -185,9 +187,9 @@ class ShroudedPanel(Panel):
         surf.fill((0, 0, 0, 0))
         end_y = max(int(h * self.gradient_pos), 1)
         for y in range(h):
-            t = min(y / end_y, 1.0)
-            alpha = int(self.gradient_start + t * (self.gradient_end - self.gradient_start))
-            pygame.draw.line(surf, (0, 0, 0, alpha), (0, y), (w - 1, y))
+            t = min(y / end_y, 1.0) ** self.INV_GAMMA
+            alpha = self.gradient_start + t * (self.gradient_end - self.gradient_start)
+            pygame.draw.line(surf, (0, 0, 0, int(alpha)), (0, y), (w - 1, y))
         return surf
 
     def _draw(self, ctx: PaintContext):
