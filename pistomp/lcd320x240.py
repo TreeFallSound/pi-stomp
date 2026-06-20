@@ -708,7 +708,7 @@ class Lcd(abstract_lcd.Lcd):
                 color = None
                 action = None
             p = FootswitchWidget(Box.xywh(x, 0, slot_w, self.footswitch_height),
-                                 fs.id, label, color, not fs.toggled,
+                                 label, color, not fs.toggled,
                                  small_font=self.tiny_font, taptempo=getattr(fs, 'taptempo', None),
                                  parent=self.footswitch_panel, action=action, object=fs)
             self.w_footswitches.append(p)

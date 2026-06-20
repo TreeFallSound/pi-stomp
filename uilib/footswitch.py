@@ -44,10 +44,10 @@ DOT_TOP = 4
 DOT_DIAMETER = 2 * DOT_RADIUS
 LABEL_TOP = DOT_TOP + DOT_DIAMETER + 2  # 18
 
-# Letter badge: bigger dot centered vertically with the letter inside.
-BADGE_RADIUS = 10
+# Letter badge: same size and y position as a bound dot.
+BADGE_RADIUS = DOT_RADIUS
 BADGE_DIAMETER = 2 * BADGE_RADIUS
-BADGE_CENTER_Y = 18  # vertically centers the 20px badge in the 36px strip
+BADGE_CENTER_Y = DOT_TOP + DOT_RADIUS
 
 # Font threshold: below this slot width the label won't fit at 18pt, so
 # drop to the small font.
@@ -55,7 +55,6 @@ SMALL_FONT_THRESHOLD = 60
 
 # Title white — same (255,255,255) used for pedalboard/snapshot titles.
 TITLE_WHITE: Color = (255, 255, 255)
-BADGE_LETTER_COLOR: Color = (0, 0, 0)
 
 
 def _tint_mask(mask: pygame.Surface, color: Color) -> pygame.Surface:
@@ -81,7 +80,6 @@ class FootswitchWidget(Widget):
     # indicators. On is a muted gray, off is near-black.
     BADGE_ON_FILL: Color = (130, 130, 130)
     BADGE_OFF_BORDER: Color = (50, 50, 50)
-    BADGE_OFF_LETTER: Color = (110, 110, 110)
     DEFAULT_COLOR: Color = (255, 255, 255)
 
     TAP_COLOR: Color = (255, 180, 0)  # amber — beat on / header text
@@ -95,7 +93,6 @@ class FootswitchWidget(Widget):
 
     font: pygame._freetype.Font
     small_font: pygame._freetype.Font | None
-    num: int
     label: str | None
     color: Color | None
     is_bypassed: bool
@@ -105,7 +102,6 @@ class FootswitchWidget(Widget):
     def __init__(
         self,
         box: Box,
-        num: int,
         label: str | None,
         color: Color | None,
         is_bypassed: bool,
@@ -117,7 +113,6 @@ class FootswitchWidget(Widget):
         super(FootswitchWidget, self).__init__(box, **kwargs)
         self.font = Config().get_font("footswitch")
         self.small_font = small_font
-        self.num = num
         self.label = label
         self.color = color
         self.is_bypassed = is_bypassed
@@ -213,7 +208,6 @@ class FootswitchWidget(Widget):
         ctx.draw_text((tx, LABEL_TOP), text, fill=label_color, font=font)
 
     def _draw_letter_badge(self, ctx: PaintContext, w: int, is_on: bool) -> None:
-        """Filled dot (on) or 1px outline ring (off) with the slot letter inside."""
         cx = w // 2
         cy = BADGE_CENTER_Y
         ox, oy = ctx._f().topleft
@@ -223,29 +217,11 @@ class FootswitchWidget(Widget):
             _tint_mask(CircleGlyph(BADGE_RADIUS).render(), fill), (cx - BADGE_RADIUS + ox, cy - BADGE_RADIUS + oy)
         )
 
-        if is_on:
-            letter_color = BADGE_LETTER_COLOR
-        else:
+        if not is_on:
             ring = RingGlyph(BADGE_RADIUS)
             ctx.surface.blit(
                 _tint_mask(ring.render(), self.BADGE_OFF_BORDER), (cx - ring.half_size + ox, cy - ring.half_size + oy)
             )
-            letter_color = self.BADGE_OFF_LETTER
-
-        letter = chr(ord("A") + self.num)
-        font = Config().get_font("footswitch_badge")
-        assert font is not None, "footswitch_badge font not registered"
-        prev = font.origin
-        font.origin = False
-        try:
-            rect = font.get_rect(letter)
-            tx = cx - rect.width // 2
-            ty = cy - rect.height // 2
-            if letter == "D":
-                tx += 1
-            font.render_to(ctx.surface, (tx + ox, ty + oy), letter, fgcolor=letter_color)
-        finally:
-            font.origin = prev
 
     def refresh(self, box=None):
         if self.parent is not None:

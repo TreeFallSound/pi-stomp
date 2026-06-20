@@ -20,7 +20,7 @@ def _render(configs, is_on):
     for i, (color, label) in enumerate(configs):
         FootswitchWidget(
             Box.xywh(i * SLOT_PITCH, 0, SLOT_WIDTH, PANEL_H),
-            i, label, color, not is_on,
+            label, color, not is_on,
             parent=panel,
         )
     panel.refresh()
