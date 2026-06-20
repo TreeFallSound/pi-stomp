@@ -549,7 +549,9 @@ class Modhandler(Handler):
                     logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
                     known.set_bypass(msg.bypassed)
                     self.lcd.refresh_plugin(known)
-                else:
+                elif not self._is_pedalboard_loading:
+                    # During a dump every plugin arrives as unknown; suppress
+                    # REST + redraw and let the LILV reload handle them.
                     self._handle_dynamic_plugin_add(msg)
 
         elif isinstance(msg, PluginBypassMessage):

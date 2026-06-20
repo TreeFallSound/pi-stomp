@@ -260,6 +260,27 @@ def test_v3_dynamic_add_known_plugin_updates_bypass_only(parallel_beths_system: 
     assert not chorus.is_bypassed()  # bypass cleared by the add message
 
 
+def test_v3_dynamic_add_suppressed_during_connect_dump(parallel_beths_system: SystemFixture):
+    """add messages while _is_pedalboard_loading=True are connect-dump entries.
+    They must NOT trigger a dynamic add (REST call + redraw) — only bypass buffering."""
+    handler = parallel_beths_system.handler
+    ws_bridge = parallel_beths_system.ws_bridge
+    parallel_beths_system.mock_get.side_effect = _effect_get_side_effect({_EXTRA_CHORUS_URI: _EXTRA_CHORUS_INFO})
+    assert handler.current
+    before = len(handler.current.pedalboard.plugins)
+    handler._is_pedalboard_loading = True
+    try:
+        ws_bridge.inject(f"add /graph/ExtraChorus {_EXTRA_CHORUS_URI} 900.0 50.0 0 1 1")
+        handler.poll_ws_messages()
+
+        # Plugin must NOT appear in the model during a dump
+        assert len(handler.current.pedalboard.plugins) == before
+        # Bypass IS buffered for later application when the pedalboard finishes loading
+        assert handler._pending_dump_bypass.get("ExtraChorus") == False
+    finally:
+        handler._is_pedalboard_loading = False
+
+
 def test_v3_dynamic_add_no_metadata_silently_skips(parallel_beths_system: SystemFixture):
     """REST returns {} for unknown URI → no plugin added, existing board untouched."""
     handler = parallel_beths_system.handler
