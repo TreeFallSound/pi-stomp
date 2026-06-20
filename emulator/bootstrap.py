@@ -79,8 +79,12 @@ def bootstrap_emulator(version: EmulatorVersion, cwd: str):
     current_bundle = handler.get_current_pedalboard_bundle_path()
     if current_bundle and current_bundle in handler.pedalboards:
         handler.set_current_pedalboard(handler.pedalboards[current_bundle])
-    else:
-        handler.pedalboard_change()
+    elif handler.pedalboard_list:
+        from modalapi.pedalboard_monitor import write_last_json
+        pb = handler.pedalboard_list[0]
+        write_last_json(handler.last_json_monitor.path, pb.bundle)
+        handler.pedalboard_change(pb)
+        handler.set_current_pedalboard(pb)
 
     handler.system_info_load()
 

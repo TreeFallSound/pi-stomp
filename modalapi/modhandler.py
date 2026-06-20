@@ -645,7 +645,7 @@ class Modhandler(Handler):
         else:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
-    def pedalboard_change(self, pedalboard=None):
+    def pedalboard_change(self, pedalboard: Pedalboard.Pedalboard) -> None:
         logging.info("Pedalboard change")
         self.lcd.draw_info_message("Loading...")
 
@@ -654,19 +654,10 @@ class Modhandler(Handler):
             logging.error("Bad Reset request")
 
         uri = self.root_uri + "pedalboard/load_bundle/"
-
-        if pedalboard is None:
-            pedalboard = self.pedalboard_list[0]
-        #self.set_current_pedalboard(pedalboard)  # TODO is this necessary?
-        bundlepath = pedalboard.bundle
-        data = {"bundlepath": bundlepath}
+        data = {"bundlepath": pedalboard.bundle}
         resp2 = self._rest_post(uri, data=data)
         if resp2 is None or resp2.status_code != 200:
             logging.error("Bad Rest request: %s %s" % (uri, data))
-
-        # Now that it's presumably changed, load the dynamic "current" data
-        # TODO this seems to be no longer required since the MOD pedalboard change will call this via poll_modui_changes()
-        #self.set_current_pedalboard(pedalboard)
 
     #
     # Preset Stuff
