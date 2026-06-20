@@ -828,8 +828,7 @@ class Mod(Handler):
             logging.error("Bad Reset request")
 
         uri = self.root_uri + "pedalboard/load_bundle/"
-        bundlepath = self.pedalboard_list[self.selected_pedalboard_index].bundle
-        data = {"bundlepath": bundlepath}
+        data = {"bundlepath": pedalboard.bundle}
         resp2 = req.post(uri, data)
         ok = ok and resp2.status_code == 200
         if not ok:
@@ -840,9 +839,8 @@ class Mod(Handler):
 
         # Stamp as known-good — only stamp when mod-host confirmed success
         if ok:
-            bundlepath = self.pedalboard_list[self.selected_pedalboard_index].bundle
             try:
-                subprocess.run(["pistomp-stamp", "stamp", bundlepath], check=False)
+                subprocess.run(["pistomp-stamp", "stamp", pedalboard.bundle], check=False)
             except Exception:
                 logging.debug("pistomp-stamp failed", exc_info=True)
 

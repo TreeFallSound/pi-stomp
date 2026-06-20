@@ -45,7 +45,7 @@ class TestStampOnPedalboardChange:
     def test_stamp_called_on_pedalboard_change(self, v1_system: SystemFixtureLegacy):
         handler = v1_system.handler
         with patch("modalapi.mod.subprocess.run") as mock_run:
-            handler.pedalboard_change()
+            handler.pedalboard_change(handler.pedalboard_list[0])
         _assert_stamp_called(mock_run, times=1)
 
     def test_stamp_called_on_top_encoder_select(self, v1_system: SystemFixtureLegacy):
@@ -74,13 +74,13 @@ class TestStampOnPedalboardChange:
 
             mock_get.side_effect = fail_response
             mock_post.side_effect = fail_response
-            handler.pedalboard_change()
+            handler.pedalboard_change(handler.pedalboard_list[0])
         _assert_stamp_not_called(mock_run)
 
     def test_stamp_exception_is_caught(self, v1_system: SystemFixtureLegacy):
         handler = v1_system.handler
         with patch("modalapi.mod.subprocess.run", side_effect=FileNotFoundError("no binary")):
-            handler.pedalboard_change()
+            handler.pedalboard_change(handler.pedalboard_list[0])
 
 
 class TestNoStampOnSetCurrentPedalboard:
