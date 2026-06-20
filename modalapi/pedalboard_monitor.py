@@ -59,3 +59,13 @@ def read_pedalboard_bundle(last_json_path: str) -> Optional[str]:
     except (json.JSONDecodeError, IOError) as e:
         logging.warning(f"Failed to read {last_json_path}: {e}")
         return None
+
+
+def write_last_json(last_json_path: str, bundle: str) -> None:
+    """Write last.json with the given bundle path."""
+    try:
+        with open(last_json_path, "w") as f:
+            json.dump({"bank": -2, "pedalboard": bundle, "supportsDividers": True}, f)
+        logging.info(f"Wrote {last_json_path} with bundle: {bundle}")
+    except IOError as e:
+        logging.error(f"Failed to write {last_json_path}: {e}")
