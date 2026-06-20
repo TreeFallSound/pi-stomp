@@ -25,6 +25,7 @@ Requires MOD Desktop running locally at http://127.0.0.1:18181.
 import logging
 import os
 
+import modalapi.pedalboard as Pedalboard
 from modalapi.modhandler import Modhandler
 from modalapi.websocket_bridge import AsyncWebSocketBridge
 import pistomp.settings as Settings
@@ -68,12 +69,9 @@ class EmulatorModhandler(Modhandler):
     def set_window(self, window):
         self._window = window
 
-    def pedalboard_change(self, pedalboard=None):
-        if pedalboard is None and self.pedalboard_list:
-            pedalboard = self.pedalboard_list[0]
+    def pedalboard_change(self, pedalboard: Pedalboard.Pedalboard) -> None:
         super().pedalboard_change(pedalboard)
-        if pedalboard is not None:
-            self.set_current_pedalboard(pedalboard)
+        self.set_current_pedalboard(pedalboard)
 
     # -------------------------------------------------------------------------
     # Skip Pi-only system calls
