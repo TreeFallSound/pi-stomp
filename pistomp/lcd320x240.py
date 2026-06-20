@@ -148,6 +148,7 @@ class Lcd(abstract_lcd.Lcd):
         self.pstack.push_panel(self.splash_panel, refresh=False)
         self.main_panel = Panel(box=Box.xywh(0, 0, self.display_width, self.display_height))
         self.main_panel_pushed = False
+        self._is_pedalboard_load = False
         self.footswitch_panel = ShroudedPanel(box=Box.xywh(0, self.display_height - self.footswitch_height,
                                                             self.display_width, self.footswitch_height),
                                               shroud_alpha=255, gradient_start=0, gradient_pos=0.8, no_dim=True, accepts_input=False)
@@ -199,8 +200,12 @@ class Lcd(abstract_lcd.Lcd):
 
     def draw_main_panel(self):
         self.draw_tools(None, None, None, None)
-        self.main_panel.sel_widget(self.w_wrench)  # Make the System tool (wrench) the initial selected item
         self.draw_title()
+        if self._is_pedalboard_load:
+            self._is_pedalboard_load = False
+            self.main_panel.sel_widget(self.w_pedalboard)
+        else:
+            self.main_panel.sel_widget(self.w_wrench)
         self.draw_analog_assignments(self.current.analog_controllers)
         self.draw_plugins()
         self.draw_footswitches()
@@ -454,18 +459,24 @@ class Lcd(abstract_lcd.Lcd):
         items = []
         bank_pbs = util.DICT_GET(self.handler.get_banks(), self.handler.get_bank())
 
+        def pedalboard_change(pb):
+            assert self.handler
+            self._is_pedalboard_load = True
+            self.handler.pedalboard_change(pb)
+
         if bank_pbs is None:
             # No bank so display all pedalboards as they're stored (alphabetically)
             for p in self.pedalboards:
-                items.append((p.title, self.handler.pedalboard_change, p))
+                items.append((p.title, pedalboard_change, p))
         else:
             # Bank is set so show only those in the bank and in the order defined by the bank
             for b in bank_pbs:
                 for p in self.pedalboards:  # LAME ugly O(N2) search
                     if p.title == b:
-                        items.append((p.title, self.handler.pedalboard_change, p))
+                        items.append((p.title, pedalboard_change, p))
 
-        self.draw_selection_menu(items, "Pedalboards", auto_dismiss=True, dismiss_option=True)
+        self.draw_selection_menu(items, "Pedalboards", auto_dismiss=True, dismiss_option=True,
+                                 default_item=self.current.pedalboard.title)
 
     def draw_preset_menu(self, event, widget):
         items = []
