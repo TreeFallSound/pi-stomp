@@ -502,7 +502,6 @@ class Modhandler(Handler):
                 logging.debug(f"Cleared {cleared} stale outbound messages on loading_start")
 
         elif isinstance(msg, LoadingEndMessage):
-            logging.debug(f"WebSocket: Pedalboard loading finished, snapshot={msg.snapshot_id}")
             # Sometimes mod-ui sends us -1 for preset index, but shows 0 anyway ("Default")
             self.next_pedalboard_preset_index = max(0, msg.snapshot_id)
 
@@ -564,7 +563,9 @@ class Modhandler(Handler):
                         break
 
         elif isinstance(msg, RemovePluginMessage):
-            if self.current is not None:
+            if self._is_pedalboard_loading:
+                logging.debug(f"WebSocket: remove {msg.instance} during load — suppressed")
+            elif self.current is not None:
                 before = len(self.current.pedalboard.plugins)
                 self.current.pedalboard.plugins = [
                     p for p in self.current.pedalboard.plugins if p.instance_id != msg.instance
@@ -578,22 +579,27 @@ class Modhandler(Handler):
                     ]
                     # Strip the removed instance from blend diff maps so the
                     # parameter_setter stops sending WS messages for it.
-                    # XXX: blend mode also listens to ws?
                     for blend in self.blend_modes.values():
                         for diff_map in blend.segment_diff_maps:
                             diff_map.pop(iid, None)
                     logging.info(f"WebSocket: Plugin {msg.instance} removed")
                     self.bind_current_pedalboard()
                     self.lcd.draw_main_panel()
+                else:
+                    logging.debug(f"WebSocket: remove {msg.instance} — not found in model")
 
         elif isinstance(msg, ConnectMessage):
-            if self.current is not None:
+            if self._is_pedalboard_loading:
+                logging.debug(f"WebSocket: connect {msg.port_from} -> {msg.port_to} during load — suppressed")
+            elif self.current is not None:
                 self.current.pedalboard.add_connection(msg.port_from, msg.port_to)
                 logging.info(f"WebSocket: Connected {msg.port_from} -> {msg.port_to}")
                 self.lcd.draw_main_panel()
 
         elif isinstance(msg, DisconnectMessage):
-            if self.current is not None:
+            if self._is_pedalboard_loading:
+                logging.debug(f"WebSocket: disconnect {msg.port_from} -> {msg.port_to} during load — suppressed")
+            elif self.current is not None:
                 self.current.pedalboard.remove_connection(msg.port_from, msg.port_to)
                 logging.info(f"WebSocket: Disconnected {msg.port_from} -> {msg.port_to}")
                 self.lcd.draw_main_panel()
