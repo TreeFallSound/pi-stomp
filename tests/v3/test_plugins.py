@@ -365,19 +365,24 @@ def test_v3_add_dump_reseeds_bypass_on_reconnect(v3_system: SystemFixture, make_
     assert plugin.is_bypassed()
 
 
-def test_v3_add_dump_unknown_instance_is_ignored(v3_system: SystemFixture, make_plugin):
-    """An add for an instance we don't have (stale/other board) is a safe no-op."""
+def test_v3_add_dynamic_unknown_plugin_empty_info_silently_fails(v3_system: SystemFixture, make_plugin):
+    """An add for an unknown instance triggers a dynamic-add attempt.
+    When REST returns no metadata (unknown URI), it fails silently — no plugin added,
+    no existing plugin state corrupted."""
     handler = v3_system.handler
     ws_bridge = v3_system.ws_bridge
 
     assert handler.current
     plugin = make_plugin("fuzz", bypassed=False, has_footswitch=False)
     handler.current.pedalboard.plugins = [plugin]
+    before = len(handler.current.pedalboard.plugins)
 
+    # mock_get returns "{}" for unrecognized URLs (including effect/get?uri=...)
     ws_bridge.inject("add other_board_plugin http://uri 0.0 0.0 1 1 1")
     handler.poll_ws_messages()
 
     assert not plugin.is_bypassed()
+    assert len(handler.current.pedalboard.plugins) == before
 
 
 def test_v3_handle_bypass_event_updates_plugin(v3_system: SystemFixture, make_plugin, snapshot):

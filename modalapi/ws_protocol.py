@@ -98,10 +98,36 @@ class TransportMessage:
 
 @dataclass
 class AddPluginMessage:
-    """Plugin present in a (re)connect/load dump (add ...)."""
+    """Plugin present in a (re)connect/load dump, or dynamically added (add ...)."""
 
     instance: str  # canonical bare form, e.g. "CollisionDrive"
+    uri: str       # LV2 plugin URI
+    x: float       # mod-ui canvas X
+    y: float       # mod-ui canvas Y
     bypassed: bool
+
+
+@dataclass
+class RemovePluginMessage:
+    """Plugin dynamically removed from the active pedalboard (remove ...)."""
+
+    instance: str  # canonical bare form, e.g. "CollisionDrive"
+
+
+@dataclass
+class ConnectMessage:
+    """Two ports connected in the active pedalboard (connect ...)."""
+
+    port_from: str  # e.g. "/graph/PluginA/out_L"
+    port_to: str    # e.g. "/graph/PluginB/in_L"
+
+
+@dataclass
+class DisconnectMessage:
+    """Two ports disconnected in the active pedalboard (disconnect ...)."""
+
+    port_from: str
+    port_to: str
 
 
 @dataclass
@@ -147,6 +173,9 @@ WebSocketMessage = Union[
     PluginBypassMessage,
     TransportMessage,
     AddPluginMessage,
+    RemovePluginMessage,
+    ConnectMessage,
+    DisconnectMessage,
     ParamSetMessage,
     MidiMapMessage,
     UnknownMessage,
@@ -213,8 +242,26 @@ def parse_message(raw_message: str) -> WebSocketMessage:
 
             # Format: add {instance} {uri} {x} {y} {bypassed} {sversion} {buildEnv}
             case ["add", instance_path, rest]:
-                bypassed = int(rest.split()[3])
-                return AddPluginMessage(instance=instance_path.removeprefix("/graph/"), bypassed=bypassed != 0)
+                parts = rest.split()
+                return AddPluginMessage(
+                    instance=instance_path.removeprefix("/graph/"),
+                    uri=parts[0],
+                    x=float(parts[1]),
+                    y=float(parts[2]),
+                    bypassed=int(parts[3]) != 0,
+                )
+
+            # Format: remove {instance}
+            case ["remove", instance_path]:
+                return RemovePluginMessage(instance=instance_path.removeprefix("/graph/"))
+
+            # Format: connect {port_from} {port_to}
+            case ["connect", port_from, port_to]:
+                return ConnectMessage(port_from=port_from, port_to=port_to)
+
+            # Format: disconnect {port_from} {port_to}
+            case ["disconnect", port_from, port_to]:
+                return DisconnectMessage(port_from=port_from, port_to=port_to)
 
             # Format: remove_hw_port /graph/{name}
             case ["remove_hw_port", port_name, *_]:

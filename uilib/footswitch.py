@@ -197,9 +197,7 @@ class FootswitchWidget(Widget):
             ring_color = self.BOUND_OFF_BG if self.color is not None else self.UNBOUND_OFF_BG
             ox, oy = ctx._f().topleft
             bg_r = DOT_RADIUS + 3
-            ctx.surface.blit(
-                _tint_mask(CircleGlyph(bg_r).render(), (0, 0, 0)), (cx - bg_r + ox, cy - bg_r + oy)
-            )
+            ctx.surface.blit(_tint_mask(CircleGlyph(bg_r).render(), (0, 0, 0)), (cx - bg_r + ox, cy - bg_r + oy))
             ring = RingGlyph(DOT_RADIUS)
             tinted = _tint_mask(ring.render(), ring_color)
             ctx.surface.blit(tinted, (cx - ring.half_size + ox, cy - ring.half_size + oy))
@@ -218,9 +216,7 @@ class FootswitchWidget(Widget):
 
         fill = self.BADGE_ON_FILL if is_on else (0, 0, 0)
         fill_r = BADGE_RADIUS if is_on else BADGE_RADIUS + 3
-        ctx.surface.blit(
-            _tint_mask(CircleGlyph(fill_r).render(), fill), (cx - fill_r + ox, cy - fill_r + oy)
-        )
+        ctx.surface.blit(_tint_mask(CircleGlyph(fill_r).render(), fill), (cx - fill_r + ox, cy - fill_r + oy))
 
         if not is_on:
             ring = RingGlyph(BADGE_RADIUS)

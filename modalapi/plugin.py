@@ -38,6 +38,7 @@ class Plugin:
         uri: str | None = None,
     ) -> None:
         self.instance_id: str = instance_id.lstrip("/")
+        self.info: dict | None = info
         self.name: str = (info or {}).get("name") or self.instance_id
         self.parameters: dict[str, Parameter] = parameters
         # MOD-UI canvas position (ingen:canvasX/Y). Drives a We sstable, audio-flow

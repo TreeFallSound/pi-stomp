@@ -16,6 +16,7 @@
 from pistomp.handler import Handler
 from pistomp.audiocard import Audiocard
 
+import bisect
 import json
 import logging
 import os
@@ -42,7 +43,7 @@ from pistomp.hardware import Hardware
 import pistomp.settings as Settings
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
-from modalapi.ws_protocol import parse_message, LoadingEndMessage, LoadingStartMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
+from modalapi.ws_protocol import parse_message, LoadingEndMessage, LoadingStartMessage, PedalSnapshotMessage, PluginBypassMessage, TransportMessage, AddPluginMessage, RemovePluginMessage, ConnectMessage, DisconnectMessage, ParamSetMessage, MidiMapMessage, WebSocketMessage
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 
 from pistomp.controller_manager import ControllerManager
@@ -535,12 +536,23 @@ class Modhandler(Handler):
                 self._handle_blend_mode_snapshot_change(msg.snapshot_id)
                 self.lcd.draw_title()
 
-        elif isinstance(msg, (PluginBypassMessage, AddPluginMessage)):
-            # PluginBypassMessage: live delta. AddPluginMessage: (re)connect dump.
-            # Buffer add-dump bypass values in case the new board hasn't loaded yet
-            # (same-tick race: dump drains before last.json reload sets current).
-            if isinstance(msg, AddPluginMessage):
-                self._pending_dump_bypass[msg.instance] = msg.bypassed
+        elif isinstance(msg, AddPluginMessage):
+            # Buffer bypass for the connect-dump race (dump may drain before
+            # last.json reload sets current).
+            self._pending_dump_bypass[msg.instance] = msg.bypassed
+            if self.current is not None:
+                known = next(
+                    (p for p in self.current.pedalboard.plugins if p.instance_id == msg.instance),
+                    None,
+                )
+                if known:
+                    logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
+                    known.set_bypass(msg.bypassed)
+                    self.lcd.refresh_plugin(known)
+                else:
+                    self._handle_dynamic_plugin_add(msg)
+
+        elif isinstance(msg, PluginBypassMessage):
             if self.current is not None:
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
@@ -548,6 +560,41 @@ class Modhandler(Handler):
                         plugin.set_bypass(msg.bypassed)
                         self.lcd.refresh_plugin(plugin)
                         break
+
+        elif isinstance(msg, RemovePluginMessage):
+            if self.current is not None:
+                before = len(self.current.pedalboard.plugins)
+                self.current.pedalboard.plugins = [
+                    p for p in self.current.pedalboard.plugins if p.instance_id != msg.instance
+                ]
+                if len(self.current.pedalboard.plugins) < before:
+                    # Also purge any connections that referenced the removed plugin
+                    iid = msg.instance
+                    self.current.pedalboard.connections = [
+                        c for c in self.current.pedalboard.connections
+                        if c.src.id != iid and c.dst.id != iid
+                    ]
+                    # Strip the removed instance from blend diff maps so the
+                    # parameter_setter stops sending WS messages for it.
+                    # XXX: blend mode also listens to ws?
+                    for blend in self.blend_modes.values():
+                        for diff_map in blend.segment_diff_maps:
+                            diff_map.pop(iid, None)
+                    logging.info(f"WebSocket: Plugin {msg.instance} removed")
+                    self.bind_current_pedalboard()
+                    self.lcd.draw_main_panel()
+
+        elif isinstance(msg, ConnectMessage):
+            if self.current is not None:
+                self.current.pedalboard.add_connection(msg.port_from, msg.port_to)
+                logging.info(f"WebSocket: Connected {msg.port_from} -> {msg.port_to}")
+                self.lcd.draw_main_panel()
+
+        elif isinstance(msg, DisconnectMessage):
+            if self.current is not None:
+                self.current.pedalboard.remove_connection(msg.port_from, msg.port_to)
+                logging.info(f"WebSocket: Disconnected {msg.port_from} -> {msg.port_to}")
+                self.lcd.draw_main_panel()
 
         elif isinstance(msg, TransportMessage):
             if self.hardware and self.hardware.taptempo:
@@ -570,6 +617,23 @@ class Modhandler(Handler):
         elif isinstance(msg, MidiMapMessage):
             # MIDI learn in mod-ui assigned a hardware control to a parameter.
             self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
+
+    def _handle_dynamic_plugin_add(self, msg: AddPluginMessage) -> None:
+        """Handle an `add` WS message for a plugin not yet in the pedalboard model."""
+        assert self.current is not None
+        info = self.current.pedalboard.get_plugin_data(msg.uri)
+        plugin = self.current.pedalboard._build_plugin(msg.instance, msg.uri, msg.x, msg.y, info)
+        if plugin is None:
+            logging.warning(f"Dynamic plugin add: no metadata for URI {msg.uri}, skipping")
+            return
+        plugin.set_bypass(msg.bypassed)
+        # Insert maintaining canvas-X sort order
+        keys = [p.canvas_x for p in self.current.pedalboard.plugins]
+        idx = bisect.bisect_left(keys, plugin.canvas_x)
+        self.current.pedalboard.plugins.insert(idx, plugin)
+        logging.info(f"WebSocket: Plugin {msg.instance} ({msg.uri}) dynamically added")
+        self.bind_current_pedalboard()
+        self.lcd.draw_main_panel()
 
     def poll_ws_messages(self):
         """Drain inbound WS messages (fast ~10ms cadence). Main-thread only.

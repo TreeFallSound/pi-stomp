@@ -221,6 +221,47 @@ def split_merge() -> MockPedalboard:
     return MockPedalboard(title="Split Merge", plugins=plugins, connections=conns)
 
 
+def parallel_beths() -> MockPedalboard:
+    """7-plugin parallel rig: 3 lanes of depth 3/2/1 + shared MixEQ merger.
+
+    Each lane feeds a common MixEQ before the outputs.  The varying lane
+    depths exercise dummy-node insertion (col2 and col3 need bridge segments
+    for the shorter lanes) and barycentric row tie-breaking.
+
+    Layout:
+    capture_1 ──┬── Comp → Amp → Delay ──┐
+                ├── OD → Chorus           ──┤→ MixEQ → playback_{1,2}
+                └── Gate                  ──┘
+    """
+    # (instance_id, category, has_footswitch, bypassed)
+    _LANES: list[list[tuple[str, str, bool, bool]]] = [
+        # Lane A – Clean (depth 3)
+        [("Comp", "Dynamics", True, False), ("Amp", "Amplifier", True, False), ("Delay", "Delay", True, False)],
+        # Lane B – Crunch (depth 2; Chorus bypassed)
+        [("OD", "Distortion", True, False), ("Chorus", "Modulator", True, True)],
+        # Lane C – Gate only (depth 1)
+        [("Gate", "Dynamics", False, False)],
+    ]
+
+    lane_plugins: list[list[MockPlugin]] = [
+        [MockPlugin(iid, cat, fs, byp) for iid, cat, fs, byp in lane] for lane in _LANES
+    ]
+    mix_eq = MockPlugin("MixEQ", "EQ", False, False)
+    all_plugins: list[MockPlugin] = [p for lane in lane_plugins for p in lane] + [mix_eq]
+    assert len(all_plugins) == 7, f"expected 7, got {len(all_plugins)}"
+
+    conns: list[Connection] = []
+    for lane in lane_plugins:
+        ids = [p.instance_id for p in lane]
+        conns.append(Connection(src=_source_ep(1), dst=_plugin_ep(ids[0])))
+        for a, b in zip(ids, ids[1:]):
+            conns.append(Connection(src=_plugin_ep(a), dst=_plugin_ep(b)))
+        conns.append(Connection(src=_plugin_ep(ids[-1]), dst=_plugin_ep("MixEQ")))
+    conns.append(Connection(src=_plugin_ep("MixEQ"), dst=_sink_ep(1)))
+    conns.append(Connection(src=_plugin_ep("MixEQ"), dst=_sink_ep(2)))
+
+    return MockPedalboard(title="Parallel Beths", plugins=all_plugins, connections=conns)
+
 
 REGISTRY: dict[str, Callable[[], MockPedalboard]] = {
     "blank": blank,
@@ -229,4 +270,5 @@ REGISTRY: dict[str, Callable[[], MockPedalboard]] = {
     "tall_parallel": tall_parallel,
     "stereo_chain": stereo_chain,
     "split_merge": split_merge,
+    "parallel_beths": parallel_beths,
 }

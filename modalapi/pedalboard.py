@@ -268,5 +268,73 @@ class Pedalboard:
                 logging.warning("Failed to parse arc %s -> %s: %s", tail, head, e)
         return connections
 
+    def _build_plugin(self, instance_id: str, uri: str, x: float, y: float, info: dict) -> Optional[Plugin.Plugin]:
+        """Build a Plugin from REST metadata (no LILV). Used for dynamic adds.
+
+        Parameters start at REST defaults; bypass is set false. MIDI bindings
+        arrive later via midi_map WS messages; values arrive via param_set.
+        Returns None if info is empty (unknown plugin URI).
+        """
+        if not info:
+            return None
+
+        category = None
+        cat = util.DICT_GET(info, Token.CATEGORY)
+        if cat and len(cat) > 0:
+            category = cat[0]
+
+        parameters: dict[str, Parameter.Parameter] = {}
+
+        bypass_info: dict = {
+            "shortName": "bypass",
+            "symbol": Token.COLON_BYPASS,
+            "ranges": {"minimum": 0, "maximum": 1},
+        }
+        parameters[Token.COLON_BYPASS] = Parameter.Parameter(bypass_info, 0.0, None, instance_id)
+
+        try:
+            plugin_params = info[Token.PORTS][Token.CONTROL][Token.INPUT]
+        except KeyError:
+            plugin_params = []
+
+        for pp in plugin_params:
+            sym = util.DICT_GET(pp, Token.SYMBOL)
+            if not sym:
+                continue
+            ranges = util.DICT_GET(pp, Token.RANGES) or {}
+            default_val = ranges.get("default")
+            parameters[sym] = Parameter.Parameter(pp, default_val, None, instance_id)
+
+        inst = Plugin.Plugin(instance_id, parameters, info, category, uri=uri)
+        inst.canvas_x = x
+        inst.canvas_y = y
+        return inst
+
+    def add_connection(self, port_from: str, port_to: str) -> None:
+        """Add a connection from live WS port paths (e.g. /graph/A/out → /graph/B/in)."""
+        instance_to_info = {p.instance_id: p.info for p in self.plugins}
+        tail = port_from.removeprefix("/graph/")
+        head = port_to.removeprefix("/graph/")
+        try:
+            conn = build_connection(tail, head, "", instance_to_info)
+            if conn not in self.connections:
+                self.connections.append(conn)
+        except Exception as e:
+            logging.warning("Failed to add connection %s -> %s: %s", port_from, port_to, e)
+
+    def remove_connection(self, port_from: str, port_to: str) -> None:
+        """Remove a connection matching live WS port paths."""
+        tail = port_from.removeprefix("/graph/")
+        head = port_to.removeprefix("/graph/")
+        src_id, src_sym = tail.split("/", 1) if "/" in tail else (tail, "")
+        dst_id, dst_sym = head.split("/", 1) if "/" in head else (head, "")
+        self.connections = [
+            c for c in self.connections
+            if not (
+                c.src.id == src_id and c.src.port_symbol == src_sym
+                and c.dst.id == dst_id and c.dst.port_symbol == dst_sym
+            )
+        ]
+
     def to_json(self):
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)

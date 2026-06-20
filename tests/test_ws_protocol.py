@@ -3,6 +3,8 @@
 from modalapi.ws_protocol import (
     AddHwPortMessage,
     AddPluginMessage,
+    ConnectMessage,
+    DisconnectMessage,
     LoadingEndMessage,
     LoadingStartMessage,
     MidiMapMessage,
@@ -10,6 +12,7 @@ from modalapi.ws_protocol import (
     ParamSetMessage,
     PluginBypassMessage,
     RemoveHwPortMessage,
+    RemovePluginMessage,
     SizeMessage,
     TransportMessage,
     TrueBypassMessage,
@@ -262,22 +265,22 @@ def test_param_set_missing_value_is_unknown():
 def test_add_plugin_bypassed():
     # add {instance} {uri} {x} {y} {bypassed} {sversion} {buildEnv}
     msg = parse_message("add CollisionDrive http://moddevices.com/caps 419.0 198.0 1 2 1")
-    assert msg == AddPluginMessage(instance="CollisionDrive", bypassed=True)
+    assert msg == AddPluginMessage(instance="CollisionDrive", uri="http://moddevices.com/caps", x=419.0, y=198.0, bypassed=True)
 
 
 def test_add_plugin_active():
     msg = parse_message("add fuzz http://uri 0.0 0.0 0 1 1")
-    assert msg == AddPluginMessage(instance="fuzz", bypassed=False)
+    assert msg == AddPluginMessage(instance="fuzz", uri="http://uri", x=0.0, y=0.0, bypassed=False)
 
 
 def test_add_plugin_strips_graph_prefix():
     msg = parse_message("add /graph/fuzz http://uri 0.0 0.0 1 1 1")
-    assert msg == AddPluginMessage(instance="fuzz", bypassed=True)
+    assert msg == AddPluginMessage(instance="fuzz", uri="http://uri", x=0.0, y=0.0, bypassed=True)
 
 
 def test_add_plugin_nonzero_bypass_is_true():
     msg = parse_message("add Reverb http://uri 0.0 0.0 2 1 1")
-    assert msg == AddPluginMessage(instance="Reverb", bypassed=True)
+    assert msg == AddPluginMessage(instance="Reverb", uri="http://uri", x=0.0, y=0.0, bypassed=True)
 
 
 def test_add_plugin_missing_bypass_field_is_unknown():
@@ -289,6 +292,41 @@ def test_add_plugin_missing_bypass_field_is_unknown():
 def test_add_plugin_non_int_bypass_is_unknown():
     msg = parse_message("add fuzz http://uri 0.0 0.0 notanint 1 1")
     assert isinstance(msg, UnknownMessage)
+
+
+# ---------------------------------------------------------------------------
+# remove
+# ---------------------------------------------------------------------------
+
+
+def test_remove_plugin():
+    msg = parse_message("remove /graph/CollisionDrive")
+    assert msg == RemovePluginMessage(instance="CollisionDrive")
+
+
+def test_remove_plugin_no_graph_prefix():
+    msg = parse_message("remove MyPlugin")
+    assert msg == RemovePluginMessage(instance="MyPlugin")
+
+
+# ---------------------------------------------------------------------------
+# connect / disconnect
+# ---------------------------------------------------------------------------
+
+
+def test_connect():
+    msg = parse_message("connect /graph/PluginA/out_L /graph/PluginB/in_L")
+    assert msg == ConnectMessage(port_from="/graph/PluginA/out_L", port_to="/graph/PluginB/in_L")
+
+
+def test_connect_from_capture():
+    msg = parse_message("connect /graph/capture_1 /graph/Fuzz/in")
+    assert msg == ConnectMessage(port_from="/graph/capture_1", port_to="/graph/Fuzz/in")
+
+
+def test_disconnect():
+    msg = parse_message("disconnect /graph/PluginA/out_L /graph/PluginB/in_L")
+    assert msg == DisconnectMessage(port_from="/graph/PluginA/out_L", port_to="/graph/PluginB/in_L")
 
 
 # ---------------------------------------------------------------------------
