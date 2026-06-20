@@ -35,6 +35,8 @@ import time
 
 from rtmidi.midiutil import open_midioutput
 
+from modalapi.pedalboard_monitor import write_last_json
+
 from pistomp.audiocard import Audiocard
 import pistomp.audiocardfactory as Audiocardfactory
 import pistomp.config as config
@@ -154,8 +156,14 @@ def main():
         # Load the current pedalboard as "current"
         current_pedal_board_bundle = handler.get_current_pedalboard_bundle_path()
         if not current_pedal_board_bundle:
-            # Apparently, no pedalboard is currently loaded so just change to the default
-            handler.pedalboard_change()
+            # last.json missing or malformed — reset to first known pedalboard
+            if not handler.pedalboard_list:
+                logging.error("No pedalboards found; cannot recover from missing/malformed last.json")
+                sys.exit(1)
+            pb = handler.pedalboard_list[0]
+            write_last_json(handler.last_json_monitor.path, pb.bundle)
+            handler.pedalboard_change(pb)
+            handler.set_current_pedalboard(pb)
         else:
             handler.set_current_pedalboard(handler.pedalboards[current_pedal_board_bundle])
 

@@ -163,6 +163,9 @@ class Handler(InputSink):
     def load_banks(self):
         raise NotImplementedError()
 
+    def pedalboard_change(self, pedalboard: Any) -> None:
+        raise NotImplementedError()
+
     def poll_indicators(self):
         raise NotImplementedError()
 
@@ -197,8 +200,7 @@ class Handler(InputSink):
         # a pedalboard reload. Idempotent: replayed connect-dump maps are no-ops.
         if self.current is None:
             return
-        current = self.current
-        plugin = next((p for p in current.pedalboard.plugins if p is not None and p.instance_id == instance), None)
+        plugin = next((p for p in self.current.pedalboard.plugins if p is not None and p.instance_id == instance), None)
         if plugin is None or plugin.parameters is None:
             return
         param = plugin.parameters.get(symbol)
