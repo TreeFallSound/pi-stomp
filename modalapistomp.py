@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 # Configure logging BEFORE any imports to ensure it takes effect
@@ -147,17 +149,27 @@ def main():
 
         # Load the current pedalboard as "current"
         current_pedal_board_bundle = handler.get_current_pedalboard_bundle_path()
-        if not current_pedal_board_bundle:
-            # last.json missing or malformed — reset to first known pedalboard
+        if current_pedal_board_bundle and current_pedal_board_bundle in handler.pedalboards:
+            handler.set_current_pedalboard(handler.pedalboards[current_pedal_board_bundle])
+        else:
             if not handler.pedalboard_list:
-                logging.error("No pedalboards found; cannot recover from missing/malformed last.json")
+                if current_pedal_board_bundle:
+                    logging.error(
+                        "last.json references %s but no pedalboards are available",
+                        current_pedal_board_bundle,
+                    )
+                else:
+                    logging.error("No pedalboards found; cannot recover from missing/malformed last.json")
                 sys.exit(1)
+            if current_pedal_board_bundle:
+                logging.warning(
+                    "last.json pedalboard %s not found; resetting to first available",
+                    current_pedal_board_bundle,
+                )
             pb = handler.pedalboard_list[0]
             write_last_json(handler.last_json_monitor.path, pb.bundle)
             handler.pedalboard_change(pb)
             handler.set_current_pedalboard(pb)
-        else:
-            handler.set_current_pedalboard(handler.pedalboards[current_pedal_board_bundle])
 
         # Load system info.  This can take a few seconds
         handler.system_info_load()
