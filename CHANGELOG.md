@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [v3.1.0]
 ### Added
-- On-device (LCD) strobe tuner with mute. Defaults to longpress on footswitch C
+- On-device (LCD) strobe tuner with mute (v3 hardware only). Defaults to longpress on footswitch C
 - Sync LCD and MOD-UI using WebSocket bridge (replaces last.json polling)
 - Blend mode for parameter blending between snapshots
 - Optional autosync for one-time send of MIDI CCs to current analog positions
