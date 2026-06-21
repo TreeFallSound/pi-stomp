@@ -4,7 +4,7 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## [v3.1.0]
+## [v3.1.0] - 2026-06-20
 ### Added
 - On-device (LCD) strobe tuner with mute (v3 hardware only). Defaults to longpress on footswitch C
 - Sync LCD and MOD-UI using WebSocket bridge (replaces last.json polling)
