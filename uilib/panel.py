@@ -176,6 +176,7 @@ class LcdBase(ABC):
 
     @property
     def has_system_splash(self) -> bool:
+        """False for backends without OS splash integration (emulator, tests)."""
         return False
 
 

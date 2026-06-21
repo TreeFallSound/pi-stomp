@@ -140,6 +140,8 @@ class Lcd(abstract_lcd.Lcd):
 
         self.wifi_menu = WifiMenu(self)
 
+        # Skip the in-app splash when early boot already showed one (/run/lcd.init).
+        # Hardware reset/clear still runs every process start (see LcdIli9341).
         if not display.has_system_splash:
             self.splash_show(True)
 
