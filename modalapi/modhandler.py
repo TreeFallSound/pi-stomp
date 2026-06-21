@@ -109,7 +109,8 @@ class Modhandler(Handler):
         self.ws_bridge.start()
         logging.info("WebSocket bridge started")
 
-        # Tuner state
+        # Tuner state (may be disabled on slow hardware)
+        self.tuner_supported: bool = True
         self._tuner_engine: TunerEngine | None = None
         self._tuner_panel: TunerPanel | None = None
         self._tuner_source_factory: TunerSourceFactory | None = None
@@ -1051,6 +1052,8 @@ class Modhandler(Handler):
         return factory(port, name=f"pistomp-tuner-{port.split('_')[-1]}")
 
     def toggle_tuner_enable(self, *argv) -> None:
+        if not self.tuner_supported:
+            return
         if self._tuner_engine is None:
             muted = bool(self.settings.get_setting(Token.TUNER_MUTE))
             input_port = int(self.settings.get_setting(Token.TUNER_INPUT) or 1)
