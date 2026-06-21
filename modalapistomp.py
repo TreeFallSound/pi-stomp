@@ -149,17 +149,27 @@ def main():
 
         # Load the current pedalboard as "current"
         current_pedal_board_bundle = handler.get_current_pedalboard_bundle_path()
-        if not current_pedal_board_bundle:
-            # last.json missing or malformed — reset to first known pedalboard
+        if current_pedal_board_bundle and current_pedal_board_bundle in handler.pedalboards:
+            handler.set_current_pedalboard(handler.pedalboards[current_pedal_board_bundle])
+        else:
             if not handler.pedalboard_list:
-                logging.error("No pedalboards found; cannot recover from missing/malformed last.json")
+                if current_pedal_board_bundle:
+                    logging.error(
+                        "last.json references %s but no pedalboards are available",
+                        current_pedal_board_bundle,
+                    )
+                else:
+                    logging.error("No pedalboards found; cannot recover from missing/malformed last.json")
                 sys.exit(1)
+            if current_pedal_board_bundle:
+                logging.warning(
+                    "last.json pedalboard %s not found; resetting to first available",
+                    current_pedal_board_bundle,
+                )
             pb = handler.pedalboard_list[0]
             write_last_json(handler.last_json_monitor.path, pb.bundle)
             handler.pedalboard_change(pb)
             handler.set_current_pedalboard(pb)
-        else:
-            handler.set_current_pedalboard(handler.pedalboards[current_pedal_board_bundle])
 
         # Load system info.  This can take a few seconds
         handler.system_info_load()
