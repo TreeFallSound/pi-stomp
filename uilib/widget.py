@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, Tuple
 
+from uilib import profiling
 from uilib.box import Box
 from uilib.config import Color
 from uilib.misc import InputEvent, WidgetAlign, trace
@@ -483,7 +484,8 @@ class Widget:
             return
         assert container.surface is not None
         ctx = PaintContext(container.surface, clip, frame=frame)
-        self.do_draw(ctx, frame)
+        with profiling.measure("widget.do_draw"):
+            self.do_draw(ctx, frame)
         self._painted = True
         self._dirty = False
         container.propagate_dirty(clip)

@@ -18,6 +18,7 @@ import numpy as np
 
 from uilib.panel import LcdBase, Box
 from uilib.spi_timing import transfer_ms as spi_transfer_ms
+from uilib import profiling
 import logging
 import threading
 import os
@@ -44,14 +45,25 @@ class LcdIli9341(LcdBase):
 
         self.lock = threading.Lock()
 
+        # FIXME: we should be able to bypass the init() altogether to avoid clearing
+        # it's pretty clear we need to fork adafruit_rgb_display...
+        # idea: maybe we can query the display's current state and only run init() if it's uninitialized?
+
         if not self.has_system_splash:
-            self.clear()
+            self.clear()  # full-panel black while still in Adafruit's portrait MADCTL
             self._set_stamp()
 
-        # Portrait dimensions (the panel itself is landscape; we rotate at push).
-        self.width = self.disp.height
-        self.height = self.disp.width
         self.flip = flip
+        # Drive the panel landscape-native so the 320x240 surface pushes row-major
+        # with no np.rot90 at update() time. Adafruit's init leaves MADCTL=0x48
+        # (portrait); re-assert lcd-splash's 0xE8 (MY|MX|MV|BGR). Non-flip drops
+        # the MX|MY mirror bits -> 0x28 (MV|BGR).
+        self._madctl = 0x28 if flip else 0xE8
+        self.disp.write(0x36, bytes([self._madctl]))
+
+        # Landscape dimensions presented to the UI (matches the panel post-MADCTL).
+        self.width = self.disp.height  # 320
+        self.height = self.disp.width  # 240
         self._pixels = np.empty((self.height, self.width, 2), dtype=np.uint8)
 
     def _block_fast(self, x0, y0, x1, y1, data=None):
@@ -143,8 +155,9 @@ class LcdIli9341(LcdBase):
     def update(self, image: pygame.Surface, box=None):
         """Push (a sub-rect of) the composed pygame surface to the LCD.
 
-        Converts surface → packed RGB888 bytes, performs rotation via numpy,
-        and packs directly to RGB565 bytes, writing via Display._block to bypass PIL."""
+        Converts surface → RGB888 bytes → packed RGB565, writing via Display._block
+        to bypass PIL. The panel runs landscape-native (MADCTL set in __init__) so
+        no rotation is needed."""
         if self.lock.locked():
             logging.debug("LCD update was locked by another thread")
         self.lock.acquire()
@@ -160,30 +173,21 @@ class LcdIli9341(LcdBase):
             y2 = max(y1, min(y2, img_height))
 
             cropped = x1 != 0 or y1 != 0 or x2 != img_width or y2 != img_height
-            if cropped:
-                sub_rect = pygame.Rect(x1, y1, x2 - x1, y2 - y1)
-                sub = image.subsurface(sub_rect)
-                if self.flip:
-                    x, y = self.height - y2, x1
-                else:
-                    x, y = y1, self.width - x2
-            else:
-                sub = image
-                x, y = 0, 0
+            sub = image.subsurface(pygame.Rect(x1, y1, x2 - x1, y2 - y1)) if cropped else image
 
+            # Landscape-native: surface coords map straight to the panel address
+            # window, so the RGB565 sub-rect ships row-major with no rotation.
             sw, sh = sub.get_size()
-            rgb_bytes = pygame.image.tobytes(sub, "RGB")
-            arr = np.frombuffer(rgb_bytes, dtype=np.uint8).reshape(sh, sw, 3)
+            with profiling.measure("lcd.update:pack"):
+                arr = pygame.surfarray.pixels3d(sub).transpose(1, 0, 2)
 
-            # Pack RGB565 on the C-contiguous source before rotating so reads
-            # are row-major. Then rotate the smaller (H, W, 2) array.
-            pix = self._pixels[:sh, :sw]
-            g = arr[:, :, 1]
-            pix[:, :, 0] = (arr[:, :, 0] & 0xF8) | (g >> 5)
-            pix[:, :, 1] = ((g & 0x1C) << 3) | (arr[:, :, 2] >> 3)
-            pixels_bytes = np.rot90(pix, k=3 if self.flip else 1).tobytes()
+                pix = self._pixels[:sh, :sw]
+                g = arr[:, :, 1]
+                pix[:, :, 0] = (arr[:, :, 0] & 0xF8) | (g >> 5)
+                pix[:, :, 1] = ((g & 0x1C) << 3) | (arr[:, :, 2] >> 3)
+                pixels_bytes = pix.tobytes()
 
-            new_h, new_w = sw, sh
-            self.disp._block(x, y, x + new_w - 1, y + new_h - 1, pixels_bytes)
+            with profiling.measure("lcd.update:_block(SPI)"):
+                self.disp._block(x1, y1, x1 + sw - 1, y1 + sh - 1, pixels_bytes)
         finally:
             self.lock.release()

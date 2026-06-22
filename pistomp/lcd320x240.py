@@ -28,6 +28,7 @@ import pistomp.switchstate as switchstate
 import pygame
 
 from uilib import *
+from uilib import profiling
 from uilib.gridpanel import GridPanel
 from uilib.pygame_init import font as _make_font
 from uilib.lcd_ili9341 import *
@@ -231,6 +232,10 @@ class Lcd(abstract_lcd.Lcd):
         return False
 
     def poll_updates(self):
+        with profiling.measure("poll_updates"):
+            self._poll_updates()
+
+    def _poll_updates(self):
         for d in self.w_parameter_dialogs.values():
             d.tick()
         if self.w_pedalboard is not None:

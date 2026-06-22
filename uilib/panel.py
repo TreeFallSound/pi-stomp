@@ -19,6 +19,7 @@ from abc import ABC
 
 import pygame
 
+from uilib import profiling
 from uilib.box import Box
 from uilib.container import ContainerWidget
 from uilib.widget import Widget
@@ -37,12 +38,13 @@ from uilib.paint import PaintContext, _pg_rect
 class Panel(ContainerWidget):
     """A Panel. Holds widgets, tracks selectable items, can be pushed onto a PanelStack."""
 
-    def __init__(self, auto_destroy=False, decorator=None, no_dim=False, accepts_input=True, **kwargs):
+    def __init__(self, auto_destroy=False, decorator=None, no_dim=False, accepts_input=True, opaque=False, **kwargs):
         self.sel_list = []
         self.sel_ref = None  # currently-selected leaf widget (resolved via sel_children)
         self.auto_destroy = auto_destroy
         self.no_dim = no_dim
         self.accepts_input = accepts_input
+        self.opaque = opaque
         if decorator:
             self.decorator = decorator(self)
         else:
@@ -383,22 +385,34 @@ class PanelStack(ContainerWidget):
         """
         assert self.surface is not None
         clip = local_clip
-        erase_ctx = PaintContext(self.surface, clip, frame=clip)
-        self._draw_erase(erase_ctx)
 
-        for p in self.stack:
-            if self.dimmer is not None and not p.no_dim:
-                self.surface.blit(self.dimmer, clip.topleft, area=_pg_rect(clip))
-            d = p.decorator
-            if d is not None:
-                inter = clip.intersection(d.box)
+        top = self.stack[-1] if self.stack else None
+        if top is not None and top.opaque and top.box is not None and top.box.contains(clip):
+            # Fast path: opaque fullscreen top panel covers the dirty clip —
+            # skip erasing the stack surface and skip all lower panels.
+            with profiling.measure("panelstack.recompose"):
+                inter = clip.intersection(top.box)
                 if not inter.is_empty():
                     ctx = PaintContext(self.surface, inter)
-                    d.do_draw(ctx, d.box)
-            inter = clip.intersection(p.box)
-            if not inter.is_empty():
-                ctx = PaintContext(self.surface, inter)
-                p.do_draw(ctx, p.box)
+                    top.do_draw(ctx, top.box)
+        else:
+            with profiling.measure("panelstack.recompose"):
+                erase_ctx = PaintContext(self.surface, clip, frame=clip)
+                self._draw_erase(erase_ctx)
+
+                for p in self.stack:
+                    if self.dimmer is not None and not p.no_dim:
+                        self.surface.blit(self.dimmer, clip.topleft, area=_pg_rect(clip))
+                    d = p.decorator
+                    if d is not None:
+                        inter = clip.intersection(d.box)
+                        if not inter.is_empty():
+                            ctx = PaintContext(self.surface, inter)
+                            d.do_draw(ctx, d.box)
+                    inter = clip.intersection(p.box)
+                    if not inter.is_empty():
+                        ctx = PaintContext(self.surface, inter)
+                        p.do_draw(ctx, p.box)
 
         if self.capture_callback:
             self.capture_callback(self.surface)

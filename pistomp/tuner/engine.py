@@ -8,9 +8,10 @@ from dataclasses import dataclass
 import numpy as np
 import numpy.typing as npt
 
+from uilib import profiling
 from pistomp.tuner.ringbuffer import RingBuffer
 from pistomp.tuner.source import AudioSource
-from pistomp.tuner.yin import detect_pitch
+from pistomp.tuner.yin import YinDetector
 
 _NOTE_NAMES = ["C", "C\u266f", "D", "D\u266f", "E", "F", "F\u266f", "G", "G\u266f", "A", "A\u266f", "B"]
 _A4_HZ = 440.0
@@ -81,10 +82,16 @@ class TunerEngine:
         self._freq_history: deque[float] = deque(maxlen=self.MEDIAN_LEN)
         self._prev_rms: float = 0.0
         self._onset_holdoff: int = 0
+        self._detector: YinDetector | None = None
 
     def start(self) -> None:
         self._running = True
         self._source.start(on_samples=self._ring.write)
+        lo, hi = self._freq_bounds
+        self._detector = YinDetector(
+            self.FRAME_SIZE, self._source.sample_rate,
+            freq_min=lo, freq_max=hi, window=self.YIN_WINDOW,
+        )
         self._worker = threading.Thread(target=self._dsp_loop, daemon=True, name="tuner-dsp")
         self._worker.start()
 
@@ -94,6 +101,7 @@ class TunerEngine:
         if self._worker is not None:
             self._worker.join(timeout=2.0)
             self._worker = None
+        self._detector = None
 
     def _dsp_loop(self) -> None:
         interval = 1.0 / self.DSP_RATE_HZ
@@ -109,7 +117,8 @@ class TunerEngine:
         if not self._ring.read_latest(self.FRAME_SIZE, self._frame):
             return
 
-        rms = float(np.sqrt(np.mean(self._frame.astype(np.float64) ** 2)))
+        with profiling.measure("rms", bin_override="dsp"):
+            rms = float(np.sqrt(np.mean(self._frame ** 2)))
 
         if rms < self.SILENCE_RMS:
             self._freq_history.clear()
@@ -132,9 +141,9 @@ class TunerEngine:
             self._onset_holdoff -= 1
             return
 
-        sr = self._source.sample_rate
-        lo, hi = self._freq_bounds
-        estimate = detect_pitch(self._frame, sr, freq_min=lo, freq_max=hi, window=self.YIN_WINDOW)
+        with profiling.measure("detect_pitch(YIN)", bin_override="dsp"):
+            assert self._detector is not None
+            estimate = self._detector.detect(self._frame)
         if estimate is None:
             return
 

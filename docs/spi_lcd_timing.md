@@ -274,3 +274,64 @@ optimization and requires no kernel or boot changes.
 | DMA/IRQ crossover | 128 bytes (FIFO depth × 2-byte words) |
 | Optimal `spidev.bufsiz` | ≥153,600 (set to 163,840 in `pistomp-arch/files/cmdline.txt`) |
 | Primary optimization lever | Dirty-rect culling (linear in pixel count) |
+
+---
+
+## Appendix: Pi 3A+ (v2 hardware)
+
+The v2 pi-stomp uses a Raspberry Pi 3A+ (BCM2837B0).  The SPI peripheral is
+**on-die** — there is no PCIe hop.  The Linux driver is `spi-bcm2835`, not
+`spi_dw_mmio`.
+
+### Clock source and divisor rule
+
+| | Pi 5 (RP1) | Pi 3A+ (BCM2837B0) |
+|---|---|---|
+| SPI clock source | `RP1_CLK_SYS` = 200 MHz | VPU core clock = 400 MHz |
+| Divisor constraint | Even only (`ALIGN(…, 2)`) | **Power of 2 only** (`roundup_pow_of_two()`) |
+
+`spi-bcm2835.c` computes `cdiv = roundup_pow_of_two(DIV_ROUND_UP(400_000_000, speed_hz))`.
+At 400 MHz VPU the BCM2835 SPI CDIV register only works reliably with power-of-2
+divisors (confirmed hardware constraint, raspberrypi/linux #2286).  Setting
+`core_freq=250` in `config.txt` restores arbitrary even divisors but slows the
+SDRAM interface and is not recommended.
+
+### Achievable speeds near the ILI9341 limit
+
+| Requested | CDIV | **Actual speed** | Full-frame wire time |
+|-----------|------|------------------|----------------------|
+| 51–99 MHz | 8 | **50 MHz** | 24.6 ms |
+| ≥ 100 MHz | 4 | **100 MHz** | 12.3 ms — **display garbled** |
+| ≤ 50 MHz  | 8–16 | 50 or 25 MHz | 24.6–49.2 ms |
+
+`DIV_ROUND_UP(400, 99) = 5` → `roundup_pow_of_two(5) = 8` → 50 MHz.
+`DIV_ROUND_UP(400, 100) = 4` → already pow2 → 100 MHz (garbled, same as Pi 5).
+
+66.7 MHz is not achievable: it requires CDIV=6 (not a power of 2).
+**Safe maximum is 50 MHz** (any request 51–99 MHz), identical to Pi 5.
+
+### Differences from Pi 5
+
+**No PCIe stall.**  BCM2835 DMA accesses SDRAM directly.  The 31% overhead
+observed at 100 MHz on Pi 5 does not apply.  At 50 MHz this was near-zero on
+Pi 5 too, so wire time is identical.
+
+**Lower fixed overhead per transfer.**  CS/BAUDR/DMA-kick register writes hit
+on-die MMIO directly (~1 ns) rather than over PCIe (~200 ns per write).
+Fixed overhead per frame is ~10–15 µs vs ~100 µs on Pi 5.
+
+**`spidev.bufsiz` matters identically.**  Default 4096 B → 38 writes per
+frame → ~1.5 ms wasted overhead.  Same `spidev.bufsiz=163840` fix applies.
+
+### Summary (Pi 3A+)
+
+| What | Value |
+|------|-------|
+| SPI driver | `spi-bcm2835` |
+| Clock source | VPU core clock = 400 MHz |
+| Divisor rule | Power of 2 only |
+| Safe max speed | **50 MHz** |
+| Full-frame wire time | **~24.6 ms** (identical to Pi 5) |
+| PCIe DMA stall | None (on-die DMA) |
+| Fixed overhead/frame | ~15 µs |
+| Primary optimization lever | Dirty-rect culling (same as Pi 5) |
