@@ -40,7 +40,6 @@ class Handlerfactory:
             handler = Mod.Mod(audiocard, cwd)
         elif (version >= 2.0) and (version < 3.0):
             handler = Modhandler.Modhandler(audiocard, cwd)
-            handler.tuner_supported = False
         elif (version >= 3.0) and (version < 4.0):
             handler = Modhandler.Modhandler(audiocard, cwd)
         else:
