@@ -19,7 +19,6 @@ from abc import ABC, abstractmethod
 import common.token as Token
 import common.util as util
 import os
-from pathlib import Path
 from board import SCL, SDA
 import busio
 from PIL import Image, ImageDraw, ImageFont
@@ -31,7 +30,7 @@ lcd.rotation = 2
 
 from pistomp.footswitch import Footswitch
 
-_FONTS_DIR = Path(__file__).parent.parent / "fonts"
+from common.fonts import font_path
 
 
 class Lcd(ABC):
@@ -95,12 +94,12 @@ class Lcd(ABC):
                      ImageDraw.Draw(self.images[6]), ImageDraw.Draw(self.images[7])]
 
         # Load fonts
-        self.splash_font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans-Bold.ttf"), 18)
-        self.title_font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans-Bold.ttf"), 11)
-        self.label_font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans-Bold.ttf"), 10)
-        self.small_bold_font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSansMono-Bold.ttf"), 8)
-        self.small_font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSansMono.ttf"), 8)
-        #self.small_font = ImageFont.truetype(str(_FONTS_DIR / "EtBt6001-JO47.ttf"), 6)
+        self.splash_font = ImageFont.truetype(font_path("DejaVuSans-Bold.ttf"), 18)
+        self.title_font = ImageFont.truetype(font_path("DejaVuSans-Bold.ttf"), 11)
+        self.label_font = ImageFont.truetype(font_path("DejaVuSans-Bold.ttf"), 10)
+        self.small_bold_font = ImageFont.truetype(font_path("DejaVuSansMono-Bold.ttf"), 8)
+        self.small_font = ImageFont.truetype(font_path("DejaVuSansMono.ttf"), 8)
+        #self.small_font = ImageFont.truetype(font_path("EtBt6001-JO47.ttf"), 6)
 
         # Splash
         text_im = Image.new('L', (103, 63))

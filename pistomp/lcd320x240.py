@@ -17,7 +17,6 @@
 
 import logging
 import os
-from pathlib import Path
 from typing import Optional
 import common.token as Token
 import common.parameter as Parameter
@@ -35,7 +34,7 @@ from pistomp.tuner.panel import TunerPanel
 
 #import traceback
 
-_FONTS_DIR = Path(__file__).parent.parent / "fonts"
+from common.fonts import font_path
 
 
 class Lcd(abstract_lcd.Lcd):
@@ -88,10 +87,10 @@ class Lcd(abstract_lcd.Lcd):
         }
 
         # TODO get fonts from config.json
-        self.title_font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans-Bold.ttf"), 26)
-        self.splash_font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans.ttf"), 48)
-        self.small_font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans.ttf"), 20)
-        self.tiny_font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans.ttf"), 16)
+        self.title_font = ImageFont.truetype(font_path("DejaVuSans-Bold.ttf"), 26)
+        self.splash_font = ImageFont.truetype(font_path("DejaVuSans.ttf"), 48)
+        self.small_font = ImageFont.truetype(font_path("DejaVuSans.ttf"), 20)
+        self.tiny_font = ImageFont.truetype(font_path("DejaVuSans.ttf"), 16)
         self.title_split_orig = 190
         self.title_split = self.title_split_orig
         self.display_width = 320

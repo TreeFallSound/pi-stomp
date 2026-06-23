@@ -14,6 +14,7 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 import pytest
 from PIL import Image, ImageFont
 
+from common.fonts import FONTS_DIR as _FONTS_DIR
 from uilib.panel import LcdBase
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -52,9 +53,6 @@ for _mod in _PI_MODULES:
 # ---------------------------------------------------------------------------
 # Force consistent font rendering across platforms (Linux / MacOS)
 # ---------------------------------------------------------------------------
-
-
-_FONTS_DIR = PROJECT_ROOT / "fonts"
 
 
 @pytest.fixture(autouse=True)
@@ -158,7 +156,7 @@ class FakeWebSocketBridge:
 
     def sent_values_for(self, instance_id: str, symbol: str) -> list[float]:
         prefix = f"param_set /graph/{instance_id}/{symbol} "
-        return [float(m[len(prefix):]) for m in self.sent if m.startswith(prefix)]
+        return [float(m[len(prefix) :]) for m in self.sent if m.startswith(prefix)]
 
 
 @pytest.fixture

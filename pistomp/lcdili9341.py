@@ -17,7 +17,6 @@
 
 import board
 import digitalio
-from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import adafruit_rgb_display.ili9341 as ili9341
 import common.token as Token
@@ -30,7 +29,7 @@ import time
 # Most draw methods should be implemented in the parent class unless that needs to be overriden for this display
 # All __init__ parameters from the lcdbase.py should be specified in this __init__
 
-_FONTS_DIR = Path(__file__).parent.parent / "fonts"
+from common.fonts import font_path
 
 
 class Lcd(lcdcolor.Lcdcolor):
@@ -53,11 +52,11 @@ class Lcd(lcdcolor.Lcdcolor):
         self.init_spi_display()
 
         # Fonts
-        self.title_font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans-Bold.ttf"), 26)
-        self.splash_font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans.ttf"), 48)
-        self.small_font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans.ttf"), 20)
-        self.tiny_font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans.ttf"), 16)
-        #self.tiny_font = ImageFont.truetype(str(_FONTS_DIR / "EtBt6001-JO47.ttf"), 12)
+        self.title_font = ImageFont.truetype(font_path("DejaVuSans-Bold.ttf"), 26)
+        self.splash_font = ImageFont.truetype(font_path("DejaVuSans.ttf"), 48)
+        self.small_font = ImageFont.truetype(font_path("DejaVuSans.ttf"), 20)
+        self.tiny_font = ImageFont.truetype(font_path("DejaVuSans.ttf"), 16)
+        #self.tiny_font = ImageFont.truetype(font_path("EtBt6001-JO47.ttf"), 12)
 
         # Colors
         self.background = (0, 0, 0)

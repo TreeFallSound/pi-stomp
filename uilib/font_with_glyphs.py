@@ -16,12 +16,11 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from functools import lru_cache
-from pathlib import Path
 from typing import Generator, Protocol, runtime_checkable
 
 from PIL import Image, ImageDraw, ImageFont
 
-_FONTS_DIR = Path(__file__).parent.parent / "fonts"
+from common.fonts import font_path
 
 
 @runtime_checkable
@@ -35,7 +34,7 @@ class PillGlyph:
 
     def __init__(self, label: str, font_size: int = 9) -> None:
         self._label = label
-        self._font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans.ttf"), font_size)
+        self._font = ImageFont.truetype(font_path("DejaVuSans.ttf"), font_size)
         bb = self._font.getbbox(label)
         self._text_w = int(bb[2] - bb[0])
         self._text_h = int(bb[3] - bb[1])

@@ -16,7 +16,6 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from abc import ABC, abstractmethod
-from pathlib import Path
 
 import board
 import busio
@@ -25,7 +24,7 @@ from PIL import Image, ImageDraw, ImageFont
 import adafruit_rgb_display.st7789 as st7789
 
 
-_FONTS_DIR = Path(__file__).parent.parent / "fonts"
+from common.fonts import font_path
 
 
 class Lcd(ABC):
@@ -73,9 +72,9 @@ class Lcd(ABC):
 
         # Font
         self.font_size = 30
-        self.font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans.ttf"), self.font_size)
+        self.font = ImageFont.truetype(font_path("DejaVuSans.ttf"), self.font_size)
         self.splash_font_size = 40
-        self.splash_font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans.ttf"), self.splash_font_size)
+        self.splash_font = ImageFont.truetype(font_path("DejaVuSans.ttf"), self.splash_font_size)
 
         # Splash
         self.splash_show()
