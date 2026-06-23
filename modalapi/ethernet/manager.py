@@ -14,22 +14,19 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
+import os
 import subprocess
 import threading
 import time
+from functools import cached_property
 from typing import Optional
 
-# Hard-coded interface name: every pi-stomp board ships with the onboard NIC as
-# `end0` under predictable interface naming. If a future variant differs, lift
-# this to config rather than scrubbing sysfs.
-IFACE = "end0"
-SERVICE = "pi-stomp-jackbridge.service"
 # Contract with the JackBridge service: truncate-on-start, atomic-rewrite of a
 # bounded list (entries older than 15 min are dropped on each append). The UI
 # just reads the whole file each poll.
+SERVICE = "pi-stomp-jackbridge.service"
 XRUN_FILE = "/tmp/pi-stomp-jackbridge.xruns"
 POLL_INTERVAL_S = 2.0
-CARRIER_FILE = "/sys/class/net/%s/carrier" % IFACE
 
 
 class EthernetManager:
@@ -45,6 +42,20 @@ class EthernetManager:
     Writes (start/stop service) are fire-and-forget via subprocess.Popen
     so the UI thread never blocks on systemctl.
     """
+
+    @cached_property
+    def iface(self) -> str:
+        """First wired (non-loopback, non-wireless) interface found in sysfs."""
+        try:
+            for name in sorted(os.listdir("/sys/class/net")):
+                if name == "lo":
+                    continue
+                if os.path.exists(f"/sys/class/net/{name}/wireless"):
+                    continue
+                return name
+        except OSError:
+            pass
+        return "eth0"
 
     def __init__(self) -> None:
         self.carrier_up: bool = False
@@ -98,10 +109,9 @@ class EthernetManager:
             self._changed = False
             return c
 
-    @staticmethod
-    def _probe_carrier() -> bool:
+    def _probe_carrier(self) -> bool:
         try:
-            with open(CARRIER_FILE) as f:
+            with open(f"/sys/class/net/{self.iface}/carrier") as f:
                 return f.read().strip() == "1"
         except OSError:
             return False
@@ -109,21 +119,16 @@ class EthernetManager:
     @staticmethod
     def _probe_service_active() -> bool:
         try:
-            return subprocess.call(
-                ["systemctl", "is-active", "--quiet", SERVICE]
-            ) == 0
+            return subprocess.call(["systemctl", "is-active", "--quiet", SERVICE]) == 0
         except Exception as e:
             logging.warning("systemctl is-active failed for %s: %s", SERVICE, e)
             return False
 
-    @staticmethod
-    def _probe_ipv4() -> Optional[str]:
+    def _probe_ipv4(self) -> Optional[str]:
         try:
-            out = subprocess.check_output(
-                ["ip", "-4", "-o", "addr", "show", IFACE], timeout=2
-            ).decode()
+            out = subprocess.check_output(["ip", "-4", "-o", "addr", "show", self.iface], timeout=2).decode()
         except Exception as e:
-            logging.debug("ip addr show %s failed: %s", IFACE, e)
+            logging.debug("ip addr show %s failed: %s", self.iface, e)
             return None
         for line in out.splitlines():
             parts = line.split()
@@ -200,7 +205,8 @@ class EthernetManager:
         try:
             subprocess.Popen(
                 ["sudo", "systemctl", verb, SERVICE],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
         except Exception as e:
             logging.warning("systemctl %s %s failed to spawn: %s", verb, SERVICE, e)
