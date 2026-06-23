@@ -16,7 +16,10 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from math import log
+from pathlib import Path
 from PIL import ImageFont
+
+_FONTS_DIR = Path(__file__).parent.parent / "fonts"
 
 from uilib.panel import *
 from uilib.misc import *
@@ -135,7 +138,7 @@ class TextEditor(RoundedPanel):
         self.set_outline(2, (255,255,255))
         self.outline = 2
         self.curline = widget.text
-        self.font = ImageFont.truetype("DejaVuSans.ttf", 18)
+        self.font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans.ttf"), 18)
         bbox = self.font.getbbox(widget.edit_message)
         msg_w, msg_h = bbox[2] - bbox[0], bbox[3]
         msg_box = Box.xywh(10, 10, msg_w, msg_h)

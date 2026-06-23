@@ -16,7 +16,10 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import json
+from pathlib import Path
 from PIL import ImageFont
+
+_FONTS_DIR = Path(__file__).parent.parent / "fonts"
 
 
 class Config:
@@ -40,9 +43,9 @@ class Config:
 
     def _set_defaults(self):
         if "default" not in self.fonts:
-            add_font("default", "DejaVuSans.ttf", 16)
+            add_font("default", str(_FONTS_DIR / "DejaVuSans.ttf"), 16)
         if "default_title" not in self.fonts:
-            add_font("default_title", "DejaVuSans-Bold.ttf", 16)
+            add_font("default_title", str(_FONTS_DIR / "DejaVuSans-Bold.ttf"), 16)
         if "default_fgnd" not in self.colors:
             add_color("default_fgnd", (255, 255, 255))
         if "default_bkgnd" not in self.colors:
@@ -90,7 +93,8 @@ class Config:
                 except KeyError as e:
                     print("Error loading font:", e)
                 else:
-                    self.add_font(l, n, s)
+                    candidate = _FONTS_DIR / n
+                    self.add_font(l, str(candidate) if candidate.exists() else n, s)
         if "colors" in data:
             colors = data["colors"]
             for color_def in colors:

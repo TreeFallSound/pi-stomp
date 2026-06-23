@@ -15,9 +15,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable, NotRequired, Optional, Protocol, TypedDict, cast
 
 from PIL import ImageFont
+
+_FONTS_DIR = Path(__file__).parent.parent / "fonts"
 
 import common.util as util
 from modalapi.wifi import (
@@ -101,7 +104,7 @@ class _PassphraseEditor(RoundedPanel):
         self._on_submit = on_submit
         self._curline = ''
 
-        font = ImageFont.truetype("DejaVuSans.ttf", 18)
+        font = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans.ttf"), 18)
         box = Box(0, 0, 300, 80)
         box = box.centre(pstack.box)
         super().__init__(box=box, parent=pstack, auto_destroy=True)
