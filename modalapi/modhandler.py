@@ -1044,7 +1044,12 @@ class Modhandler(Handler):
                 self.software_version = output.decode()
                 logging.info("pi-Stomp Software Version: %s" % self.software_version)
         except subprocess.CalledProcessError:
-            logging.error("Cannot obtain git software tag info")
+            try:
+                output = subprocess.check_output(['dpkg-query', '--showformat=${Version}', '--show', 'pi-stomp'])
+                self.software_version = output.decode().strip()
+                logging.info("pi-Stomp Software Version (pkg): %s" % self.software_version)
+            except subprocess.CalledProcessError:
+                logging.error("Cannot obtain software version info")
 
         try:
             if Path(self.build_file).exists():

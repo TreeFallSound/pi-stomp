@@ -1043,7 +1043,12 @@ class Mod(Handler):
                 self.git_describe = output.decode()
                 self.software_version = self.git_describe.split('-')[0]
         except subprocess.CalledProcessError:
-            logging.error("Cannot obtain git software tag info")
+            try:
+                output = subprocess.check_output(['dpkg-query', '--showformat=${Version}', '--show', 'pi-stomp'])
+                self.git_describe = output.decode().strip()
+                self.software_version = self.git_describe
+            except subprocess.CalledProcessError:
+                logging.error("Cannot obtain software version info")
 
         self.eq_status = self.audiocard.get_switch_parameter(self.audiocard.DAC_EQ)
         self.lcd.update_eq(self.eq_status)
