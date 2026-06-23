@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 from typing import Literal, TYPE_CHECKING, cast
 
+from common.fonts import font_path, FONTS_DIR
 from uilib.pygame_init import font as _make_font
 
 if TYPE_CHECKING:
@@ -60,15 +61,15 @@ class Config:
 
     def _set_defaults(self) -> None:
         if "default" not in self.fonts:
-            self.add_font("default", "DejaVuSans.ttf", 16)
+            self.add_font("default", font_path("DejaVuSans.ttf"), 16)
         if "default_title" not in self.fonts:
-            self.add_font("default_title", "DejaVuSans-Bold.ttf", 16)
+            self.add_font("default_title", font_path("DejaVuSans-Bold.ttf"), 16)
         if "footswitch" not in self.fonts:
-            self.add_font("footswitch", "DejaVuSans.ttf", 18)
+            self.add_font("footswitch", font_path("DejaVuSans.ttf"), 18)
         if "footswitch_badge" not in self.fonts:
-            self.add_font("footswitch_badge", "DejaVuSans-Bold.ttf", 14)
+            self.add_font("footswitch_badge", font_path("DejaVuSans-Bold.ttf"), 14)
         if "footswitch_tap_bpm" not in self.fonts:
-            self.add_font("footswitch_tap_bpm", "DejaVuSans-Bold.ttf", 16)
+            self.add_font("footswitch_tap_bpm", font_path("DejaVuSans-Bold.ttf"), 16)
         if "default_fgnd" not in self.colors:
             self.add_color("default_fgnd", (255, 255, 255))
         if "default_bkgnd" not in self.colors:
@@ -117,7 +118,8 @@ class Config:
                 except KeyError as e:
                     print("Error loading font:", e)
                 else:
-                    self.add_font(label, name, size)
+                    candidate = FONTS_DIR / name
+                    self.add_font(label, str(candidate) if candidate.exists() else name, size)
         if "colors" in data:
             for color_def in data["colors"]:
                 try:

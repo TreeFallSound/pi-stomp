@@ -16,10 +16,10 @@
 import statistics
 import time
 from collections import deque
-from pathlib import Path
 from typing import Callable, Literal
 
 from uilib import profiling
+from common.fonts import font_path
 from uilib.box import Box
 from uilib.config import Config
 from uilib.misc import get_text_bbox, get_text_size
@@ -31,9 +31,6 @@ from uilib.widget import Widget
 
 from pistomp.input.event import ControllerEvent
 from pistomp.input.sink import InputSink
-
-_FONTS_DIR = Path(__file__).resolve().parents[2] / "fonts"
-
 
 from pistomp.tuner.engine import TunerEngine, TunerReading
 
@@ -368,7 +365,7 @@ class TunerPanel(Panel, InputSink):
         super().__init__(box=Box.xywh(0, 0, _W, 240), auto_destroy=True, no_dim=True, opaque=True)
         self._engine = engine
 
-        note_font = make_font(str(_FONTS_DIR / "DejaVuSans-Bold.ttf"), 56)
+        note_font = make_font(font_path("DejaVuSans-Bold.ttf"), 56)
         btn_font = Config().get_font("default")
         _, btn_text_h = get_text_size("Mute", btn_font)
         btn_v_margin = max(0, (_BTN_H - btn_text_h) // 2)

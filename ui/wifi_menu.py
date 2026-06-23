@@ -15,7 +15,7 @@
 
 from typing import TYPE_CHECKING, Callable, NotRequired, Optional, Protocol, TypedDict, cast
 
-from pathlib import Path
+from common.fonts import font_path
 
 import common.util as util
 from modalapi.ethernet import EthernetManager
@@ -58,20 +58,23 @@ class _WifiHost(Protocol):
 
     The concrete handler (`modalapi.modhandler.ModHandler`) satisfies this structurally.
     """
+
     wifi_manager: WifiManager
     wifi_status: Optional[WifiStatus]
     # v3 sets this; v1/v2 (mod.py) leave it None — Wired Connection row stays hidden.
     ethernet_manager: Optional[EthernetManager]
 
 
-ACTIVE_GLYPH = '\u2714'    # ✔
-SEP = '\u00b7'             # ·
+ACTIVE_GLYPH = "\u2714"  # ✔
+SEP = "\u00b7"  # ·
+
 
 class Row(TypedDict):
     """A single network line in the wifi menu — saved profile, in-range network, or both.
 
     `signal`, `security`, and `profile` are present but may be None (e.g. saved-but-out-of-range
     has no signal/security; in-range-but-unsaved has no profile)."""
+
     ssid: str
     signal: Optional[int]
     security: Optional[str]
@@ -96,22 +99,18 @@ class _PassphraseEditor(RoundedPanel):
     def __init__(self, ssid: str, pstack, on_submit: PasswordCallback) -> None:
         self._pstack = pstack
         self._on_submit = on_submit
-        self._curline = ''
+        self._curline = ""
 
-        _fonts = Path(__file__).resolve().parent.parent / "fonts"
-        font = _make_font(_fonts / "DejaVuSans.ttf", 18)
+        font = _make_font(font_path("DejaVuSans.ttf"), 18)
         box = Box(0, 0, 300, 80)
         box = box.centre(pstack.box)
         super().__init__(box=box, parent=pstack, auto_destroy=True)
         self.set_outline(2, (255, 255, 255))
 
-        TextWidget(box=Box.xywh(10, 8, 280, 0), text='Password for ' + ssid,
-                   font=font, parent=self)
-        self._edit = TextWidget(box=Box.xywh(10, 30, 280, 20),
-                                text='\u2588', font=font, parent=self)
+        TextWidget(box=Box.xywh(10, 8, 280, 0), text="Password for " + ssid, font=font, parent=self)
+        self._edit = TextWidget(box=Box.xywh(10, 30, 280, 20), text="\u2588", font=font, parent=self)
         self._edit.set_background((64, 64, 64))
-        selector = LetterSelector(box=Box.xywh(10, 52, 280, 22), font=font,
-                                  parent=self, action=self._on_letter)
+        selector = LetterSelector(box=Box.xywh(10, 52, 280, 22), font=font, parent=self, action=self._on_letter)
         self.add_sel_widget(selector)
         pstack.push_panel(self)
         self.refresh()
@@ -126,12 +125,12 @@ class _PassphraseEditor(RoundedPanel):
                 self._on_submit(self._curline)
             return
         if event == InputEvent.CLEAR:
-            self._curline = ''
+            self._curline = ""
         elif event == InputEvent.BACKSPACE:
             self._curline = self._curline[:-1]
         elif event == InputEvent.LETTER:
             self._curline += str(data)
-        self._edit.set_text(self._curline + '\u2588')
+        self._edit.set_text(self._curline + "\u2588")
 
 
 def signal_bars_level(signal: int) -> int:
@@ -140,14 +139,14 @@ def signal_bars_level(signal: int) -> int:
 
 
 def is_open_network(security: Optional[str]) -> bool:
-    return not security or security == '--'
+    return not security or security == "--"
 
 
 def _glyph_height() -> int:
     """Row height to size glyphs at — the default font's line height. Picked
     once at construction (emoji model). RichTextWidget centers glyphs shorter
     than the row inside the row band; this picks a height that matches text."""
-    font = Config().get_font('default')
+    font = Config().get_font("default")
     assert font is not None
     return int(font.get_sized_ascender()) + abs(int(font.get_sized_descender()))
 
@@ -159,10 +158,10 @@ class WifiMenu:
     Reads cached state from WifiManager; submits writes to its CommandQueue.
     """
 
-    def __init__(self, lcd: 'Lcd') -> None:
-        self.lcd: 'Lcd' = lcd
-        self._root_menu: Optional['Menu'] = None
-        self._nearby_menu: Optional['Menu'] = None
+    def __init__(self, lcd: "Lcd") -> None:
+        self.lcd: "Lcd" = lcd
+        self._root_menu: Optional["Menu"] = None
+        self._nearby_menu: Optional["Menu"] = None
         self._cached_scanned: list[ScannedNetwork] = []
 
     @property
@@ -183,7 +182,7 @@ class WifiMenu:
     def _saved_by_ssid(self) -> dict[str, list[SavedConnection]]:
         by_ssid: dict[str, list[SavedConnection]] = {}
         for c in self._wifi_manager.get_cached_saved():
-            by_ssid.setdefault(c['ssid'], []).append(c)
+            by_ssid.setdefault(c["ssid"], []).append(c)
         return by_ssid
 
     @property
@@ -220,30 +219,30 @@ class WifiMenu:
 
     def _render_root_menu(self, default_label: Optional[str] = None) -> None:
         wifi_status = self._wifi_status
-        hotspot_active = bool(util.DICT_GET(wifi_status, 'hotspot_active'))
-        supported = util.DICT_GET(wifi_status, 'wifi_supported') is not False
-        active_name = util.DICT_GET(wifi_status, 'connection')
+        hotspot_active = bool(util.DICT_GET(wifi_status, "hotspot_active"))
+        supported = util.DICT_GET(wifi_status, "wifi_supported") is not False
+        active_name = util.DICT_GET(wifi_status, "connection")
         scanned = self._cached_scanned
         saved_by_ssid = self._saved_by_ssid
-        scanned_ssids = {n['ssid'] for n in scanned}
+        scanned_ssids = {n["ssid"] for n in scanned}
         rows, _ = self._build_rows(scanned, saved_by_ssid, scanned_ssids, active_name)
         title = self._title(wifi_status, active_name)
         items = self._build_items(rows, hotspot_active, supported)
-        self._root_menu = self.lcd.draw_selection_menu(
-            items, title, dismiss_option=True, default_item=default_label)
+        self._root_menu = self.lcd.draw_selection_menu(items, title, dismiss_option=True, default_item=default_label)
 
     def _render_nearby_menu(self, default_label: Optional[str] = None) -> None:
         scanned = self._cached_scanned
         saved_by_ssid = self._saved_by_ssid
-        scanned_ssids = {n['ssid'] for n in scanned}
-        active_name = util.DICT_GET(self._wifi_status, 'connection')
+        scanned_ssids = {n["ssid"] for n in scanned}
+        active_name = util.DICT_GET(self._wifi_status, "connection")
         _, nearby = self._build_rows(scanned, saved_by_ssid, scanned_ssids, active_name)
         if nearby:
             items: list[MenuItem] = [(self._row_segments(r), self._on_network_tap, r) for r in nearby]
         else:
             items = [("Scanning...", None, None)]
         self._nearby_menu = self.lcd.draw_selection_menu(
-            items, "Nearby Networks", dismiss_option=True, default_item=default_label)
+            items, "Nearby Networks", dismiss_option=True, default_item=default_label
+        )
 
     def notify_status_change(self) -> None:
         """Handler hook after wifi_status changes. Rebuilds the root menu
@@ -257,8 +256,8 @@ class WifiMenu:
         self._render_root_menu(default_label=keep)
 
     @staticmethod
-    def _current_label(menu: 'Menu') -> Optional[str]:
-        sel_ref = getattr(menu, 'sel_ref', None)
+    def _current_label(menu: "Menu") -> Optional[str]:
+        sel_ref = getattr(menu, "sel_ref", None)
         if sel_ref is None:
             return None
         try:
@@ -267,24 +266,25 @@ class WifiMenu:
             return None
 
     def toggle_hotspot(self, _: object = None) -> None:
-        was_active = bool(util.DICT_GET(self._wifi_status, 'hotspot_active'))
+        was_active = bool(util.DICT_GET(self._wifi_status, "hotspot_active"))
         self._pstack.pop_panel(None)
         self._wifi_manager.queue.submit(ToggleHotspotCmd(was_active), self._on_toggle_done)
 
     def _on_toggle_done(self, err: Optional[bytes]) -> None:
         if isinstance(err, Exception):
-            err = str(err).encode('utf-8')
+            err = str(err).encode("utf-8")
         if err is not None:
-            self._pstack.push_panel(
-                MessageDialog(self._pstack, parse_nmcli_error(err), title="Couldn't reconnect"))
+            self._pstack.push_panel(MessageDialog(self._pstack, parse_nmcli_error(err), title="Couldn't reconnect"))
 
     # ----- list assembly -----
 
-    def _build_rows(self,
-                    scanned: list[ScannedNetwork],
-                    saved_by_ssid: dict[str, list[SavedConnection]],
-                    scanned_ssids: set[str],
-                    active_name: Optional[str]) -> tuple[list[Row], list[Row]]:
+    def _build_rows(
+        self,
+        scanned: list[ScannedNetwork],
+        saved_by_ssid: dict[str, list[SavedConnection]],
+        scanned_ssids: set[str],
+        active_name: Optional[str],
+    ) -> tuple[list[Row], list[Row]]:
         """Returns (saved_rows_for_root, nearby_unsaved_for_submenu).
 
         Saved-in-range pick up signal/security from scan results; saved-out-of-range
@@ -292,23 +292,23 @@ class WifiMenu:
         rows: list[Row] = []
         nearby: list[Row] = []
         for net in scanned:
-            profiles = saved_by_ssid.get(net['ssid'], [])
+            profiles = saved_by_ssid.get(net["ssid"], [])
             saved_profile = self._pick_profile(profiles, active_name)
             row: Row = {
-                'ssid': net['ssid'],
-                'signal': net['signal'],
-                'security': net['security'],
-                'saved': saved_profile is not None,
-                'profile': saved_profile,
-                'active': saved_profile is not None and saved_profile['name'] == active_name,
+                "ssid": net["ssid"],
+                "signal": net["signal"],
+                "security": net["security"],
+                "saved": saved_profile is not None,
+                "profile": saved_profile,
+                "active": saved_profile is not None and saved_profile["name"] == active_name,
             }
             self._maybe_disambiguate(row, profiles)
             if saved_profile is not None:
                 rows.append(row)
             else:
                 nearby.append(row)
-        rows.sort(key=lambda r: (not r['active'], -(r['signal'] or 0)))
-        nearby.sort(key=lambda r: -(r['signal'] or 0))
+        rows.sort(key=lambda r: (not r["active"], -(r["signal"] or 0)))
+        nearby.sort(key=lambda r: -(r["signal"] or 0))
 
         out_of_range: list[Row] = []
         for ssid, profiles in saved_by_ssid.items():
@@ -316,16 +316,16 @@ class WifiMenu:
                 continue
             for profile in profiles:
                 ooo_row: Row = {
-                    'ssid': ssid,
-                    'signal': None,
-                    'security': None,
-                    'saved': True,
-                    'profile': profile,
-                    'active': profile['name'] == active_name,
+                    "ssid": ssid,
+                    "signal": None,
+                    "security": None,
+                    "saved": True,
+                    "profile": profile,
+                    "active": profile["name"] == active_name,
                 }
                 self._maybe_disambiguate(ooo_row, profiles)
                 out_of_range.append(ooo_row)
-        out_of_range.sort(key=lambda r: -(r['profile']['timestamp'] if r['profile'] else 0))
+        out_of_range.sort(key=lambda r: -(r["profile"]["timestamp"] if r["profile"] else 0))
         rows.extend(out_of_range)
         return rows, nearby
 
@@ -334,7 +334,7 @@ class WifiMenu:
         mgr = self._host.ethernet_manager
         if mgr is not None and mgr.carrier_up:
             h = _glyph_height()
-            eth_label: list[Segment] = [IconSeg(EthernetCableGlyph(height=h)), TextSeg('  Wired Connection')]
+            eth_label: list[Segment] = [IconSeg(EthernetCableGlyph(height=h)), TextSeg("  Wired Connection")]
             items.append((eth_label, self._open_ethernet_menu, None))
         items.extend((self._row_segments(r), self._on_network_tap, r, None, self._on_network_long_tap) for r in rows)
         if supported and not hotspot_active:
@@ -344,66 +344,64 @@ class WifiMenu:
         items.append((hotspot_label, self.toggle_hotspot, None))
         return items
 
-    def _title(self, wifi_status: WifiStatus,
-               active_name: Optional[str]) -> str:
-        if util.DICT_GET(wifi_status, 'hotspot_active'):
+    def _title(self, wifi_status: WifiStatus, active_name: Optional[str]) -> str:
+        if util.DICT_GET(wifi_status, "hotspot_active"):
             return "WiFi " + SEP + " Hotspot"
         if active_name:
-            ssid = util.DICT_GET(wifi_status, 'ssid') or active_name
+            ssid = util.DICT_GET(wifi_status, "ssid") or active_name
             return "WiFi %s %s" % (SEP, ssid)
         return "WiFi " + SEP + " Disconnected"
 
     def _row_segments(self, row: Row) -> list[Segment]:
-        label = row.get('display_name') or row['ssid']
+        label = row.get("display_name") or row["ssid"]
         h = _glyph_height()
         segs: list[Segment] = [TextSeg(label)]
-        if not row.get('saved') and is_open_network(row.get('security')):
-            segs.append(TextSeg(' '))
-            segs.append(IconSeg(PillGlyph('P', height=h)))
-        if row.get('active'):
-            segs.append(TextSeg(' ' + ACTIVE_GLYPH))
+        if not row.get("saved") and is_open_network(row.get("security")):
+            segs.append(TextSeg(" "))
+            segs.append(IconSeg(PillGlyph("P", height=h)))
+        if row.get("active"):
+            segs.append(TextSeg(" " + ACTIVE_GLYPH))
         segs.append(Spacer())
-        if row.get('signal') is not None:
-            segs.append(IconSeg(SignalBarsGlyph(signal_bars_level(row['signal']), height=h)))
+        if row.get("signal") is not None:
+            segs.append(IconSeg(SignalBarsGlyph(signal_bars_level(row["signal"]), height=h)))
         return segs
 
     @staticmethod
-    def _pick_profile(profiles: list[SavedConnection],
-                      active_name: Optional[str]) -> Optional[SavedConnection]:
+    def _pick_profile(profiles: list[SavedConnection], active_name: Optional[str]) -> Optional[SavedConnection]:
         if not profiles:
             return None
         for p in profiles:
-            if p['name'] == active_name:
+            if p["name"] == active_name:
                 return p
-        return max(profiles, key=lambda p: p['timestamp'] or 0)
+        return max(profiles, key=lambda p: p["timestamp"] or 0)
 
     @staticmethod
     def _maybe_disambiguate(row: Row, profiles: list[SavedConnection]) -> None:
         """When several saved profiles share an SSID (e.g. OEM `preconfigured`
         plus a user-added entry), surface the profile name so the rows are
         distinguishable. If the name doesn't already contain the SSID, suffix it."""
-        profile = row.get('profile')
-        if not (row.get('saved') and len(profiles) > 1 and profile is not None):
+        profile = row.get("profile")
+        if not (row.get("saved") and len(profiles) > 1 and profile is not None):
             return
-        name = profile['name']
-        ssid = row['ssid']
+        name = profile["name"]
+        ssid = row["ssid"]
         if ssid and ssid.lower() in name.lower():
-            row['display_name'] = name
+            row["display_name"] = name
         else:
-            row['display_name'] = '%s (%s)' % (name, ssid) if ssid else name
+            row["display_name"] = "%s (%s)" % (name, ssid) if ssid else name
 
     # ----- per-network actions -----
 
     def _on_network_tap(self, row: Row) -> None:
         """Root-menu row tap. Routes by row state:
 
-            tap on saved+active     → Disconnect/Forget/Replace pw submenu
-            tap on saved+non-active → connect_saved (no prompt — we have the PSK)
-            tap on unsaved           → _connect_scanned_flow (stays in nearby on failure)
+        tap on saved+active     → Disconnect/Forget/Replace pw submenu
+        tap on saved+non-active → connect_saved (no prompt — we have the PSK)
+        tap on unsaved           → _connect_scanned_flow (stays in nearby on failure)
         """
-        saved = row.get('saved')
+        saved = row.get("saved")
         if saved:
-            if row.get('active'):
+            if row.get("active"):
                 self._open_saved_submenu(row, include_disconnect=True)
                 return
             self._connect_saved(row)
@@ -413,23 +411,23 @@ class WifiMenu:
     def _connect_scanned_flow(self, row: Row) -> None:
         """Connect to a scanned (unsaved) network. One attempt — if it fails,
         show the error. The user can re-try via the menu."""
-        ssid = row['ssid']
+        ssid = row["ssid"]
 
         def attempt(psk: Optional[str]) -> None:
             self._pstack.pop_panel(None)
             self._wifi_manager.queue.submit(
-                ConnectScannedCmd(ssid=ssid, security=row.get('security') or '', psk=psk),
-                self._on_op_done)
+                ConnectScannedCmd(ssid=ssid, security=row.get("security") or "", psk=psk), self._on_op_done
+            )
 
-        if is_open_network(row.get('security')):
+        if is_open_network(row.get("security")):
             attempt(None)
         else:
             self._open_password_prompt(ssid, attempt)
 
     def _on_network_long_tap(self, row: Row) -> None:
         """Long-press on a network row → saved-network submenu."""
-        if row.get('saved'):
-            self._open_saved_submenu(row, include_disconnect=bool(row.get('active')))
+        if row.get("saved"):
+            self._open_saved_submenu(row, include_disconnect=bool(row.get("active")))
 
     def _open_saved_submenu(self, row: Row, include_disconnect: bool = False) -> None:
         items: list[MenuItem] = []
@@ -437,7 +435,7 @@ class WifiMenu:
             items.append(("Disconnect", self._disconnect, row))
         items.append(("Replace password", self._open_replace_psk_dialog, row))
         items.append(("Forget", self._forget, row))
-        self.lcd.draw_selection_menu(items, row['ssid'], dismiss_option=True)
+        self.lcd.draw_selection_menu(items, row["ssid"], dismiss_option=True)
 
     def _open_ethernet_menu(self, _: object = None) -> None:
         self.lcd.ethernet_menu.open()
@@ -448,62 +446,52 @@ class WifiMenu:
 
     def _on_op_done(self, err: Optional[bytes]) -> None:
         if isinstance(err, Exception):
-            err = str(err).encode('utf-8')
+            err = str(err).encode("utf-8")
         if err is not None:
-            self._pstack.push_panel(
-                MessageDialog(self._pstack, parse_nmcli_error(err), title="Couldn't connect"))
+            self._pstack.push_panel(MessageDialog(self._pstack, parse_nmcli_error(err), title="Couldn't connect"))
 
     def _connect_saved(self, row: Row) -> None:
-        profile = row['profile']
+        profile = row["profile"]
         assert profile is not None
         self._pstack.pop_panel(None)
-        self._wifi_manager.queue.submit(
-            ConnectSavedCmd(name=profile['name'], ssid=row['ssid']),
-            self._on_op_done)
+        self._wifi_manager.queue.submit(ConnectSavedCmd(name=profile["name"], ssid=row["ssid"]), self._on_op_done)
 
     def _disconnect(self, row: Row) -> None:
-        profile = row['profile']
+        profile = row["profile"]
         assert profile is not None
         self._pstack.pop_panel(None)
-        self._wifi_manager.queue.submit(
-            DisconnectCmd(name=profile['name'], ssid=row['ssid']),
-            self._on_disconnect_done)
+        self._wifi_manager.queue.submit(DisconnectCmd(name=profile["name"], ssid=row["ssid"]), self._on_disconnect_done)
 
     def _on_disconnect_done(self, err: Optional[bytes]) -> None:
         if isinstance(err, Exception):
-            err = str(err).encode('utf-8')
+            err = str(err).encode("utf-8")
         if err is not None:
-            self._pstack.push_panel(
-                MessageDialog(self._pstack, parse_nmcli_error(err), title="Couldn't disconnect"))
+            self._pstack.push_panel(MessageDialog(self._pstack, parse_nmcli_error(err), title="Couldn't disconnect"))
 
     def _open_replace_psk_dialog(self, row: Row) -> None:
-        profile = row['profile']
+        profile = row["profile"]
         assert profile is not None
-        self._open_password_prompt(row['ssid'],
-            lambda psk: self._submit_replace_psk(profile, row['ssid'], psk))
+        self._open_password_prompt(row["ssid"], lambda psk: self._submit_replace_psk(profile, row["ssid"], psk))
 
     def _submit_replace_psk(self, profile: SavedConnection, ssid: str, psk: str) -> None:
         self._pstack.pop_panel(None)
-        self._wifi_manager.queue.submit(
-            ReplacePskCmd(name=profile['name'], ssid=ssid, psk=psk),
-            self._on_op_done)
+        self._wifi_manager.queue.submit(ReplacePskCmd(name=profile["name"], ssid=ssid, psk=psk), self._on_op_done)
 
     def _forget(self, row: Row) -> None:
-        profile = row['profile']
+        profile = row["profile"]
         assert profile is not None
-        was_active = bool(row.get('active'))
-        forgotten_ssid = row['ssid']
+        was_active = bool(row.get("active"))
+        forgotten_ssid = row["ssid"]
         self._wifi_manager.queue.submit(
-            ForgetCmd(name=profile['name'], ssid=forgotten_ssid),
-            lambda err: self._on_forget_done(err, was_active, forgotten_ssid))
+            ForgetCmd(name=profile["name"], ssid=forgotten_ssid),
+            lambda err: self._on_forget_done(err, was_active, forgotten_ssid),
+        )
 
-    def _on_forget_done(self, err: Optional[bytes],
-                        was_active: bool, forgotten_ssid: str) -> None:
+    def _on_forget_done(self, err: Optional[bytes], was_active: bool, forgotten_ssid: str) -> None:
         if isinstance(err, Exception):
-            err = str(err).encode('utf-8')
+            err = str(err).encode("utf-8")
         if err is not None:
-            self._pstack.push_panel(
-                MessageDialog(self._pstack, parse_nmcli_error(err), title="Error"))
+            self._pstack.push_panel(MessageDialog(self._pstack, parse_nmcli_error(err), title="Error"))
             return
         self._pstack.pop_panel(None)
         if self._root_menu is not None:
@@ -513,8 +501,8 @@ class WifiMenu:
             fallback = self._pick_fallback_saved(forgotten_ssid)
             if fallback is not None:
                 self._wifi_manager.queue.submit(
-                    ConnectSavedCmd(name=fallback['profile']['name'], ssid=fallback['ssid']),
-                    self._on_op_done)
+                    ConnectSavedCmd(name=fallback["profile"]["name"], ssid=fallback["ssid"]), self._on_op_done
+                )
         self.open()
 
     def _pick_fallback_saved(self, exclude_ssid: str) -> Optional[Row]:
@@ -523,11 +511,10 @@ class WifiMenu:
         Uses the cached scan as the reachability check — out-of-range saved
         profiles have no signal entry and are skipped."""
         saved_by_ssid = self._saved_by_ssid
-        scanned_ssids = {n['ssid'] for n in self._cached_scanned}
-        rows, _ = self._build_rows(self._cached_scanned, saved_by_ssid,
-                                   scanned_ssids, active_name=None)
+        scanned_ssids = {n["ssid"] for n in self._cached_scanned}
+        rows, _ = self._build_rows(self._cached_scanned, saved_by_ssid, scanned_ssids, active_name=None)
         for r in rows:
-            if r['ssid'] == exclude_ssid or r['signal'] is None or r['profile'] is None:
+            if r["ssid"] == exclude_ssid or r["signal"] is None or r["profile"] is None:
                 continue
             return r
         return None
@@ -538,30 +525,59 @@ class WifiMenu:
         _PassphraseEditor(ssid, self._pstack, on_submit)
 
     def _open_join_dialog(self, _: object = None) -> None:
-        d = Dialog(width=240, height=120, auto_destroy=True, title='Join other network')
-        font = Config().get_font('default')
+        d = Dialog(width=240, height=120, auto_destroy=True, title="Join other network")
+        font = Config().get_font("default")
         from uilib.misc import get_text_size  # local import — uilib.__init__ doesn't re-export
-        ssid_label_w = get_text_size('SSID :', font)[0]
-        pw_label_w = get_text_size('Passwd :', font)[0]
-        TextWidget(box=Box.xywh(0, 0, ssid_label_w, 0), text='SSID :', parent=d,
-                   h_margin=0, v_margin=3, align=WidgetAlign.NONE)
-        ssid_w = TextWidget(box=Box.xywh(ssid_label_w, 0, 190, 0), text='', parent=d,
-                            outline=1, sel_width=3, outline_radius=5,
-                            align=WidgetAlign.NONE, name='ssid_field',
-                            edit_message='WiFi SSID')
+
+        ssid_label_w = get_text_size("SSID :", font)[0]
+        pw_label_w = get_text_size("Passwd :", font)[0]
+        TextWidget(
+            box=Box.xywh(0, 0, ssid_label_w, 0), text="SSID :", parent=d, h_margin=0, v_margin=3, align=WidgetAlign.NONE
+        )
+        ssid_w = TextWidget(
+            box=Box.xywh(ssid_label_w, 0, 190, 0),
+            text="",
+            parent=d,
+            outline=1,
+            sel_width=3,
+            outline_radius=5,
+            align=WidgetAlign.NONE,
+            name="ssid_field",
+            edit_message="WiFi SSID",
+        )
         d.add_sel_widget(ssid_w)
-        TextWidget(box=Box.xywh(0, 30, pw_label_w, 0), text='Passwd :', parent=d,
-                   h_margin=0, v_margin=3, align=WidgetAlign.NONE)
-        pw_w = TextWidget(box=Box.xywh(pw_label_w, 30, 169, 0), text='', parent=d,
-                          outline=1, sel_width=3, outline_radius=5,
-                          align=WidgetAlign.NONE, name='pw_field',
-                          edit_message='Password')
+        TextWidget(
+            box=Box.xywh(0, 30, pw_label_w, 0),
+            text="Passwd :",
+            parent=d,
+            h_margin=0,
+            v_margin=3,
+            align=WidgetAlign.NONE,
+        )
+        pw_w = TextWidget(
+            box=Box.xywh(pw_label_w, 30, 169, 0),
+            text="",
+            parent=d,
+            outline=1,
+            sel_width=3,
+            outline_radius=5,
+            align=WidgetAlign.NONE,
+            name="pw_field",
+            edit_message="Password",
+        )
         d.add_sel_widget(pw_w)
 
-        cancel = TextWidget(box=Box.xywh(0, 90, 0, 0), text='Cancel', parent=d,
-                            outline=1, sel_width=3, outline_radius=5,
-                            action=lambda x, y: self._pstack.pop_panel(d),
-                            align=WidgetAlign.NONE, name='cancel_btn')
+        cancel = TextWidget(
+            box=Box.xywh(0, 90, 0, 0),
+            text="Cancel",
+            parent=d,
+            outline=1,
+            sel_width=3,
+            outline_radius=5,
+            action=lambda x, y: self._pstack.pop_panel(d),
+            align=WidgetAlign.NONE,
+            name="cancel_btn",
+        )
         d.add_sel_widget(cancel)
 
         def submit(_event, _button):
@@ -573,14 +589,22 @@ class WifiMenu:
             # Join dialog has no scan context: infer security from psk presence.
             # "WPA2" → wpa-psk; "" → open. Users on WPA3-only / enterprise networks
             # need to use the scan flow instead.
-            security = 'WPA2' if psk else ''
+            security = "WPA2" if psk else ""
             self._wifi_manager.queue.submit(
-                ConnectScannedCmd(ssid=ssid, security=security, psk=psk or None),
-                self._on_op_done)
+                ConnectScannedCmd(ssid=ssid, security=security, psk=psk or None), self._on_op_done
+            )
 
-        ok = TextWidget(box=Box.xywh(80, 90, 0, 0), text='Ok', parent=d,
-                        outline=1, sel_width=3, outline_radius=5,
-                        action=submit, align=WidgetAlign.NONE, name='ok_btn')
+        ok = TextWidget(
+            box=Box.xywh(80, 90, 0, 0),
+            text="Ok",
+            parent=d,
+            outline=1,
+            sel_width=3,
+            outline_radius=5,
+            action=submit,
+            align=WidgetAlign.NONE,
+            name="ok_btn",
+        )
         d.add_sel_widget(ok)
         self._pstack.push_panel(d)
         d.refresh()

@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from common.fonts import font_path
 import common.token as Token
 import common.util as util
 import os
@@ -24,7 +25,6 @@ from pygame import Surface
 from uilib.pygame_init import font as _make_font
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
-
 
 class Lcd(abstract_lcd.Lcd):
     __single = None
@@ -85,16 +85,15 @@ class Lcd(abstract_lcd.Lcd):
 
         # Load fonts from the bundled fonts dir (pygame._freetype for consistent rendering)
         # Use monochrome (antialiased=False) for crisp rendering on 1-bit LCD
-        fonts_dir = os.path.join(cwd, "fonts")
-        self.splash_font = _make_font(os.path.join(fonts_dir, "DejaVuSans-Bold.ttf"), 18)
+        self.splash_font = _make_font(font_path("DejaVuSans-Bold.ttf"), 18)
         self.splash_font.antialiased = False
-        self.title_font = _make_font(os.path.join(fonts_dir, "DejaVuSans-Bold.ttf"), 11)
+        self.title_font = _make_font(font_path("DejaVuSans-Bold.ttf"), 11)
         self.title_font.antialiased = False
-        self.label_font = _make_font(os.path.join(fonts_dir, "DejaVuSans-Bold.ttf"), 10)
+        self.label_font = _make_font(font_path("DejaVuSans-Bold.ttf"), 10)
         self.label_font.antialiased = False
-        self.small_bold_font = _make_font(os.path.join(fonts_dir, "DejaVuSansMono-Bold.ttf"), 8)
+        self.small_bold_font = _make_font(font_path("DejaVuSansMono-Bold.ttf"), 8)
         self.small_bold_font.antialiased = False
-        self.small_font = _make_font(os.path.join(fonts_dir, "EtBt6001-JO47.ttf"), 6)
+        self.small_font = _make_font(font_path("EtBt6001-JO47.ttf"), 6)
         self.small_font.antialiased = False
 
         # Splash

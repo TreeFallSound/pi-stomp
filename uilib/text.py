@@ -15,6 +15,7 @@
 
 import time
 from math import log
+
 from typing import Optional, TYPE_CHECKING
 from typing_extensions import override
 import pygame
@@ -25,6 +26,8 @@ from uilib.widget import Widget
 from uilib.panel import RoundedPanel
 from uilib.misc import InputEvent, TextHAlign, get_text_size, trace
 from uilib.config import Config
+
+from common.fonts import font_path
 
 if TYPE_CHECKING:
     import pygame._freetype
@@ -156,10 +159,7 @@ class TextEditor(RoundedPanel):
         self.set_outline(2, (255, 255, 255))
         self.outline = 2
         self.curline = widget.text
-        from pathlib import Path
-
-        _fonts = Path(__file__).resolve().parent.parent / "fonts"
-        self.font = _make_font(_fonts / "DejaVuSans.ttf", 18)
+        self.font = _make_font(font_path("DejaVuSans.ttf"), 18)
         msg_w, msg_h = get_text_size(widget.edit_message, self.font)
         msg_box = Box.xywh(10, 10, msg_w, msg_h)
         self.msg = TextWidget(box=msg_box, text=widget.edit_message, font=self.font, parent=self)
