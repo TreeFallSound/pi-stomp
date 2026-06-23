@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import os
 import socket
-import sys
 import time
 import subprocess
 import datetime
@@ -16,33 +15,40 @@ BPP = 4
 FRAME_SIZE = WIDTH * HEIGHT * BPP
 FPS = 60
 
+
 class LcdRecorder:
     def __init__(self, output_path, lossless=False):
         self.output_path = output_path
         self.running = True
-        self.current_frame = bytes(FRAME_SIZE) # Black frame initially
+        self.current_frame = bytes(FRAME_SIZE)  # Black frame initially
         self.frame_received = threading.Event()
-        
+
         # ffmpeg command
         self.ffmpeg_cmd = [
             "ffmpeg",
             "-y",
-            "-f", "rawvideo",
-            "-pixel_format", "rgba",
-            "-video_size", f"{WIDTH}x{HEIGHT}",
-            "-framerate", str(FPS),
-            "-i", "-", # input from pipe
-            "-c:v", "libx264",
+            "-f",
+            "rawvideo",
+            "-pixel_format",
+            "bgra",
+            "-video_size",
+            f"{WIDTH}x{HEIGHT}",
+            "-framerate",
+            str(FPS),
+            "-i",
+            "pipe:",
+            "-c:v",
+            "libx264",
         ]
-        
+
         if lossless:
             # Lossless H.264
             self.ffmpeg_cmd.extend(["-preset", "ultrafast", "-qp", "0"])
         else:
             # High quality but compressed
             self.ffmpeg_cmd.extend(["-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p"])
-            
-        self.ffmpeg_cmd.append(self.output_path)
+
+        self.ffmpeg_cmd.append(f"file:{self.output_path}")
 
     def stop(self, signum=None, frame=None):
         print("\nStopping recording...")
@@ -65,7 +71,7 @@ class LcdRecorder:
                             self.running = False
                             break
                         data += chunk
-                    
+
                     if len(data) == FRAME_SIZE:
                         self.current_frame = data
                         self.frame_received.set()
@@ -80,8 +86,8 @@ class LcdRecorder:
 
         server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server_sock.bind(SOCKET_PATH)
-        os.chmod(SOCKET_PATH, 0o666) # Ensure pi-stomp can connect
-        
+        os.chmod(SOCKET_PATH, 0o666)  # Ensure pi-stomp can connect
+
         # Handle signals
         signal.signal(signal.SIGINT, self.stop)
         signal.signal(signal.SIGTERM, self.stop)
@@ -110,11 +116,12 @@ class LcdRecorder:
 
         interval = 1.0 / FPS
         next_tick = time.time() + interval
-        
+
         try:
             while self.running:
                 # Write current frame (either new or repeated)
                 try:
+                    assert process.stdin is not None
                     process.stdin.write(self.current_frame)
                 except BrokenPipeError:
                     print("ffmpeg process closed unexpectedly")
@@ -125,7 +132,7 @@ class LcdRecorder:
                 sleep_time = next_tick - now
                 if sleep_time > 0:
                     time.sleep(sleep_time)
-                
+
                 next_tick += interval
                 # If we're falling behind, catch up
                 if next_tick < time.time():
@@ -141,6 +148,7 @@ class LcdRecorder:
                 os.remove(SOCKET_PATH)
             print(f"Recording saved to {self.output_path}")
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Record pi-stomp LCD to a video file.")
     parser.add_argument("-o", "--output", help="Output file path")
@@ -153,6 +161,6 @@ if __name__ == "__main__":
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         home = os.path.expanduser("~")
         output_file = os.path.join(home, f"pistomp_capture_{timestamp}.mp4")
-    
+
     recorder = LcdRecorder(output_file, lossless=args.lossless)
     recorder.run()

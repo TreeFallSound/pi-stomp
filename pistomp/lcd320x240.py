@@ -293,8 +293,7 @@ class Lcd(abstract_lcd.Lcd):
                         self._capture_socket.connect(self.CAPTURE_SOCKET_PATH)
                         # Increase buffer size to handle multiple 300KB frames (4MB = ~13 frames)
                         self._capture_socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4 * 1024 * 1024)
-                        # We don't want to block the main loop if the consumer is slow
-                        self._capture_socket.setblocking(False)
+                        self._capture_socket.setblocking(True)
                         self.pstack.set_capture_callback(self._send_capture_frame)
                         logging.info("LCD capture connected")
                         # Force a full refresh so the recorder gets a frame immediately
@@ -313,9 +312,7 @@ class Lcd(abstract_lcd.Lcd):
     def _send_capture_frame(self, image):
         if self._capture_socket:
             try:
-                # Send raw RGB data. 320x240x3 = 230,400 bytes.
-                # Use sendall with non-blocking - if it fails, we drop and disconnect
-                self._capture_socket.sendall(image.tobytes())
+                self._capture_socket.sendall(image.get_buffer().raw)
             except (socket.error, BrokenPipeError, BlockingIOError):
                 # BlockingIOError means the recorder can't keep up - we disconnect
                 # to avoid slowing down pi-stomp
