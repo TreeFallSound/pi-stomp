@@ -26,7 +26,7 @@ from uilib.widget import Widget
 TILE_W = 74
 TILE_H = 28
 CHANNEL = 7  # horizontal column gutter
-ROW_GAP = 3  # vertical row gutter — no wires routed here, so chosen for visual breathing room
+ROW_GAP = 4  # vertical row gutter
 LANE_OFFSETS: tuple[int, int] = (2, 4)
 PORT_OFFSETS_Y: tuple[int, int] = (8, 18)
 
