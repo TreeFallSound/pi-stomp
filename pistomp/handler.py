@@ -185,10 +185,10 @@ class Handler(InputSink):
     def is_symbol_locked(self, instance_id: str, symbol: str) -> bool:
         return False
 
-    def show_plugin_panel(self, plugin, panel_cls) -> None:
+    def show_fullscreen_panel(self, plugin, panel_cls) -> None:
         pass
 
-    def hide_plugin_panel(self) -> None:
+    def hide_fullscreen_panel(self) -> None:
         pass
 
     #

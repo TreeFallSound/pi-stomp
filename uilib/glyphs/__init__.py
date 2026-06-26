@@ -20,6 +20,7 @@ FONTS_DIR: Path = Path(__file__).resolve().parent.parent.parent / "fonts"
 DEFAULT_COLOR: tuple[int, int, int] = (255, 255, 255)
 
 # Re-export glyphs for convenience
+from uilib.glyphs.arc_ring import ArcRingGlyph
 from uilib.glyphs.circle import CircleGlyph, RingGlyph
 from uilib.glyphs.ethernet_cable import EthernetCableGlyph
 from uilib.glyphs.expression_pedal import ExpressionPedalGlyph
@@ -27,10 +28,12 @@ from uilib.glyphs.keycap_corner import KeycapCornerGlyph
 from uilib.glyphs.knob import KnobGlyph
 from uilib.glyphs.pill import PillGlyph
 from uilib.glyphs.signal_bars import SignalBarsGlyph
+from uilib.glyphs.spinner import SpinnerGlyph
 
 __all__ = [
     "DEFAULT_COLOR",
     "FONTS_DIR",
+    "ArcRingGlyph",
     "CircleGlyph",
     "RingGlyph",
     "EthernetCableGlyph",
@@ -39,4 +42,5 @@ __all__ = [
     "KnobGlyph",
     "PillGlyph",
     "SignalBarsGlyph",
+    "SpinnerGlyph",
 ]

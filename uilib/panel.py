@@ -71,6 +71,8 @@ class Panel(ContainerWidget):
             self.sel_list.remove(widget)
         flat = self._flat_sel()
         if self.sel_ref not in flat:
+            if self.sel_ref is not None:
+                self.sel_ref.set_selected(False)
             self.sel_ref = None
             if flat and previously_selectable:
                 self._select_widget_ref(flat[0])

@@ -12,42 +12,43 @@ from pistomp.tuner.source import ToneSource
 
 class TestFreqToNote:
     def test_a4(self):
-        name, cents, ideal = _freq_to_note(440.0)
-        assert name == "A4"
-        assert abs(cents) < 0.5
-        assert abs(ideal - 440.0) < 0.1
+        n = _freq_to_note(440.0)
+        assert n.name == "A4"
+        assert abs(n.cents) < 0.5
+        assert abs(n.ideal_hz - 440.0) < 0.1
+        assert n.midi_note == 69
 
     def test_c4(self):
-        name, cents, ideal = _freq_to_note(261.63)
-        assert name == "C4"
-        assert abs(cents) < 1.0
+        n = _freq_to_note(261.63)
+        assert n.name == "C4"
+        assert abs(n.cents) < 1.0
 
     def test_low_e_string(self):
-        name, cents, ideal = _freq_to_note(82.41)
-        assert name == "E2"
-        assert abs(cents) < 1.5
+        n = _freq_to_note(82.41)
+        assert n.name == "E2"
+        assert abs(n.cents) < 1.5
 
     def test_sharp_note(self):
-        name, cents, ideal = _freq_to_note(466.16)
-        assert name.startswith("A")
-        assert "\u266f" in name or name == "Bb4"
+        n = _freq_to_note(466.16)
+        assert n.name.startswith("A")
+        assert "\u266f" in n.name or n.name == "Bb4"
 
     def test_cents_sharp(self):
-        _, cents, _ = _freq_to_note(445.0)
-        assert cents > 10.0
+        n = _freq_to_note(445.0)
+        assert n.cents > 10.0
 
     def test_cents_flat(self):
-        _, cents, _ = _freq_to_note(435.0)
-        assert cents < -10.0
+        n = _freq_to_note(435.0)
+        assert n.cents < -10.0
 
     def test_ideal_hz_matches_note(self):
-        name, _, ideal = _freq_to_note(220.0)
-        assert name == "A3"
-        assert abs(ideal - 220.0) < 0.1
+        n = _freq_to_note(220.0)
+        assert n.name == "A3"
+        assert abs(n.ideal_hz - 220.0) < 0.1
 
     def test_very_low_frequency(self):
-        name, cents, ideal = _freq_to_note(32.7)
-        assert "C" in name
+        n = _freq_to_note(32.7)
+        assert "C" in n.name
 
 
 class TestTunerEngineIntegration:

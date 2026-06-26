@@ -1,7 +1,7 @@
 """Plugin panel registry.
 
 Each panel implementation registers itself against the LV2 URIs it handles.
-``lcd320x240.plugin_event`` and ``modhandler.show_plugin_panel`` dispatch
+``lcd320x240.plugin_event`` and ``modhandler.show_fullscreen_panel`` dispatch
 via this registry.
 """
 

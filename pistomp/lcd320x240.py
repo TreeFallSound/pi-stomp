@@ -40,7 +40,6 @@ from pistomp.footswitch import Footswitch  # TODO would like to avoid this modul
 from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
 from pistomp.encoder_controller import EncoderController
 from blend.manager import BlendMode
-from pistomp.tuner.panel import TunerPanel
 from plugins.base import PluginPanel
 from plugins import PANELS
 
@@ -154,7 +153,6 @@ class Lcd(abstract_lcd.Lcd):
                                                             self.display_width, self.footswitch_height),
                                               shroud_alpha=255, gradient_start=0, gradient_pos=0.8, no_dim=True, accepts_input=False)
         self._fullscreen_panel: Panel | None = None
-        self._tuner_panel = None
 
         self.pedalboards = {}
 
@@ -226,7 +224,7 @@ class Lcd(abstract_lcd.Lcd):
     def handle(self, event: ControllerEvent) -> bool:
         # When a fullscreen panel is top-most and is an InputSink, ask it first.
         # It returns True to stop the event from reaching the normal handler cascade.
-        if self._fullscreen_panel is not None and self.pstack.current is self._fullscreen_panel:
+        if self._fullscreen_panel is not None:
             if self._fullscreen_panel.handle(event):
                 return True
         return False
@@ -248,8 +246,6 @@ class Lcd(abstract_lcd.Lcd):
         self.pstack.poll_updates()
         if self._fullscreen_panel is not None and self.pstack.current is self._fullscreen_panel:
             self._fullscreen_panel.tick()
-        if self._tuner_panel is not None and self.pstack.current == self._tuner_panel:
-            self._tuner_panel.tick()
         self._poll_capture_socket()
 
         # Update control progress bars (analog controls and encoders)
@@ -329,20 +325,12 @@ class Lcd(abstract_lcd.Lcd):
         self.pstack.set_capture_callback(None)
         logging.info("LCD capture disabled")
 
-    def show_tuner_panel(self, panel: TunerPanel) -> None:
-        self._tuner_panel = panel
-        self.pstack.push_panel(panel)
-        # push_panel composes the (still-blank) panel onto the stack but
-        # doesn't draw the panel's children. Force a full redraw so bg, rules,
-        # header and hint are on screen before tick()'s partial refreshes start.
-        panel.refresh()
-
-    def show_plugin_panel(self, panel: Panel) -> None:
+    def show_fullscreen_panel(self, panel: Panel) -> None:
         self._fullscreen_panel = panel
         self.pstack.push_panel(panel)
         panel.refresh()
 
-    def hide_plugin_panel(self) -> None:
+    def hide_fullscreen_panel(self) -> None:
         if self._fullscreen_panel is not None:
             self.pstack.pop_panel(self._fullscreen_panel)
         self._fullscreen_panel = None
@@ -529,10 +517,6 @@ class Lcd(abstract_lcd.Lcd):
             self.grid_panel.destroy()
             self.grid_panel = None
         self.w_plugins = []
-        if self.plugin_panel is not None:
-            self.plugin_panel.destroy()
-            self._fullscreen_panel = None
-
         plugins = self.current.pedalboard.plugins
         plugins_by_id = {p.instance_id.lstrip("/"): p for p in plugins}
         layout = build_layout_compress(plugins_by_id.keys(), self.current.pedalboard.connections)
@@ -572,7 +556,7 @@ class Lcd(abstract_lcd.Lcd):
         elif event == InputEvent.LONG_CLICK:
             panel_cls = PANELS.get(plugin.uri)
             if panel_cls is not None:
-                self.handler.show_plugin_panel(plugin, panel_cls)
+                self.handler.show_fullscreen_panel(plugin, panel_cls)
             else:
                 self.draw_parameter_menu(plugin)
 
@@ -761,18 +745,23 @@ class Lcd(abstract_lcd.Lcd):
     def draw_system_menu(self, event, widget):
         items = [("System info", self.draw_system_info_dialog, None),
                  ("Tuner", self._toggle_tuner_from_menu, None),
+                 ("NAM Capture", self._open_nam_capture_from_menu, None),
                  ("System shutdown", self.handler.system_menu_shutdown, None),
                  ("System reboot",  self.handler.system_menu_reboot, None),
                  ("Restart sound engine", self.handler.system_menu_restart_sound, None),
                  ("Bank Select >", self.draw_bank_menu, None),
                  ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None)]
         if self.handler.recovery_available:
-            items.insert(4, ("Recovery Mode...", self.handler.system_menu_recovery_mode, None))
+            items.insert(5, ("Recovery Mode...", self.handler.system_menu_recovery_mode, None))
         self.draw_selection_menu(items, "System Menu")
 
     def _toggle_tuner_from_menu(self, arg):
         self.pstack.pop_panel(None)  # dismiss the menu first
         self.handler.toggle_tuner_enable()
+
+    def _open_nam_capture_from_menu(self, arg):
+        self.pstack.pop_panel(None)  # dismiss the menu first
+        self.handler._mount_nam_capture_panel()
 
     def draw_pedalboard_mgmt_menu(self, arg):
         items = [("Save current pedalboard", self.handler.system_menu_save_current_pb, None),

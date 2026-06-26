@@ -44,7 +44,6 @@ import pistomp.generichost as Generichost
 import pistomp.testhost as Testhost
 import pistomp.handlerfactory as Handlerfactory
 import pistomp.hardwarefactory as Hardwarefactory
-from pistomp.tuner.source import build_source
 
 # Force plugin panel registration so PANELS is populated at startup
 import plugins.eq.panel  # noqa: F401
@@ -196,8 +195,7 @@ def main():
     assert handler is not None
 
     if not is_emulator and args.tuner_source:
-        tuner_spec = args.tuner_source
-        handler.set_tuner_source_factory(lambda port, *, name: build_source(tuner_spec, port, name=name))
+        handler.set_tuner_source_spec(args.tuner_source)
 
     logging.info("Entering main loop. Press Control-C to exit.")
     period = 0

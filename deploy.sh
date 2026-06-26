@@ -10,12 +10,9 @@ ssh pistomp@pistomp.local "rm -f /home/pistomp/pi-stomp/modalapi/wifi.py"
 scp modalapi/wifi/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/modalapi/wifi/
 ssh pistomp@pistomp.local "mkdir -p /home/pistomp/pi-stomp/modalapi/ethernet"
 scp modalapi/ethernet/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/modalapi/ethernet/
-scp pistomp/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/pistomp/
-scp pistomp/tuner/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/pistomp/tuner/
-scp pistomp/input/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/pistomp/input/
-if [ -d blend ]; then
-    scp -r blend pistomp@pistomp.local:/home/pistomp/pi-stomp/
-fi
+scp -r pistomp pistomp@pistomp.local:/home/pistomp/pi-stomp/
+scp -r blend pistomp@pistomp.local:/home/pistomp/pi-stomp/
+scp -r common pistomp@pistomp.local:/home/pistomp/pi-stomp/
 scp -r common pistomp@pistomp.local:/home/pistomp/pi-stomp/
 scp -r fonts pistomp@pistomp.local:/home/pistomp/pi-stomp/
 scp -r images pistomp@pistomp.local:/home/pistomp/pi-stomp/

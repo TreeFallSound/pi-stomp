@@ -20,6 +20,9 @@ clock", used by the LCD drivers' transfer_ms (the inline-push gate), the
 emulator's transfer-time simulation, and lcd320x240's poll_divisor.
 """
 
+# Device target: BAUDR=4 → 50.00 MHz actual (Pi 4/5; see pistomp-arch firstboot.sh).
+DEVICE_SPI_HZ: float = 50_000_000.0
+
 # Constants fit from on-device timing of LcdIli9341.update() at 20 MHz, 33.3 MHz,
 # and 50 MHz actual (Pi 5 / Python 3.14, tools/bench_lcd_device.py).
 #

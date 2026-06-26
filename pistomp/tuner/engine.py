@@ -4,6 +4,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
+from typing import Protocol
 
 import numpy as np
 import numpy.typing as npt
@@ -18,15 +19,22 @@ _A4_HZ = 440.0
 _A4_MIDI = 69
 
 
-def _freq_to_note(freq_hz: float) -> tuple[str, float, float]:
-    """Returns (note_name, cents_deviation, ideal_hz)."""
+@dataclass(frozen=True)
+class Note:
+    name: str
+    cents: float
+    ideal_hz: float
+    midi_note: int
+
+
+def _freq_to_note(freq_hz: float) -> Note:
     midi = 12.0 * math.log2(freq_hz / _A4_HZ) + _A4_MIDI
     midi_round = round(midi)
     cents = (midi - midi_round) * 100.0
     octave = (midi_round // 12) - 1
     name = _NOTE_NAMES[midi_round % 12] + str(octave)
     ideal = _A4_HZ * (2 ** ((midi_round - _A4_MIDI) / 12.0))
-    return name, cents, ideal
+    return Note(name=name, cents=cents, ideal_hz=ideal, midi_note=midi_round)
 
 
 @dataclass(frozen=True)
@@ -36,6 +44,14 @@ class TunerReading:
     freq_hz: float
     ideal_hz: float
     ts: float
+    midi_note: int = 0
+
+
+class TunerBackend(Protocol):
+    """Common interface satisfied by both TunerEngine (in-process) and TunerClient (subprocess)."""
+
+    def get_reading(self) -> TunerReading | None: ...
+    def stop(self) -> None: ...
 
 
 class TunerEngine:
@@ -89,8 +105,11 @@ class TunerEngine:
         self._source.start(on_samples=self._ring.write)
         lo, hi = self._freq_bounds
         self._detector = YinDetector(
-            self.FRAME_SIZE, self._source.sample_rate,
-            freq_min=lo, freq_max=hi, window=self.YIN_WINDOW,
+            self.FRAME_SIZE,
+            self._source.sample_rate,
+            freq_min=lo,
+            freq_max=hi,
+            window=self.YIN_WINDOW,
         )
         self._worker = threading.Thread(target=self._dsp_loop, daemon=True, name="tuner-dsp")
         self._worker.start()
@@ -118,7 +137,7 @@ class TunerEngine:
             return
 
         with profiling.measure("rms", bin_override="dsp"):
-            rms = float(np.sqrt(np.mean(self._frame ** 2)))
+            rms = float(np.sqrt(np.mean(self._frame**2)))
 
         if rms < self.SILENCE_RMS:
             self._freq_history.clear()
@@ -151,17 +170,18 @@ class TunerEngine:
         freq = float(np.median(self._freq_history))
 
         try:
-            note, cents, ideal = _freq_to_note(freq)
+            n = _freq_to_note(freq)
         except Exception:
             logging.debug("tuner: freq_to_note failed for %s", freq)
             return
 
         reading = TunerReading(
-            note=note,
-            cents=cents,
+            note=n.name,
+            cents=n.cents,
             freq_hz=freq,
-            ideal_hz=ideal,
+            ideal_hz=n.ideal_hz,
             ts=time.monotonic(),
+            midi_note=n.midi_note,
         )
         with self._lock:
             self._latest = reading

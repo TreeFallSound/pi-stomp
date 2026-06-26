@@ -53,6 +53,11 @@ case "$_version" in
     *) _version="v3" ;;
 esac
 
+# MOD Desktop runs its own JACK server named "mod-desktop" rather than the
+# system default. JACK2's C library reads JACK_DEFAULT_SERVER automatically,
+# so this covers both the tuner and the NAM capture client with no code changes.
+export JACK_DEFAULT_SERVER="${JACK_DEFAULT_SERVER:-mod-desktop}"
+
 # pygame runs in headless mode by default; set an appropriate video driver
 # for the current platform so we can see the emulator.
 case "$(uname -s)" in

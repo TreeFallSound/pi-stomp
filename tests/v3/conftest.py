@@ -20,6 +20,12 @@ from uilib.misc import InputEvent
 from uilib.text import LetterSelector, TextEditor
 
 
+@pytest.fixture(autouse=True)
+def freeze_monotonic(monkeypatch):
+    """Freeze time.monotonic() so dt-based animations are deterministic in v3 tests."""
+    monkeypatch.setattr("time.monotonic", lambda: 1000.0)
+
+
 @pytest.fixture
 def v3_system(fake_lcd, tmp_path) -> Generator[SystemFixture, None, None]:
     yield from _v3_stack(fake_lcd, tmp_path)

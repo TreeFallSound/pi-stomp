@@ -127,8 +127,8 @@ def stats(samples):
     for s in segs:
         freqs = [d[2] for d in s]
         settled = float(np.median(freqs[len(freqs) // 3 :]))  # last-two-thirds median
-        note, _, ideal = _freq_to_note(settled)
-        cents = [1200.0 * np.log2(f / ideal) for f in freqs]
+        n = _freq_to_note(settled)
+        cents = [1200.0 * np.log2(f / n.ideal_hz) for f in freqs]
         steady = cents[max(1, len(cents) // 3) :]
         excursion = max(abs(c) for c in cents)
         worst = max(worst, excursion)

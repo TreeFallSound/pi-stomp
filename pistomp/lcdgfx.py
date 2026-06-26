@@ -178,10 +178,10 @@ class Lcd(abstract_lcd.Lcd):
         self._lcd.show()
 
     # Plugin panels (not supported on monochrome LCD)
-    def show_plugin_panel(self, panel):
+    def show_fullscreen_panel(self, panel):
         pass
 
-    def hide_plugin_panel(self):
+    def hide_fullscreen_panel(self):
         pass
 
     def has_active_fullscreen_panel(self):

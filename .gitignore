@@ -5,3 +5,4 @@ __pycache__
 .coverage
 .opencode/plugins/emdash-notifications.js
 tools/renders/
+setup/nam/*.wav

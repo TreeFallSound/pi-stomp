@@ -28,13 +28,12 @@ from typing import Generic, TypeVar
 
 import common.token as Token
 from modalapi.plugin import Plugin
+from pistomp.fullscreen_panel import FullscreenPanel
 from pistomp.handler import Handler
 from pistomp.input.event import ControllerEvent, EncoderEvent
-from pistomp.input.sink import InputSink
 from uilib.box import Box
 from uilib.config import Config
 from uilib.misc import get_text_size
-from uilib.panel import Panel
 from uilib.text import Button
 
 TState = TypeVar("TState")
@@ -64,7 +63,7 @@ def _build_btn(text: str, x: int, font, v_margin, parent, action):
 # ── base class ──────────────────────────────────────────────────────────────
 
 
-class PluginPanel(Panel, InputSink, Generic[TState]):
+class PluginPanel(FullscreenPanel, Generic[TState]):
     """Full-screen UI for a specific LV2 plugin type.
 
     Parameters
@@ -75,7 +74,7 @@ class PluginPanel(Panel, InputSink, Generic[TState]):
         The handler object (e.g. ``Modhandler``) that opened the panel.
     on_dismiss :
         Callback fired when the Back button is pressed or the panel is
-        otherwise dismissed.  Usually calls ``lcd.hide_plugin_panel()``.
+        otherwise dismissed.  Usually calls ``handler.hide_fullscreen_panel()``.
     """
 
     def __init__(
@@ -90,7 +89,7 @@ class PluginPanel(Panel, InputSink, Generic[TState]):
         self._on_dismiss = on_dismiss
         self._param_queue: dict[str, float] = {}
 
-        Panel.__init__(self, box=Box.xywh(0, 0, _W, _H), no_dim=True)
+        FullscreenPanel.__init__(self)
 
         # Chrome buttons (created now, appended to nav *after* subclass widgets)
         cfg = Config()

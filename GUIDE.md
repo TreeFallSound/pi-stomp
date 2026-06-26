@@ -378,6 +378,13 @@ mod-ui echoes back → ParamSetMessage → plugin.set_param_value()  # caches va
 - `modalapi/jack_mute.py` — Local-monitor mute
 - `modalapi/wifi/`, `modalapi/ethernet/` — Network managers
 
+## Coding principles
+
+- **Type safety is mandatory**
+- **Broad pyright ignores are a code smell**
+- **getattr and hasattr are banned**
+- **dependencies must form a DAG**
+
 ## Design Principles
 
 - **Polling over events** — Fixed-frequency loops for predictable timing; 10ms critical path

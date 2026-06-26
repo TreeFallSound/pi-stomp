@@ -126,13 +126,3 @@ class TestTunerDismiss:
         handler.audiocard.set_output_muted.assert_any_call(False)
 
 
-class TestTunerFactory:
-    def test_unique_names_per_port(self, v3_tuner_silence):
-        """_tuner_factory must derive a unique JACK client name from the port,
-        so concurrent old+new sources don't collide."""
-        handler = v3_tuner_silence.handler
-        names: list[str] = []
-        handler.set_tuner_source_factory(lambda port, *, name: names.append(name) or SilenceSource())
-        handler._tuner_factory("system:capture_1")
-        handler._tuner_factory("system:capture_2")
-        assert names[0] != names[1]

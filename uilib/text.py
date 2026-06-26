@@ -224,7 +224,13 @@ class TextWidget(Widget):
 
     def _get_text_size(self):
         if not self.text_size_valid:
-            self.text_w, self.text_h = get_text_size(self.text, self.font, self.font_metrics)
+            lines = self.text.split("\n")
+            if len(lines) == 1:
+                self.text_w, self.text_h = get_text_size(self.text, self.font, self.font_metrics)
+            else:
+                _, line_h = get_text_size("", self.font)
+                self.text_w = max(get_text_size(l, self.font, self.font_metrics)[0] for l in lines)
+                self.text_h = line_h * len(lines)
             self.text_size_valid = True
         return (self.text_w, self.text_h)
 
@@ -303,19 +309,23 @@ class TextWidget(Widget):
                 ctx.draw_text((ctx.width - h_margin - rw, v_margin), right, fill=self.fgnd_color, font=self.font)
                 return
 
-        tw, th = self._get_text_size()
-        if tw > hroom:
-            tw = hroom
-        if th > vroom:
-            th = vroom
-        if self.text_halign == TextHAlign.LEFT:
-            hoffset = 0
-        elif self.text_halign == TextHAlign.RIGHT:
-            hoffset = hroom - tw
-        else:
-            hoffset = int((hroom - tw) / 2)
-        loc = (h_margin + hoffset, v_margin)
-        ctx.draw_text(loc, self.text, fill=self.fgnd_color, font=self.font)
+        lines = self.text.split("\n")
+        _, line_h = get_text_size("", self.font)
+        y = v_margin
+        for line in lines:
+            tw, _ = get_text_size(line, self.font)
+            if tw > hroom:
+                tw = hroom
+            if self.text_halign == TextHAlign.LEFT:
+                hoffset = 0
+            elif self.text_halign == TextHAlign.RIGHT:
+                hoffset = hroom - tw
+            else:
+                hoffset = int((hroom - tw) / 2)
+            ctx.draw_text((h_margin + hoffset, y), line, fill=self.fgnd_color, font=self.font)
+            y += line_h
+            if y >= v_margin + vroom:
+                break
 
     def tick(self):
         """Override in subclasses for animation."""

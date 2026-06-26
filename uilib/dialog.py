@@ -72,6 +72,7 @@ class DialogDecorator(PanelDecorator):
         # The +2 here is magic ... need to figure out what's up, otherwise we get only 1 pixel
         ctx.draw_line(((0, y), (ctx.width - self.outline, y)), fill=self.fgnd_color, width=self.outline + 2)
 
+
 class Dialog(RoundedPanel):
     """A pop-up dialog with a title decorator.
 
@@ -84,10 +85,9 @@ class Dialog(RoundedPanel):
         box = Box.xywh(0, 0, width, height)
         radius = 10
         if title_font is None:
-            title_font = Config().get_font('default_title')
+            title_font = Config().get_font("default_title")
         deco = functools.partial(DialogDecorator, title=title, title_font=title_font, outline_radius=radius)
-        super(Dialog, self).__init__(box=box, align=WidgetAlign.CENTRE, radius=radius,
-                                     decorator=deco, **kwargs)
+        super(Dialog, self).__init__(box=box, align=WidgetAlign.CENTRE, radius=radius, decorator=deco, **kwargs)
 
     @override
     def _build_shape_mask(self) -> pygame.Surface:
@@ -97,9 +97,13 @@ class Dialog(RoundedPanel):
         size = (int(self.box.width), int(self.box.height))
         mask = pygame.Surface(size, pygame.SRCALPHA)
         mask.fill((0, 0, 0, 0))
-        pygame.draw.rect(mask, (255, 255, 255, 255),
-                         pygame.Rect(0, 0, size[0], size[1]), 0,
-                         **Radius.bottom(self.radius).as_pygame_kwargs())
+        pygame.draw.rect(
+            mask,
+            (255, 255, 255, 255),
+            pygame.Rect(0, 0, size[0], size[1]),
+            0,
+            **Radius.bottom(self.radius).as_pygame_kwargs(),
+        )
         return mask
 
 
@@ -107,7 +111,7 @@ class MessageDialog(Dialog):
     def __init__(self, panelstack, message, title="Error", width=200, height=90):
         super(MessageDialog, self).__init__(width=width, height=height, title=title, auto_destroy=True)
 
-        char_w = Config().get_font('default_title').get_rect("a").width
+        char_w = Config().get_font("default_title").get_rect("a").width
         chars_per_line = width // max(1, int(char_w))
         chunks = textwrap.wrap(message, width=chars_per_line)
         wrapped = "\n".join(chunks)
@@ -134,3 +138,64 @@ class MessageDialog(Dialog):
         )
         self.add_sel_widget(b)
         self.sel_widget(b)
+
+
+class ConfirmDialog(Dialog):
+    """Two-button confirmation dialog: Cancel (left, default focus) and a confirm action (right)."""
+
+    def __init__(
+        self,
+        panelstack,
+        message,
+        title="Confirm",
+        on_confirm=None,
+        width=220,
+        height=88,
+        confirm_text="Confirm",
+        cancel_text="Cancel",
+    ):
+        super(ConfirmDialog, self).__init__(width=width, height=height, title=title, auto_destroy=True)
+
+        t = TextWidget(
+            box=Box.xywh(5, 2, width - 10, height - 42),
+            text=message,
+            parent=self,
+            outline=0,
+            sel_width=0,
+            align=WidgetAlign.NONE,
+        )
+        self.add_widget(t)
+
+        btn_w = (width - 15) // 2
+
+        cancel = TextWidget(
+            box=Box.xywh(5, height - 32, btn_w, 0),
+            text=cancel_text,
+            parent=self,
+            outline=1,
+            sel_width=3,
+            outline_radius=5,
+            action=lambda x, y: panelstack.pop_panel(self),
+            align=WidgetAlign.NONE,
+            name="cancel_btn",
+        )
+        self.add_sel_widget(cancel)
+
+        def _confirm(x, y):
+            panelstack.pop_panel(self)
+            if on_confirm:
+                on_confirm()
+
+        confirm_btn = TextWidget(
+            box=Box.xywh(10 + btn_w, height - 32, btn_w, 0),
+            text=confirm_text,
+            parent=self,
+            outline=1,
+            sel_width=3,
+            outline_radius=5,
+            action=_confirm,
+            align=WidgetAlign.NONE,
+            name="confirm_btn",
+        )
+        self.add_sel_widget(confirm_btn)
+        self.sel_widget(cancel)  # default focus on Cancel

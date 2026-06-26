@@ -126,11 +126,11 @@ class Lcd(ABC):
         pass
 
     @abstractmethod
-    def show_plugin_panel(self, panel):
+    def show_fullscreen_panel(self, panel):
         pass
 
     @abstractmethod
-    def hide_plugin_panel(self):
+    def hide_fullscreen_panel(self):
         pass
 
     @abstractmethod

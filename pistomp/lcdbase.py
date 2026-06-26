@@ -79,10 +79,10 @@ class Lcdbase(abstract_lcd.Lcd):
         self.selected_box = None  # ((x0, y0), (x1, y1), width)
 
     # Plugin panels (not supported on monochrome LCD base)
-    def show_plugin_panel(self, panel):
+    def show_fullscreen_panel(self, panel):
         pass
 
-    def hide_plugin_panel(self):
+    def hide_fullscreen_panel(self):
         pass
 
     def has_active_fullscreen_panel(self):

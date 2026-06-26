@@ -23,16 +23,14 @@ from common.fonts import font_path
 from uilib.box import Box
 from uilib.config import Config
 from uilib.misc import get_text_bbox, get_text_size
-from uilib.panel import Panel
 from uilib.pygame_init import font as make_font
 from uilib.label import Label
 from uilib.text import Button
 from uilib.widget import Widget
 
-from pistomp.input.event import ControllerEvent
-from pistomp.input.sink import InputSink
+from pistomp.fullscreen_panel import FullscreenPanel
 
-from pistomp.tuner.engine import TunerEngine, TunerReading
+from pistomp.tuner.engine import TunerBackend, TunerReading
 
 _W = 320  # display width
 
@@ -350,20 +348,21 @@ class StrobeWidget(Widget):
 # ── TunerPanel ───────────────────────────────────────────────────────────────
 
 
-class TunerPanel(Panel, InputSink):
+class TunerPanel(FullscreenPanel):
     STALE_SECS = 4.0
 
     def __init__(
         self,
-        engine: TunerEngine,
+        backend_factory: Callable[[int], TunerBackend],
+        input_port: int,
         on_dismiss: Callable[[], None],
         on_mute_toggle: Callable[[], None],
         on_input_toggle: Callable[[], None],
         muted: bool = False,
-        input_port: int = 1,
     ) -> None:
-        super().__init__(box=Box.xywh(0, 0, _W, 240), auto_destroy=True, no_dim=True, opaque=True)
-        self._engine = engine
+        super().__init__()
+        self._backend_factory = backend_factory
+        self._engine: TunerBackend = self._create_engine(input_port)
 
         note_font = make_font(font_path("DejaVuSans-Bold.ttf"), 56)
         btn_font = Config().get_font("default")
@@ -412,18 +411,26 @@ class TunerPanel(Panel, InputSink):
         self._cents_history: deque[float] = deque(maxlen=3)
         profiling.maybe_start()
 
-    def handle(self, event: ControllerEvent) -> bool:
-        return False
+    def _create_engine(self, port: int) -> TunerBackend:
+        return self._backend_factory(port)
 
-    def set_engine(self, engine: TunerEngine) -> None:
-        self._engine = engine
+    def destroy(self) -> None:
+        self._engine.stop()
+        super().destroy()
+
+    def should_persist_on_board_change(self) -> bool:
+        return True
+
+    def switch_input_port(self, new_port: int) -> None:
+        old_engine = self._engine
+        self._engine = self._create_engine(new_port)
+        old_engine.stop()
+        self._btn_input.set_text(f"Input {new_port}")
+        self._btn_input.set_text(f"Input {new_port}")
 
     def set_muted(self, muted: bool) -> None:
         self._apply_mute_style(muted)
         self._btn_mute.refresh()
-
-    def set_input_port(self, port: int) -> None:
-        self._btn_input.set_text(f"Input {port}")
 
     def _apply_mute_style(self, muted: bool) -> None:
         self._btn_mute.set_background(_BTN_MUTE_ACTIVE_COLOR if muted else (0, 0, 0))

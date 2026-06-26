@@ -1,7 +1,7 @@
 """Snapshot sagas for the x42-eq (fil4) full-screen panel.
 
 These tests drive the panel via the public handler entry points
-(`show_plugin_panel`, `universal_encoder_select`, `universal_encoder_sw`)
+(`show_fullscreen_panel`, `universal_encoder_select`, `universal_encoder_sw`)
 and capture the LCD frame at each step.
 
 Each test is a multi-step "saga" rather than a single assertion. The goal
@@ -88,7 +88,7 @@ def open_eq(v3_system: SystemFixture) -> Plugin:
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
 
-    handler.show_plugin_panel(plugin, EqPanel)
+    handler.show_fullscreen_panel(plugin, EqPanel)
     handler.poll_lcd_updates()
     return plugin
 
