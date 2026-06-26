@@ -952,7 +952,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_controls = []
 
         x = 0
-        y = 56  # vertical position on screen
+        y = 54  # vertical position on screen
         for i in range(0, num):
             k = None
             v = None

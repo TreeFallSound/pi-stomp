@@ -15,14 +15,9 @@
 
 import pygame
 
+from uilib.box import Box
 from uilib.glyphs import ExpressionPedalGlyph, KnobGlyph
-from uilib.text import *
-
-
-#
-# This is a class for drawing simple icon widgets using shapes (eg. ellipse, rect, line, etc.)
-# with a text label
-#
+from uilib.text import TextWidget
 
 
 class Icon(TextWidget):
@@ -31,14 +26,15 @@ class Icon(TextWidget):
     The icon graphic is a cached `Glyph` (`KnobGlyph` or `ExpressionPedalGlyph`)
     rendered into an RGBA surface and blitted at the left of the widget. Color
     is baked into the glyph at `add_knob()`/`add_pedal()` time (the widget's
-    `fgnd_color` at that moment). Text is drawn to the right of the icon.
+    `fgnd_color` at that moment). Text is drawn to the right of the icon, with a
+    thin value meter along the bottom edge.
     """
 
     def __init__(self, box, text="", text_color=None, height=13, outline_width=2, **kwargs):
         self.height = height
         self.outline_width = outline_width
         self._glyph = None  # set by add_knob/add_pedal
-        self.progress = None  # Progress value 0.0-1.0 for progress bar fill
+        self.progress = None  # value 0.0-1.0 for the meter fill
 
         super(Icon, self).__init__(box, text=text, **kwargs)
 
@@ -51,8 +47,11 @@ class Icon(TextWidget):
         self._glyph = ExpressionPedalGlyph(self.height)
 
     def set_progress(self, progress):
-        """Set progress value (0.0-1.0) for progress bar fill effect"""
-        self.progress = max(0.0, min(1.0, progress)) if progress is not None else None
+        """Set meter value (0.0-1.0) for the fill."""
+        new = max(0.0, min(1.0, progress)) if progress is not None else None
+        if new == self.progress:
+            return
+        self.progress = new
         if self.visible and self.parent:
             self.refresh()
 
@@ -87,33 +86,18 @@ class Icon(TextWidget):
         text_x = loc[0] + self.height + h_margin
         text_y = loc[1]
 
-        if self.progress is None or self.progress <= 0:
-            ctx.draw_text((text_x, text_y), self.text, fill=self.text_color, font=self.font)
-            return
+        ctx.draw_text((text_x, text_y), self.text, fill=self.text_color, font=self.font)
 
-        # Progress bar: fill behind text, then draw text in two clipped passes
-        # so the filled region gets inverted text and the unfilled region gets normal text.
-        bar_width = ctx.width - self.height - (h_margin * 4)
-        bar_height = ctx.height - (h_margin * 4)
-        fill_width = int(bar_width * self.progress)
-        if fill_width > 0:
-            fill_box = Box(self.height + h_margin, 0, self.height + h_margin + fill_width, bar_height)
-            ctx.draw_rectangle(fill_box, fill=self.text_color)
-
-            ox, oy = ctx._f().topleft
-            fill_x1_abs = ox + self.height + h_margin + fill_width
-            cur_clip = ctx.surface.get_clip()
-
-            # text over unfilled region
-            r = pygame.Rect(fill_x1_abs, cur_clip.y, cur_clip.right - fill_x1_abs, cur_clip.height)
-            ctx.surface.set_clip(cur_clip.clip(r))
-            ctx.draw_text((text_x, text_y), self.text, fill=self.text_color, font=self.font)
-
-            # text over filled region (inverted)
-            r = pygame.Rect(cur_clip.x, cur_clip.y, fill_x1_abs - cur_clip.x, cur_clip.height)
-            ctx.surface.set_clip(cur_clip.clip(r))
-            ctx.draw_text((text_x, text_y), self.text, fill=self.bkgnd_color, font=self.font)
-
-            ctx.surface.set_clip(cur_clip)
-        else:
-            ctx.draw_text((text_x, text_y), self.text, fill=self.text_color, font=self.font)
+        # Value meter along the bottom edge: dim full-range track + bright fill,
+        # ending 2px short of the right edge.
+        bar_h = 2
+        bar_x0 = h_margin
+        bar_x1 = ctx.width - 2
+        bar_y0 = ctx.height - bar_h
+        c = pygame.Color(self.text_color)
+        track = (c.r // 4, c.g // 4, c.b // 4)
+        ctx.draw_rectangle(Box(bar_x0, bar_y0, bar_x1, ctx.height), fill=track)
+        if self.progress is not None and self.progress > 0:
+            fill_w = int((bar_x1 - bar_x0) * self.progress)
+            if fill_w > 0:
+                ctx.draw_rectangle(Box(bar_x0, bar_y0, bar_x0 + fill_w, ctx.height), fill=self.text_color)
