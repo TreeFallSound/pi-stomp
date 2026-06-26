@@ -76,6 +76,7 @@ class FootswitchWidget(Widget):
     # Bound switches: bright when active, dim ring when off.
     UNBOUND_OFF_BG: Color = (40, 40, 40)
     BOUND_OFF_BG: Color = (90, 90, 90)
+    BOUND_OFF_LABEL: Color = (140, 140, 140)
     # Unassigned badges: deliberately dim so they don't compete with bound
     # indicators. On is a muted gray, off is near-black.
     BADGE_ON_FILL: Color = (130, 130, 130)
@@ -201,7 +202,7 @@ class FootswitchWidget(Widget):
             ring = RingGlyph(DOT_RADIUS)
             tinted = _tint_mask(ring.render(), ring_color)
             ctx.surface.blit(tinted, (cx - ring.half_size + ox, cy - ring.half_size + oy))
-            label_color = self.BOUND_OFF_BG if self.color is not None else self.UNBOUND_OFF_BG
+            label_color = self.BOUND_OFF_LABEL if self.color is not None else self.UNBOUND_OFF_BG
 
         font = self._slot_font()
         text = self._fit(self.label or "", w - 2, font)
