@@ -30,9 +30,10 @@ class Icon(TextWidget):
     thin value meter along the bottom edge.
     """
 
-    def __init__(self, box, text="", text_color=None, height=13, outline_width=2, **kwargs):
+    def __init__(self, box, text="", text_color=None, height=13, outline_width=2, bar_height=3, **kwargs):
         self.height = height
         self.outline_width = outline_width
+        self.bar_height = bar_height
         self._glyph = None  # set by add_knob/add_pedal
         self.progress = None  # value 0.0-1.0 for the meter fill
 
@@ -64,7 +65,7 @@ class Icon(TextWidget):
             return
 
         h_margin = 1
-        loc = (h_margin, v_margin)
+        loc = (h_margin, v_margin - 2)
 
         # Blit the cached glyph alpha-mask (knob or expression pedal) at the
         # left, vertically centered in the widget, tinted to the icon colour.
@@ -90,10 +91,9 @@ class Icon(TextWidget):
 
         # Value meter along the bottom edge: dim full-range track + bright fill,
         # ending 2px short of the right edge.
-        bar_h = 2
         bar_x0 = h_margin
         bar_x1 = ctx.width - 2
-        bar_y0 = ctx.height - bar_h
+        bar_y0 = ctx.height - self.bar_height
         c = pygame.Color(self.text_color)
         track = (c.r // 4, c.g // 4, c.b // 4)
         ctx.draw_rectangle(Box(bar_x0, bar_y0, bar_x1, ctx.height), fill=track)

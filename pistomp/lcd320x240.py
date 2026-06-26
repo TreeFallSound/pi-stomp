@@ -944,6 +944,7 @@ class Lcd(abstract_lcd.Lcd):
         minimum = 4 if self.handler.hardware.version >= 3 else 3
         num = max(minimum, len(controllers) + 1)
         width_per_control = int(round(self.display_width / num))
+        height_per_control = 19
         text_per_control = width_per_control - 16  # minus height of control icon
 
         # clean up previous control widgets
@@ -952,7 +953,7 @@ class Lcd(abstract_lcd.Lcd):
         self.w_controls = []
 
         x = 0
-        y = 54  # vertical position on screen
+        y = 56  # vertical position on screen
         for i in range(0, num):
             k = None
             v = None
@@ -1027,7 +1028,7 @@ class Lcd(abstract_lcd.Lcd):
 
             if control_type == Token.KNOB:
                 w = Icon(
-                    box=Box.xywh(x, y, width_per_control, 20),
+                    box=Box.xywh(x, y, width_per_control, height_per_control),
                     text=name,
                     text_color=text_color,
                     parent=self.main_panel,
@@ -1041,7 +1042,7 @@ class Lcd(abstract_lcd.Lcd):
                 self.w_controls.append(w)
             elif control_type == Token.EXPRESSION:
                 w = Icon(
-                    box=Box.xywh(x, y, width_per_control, 20),
+                    box=Box.xywh(x, y, width_per_control, height_per_control),
                     text=name,
                     text_color=text_color,
                     parent=self.main_panel,
