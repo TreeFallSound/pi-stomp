@@ -591,7 +591,7 @@ class Lcd(abstract_lcd.Lcd):
         def tile_factory(node, box, parent):
             plugin = plugins_by_id[node.id]
             if plugin.notes_text:
-                label = plugin.notes_text.split('\n')[0].strip()
+                label = "✎" + plugin.notes_text.split('\n')[0].strip()
             else:
                 label = plugin.display_name[:self.plugin_label_length].replace("_", "")
             label = self.shorten_name(label, box.width)
