@@ -176,6 +176,16 @@ class ContainerWidget(Widget):
             if self.visible and self.parent is not None:
                 self.propagate_dirty(local_clip)
 
+    def redraw_region(self, box: Box) -> None:
+        """Recompose+push a sub-rectangle, redrawing every child intersecting it.
+
+        Unlike Widget.refresh() (which redraws a single widget), this marks the
+        region stale and lets the container's do_draw rebuild that slice with all
+        overlapping children in z-order — e.g. a floating label shrinking back to
+        reveal the toolbar icons beneath it."""
+        self._invalidate_cache(box)
+        self.propagate_dirty(box)
+
     def _finalize_cache(self) -> None:
         """Hook called after the backing surface is rebuilt. Subclasses can
         apply composite effects (e.g. corner masking) so steady-state blits

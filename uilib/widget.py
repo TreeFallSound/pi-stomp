@@ -103,6 +103,7 @@ class Widget:
 
     # Non-inherited attributes (set from kwargs in __init__)
     label: str | None
+    subtitle: str | None
     outline: int
     outline_radius: int | None
     outline_color: Color | None
@@ -156,6 +157,7 @@ class Widget:
 
         # Non-inherited attributes
         self.label = self._get_arg(kwargs, "label", None)
+        self.subtitle = self._get_arg(kwargs, "subtitle", None)
         self.outline = self._get_arg(kwargs, "outline", 0)
         self.outline_radius = self._get_arg(kwargs, "outline_radius", None)
         self.outline_color = self._get_arg(kwargs, "outline_color", None)
@@ -381,6 +383,11 @@ class Widget:
 
     def get_object(self):
         return self.object
+
+    def describe(self) -> str | None:
+        """Human-readable description of this widget when selected.
+        Default returns the static `subtitle`; subclasses may compute it."""
+        return self.subtitle
 
     def attach(self, parent: "Widget"):
         """Attach a widget to a parent"""

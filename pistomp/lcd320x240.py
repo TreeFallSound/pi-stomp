@@ -50,6 +50,43 @@ PARAMETER_DIALOG_TIMEOUT = 1.0
 # Wifi "processing" spinner full-cycle rate (Hz), wall-clock paced.
 WIFI_SPINNER_HZ = 1.5
 
+
+class Subtitle(TextWidget):
+    """Top-left floating label naming the current main-panel selection.
+
+    Auto-sizes to its text and repaints the union of its old and new boxes, so a
+    shrinking label reveals the toolbar icons it had overlapped (via the
+    container's redraw_region dirty-rect path)."""
+
+    ANCHOR_X = 2
+    ANCHOR_Y = 1
+    PAD_W = 4
+    PAD_H = 2
+    MAX_X1 = 210  # right edge: stop short of the toolbar icons
+
+    def _draw_erase(self, ctx):
+        # Transparent background: draw glyphs straight over whatever's beneath
+        # (e.g. the title's selection outline). Stale text is cleared by the
+        # container recompose in redraw_region(), not by erasing our own box.
+        pass
+
+    def set_description(self, text: str) -> None:
+        if text == self.text:
+            return
+        old = self.box.copy() if self.box is not None else Box.xywh(self.ANCHOR_X, self.ANCHOR_Y, 0, 0)
+        self.text = text
+        self.text_size_valid = False
+        if text:
+            tw, th = get_text_size(text, self.font)
+            width = min(tw + self.PAD_W, self.MAX_X1 - self.ANCHOR_X)  # clip long text at the icons
+            new = Box.xywh(self.ANCHOR_X, self.ANCHOR_Y, width, th + self.PAD_H)
+        else:
+            new = Box.xywh(self.ANCHOR_X, self.ANCHOR_Y, 0, 0)
+        self.set_box(new, refresh=False)
+        if isinstance(self.parent, ContainerWidget):
+            self.parent.redraw_region(old.union(new))
+
+
 class Lcd(abstract_lcd.Lcd):
     CAPTURE_SOCKET_PATH = "/tmp/pistomp-lcd.sock"
 
@@ -140,6 +177,8 @@ class Lcd(abstract_lcd.Lcd):
         self.w_controls = []
         self.w_splash = None
         self.w_info_msg = None
+        self.w_subtitle: Optional[Subtitle] = None
+        self._subtitle_text = ""
         self.w_parameter_dialogs = {}
 
         # panels
@@ -214,6 +253,14 @@ class Lcd(abstract_lcd.Lcd):
         if self.footswitch_panel.sel_ref is not None:
             self.footswitch_panel.sel_ref.set_selected(False)
         self.footswitch_panel.sel_ref = None
+        if self.w_subtitle is None:
+            # Created last so it composites on top of the toolbar icons. Not
+            # selectable; updated from the current selection in _poll_updates.
+            self.w_subtitle = Subtitle(
+                box=Box.xywh(Subtitle.ANCHOR_X, Subtitle.ANCHOR_Y, 0, 0),
+                text="", font=self.tiny_font, parent=self.main_panel, outline=0, sel_width=0,
+            )
+            self.w_subtitle.set_foreground((150, 150, 150))
         if not self.main_panel_pushed:
             self.pstack.push_panel(self.main_panel, refresh=False)
             self.pstack.push_panel(self.footswitch_panel, refresh=False)
@@ -250,6 +297,10 @@ class Lcd(abstract_lcd.Lcd):
 
         # Update control progress bars (analog controls and encoders)
         if self.pstack.current == self.main_panel:
+            if self.w_subtitle is not None:
+                sel = self.main_panel.sel_ref
+                desc = sel.describe() if sel is not None else None
+                self.w_subtitle.set_description(desc or "")
             for icon in self.w_controls:
                 if icon.object is None:
                     continue
@@ -356,18 +407,22 @@ class Lcd(abstract_lcd.Lcd):
             image=os.path.join(self.imagedir, 'wifi_gray.png'),
             parent=self.main_panel,
             action=self.wifi_menu.open,
+            subtitle="Network",
         )
         self.main_panel.add_sel_widget(self.w_wifi)
         if self.w_eq is not None:
             return
         self.w_eq = ImageWidget(box=Box.xywh(240, 0, 20, 20), image=os.path.join(self.imagedir,
-                                  'eq_blue.png'), parent=self.main_panel, action=self.draw_audio_menu)
+                                  'eq_blue.png'), parent=self.main_panel, action=self.draw_audio_menu,
+                                subtitle="Audio")
         self.main_panel.add_sel_widget(self.w_eq)
         self.w_power = ImageWidget(box=Box.xywh(270, 0, 20, 20), image=os.path.join(self.imagedir,
-                                   'power_gray.png'), parent=self.main_panel, action=self.toggle_bypass)
+                                   'power_gray.png'), parent=self.main_panel, action=self.toggle_bypass,
+                                   subtitle="Bypass")
         self.main_panel.add_sel_widget(self.w_power)
         self.w_wrench = ImageWidget(box=Box.xywh(296, 0, 20, 20), image=os.path.join(self.imagedir,
-                             'wrench_silver.png'), parent=self.main_panel, action=self.draw_system_menu)
+                             'wrench_silver.png'), parent=self.main_panel, action=self.draw_system_menu,
+                             subtitle="System")
         self.main_panel.add_sel_widget(self.w_wrench)
 
     def toggle_bypass(self, event, widget):
@@ -410,6 +465,7 @@ class Lcd(abstract_lcd.Lcd):
                 parent=self.main_panel,
                 action=self.draw_pedalboard_menu,
                 lcd_poll_divisor=self.poll_divisor,
+                subtitle="Pedalboard",
             )
             self.main_panel.add_sel_widget(self.w_pedalboard)
 
@@ -442,6 +498,7 @@ class Lcd(abstract_lcd.Lcd):
             parent=self.main_panel,
             action=self.draw_preset_menu,
             lcd_poll_divisor=self.poll_divisor,
+            subtitle="Snapshot",
         )
         self.main_panel.add_sel_widget(self.w_preset)
 
@@ -528,10 +585,11 @@ class Lcd(abstract_lcd.Lcd):
             else:
                 label = plugin.display_name[:self.plugin_label_length].replace("_", "")
             label = self.shorten_name(label, box.width)
+            subtitle = f"{plugin.category}: {plugin.display_name}" if plugin.category else plugin.display_name
             # parent MUST be passed in ctor: attaching later wipes the
             # explicit colors color_plugin() sets via inherited-attr resolution.
             tile = TextWidget(box=box, text=label, outline_radius=5,
-                              parent=parent, action=self.plugin_event, object=plugin)
+                              parent=parent, action=self.plugin_event, object=plugin, subtitle=subtitle)
             tile.set_font(self.small_font)
             self.color_plugin(tile, plugin)
             self.w_plugins.append(tile)
@@ -991,6 +1049,7 @@ class Lcd(abstract_lcd.Lcd):
                 # Non-mapped control
                 name = "none"
                 control_type = Token.EXPRESSION if i == 0 else Token.KNOB  # HACK cuz we don't know type of unmapped
+                subtitle = "Expression pedal (unassigned)" if control_type == Token.EXPRESSION else "Knob (unassigned)"
                 color = Category.get_category_color(None)
                 text_color = color
             else:
@@ -998,6 +1057,7 @@ class Lcd(abstract_lcd.Lcd):
                 control_type = util.DICT_GET(v, Token.TYPE)
                 if control_type == Token.VOLUME:
                     name = "volume"
+                    subtitle = "Output volume"
                     control_type = Token.KNOB
                     color = self.default_plugin_color
                     text_color = color
@@ -1005,12 +1065,13 @@ class Lcd(abstract_lcd.Lcd):
                     port_name = util.DICT_GET(v, 'port_name')
                     if port_name:
                         midi_cc = util.DICT_GET(v, 'midi_cc')
-                        name = f"{port_name}:{midi_cc}"
-                        name = self.shorten_name(name, text_per_control)
+                        subtitle = f"{port_name}:{midi_cc} (external MIDI)"
+                        name = self.shorten_name(f"{port_name}:{midi_cc}", text_per_control)
                         color = self.default_plugin_color
                         text_color = (180, 180, 255)  # light blue = external routing
                     else:
-                        name = self.shorten_name(k.split(":")[1], text_per_control)
+                        subtitle = k.split(":")[1]
+                        name = self.shorten_name(subtitle, text_per_control)
                         color = util.DICT_GET(v, Token.COLOR)
                         if color is None:
                             category = util.DICT_GET(v, Token.CATEGORY)
@@ -1032,6 +1093,7 @@ class Lcd(abstract_lcd.Lcd):
                     snapshot_name = self.handler.current.presets.get(closest_stop.snapshot_index, "")
                     if snapshot_name:
                         name = snapshot_name
+                        subtitle = f"Blend: {snapshot_name}"
 
             if control_type == Token.KNOB:
                 w = Icon(
@@ -1041,6 +1103,7 @@ class Lcd(abstract_lcd.Lcd):
                     parent=self.main_panel,
                     outline=0,
                     object=icon_object,
+                    subtitle=subtitle,
                 )
                 w.set_foreground(color)
                 w.add_knob()
@@ -1055,6 +1118,7 @@ class Lcd(abstract_lcd.Lcd):
                     parent=self.main_panel,
                     outline=0,
                     object=icon_object,
+                    subtitle=subtitle,
                 )
                 w.set_foreground(color)
                 w.add_pedal()
