@@ -103,26 +103,27 @@ def main() -> None:
                     writer.join(timeout=2.0)
                     session.write_wav(output_path)
                     exit_code = 5
-                    return
+                    break
 
                 if session.clip_detected:
                     session.stop()
                     stop_writer.set()
                     writer.join(timeout=2.0)
                     exit_code = 2
-                    return
+                    break
 
                 if session.silence_detected:
                     session.stop()
                     stop_writer.set()
                     writer.join(timeout=2.0)
                     exit_code = 1
-                    return
-
-            stop_writer.set()
-            writer.join(timeout=2.0)
-            session.write_wav(output_path)
-            exit_code = 0
+                    break
+            else:
+                # while-loop ran to EOF without an early-exit branch
+                stop_writer.set()
+                writer.join(timeout=2.0)
+                session.write_wav(output_path)
+                exit_code = 0
 
         except Exception as exc:
             print(f"NAM capture error: {exc}", file=sys.stderr)
@@ -134,7 +135,10 @@ def main() -> None:
 
     finally:
         del frame
-        shm.close()
+        try:
+            shm.close()
+        except BufferError:
+            pass  # writer thread may still hold the frame on the error path
 
     sys.exit(exit_code)
 

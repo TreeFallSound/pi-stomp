@@ -183,6 +183,7 @@ class NamCaptureEngine:
 
                 rc = client.poll()
                 if rc is not None:
+                    client.stop()  # reap + release SHM (subprocess already exited)
                     with self._lock:
                         self._client = None
                     self._apply_exit_code(rc, out_wav)

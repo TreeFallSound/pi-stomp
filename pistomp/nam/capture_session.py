@@ -10,10 +10,9 @@ import numpy as np
 import numpy.typing as npt
 
 _SAMPLE_RATE = 48000
-_SILENCE_PLAY_THRESHOLD = 0.1  # ≈ −20 dBFS — output must exceed this to count toward detection
-_NOISE_FLOOR_THRESHOLD = 10 ** (-50 / 20)  # ≈ −50 dBFS — input high-water mark must exceed this
-_NOISE_FLOOR_SETTLE_FRAMES = _SAMPLE_RATE * 4  # 4 s of loud output before we decide
 _CLIP_THRESHOLD = 0.99  # float32 full-scale; any peak above → abort
+_SILENCE_RATIO_SQ = 10 ** (-15 / 10)  # input RMS this far (−15 dB) below latency-aligned output RMS = a silent period
+_SILENCE_ABORT_FRAMES = _SAMPLE_RATE * 4  # 4 s of accumulated silent periods → abort
 
 
 class CaptureSession:
@@ -36,8 +35,7 @@ class CaptureSession:
         self._latency: int = 0  # frames; set in start() after JACK query
         self._total: int = 0  # n + latency; set in start()
         self._pos = 0
-        self._loud_out_frames: int = 0
-        self._in_peak_max_during_loud: float = 0.0
+        self._silent_frames: int = 0  # accumulated frames where input sat ≥15 dB below output; never cleared
 
         self._client = None
         self._done = threading.Event()
@@ -118,15 +116,21 @@ class CaptureSession:
             self._acc_count += 1
             if in_peak >= _CLIP_THRESHOLD and not self._clip_abort.is_set():
                 self._clip_abort.set()
-            if out_peak >= _SILENCE_PLAY_THRESHOLD and not self._silence_abort.is_set():
-                self._loud_out_frames += frames
-                if in_peak > self._in_peak_max_during_loud:
-                    self._in_peak_max_during_loud = in_peak
-                if (
-                    self._loud_out_frames >= _NOISE_FLOOR_SETTLE_FRAMES
-                    and self._in_peak_max_during_loud < _NOISE_FLOOR_THRESHOLD
-                ):
-                    self._silence_abort.set()
+
+            # ── silence — input RMS persistently far below latency-aligned output RMS ──
+            # The input this callback was produced by output sent L frames ago; compare
+            # against that slice (zeros outside the played range = real output silence).
+            # Squared domain avoids sqrt: in_ss < out_ss·r²  ⟺  in_rms < out_rms·r (same /frames).
+            if not self._silence_abort.is_set():
+                lo = max(pos - self._latency, 0)
+                hi = min(pos - self._latency + frames, n)
+                out_seg = samples[lo:hi]
+                out_ss = float(np.dot(out_seg, out_seg)) if hi > lo else 0.0
+                in_ss = float(np.dot(in_buf, in_buf))
+                if in_ss < out_ss * _SILENCE_RATIO_SQ:
+                    self._silent_frames += frames
+                    if self._silent_frames >= _SILENCE_ABORT_FRAMES:
+                        self._silence_abort.set()
 
             # ── EOF ───────────────────────────────────────────────────────────
             if new_pos >= total and not self._done.is_set():
