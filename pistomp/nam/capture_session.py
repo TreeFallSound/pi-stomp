@@ -12,7 +12,7 @@ import numpy.typing as npt
 _SAMPLE_RATE = 48000
 _CLIP_THRESHOLD = 0.99  # float32 full-scale; any peak above → abort
 _SILENCE_RATIO_SQ = 10 ** (-15 / 10)  # input RMS this far (−15 dB) below latency-aligned output RMS = a silent period
-_SILENCE_ABORT_FRAMES = _SAMPLE_RATE * 4  # 4 s of accumulated silent periods → abort
+_SILENCE_ABORT_FRAMES = _SAMPLE_RATE * 2  # 2 s of accumulated silent periods → abort
 
 
 class CaptureSession:
