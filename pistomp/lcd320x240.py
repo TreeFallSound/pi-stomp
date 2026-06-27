@@ -45,7 +45,9 @@ from plugins import PANELS
 
 # Parameter dialog auto-dismiss timeout (seconds)
 PARAMETER_DIALOG_TIMEOUT = 1.0
-#import traceback
+
+# Subtitle auto-hide after no nav encoder movement (seconds)
+SUBTITLE_TIMEOUT = 2.5
 
 # Wifi "processing" spinner full-cycle rate (Hz), wall-clock paced.
 WIFI_SPINNER_HZ = 1.5
@@ -178,7 +180,8 @@ class Lcd(abstract_lcd.Lcd):
         self.w_splash = None
         self.w_info_msg = None
         self.w_subtitle: Optional[Subtitle] = None
-        self._subtitle_text = ""
+        self._subtitle_desc = ""           # last selection description seen
+        self._subtitle_changed_at = 0.0    # monotonic time of last nav change
         self.w_parameter_dialogs = {}
 
         # panels
@@ -299,8 +302,15 @@ class Lcd(abstract_lcd.Lcd):
         if self.pstack.current == self.main_panel:
             if self.w_subtitle is not None:
                 sel = self.main_panel.sel_ref
-                desc = sel.describe() if sel is not None else None
-                self.w_subtitle.set_description(desc or "")
+                desc = (sel.describe() if sel is not None else None) or ""
+                if desc != self._subtitle_desc:
+                    self._subtitle_desc = desc
+                    self._subtitle_changed_at = time.monotonic()
+                # Show on change, hide after SUBTITLE_TIMEOUT of no nav movement.
+                if time.monotonic() - self._subtitle_changed_at < SUBTITLE_TIMEOUT:
+                    self.w_subtitle.set_description(desc)
+                else:
+                    self.w_subtitle.set_description("")
             for icon in self.w_controls:
                 if icon.object is None:
                     continue
