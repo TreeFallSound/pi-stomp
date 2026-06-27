@@ -26,6 +26,7 @@ class MockPlugin:
     has_footswitch: bool = False
     bypassed: bool = False
     controllers: list = field(default_factory=list)
+    notes_text: str | None = None
 
     @property
     def display_name(self) -> str:

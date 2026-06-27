@@ -77,6 +77,9 @@ class PluginPanel(FullscreenPanel, Generic[TState]):
         otherwise dismissed.  Usually calls ``handler.hide_fullscreen_panel()``.
     """
 
+    intercept_shortpress: bool = False
+    "Set to true for informational plugins that do not need bypass (e.g. notes)"
+
     def __init__(
         self,
         *,
@@ -127,9 +130,11 @@ class PluginPanel(FullscreenPanel, Generic[TState]):
         self.build_widgets()
 
         # … then append chrome last so Nav always cycles through it.
-        self.add_sel_widget(self._btn_back)
-        self.add_sel_widget(self._btn_bypass)
-        self.add_sel_widget(self._btn_reset)
+        # build_widgets() may hide individual buttons (e.g. notes panel hides
+        # bypass/reset); skip invisible ones so add_sel_widget's assert holds.
+        for btn in (self._btn_back, self._btn_bypass, self._btn_reset):
+            if btn.visible:
+                self.add_sel_widget(btn)
 
         self._refresh_bypass_style()
 

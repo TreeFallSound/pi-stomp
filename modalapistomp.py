@@ -47,6 +47,7 @@ import pistomp.hardwarefactory as Hardwarefactory
 
 # Force plugin panel registration so PANELS is populated at startup
 import plugins.eq.panel  # noqa: F401
+import plugins.notes.panel  # noqa: F401
 
 EMULATOR_HOSTS = ("emulator_v1", "emulator_v2", "emulator_v3")
 

@@ -151,7 +151,7 @@ class Lcd(abstract_lcd.Lcd):
         self._is_pedalboard_load = False
         self.footswitch_panel = ShroudedPanel(box=Box.xywh(0, self.display_height - self.footswitch_height,
                                                             self.display_width, self.footswitch_height),
-                                              shroud_alpha=255, gradient_start=0, gradient_pos=0.8, no_dim=True, accepts_input=False)
+                                              shroud_alpha=255, gradient_start=0, gradient_pos=0.2, no_dim=True, accepts_input=False)
         self._fullscreen_panel: Panel | None = None
 
         self.pedalboards = {}
@@ -523,8 +523,10 @@ class Lcd(abstract_lcd.Lcd):
 
         def tile_factory(node, box, parent):
             plugin = plugins_by_id[node.id]
-            label = plugin.display_name[:self.plugin_label_length]
-            label = label.replace("_", "")
+            if plugin.notes_text:
+                label = plugin.notes_text.split('\n')[0].strip()
+            else:
+                label = plugin.display_name[:self.plugin_label_length].replace("_", "")
             label = self.shorten_name(label, box.width)
             # parent MUST be passed in ctor: attaching later wipes the
             # explicit colors color_plugin() sets via inherited-attr resolution.
@@ -551,10 +553,13 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.refresh()
 
     def plugin_event(self, event, widget, plugin):
+        panel_cls = PANELS.get(plugin.uri)
         if event == InputEvent.CLICK:
-            self.handler.toggle_plugin_bypass(widget, plugin)
+            if panel_cls is not None and panel_cls.intercept_shortpress:
+                self.handler.show_fullscreen_panel(plugin, panel_cls)
+            else:
+                self.handler.toggle_plugin_bypass(widget, plugin)
         elif event == InputEvent.LONG_CLICK:
-            panel_cls = PANELS.get(plugin.uri)
             if panel_cls is not None:
                 self.handler.show_fullscreen_panel(plugin, panel_cls)
             else:
@@ -618,6 +623,8 @@ class Lcd(abstract_lcd.Lcd):
         return color
 
     def get_plugin_color(self, plugin):
+        if plugin.notes_text is not None:
+            return (214, 217, 111)
         if plugin.category:
             return self.get_category_color(plugin.category)
         return self.default_plugin_color
@@ -1079,7 +1086,7 @@ class Lcd(abstract_lcd.Lcd):
     
     def shorten_name(self, name, width):
         text = ""
-        for x in name.lower().replace('_', '').replace('/', '').replace(' ', ''):
+        for x in name.lower().replace('=', '').replace('_', '').replace('/', '').replace(' ', ''):
             test = text + x
             tw, _ = get_text_size(test, self.small_font)
             if tw >= width:

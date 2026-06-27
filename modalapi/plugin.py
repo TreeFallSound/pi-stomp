@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import re
 from functools import cached_property
+from pathlib import Path
 
 from common.parameter import Parameter
 from pistomp.controller import Controller
@@ -29,6 +30,8 @@ LcdPosition = tuple[int, int, int] | tuple[Point, Point, int]
 
 
 class Plugin:
+    _NOTES_RE = re.compile(r'<[^>]*notes#text>\s+"""(.*?)"""', re.DOTALL)
+
     def __init__(
         self,
         instance_id: str,
@@ -36,6 +39,7 @@ class Plugin:
         info: dict | None,
         category: str | None = None,
         uri: str | None = None,
+        notes_ttl_path: Path | None = None,
     ) -> None:
         self.instance_id: str = instance_id.lstrip("/")
         self.info: dict | None = info
@@ -56,6 +60,18 @@ class Plugin:
         # Snapshot of parameter values at pedalboard parse time. Cleared on
         # pedalboard reload. Serves as the baseline for panel Reset.
         self.pedalboard_snapshot: dict[str, float] = {}
+        self._notes_ttl_path = notes_ttl_path
+
+    @cached_property
+    def notes_text(self) -> str | None:
+        if self._notes_ttl_path is None:
+            return None
+        try:
+            content = self._notes_ttl_path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        m = self._NOTES_RE.search(content)
+        return m.group(1) if m else None
 
     @cached_property
     def display_name(self) -> str:

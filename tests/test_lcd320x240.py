@@ -84,6 +84,7 @@ def setup_main_ui(instance):
             instance_id="distortion",
             uri="mock://distortion",
             display_name="distortion",
+            notes_text=None,
             is_bypassed=lambda: False,
             category="Distortion",
             has_footswitch=True,
@@ -94,6 +95,7 @@ def setup_main_ui(instance):
             instance_id="delay",
             uri="mock://delay",
             display_name="delay",
+            notes_text=None,
             is_bypassed=lambda: False,
             category="Delay",
             has_footswitch=True,
@@ -103,10 +105,12 @@ def setup_main_ui(instance):
         MockObject(
             instance_id="reverb",
             uri="mock://reverb",
+            notes_text=None,
         ),
         MockObject(
             instance_id="reverb",
             display_name="reverb",
+            notes_text=None,
             is_bypassed=lambda: True,
             category="Reverb",
             has_footswitch=True,
@@ -116,10 +120,12 @@ def setup_main_ui(instance):
         MockObject(
             instance_id="chorus",
             uri="mock://chorus",
+            notes_text=None,
         ),
         MockObject(
             instance_id="chorus",
             display_name="chorus",
+            notes_text=None,
             is_bypassed=lambda: False,
             category="Modulator",
             has_footswitch=False,

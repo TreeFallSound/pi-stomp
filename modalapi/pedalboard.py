@@ -20,13 +20,17 @@ import os
 import requests as req
 import sys
 import urllib.parse
+from pathlib import Path
 from typing import Optional
 
 import common.token as Token
+
 import common.util as util
 import common.parameter as Parameter
 import modalapi.plugin as Plugin
 from modalapi.connections import Connection, build_connection
+
+_NOTES_URI = "http://open-music-kontrollers.ch/lv2/notes#notes"
 
 
 class Pedalboard:
@@ -52,6 +56,7 @@ class Pedalboard:
         self.uri_port = self.world.new_uri("http://lv2plug.in/ns/lv2core#port")
         self.uri_tail = self.world.new_uri("http://drobilla.net/ns/ingen#tail")
         self.uri_value = self.world.new_uri("http://drobilla.net/ns/ingen#value")
+        self.uri_instance_number = self.world.new_uri("http://moddevices.com/ns/modpedal#instanceNumber")
 
     def get_pedalboard_plugin(self, world, bundlepath):
         # lilv wants the last character as the separator
@@ -210,7 +215,15 @@ class Pedalboard:
                             parameters[symbol] = param
 
                     # logging.debug("  Label: %s" % label)
-            inst = Plugin.Plugin(instance_id, parameters, plugin_info, category, uri=plugin_uri)
+            notes_ttl_path: Path | None = None
+            if plugin_uri == _NOTES_URI:
+                n_node = self.world.get(block, self.uri_instance_number, None)
+                if n_node is not None:
+                    try:
+                        notes_ttl_path = Path(bundlepath) / f"effect-{int(str(n_node))}" / "effect.ttl"
+                    except ValueError:
+                        pass
+            inst = Plugin.Plugin(instance_id, parameters, plugin_info, category, uri=plugin_uri, notes_ttl_path=notes_ttl_path)
             inst.canvas_x = self._coord(block, self.uri_canvas_x)
             inst.canvas_y = self._coord(block, self.uri_canvas_y)
             instance_to_info[instance_id.lstrip("/")] = plugin_info
@@ -220,17 +233,14 @@ class Pedalboard:
         # Order by MOD-UI canvas position: left-to-right (audio flow), then
         # top-to-bottom. Deterministic regardless of lilv's block iteration
         # order; instance_id breaks any exact-coordinate tie.
-        self.plugins = sorted(
-            all_plugins, key=lambda p: (p.canvas_x, p.canvas_y, p.instance_id)
-        )
+        self.plugins = sorted(all_plugins, key=lambda p: (p.canvas_x, p.canvas_y, p.instance_id))
 
         self.connections = self._extract_connections(plugin, bundlepath, instance_to_info)
 
         # Capture parse-time snapshot of all parameter values for Reset
         for plugin in self.plugins:
             plugin.pedalboard_snapshot = {
-                sym: float(p.value) if p.value is not None else 0.0
-                for sym, p in plugin.parameters.items()
+                sym: float(p.value) if p.value is not None else 0.0 for sym, p in plugin.parameters.items()
             }
 
         # Done obtaining relevant lilv for the pedalboard
@@ -329,10 +339,13 @@ class Pedalboard:
         src_id, src_sym = tail.split("/", 1) if "/" in tail else (tail, "")
         dst_id, dst_sym = head.split("/", 1) if "/" in head else (head, "")
         self.connections = [
-            c for c in self.connections
+            c
+            for c in self.connections
             if not (
-                c.src.id == src_id and c.src.port_symbol == src_sym
-                and c.dst.id == dst_id and c.dst.port_symbol == dst_sym
+                c.src.id == src_id
+                and c.src.port_symbol == src_sym
+                and c.dst.id == dst_id
+                and c.dst.port_symbol == dst_sym
             )
         ]
 
