@@ -106,6 +106,9 @@ class Dialog(RoundedPanel):
         )
         return mask
 
+    def tick(self) -> None:
+        pass
+
 
 class MessageDialog(Dialog):
     def __init__(self, panelstack, message, title="Error", width=200, height=90):
