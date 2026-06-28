@@ -13,7 +13,9 @@ _SAMPLE_RATE = 48000
 _CLIP_THRESHOLD = 0.99  # float32 full-scale; any peak above → abort
 _SILENCE_RATIO_SQ = 10 ** (-15 / 10)  # input RMS this far (−15 dB) below latency-aligned output RMS = a silent period
 _SILENCE_ABORT_FRAMES = _SAMPLE_RATE * 2  # 2 s of accumulated silent periods → abort
-# FIXME: need to expire the silent frames counter after a few seconds of non-silent input, otherwise a single blip of silence can trigger an abort after a long capture.
+_SILENCE_DECAY_FRAMES = _SAMPLE_RATE * 2  # 2 s of non-silent input clears accumulated silent frames
+_MIN_OUT_SS_FACTOR = 10 ** (-50 / 10)  # output RMS must be ≥ -50 dBFS for silence evaluation
+
 
 """
 The red LED means the audio input signal level — measured by the ADC before any ALSA/JACK gain is applied — has exceeded -15 dBV adjusted for input gain (analogVU.py:83).
@@ -38,23 +40,9 @@ Because the ADC sits upstream of the ALSA capture gain stage, the thresholds shi
 
 So red = the input signal is hot enough that it's likely clipping the analog input stage of the audio card, not just being loud in software.
 
-The input_gain side is not manually calibrated — it's read from the ALSA capture volume and baked into the threshold math automatically via recalibrate_gain(). The dB thresholds themselves (-39, -20, -15) are hardcoded.
-
-What we detect now:
-- _CLIP_THRESHOLD = 0.99 in capture_session.py — digital full-scale in JACK float32. Only catches true digital clipping.
-
-What we're missing:
-- The AnalogVU hardware objects already model the audio card's analog input stage clipping at -15 dBV x input_gain. This is exactly the threshold where the circuit is distorting the signal before the ADC even converts it. The current capture process never consults this.
-
-TODO: Proposed approach:
-
-1. Add abort_with_error(msg: str) to NamCaptureEngine — sets FAILED with a custom message without going through the subprocess exit code path.
-2. In NamCapturePanel.tick() during CAPTURING state, check self._handler.hardware.indicators for any AnalogVU in VuState.CLIP state, sustained for ~5 consecutive ticks (~50ms) to avoid aborting on a transient.
-3. Call engine.abort_with_error("Analog clipping: lower amp output") when triggered.
-
-This is better than lowering _CLIP_THRESHOLD in the session because it uses your already-calibrated per-gain-setting hardware thresholds rather than a crude dBFS approximation. It also produces a more actionable error message.
-
-One question before implementing: the sustained-clip window (50ms) — do you want that, or should any single CLIP reading during capture abort immediately? Since the capture is measuring a sweep signal that naturally has quiet periods, a transient hit at the loudest part of the sweep seems like a legitimate abort condition, not just noise.
+Detection implementation:
+- _CLIP_THRESHOLD = 0.99 in capture_session.py — digital full-scale in JACK float32. Catches true digital clipping in software.
+- Analog VU hardware clipping: NamCapturePanel checks hardware indicators for any AnalogVU in VuState.CLIP state sustained for 5 consecutive ticks (~50ms). When triggered, it calls engine.abort_with_error("Analog clipping: lower amp output").
 """
 
 
@@ -111,7 +99,7 @@ class CaptureSession:
         try:
             send = client.get_port_by_name(self._send_port)
             ret = client.get_port_by_name(self._return_port)
-            L = send.get_latency_range(jack.PLAYBACK)[1] + ret.get_latency_range(jack.CAPTURE)[1]
+            L = send.get_latency_range(jack.PLAYBACK)[1] + ret.get_latency_range(jack.CAPTURE)[1]  # type: ignore[attr-defined]
         except Exception:
             L = 0
         self._latency = L
@@ -128,7 +116,7 @@ class CaptureSession:
             pos = self._pos
 
             # ── playback — reamp signal then silence for L extra frames ────────
-            out_buf: npt.NDArray[np.float32] = out_port.get_array()
+            out_buf: npt.NDArray[np.float32] = out_port.get_array()  # type: ignore[attr-defined]
             play_remain = n - pos
             if play_remain > 0:
                 take = min(frames, play_remain)
@@ -139,7 +127,7 @@ class CaptureSession:
                 out_buf[:] = 0.0
 
             # ── capture — record for n + L frames ─────────────────────────────
-            in_buf: npt.NDArray[np.float32] = in_port.get_array()
+            in_buf: npt.NDArray[np.float32] = in_port.get_array()  # type: ignore[attr-defined]
             cap_remain = total - pos
             if cap_remain > 0:
                 take = min(frames, cap_remain)
@@ -169,11 +157,15 @@ class CaptureSession:
                 hi = min(pos - self._latency + frames, n)
                 out_seg = samples[lo:hi]
                 out_ss = float(np.dot(out_seg, out_seg)) if hi > lo else 0.0
-                in_ss = float(np.dot(in_buf, in_buf))
-                if in_ss < out_ss * _SILENCE_RATIO_SQ:
-                    self._silent_frames += frames
-                    if self._silent_frames >= _SILENCE_ABORT_FRAMES:
-                        self._silence_abort.set()
+                if out_ss >= frames * _MIN_OUT_SS_FACTOR:
+                    in_ss = float(np.dot(in_buf, in_buf))
+                    if in_ss < out_ss * _SILENCE_RATIO_SQ:
+                        self._silent_frames += frames
+                        if self._silent_frames >= _SILENCE_ABORT_FRAMES:
+                            self._silence_abort.set()
+                    else:
+                        decay = int(frames * (_SILENCE_ABORT_FRAMES / _SILENCE_DECAY_FRAMES))
+                        self._silent_frames = max(0, self._silent_frames - decay)
 
             # ── EOF ───────────────────────────────────────────────────────────
             if new_pos >= total and not self._done.is_set():

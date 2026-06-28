@@ -113,6 +113,13 @@ class NamCaptureEngine:
             self._thread.join(timeout=10.0)
             self._thread = None
 
+    def abort_with_error(self, msg: str) -> None:
+        """Abort active capture immediately and transition to FAILED with *msg*."""
+        with self._lock:
+            self._error = msg
+            self._state = CaptureState.FAILED
+        self.stop()
+
     def reset(self) -> None:
         with self._lock:
             if self._state not in (CaptureState.DONE, CaptureState.FAILED, CaptureState.ABORTED):
@@ -178,7 +185,8 @@ class NamCaptureEngine:
                     with self._lock:
                         self._client = None
                         self._output_path = out_wav
-                        self._state = CaptureState.ABORTED
+                        if self._state != CaptureState.FAILED:
+                            self._state = CaptureState.ABORTED
                     return
 
                 rc = client.poll()

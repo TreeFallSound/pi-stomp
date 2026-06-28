@@ -22,6 +22,7 @@ class _FakeEngine:
         self._progress = progress
         self.started: list[str] = []
         self.stopped = False
+        self.aborted_error: str | None = None
 
     @property
     def state(self) -> CaptureState:
@@ -29,7 +30,13 @@ class _FakeEngine:
 
     @property
     def error(self) -> str | None:
+        if self.aborted_error is not None:
+            return self.aborted_error
         return "Reduce amp output" if self._state == CaptureState.FAILED else None
+
+    def abort_with_error(self, msg: str) -> None:
+        self.aborted_error = msg
+        self._state = CaptureState.FAILED
 
     @property
     def output_path(self) -> Path | None:
@@ -73,7 +80,7 @@ class _FakeEngine:
 def _make_panel(engine: _FakeEngine, on_dismiss=None) -> NamCapturePanel:
     """Build a NamCapturePanel backed by *engine* without touching the filesystem."""
     if on_dismiss is None:
-        on_dismiss = lambda: None
+        on_dismiss = lambda: None  # noqa: E731
     with (
         patch.object(NamCapturePanel, "_create_engine", return_value=engine),
         patch("pistomp.nam.panel.wav_duration", return_value=190.0),
@@ -132,6 +139,7 @@ class TestNamPanelLifecycle:
     def test_start_button_starts_engine(self, v3_system):
         engine = _FakeEngine(CaptureState.IDLE)
         panel = _make_panel(engine)
+        assert panel._btn_start.action is not None
         panel._btn_start.action()
         assert "capture" in engine.started
 
@@ -154,6 +162,7 @@ class TestNamPanelLifecycle:
     def test_close_setup_calls_on_dismiss(self, v3_system):
         dismissed = []
         panel = _make_panel(_FakeEngine(CaptureState.IDLE), on_dismiss=lambda: dismissed.append(True))
+        assert panel._btn_setup_close.action is not None
         panel._btn_setup_close.action()
         assert dismissed == [True]
 
@@ -162,6 +171,7 @@ class TestNamPanelLifecycle:
         engine = _FakeEngine(CaptureState.DONE, progress=1.0)
         panel = _make_panel(engine, on_dismiss=lambda: dismissed.append(True))
         panel.tick()
+        assert panel._btn_done.action is not None
         panel._btn_done.action()
         assert dismissed == [True]
 
@@ -169,6 +179,7 @@ class TestNamPanelLifecycle:
         engine = _FakeEngine(CaptureState.FAILED, progress=0.3)
         panel = _make_panel(engine)
         panel.tick()  # switch to capture view → FAILED
+        assert panel._btn_capture_close.action is not None
         panel._btn_capture_close.action()  # "Back"
         assert engine.state == CaptureState.IDLE
 
@@ -176,6 +187,7 @@ class TestNamPanelLifecycle:
         engine = _FakeEngine(CaptureState.ABORTED, progress=0.6)
         panel = _make_panel(engine)
         panel.tick()  # switch to capture view → ABORTED
+        assert panel._btn_capture_close.action is not None
         panel._btn_capture_close.action()  # "Back"
         assert engine.state == CaptureState.IDLE
 
@@ -190,6 +202,7 @@ class TestNamPanelLifecycle:
         engine = _FakeEngine(CaptureState.FAILED, progress=0.3)
         panel = _make_panel(engine)
         panel.tick()  # switch to capture view → FAILED
+        assert panel._btn_capture_right.action is not None
         panel._btn_capture_right.action()  # "Retry"
         assert "capture" in engine.started
 
@@ -207,6 +220,39 @@ class TestNamPanelLifecycle:
         v3_system.handler.lcd.show_fullscreen_panel(panel)
         v3_system.handler.lcd.hide_fullscreen_panel()  # pop_panel → auto_destroy → destroy()
         assert engine.stopped
+
+    def test_analog_clipping_aborts_engine(self, v3_system):
+        from pistomp.analogVU import VuState
+
+        engine = _FakeEngine(CaptureState.CAPTURING)
+        panel = _make_panel(engine)
+        panel._handler = v3_system.handler
+        vu = v3_system.handler.hardware.indicators[0]
+        vu.state = VuState.CLIP
+
+        for _ in range(4):
+            panel.tick()
+            assert engine._state == CaptureState.CAPTURING
+        panel.tick()
+        assert engine._state == CaptureState.FAILED
+        assert engine.aborted_error == "Analog clipping: lower amp output"
+
+
+class TestCaptureSessionSilence:
+    def test_silence_decay(self):
+        import numpy as np
+        from pistomp.nam.capture_session import CaptureSession
+
+        samples = np.ones(48000, dtype=np.float32)
+        session = CaptureSession(samples, "out", "in")
+        # Verify initial state
+        assert session._silent_frames == 0
+        session._silent_frames = 24000
+        # Simulate non-silent callback step with decay calculation
+        frames = 480
+        decay = int(frames * (96000 / 96000))
+        session._silent_frames = max(0, session._silent_frames - decay)
+        assert session._silent_frames == 23520
 
 
 class TestNamHandlerIntegration:

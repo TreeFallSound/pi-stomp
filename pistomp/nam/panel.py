@@ -196,6 +196,7 @@ class KnobWidget(Widget):
 
     def _tip_rect_abs(self, t: float) -> Box:
         """Absolute bounding box of the tip dot at value fraction t."""
+        assert self.box is not None
         cx = self.box.x0 + self.box.width // 2
         cy = self.box.y0 + (self.box.height - self._VALUE_H) // 2
         rad = math.radians(210.0 + t * 300.0)
@@ -213,10 +214,13 @@ class KnobWidget(Widget):
         supported SPI speeds including 33 MHz.  Large jumps fall back to the
         full widget so the changed arc segment is never left stale.
         """
+        assert self.box is not None
         w, h = self.box.width, self.box.height
         value_rect = Box.xywh(self.box.x0, self.box.y0 + h - self._VALUE_H, w, self._VALUE_H)
         if abs(new_t - old_t) < 0.10:
-            return self._tip_rect_abs(old_t).union(self._tip_rect_abs(new_t)).union(value_rect)
+            res = self._tip_rect_abs(old_t).union(self._tip_rect_abs(new_t)).union(value_rect)
+            assert res is not None
+            return res
         return self.box
 
     def _draw(self, ctx: PaintContext) -> None:
@@ -472,6 +476,7 @@ class NamCapturePanel(FullscreenPanel):
         self._meter_tick: int = 0
         self._in_capture_view: bool = False
         self._pending_path_shown: bool = False
+        self._analog_clip_ticks: int = 0
         self._duration = wav_duration(reamp_wav)
         try:
             self._max_out_db: float = min(6.0, -wav_peak_dbfs(reamp_wav))
@@ -753,6 +758,23 @@ class NamCapturePanel(FullscreenPanel):
             self._reel.advance_rotation(dt)
             self._reel.set_progress(self._engine.progress())
 
+            # Check analog hardware clipping via AnalogVU indicators
+            if self._handler is not None:
+                hw = self._handler.hardware
+                if hw is not None:
+                    from pistomp.analogVU import AnalogVU, VuState
+                    is_clipping = any(
+                        isinstance(ind, AnalogVU) and ind.state == VuState.CLIP
+                        for ind in hw.indicators
+                    )
+                    if is_clipping:
+                        self._analog_clip_ticks += 1
+                        if self._analog_clip_ticks >= 5:
+                            self._engine.abort_with_error("Analog clipping: lower amp output")
+                            return
+                    else:
+                        self._analog_clip_ticks = 0
+
             snap = self._engine.level_snapshot_db()
             if snap is not None:
                 in_db, out_db = snap
@@ -808,7 +830,10 @@ class NamCapturePanel(FullscreenPanel):
             confirm_text="Abort",
             cancel_text="Cancel",
         )
-        self.parent.push_panel(d)
+        try:
+            self.parent.push_panel(d)  # type: ignore[attr-defined]
+        except AttributeError:
+            self._on_confirmed_abort()
 
     def _on_confirmed_abort(self) -> None:
         """Abort the running capture and return to IDLE setup view."""
