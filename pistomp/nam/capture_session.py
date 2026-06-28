@@ -17,35 +17,6 @@ _SILENCE_DECAY_FRAMES = _SAMPLE_RATE * 2  # 2 s of non-silent input clears accum
 _MIN_OUT_SS_FACTOR = 10 ** (-50 / 10)  # output RMS must be ≥ -50 dBFS for silence evaluation
 
 
-"""
-The red LED means the audio input signal level — measured by the ADC before any ALSA/JACK gain is applied — has exceeded -15 dBV adjusted for input gain (analogVU.py:83).
-
-Specifically:
-
-- The MCP3008 ADC reads the raw input signal at 10ms intervals
-- Each reading is reflected around the DC baseline (so positive and negative swings are treated equivalently: abs(baseline - value) + baseline)
-- A short 4-sample rolling average (~40ms) is compared against three thresholds, all computed as baseline + amplitude_at_threshold_db:
-
-┌───────┬────────┬──────────────────────┐
-│ State │ Color  │      Threshold       │
-├───────┼────────┼──────────────────────┤
-│ SIG   │ Green  │ −39 dBV − input_gain │
-├───────┼────────┼──────────────────────┤
-│ WARN  │ Orange │ −20 dBV − input_gain │
-├───────┼────────┼──────────────────────┤
-│ CLIP  │ Red    │ −15 dBV − input_gain │
-└───────┴────────┴──────────────────────┘
-
-Because the ADC sits upstream of the ALSA capture gain stage, the thresholds shift inversely with input_gain — if you crank up the capture volume, the clip threshold moves lower (less ADC amplitude needed to trigger red), reflecting that the downstream analog stage will clip at a lower input level.
-
-So red = the input signal is hot enough that it's likely clipping the analog input stage of the audio card, not just being loud in software.
-
-Detection implementation:
-- _CLIP_THRESHOLD = 0.99 in capture_session.py — digital full-scale in JACK float32. Catches true digital clipping in software.
-- Analog VU hardware clipping: NamCapturePanel checks hardware indicators for any AnalogVU in VuState.CLIP state sustained for 5 consecutive ticks (~50ms). When triggered, it calls engine.abort_with_error("Analog clipping: lower amp output").
-"""
-
-
 class CaptureSession:
     """Plays samples out send_port while capturing return_port."""
 
