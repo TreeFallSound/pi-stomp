@@ -12,6 +12,7 @@ runtime deps).
 
 from __future__ import annotations
 
+import math
 import wave
 from pathlib import Path
 
@@ -48,3 +49,10 @@ def load_wav_float32(path: Path | str) -> npt.NDArray[np.float32]:
     padded[:, 1:] = buf  # 24-bit bytes at positions 1,2,3; position 0 = 0x00
     int32 = padded.view(np.dtype("<i4")).reshape(-1)
     return (int32.astype(np.float32)) / np.float32(2**31)
+
+
+def wav_peak_dbfs(path: Path | str) -> float:
+    """Return the peak level in dBFS of *path* (always ≤ 0.0)."""
+    samples = load_wav_float32(path)
+    peak = float(np.max(np.abs(samples)))
+    return 20.0 * math.log10(max(peak, 1e-10))

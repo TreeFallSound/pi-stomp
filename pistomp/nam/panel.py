@@ -57,7 +57,7 @@ from pistomp.fullscreen_panel import FullscreenPanel
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.nam import routing
 from pistomp.nam.engine import CaptureState, NamCaptureEngine
-from pistomp.nam.wavio import wav_duration
+from pistomp.nam.wavio import wav_duration, wav_peak_dbfs
 
 _W = 320
 _H = 240
@@ -126,6 +126,9 @@ _KNOB_ARC_BG = (38, 30, 14)  # dim warm dark — empty arc track
 _KNOB_TIP = (255, 210, 80)  # bright amber — tip dot
 _KNOB_LABEL_FG = (115, 115, 125)
 _KNOB_VALUE_FG = (175, 175, 195)
+
+# Mute button active state
+_BTN_MUTE_ACTIVE_COLOR: tuple[int, int, int] = (140, 50, 0)
 
 # Misc
 _DIM = (75, 75, 82)
@@ -470,8 +473,13 @@ class NamCapturePanel(FullscreenPanel):
         self._in_capture_view: bool = False
         self._pending_path_shown: bool = False
         self._duration = wav_duration(reamp_wav)
+        try:
+            self._max_out_db: float = min(6.0, -wav_peak_dbfs(reamp_wav))
+        except Exception:
+            self._max_out_db = 6.0
+        self._muted: bool = False
         self._gain_val: float = -10.0
-        self._vol_val: float = -10.0
+        self._vol_val: float = -3.0
         self._saved_gain: float | None = None
         self._saved_vol: float | None = None
 
@@ -509,7 +517,7 @@ class NamCapturePanel(FullscreenPanel):
 
         self._knob_gain = KnobWidget(
             box=Box.xywh(8, _KNOB_Y, _KNOB_W, _KNOB_H),
-            label="IN",
+            label="IN2",
             min_val=-19.75,
             max_val=12.0,
             default_font=font,
@@ -518,9 +526,9 @@ class NamCapturePanel(FullscreenPanel):
         )
         self._knob_vol = KnobWidget(
             box=Box.xywh(_W - _KNOB_W - 8, _KNOB_Y, _KNOB_W, _KNOB_H),
-            label="OUT",
+            label="OUT2",
             min_val=-25.75,
-            max_val=6.0,
+            max_val=self._max_out_db,
             default_font=font,
             caption_font=self._caption_font,
             parent=self,
@@ -610,6 +618,15 @@ class NamCapturePanel(FullscreenPanel):
             parent=self,
             action=lambda *_: self._on_abort(),
         )
+        self._btn_mute = Button(
+            box=Box.xywh(_BTN_X_CLOSE, _BTN_Y, _BTN_W, _BTN_H),
+            text="Mute",
+            font=font,
+            outline_radius=4,
+            parent=self,
+            action=lambda *_: self._toggle_mute(),
+        )
+
         # Full-width "Saved as …" button shown only in DONE state
         self._btn_done = Button(
             box=Box.xywh(_BTN_GAP, _BTN_Y, _W - 2 * _BTN_GAP, _BTN_H),
@@ -629,6 +646,7 @@ class NamCapturePanel(FullscreenPanel):
             self._meter_out,
             self._meter_in,
             self._error_lbl,
+            self._btn_mute,
             self._btn_capture_close,
             self._btn_capture_right,
             self._btn_done,
@@ -797,6 +815,21 @@ class NamCapturePanel(FullscreenPanel):
         self._engine.stop()
         self._engine.reset()
 
+    def _toggle_mute(self) -> None:
+        self._muted = not self._muted
+        if self._muted:
+            routing.disconnect_monitor()
+        else:
+            routing.connect_monitor()
+        self._btn_mute.set_background(_BTN_MUTE_ACTIVE_COLOR if self._muted else (0, 0, 0))
+        self._btn_mute.refresh()
+
+    def _unmute(self) -> None:
+        if self._muted:
+            self._muted = False
+            routing.connect_monitor()
+            self._btn_mute.set_background((0, 0, 0))
+
     def _on_reset(self) -> None:
         """Return to IDLE (setup view) from FAILED or ABORTED."""
         self._engine.reset()
@@ -835,8 +868,10 @@ class NamCapturePanel(FullscreenPanel):
         # Reel
         if state == CaptureState.DONE:
             self._reel.set_done()
+            self._unmute()
         elif state in (CaptureState.FAILED, CaptureState.ABORTED):
             self._reel.freeze()
+            self._unmute()
 
         # Error label — single short line, centred
         if state == CaptureState.FAILED:
@@ -850,12 +885,14 @@ class NamCapturePanel(FullscreenPanel):
             self._error_lbl.hide(refresh=False)
 
         # Buttons — rebuild sel list for capture view
-        for w in (self._btn_capture_close, self._btn_capture_right, self._btn_done):
+        for w in (self._btn_mute, self._btn_capture_close, self._btn_capture_right, self._btn_done):
             if w in self.sel_list:
                 self.del_sel_widget(w)
             w.hide(refresh=False)
 
         if state == CaptureState.CAPTURING:
+            self._btn_mute.show(refresh=False)
+            self.add_sel_widget(self._btn_mute)
             self._btn_capture_right.set_text("Abort")
             self._btn_capture_right.set_action(lambda *_: self._on_abort())
             self._btn_capture_right.show(refresh=False)
@@ -938,7 +975,7 @@ class NamCapturePanel(FullscreenPanel):
             self._handler.audio_parameter_commit(self._handler.audiocard.CAPTURE_VOLUME, self._gain_val)
             self._knob_gain.set_value(self._gain_val)
         else:
-            self._vol_val = max(-25.75, min(6.0, self._vol_val + steps * step_size))
+            self._vol_val = max(-25.75, min(self._max_out_db, self._vol_val + steps * step_size))
             self._handler.audio_parameter_commit(self._handler.audiocard.MASTER, self._vol_val)
             self._knob_vol.set_value(self._vol_val)
 
@@ -951,7 +988,10 @@ class NamCapturePanel(FullscreenPanel):
             self._saved_gain = hw_gain if hw_gain != 0.0 else -10.0
             self._saved_vol = hw_vol if hw_vol != 0.0 else -10.0
             self._gain_val = self._handler.settings.get_setting(Token.NAM_CAPTURE_GAIN) or -10.0
-            self._vol_val = self._handler.settings.get_setting(Token.NAM_OUTPUT_VOL) or -10.0
+            self._vol_val = min(
+                self._max_out_db,
+                self._handler.settings.get_setting(Token.NAM_OUTPUT_VOL) or -3.0,
+            )
             self._handler.audio_parameter_commit(ac.CAPTURE_VOLUME, self._gain_val)
             self._handler.audio_parameter_commit(ac.MASTER, self._vol_val)
         self._refresh_knob_values()

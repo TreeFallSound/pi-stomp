@@ -13,6 +13,28 @@ _SAMPLE_RATE = 48000
 _CLIP_THRESHOLD = 0.99  # float32 full-scale; any peak above → abort
 _SILENCE_RATIO_SQ = 10 ** (-15 / 10)  # input RMS this far (−15 dB) below latency-aligned output RMS = a silent period
 _SILENCE_ABORT_FRAMES = _SAMPLE_RATE * 2  # 2 s of accumulated silent periods → abort
+# FIXME: need to expire the silent frames counter after a few seconds of non-silent input, otherwise a single blip of silence can trigger an abort after a long capture.
+
+"""
+TODO:
+The input_gain side is not manually calibrated — it's read from the ALSA capture volume and baked into the threshold math automatically via recalibrate_gain(). The dB thresholds themselves (-39, -20, -15) are hardcoded.
+
+What we detect now:
+- _CLIP_THRESHOLD = 0.99 in capture_session.py — digital full-scale in JACK float32. Only catches true digital clipping.
+
+What we're missing:
+- The AnalogVU hardware objects already model the audio card's analog input stage clipping at -15 dBV x input_gain. This is exactly the threshold where the circuit is distorting the signal before the ADC even converts it. The current capture process never consults this.
+
+Proposed approach:
+
+1. Add abort_with_error(msg: str) to NamCaptureEngine — sets FAILED with a custom message without going through the subprocess exit code path.
+2. In NamCapturePanel.tick() during CAPTURING state, check self._handler.hardware.indicators for any AnalogVU in VuState.CLIP state, sustained for ~5 consecutive ticks (~50ms) to avoid aborting on a transient.
+3. Call engine.abort_with_error("Analog clipping: lower amp output") when triggered.
+
+This is better than lowering _CLIP_THRESHOLD in the session because it uses your already-calibrated per-gain-setting hardware thresholds rather than a crude dBFS approximation. It also produces a more actionable error message.
+
+One question before implementing: the sustained-clip window (50ms) — do you want that, or should any single CLIP reading during capture abort immediately? Since the capture is measuring a sweep signal that naturally has quiet periods, a transient hit at the loudest part of the sweep seems like a legitimate abort condition, not just noise.
+"""
 
 
 class CaptureSession:
