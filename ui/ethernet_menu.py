@@ -66,6 +66,14 @@ class EthernetMenu:
         # One of: 'back', 'toggle', 'mute', or None.
         self._last_selected_role: Optional[str] = None
         self._role_widgets: dict[str, object] = {}
+        # Refs to widgets that mutate in place — reset on every _render().
+        # tick() updates the xrun rows via set_text(); the action handlers
+        # update their own button label the same way. None of these paths
+        # rebuild the dialog, so the buttons don't vanish under the user's
+        # finger and the SPI blit stays a precise clip.
+        self._xrun_widgets: list[TextWidget] = []
+        self._toggle_btn: Optional[TextWidget] = None
+        self._mute_btn: Optional[TextWidget] = None
 
     def _capture_selected_role(self) -> None:
         if self._panel is None or self._panel.sel_ref is None:
@@ -122,15 +130,23 @@ class EthernetMenu:
         self._render()
 
     def tick(self) -> None:
-        """Periodic re-render while we're on top, so xrun counters update
-        without the user leaving the screen. Cheap — the file is bounded."""
+        """Update the xrun counters while we're on top, without rebuilding
+        the dialog. The rest of the rows and the buttons are static between
+        state flips; mutating them via set_text() takes the per-widget
+        dirty-rect path so the buttons stay put (no reblit under the user's
+        finger, no full-screen redraw on the SPI bus)."""
         if self._panel is None or self._pstack.current is not self._panel:
             return
         if not self._manager.carrier_up:
             return  # notify_change will handle pop-and-dialog
         if not self._manager.service_active:
-            return  # static screen, no need to redraw
-        self._render()
+            return  # no xrun rows to update
+        if not self._xrun_widgets:
+            return
+        b1, b5, b15 = self._manager.read_xrun_buckets()
+        self._xrun_widgets[0].set_text("xruns 1m:" + SPLIT + str(b1))
+        self._xrun_widgets[1].set_text("xruns 5m:" + SPLIT + str(b5))
+        self._xrun_widgets[2].set_text("xruns 15m:" + SPLIT + str(b15))
 
     # ----- rendering -----
 
@@ -140,6 +156,12 @@ class EthernetMenu:
             old = self._panel
             self._panel = None
             self._pstack.pop_panel(old)
+
+        # Old widgets were just destroyed — drop our refs so tick() / actions
+        # don't try to mutate zombies if a render races a poll.
+        self._xrun_widgets = []
+        self._toggle_btn = None
+        self._mute_btn = None
 
         active = self._manager.service_active
 
@@ -156,18 +178,15 @@ class EthernetMenu:
             rows.append(("xruns 5m:", str(b5)))
             rows.append(("xruns 15m:", str(b15)))
 
-        if active:
-            toggle_label, toggle_action = "Disable", self._on_disable
-        else:
-            toggle_label, toggle_action = "Enable", self._on_enable
-
         muted = self._mute.is_muted()
+        toggle_label = "Disable" if active else "Enable"
         mute_label = "Unmute MOD" if muted else "Mute MOD"
 
         line_h = 18
         y = 4
+        xrun_label_set = {"xruns 1m:", "xruns 5m:", "xruns 15m:"}
         for label, value in rows:
-            TextWidget(
+            w = TextWidget(
                 box=Box.xywh(8, y, DIALOG_W - 16, line_h),
                 text=label + SPLIT + value,
                 font=font,
@@ -176,6 +195,8 @@ class EthernetMenu:
                 sel_width=0,
                 align=WidgetAlign.NONE,
             )
+            if label in xrun_label_set:
+                self._xrun_widgets.append(w)
             y += line_h
 
         btn_y = DIALOG_H - 36
@@ -192,32 +213,32 @@ class EthernetMenu:
         )
         d.add_sel_widget(back_btn)
 
-        # Toggle sits to the right of back; mute is right-aligned. Auto-width
-        # buttons (w=0) compute their box during init, so we read back .width
-        # to chain placements without overlap. Rapid taps are harmless:
-        # systemctl no-ops when the service is already in the target state,
-        # and the bg poll flips the label within POLL_INTERVAL_S.
+        # Toggle sits to the right of back; constructed with the wider of the
+        # two labels so the box is the same size in both states. Without
+        # this, swapping "Enable"→"Disable" via set_text() would clip the
+        # trailing "e" inside the original (narrower) box.
         assert back_btn.box
         toggle_x = back_btn.box.x0 + back_btn.box.width + 6
         toggle_btn = TextWidget(
             box=Box.xywh(toggle_x, btn_y, 0, 0),
-            text=toggle_label,
+            text="Disable",
             parent=d,
             outline=1,
             sel_width=3,
             outline_radius=5,
-            action=toggle_action,
+            action=self._on_toggle_service,
             align=WidgetAlign.NONE,
             name="ethernet_toggle_btn",
         )
+        toggle_btn.set_text(toggle_label)
         d.add_sel_widget(toggle_btn)
+        self._toggle_btn = toggle_btn
 
-        # Build mute at x=0 first to learn its auto-computed width, then
-        # reposition via set_box so its right edge sits at DIALOG_W - 8.
-        # (Box.x0 setter leaves x1 alone — it shrinks rather than translates.)
+        # Mute button: same trick — size to fit "Unmute MOD" so a set_text
+        # back to "Mute MOD" doesn't leave dead space at the right edge.
         mute_btn = TextWidget(
             box=Box.xywh(0, btn_y, 0, 0),
-            text=mute_label,
+            text="Unmute MOD",
             parent=d,
             outline=1,
             sel_width=3,
@@ -229,8 +250,10 @@ class EthernetMenu:
         assert mute_btn.box
         mute_w = mute_btn.box.width
         mute_h = mute_btn.box.height
+        mute_btn.set_text(mute_label)
         mute_btn.set_box(Box.xywh(DIALOG_W - 8 - mute_w, btn_y, mute_w, mute_h))
         d.add_sel_widget(mute_btn)
+        self._mute_btn = mute_btn
 
         # Stash refs by role so re-renders can preserve selection (panel pop
         # blows away widget identity, so we track which role was selected).
@@ -250,22 +273,30 @@ class EthernetMenu:
 
     # ----- actions -----
 
-    def _on_enable(self, _event: object = None, _widget: object = None) -> None:
-        self._manager.start_service()
-        # systemctl is fire-and-forget; the bg poll picks up the state flip
-        # within POLL_INTERVAL_S and the next tick re-renders with "Disable".
-        self._render()
-
-    def _on_disable(self, _event: object = None, _widget: object = None) -> None:
-        self._manager.stop_service()
-        self._render()
+    def _on_toggle_service(self, _event: object = None, _widget: object = None) -> None:
+        # Optimistic update: show the *new* state immediately, before the
+        # background poll observes systemctl's effect. The bg poll's
+        # notify_change() will re-render the dialog (full rebuild is needed
+        # there anyway, because the row *set* changes when service_active
+        # flips) and reconcile any drift.
+        if self._manager.service_active:
+            self._manager.stop_service()
+            new_label = "Enable"
+        else:
+            self._manager.start_service()
+            new_label = "Disable"
+        if self._toggle_btn is not None:
+            self._toggle_btn.set_text(new_label)
 
     def _on_toggle_mute(self, _event: object = None, _widget: object = None) -> None:
         if self._mute.is_muted():
             self._mute.unmute()
+            new_label = "Mute MOD"
         else:
             self._mute.mute()
-        self._render()
+            new_label = "Unmute MOD"
+        if self._mute_btn is not None:
+            self._mute_btn.set_text(new_label)
 
     def _on_back(self, _event: object = None, _widget: object = None) -> None:
         if self._panel is not None:

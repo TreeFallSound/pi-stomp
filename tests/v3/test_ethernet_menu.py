@@ -6,14 +6,12 @@ menu's render and action paths.
 """
 
 from typing import Optional
-from unittest.mock import patch
 
 import pytest
 
 from emulator.stubs import StubJackMute
-from ui.ethernet_menu import EthernetMenu
-from uilib.dialog import Dialog, MessageDialog
-from uilib.misc import InputEvent
+from ui.ethernet_menu import EthernetMenu, SPLIT
+from uilib.dialog import MessageDialog
 
 
 class FakeEthernetManager:
@@ -117,7 +115,7 @@ def test_enable_calls_start_service(ethernet_env):
     lcd, em, _ = ethernet_env
     em.service_active = False
     menu = _open(lcd)
-    menu._on_enable()
+    menu._on_toggle_service()
     assert em.start_calls == 1
 
 
@@ -125,7 +123,7 @@ def test_disable_calls_stop_service(ethernet_env):
     lcd, em, _ = ethernet_env
     em.service_active = True
     menu = _open(lcd)
-    menu._on_disable()
+    menu._on_toggle_service()
     assert em.stop_calls == 1
 
 
@@ -145,6 +143,83 @@ def test_toggle_mute_when_muted_calls_unmute(ethernet_env):
     menu = _open(lcd)
     menu._on_toggle_mute()
     assert mute.is_muted() is False
+
+
+# ---------------------------------------------------------------------------
+# In-place update regression tests
+#
+# The dialog used to be torn down and rebuilt on every 2-second tick and on
+# every button press, which both (a) destroyed the widget under the user's
+# finger and (b) forced a full-screen redraw. The current implementation
+# mutates a small set of widgets in place via set_text(), which takes the
+# per-widget dirty-rect path. These tests guard that contract.
+# ---------------------------------------------------------------------------
+
+
+def test_tick_does_not_rebuild_panel(ethernet_env):
+    lcd, em, _ = ethernet_env
+    em.service_active = True
+    em._xruns = (0, 0, 0)
+    menu = _open(lcd)
+    first_panel = menu._panel
+    menu.tick()
+    assert menu._panel is first_panel, "tick() must not pop+rebuild the dialog"
+    # The xrun widgets must still be the same instances — that's how we know
+    # set_text mutated in place rather than _render recreating them.
+    assert len(menu._xrun_widgets) == 3
+    widget_ids = [id(w) for w in menu._xrun_widgets]
+    menu.tick()
+    assert [id(w) for w in menu._xrun_widgets] == widget_ids
+
+
+def test_tick_updates_xrun_text_in_place(ethernet_env):
+    lcd, em, _ = ethernet_env
+    em.service_active = True
+    em._xruns = (0, 0, 0)
+    menu = _open(lcd)
+    em._xruns = (1, 3, 7)
+    menu.tick()
+    assert menu._xrun_widgets[0].text == "xruns 1m:" + SPLIT + "1"
+    assert menu._xrun_widgets[1].text == "xruns 5m:" + SPLIT + "3"
+    assert menu._xrun_widgets[2].text == "xruns 15m:" + SPLIT + "7"
+
+
+def test_tick_noop_when_service_inactive(ethernet_env):
+    lcd, em, _ = ethernet_env
+    em.service_active = False
+    menu = _open(lcd)
+    first_panel = menu._panel
+    assert menu._xrun_widgets == []
+    menu.tick()
+    assert menu._panel is first_panel  # still untouched
+
+
+def test_toggle_service_updates_button_label(ethernet_env):
+    lcd, em, _ = ethernet_env
+    em.service_active = False
+    menu = _open(lcd)
+    toggle = menu._toggle_btn
+    assert toggle is not None
+    assert toggle.text == "Enable"
+    menu._on_toggle_service()
+    assert menu._panel is toggle.parent  # no rebuild
+    assert toggle.text == "Disable"  # mutated in place
+    menu._on_toggle_service()
+    assert toggle.text == "Enable"
+
+
+def test_toggle_mute_updates_button_label(ethernet_env):
+    lcd, em, mute = ethernet_env
+    em.service_active = True
+    menu = _open(lcd)
+    mute_btn = menu._mute_btn
+    assert mute_btn is not None
+    assert mute_btn.text == "Mute MOD"
+    menu._on_toggle_mute()
+    assert menu._panel is mute_btn.parent  # no rebuild
+    assert mute_btn.text == "Unmute MOD"
+    menu._on_toggle_mute()
+    assert mute_btn.text == "Mute MOD"
 
 
 def test_open_with_no_carrier_shows_message_dialog(ethernet_env):
@@ -186,11 +261,12 @@ def test_back_pops_panel(ethernet_env):
 
 
 def test_enable_then_state_flip_shows_disable(ethernet_env):
-    """After Enable fires, bg poll flips service_active; next render shows Disable."""
+    """After Enable fires, the toggle button optimistically reads 'Disable'."""
     lcd, em, _ = ethernet_env
     em.service_active = False
     menu = _open(lcd)
-    menu._on_enable()  # StubFake flips service_active to True synchronously
+    menu._on_toggle_service()  # StubFake flips service_active to True synchronously
     # Find the toggle widget by walking the panel's selectable list.
+    assert menu._panel is not None
     labels = [w.text for w in menu._panel.sel_list]
     assert "Disable" in labels
