@@ -73,7 +73,9 @@ def _rbj_peaking(f0: float, q: float, gain_db: float) -> tuple[float, float, flo
     A = 10.0 ** (gain_db / 40.0)
     w0 = 2.0 * math.pi * f0 / FS
     cosw0 = math.cos(w0)
-    alpha = math.sin(w0) / (2.0 * max(q, 1e-4))
+    # fil4 port Q is bandwidth in octaves (reciprocal of RBJ Q)
+    q_rbj = 1.0 / max(q, 1e-4)
+    alpha = math.sin(w0) / (2.0 * q_rbj)
     a0 = 1.0 + alpha / A
     b0 = (1.0 + alpha * A) / a0
     b1 = (-2.0 * cosw0) / a0
@@ -81,6 +83,7 @@ def _rbj_peaking(f0: float, q: float, gain_db: float) -> tuple[float, float, flo
     a1 = (-2.0 * cosw0) / a0
     a2 = (1.0 - alpha / A) / a0
     return b0, b1, b2, a1, a2
+
 
 
 def _rbj_lowshelf(f0: float, q: float, gain_db: float) -> tuple[float, float, float, float, float]:
