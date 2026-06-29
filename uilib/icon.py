@@ -90,9 +90,9 @@ class Icon(TextWidget):
         ctx.draw_text((text_x, text_y), self.text, fill=self.text_color, font=self.font)
 
         # Value meter along the bottom edge: dim full-range track + bright fill,
-        # ending 2px short of the right edge.
+        # ending 1px short of the right edge.
         bar_x0 = h_margin
-        bar_x1 = ctx.width - 2
+        bar_x1 = ctx.width - 1
         bar_y0 = ctx.height - self.bar_height
         c = pygame.Color(self.text_color)
         track = (c.r // 4, c.g // 4, c.b // 4)

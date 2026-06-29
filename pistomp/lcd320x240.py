@@ -30,7 +30,7 @@ import pygame
 
 from uilib import *
 from uilib import profiling
-from uilib.gridpanel import GridPanel
+from uilib.gridpanel import GridPanel, TILE_W, CHANNEL
 from uilib.pygame_init import font as _make_font
 from uilib.lcd_ili9341 import *
 from uilib.text import PluginTile
@@ -1030,25 +1030,24 @@ class Lcd(abstract_lcd.Lcd):
 
     # Analog Assignments (Tweak, Expression Pedal, etc.)
     def draw_analog_assignments(self, controllers):
-        # Quite a few assumptions here
-        # Expression pedal in first position, then 3 knobs (for v3)
-        # Should work for more or fewer but won't likely look great on the LCD
-
-        # spacing and scaling of text
+        # Position analog control bars to align exactly with the plugin grid
+        # columns above them. Uses the same column pitch (TILE_W + CHANNEL) and
+        # tile width (TILE_W) as GridPanel so the progress bars line up with
+        # the plugin tiles left edge and width.
         minimum = 4 if self.handler.hardware.version >= 3 else 3
         num = max(minimum, len(controllers) + 1)
-        width_per_control = int(round(self.display_width / num))
+        pitch = TILE_W + CHANNEL
         height_per_control = 19
-        text_per_control = width_per_control - 16  # minus height of control icon
+        text_per_control = TILE_W - 16  # minus height of control icon
 
         # clean up previous control widgets
         for w in self.w_controls:
             w.destroy()
         self.w_controls = []
 
-        x = 0
         y = 56  # vertical position on screen
         for i in range(0, num):
+            x = i * pitch
             k = None
             v = None
             for key, value in controllers.items():
@@ -1126,7 +1125,7 @@ class Lcd(abstract_lcd.Lcd):
 
             if control_type == Token.KNOB:
                 w = Icon(
-                    box=Box.xywh(x, y, width_per_control, height_per_control),
+                    box=Box.xywh(x, y, TILE_W, height_per_control),
                     text=name,
                     text_color=text_color,
                     parent=self.main_panel,
@@ -1141,7 +1140,7 @@ class Lcd(abstract_lcd.Lcd):
                 self.w_controls.append(w)
             elif control_type == Token.EXPRESSION:
                 w = Icon(
-                    box=Box.xywh(x, y, width_per_control, height_per_control),
+                    box=Box.xywh(x, y, TILE_W, height_per_control),
                     text=name,
                     text_color=text_color,
                     parent=self.main_panel,
@@ -1154,8 +1153,6 @@ class Lcd(abstract_lcd.Lcd):
                 if blend_initial_progress is not None:
                     w.set_progress(blend_initial_progress)
                 self.w_controls.append(w)
-
-            x += width_per_control
     
     def draw_info_message(self, text, refresh=False):
         if self.w_info_msg is None:
