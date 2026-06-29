@@ -9,7 +9,7 @@ import pytest
 
 from common.parameter import Parameter
 from modalapi.plugin import Plugin
-from plugins import PANELS, register_panel
+from plugins import lookup, register_panel
 from plugins.base import PluginPanel
 from pistomp.input.event import EncoderEvent, SwitchEvent, SwitchEventKind
 from uilib.box import Box
@@ -97,8 +97,8 @@ def fake_handler():
 
 class TestRegistry:
     def test_register_panel_populates_dict(self):
-        assert "http://example.com/demo" in PANELS
-        assert PANELS["http://example.com/demo"] is DemoPanel
+        c = lookup("http://example.com/demo")
+        assert c.panel_cls is DemoPanel
 
 
 # ── base-class tests ────────────────────────────────────────────────────────

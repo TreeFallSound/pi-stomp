@@ -33,7 +33,7 @@ from uilib import profiling
 from uilib.gridpanel import GridPanel
 from uilib.pygame_init import font as _make_font
 from uilib.lcd_ili9341 import *
-from uilib.text import NamPluginTile, PluginTile
+from uilib.text import PluginTile
 from modalapi.layout import build_layout_compress
 
 from pistomp.input.event import ControllerEvent
@@ -42,7 +42,7 @@ from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
 from pistomp.encoder_controller import EncoderController
 from blend.manager import BlendMode
 from plugins.base import PluginPanel
-from plugins import PANELS
+from plugins import lookup
 
 # Parameter dialog auto-dismiss timeout (seconds)
 PARAMETER_DIALOG_TIMEOUT = 1.0
@@ -52,21 +52,9 @@ SUBTITLE_TIMEOUT = 2.5
 
 # LV2 plugin URIs that get the NAM (Neural Amp Modeler) display style: a
 # tri-color border in the Tone3000 logo palette (red top, yellow sides, blue
-# bottom) and a yellow body when active. The body color is always yellow,
-# so the side borders stay visible even when bypassed. Add new URIs here as
-# new NAM modeler plugins are installed.
-NAM_PLUGIN_URIS: frozenset[str] = frozenset({
-    "http://github.com/mikeoliphant/neural-amp-modeler-lv2",
-    "http://gareus.org/oss/lv2/nam#mono",
-    "http://gareus.org/oss/lv2/nam#stereo",
-    "https://tone3000.com/plugins/nam",
-})
-
-
-def is_nam_plugin(plugin) -> bool:
-    """True if the plugin's URI is in NAM_PLUGIN_URIS."""
-    uri = getattr(plugin, "uri", None)
-    return uri is not None and uri in NAM_PLUGIN_URIS
+# NAM plugin URIs are now registered in plugins/__init__.py via
+# register_customization(tile_cls=NamPluginTile).  The tile class is
+# resolved at runtime through ``lookup(plugin).tile_cls``.
 
 # Wifi "processing" spinner full-cycle rate (Hz), wall-clock paced.
 WIFI_SPINNER_HZ = 1.5
@@ -615,7 +603,8 @@ class Lcd(abstract_lcd.Lcd):
                 label = plugin.display_name[:self.plugin_label_length].replace("_", "")
             label = self.shorten_name(label, box.width)
             subtitle = f"{plugin.category}: {plugin.display_name}" if plugin.category else plugin.display_name
-            tile_cls = NamPluginTile if is_nam_plugin(plugin) else PluginTile
+            customization = lookup(plugin)
+            tile_cls = customization.tile_cls or PluginTile
             # parent MUST be passed in ctor: attaching later wipes the
             # explicit colors color_plugin() sets via inherited-attr resolution.
             tile = tile_cls(box=box, text=label, outline_radius=5,
@@ -641,9 +630,10 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.refresh()
 
     def plugin_event(self, event, widget, plugin):
-        panel_cls = PANELS.get(plugin.uri)
+        customization = lookup(plugin)
+        panel_cls = customization.panel_cls
         if event == InputEvent.CLICK:
-            if panel_cls is not None and panel_cls.intercept_shortpress:
+            if panel_cls is not None and customization.intercept_shortpress:
                 self.handler.show_fullscreen_panel(plugin, panel_cls)
             else:
                 self.handler.toggle_plugin_bypass(widget, plugin)
@@ -670,8 +660,9 @@ class Lcd(abstract_lcd.Lcd):
             # treats outline_color=None as "no border". NamPluginTile
             # ignores outline_color entirely and draws its own palette.
             widget.set_outline(0, None)
-            if is_nam_plugin(plugin):
-                widget.set_background(NamPluginTile.NAM_YELLOW)
+            customization = lookup(plugin)
+            if customization.tile_cls is not None and hasattr(customization.tile_cls, "NAM_YELLOW"):
+                widget.set_background(customization.tile_cls.NAM_YELLOW)
             else:
                 widget.set_background(self.get_plugin_color(plugin))
             widget.set_foreground(self.background)

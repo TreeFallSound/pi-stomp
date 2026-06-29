@@ -192,63 +192,107 @@ def _render_filled_rounded_rect(
             alpha[fill_mask] = np.maximum(alpha[fill_mask], fill_alpha[fill_mask])
 
     if has_border and bw > 0.0:
-        # Pick the border color for each pixel by where it sits in the
-        # rounded rect. Top region → border_top, bottom → border_bottom,
-        # middle band → left/right. Corners use _corner_color (horizontal
-        # edge wins, vertical falls back). This avoids needing per-side
-        # 2D SDFs and matches the docstring's contract.
+        # Per-pixel border color with smooth band transitions and inner-edge AA.
+        #
+        # The border color at each ring pixel is a blend of the horizontal
+        # edge color (top or bottom) and the vertical edge color (left or
+        # right). The horizontal/vertical blend uses a 1-pixel linear
+        # transition at the band boundaries, so the top edge flows into
+        # the left edge over one pixel instead of a hard color cut.
+        #
+        # At the inner edge of the ring (sdf ≈ -bw), the border color
+        # blends with the fill color (or fades to transparent when there
+        # is no fill), giving smooth AA against the body instead of a
+        # hard staircase.
+        #
+        # Per the RectBorder contract: horizontal edges win at corners,
+        # vertical edges fall back when the horizontal is None. A None
+        # side means no border on that edge — the fill flows through.
         x = np.arange(width, dtype=float) + 0.5
         y = np.arange(height, dtype=float) + 0.5
-        Ycol = y[:, None]
-        Xrow = x[None, :]
+        Ycol = y[:, None]  # (H, 1)
+        Xrow = x[None, :]  # (1, W)
 
-        # Ring mask: pixels inside the rect AND within `bw` of the edge.
         on_ring = (sdf >= -bw - 0.5) & (sdf <= 0.5)
         if on_ring.any():
-            # AA coverage: 1.0 for -bw+0.5 < sdf < -0.5, linear falloff at both edges.
-            ring_alpha = np.clip(0.5 - sdf, 0.0, 1.0) * np.clip(sdf + bw + 0.5, 0.0, 1.0)
-
-            # The edge bands are `max(radius, bw)` wide so the ring (which
-            # is `bw` pixels deep) is fully captured even when radius=0
-            # (square rect: no corner zone, straight edges cover the full
-            # ring). The corner zone within each band is `radius` wide —
-            # empty for radius=0, so corners get no pixels and the edge
-            # stamps cover the entire band.
             band = max(float(radius), bw)
-            top_mask = (Ycol <= band) & on_ring
-            bot_mask = (Ycol >= float(height) - band) & on_ring
-            mid_mask = on_ring & ~top_mask & ~bot_mask
 
-            def _stamp(mask: np.ndarray, color: ColorLike) -> None:
-                if not mask.any():
-                    return
-                rgb[mask] = _to_rgb(color)
+            # Band weights with 1-pixel linear transition at the boundaries.
+            # top_w: 1.0 in the top band → 0.0 in the middle, transition at y=band.
+            # bot_w: 1.0 in the bottom band → 0.0 in the middle.
+            top_w = np.clip(band + 0.5 - Ycol, 0.0, 1.0)
+            bot_w = np.clip(Ycol - (float(height) - band - 0.5), 0.0, 1.0)
+            # Zero out where the color is None (that edge has no border).
+            if border_top is None:
+                top_w = np.zeros_like(top_w)
+            if border_bottom is None:
+                bot_w = np.zeros_like(bot_w)
+            h_weight = top_w + bot_w  # (H, 1)
 
-            # Top corners + top edge.
-            _stamp(top_mask & (Xrow <= float(radius)),
-                   _corner_color(border_top, border_left))
-            _stamp(top_mask & (Xrow >= float(width) - float(radius)),
-                   _corner_color(border_top, border_right))
-            _stamp(top_mask & (Xrow > float(radius)) & (Xrow < float(width) - float(radius)),
-                   border_top)
+            # Top vs bottom fraction for horizontal color.
+            top_frac = top_w / (h_weight + 1e-10)  # (H, 1): 1.0 top, 0.0 bottom
 
-            # Bottom corners + bottom edge.
-            _stamp(bot_mask & (Xrow <= float(radius)),
-                   _corner_color(border_bottom, border_left))
-            _stamp(bot_mask & (Xrow >= float(width) - float(radius)),
-                   _corner_color(border_bottom, border_right))
-            _stamp(bot_mask & (Xrow > float(radius)) & (Xrow < float(width) - float(radius)),
-                   border_bottom)
+            # Vertical edge validity: 1.0 on the left/right edge, 0.0 elsewhere.
+            # This prevents the vertical color from leaking to the top-center
+            # when the top color is None (fill flows through that edge).
+            v_valid = np.zeros((height, width), dtype=np.float32)
+            if border_left is not None:
+                v_valid += np.clip(band + 0.5 - Xrow, 0.0, 1.0)
+            if border_right is not None:
+                v_valid += np.clip(Xrow - (float(width) - band - 0.5), 0.0, 1.0)
+            v_valid = np.clip(v_valid, 0.0, 1.0)  # (H, W)
 
-            # Middle band: left/right edges.
-            _stamp(mid_mask & (Xrow <= band), border_left)
-            _stamp(mid_mask & (Xrow >= float(width) - band), border_right)
+            # Left vs right fraction for vertical color.
+            # Hard split at width/2 — the ring doesn't span the center, so
+            # the left and right edges never meet.
+            if border_left is not None and border_right is not None:
+                left_frac = np.where(Xrow < float(width) / 2.0, 1.0, 0.0)
+            elif border_left is not None:
+                left_frac = np.ones_like(Xrow)
+            else:
+                left_frac = np.zeros_like(Xrow)
 
-            # Composite border alpha over fill: take the max so the ring is
-            # fully opaque over the body (no gap at the inner edge where
-            # ring_alpha→0 but fill_alpha=1), and AA falloff is preserved
-            # at the outer edge. Applied once after all color stamps.
-            np.maximum(alpha, ring_alpha, out=alpha)
+            # Resolve colors to float arrays (None → (0,0,0), but v_valid/h_weight
+            # will be 0 there so the color never contributes).
+            top_c = np.array(_to_rgb(border_top) or (0, 0, 0), dtype=np.float32)
+            bot_c = np.array(_to_rgb(border_bottom) or (0, 0, 0), dtype=np.float32)
+            left_c = np.array(_to_rgb(border_left) or (0, 0, 0), dtype=np.float32)
+            right_c = np.array(_to_rgb(border_right) or (0, 0, 0), dtype=np.float32)
+
+            # Per-pixel border color: (H, W, 3)
+            # h_color: top or bottom, depending on which band. (H, 1, 3)
+            # v_color: left or right, depending on X position. (1, W, 3)
+            h_color = top_c[None, None, :] * top_frac[:, :, None] + bot_c[None, None, :] * (1.0 - top_frac[:, :, None])
+            v_color = left_c[None, None, :] * left_frac[:, :, None] + right_c[None, None, :] * (1.0 - left_frac[:, :, None])
+
+            # Border weight: horizontal takes priority (corner rule), vertical fills in.
+            # At a top-left corner: h_weight=1, v_valid=1 → border_weight=1, h_frac=1 → top color.
+            # At a mid-left edge: h_weight=0, v_valid=1 → border_weight=1, h_frac=0 → left color.
+            # At a band boundary on the left edge: h_weight=0.5, v_valid=1 → h_frac=0.5 → 50/50 blend.
+            # At top-center with top=None: h_weight=0, v_valid=0 → border_weight=0 → no border (fill flows).
+            border_weight = h_weight + v_valid * (1.0 - h_weight)  # (H, W)
+            h_frac = h_weight / (border_weight + 1e-10)  # (H, W)
+            border_color = h_color * h_frac[:, :, None] + v_color * (1.0 - h_frac[:, :, None])
+
+            # Inner-edge AA: 1.0 at the outer side of the ring, 0.0 at the inner side.
+            # Blends the border color with the fill (or fades to transparent).
+            inner_aa = np.clip(sdf + bw + 0.5, 0.0, 1.0)  # (H, W)
+
+            if has_fill:
+                # Blend border with fill: at the inner edge, the border color
+                # smoothly transitions to the fill color. Alpha stays as
+                # fill_alpha (already set, fully opaque inside the rect).
+                fill_rgb_arr = np.array(fill_rgb, dtype=np.float32)
+                coverage = border_weight * inner_aa  # (H, W)
+                blended = border_color * coverage[:, :, None] + fill_rgb_arr * (1.0 - coverage[:, :, None])
+                rgb[on_ring] = blended[on_ring].astype(np.uint8)
+            else:
+                # No fill: ring alpha = border_weight * inner_aa * outer_aa.
+                # Both edges of the ring have AA falloff.
+                outer_aa = np.clip(0.5 - sdf, 0.0, 1.0)
+                ring_alpha = border_weight * inner_aa * outer_aa
+                rgb[on_ring] = border_color[on_ring].astype(np.uint8)
+                alpha = np.maximum(alpha, ring_alpha)
 
     # Also clip the fill to the rounded-rect boundary: pixels outside the
     # rect (sdf > 0) must be fully transparent even if the fill was written.
