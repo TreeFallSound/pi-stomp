@@ -598,13 +598,17 @@ class Lcd(abstract_lcd.Lcd):
         def tile_factory(node, box, parent):
             plugin = plugins_by_id[node.id]
             customization = lookup(plugin)
-            display_name = customization.display_name or plugin.display_name
-            if plugin.notes_text:
-                label = "✎" + plugin.notes_text.split('\n')[0].strip()
+            if customization.display_name_fn is not None:
+                override = customization.display_name_fn(plugin)
+                display_name = override if override is not None else plugin.display_name
             else:
-                label = display_name[:self.plugin_label_length].replace("_", "")
+                display_name = customization.display_name or plugin.display_name
+            label = display_name[:self.plugin_label_length].replace("_", "")
             label = self.shorten_name(label, box.width)
-            subtitle = f"{plugin.category}: {display_name}" if plugin.category else display_name
+            if customization.subtitle_fn is not None:
+                subtitle = customization.subtitle_fn(plugin) or display_name
+            else:
+                subtitle = f"{plugin.category}: {display_name}" if plugin.category else display_name
             tile = PluginTile(box=box, text=label, outline_radius=5,
                               parent=parent, action=self.plugin_event, object=plugin,
                               subtitle=subtitle, border=customization.tile_border)

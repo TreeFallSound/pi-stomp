@@ -4,19 +4,21 @@ A single source of truth for all per-plugin-type overrides.  Each LV2 URI
 can register a ``PluginCustomization`` dataclass that bundles:
 
 1. **Panel** — a fullscreen ``PluginPanel`` subclass for this plugin type.
-2. **Display name** — override the heuristic name.
-3. **Shortpress** — whether a short click opens the panel (like longpress)
+2. **Display name** — override the heuristic name (static string or callable).
+3. **Subtitle** — override the subtitle shown below the plugin name.
+4. **Shortpress** — whether a short click opens the panel (like longpress)
    instead of toggling bypass.
-4. **Tile active color** — background color when the plugin is active.
-5. **Tile border** — per-side border colors for the plugin tile.
+5. **Tile active color** — background color when the plugin is active.
+6. **Tile border** — per-side border colors for the plugin tile.
 
-Future customizations (subtitles, color schemes, …) are just new fields on
+Future customizations (color schemes, …) are just new fields on
 the dataclass — no existing registrations break.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from common.color import RectBorder
@@ -37,6 +39,8 @@ class PluginCustomization:
 
     panel_cls: type[PluginPanel] | None = None
     display_name: str | None = None
+    display_name_fn: Callable[[Plugin], str | None] | None = field(default=None, compare=False, hash=False)
+    subtitle_fn: Callable[[Plugin], str | None] | None = field(default=None, compare=False, hash=False)
     intercept_shortpress: bool = False
     tile_active_color: tuple[int, int, int] | None = None
     tile_border: RectBorder | None = None

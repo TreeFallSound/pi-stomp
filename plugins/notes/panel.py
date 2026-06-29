@@ -158,4 +158,10 @@ class NotesPanel(PluginPanel[None]):
             self._scrollbar.update(self._top)
 
 
-register(NOTES_URI, customization=PluginCustomization(panel_cls=NotesPanel, intercept_shortpress=True))
+def _notes_shortname(plugin) -> str | None:
+    if plugin.notes_text:
+        return "✎" + plugin.notes_text.split('\n')[0].strip()
+    return None
+
+
+register(NOTES_URI, customization=PluginCustomization(panel_cls=NotesPanel, intercept_shortpress=True, display_name_fn=_notes_shortname))

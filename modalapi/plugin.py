@@ -31,6 +31,7 @@ LcdPosition = tuple[int, int, int] | tuple[Point, Point, int]
 
 class Plugin:
     _NOTES_RE = re.compile(r'<[^>]*notes#text>\s+"""(.*?)"""', re.DOTALL)
+    _MODEL_RE = re.compile(r'<[^>]*#model>\s+<([^>]+)>')
 
     def __init__(
         self,
@@ -40,13 +41,12 @@ class Plugin:
         category: str | None = None,
         uri: str | None = None,
         notes_ttl_path: Path | None = None,
+        model_ttl_path: Path | None = None,
     ) -> None:
         self.instance_id: str = instance_id.lstrip("/")
         self.info: dict | None = info
         self.name: str = (info or {}).get("name") or self.instance_id
         self.parameters: dict[str, Parameter] = parameters
-        # MOD-UI canvas position (ingen:canvasX/Y). Drives a We sstable, audio-flow
-        # ordering of pb.plugins independent of lilv's hash-randomised iteration.
         self.canvas_x: float = 0.0
         self.canvas_y: float = 0.0
         self.bypass_indicator_xy: tuple[Point, Point] = ((0, 0), (0, 0))
@@ -54,13 +54,10 @@ class Plugin:
         self.controllers: list[Controller] = []
         self.has_footswitch: bool = False
         self.category: str | None = category
-        # LV2 plugin URI (e.g. "http://gareus.org/oss/lv2/fil4#mono").
-        # Used by full-screen panels that override the generic parameter menu.
         self.uri: str | None = uri
-        # Snapshot of parameter values at pedalboard parse time. Cleared on
-        # pedalboard reload. Serves as the baseline for panel Reset.
         self.pedalboard_snapshot: dict[str, float] = {}
         self._notes_ttl_path = notes_ttl_path
+        self._model_ttl_path = model_ttl_path
 
     @cached_property
     def notes_text(self) -> str | None:
@@ -71,6 +68,17 @@ class Plugin:
         except OSError:
             return None
         m = self._NOTES_RE.search(content)
+        return m.group(1) if m else None
+
+    @cached_property
+    def model_path(self) -> str | None:
+        if self._model_ttl_path is None:
+            return None
+        try:
+            content = self._model_ttl_path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        m = self._MODEL_RE.search(content)
         return m.group(1) if m else None
 
     @cached_property

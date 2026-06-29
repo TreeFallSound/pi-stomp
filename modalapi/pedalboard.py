@@ -32,6 +32,15 @@ from modalapi.connections import Connection, build_connection
 
 _NOTES_URI = "http://open-music-kontrollers.ch/lv2/notes#notes"
 
+_NAM_URIS = frozenset(
+    {
+        "http://github.com/mikeoliphant/neural-amp-modeler-lv2",
+        "http://gareus.org/oss/lv2/nam#mono",
+        "http://gareus.org/oss/lv2/nam#stereo",
+        "https://tone3000.com/plugins/nam",
+    }
+)
+
 
 class Pedalboard:
     def __init__(self, title, bundle, root_uri="http://localhost:80/"):
@@ -77,7 +86,7 @@ class Pedalboard:
 
         # make sure the bundle includes 1 and only 1 plugin (the pedalboard)
         if len(ps) != 1:
-            raise Exception("get_pedalboard_info(%s) - bundle has 0 or > 1 plugin".format(bundle))
+            raise Exception("get_pedalboard_info({}) - bundle has 0 or > 1 plugin".format(bundle))
 
         # no indexing in python-lilv yet, just get the first item
         plugin = None
@@ -86,7 +95,7 @@ class Pedalboard:
             break
 
         if plugin is None:
-            raise Exception("get_pedalboard_plugin(%s)".format(bundle))
+            raise Exception("get_pedalboard_plugin({}) - no plugin found".format(bundle))
 
         return plugin
 
@@ -144,6 +153,7 @@ class Pedalboard:
             # Add plugin data (from plugin registry) to global plugin dictionary
             plugin_info = {}
             category = None
+            plugin_uri = None
             prototype = self.world.find_nodes(block, self.world.ns.lv2.prototype, None)
             if len(prototype) > 0:
                 # logging.debug("prototype %s" % prototype[0])
@@ -216,6 +226,7 @@ class Pedalboard:
 
                     # logging.debug("  Label: %s" % label)
             notes_ttl_path: Path | None = None
+            model_ttl_path: Path | None = None
             if plugin_uri == _NOTES_URI:
                 n_node = self.world.get(block, self.uri_instance_number, None)
                 if n_node is not None:
@@ -223,7 +234,22 @@ class Pedalboard:
                         notes_ttl_path = Path(bundlepath) / f"effect-{int(str(n_node))}" / "effect.ttl"
                     except ValueError:
                         pass
-            inst = Plugin.Plugin(instance_id, parameters, plugin_info, category, uri=plugin_uri, notes_ttl_path=notes_ttl_path)
+            elif plugin_uri in _NAM_URIS:
+                n_node = self.world.get(block, self.uri_instance_number, None)
+                if n_node is not None:
+                    try:
+                        model_ttl_path = Path(bundlepath) / f"effect-{int(str(n_node))}" / "effect.ttl"
+                    except ValueError:
+                        pass
+            inst = Plugin.Plugin(
+                instance_id,
+                parameters,
+                plugin_info,
+                category,
+                uri=plugin_uri,
+                notes_ttl_path=notes_ttl_path,
+                model_ttl_path=model_ttl_path,
+            )
             inst.canvas_x = self._coord(block, self.uri_canvas_x)
             inst.canvas_y = self._coord(block, self.uri_canvas_y)
             instance_to_info[instance_id.lstrip("/")] = plugin_info
