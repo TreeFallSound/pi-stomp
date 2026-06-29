@@ -37,7 +37,6 @@ from uilib.text import PluginTile
 from modalapi.layout import build_layout_compress
 
 from pistomp.input.event import ControllerEvent
-from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
 from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
 from pistomp.encoder_controller import EncoderController
 from blend.manager import BlendMode
@@ -48,7 +47,7 @@ from plugins import lookup
 PARAMETER_DIALOG_TIMEOUT = 1.0
 
 # Subtitle auto-hide after no nav encoder movement (seconds)
-SUBTITLE_TIMEOUT = 2.5
+SUBTITLE_TIMEOUT = 1.3
 
 # LV2 plugin URIs that get the NAM (Neural Amp Modeler) display style: a
 # tri-color border in the Tone3000 logo palette (red top, yellow sides, blue
