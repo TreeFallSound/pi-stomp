@@ -175,6 +175,9 @@ Config files:
 
 The WebSocket bridge (`AsyncWebSocketBridge`) runs a daemon thread with exponential-backoff reconnection. Outbound messages go into an unbounded queue; inbound messages are drained by `poll_ws_messages()` on every tick. `output_set` meter/scope messages are dropped at reception.
 
+REST covers pedalboard and snapshot operations the current BPM. Plugin bypass/parameters and outgoing tap tempo use WebSocket.
+
+
 #### Inbound messages
 
 | Pattern | Typed message | Effect |
@@ -213,30 +216,12 @@ Change detection: `FileChangeMonitor` watches `/home/pistomp/data/last.json` mti
 
 ### Blend Mode
 
-Blend mode interpolates between snapshots based on analog input position. Configured per-pedalboard in `config.yml` under `blend_snapshots`:
-
-```yaml
-blend_snapshots:
-  - name: "Clean to Fuzz"
-    input_id: 0                     # Expression pedal
-    interpolation: smooth           # linear, smooth, build, drop, snap, bloom
-    stops:
-      "0.0": "Clean"
-      "0.5": "Crunch"
-      "1.0": "Fuzz"
-```
+Blend mode interpolates between snapshots based on analog input position. Configured per-pedalboard in `config.yml`.
 
 On pedalboard load, `SnapshotManager.sync_blend_snapshots()` creates or updates the snapshot entries in MOD, then `BlendMode.prepare()` pre-computes diff maps for every parameter between stops. During the 10ms polling loop, the active `BlendMode` reads its input controller and sends only parameters whose values have actually changed — MIDI-bound parameters are automatically excluded to prevent conflicts with CC control.
 
-```
-# Tempo
-GET  /get_bpm                            # Get current BPM
-POST /set_bpm                            # Sets curent BPM
-```
 
-REST covers pedalboard and snapshot operations the current BPM. Plugin bypass/parameters and outgoing tap tempo use WebSocket.
-
-The blend system is in `blend/`: `manager.py` (lifecycle, input wiring), `snapshot.py` (creation/sync), `parameter_setter.py` (WS diff sender), `input_controller.py` (analog input adapter), `easing.py` (interpolation curves), `stop.py` (diff map computation).
+The blend system is in `blend/`.
 
 ## Core Components
 
