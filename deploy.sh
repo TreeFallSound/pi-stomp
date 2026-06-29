@@ -1,44 +1,24 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+# Deploy pi-stomp source to the device via rsync and restart the service.
+# Override PISTOMP_HOST / PISTOMP_USER if your device differs from the default.
+set -euo pipefail
 
-echo "Deploying Python files to pistomp..."
+HOST="${PISTOMP_HOST:-pistomp.local}"
+USER="${PISTOMP_USER:-pistomp}"
+TARGET="${USER}@${HOST}"
+REMOTE_DIR="/home/pistomp/pi-stomp"
 
-# Copy Python files to device
-scp modalapistomp.py pistomp@pistomp.local:/home/pistomp/pi-stomp/
-scp modalapi/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/modalapi/
-ssh pistomp@pistomp.local "rm -f /home/pistomp/pi-stomp/modalapi/wifi.py"
-scp modalapi/wifi/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/modalapi/wifi/
-ssh pistomp@pistomp.local "mkdir -p /home/pistomp/pi-stomp/modalapi/ethernet"
-scp modalapi/ethernet/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/modalapi/ethernet/
-scp -r pistomp pistomp@pistomp.local:/home/pistomp/pi-stomp/
-scp -r blend pistomp@pistomp.local:/home/pistomp/pi-stomp/
-scp -r common pistomp@pistomp.local:/home/pistomp/pi-stomp/
-scp -r common pistomp@pistomp.local:/home/pistomp/pi-stomp/
-scp -r fonts pistomp@pistomp.local:/home/pistomp/pi-stomp/
-scp -r images pistomp@pistomp.local:/home/pistomp/pi-stomp/
-scp -r plugins pistomp@pistomp.local:/home/pistomp/pi-stomp/
-scp -r ui pistomp@pistomp.local:/home/pistomp/pi-stomp/
-scp -r uilib pistomp@pistomp.local:/home/pistomp/pi-stomp/
-scp -r util pistomp@pistomp.local:/home/pistomp/pi-stomp/
+echo "==> Deploying to ${TARGET}"
 
-echo "Restarting service..."
-ssh pistomp@pistomp.local "sudo systemctl restart mod-ala-pi-stomp"
+rsync -az --delete --exclude='__pycache__' --exclude='*.pyc' \
+    --exclude='.git' --exclude='.gitignore' --exclude='tests' \
+    --exclude='setup' --exclude='*.md' --exclude='*.yml' --exclude='*.yaml' \
+    --exclude='*.json' --exclude='*.toml' --exclude='*.lock' \
+    --exclude='*.png' --exclude='*.jpg' --exclude='*.svg' \
+    ./ \
+    "${TARGET}:${REMOTE_DIR}/"
 
-# Tail logs during startup (2 seconds) then check status
-echo "Service starting, showing logs..."
-echo "----------------------------------------"
-ssh pistomp@pistomp.local "timeout 2 sudo journalctl -u mod-ala-pi-stomp -f --since '1 second ago' 2>/dev/null || true"
-echo "----------------------------------------"
+echo "==> Restarting mod-ala-pi-stomp"
+ssh "${TARGET}" 'sudo systemctl restart mod-ala-pi-stomp'
 
-# Check if service started successfully
-if ssh pistomp@pistomp.local "sudo systemctl is-active --quiet mod-ala-pi-stomp"; then
-    echo "Service started successfully."
-else
-    echo "ERROR: Service failed to start!"
-    echo "----------------------------------------"
-    echo "Service status:"
-    ssh pistomp@pistomp.local "sudo systemctl status mod-ala-pi-stomp"
-    exit 1
-fi
-
-exit 0
+echo "==> Done"
