@@ -226,13 +226,13 @@ def make_plugin():
     from modalapi.plugin import Plugin
     from modalapi.parameter import Parameter
 
-    def _make(instance_id, category="Distortion", bypassed=False, has_footswitch=False, parameters=None):
+    def _make(instance_id, category="Distortion", bypassed=False, has_footswitch=False, parameters=None, uri=None):
         if parameters is None:
             parameters = {}
         bypass_info = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
         bypass_param = Parameter(bypass_info, bypassed, None, instance_id)
         parameters[":bypass"] = bypass_param
-        p = Plugin(instance_id, parameters, {}, category)
+        p = Plugin(instance_id, parameters, {}, category, uri=uri)
         p.has_footswitch = has_footswitch
         return p
 

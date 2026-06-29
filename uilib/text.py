@@ -26,6 +26,7 @@ from uilib.widget import Widget
 from uilib.panel import RoundedPanel
 from uilib.misc import InputEvent, TextHAlign, get_text_size, trace
 from uilib.config import Config
+from uilib.glyphs import RectBorder, RoundedRectGlyph
 
 from common.fonts import font_path
 
@@ -346,6 +347,75 @@ class Button(TextWidget):
         self.outline = self._get_arg(kwargs, "outline", 1)
         self.sel_width = self._get_arg(kwargs, "sel_width", 2)
         super(Button, self).__init__(**kwargs)
+
+
+class PluginTile(TextWidget):
+    """TextWidget for plugin grid tiles.
+
+    Renders fill + border through a single RoundedRectGlyph so the body
+    and outline share the same analytic-AA pass (and the same LRU
+    cache) as every other rounded rect in the UI. The whole tile is
+    drawn in ``_draw_erase`` (below the text) — fill and border
+    together, not composited — so there is no gap or overlap at the
+    corners and the AA is continuous across both.
+
+    Subclasses override ``_get_border`` to specialize the per-side
+    colors. The default uses ``outline_color`` for all four sides, or
+    returns an empty border when ``outline_color`` is ``None`` (the
+    active-tile case where the body fill is the only visual element).
+    """
+
+    def _get_border(self) -> RectBorder:
+        c = self.outline_color
+        if c is None:
+            return RectBorder()
+        return RectBorder(top=c, right=c, bottom=c, left=c)
+
+    def _make_glyph(self) -> RoundedRectGlyph:
+        assert self.box is not None
+        return RoundedRectGlyph(
+            width=self.box.width,
+            height=self.box.height,
+            radius=self.outline_radius or 0,
+            fill=self.bkgnd_color,
+            border=self._get_border(),
+        )
+
+    @override
+    def _draw_erase(self, ctx):
+        # Fill + border rendered as one opaque surface, then text on top
+        # by the base class, then selection reticule by _draw_selection.
+        ctx.paste(self._make_glyph().render(), (0, 0))
+
+    @override
+    def _draw_outline(self, ctx):
+        # Border was already painted as part of the glyph in _draw_erase.
+        return
+
+
+class NamPluginTile(PluginTile):
+    """PluginTile variant for NAM plugins with a tri-color border.
+
+    The border mirrors the Tone3000 logo palette: the top edge and top
+    corners are red, the vertical sides are yellow, the bottom edge and
+    bottom corners are blue. The border stays visible in both active and
+    bypassed states so the plugin is identifiable at a glance, even
+    silenced. Body fill and text color are driven by the caller
+    (Lcd.color_plugin) like a normal tile — only the outline is special.
+    """
+
+    NAM_YELLOW: tuple[int, int, int] = (255, 230, 0)
+    NAM_RED: tuple[int, int, int] = (220, 20, 20)
+    NAM_BLUE: tuple[int, int, int] = (20, 30, 220)
+
+    @override
+    def _get_border(self) -> RectBorder:
+        return RectBorder(
+            top=self.NAM_RED,
+            right=self.NAM_YELLOW,
+            bottom=self.NAM_BLUE,
+            left=self.NAM_YELLOW,
+        )
 
 
 class ScrollingText(TextWidget):

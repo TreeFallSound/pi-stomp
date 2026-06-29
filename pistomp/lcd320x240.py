@@ -33,6 +33,7 @@ from uilib import profiling
 from uilib.gridpanel import GridPanel
 from uilib.pygame_init import font as _make_font
 from uilib.lcd_ili9341 import *
+from uilib.text import NamPluginTile, PluginTile
 from modalapi.layout import build_layout_compress
 
 from pistomp.input.event import ControllerEvent
@@ -48,6 +49,24 @@ PARAMETER_DIALOG_TIMEOUT = 1.0
 
 # Subtitle auto-hide after no nav encoder movement (seconds)
 SUBTITLE_TIMEOUT = 2.5
+
+# LV2 plugin URIs that get the NAM (Neural Amp Modeler) display style: a
+# tri-color border in the Tone3000 logo palette (red top, yellow sides, blue
+# bottom) and a yellow body when active. The body color is always yellow,
+# so the side borders stay visible even when bypassed. Add new URIs here as
+# new NAM modeler plugins are installed.
+NAM_PLUGIN_URIS: frozenset[str] = frozenset({
+    "http://github.com/mikeoliphant/neural-amp-modeler-lv2",
+    "http://gareus.org/oss/lv2/nam#mono",
+    "http://gareus.org/oss/lv2/nam#stereo",
+    "https://tone3000.com/plugins/nam",
+})
+
+
+def is_nam_plugin(plugin) -> bool:
+    """True if the plugin's URI is in NAM_PLUGIN_URIS."""
+    uri = getattr(plugin, "uri", None)
+    return uri is not None and uri in NAM_PLUGIN_URIS
 
 # Wifi "processing" spinner full-cycle rate (Hz), wall-clock paced.
 WIFI_SPINNER_HZ = 1.5
@@ -596,10 +615,11 @@ class Lcd(abstract_lcd.Lcd):
                 label = plugin.display_name[:self.plugin_label_length].replace("_", "")
             label = self.shorten_name(label, box.width)
             subtitle = f"{plugin.category}: {plugin.display_name}" if plugin.category else plugin.display_name
+            tile_cls = NamPluginTile if is_nam_plugin(plugin) else PluginTile
             # parent MUST be passed in ctor: attaching later wipes the
             # explicit colors color_plugin() sets via inherited-attr resolution.
-            tile = TextWidget(box=box, text=label, outline_radius=5,
-                              parent=parent, action=self.plugin_event, object=plugin, subtitle=subtitle)
+            tile = tile_cls(box=box, text=label, outline_radius=5,
+                            parent=parent, action=self.plugin_event, object=plugin, subtitle=subtitle)
             tile.set_font(self.small_font)
             self.color_plugin(tile, plugin)
             self.w_plugins.append(tile)
@@ -641,14 +661,19 @@ class Lcd(abstract_lcd.Lcd):
 
 
     def color_plugin(self, widget, plugin):
-        color = self.get_plugin_color(plugin)
         if plugin.is_bypassed() == True:
-            widget.set_outline(1, color)
+            widget.set_outline(1, self.get_plugin_color(plugin))
             widget.set_background(self.background)
             widget.set_foreground(self.foreground)
         else:
-            widget.set_outline(1, self.background)
-            widget.set_background(color)
+            # Active: body fill only, no outline. PluginTile's glyph
+            # treats outline_color=None as "no border". NamPluginTile
+            # ignores outline_color entirely and draws its own palette.
+            widget.set_outline(0, None)
+            if is_nam_plugin(plugin):
+                widget.set_background(NamPluginTile.NAM_YELLOW)
+            else:
+                widget.set_background(self.get_plugin_color(plugin))
             widget.set_foreground(self.background)
 
     def refresh_plugins(self):

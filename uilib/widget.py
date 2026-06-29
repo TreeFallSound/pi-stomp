@@ -549,7 +549,21 @@ class Widget:
                 radius = self.outline_radius
             if radius == 0:
                 radius = None
-            ctx.draw_rectangle(ctx.bounds, None, self.sel_color, self.sel_width, radius=radius)
+            from uilib.glyphs import RectBorder, RoundedRectGlyph
+            sel_color = self.sel_color
+            # Reticule is border-only with a transparent interior, so the
+            # underlying widget (e.g. plugin tile fill) shows through.
+            # AA falloff on the ring is partial transparency, which is
+            # the standard pygame behavior for anti-aliased strokes.
+            glyph = RoundedRectGlyph(
+                width=ctx.width,
+                height=ctx.height,
+                radius=radius or 0,
+                fill=None,
+                border=RectBorder(top=sel_color, right=sel_color, bottom=sel_color, left=sel_color),
+                border_width=self.sel_width,
+            )
+            ctx.paste(glyph.render(), (0, 0))
 
     def _draw(self, ctx: PaintContext):
         pass

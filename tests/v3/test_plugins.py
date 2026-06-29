@@ -164,6 +164,69 @@ def test_v3_toggle_plugin_bypass_no_footswitch_sends_websocket(v3_system: System
     snapshot("bypassed")
 
 
+def test_v3_nam_plugin_uses_tri_color_tile(v3_system: SystemFixture, make_plugin, snapshot):
+    """A plugin whose URI is in NAM_PLUGIN_URIS renders as a NamPluginTile with the
+    Tone3000 palette: yellow body when active, black body + white text + tri-color
+    border (red top, yellow sides, blue bottom) when bypassed."""
+    from pistomp.lcd320x240 import NAM_PLUGIN_URIS
+    from uilib.text import NamPluginTile
+
+    handler = v3_system.handler
+    hw = v3_system.hw
+
+    assert handler.current
+    assert handler.lcd
+
+    nam_uri = next(iter(NAM_PLUGIN_URIS))
+    plugin = make_plugin(
+        "nam_amp", category="Simulator", bypassed=False, has_footswitch=False, uri=nam_uri,
+    )
+    handler.current.pedalboard.plugins = [plugin]
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    widget = next(w for w in handler.lcd.w_plugins if w.object is plugin)
+    assert isinstance(widget, NamPluginTile), "NAM plugin must render as NamPluginTile"
+    assert widget.bkgnd_color == NamPluginTile.NAM_YELLOW, "active NAM body must be yellow"
+    snapshot("active")
+
+    handler.toggle_plugin_bypass(widget, plugin)
+    assert widget.bkgnd_color == handler.lcd.background, "bypassed NAM body must be black"
+    assert widget.fgnd_color == handler.lcd.foreground, "bypassed text must be white"
+    snapshot("bypassed")
+
+
+def test_v3_nam_plugin_mixed_with_other_types(v3_system: SystemFixture, make_plugin, snapshot):
+    """NAM tile styling does not leak onto neighbouring non-NAM tiles in the same grid."""
+    from pistomp.lcd320x240 import NAM_PLUGIN_URIS
+    from uilib.text import NamPluginTile, TextWidget
+
+    handler = v3_system.handler
+    hw = v3_system.hw
+
+    assert handler.current
+    assert handler.lcd
+
+    nam_uri = next(iter(NAM_PLUGIN_URIS))
+    plugins = [
+        make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=False),
+        make_plugin("nam1", category="Simulator", bypassed=False, has_footswitch=False, uri=nam_uri),
+        make_plugin("delay", category="Delay", bypassed=False, has_footswitch=False),
+        make_plugin("nam2", category="Simulator", bypassed=True, has_footswitch=False, uri=nam_uri),
+    ]
+    handler.current.pedalboard.plugins = plugins
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    widgets = {w.object.instance_id: w for w in handler.lcd.w_plugins}
+    assert isinstance(widgets["nam1"], NamPluginTile)
+    assert isinstance(widgets["nam2"], NamPluginTile)
+    assert not isinstance(widgets["fuzz"], NamPluginTile)
+    assert not isinstance(widgets["delay"], NamPluginTile)
+    assert isinstance(widgets["fuzz"], TextWidget)
+    snapshot()
+
+
 def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_plugin, get_urls):
     """Plugin with has_footswitch: toggle_plugin_bypass() sends MIDI and waits
     for the WS echo to update state and display."""

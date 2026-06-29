@@ -27,6 +27,7 @@ from uilib.glyphs.expression_pedal import ExpressionPedalGlyph
 from uilib.glyphs.keycap_corner import KeycapCornerGlyph
 from uilib.glyphs.knob import KnobGlyph
 from uilib.glyphs.pill import PillGlyph
+from uilib.glyphs.rounded_rect import RectBorder, RoundedRectGlyph
 from uilib.glyphs.signal_bars import SignalBarsGlyph
 from uilib.glyphs.spinner import SpinnerGlyph
 
@@ -35,6 +36,8 @@ __all__ = [
     "FONTS_DIR",
     "ArcRingGlyph",
     "CircleGlyph",
+    "RectBorder",
+    "RoundedRectGlyph",
     "RingGlyph",
     "EthernetCableGlyph",
     "ExpressionPedalGlyph",
