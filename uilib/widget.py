@@ -532,10 +532,7 @@ class Widget:
         erase = ctx.dirty_bounds
         if erase.is_empty():
             return
-        if self.outline_radius is not None and erase == ctx.bounds:
-            ctx.draw_rectangle(ctx.bounds, fill=self.bkgnd_color, radius=self.outline_radius)
-        else:
-            ctx.draw_rectangle(erase, fill=self.bkgnd_color)
+        ctx.draw_rectangle(erase, fill=self.bkgnd_color)
 
     def _draw_outline(self, ctx: PaintContext):
         if self.outline != 0:

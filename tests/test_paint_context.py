@@ -110,12 +110,11 @@ class TestDrawErase:
         assert surf.get_at((10, 10))[:3] == (0, 0, 0)
         assert surf.get_at((50, 50))[:3] == (255, 255, 255)
 
-    def test_radius_full_frame_uses_rounded_rectangle(self):
+    def test_radius_full_frame_uses_nonrounded_rectangle(self):
         frame = Box(0, 0, 100, 100)
         surf = self._erase_and_read(frame, frame, outline_radius=10)
         assert surf.get_at((50, 50))[:3] == (0, 0, 0)
-        # Absolute corner pixel NOT erased (rounded rect leaves it)
-        assert surf.get_at((0, 0))[:3] == (255, 255, 255)
+        assert surf.get_at((0, 0))[:3] == (0, 0, 0)
 
 
 # ---------------------------------------------------------------------------
