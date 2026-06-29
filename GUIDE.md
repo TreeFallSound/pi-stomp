@@ -14,18 +14,19 @@ MOD-UI is the single writer of plugin bypass and parameter values. pi-Stomp emit
 
 ## OS & Deployment
 
-pi-Stomp runs on a custom Arch Linux ARM image built by the `pistomp-arch` repository. The image includes JACK2, mod-host, MOD-UI, other system dependencies, and all Python dependencies are maintained in a virtual environment.
+pi-Stomp runs on a custom Raspberry Pi OS Lite image (Debian Trixie, arm64, RT kernel) built by the [pi-gen-pistomp](https://github.com/TreeFallSound/pi-gen-pistomp) repository. The image includes JACK2, mod-host, MOD-UI, and other system dependencies; pi-stomp itself is shipped as an `arm64` Debian package built from this repo at image build time, and updates ship via an apt repo hosted on GitHub Pages (full OTA design in `pi-gen-pistomp/docs/OTA.md`).
 
-> __The built-in system python is used for base packages, as they are not packaged on PyPI.__
+> __The system python is used for base packages (e.g. `python3-lilv`), as they are not packaged on PyPI. PyPI dependencies live in a uv-managed venv built at package time.__
 
 | Path | Purpose |
 |------|---------|
-| `/home/pistomp/pi-stomp/` | Application code (git clone) |
+| `/opt/pistomp/pi-stomp/` | Installed source tree (from the `pi-stomp` `.deb`) |
+| `/home/pistomp/pi-stomp/` | Symlink to the above, for `deploy.sh` compatibility |
+| `/opt/pistomp/venvs/pi-stomp/` | uv venv with `--system-site-packages` |
 | `/home/pistomp/data/` | Runtime data |
 | `/home/pistomp/data/config/` | Settings, default config |
 | `/home/pistomp/data/.pedalboards/` | Pedalboard bundles |
-| `/opt/pistomp/venvs/pi-stomp/` | Python venv (system-site-packages) |
-| `/usr/lib/systemd/system/mod-ala-pi-stomp.service` | Service unit |
+| `/usr/lib/systemd/system/mod-ala-pi-stomp.service` | Service unit (ships in the `pi-stomp` `.deb`) |
 
 The service runs as the `pistomp` user (not root).
 
@@ -44,6 +45,20 @@ For local development, `scp` files to the device, use `deploy.sh`, or mount via 
 scp modalapi/*.py pistomp@pistomp.local:/home/pistomp/pi-stomp/modalapi/
 ssh pistomp@pistomp.local "ps-restart"
 ```
+
+### Shipping a new pi-stomp version
+
+OTA updates flow through the `pi-gen-pistomp` repo's apt repo. Two pushes are required:
+
+1. Land code changes on `pi-stomp#main`.
+2. In `pi-gen-pistomp`, bump the pi-stomp package version so `build-deb.yml` builds a fresh `.deb`:
+   ```bash
+   cd ../pi-gen-pistomp
+   ./scripts/bump-version.sh pi-stomp "Description of change."
+   ```
+   This edits `debpkgs/pi-stomp/debian/changelog` (the version is the gate that triggers a rebuild; no other files need editing).
+3. Push `pi-gen-pistomp#main`. The `build-deb.yml` workflow builds the `.deb`, publishes a GitHub Release tagged `debpkg/pi-stomp/<ver>`, and `publish-apt-repo.yml` updates the `gh-pages` apt index.
+4. Devices pick it up on their next `apt upgrade` (or via the `pistomp-recovery` Update-packages menu).
 
 ## Tests
 
