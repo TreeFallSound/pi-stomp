@@ -67,10 +67,10 @@ class Subtitle(TextWidget):
     container's redraw_region dirty-rect path)."""
 
     ANCHOR_X = 2
-    ANCHOR_Y = 1
+    ANCHOR_Y = 2
     PAD_W = 4
     PAD_H = 2
-    MAX_X1 = 210  # right edge: stop short of the toolbar icons
+    MAX_X1 = 200  # right edge: stop short of the toolbar icons
 
     def _draw_erase(self, ctx):
         # Transparent background: draw glyphs straight over whatever's beneath
@@ -149,6 +149,7 @@ class Lcd(abstract_lcd.Lcd):
         self.splash_font = _make_font(font_path("DejaVuSans.ttf"), 48)
         self.small_font = _make_font(font_path("DejaVuSans.ttf"), 20)
         self.tiny_font = _make_font(font_path("DejaVuSans.ttf"), 16)
+        self.subtitle_font = _make_font(font_path("DejaVuSans.ttf"), 14)
         self.title_split_orig = 190
         self.title_split = self.title_split_orig
         self.display_width = 320
@@ -267,9 +268,9 @@ class Lcd(abstract_lcd.Lcd):
             # selectable; updated from the current selection in _poll_updates.
             self.w_subtitle = Subtitle(
                 box=Box.xywh(Subtitle.ANCHOR_X, Subtitle.ANCHOR_Y, 0, 0),
-                text="", font=self.tiny_font, parent=self.main_panel, outline=0, sel_width=0,
+                text="", font=self.subtitle_font, parent=self.main_panel, outline=0, sel_width=0,
             )
-            self.w_subtitle.set_foreground((150, 150, 150))
+            self.w_subtitle.set_foreground((120, 120, 120))
         if not self.main_panel_pushed:
             self.pstack.push_panel(self.main_panel, refresh=False)
             self.pstack.push_panel(self.footswitch_panel, refresh=False)
