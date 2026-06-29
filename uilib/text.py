@@ -404,7 +404,7 @@ class NamPluginTile(PluginTile):
     (Lcd.color_plugin) like a normal tile — only the outline is special.
     """
 
-    NAM_YELLOW: tuple[int, int, int] = (255, 230, 0)
+    NAM_YELLOW: tuple[int, int, int] = (224, 179, 0)
     NAM_RED: tuple[int, int, int] = (220, 20, 20)
     NAM_BLUE: tuple[int, int, int] = (20, 30, 220)
 

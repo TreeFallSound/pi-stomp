@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 
 from plugins.customization import (
     PluginCustomization,
-    _URI_MAP,
     lookup,
     register,
     register_customization,
@@ -39,12 +38,14 @@ def register_panel(*uris: str):
 # These don't have a panel — just a custom tile class.
 from uilib.text import NamPluginTile  # noqa: E402
 
-_NAM_URIS = frozenset({
-    "http://github.com/mikeoliphant/neural-amp-modeler-lv2",
-    "http://gareus.org/oss/lv2/nam#mono",
-    "http://gareus.org/oss/lv2/nam#stereo",
-    "https://tone3000.com/plugins/nam",
-})
+_NAM_URIS = frozenset(
+    {
+        "http://github.com/mikeoliphant/neural-amp-modeler-lv2",
+        "http://gareus.org/oss/lv2/nam#mono",
+        "http://gareus.org/oss/lv2/nam#stereo",
+        "https://tone3000.com/plugins/nam",
+    }
+)
 
 register_customization(*_NAM_URIS, tile_cls=NamPluginTile)
 
