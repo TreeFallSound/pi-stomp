@@ -165,11 +165,10 @@ def test_v3_toggle_plugin_bypass_no_footswitch_sends_websocket(v3_system: System
 
 
 def test_v3_nam_plugin_uses_tri_color_tile(v3_system: SystemFixture, make_plugin, snapshot):
-    """A plugin whose URI is registered with a NamPluginTile renders with the
+    """A plugin whose URI is registered with a NAM customization renders with the
     Tone3000 palette: yellow body when active, black body + white text + tri-color
     border (red top, yellow sides, blue bottom) when bypassed."""
     from plugins.customization import _URI_MAP
-    from uilib.text import NamPluginTile
 
     handler = v3_system.handler
     hw = v3_system.hw
@@ -178,7 +177,15 @@ def test_v3_nam_plugin_uses_tri_color_tile(v3_system: SystemFixture, make_plugin
     assert handler.lcd
 
     # Find a NAM URI from the registry
-    nam_uri = next(uri for uri, c in _URI_MAP.items() if c.tile_cls is NamPluginTile)
+    nam_uri = next(uri for uri, c in _URI_MAP.items() if c.tile_active_color is not None)
+    nam_customization = _URI_MAP[nam_uri]
+    assert nam_customization.tile_active_color is not None
+    assert nam_customization.tile_border is not None
+    assert nam_customization.tile_border.top is not None
+    assert nam_customization.tile_border.right is not None
+    assert nam_customization.tile_border.bottom is not None
+    assert nam_customization.tile_border.left is not None
+
     plugin = make_plugin(
         "nam_amp", category="Simulator", bypassed=False, has_footswitch=False, uri=nam_uri,
     )
@@ -187,8 +194,7 @@ def test_v3_nam_plugin_uses_tri_color_tile(v3_system: SystemFixture, make_plugin
     handler.lcd.draw_main_panel()
 
     widget = next(w for w in handler.lcd.w_plugins if w.object is plugin)
-    assert isinstance(widget, NamPluginTile), "NAM plugin must render as NamPluginTile"
-    assert widget.bkgnd_color == NamPluginTile.NAM_YELLOW, "active NAM body must be yellow"
+    assert widget.bkgnd_color == nam_customization.tile_active_color, "active NAM body must be yellow"
     snapshot("active")
 
     handler.toggle_plugin_bypass(widget, plugin)
@@ -200,7 +206,7 @@ def test_v3_nam_plugin_uses_tri_color_tile(v3_system: SystemFixture, make_plugin
 def test_v3_nam_plugin_mixed_with_other_types(v3_system: SystemFixture, make_plugin, snapshot):
     """NAM tile styling does not leak onto neighbouring non-NAM tiles in the same grid."""
     from plugins.customization import _URI_MAP
-    from uilib.text import NamPluginTile, TextWidget
+    from uilib.text import TextWidget
 
     handler = v3_system.handler
     hw = v3_system.hw
@@ -208,7 +214,7 @@ def test_v3_nam_plugin_mixed_with_other_types(v3_system: SystemFixture, make_plu
     assert handler.current
     assert handler.lcd
 
-    nam_uri = next(uri for uri, c in _URI_MAP.items() if c.tile_cls is NamPluginTile)
+    nam_uri = next(uri for uri, c in _URI_MAP.items() if c.tile_active_color is not None)
     plugins = [
         make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=False),
         make_plugin("nam1", category="Simulator", bypassed=False, has_footswitch=False, uri=nam_uri),
@@ -220,10 +226,12 @@ def test_v3_nam_plugin_mixed_with_other_types(v3_system: SystemFixture, make_plu
     handler.lcd.draw_main_panel()
 
     widgets = {w.object.instance_id: w for w in handler.lcd.w_plugins}
-    assert isinstance(widgets["nam1"], NamPluginTile)
-    assert isinstance(widgets["nam2"], NamPluginTile)
-    assert not isinstance(widgets["fuzz"], NamPluginTile)
-    assert not isinstance(widgets["delay"], NamPluginTile)
+    # NAM tiles should have the custom border set
+    assert widgets["nam1"]._custom_border is not None
+    assert widgets["nam2"]._custom_border is not None
+    # Non-NAM tiles should not have a custom border
+    assert widgets["fuzz"]._custom_border is None
+    assert widgets["delay"]._custom_border is None
     assert isinstance(widgets["fuzz"], TextWidget)
     snapshot()
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing_extensions import override
 
 import common.token as Token
-from plugins import register_panel
 from plugins.base import PluginPanel
+from plugins.customization import PluginCustomization, register
 from plugins.notes import NOTES_URI
 from pistomp.input.event import ControllerEvent, EncoderEvent
 from uilib.box import Box
@@ -79,15 +79,12 @@ def _wrap_lines(text: str, font, max_w: int) -> list[str]:
     return out
 
 
-@register_panel(NOTES_URI)
 class NotesPanel(PluginPanel[None]):
     """Read-only text viewer for Notes plugin instances.
 
     Nav encoder scrolls line by line; all other encoder and footswitch
     events fall through to the normal handler cascade.
     """
-
-    intercept_shortpress = True
 
     # ── PluginPanel contract ───────────────────────────────────────────────
 
@@ -159,3 +156,6 @@ class NotesPanel(PluginPanel[None]):
             self._top = new_top
             self._text_widget.set_text(self._visible_text())
             self._scrollbar.update(self._top)
+
+
+register(NOTES_URI, customization=PluginCustomization(panel_cls=NotesPanel, intercept_shortpress=True))

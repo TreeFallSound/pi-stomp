@@ -549,7 +549,8 @@ class Widget:
                 radius = self.outline_radius
             if radius == 0:
                 radius = None
-            from uilib.glyphs import RectBorder, RoundedRectGlyph
+            from common.color import RectBorder
+            from uilib.glyphs import RoundedRectGlyph
             sel_color = self.sel_color
             # Reticule is border-only with a transparent interior, so the
             # underlying widget (e.g. plugin tile fill) shows through.

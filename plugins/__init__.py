@@ -5,56 +5,27 @@ Each panel implementation registers itself against the LV2 URIs it handles.
 via this registry.
 
 This module re-exports the unified customization API from
-``plugins.customization`` and keeps the legacy ``PANELS`` dict for
-backward compatibility.
+``plugins.customization`` and triggers all panel registrations at import time.
 """
 
 from __future__ import annotations
-
-from typing import TYPE_CHECKING
 
 from plugins.customization import (
     PluginCustomization,
     lookup,
     register,
-    register_customization,
+    registered_uris,
 )
 
-if TYPE_CHECKING:
-    from plugins.base import PluginPanel
-
-
-# Legacy dict — populated by @register_panel / @register decorators at import
-# time, same as before.  New code should use ``lookup(plugin)`` instead.
-PANELS: dict[str, type[PluginPanel]] = {}
-
-
-def register_panel(*uris: str):
-    """Legacy decorator.  Use ``@register(...)`` instead."""
-    return register(*uris)
-
-
-# Register NAM (Neural Amp Modeler) tile customizations.
-# These don't have a panel — just a custom tile class.
-from uilib.text import NamPluginTile  # noqa: E402
-
-_NAM_URIS = frozenset(
-    {
-        "http://github.com/mikeoliphant/neural-amp-modeler-lv2",
-        "http://gareus.org/oss/lv2/nam#mono",
-        "http://gareus.org/oss/lv2/nam#stereo",
-        "https://tone3000.com/plugins/nam",
-    }
-)
-
-register_customization(*_NAM_URIS, tile_cls=NamPluginTile)
+# Import all panel/customization modules to trigger their registrations.
+import plugins.eq.panel      # noqa: F401
+import plugins.nam           # noqa: F401
+import plugins.notes.panel   # noqa: F401
 
 
 __all__ = [
-    "PANELS",
     "PluginCustomization",
     "lookup",
     "register",
-    "register_customization",
-    "register_panel",
+    "registered_uris",
 ]

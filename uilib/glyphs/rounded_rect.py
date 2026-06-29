@@ -35,26 +35,8 @@ from functools import lru_cache
 import numpy as np
 import pygame
 
+from common.color import ColorRGB, RectBorder
 from uilib.paint import ColorLike
-
-ColorRGB = tuple[int, int, int]
-
-
-@dataclass(frozen=True)
-class RectBorder:
-    """Per-side border colors for a RoundedRectGlyph.
-
-    Each side is optional. A ``None`` side is omitted from the rendered
-    border (the fill still flows through that edge). Corner arcs take the
-    color of the meeting horizontal edge — top for the top corners,
-    bottom for the bottom corners — falling back to the vertical edge if
-    the horizontal is unset.
-    """
-
-    top: ColorRGB | None = None
-    right: ColorRGB | None = None
-    bottom: ColorRGB | None = None
-    left: ColorRGB | None = None
 
 
 def _to_rgb(color: ColorLike | None) -> ColorRGB | None:

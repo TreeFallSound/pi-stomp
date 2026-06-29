@@ -75,8 +75,8 @@ class Plugin:
 
     @cached_property
     def display_name(self) -> str:
-        id_base = re.sub(r'_?\d+$', '', self.instance_id).lower()
-        raw = self.name if len(self.name) < len(self.instance_id) or id_base in ('mono', 'stereo') else self.instance_id
+        id_base = re.sub(r"_?\d+$", "", self.instance_id).lower()
+        raw = self.name if len(self.name) < len(self.instance_id) or id_base in ("mono", "stereo") else self.instance_id
         return raw.replace("_", "")
 
     def is_bypassed(self) -> bool:

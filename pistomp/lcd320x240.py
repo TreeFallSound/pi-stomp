@@ -53,8 +53,8 @@ SUBTITLE_TIMEOUT = 2.5
 # LV2 plugin URIs that get the NAM (Neural Amp Modeler) display style: a
 # tri-color border in the Tone3000 logo palette (red top, yellow sides, blue
 # NAM plugin URIs are now registered in plugins/__init__.py via
-# register_customization(tile_cls=NamPluginTile).  The tile class is
-# resolved at runtime through ``lookup(plugin).tile_cls``.
+# NAM plugin URIs are now registered in plugins/nam/ via
+# PluginCustomization(tile_active_color=..., tile_border=...).
 
 # Wifi "processing" spinner full-cycle rate (Hz), wall-clock paced.
 WIFI_SPINNER_HZ = 1.5
@@ -597,18 +597,17 @@ class Lcd(abstract_lcd.Lcd):
 
         def tile_factory(node, box, parent):
             plugin = plugins_by_id[node.id]
+            customization = lookup(plugin)
+            display_name = customization.display_name or plugin.display_name
             if plugin.notes_text:
                 label = "✎" + plugin.notes_text.split('\n')[0].strip()
             else:
-                label = plugin.display_name[:self.plugin_label_length].replace("_", "")
+                label = display_name[:self.plugin_label_length].replace("_", "")
             label = self.shorten_name(label, box.width)
-            subtitle = f"{plugin.category}: {plugin.display_name}" if plugin.category else plugin.display_name
-            customization = lookup(plugin)
-            tile_cls = customization.tile_cls or PluginTile
-            # parent MUST be passed in ctor: attaching later wipes the
-            # explicit colors color_plugin() sets via inherited-attr resolution.
-            tile = tile_cls(box=box, text=label, outline_radius=5,
-                            parent=parent, action=self.plugin_event, object=plugin, subtitle=subtitle)
+            subtitle = f"{plugin.category}: {display_name}" if plugin.category else display_name
+            tile = PluginTile(box=box, text=label, outline_radius=5,
+                              parent=parent, action=self.plugin_event, object=plugin,
+                              subtitle=subtitle, border=customization.tile_border)
             tile.set_font(self.small_font)
             self.color_plugin(tile, plugin)
             self.w_plugins.append(tile)
@@ -657,12 +656,12 @@ class Lcd(abstract_lcd.Lcd):
             widget.set_foreground(self.foreground)
         else:
             # Active: body fill only, no outline. PluginTile's glyph
-            # treats outline_color=None as "no border". NamPluginTile
-            # ignores outline_color entirely and draws its own palette.
+            # treats outline_color=None as "no border". Custom borders
+            # (e.g. NAM tri-color) are passed via PluginCustomization.tile_border.
             widget.set_outline(0, None)
             customization = lookup(plugin)
-            if customization.tile_cls is not None and hasattr(customization.tile_cls, "NAM_YELLOW"):
-                widget.set_background(customization.tile_cls.NAM_YELLOW)
+            if customization.tile_active_color is not None:
+                widget.set_background(customization.tile_active_color)
             else:
                 widget.set_background(self.get_plugin_color(plugin))
             widget.set_foreground(self.background)

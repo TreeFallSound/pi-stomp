@@ -109,6 +109,7 @@ def setup_main_ui(instance):
         ),
         MockObject(
             instance_id="reverb",
+            uri="mock://reverb",
             display_name="reverb",
             notes_text=None,
             is_bypassed=lambda: True,
@@ -124,6 +125,7 @@ def setup_main_ui(instance):
         ),
         MockObject(
             instance_id="chorus",
+            uri="mock://chorus",
             display_name="chorus",
             notes_text=None,
             is_bypassed=lambda: False,

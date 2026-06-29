@@ -24,7 +24,7 @@ import numpy as np
 import pygame
 
 from plugins.base import PluginPanel
-from plugins import register_panel
+from plugins.customization import PluginCustomization, register
 from plugins.eq import FIL4_URIS
 from plugins.eq.bands import BANDS, BAND_COLORS, Band, PLUGIN_ENABLE_SYM
 from plugins.eq.curve import (
@@ -825,7 +825,6 @@ def _clip(v: float, lo: float, hi: float) -> float:
 # ── EqPanel ──────────────────────────────────────────────────────────────────
 
 
-@register_panel(*FIL4_URIS)
 class EqPanel(PluginPanel[EqState]):
     """Full-screen panel for editing an x42-eq instance."""
 
@@ -1023,3 +1022,6 @@ class EqPanel(PluginPanel[EqState]):
             q=float(qv),
             gain_db=float(gain),
         )
+
+
+register(*FIL4_URIS, customization=PluginCustomization(panel_cls=EqPanel))

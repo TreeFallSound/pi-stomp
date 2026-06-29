@@ -77,9 +77,6 @@ class PluginPanel(FullscreenPanel, Generic[TState]):
         otherwise dismissed.  Usually calls ``handler.hide_fullscreen_panel()``.
     """
 
-    intercept_shortpress: bool = False
-    "Set to true for informational plugins that do not need bypass (e.g. notes)"
-
     def __init__(
         self,
         *,

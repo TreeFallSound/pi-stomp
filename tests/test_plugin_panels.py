@@ -9,7 +9,7 @@ import pytest
 
 from common.parameter import Parameter
 from modalapi.plugin import Plugin
-from plugins import lookup, register_panel
+from plugins import lookup, register, PluginCustomization
 from plugins.base import PluginPanel
 from pistomp.input.event import EncoderEvent, SwitchEvent, SwitchEventKind
 from uilib.box import Box
@@ -45,7 +45,6 @@ class DemoState:
     gain: float = 0.0
 
 
-@register_panel("http://example.com/demo")
 class DemoPanel(PluginPanel[DemoState]):
     def snapshot_state(self) -> DemoState:
         p = self.plugin.parameters.get("gain")
@@ -62,6 +61,9 @@ class DemoPanel(PluginPanel[DemoState]):
             self.set_param("gain", self.plugin.parameters["gain"].value + rotations * 0.1)
             return True
         return False
+
+
+register("http://example.com/demo", customization=PluginCustomization(panel_cls=DemoPanel))
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
@@ -96,8 +98,8 @@ def fake_handler():
 
 
 class TestRegistry:
-    def test_register_panel_populates_dict(self):
-        c = lookup("http://example.com/demo")
+    def test_register_panel_populates_dict(self, fake_plugin):
+        c = lookup(fake_plugin)
         assert c.panel_cls is DemoPanel
 
 
