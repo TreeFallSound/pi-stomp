@@ -93,7 +93,7 @@ class PluginPanel(FullscreenPanel, Generic[TState]):
 
         # Chrome buttons (created now, appended to nav *after* subclass widgets)
         cfg = Config()
-        self._btn_font = cfg.get_font("small") or cfg.get_font("default")
+        self._btn_font = cfg.get_font("default")
         assert self._btn_font is not None, "PluginPanel requires a 'small' or 'default' font"
         _, btn_text_h = get_text_size("Bypass", self._btn_font)
         self._btn_v_margin = max(0, (_BTN_H - btn_text_h) // 2)

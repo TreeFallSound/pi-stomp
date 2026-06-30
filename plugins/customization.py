@@ -10,6 +10,8 @@ can register a ``PluginCustomization`` dataclass that bundles:
    instead of toggling bypass.
 5. **Tile active color** — background color when the plugin is active.
 6. **Tile border** — per-side border colors for the plugin tile.
+7. **Menu widget** — a custom ``Widget`` subclass rendered inside a regular
+   menu dialog for low-band-count plugins (instead of a fullscreen panel).
 
 Future customizations (color schemes, …) are just new fields on
 the dataclass — no existing registrations break.
@@ -26,6 +28,7 @@ from common.color import RectBorder
 if TYPE_CHECKING:
     from plugins.base import PluginPanel
     from modalapi.plugin import Plugin
+    from uilib.widget import Widget
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,7 @@ class PluginCustomization:
     """
 
     panel_cls: type[PluginPanel] | None = None
+    menu_widget_cls: type[Widget] | None = None
     display_name: str | None = None
     display_name_fn: Callable[[Plugin], str | None] | None = field(default=None, compare=False, hash=False)
     subtitle_fn: Callable[[Plugin], str | None] | None = field(default=None, compare=False, hash=False)

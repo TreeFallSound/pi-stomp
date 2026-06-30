@@ -1,22 +1,11 @@
-# This file is part of pi-stomp.
-#
-# pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# pi-stomp is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+"""Abstract parametric EQ panel — frequency-response curve visualization.
 
-"""Full-screen EQ panel for fil4 / x42-eq."""
+Subclasses provide band specs via ``build_band_specs()``.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import Optional
 
@@ -24,9 +13,7 @@ import numpy as np
 import pygame
 
 from plugins.base import PluginPanel
-from plugins.customization import PluginCustomization, register
-from plugins.eq import FIL4_URIS
-from plugins.eq.bands import BANDS, BAND_COLORS, Band, PLUGIN_ENABLE_SYM
+from plugins.eq.band_spec import BandSpec
 from plugins.eq.curve import (
     GRAPH_W,
     BandParams,
@@ -38,6 +25,7 @@ from plugins.eq.curve import (
 )
 from uilib.box import Box
 from uilib.config import Config
+from uilib.glyphs.circle import CircleGlyph, RingGlyph
 from uilib.misc import InputEvent, get_text_size
 from uilib.widget import Widget
 
@@ -67,37 +55,41 @@ BG_BLACK = (0, 0, 0)
 GRID_DIM = (45, 45, 45)
 GRID_0DB = (140, 140, 140)
 CURVE_COLOR = (220, 220, 220)
-# Line thickness in pixels, measured PERPENDICULAR to the curve. The vertical
-# extent painted at each column is CURVE_THICKNESS * sqrt(1 + slope²), so the
-# perceived weight stays constant regardless of slope.
 CURVE_THICKNESS = 1.3
 HALO_COLOR = (255, 255, 255)
 READOUT_COLOR = (200, 200, 200)
 INACTIVE_SHADE = 0.45
 
-# "Comet tail" smear under the curve.
-# Per-column intensity = clip(|db| / DB_MAX, 0, 1). The tail extends from the
-# curve toward the 0 dB line — so it always points at zero — and its on-screen
-# length equals the distance from the curve to that line (which is itself
-# proportional to |db|). Top-pixel opacity scales with intensity, fading
-# linearly to 0 at the zero line.
+NODE_R = 4
+HALO_R = 6
+
+
+def _tint_mask(mask: pygame.Surface, color: tuple[int, int, int]) -> pygame.Surface:
+    tinted = mask.copy()
+    color_surf = pygame.Surface(mask.get_size(), pygame.SRCALPHA)
+    color_surf.fill(color)
+    tinted.blit(color_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+    return tinted
+
+
+def paint_band_node(ctx, cx: int, cy: int, color: tuple[int, int, int], selected: bool) -> None:
+    """Paint the parametric-EQ node circle (black eraser, coloured fill, optional halo)."""
+    eraser = CircleGlyph(NODE_R + 2)
+    ctx.paste(_tint_mask(eraser.render(), BG_BLACK), (cx - eraser.radius, cy - eraser.radius))
+    node = CircleGlyph(NODE_R)
+    ctx.paste(_tint_mask(node.render(), color), (cx - node.radius, cy - node.radius))
+    if selected:
+        halo = RingGlyph(HALO_R)
+        ctx.paste(_tint_mask(halo.render(), HALO_COLOR), (cx - halo.half_size, cy - halo.half_size))
+
 SMEAR_ALPHA = 0.65
-# Visual cap on tail length in pixels. HP/LP curves park entire spans near
-# ±DB_MAX where the full curve-to-zero distance is half the graph height —
-# uncapped that's ~28k Python-level pixel writes per frame. Capping at 60 px
-# clips the perceptually-uninteresting middle of the tail without changing
-# the apparent intensity at the curve.
 SMEAR_LENGTH_MAX = 60
 
 
 # ── grid helpers ─────────────────────────────────────────────────────────────
 
-# Gridlines are linearly evenly spaced in pixel x. The graph's mapping
-# from x to frequency is logarithmic (see freq_to_x), so each major x
-# corresponds to whatever frequency lands there — we label that value
-# rather than picking round Hz numbers.
-_FREQ_MAJOR_STEP_PX = 80  # majors at x = 80, 160, 240
-_FREQ_MINOR_STEP_PX = 40  # minors at x = 40, 120, 200, 280
+_FREQ_MAJOR_STEP_PX = 80
+_FREQ_MINOR_STEP_PX = 40
 _DB_GRID = (-18.0, -12.0, -6.0, 6.0, 12.0, 18.0)
 
 
@@ -126,8 +118,6 @@ _FREQ_MINORS_X: tuple[int, ...] = tuple(
 )
 _FREQ_GRID_X: frozenset[int] = frozenset(_FREQ_MAJORS_X) | frozenset(_FREQ_MINORS_X)
 
-# (label, x_of_gridline) for every vertical gridline. Only the leftmost
-# (20 Hz) carries the "Hz" suffix; the rest read as bare numbers / "Xk".
 _FREQ_LABELS: tuple[tuple[str, int], ...] = tuple(
     (_fmt_axis_freq(_x_to_freq(x), with_unit=(x == 0)), x) for x in sorted(_FREQ_GRID_X)
 )
@@ -153,9 +143,8 @@ def bg_color(x: int, y: int) -> tuple[int, int, int]:
     return BG_BLACK
 
 
-# Precomputed background array in widget-relative coordinates.
-_BG_ZERO_Y = _ZERO_DB_Y - GRAPH_Y0  # widget-relative 0 dB row
-_BG_DB_GRID_Y = frozenset(y - GRAPH_Y0 for y in _DB_GRID_Y)  # widget-relative
+_BG_ZERO_Y = _ZERO_DB_Y - GRAPH_Y0
+_BG_DB_GRID_Y = frozenset(y - GRAPH_Y0 for y in _DB_GRID_Y)
 _BG_ARRAY: np.ndarray = np.zeros((GRAPH_W, GRAPH_H, 3), dtype=np.uint8)
 _BG_ARRAY[:] = BG_BLACK
 for _y in _BG_DB_GRID_Y:
@@ -171,16 +160,16 @@ if 0 <= _BG_ZERO_Y < GRAPH_H:
 # ── smear (comet-tail) helpers ──────────────────────────────────────────────
 
 
-def _smear_colors_for_state(state: EqState) -> Optional[np.ndarray]:
+def _smear_colors_for_state(state: EqState, bands: Sequence[BandSpec]) -> Optional[np.ndarray]:
     """RGB color per graph column, ease-in-out interpolated across the x
     positions of currently-enabled bands. Returns (GRAPH_W, 3) float array,
     or None if no bands are enabled (no smear)."""
     anchors: list[tuple[int, tuple[int, int, int]]] = []
-    for band in BANDS:
+    for band in bands:
         p = state.bands.get(band.name)
         if p is None or not p.enabled:
             continue
-        anchors.append((int(freq_to_x(p.freq)), BAND_COLORS[band.name]))
+        anchors.append((int(freq_to_x(p.freq)), band.color))
     if not anchors:
         return None
     anchors.sort(key=lambda t: t[0])
@@ -190,8 +179,6 @@ def _smear_colors_for_state(state: EqState) -> Optional[np.ndarray]:
     if len(xs) == 1:
         out = np.broadcast_to(cs[0], (GRAPH_W, 3)).copy()
         return out
-    # For each column, find the bracketing pair [xs[i-1], xs[i]] and smoothstep
-    # between their colors. Outside the anchor range, clamp to the edge color.
     idx = np.clip(np.searchsorted(xs, all_x, side="right"), 1, len(xs) - 1)
     x0 = xs[idx - 1]
     x1 = xs[idx]
@@ -205,8 +192,6 @@ def _smear_colors_for_state(state: EqState) -> Optional[np.ndarray]:
 
 
 def _smear_intensity_from_db(curve_db: np.ndarray) -> np.ndarray:
-    """Per-column intensity in [0, 1] = clip(|db| / DB_MAX). Drives both
-    tail opacity and (via the curve-to-zero distance) length."""
     return np.clip(np.abs(curve_db) / DB_MAX, 0.0, 1.0)
 
 
@@ -219,44 +204,38 @@ class GraphWidget(Widget):
     State-change setters (`set_state`, `set_selected`, `set_bypassed`) compute
     the dirty x-extent against cached previous state and call `self.refresh`
     with only that sub-box; `_draw` paints from-scratch but clips work to the
-    requested `real_box` so only changed columns are touched (and only those
-    columns are flushed over SPI by the panel stack).
+    requested `real_box` so only changed columns are touched.
 
-    Assumes the widget spans the full panel width with image x == local x
-    (same convention used by TunerPanel's widgets).
+    Assumes the widget spans the full panel width with image x == local x.
     """
 
-    NODE_R = 3
-    HALO_R = 6
-
-    def __init__(self, box: Box, axis_font=None, **kwargs) -> None:
+    def __init__(self, box: Box, bands: Sequence[BandSpec], axis_font=None, show_axis_labels: bool = True, **kwargs) -> None:
         kwargs.setdefault("bkgnd_color", BG_BLACK)
         super().__init__(box=box, **kwargs)
+        self._bands = bands
         self._axis_font = axis_font
+        self._show_axis_labels = show_axis_labels
         self._cache = CurveCache()
         self._state: Optional[EqState] = None
         self._selected_band: Optional[str] = None
         self._curve_y: Optional[np.ndarray] = None
         self._curve_y_float: Optional[np.ndarray] = None
-        # Per-column y range covered by the polyline's half-segments to each
-        # neighbour — used by the AA rasterizer to spread ink across rows
-        # in proportion to the slope at that column.
         self._curve_y_lo: Optional[np.ndarray] = None
         self._curve_y_hi: Optional[np.ndarray] = None
         self._node_positions: dict[str, _NodePos] = {}
         self._bypassed: bool = False
-        self._smear_colors: Optional[np.ndarray] = None  # (GRAPH_W, 3) or None
-        self._smear_intensity: Optional[np.ndarray] = None  # (GRAPH_W,) floats in [0, 1]
+        self._smear_colors: Optional[np.ndarray] = None
+        self._smear_intensity: Optional[np.ndarray] = None
 
     # ── state setters (self-refresh with surgical sub-box) ──────────────────
 
     def set_state(self, state: EqState) -> None:
-        new_curve_db = self._cache.compute(state)
+        new_curve_db = self._cache.compute(self._bands, state)
         new_curve_y_float = db_to_y_float(new_curve_db, GRAPH_Y0, GRAPH_Y1, DB_MAX)
         new_curve_y = np.round(new_curve_y_float).astype(int)
         new_y_lo, new_y_hi = self._neighbor_extents(new_curve_y_float)
         new_nodes = self._compute_nodes(state)
-        new_smear_colors = _smear_colors_for_state(state)
+        new_smear_colors = _smear_colors_for_state(state, self._bands)
         new_smear_intensity = _smear_intensity_from_db(new_curve_db)
 
         old_curve = self._curve_y
@@ -267,7 +246,6 @@ class GraphWidget(Widget):
         self._state = state
 
         if old_curve is None:
-            # First paint: commit everything, refresh handled by panel.refresh().
             self._curve_y = new_curve_y
             self._curve_y_float = new_curve_y_float
             self._curve_y_lo = new_y_lo
@@ -289,23 +267,8 @@ class GraphWidget(Widget):
         x_min, x_max = self._extend_extent_for_nodes(x_min, x_max, old_nodes, new_nodes)
 
         if x_min is None or x_max is None:
-            # No dirty columns — keep the committed/displayed arrays as-is so
-            # the next diff compares against what's actually on screen. This
-            # lets sub-threshold smear drift accumulate over many tweaks
-            # until it eventually crosses the visibility threshold.
             return
 
-        # Slice-commit: only the columns inside [x_min, x_max) were repainted,
-        # so only those columns' committed state now matches the screen. The
-        # columns outside the refresh range keep their previous committed
-        # values — which equal the values that produced the pixels still on
-        # the LCD. This keeps the next call's diff honest about staleness:
-        # if a column's float Y has drifted from what's on screen, the diff
-        # catches it instead of silently advancing the baseline.
-        #
-        # old_curve is non-None here (we passed the `old_curve is None`
-        # early-return above), and it aliases self._curve_y, so the slice
-        # targets are non-None too. Cast to satisfy pyright.
         assert self._curve_y is not None
         assert self._curve_y_float is not None
         assert self._curve_y_lo is not None
@@ -330,14 +293,6 @@ class GraphWidget(Widget):
             return
         old = self._selected_band
         self._selected_band = band_name
-
-        # Selection only flips the halo on two nodes — nothing else on the
-        # graph changes (curve, smear, grid are untouched). Repaint each
-        # affected node's tight bbox in isolation; the rasterizer restores
-        # the halo-ring pixels the previously-selected node left behind, and
-        # the newly-selected node paints its halo on top. This avoids the
-        # full-height strip (and the inter-node gap columns) that
-        # `_refresh_x_range` would repaint via the value-change path.
         for name in (old, band_name):
             self._refresh_node_bbox(name)
 
@@ -348,7 +303,7 @@ class GraphWidget(Widget):
         if pos is None:
             return
         cx, cy, _, _ = pos
-        r = self.HALO_R + 1  # covers the halo outline (HALO_R) + 1px margin
+        r = HALO_R + 1
         bx = self.box
         if bx is None:
             return
@@ -363,7 +318,7 @@ class GraphWidget(Widget):
         if self._bypassed == bypassed:
             return
         self._bypassed = bypassed
-        self.refresh()  # curve colour shifts globally — repaint everything
+        self.refresh()
 
     # ── dirty-extent helpers ────────────────────────────────────────────────
 
@@ -374,15 +329,9 @@ class GraphWidget(Widget):
         old_f: Optional[np.ndarray] = None,
         new_f: Optional[np.ndarray] = None,
     ) -> tuple[Optional[int], Optional[int]]:
-        # Int-level diff catches whole-pixel moves; float diff (with a
-        # sub-pixel epsilon) catches AA-blend drift where the rounded y
-        # didn't change but the float y moved enough to shift the alpha
-        # blend at the curve's edge rows. Without the float comparison,
-        # those columns keep stale pixels until some other refresh (e.g.
-        # a full-strip nav repaint) accidentally touches them.
         diff = np.flatnonzero(old_int != new_int)
         if old_f is not None and new_f is not None:
-            f_eps = 0.1  # ~10% of a pixel — below visible AA step on 8-bit
+            f_eps = 0.1
             float_diff = np.flatnonzero(np.abs(old_f - new_f) > f_eps)
             diff = np.union1d(diff, float_diff)
         if diff.size == 0:
@@ -398,9 +347,6 @@ class GraphWidget(Widget):
         old_intensity: Optional[np.ndarray],
         new_intensity: Optional[np.ndarray],
     ) -> tuple[Optional[int], Optional[int]]:
-        # Sub-perceptual tolerances. Threshold intensity at ~1 LSB of a
-        # blended 8-bit channel (≈ 1/255 of top alpha) and ~2 LSBs of an
-        # 8-bit colour channel.
         I_EPS = 1.0 / 255.0
         C_EPS = 2.0
         diffs: list[np.ndarray] = []
@@ -428,7 +374,7 @@ class GraphWidget(Widget):
         old_nodes: dict[str, _NodePos],
         new_nodes: dict[str, _NodePos],
     ) -> tuple[Optional[int], Optional[int]]:
-        node_r = self.HALO_R + 1
+        node_r = HALO_R + 1
         names = set(old_nodes) | set(new_nodes)
         for name in names:
             if old_nodes.get(name) == new_nodes.get(name):
@@ -449,7 +395,7 @@ class GraphWidget(Widget):
         if pos is None:
             return None
         cx = pos[0]
-        node_r = self.HALO_R + 1
+        node_r = HALO_R + 1
         return cx - node_r, cx + node_r + 1
 
     def _refresh_x_range(self, x_min: Optional[int], x_max: Optional[int]) -> None:
@@ -466,9 +412,6 @@ class GraphWidget(Widget):
 
     @staticmethod
     def _neighbor_extents(ys_f: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """For each column, the y range covered by the polyline's two
-        half-segments to the immediate neighbours (column-centre to
-        midpoint with the next/prev column). Returns (y_lo, y_hi)."""
         mids = (ys_f[:-1] + ys_f[1:]) * 0.5
         y_left = np.empty_like(ys_f)
         y_right = np.empty_like(ys_f)
@@ -478,47 +421,39 @@ class GraphWidget(Widget):
         y_right[-1] = ys_f[-1]
         return np.minimum(y_left, y_right), np.maximum(y_left, y_right)
 
-    @staticmethod
-    def _compute_nodes(state: EqState) -> dict[str, _NodePos]:
+    def _compute_nodes(self, state: EqState) -> dict[str, _NodePos]:
         out: dict[str, _NodePos] = {}
-        for band in BANDS:
+        for band in self._bands:
             p = state.bands.get(band.name)
             if p is None:
                 continue
             cx = int(freq_to_x(p.freq))
             cy = _ZERO_DB_Y if band.gain_sym is None else _db_to_y_scalar(p.gain_db)
-            color: tuple[int, int, int] = BAND_COLORS[band.name] if p.enabled else (80, 80, 80)
+            color: tuple[int, int, int] = band.color if p.enabled else (80, 80, 80)
             out[band.name] = (cx, cy, color, p.enabled)
         return out
 
     # ── paint ───────────────────────────────────────────────────────────────
 
     def _draw_erase(self, ctx) -> None:
-        pass  # _draw handles its own background, clipped to dirty_bounds
+        pass
 
     def _draw(self, ctx) -> None:
-        # Widget box: Box.xywh(0, GRAPH_Y0, _W, GRAPH_H).
-        # ctx coords are widget-relative: (0,0) = (0, GRAPH_Y0) in image space.
-        # All image-space y values (GRAPH_Y0, _ZERO_DB_Y, etc.) must be shifted
-        # by -GRAPH_Y0 to become widget-relative.
-        db = ctx.dirty_bounds  # widget-relative dirty rect
+        db = ctx.dirty_bounds
         rx0, ry0 = db.x0, db.y0
         rx1, ry1 = db.x1, db.y1
 
-        # Background fill — only the dirty rect
         ctx.draw_rectangle(db, fill=BG_BLACK)
 
-        # Vertical grid lines that fall in [rx0, rx1)
         for x in _FREQ_GRID_X:
             if rx0 <= x < rx1:
                 ctx.draw_line([(x, max(ry0, 0)), (x, min(ry1, GRAPH_H) - 1)], fill=GRID_DIM, width=1)
 
-        # Horizontal grid lines — clip x extent to the dirty rect.
         hx0 = max(rx0, 0)
         hx1 = min(rx1, _W)
         hy0 = max(ry0, 0)
         hy1 = min(ry1, GRAPH_H)
-        zero_y = _ZERO_DB_Y - GRAPH_Y0  # widget-relative 0 dB line
+        zero_y = _ZERO_DB_Y - GRAPH_Y0
         if hx0 < hx1 and hy0 < hy1:
             for db_val in _DB_GRID:
                 y = _db_to_y_scalar(db_val) - GRAPH_Y0
@@ -527,108 +462,90 @@ class GraphWidget(Widget):
             if hy0 <= zero_y < hy1:
                 ctx.draw_line([(hx0, zero_y), (hx1 - 1, zero_y)], fill=GRID_0DB, width=1)
 
-        # Curve + comet-tail smear — only columns within the dirty rect.
-        # Vectorized over the dirty column range via pygame.surfarray.pixels3d
-        # (a zero-copy view into the surface pixel buffer). The per-pixel math
-        # is identical to the previous set_at loop; it's just computed in bulk
-        # as dense (N, H) arrays. See tools/bench_eq_raster.py — this is ~7.7x
-        # faster than set_at on a Pi 3 (7ms → 0.9ms for a full refresh).
         if self._curve_y is not None:
             shade = INACTIVE_SHADE if self._bypassed else 1.0
             curve_color = tuple(int(c * shade) for c in CURVE_COLOR)
             cx0 = max(rx0, 0)
             cx1 = min(rx1, GRAPH_W)
-            # Clamp the rasterized y-range to the dirty rect so a small bbox
-            # (e.g. a single band node from set_selected) doesn't recompute
-            # the full graph height. The per-row math is unaffected — we just
-            # slice fewer rows from the (GRAPH_W,) column arrays.
             cy0 = max(ry0, 0)
             cy1 = min(ry1, GRAPH_H)
             if cx1 > cx0 and cy1 > cy0:
                 ox, oy = ctx._f().topleft
                 surf = ctx.surface
                 px = None
+                sub = None
                 try:
-                    px = pygame.surfarray.pixels3d(surf)  # locks surface
-                    # Surface slice for the dirty rect: (N, H_dirty, 3) view.
+                    px = pygame.surfarray.pixels3d(surf)
                     sub = px[ox + cx0 : ox + cx1, oy + cy0 : oy + cy1, :]
-                    bg = _BG_ARRAY[cx0:cx1, cy0:cy1].astype(np.float32)  # (N, H, 3)
+                    bg = _BG_ARRAY[cx0:cx1, cy0:cy1].astype(np.float32)
                     result = bg.copy()
 
-                    # ── smear (comet tail) ──
                     ys_f = self._curve_y_float
                     smear_colors = self._smear_colors
                     smear_intensity = self._smear_intensity
                     if smear_colors is not None and smear_intensity is not None and ys_f is not None:
-                        yf = ys_f[cx0:cx1].astype(np.float32) - GRAPH_Y0  # (N,)
+                        yf = ys_f[cx0:cx1].astype(np.float32) - GRAPH_Y0
                         yz_f = float(_ZERO_DB_Y - GRAPH_Y0)
                         raw_len = np.abs(yz_f - yf)
                         length = np.minimum(raw_len, float(SMEAR_LENGTH_MAX))
-                        intensity = smear_intensity[cx0:cx1].astype(np.float32)  # (N,)
+                        intensity = smear_intensity[cx0:cx1].astype(np.float32)
                         top_alpha = SMEAR_ALPHA * intensity
                         valid = (length >= 0.5) & (intensity > 0.0)
-                        down = yf <= yz_f  # smear downward (boost)
-                        y_top = np.where(down, yf, yf - length)  # (N,)
-                        y_bot = np.where(down, yf + length, yf)  # (N,)
-                        inv_2len = 0.5 / np.where(length > 0, length, 1.0)  # avoid div0
-                        rows = np.arange(cy0, cy1, dtype=np.float32)  # (H,)
-                        a = np.maximum(rows[None, :], y_top[:, None])  # (N, H)
-                        b = np.minimum(rows[None, :] + 1.0, y_bot[:, None])  # (N, H)
+                        down = yf <= yz_f
+                        y_top = np.where(down, yf, yf - length)
+                        y_bot = np.where(down, yf + length, yf)
+                        inv_2len = 0.5 / np.where(length > 0, length, 1.0)
+                        rows = np.arange(cy0, cy1, dtype=np.float32)
+                        a = np.maximum(rows[None, :], y_top[:, None])
+                        b = np.minimum(rows[None, :] + 1.0, y_bot[:, None])
                         pix_valid = (b > a) & valid[:, None]
                         u_a = np.where(down[:, None], a - yf[:, None], yf[:, None] - b)
                         u_b = np.where(down[:, None], b - yf[:, None], yf[:, None] - a)
                         smear_alpha = top_alpha[:, None] * (
                             (u_b - u_a) - (u_b * u_b - u_a * u_a) * inv_2len[:, None]
-                        )  # (N, H)
+                        )
                         smear_alpha = np.where(pix_valid & (smear_alpha > 0.0), smear_alpha, 0.0)
-                        sc = smear_colors[cx0:cx1].astype(np.float32) * shade  # (N, 3)
-                        smear_blend = bg + (sc[:, None, :] - bg) * smear_alpha[:, :, None]  # (N, H, 3)
+                        sc = smear_colors[cx0:cx1].astype(np.float32) * shade
+                        smear_blend = bg + (sc[:, None, :] - bg) * smear_alpha[:, :, None]
                         smear_mask = smear_alpha > 0.0
                         result[smear_mask] = smear_blend[smear_mask]
 
-                    # ── curve line ──
                     y_lo = self._curve_y_lo
                     y_hi = self._curve_y_hi
                     if y_lo is not None and y_hi is not None:
-                        yl = y_lo[cx0:cx1].astype(np.float32) - GRAPH_Y0  # (N,)
-                        yh = y_hi[cx0:cx1].astype(np.float32) - GRAPH_Y0  # (N,)
+                        yl = y_lo[cx0:cx1].astype(np.float32) - GRAPH_Y0
+                        yh = y_hi[cx0:cx1].astype(np.float32) - GRAPH_Y0
                         mid = (yl + yh) * 0.5
                         half_extent = np.sqrt(1.0 + (yh - yl) ** 2) * (CURVE_THICKNESS * 0.5)
-                        y_lo_ext = mid - half_extent  # (N,)
-                        y_hi_ext = mid + half_extent  # (N,)
-                        rows = np.arange(cy0, cy1, dtype=np.float32)  # (H,)
+                        y_lo_ext = mid - half_extent
+                        y_hi_ext = mid + half_extent
+                        rows = np.arange(cy0, cy1, dtype=np.float32)
                         overlap = np.minimum(rows[None, :] + 1.0, y_hi_ext[:, None]) - np.maximum(
                             rows[None, :], y_lo_ext[:, None]
-                        )  # (N, H)
-                        curve_alpha = np.clip(overlap, 0.0, 1.0)  # (N, H)
-                        cc = np.array(curve_color, dtype=np.float32)  # (3,)
-                        curve_blend = bg + (cc - bg) * curve_alpha[:, :, None]  # (N, H, 3)
+                        )
+                        curve_alpha = np.clip(overlap, 0.0, 1.0)
+                        cc = np.array(curve_color, dtype=np.float32)
+                        curve_blend = bg + (cc - bg) * curve_alpha[:, :, None]
                         curve_mask = curve_alpha > 0.0
                         result[curve_mask] = curve_blend[curve_mask]
                     else:
-                        # Fallback: single-pixel curve (no AA extent).
                         ys = self._curve_y
-                        base_y = ys[cx0:cx1].astype(np.int32) - GRAPH_Y0  # (N,)
+                        base_y = ys[cx0:cx1].astype(np.int32) - GRAPH_Y0
                         in_range = (base_y >= cy0) & (base_y < cy1)
                         xs_idx = np.where(in_range)[0]
                         if xs_idx.size > 0:
                             result[xs_idx, base_y[xs_idx] - cy0, :] = curve_color
 
-                    # numpy astype rounds half-to-even; the original set_at
-                    # path used Python int() (truncate). The ±1 difference on
-                    # blended pixels is visually imperceptible and we accept
-                    # it for the speed win of bulk uint8 conversion.
                     np.clip(result, 0, 255, out=result)
                     sub[:] = result.astype(np.uint8)
                 finally:
-                    del px  # release surface lock
+                    del sub
+                    del px
 
-        # Band nodes — skip those whose bbox misses the dirty rect.
-        # Draw selected last so the halo lands on top.
         if self._state is not None and self._node_positions:
-            node_r = self.HALO_R + 1
-            ordered: list[Band] = [b for b in BANDS if b.name != self._selected_band]
-            sel = next((b for b in BANDS if b.name == self._selected_band), None)
+            node_r = HALO_R + 1
+            ordered: list[BandSpec] = [b for b in self._bands if b.name != self._selected_band]
+            sel = next((b for b in self._bands if b.name == self._selected_band), None)
             if sel is not None:
                 ordered.append(sel)
             for band in ordered:
@@ -638,70 +555,49 @@ class GraphWidget(Widget):
                 cx, cy, color, _enabled = pos
                 if cx + node_r <= rx0 or cx - node_r >= rx1:
                     continue
-                # cx, cy are image-space; convert cy to widget-relative
                 self._paint_node(ctx, cx, cy - GRAPH_Y0, color, band.name == self._selected_band)
 
-        # Axis labels (small font). Clipped to the dirty rect so they only
-        # repaint when their columns are part of the refresh.
-        if self._axis_font is not None:
+        if self._axis_font is not None and self._show_axis_labels:
             self._paint_axis_labels(ctx, rx0, rx1)
 
     def _paint_axis_labels(self, ctx, rx0: int, rx1: int) -> None:
         font = self._axis_font
-        # dB labels at the left edge (widget-relative y coords).
         for text, db_val in _DB_LABELS:
             tw, th = get_text_size(text, font)
             x = 2
             if x + tw <= rx0 or x >= rx1:
                 continue
-            y = _db_to_y_scalar(db_val) - GRAPH_Y0  # widget-relative
+            y = _db_to_y_scalar(db_val) - GRAPH_Y0
             if db_val > 0:
                 ty = y + 1
             else:
                 ty = y - th - 1
             ctx.draw_text((x, ty), text, fill=_AXIS_LABEL_COLOR, font=font)
-        # Freq labels along the bottom, placed to the right of each major
-        # gridline so the line itself stays unobscured.
         for text, fx in _FREQ_LABELS:
             tw, th = get_text_size(text, font)
             tx = fx + 2
             if tx + tw <= rx0 or tx >= rx1:
                 continue
-            ty = GRAPH_H - th - 1  # widget-relative bottom
+            ty = GRAPH_H - th - 1
             ctx.draw_text((tx, ty), text, fill=_AXIS_LABEL_COLOR, font=font)
 
     def _paint_node(self, ctx, cx: int, cy: int, color: tuple[int, int, int], selected: bool) -> None:
-        r = self.NODE_R
-        # 2px black ring sits between the coloured node (r=3) and the halo
-        # (inner edge r=5). Painting it for every band turns the previously
-        # transparent gap into a solid outline; for the selected band the
-        # halo lands flush on top of it.
-        ctx.draw_ellipse(Box(cx - r - 2, cy - r - 2, cx + r + 2, cy + r + 2), fill=BG_BLACK)
-        ctx.draw_ellipse(Box(cx - r, cy - r, cx + r, cy + r), fill=color)
-        if selected:
-            hr = self.HALO_R
-            ctx.draw_ellipse(Box(cx - hr, cy - hr, cx + hr, cy + hr), outline=HALO_COLOR, width=1)
+        paint_band_node(ctx, cx, cy, color, selected)
 
 
 # ── ReadoutWidget ────────────────────────────────────────────────────────────
 
 
-# Top-row column anchors. Left-anchored columns (name/freq/Q) place their
-# left edge at the given x; the gain column is right-anchored — its right
-# edge sits at `_READOUT_GAIN_RIGHT` (px from panel left), so values like
-# "+18.0 dB" / "disabled" line up flush with the right side of the LCD.
 _READOUT_COLS_LEFT: tuple[tuple[str, int], ...] = (
     ("name", 6),
     ("freq", 60),
     ("q", 160),
 )
-_READOUT_GAIN_RIGHT: int = _W - 6  # 6 px from the right edge
+_READOUT_GAIN_RIGHT: int = _W - 6
 
 
 class ReadoutWidget(Widget):
-    """Top-bar with statically-positioned name / freq / Q / gain columns.
-    Each column is independently set via `set_field`; only changed columns
-    re-render. Free-form text (chrome hints) uses `set_message` instead."""
+    """Top-bar with statically-positioned name / freq / Q / gain columns."""
 
     def __init__(self, box: Box, font, **kwargs) -> None:
         kwargs.setdefault("bkgnd_color", BG_BLACK)
@@ -709,7 +605,7 @@ class ReadoutWidget(Widget):
         self._font = font
         self._fields: dict[str, str] = {k: "" for k, _ in _READOUT_COLS_LEFT}
         self._fields["gain"] = ""
-        self._message: Optional[str] = None  # if set, replaces field layout
+        self._message: Optional[str] = None
 
     def set_fields(self, name: str, freq: str, q: str, gain: str) -> None:
         new = {"name": name, "freq": freq, "q": q, "gain": gain}
@@ -746,26 +642,24 @@ class ReadoutWidget(Widget):
 # ── invisible band selectable ────────────────────────────────────────────────
 
 
-class _BandSelectable(Widget):
+class BandSelectable(Widget):
     """Nav-cycle target with no visual presence of its own — the band's
     coloured circle on the graph is the indicator (halo when selected)."""
 
-    def __init__(self, panel: "EqPanel", band: Band) -> None:
+    def __init__(self, panel: ParametricEqPanel, band: BandSpec) -> None:
         super().__init__(box=Box.xywh(0, 0, 1, 1), parent=panel, visible=True)
-        self._panel: "EqPanel" = panel
+        self._panel: ParametricEqPanel = panel
         self.band = band
 
     def set_selected(self, selected: bool) -> None:  # type: ignore[override]
         self.selected = selected
-        # Halo and readout updates are driven by EqPanel._select_widget_idx
-        # so chrome focus correctly clears the previously-selected band.
 
     def input_event(self, event) -> bool:  # type: ignore[override]
         if event == InputEvent.CLICK:
-            self._panel._on_band_click(self.band)
+            self._panel._toggle_band_enable(self.band)
             return True
         if event == InputEvent.LONG_CLICK:
-            self._panel._on_band_long(self.band)
+            self._panel._reset_band_to_snapshot(self.band)
             return True
         return False
 
@@ -779,10 +673,6 @@ class _BandSelectable(Widget):
         pass
 
     def _draw_selection(self, ctx) -> None:
-        # Suppress the base Widget's selection rectangle — our visual is the
-        # halo painted by the GraphWidget on the band's node. Without this
-        # override, the 1×1 widget box would paint a tiny selection square at
-        # (0,0) on first paint.
         pass
 
 
@@ -795,14 +685,15 @@ def _fmt_freq(hz: float) -> str:
     return f"{hz:.0f} Hz"
 
 
-def _band_readout_fields(band: Band, p: BandParams) -> tuple[str, str, str, str]:
+def band_readout_fields(band: BandSpec, p: BandParams) -> tuple[str, str, str, str]:
+    """Format readout fields for a parametric band. Returns (name, freq, q, gain)."""
     name = band.name
     freq = _fmt_freq(p.freq)
     q = f"Q {p.q:.2f}"
     if not p.enabled:
         gain = "disabled"
     elif band.gain_sym is None:
-        gain = "—"
+        gain = "\u2014"
     else:
         gain = f"{p.gain_db:+.1f} dB"
     return name, freq, q, gain
@@ -811,27 +702,34 @@ def _band_readout_fields(band: Band, p: BandParams) -> tuple[str, str, str, str]
 # ── tweak step sizes ────────────────────────────────────────────────────────
 
 _GAIN_STEP_DB = 0.5
-_FREQ_STEP = 2.0 ** (1.0 / 12.0)  # one semitone per click
+_FREQ_STEP = 2.0 ** (1.0 / 12.0)
 _Q_STEP = 0.05
-
-# Speed multipliers mirror EncoderController.refresh — keep behaviour
-# consistent between MIDI-bound use and panel-bound use.
 
 
 def _clip(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
 
 
-# ── EqPanel ──────────────────────────────────────────────────────────────────
+# ── ParametricEqPanel (ABC) ──────────────────────────────────────────────────
 
 
-class EqPanel(PluginPanel[EqState]):
-    """Full-screen panel for editing an x42-eq instance."""
+class ParametricEqPanel(PluginPanel[EqState]):
+    """Abstract base for parametric EQ panels with frequency-response curve.
+
+    Subclasses must implement ``build_band_specs()`` returning the list of
+    ``BandSpec`` for this plugin.
+    """
+
+    _show_axis_labels: bool = True
+
+    # ── subclass contract ──────────────────────────────────────────────────
+
+    def build_band_specs(self) -> Sequence[BandSpec]:
+        raise NotImplementedError
 
     # ── PluginPanel subclass contract ────────────────────────────────────────
 
     def snapshot_state(self) -> EqState:
-        """Construct EqState from the current plugin.parameters values."""
         params = self.plugin.parameters
 
         def _val(symbol: str, default: float) -> float:
@@ -839,15 +737,16 @@ class EqPanel(PluginPanel[EqState]):
             return float(p.value) if p is not None and p.value is not None else default
 
         bands: dict[str, BandParams] = {}
-        for band in BANDS:
+        for band in self.bands:
+            enable_val = _val(band.enable_sym, 0.0) if band.enable_sym is not None else 1.0
             bands[band.name] = BandParams(
-                enabled=bool(_val(band.enable_sym, 0.0)),
+                enabled=bool(enable_val),
                 freq=_val(band.freq_sym, 0.5 * (band.freq_min + band.freq_max)),
-                q=_val(band.q_sym, 0.7),
+                q=_val(band.q_sym, 0.7) if band.q_sym is not None else 1.0,
                 gain_db=_val(band.gain_sym, 0.0) if band.gain_sym else 0.0,
             )
         return EqState(
-            plugin_enabled=bool(_val(PLUGIN_ENABLE_SYM, 1.0)),
+            plugin_enabled=bool(_val("enable", 1.0)),
             global_gain_db=_val("gain", 0.0),
             bands=bands,
         )
@@ -858,8 +757,7 @@ class EqPanel(PluginPanel[EqState]):
         self._update_readout()
 
     def build_widgets(self) -> None:
-        # Snapshot state early so add_sel_widget → _select_widget_idx → _update_readout
-        # can read it when the first band selectable is registered.
+        self.bands = self.build_band_specs()
         self._state = self.snapshot_state()
         cfg = Config()
         btn_font = cfg.get_font("default")
@@ -872,37 +770,33 @@ class EqPanel(PluginPanel[EqState]):
         )
         self._graph = GraphWidget(
             box=Box.xywh(0, GRAPH_Y0, _W, GRAPH_H),
+            bands=self.bands,
             axis_font=axis_font,
+            show_axis_labels=self._show_axis_labels,
             parent=self,
         )
 
-        # Band selectables first (Nav cycles bands → chrome → bands → ...)
-        self._band_sels: dict[str, _BandSelectable] = {}
-        for band in BANDS:
-            sel = _BandSelectable(self, band)
+        self._band_sels: dict[str, BandSelectable] = {}
+        for band in self.bands:
+            sel = BandSelectable(self, band)
             self._band_sels[band.name] = sel
             self.add_sel_widget(sel)
 
-        # Initial paint: apply starting state and select first band.
-        # set_bypassed must run before set_state so the very first curve
-        # render uses the dimmed shade when we open already-bypassed.
         self._graph.set_bypassed(self.plugin.is_bypassed())
         self.apply_state(self.snapshot_state())
-        self.sel_widget(self._band_sels[BANDS[0].name])
+        self.sel_widget(self._band_sels[self.bands[0].name])
 
     def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:
         if encoder_id not in (1, 2, 3) or rotations == 0:
             return False
         band = self.selected_band
         if band is None:
-            # Chrome selected: consume Tweak1/2 silently, let Tweak3 (volume)
-            # fall through to normal handler dispatch.
             return encoder_id != 3
         delta = rotations
         p = self._state.bands[band.name]
         if encoder_id == 1:
             if band.gain_sym is None:
-                return True  # HP/LP: consume but no-op
+                return True
             new_gain = _clip(p.gain_db + delta * _GAIN_STEP_DB, band.gain_min, band.gain_max)
             if new_gain == p.gain_db:
                 return True
@@ -917,6 +811,8 @@ class EqPanel(PluginPanel[EqState]):
             self._replace_band(band, freq=new_freq)
             return True
         elif encoder_id == 3:
+            if band.q_sym is None:
+                return True
             new_q = _clip(p.q + delta * _Q_STEP, band.q_min, band.q_max)
             if new_q == p.q:
                 return True
@@ -925,18 +821,13 @@ class EqPanel(PluginPanel[EqState]):
             return True
         return False
 
-    # ── tick: drain coalesce queue + react to external bypass changes ──────
-
     def tick(self) -> None:
-        # Mirror external bypass changes (footswitch, MOD-UI) into the graph.
         bypassed = self.plugin.is_bypassed()
         if bypassed != getattr(self, "_last_bypassed", None):
             self._last_bypassed = bypassed
             self._graph.set_bypassed(bypassed)
             self._update_readout()
         super().tick()
-
-    # ── bypass style override (base calls this on toggle) ────────────────────
 
     def _refresh_bypass_style(self) -> None:
         super()._refresh_bypass_style()
@@ -946,13 +837,13 @@ class EqPanel(PluginPanel[EqState]):
     # ── state helpers ───────────────────────────────────────────────────────
 
     @property
-    def selected_band(self) -> Optional[Band]:
+    def selected_band(self) -> Optional[BandSpec]:
         if self.sel_ref is None:
             return None
         w = self.sel_ref
-        return w.band if isinstance(w, _BandSelectable) else None
+        return w.band if isinstance(w, BandSelectable) else None
 
-    def _replace_band(self, band: Band, **changes) -> None:
+    def _replace_band(self, band: BandSpec, **changes) -> None:
         old = self._state.bands[band.name]
         new = replace(old, **changes)
         new_bands = dict(self._state.bands)
@@ -963,12 +854,12 @@ class EqPanel(PluginPanel[EqState]):
 
     def _update_readout(self) -> None:
         sel_w = self.sel_ref
-        if isinstance(sel_w, _BandSelectable):
+        if isinstance(sel_w, BandSelectable):
             p = self._state.bands.get(sel_w.band.name)
             if p is None:
                 self._readout.set_message("")
             else:
-                name, freq, q, gain = _band_readout_fields(sel_w.band, p)
+                name, freq, q, gain = band_readout_fields(sel_w.band, p)
                 self._readout.set_fields(name, freq, q, gain)
         elif sel_w is self._btn_bypass:
             self._readout.set_message("Plugin bypassed" if self.plugin.is_bypassed() else "Bypass plugin")
@@ -979,49 +870,30 @@ class EqPanel(PluginPanel[EqState]):
         else:
             self._readout.set_message("")
 
-    # ── selection routing ───────────────────────────────────────────────────
-
     def _select_widget_ref(self, w):  # type: ignore[override]
         super()._select_widget_ref(w)
-        band_name = w.band.name if isinstance(w, _BandSelectable) else None
+        band_name = w.band.name if isinstance(w, BandSelectable) else None
         self._graph.set_selected(band_name)
         self._update_readout()
 
     # ── band-selectable callbacks ───────────────────────────────────────────
 
-    def _on_band_click(self, band: Band) -> None:
+    def _toggle_band_enable(self, band: BandSpec) -> None:
+        if band.enable_sym is None:
+            return
         p = self._state.bands[band.name]
         new_enabled = not p.enabled
         self.set_param(band.enable_sym, 1.0 if new_enabled else 0.0)
         self._replace_band(band, enabled=new_enabled)
 
-    def _on_band_long(self, band: Band) -> None:
-        """Reset this band to the pedalboard snapshot, skipping locked symbols."""
+    def _reset_band_to_snapshot(self, band: BandSpec) -> None:
         snap = self.plugin.pedalboard_snapshot
         for symbol in (band.enable_sym, band.freq_sym, band.q_sym):
+            if symbol is None:
+                continue
             if symbol in snap and not self._is_symbol_locked(self.plugin.instance_id, symbol):
                 self.set_param(symbol, snap[symbol])
         if band.gain_sym is not None and band.gain_sym in snap:
             if not self._is_symbol_locked(self.plugin.instance_id, band.gain_sym):
                 self.set_param(band.gain_sym, snap[band.gain_sym])
         self.apply_state(self.snapshot_state())
-
-    # ── EqState from flat snapshot (used by _on_band_long fallback) ────────
-
-    def _band_params_from_snapshot(self, band: Band) -> BandParams | None:
-        snap = self.plugin.pedalboard_snapshot
-        en = snap.get(band.enable_sym)
-        fr = snap.get(band.freq_sym)
-        qv = snap.get(band.q_sym)
-        if en is None or fr is None or qv is None:
-            return None
-        gain = snap.get(band.gain_sym, 0.0) if band.gain_sym else 0.0
-        return BandParams(
-            enabled=bool(en),
-            freq=float(fr),
-            q=float(qv),
-            gain_db=float(gain),
-        )
-
-
-register(*FIL4_URIS, customization=PluginCustomization(panel_cls=EqPanel))

@@ -12,6 +12,8 @@ Three hardware variants (v1/v2/v3) share a common `Hardware` base class (switche
 
 MOD-UI is the single writer of plugin bypass and parameter values. pi-Stomp emits changes (MIDI CC for footswitches, WebSocket `param_set` for other toggles) and updates its own indicators optimistically, then reconciles against MOD-UI's echo — which carries the absolute current value, so it overwrites rather than compounds. This keeps the UI responsive while avoiding dual-source drift.
 
+An lv2-ttl-guide exists in docs/ to describe the plugin (LV2) and pedalboard (TTL) formats.
+
 ## OS & Deployment
 
 pi-Stomp runs on a custom Raspberry Pi OS Lite image (Debian Trixie, arm64, RT kernel) built by the [pi-gen-pistomp](https://github.com/TreeFallSound/pi-gen-pistomp) repository. The image includes JACK2, mod-host, MOD-UI, and other system dependencies; pi-stomp itself is shipped as an `arm64` Debian package built from this repo at image build time, and updates ship via an apt repo hosted on GitHub Pages (full OTA design in `pi-gen-pistomp/docs/OTA.md`).

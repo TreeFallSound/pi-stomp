@@ -37,6 +37,7 @@ FontName = Literal[
     "big_bold",
     "small",
     "tiny",
+    "micro",
 ]
 
 
@@ -70,6 +71,12 @@ class Config:
             self.add_font("footswitch_badge", font_path("DejaVuSans-Bold.ttf"), 14)
         if "footswitch_tap_bpm" not in self.fonts:
             self.add_font("footswitch_tap_bpm", font_path("DejaVuSans-Bold.ttf"), 16)
+        if "tiny" not in self.fonts:
+            self.add_font("tiny", font_path("DejaVuSans.ttf"), 10)
+        if "small" not in self.fonts:
+            self.add_font("small", font_path("DejaVuSans.ttf"), 13)
+        if "micro" not in self.fonts:
+            self.add_font("micro", font_path("DejaVuSans.ttf"), 8)
         if "default_fgnd" not in self.colors:
             self.add_color("default_fgnd", (255, 255, 255))
         if "default_bkgnd" not in self.colors:

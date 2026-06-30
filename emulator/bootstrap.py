@@ -69,7 +69,7 @@ def bootstrap_emulator(version: EmulatorVersion, cwd: str):
     handler.add_hardware(hw)
 
     # Force plugin panel registration (eq, etc.)
-    import plugins.eq.panel  # noqa: F401
+    import plugins.eq.parametric  # noqa: F401
 
     window = EmulatorWindow(hw)
     handler.set_window(window)

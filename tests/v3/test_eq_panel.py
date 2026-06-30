@@ -18,9 +18,9 @@ from modalapi.parameter import Parameter
 from modalapi.plugin import Plugin
 from pistomp.controller import Controller
 from pistomp.input.event import EncoderEvent
-from plugins.eq import FIL4_MONO_URI
-from plugins.eq.bands import BANDS, PLUGIN_ENABLE_SYM
-from plugins.eq.panel import EqPanel
+from plugins.fil4 import FIL4_MONO_URI
+from plugins.fil4.band_spec import BAND_SPECS, PLUGIN_ENABLE_SYM
+from plugins.fil4.panel import Fil4Panel
 from tests.types import SystemFixture
 
 
@@ -59,11 +59,13 @@ def make_fil4_plugin(instance_id: str = "fil4") -> Plugin:
     params["gain"] = _param("gain", 0.0, -18.0, 18.0, instance_id=instance_id)
 
     # Per-band
-    for b in BANDS:
-        params[b.enable_sym] = _param(b.enable_sym, 0.0, instance_id=instance_id)
+    for b in BAND_SPECS:
+        if b.enable_sym is not None:
+            params[b.enable_sym] = _param(b.enable_sym, 0.0, instance_id=instance_id)
         f0 = (b.freq_min * b.freq_max) ** 0.5
         params[b.freq_sym] = _param(b.freq_sym, f0, b.freq_min, b.freq_max, instance_id=instance_id)
-        params[b.q_sym] = _param(b.q_sym, 1.0, b.q_min, b.q_max, instance_id=instance_id)
+        if b.q_sym is not None:
+            params[b.q_sym] = _param(b.q_sym, 1.0, b.q_min, b.q_max, instance_id=instance_id)
         if b.gain_sym is not None:
             params[b.gain_sym] = _param(b.gain_sym, 0.0, -18.0, 18.0, instance_id=instance_id)
 
@@ -88,7 +90,7 @@ def open_eq(v3_system: SystemFixture) -> Plugin:
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
 
-    handler.show_fullscreen_panel(plugin, EqPanel)
+    handler.show_fullscreen_panel(plugin, Fil4Panel)
     handler.poll_lcd_updates()
     return plugin
 
@@ -139,9 +141,9 @@ def test_eq_nav_cycles_bands(v3_system: SystemFixture, nav_handler, snapshot):
     """Forward-nav through every band; the halo + readout must follow."""
     handler = v3_system.handler
     open_eq(v3_system)
-    snapshot(BANDS[0].name)
+    snapshot(BAND_SPECS[0].name)
 
-    for band in BANDS[1:]:
+    for band in BAND_SPECS[1:]:
         nav(nav_handler, 1)
         handler.poll_lcd_updates()
         snapshot(band.name)

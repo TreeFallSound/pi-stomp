@@ -1,10 +1,4 @@
-"""Frequency-response magnitude (dB) for the fil4 / x42-eq filter chain.
-
-V1 uses RBJ Audio EQ Cookbook biquads for peaks and shelves, and simple
-analytical magnitude responses for HP/LP. This is an approximation of fil4's
-exact topologies (paramsect for peaks, custom HP/LP with resonance remaps).
-The peak/shelf curves are visually close enough for live tweaking; refine
-later if MOD-UI overlay comparison shows meaningful drift.
+"""Frequency-response magnitude (dB) for parametric EQ filter chains.
 
 All math is vectorised numpy. No scipy, no FFT — we evaluate
 |H(e^jω)| = |B(z)/A(z)| at z = exp(-jω) analytically at each graph frequency.
@@ -13,11 +7,12 @@ All math is vectorised numpy. No scipy, no FFT — we evaluate
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
 
-from plugins.eq.bands import BANDS, Band
+from plugins.eq.band_spec import BandSpec
 
 # ── constants ────────────────────────────────────────────────────────────────
 
@@ -50,7 +45,7 @@ class EqState:
 
     plugin_enabled: bool
     global_gain_db: float
-    bands: dict[str, BandParams]  # keyed by Band.name
+    bands: dict[str, BandParams]  # keyed by BandSpec.name
 
 
 # ── biquad evaluator ─────────────────────────────────────────────────────────
@@ -73,7 +68,6 @@ def _rbj_peaking(f0: float, q: float, gain_db: float) -> tuple[float, float, flo
     A = 10.0 ** (gain_db / 40.0)
     w0 = 2.0 * math.pi * f0 / FS
     cosw0 = math.cos(w0)
-    # fil4 port Q is bandwidth in octaves (reciprocal of RBJ Q)
     q_rbj = 1.0 / max(q, 1e-4)
     alpha = math.sin(w0) / (2.0 * q_rbj)
     a0 = 1.0 + alpha / A
@@ -91,7 +85,6 @@ def _rbj_lowshelf(f0: float, q: float, gain_db: float) -> tuple[float, float, fl
     w0 = 2.0 * math.pi * f0 / FS
     cosw0 = math.cos(w0)
     sinw0 = math.sin(w0)
-    # fil4 remaps port-Q to: q_eff = 0.2129 + port_Q / 2.25  (src/lv2.c)
     q_eff = 0.2129 + q / 2.25
     alpha = sinw0 / (2.0 * max(q_eff, 1e-4))
     two_sqrtA_alpha = 2.0 * math.sqrt(A) * alpha
@@ -122,9 +115,6 @@ def _rbj_highshelf(f0: float, q: float, gain_db: float) -> tuple[float, float, f
 
 
 def _rbj_highpass(f0: float, q: float) -> tuple[float, float, float, float, float]:
-    """2nd-order high-pass — RBJ Q. fil4's HP is a different topology
-    (1-pole cascade with feedback, ~12 dB/oct, RESHP(Q) remap); RBJ HP
-    has the same slope and is visually close enough for v1."""
     w0 = 2.0 * math.pi * f0 / FS
     cosw0 = math.cos(w0)
     alpha = math.sin(w0) / (2.0 * max(q, 1e-4))
@@ -138,10 +128,6 @@ def _rbj_highpass(f0: float, q: float) -> tuple[float, float, float, float, floa
 
 
 def _rbj_lowpass(f0: float, q: float) -> tuple[float, float, float, float, float]:
-    """2nd-order low-pass. fil4's LP is a 4-pole cascade (~24 dB/oct,
-    RESLP(Q) remap, pre-warped cutoff, plus a corrective high-shelf).
-    For v1 we approximate with 2× cascaded RBJ LP at sqrt-Q to get ~24 dB/oct.
-    """
     w0 = 2.0 * math.pi * f0 / FS
     cosw0 = math.cos(w0)
     alpha = math.sin(w0) / (2.0 * max(q, 1e-4))
@@ -157,21 +143,18 @@ def _rbj_lowpass(f0: float, q: float) -> tuple[float, float, float, float, float
 # ── per-stage magnitude (dB) ─────────────────────────────────────────────────
 
 
-def _stage_db(band: Band, p: BandParams) -> np.ndarray:
+def _stage_db(band: BandSpec, p: BandParams) -> np.ndarray:
     """Magnitude response in dB for one stage at GRAPH_FREQS."""
     f = max(min(p.freq, FS * 0.49), 1.0)
     if band.kind == "peak":
         return _biquad_mag_db(*_rbj_peaking(f, p.q, p.gain_db))
     if band.kind == "shelf":
-        if band.name.startswith("L"):
+        if band.shelf_side == "low":
             return _biquad_mag_db(*_rbj_lowshelf(f, p.q, p.gain_db))
         return _biquad_mag_db(*_rbj_highshelf(f, p.q, p.gain_db))
     if band.kind == "hp":
-        # Two cascaded passes only if Q is high enough to matter; v1 uses single
-        # 2nd-order RBJ HP. Slope is ~12 dB/oct (matches fil4's HP slope).
         return _biquad_mag_db(*_rbj_highpass(f, max(p.q, 0.5)))
     if band.kind == "lp":
-        # 2× cascade for ~24 dB/oct (matches fil4's LP slope).
         single = _biquad_mag_db(*_rbj_lowpass(f, max(p.q, 0.5)))
         return single * 2.0
     raise ValueError(f"unknown band kind {band.kind!r}")
@@ -183,29 +166,27 @@ def _stage_db(band: Band, p: BandParams) -> np.ndarray:
 class CurveCache:
     """Caches per-stage magnitude arrays keyed by params; only changed stages
     recompute. Aggregate curve is sum-in-dB across enabled stages plus the
-    flat global gain offset, multiplied by a `shade` factor when the plugin
-    is bypassed (renders dimmer to indicate inactive)."""
+    flat global gain offset."""
 
     def __init__(self) -> None:
         self._stage_cache: dict[tuple[str, tuple], np.ndarray] = {}
 
-    def _stage_curve(self, band: Band, p: BandParams) -> np.ndarray:
+    def _stage_curve(self, band: BandSpec, p: BandParams) -> np.ndarray:
         key = (band.name, p.key())
         cached = self._stage_cache.get(key)
         if cached is not None:
             return cached
         curve = _stage_db(band, p) if p.enabled else np.zeros(GRAPH_W)
-        # bound cache size — drop old entries for this band
         for k in list(self._stage_cache.keys()):
             if k[0] == band.name:
                 del self._stage_cache[k]
         self._stage_cache[key] = curve
         return curve
 
-    def compute(self, state: EqState) -> np.ndarray:
+    def compute(self, bands: Sequence[BandSpec], state: EqState) -> np.ndarray:
         """Sum of all enabled stages, plus flat global gain, in dB."""
         total = np.full(GRAPH_W, state.global_gain_db, dtype=float)
-        for band in BANDS:
+        for band in bands:
             p = state.bands.get(band.name)
             if p is None:
                 continue

@@ -5,8 +5,22 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from pistomp.nam.engine import CaptureState
 from pistomp.nam.panel import NamCapturePanel
+
+
+@pytest.fixture(autouse=True)
+def _no_jack(monkeypatch):
+    """Suppress all jack_connect/jack_disconnect/jack_lsp subprocess calls."""
+    import pistomp.nam.routing as routing
+
+    monkeypatch.setattr(routing, "connect_monitor", lambda **_: None)
+    monkeypatch.setattr(routing, "disconnect_monitor", lambda **_: None)
+    monkeypatch.setattr(routing, "snapshot", lambda **_: [])
+    monkeypatch.setattr(routing, "clear", lambda **_: None)
+    monkeypatch.setattr(routing, "restore", lambda *_: None)
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +98,7 @@ def _make_panel(engine: _FakeEngine, on_dismiss=None) -> NamCapturePanel:
     with (
         patch.object(NamCapturePanel, "_create_engine", return_value=engine),
         patch("pistomp.nam.panel.wav_duration", return_value=190.0),
+        patch("pistomp.nam.panel.wav_peak_dbfs", return_value=-6.0),
     ):
         return NamCapturePanel(output_dir="/tmp", on_dismiss=on_dismiss)
 

@@ -636,6 +636,7 @@ class Lcd(abstract_lcd.Lcd):
     def plugin_event(self, event, widget, plugin):
         customization = lookup(plugin)
         panel_cls = customization.panel_cls
+        menu_widget_cls = customization.menu_widget_cls
         if event == InputEvent.CLICK:
             if panel_cls is not None and customization.intercept_shortpress:
                 self.handler.show_fullscreen_panel(plugin, panel_cls)
@@ -644,8 +645,20 @@ class Lcd(abstract_lcd.Lcd):
         elif event == InputEvent.LONG_CLICK:
             if panel_cls is not None:
                 self.handler.show_fullscreen_panel(plugin, panel_cls)
+            elif menu_widget_cls is not None:
+                self._show_custom_layout_menu(plugin, menu_widget_cls)
             else:
                 self.draw_parameter_menu(plugin)
+
+    def _show_custom_layout_menu(self, plugin, menu_widget_cls):
+        from pistomp.menu_panel import CustomLayoutMenu
+
+        panel = CustomLayoutMenu(
+            plugin=plugin,
+            menu_widget_cls=menu_widget_cls,
+            on_dismiss=lambda p: self.pstack.pop_panel(p),
+        )
+        self.pstack.push_panel(panel)
 
     def footswitch_event(self, event, widget, footswitch):
         if event == InputEvent.CLICK:
