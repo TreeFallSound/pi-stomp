@@ -41,19 +41,12 @@ from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
 from pistomp.encoder_controller import EncoderController
 from blend.manager import BlendMode
 from plugins.base import PluginPanel
-from plugins import lookup
 
 # Parameter dialog auto-dismiss timeout (seconds)
 PARAMETER_DIALOG_TIMEOUT = 1.0
 
 # Subtitle auto-hide after no nav encoder movement (seconds)
 SUBTITLE_TIMEOUT = 1.3
-
-# LV2 plugin URIs that get the NAM (Neural Amp Modeler) display style: a
-# tri-color border in the Tone3000 logo palette (red top, yellow sides, blue
-# NAM plugin URIs are now registered in plugins/__init__.py via
-# NAM plugin URIs are now registered in plugins/nam/ via
-# PluginCustomization(tile_active_color=..., tile_border=...).
 
 # Wifi "processing" spinner full-cycle rate (Hz), wall-clock paced.
 WIFI_SPINNER_HZ = 1.5
@@ -597,21 +590,13 @@ class Lcd(abstract_lcd.Lcd):
 
         def tile_factory(node, box, parent):
             plugin = plugins_by_id[node.id]
-            customization = lookup(plugin)
-            if customization.display_name_fn is not None:
-                override = customization.display_name_fn(plugin)
-                display_name = override if override is not None else plugin.display_name
-            else:
-                display_name = customization.display_name or plugin.display_name
+            display_name = plugin.display_name
             label = display_name[:self.plugin_label_length].replace("_", "")
             label = self.shorten_name(label, box.width)
-            if customization.subtitle_fn is not None:
-                subtitle = customization.subtitle_fn(plugin) or display_name
-            else:
-                subtitle = f"{plugin.category}: {display_name}" if plugin.category else display_name
+            subtitle = plugin.subtitle or (f"{plugin.category}: {display_name}" if plugin.category else display_name)
             tile = PluginTile(box=box, text=label, outline_radius=5,
                               parent=parent, action=self.plugin_event, object=plugin,
-                              subtitle=subtitle, border=customization.tile_border,
+                              subtitle=subtitle, border=plugin.tile_border,
                               backdrop=self.background)
             tile.set_font(self.small_font)
             self.color_plugin(tile, plugin)
@@ -634,11 +619,10 @@ class Lcd(abstract_lcd.Lcd):
         self.main_panel.refresh()
 
     def plugin_event(self, event, widget, plugin):
-        customization = lookup(plugin)
-        panel_cls = customization.panel_cls
-        menu_widget_cls = customization.menu_widget_cls
+        panel_cls = plugin.panel_cls
+        menu_widget_cls = plugin.menu_widget_cls
         if event == InputEvent.CLICK:
-            if panel_cls is not None and customization.intercept_shortpress:
+            if panel_cls is not None and plugin.intercept_shortpress:
                 self.handler.show_fullscreen_panel(plugin, panel_cls)
             else:
                 self.handler.toggle_plugin_bypass(widget, plugin)
@@ -677,9 +661,8 @@ class Lcd(abstract_lcd.Lcd):
             # treats outline_color=None as "no border". Custom borders
             # (e.g. NAM tri-color) are passed via PluginCustomization.tile_border.
             widget.set_outline(0, None)
-            customization = lookup(plugin)
-            if customization.tile_active_color is not None:
-                widget.set_background(customization.tile_active_color)
+            if plugin.tile_active_color is not None:
+                widget.set_background(plugin.tile_active_color)
             else:
                 widget.set_background(self.get_plugin_color(plugin))
             widget.set_foreground(self.background)
@@ -724,8 +707,6 @@ class Lcd(abstract_lcd.Lcd):
         return color
 
     def get_plugin_color(self, plugin):
-        if plugin.notes_text is not None:
-            return (214, 217, 111)
         if plugin.category:
             return self.get_category_color(plugin.category)
         return self.default_plugin_color
@@ -788,7 +769,10 @@ class Lcd(abstract_lcd.Lcd):
         width = slot_width if slot_width is not None else self.footswitch_width
         plugin = next((p for p in self.current.pedalboard.plugins
                        if p.instance_id == param.instance_id), None)
-        name = plugin.display_name if plugin is not None else param.instance_id
+        if plugin is not None:
+            name = plugin.display_name
+        else:
+            name = param.instance_id
         return self.shorten_name(name, width)
 
     def draw_footswitches(self):

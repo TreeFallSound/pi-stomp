@@ -8,32 +8,56 @@ future change.
 from __future__ import annotations
 
 import os
+import re
 import urllib.parse
+from dataclasses import dataclass
+from pathlib import Path
 
 from common.color import RectBorder
+from modalapi.plugin import Plugin
+from modalapi.plugin_customization import PluginExtraData, extra_data_as
 from plugins.customization import PluginCustomization, register
 
-_NAM_YELLOW = (224, 179, 0)
-_NAM_RED = (220, 20, 20)
-_NAM_BLUE = (20, 30, 220)
-
-_NAM_URIS = (
+NAM_URIS = (
     "http://github.com/mikeoliphant/neural-amp-modeler-lv2",
     "http://gareus.org/oss/lv2/nam#mono",
     "http://gareus.org/oss/lv2/nam#stereo",
     "https://tone3000.com/plugins/nam",
 )
 
+_NAM_YELLOW = (224, 179, 0)
+_NAM_RED = (220, 20, 20)
+_NAM_BLUE = (20, 30, 220)
 
-def _model_filename(plugin) -> str | None:
-    path = plugin.model_path
-    if path is None:
+_MODEL_RE = re.compile(r'<[^>]*#model>\s+<([^>]+)>')
+
+
+@dataclass(frozen=True)
+class NamData(PluginExtraData):
+    """The model file referenced by a NAM instance's effect TTL."""
+
+    model_path: str
+
+
+def _nam_extra_data(bundlepath: str, instance_number: int) -> NamData | None:
+    ttl_path = Path(bundlepath) / f"effect-{instance_number}" / "effect.ttl"
+    try:
+        content = ttl_path.read_text(encoding="utf-8")
+    except OSError:
         return None
-    decoded = urllib.parse.unquote(path)
+    m = _MODEL_RE.search(content)
+    return NamData(model_path=m.group(1)) if m else None
+
+
+def _model_filename(plugin: Plugin) -> str | None:
+    data = extra_data_as(plugin, NamData)
+    if data is None:
+        return None
+    decoded = urllib.parse.unquote(data.model_path)
     return os.path.basename(decoded)
 
 
-def _nam_display_name(plugin) -> str | None:
+def _nam_display_name(plugin: Plugin) -> str | None:
     name = _model_filename(plugin)
     if name is None:
         return None
@@ -41,7 +65,7 @@ def _nam_display_name(plugin) -> str | None:
     return stem
 
 
-def _nam_subtitle(plugin) -> str | None:
+def _nam_subtitle(plugin: Plugin) -> str | None:
     name = _model_filename(plugin)
     if name is None:
         return None
@@ -49,7 +73,7 @@ def _nam_subtitle(plugin) -> str | None:
 
 
 register(
-    *_NAM_URIS,
+    *NAM_URIS,
     customization=PluginCustomization(
         tile_active_color=_NAM_YELLOW,
         tile_border=RectBorder(
@@ -60,5 +84,6 @@ register(
         ),
         display_name_fn=_nam_display_name,
         subtitle_fn=_nam_subtitle,
+        extra_data_fn=_nam_extra_data,
     ),
 )

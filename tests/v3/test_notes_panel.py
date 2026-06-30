@@ -11,8 +11,9 @@ from modalapi.parameter import Parameter
 from modalapi.plugin import Plugin
 from pistomp.controller import Controller
 from pistomp.input.event import EncoderEvent
+from plugins.customization import lookup
 from plugins.notes import NOTES_URI
-from plugins.notes.panel import NotesPanel
+from plugins.notes.panel import NotesData, NotesPanel
 from tests.types import SystemFixture
 import common.token as Token
 
@@ -59,8 +60,8 @@ def make_notes_plugin(instance_id: str = "notes_1") -> Plugin:
     params: dict[str, Parameter] = {
         ":bypass": Parameter(bypass_info, 0.0, None, instance_id),
     }
-    plugin = Plugin(instance_id, params, {}, "Utility", uri=NOTES_URI)
-    plugin.notes_text = _NOTES_TEXT
+    plugin = Plugin(instance_id, params, {}, "Utility", uri=NOTES_URI, customization=lookup(NOTES_URI))
+    plugin.extra_data = NotesData(text=_NOTES_TEXT)
     plugin.has_footswitch = False
     plugin.pedalboard_snapshot = {":bypass": 0.0}
     return plugin

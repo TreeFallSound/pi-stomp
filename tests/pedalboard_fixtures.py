@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from modalapi.connections import Connection, Endpoint, EndpointKind
+from modalapi.plugin_customization import PluginExtraData
 
 
 @dataclass
@@ -26,12 +27,36 @@ class MockPlugin:
     has_footswitch: bool = False
     bypassed: bool = False
     controllers: list = field(default_factory=list)
-    notes_text: str | None = None
     uri: str | None = None
+    extra_data: PluginExtraData | None = None
 
     @property
     def display_name(self) -> str:
         return self.instance_id.replace("_", "")
+
+    @property
+    def subtitle(self) -> str | None:
+        return None
+
+    @property
+    def tile_active_color(self) -> tuple[int, int, int] | None:
+        return None
+
+    @property
+    def tile_border(self):
+        return None
+
+    @property
+    def panel_cls(self):
+        return None
+
+    @property
+    def menu_widget_cls(self):
+        return None
+
+    @property
+    def intercept_shortpress(self) -> bool:
+        return False
 
     def is_bypassed(self) -> bool:
         return self.bypassed

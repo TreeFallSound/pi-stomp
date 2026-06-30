@@ -34,6 +34,10 @@ import common.util as util
 from common.parameter import Parameter
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
+# Importing the plugins package runs every plugin module's register() — this is
+# the explicit, deterministic load of the customization registry. lookup is then
+# injected into Pedalboard as its Customizer.
+from plugins.customization import lookup as plugin_lookup
 import modalapi.external_midi as ExternalMidi
 from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 from modalapi.ethernet import EthernetManager
@@ -767,7 +771,7 @@ class Modhandler(Handler):
             logging.info("Loading pedalboard info: %s" % pb[Token.TITLE])
             bundle = pb[Token.BUNDLE]
             title = pb[Token.TITLE]
-            pedalboard = Pedalboard.Pedalboard(title, bundle, root_uri=self.root_uri)
+            pedalboard = Pedalboard.Pedalboard(title, bundle, root_uri=self.root_uri, customizer=plugin_lookup)
             pedalboard.load_bundle(bundle, self.plugin_dict)
             self.pedalboards[bundle] = pedalboard
             self.pedalboard_list.append(pedalboard)
@@ -779,7 +783,7 @@ class Modhandler(Handler):
         title = old.title
 
         # create a new one
-        pedalboard = Pedalboard.Pedalboard(title, bundle, root_uri=self.root_uri)
+        pedalboard = Pedalboard.Pedalboard(title, bundle, root_uri=self.root_uri, customizer=plugin_lookup)
         pedalboard.load_bundle(bundle, self.plugin_dict)
         self.pedalboards[bundle] = pedalboard
 

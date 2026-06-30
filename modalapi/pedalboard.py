@@ -20,7 +20,6 @@ import os
 import requests as req
 import sys
 import urllib.parse
-from pathlib import Path
 from typing import Optional
 
 import common.token as Token
@@ -29,24 +28,18 @@ import common.util as util
 import common.parameter as Parameter
 import modalapi.plugin as Plugin
 from modalapi.connections import Connection, build_connection
-
-_NOTES_URI = "http://open-music-kontrollers.ch/lv2/notes#notes"
-
-_NAM_URIS = frozenset(
-    {
-        "http://github.com/mikeoliphant/neural-amp-modeler-lv2",
-        "http://gareus.org/oss/lv2/nam#mono",
-        "http://gareus.org/oss/lv2/nam#stereo",
-        "https://tone3000.com/plugins/nam",
-    }
-)
+from modalapi.plugin_customization import Customizer, PluginExtraData, default_customizer
 
 
 class Pedalboard:
-    def __init__(self, title, bundle, root_uri="http://localhost:80/"):
+    def __init__(self, title, bundle, root_uri="http://localhost:80/", customizer: Customizer | None = None):
         self.root_uri = root_uri
         self.title = title
         self.bundle = bundle  # TODO used?
+        # Resolver injected by the composition root (handler); defaults to a
+        # no-op so headless/v1 construction degrades to standard behaviour
+        # instead of silently depending on plugin-package import order.
+        self._customizer: Customizer = customizer or default_customizer
         self.plugins = []
         self.connections: list[Connection] = []
 
@@ -139,7 +132,7 @@ class Pedalboard:
         u = self.world.new_uri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
         plugin_types = [i for i in util.LILV_FOREACH(plugin.get_value(u), fill_in_type)]
         if "http://moddevices.com/ns/modpedal#Pedalboard" not in plugin_types:
-            raise Exception("get_pedalboard_info(%s) - plugin has no mod:Pedalboard type".format(bundlepath))
+            raise Exception(f"get_pedalboard_info({bundlepath}) - plugin has no mod:Pedalboard type")
 
         # Iterate blocks (plugins). Order is imposed afterward from canvas
         # coordinates (see below), so block iteration order doesn't matter.
@@ -225,20 +218,13 @@ class Pedalboard:
                             parameters[symbol] = param
 
                     # logging.debug("  Label: %s" % label)
-            notes_ttl_path: Path | None = None
-            model_ttl_path: Path | None = None
-            if plugin_uri == _NOTES_URI:
+            c = self._customizer(plugin_uri)
+            extra_data: PluginExtraData | None = None
+            if c.extra_data_fn is not None:
                 n_node = self.world.get(block, self.uri_instance_number, None)
                 if n_node is not None:
                     try:
-                        notes_ttl_path = Path(bundlepath) / f"effect-{int(str(n_node))}" / "effect.ttl"
-                    except ValueError:
-                        pass
-            elif plugin_uri in _NAM_URIS:
-                n_node = self.world.get(block, self.uri_instance_number, None)
-                if n_node is not None:
-                    try:
-                        model_ttl_path = Path(bundlepath) / f"effect-{int(str(n_node))}" / "effect.ttl"
+                        extra_data = c.extra_data_fn(bundlepath, int(str(n_node)))
                     except ValueError:
                         pass
             inst = Plugin.Plugin(
@@ -247,8 +233,8 @@ class Pedalboard:
                 plugin_info,
                 category,
                 uri=plugin_uri,
-                notes_ttl_path=notes_ttl_path,
-                model_ttl_path=model_ttl_path,
+                customization=c,
+                extra_data=extra_data,
             )
             inst.canvas_x = self._coord(block, self.uri_canvas_x)
             inst.canvas_y = self._coord(block, self.uri_canvas_y)
@@ -341,7 +327,7 @@ class Pedalboard:
             default_val = ranges.get("default")
             parameters[sym] = Parameter.Parameter(pp, default_val, None, instance_id)
 
-        inst = Plugin.Plugin(instance_id, parameters, info, category, uri=uri)
+        inst = Plugin.Plugin(instance_id, parameters, info, category, uri=uri, customization=self._customizer(uri))
         inst.canvas_x = x
         inst.canvas_y = y
         return inst

@@ -242,6 +242,7 @@ def fake_lcd():
 def make_plugin():
     from modalapi.plugin import Plugin
     from modalapi.parameter import Parameter
+    from plugins.customization import lookup
 
     def _make(instance_id, category="Distortion", bypassed=False, has_footswitch=False, parameters=None, uri=None):
         if parameters is None:
@@ -249,7 +250,9 @@ def make_plugin():
         bypass_info = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
         bypass_param = Parameter(bypass_info, bypassed, None, instance_id)
         parameters[":bypass"] = bypass_param
-        p = Plugin(instance_id, parameters, {}, category, uri=uri)
+        # Fixture acts as the composition root: resolve customization by URI,
+        # mirroring how the handler injects it in production.
+        p = Plugin(instance_id, parameters, {}, category, uri=uri, customization=lookup(uri))
         p.has_footswitch = has_footswitch
         return p
 

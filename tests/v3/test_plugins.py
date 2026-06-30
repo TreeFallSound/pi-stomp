@@ -168,7 +168,7 @@ def test_v3_nam_plugin_uses_tri_color_tile(v3_system: SystemFixture, make_plugin
     """A plugin whose URI is registered with a NAM customization renders with the
     Tone3000 palette: yellow body when active, black body + white text + tri-color
     border (red top, yellow sides, blue bottom) when bypassed."""
-    from plugins.customization import _URI_MAP
+    from plugins.customization import lookup, registered_uris
 
     handler = v3_system.handler
     hw = v3_system.hw
@@ -176,9 +176,9 @@ def test_v3_nam_plugin_uses_tri_color_tile(v3_system: SystemFixture, make_plugin
     assert handler.current
     assert handler.lcd
 
-    # Find a NAM URI from the registry
-    nam_uri = next(uri for uri, c in _URI_MAP.items() if c.tile_active_color is not None)
-    nam_customization = _URI_MAP[nam_uri]
+    # NAM is the only registration with a tri-color tile_border.
+    nam_uri = next(u for u in registered_uris() if lookup(u).tile_border is not None)
+    nam_customization = lookup(nam_uri)
     assert nam_customization.tile_active_color is not None
     assert nam_customization.tile_border is not None
     assert nam_customization.tile_border.top is not None
@@ -205,7 +205,7 @@ def test_v3_nam_plugin_uses_tri_color_tile(v3_system: SystemFixture, make_plugin
 
 def test_v3_nam_plugin_mixed_with_other_types(v3_system: SystemFixture, make_plugin, snapshot):
     """NAM tile styling does not leak onto neighbouring non-NAM tiles in the same grid."""
-    from plugins.customization import _URI_MAP
+    from plugins.customization import lookup, registered_uris
     from uilib.text import TextWidget
 
     handler = v3_system.handler
@@ -214,7 +214,7 @@ def test_v3_nam_plugin_mixed_with_other_types(v3_system: SystemFixture, make_plu
     assert handler.current
     assert handler.lcd
 
-    nam_uri = next(uri for uri, c in _URI_MAP.items() if c.tile_active_color is not None)
+    nam_uri = next(u for u in registered_uris() if lookup(u).tile_border is not None)
     plugins = [
         make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=False),
         make_plugin("nam1", category="Simulator", bypassed=False, has_footswitch=False, uri=nam_uri),

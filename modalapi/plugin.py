@@ -17,11 +17,16 @@ from __future__ import annotations
 
 import json
 import re
-from functools import cached_property
-from pathlib import Path
+from typing import TYPE_CHECKING
 
+from common.color import RectBorder
 from common.parameter import Parameter
+from modalapi.plugin_customization import PluginCustomization, PluginExtraData
 from pistomp.controller import Controller
+
+if TYPE_CHECKING:
+    from plugins.base import PluginPanel
+    from uilib.widget import Widget
 
 Point = tuple[int, int]
 
@@ -30,9 +35,6 @@ LcdPosition = tuple[int, int, int] | tuple[Point, Point, int]
 
 
 class Plugin:
-    _NOTES_RE = re.compile(r'<[^>]*notes#text>\s+"""(.*?)"""', re.DOTALL)
-    _MODEL_RE = re.compile(r'<[^>]*#model>\s+<([^>]+)>')
-
     def __init__(
         self,
         instance_id: str,
@@ -40,8 +42,8 @@ class Plugin:
         info: dict | None,
         category: str | None = None,
         uri: str | None = None,
-        notes_ttl_path: Path | None = None,
-        model_ttl_path: Path | None = None,
+        customization: PluginCustomization | None = None,
+        extra_data: PluginExtraData | None = None,
     ) -> None:
         self.instance_id: str = instance_id.lstrip("/")
         self.info: dict | None = info
@@ -56,36 +58,53 @@ class Plugin:
         self.category: str | None = category
         self.uri: str | None = uri
         self.pedalboard_snapshot: dict[str, float] = {}
-        self._notes_ttl_path = notes_ttl_path
-        self._model_ttl_path = model_ttl_path
+        # Customization is injected by the composition root, never looked up
+        # here — Plugin must not reach up into the plugins package.
+        self._customization: PluginCustomization = customization or PluginCustomization()
+        self.extra_data: PluginExtraData | None = extra_data
 
-    @cached_property
-    def notes_text(self) -> str | None:
-        if self._notes_ttl_path is None:
-            return None
-        try:
-            content = self._notes_ttl_path.read_text(encoding="utf-8")
-        except OSError:
-            return None
-        m = self._NOTES_RE.search(content)
-        return m.group(1) if m else None
-
-    @cached_property
-    def model_path(self) -> str | None:
-        if self._model_ttl_path is None:
-            return None
-        try:
-            content = self._model_ttl_path.read_text(encoding="utf-8")
-        except OSError:
-            return None
-        m = self._MODEL_RE.search(content)
-        return m.group(1) if m else None
-
-    @cached_property
+    @property
     def display_name(self) -> str:
+        c = self._customization
+        if c.display_name_fn:
+            override = c.display_name_fn(self)
+            if override is not None:
+                return override
+        if c.display_name:
+            return c.display_name
+        return self._heuristic_name()
+
+    def _heuristic_name(self) -> str:
         id_base = re.sub(r"_?\d+$", "", self.instance_id).lower()
         raw = self.name if len(self.name) < len(self.instance_id) or id_base in ("mono", "stereo") else self.instance_id
         return raw.replace("_", "")
+
+    @property
+    def subtitle(self) -> str | None:
+        c = self._customization
+        if c.subtitle_fn:
+            return c.subtitle_fn(self)
+        return None
+
+    @property
+    def tile_active_color(self) -> tuple[int, int, int] | None:
+        return self._customization.tile_active_color
+
+    @property
+    def tile_border(self) -> RectBorder | None:
+        return self._customization.tile_border
+
+    @property
+    def panel_cls(self) -> type[PluginPanel] | None:
+        return self._customization.panel_cls
+
+    @property
+    def menu_widget_cls(self) -> type[Widget] | None:
+        return self._customization.menu_widget_cls
+
+    @property
+    def intercept_shortpress(self) -> bool:
+        return self._customization.intercept_shortpress
 
     def is_bypassed(self) -> bool:
         param = self.parameters.get(":bypass")

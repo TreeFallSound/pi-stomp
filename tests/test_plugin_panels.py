@@ -82,6 +82,7 @@ def fake_plugin():
         info={},
         category="Utility",
         uri="http://example.com/demo",
+        customization=lookup("http://example.com/demo"),
     )
     # pedalboard_snapshot set by parser in real life; simulate here
     # Note: Plugin.__init__ strips leading '/' from instance_id
@@ -99,7 +100,7 @@ def fake_handler():
 
 class TestRegistry:
     def test_register_panel_populates_dict(self, fake_plugin):
-        c = lookup(fake_plugin)
+        c = lookup(fake_plugin.uri)
         assert c.panel_cls is DemoPanel
 
 

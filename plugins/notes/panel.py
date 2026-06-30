@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
 from typing_extensions import override
 
 import common.token as Token
+from modalapi.plugin import Plugin
+from modalapi.plugin_customization import PluginExtraData, extra_data_as
 from plugins.base import PluginPanel
 from plugins.customization import PluginCustomization, register
 from plugins.notes import NOTES_URI
@@ -15,6 +21,30 @@ from uilib.misc import TextHAlign, get_text_size
 from uilib.paint import PaintContext
 from uilib.text import TextWidget
 from uilib.widget import Widget
+
+_NOTES_RE = re.compile(r'<[^>]*notes#text>\s+"""(.*?)"""', re.DOTALL)
+
+
+@dataclass(frozen=True)
+class NotesData(PluginExtraData):
+    """The note text embedded in a Notes instance's effect TTL."""
+
+    text: str
+
+
+def _notes_extra_data(bundlepath: str, instance_number: int) -> NotesData | None:
+    ttl_path = Path(bundlepath) / f"effect-{instance_number}" / "effect.ttl"
+    try:
+        content = ttl_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = _NOTES_RE.search(content)
+    return NotesData(text=m.group(1)) if m else None
+
+
+def _notes_text(plugin: Plugin) -> str:
+    data = extra_data_as(plugin, NotesData)
+    return data.text if data is not None else ""
 
 # layout constants (shared with base)
 _W = 320
@@ -103,7 +133,7 @@ class NotesPanel(PluginPanel[None]):
         self._line_h = max(1, line_h)
         self._vis_count = max(1, (_CONTENT_H - _MARGIN) // self._line_h)
 
-        raw = self.plugin.notes_text or ""
+        raw = _notes_text(self.plugin)
         text_w = _W - 2 * _MARGIN - _SB_W - 2
         self._lines = _wrap_lines(raw, font, text_w)
         self._top = 0
@@ -158,10 +188,17 @@ class NotesPanel(PluginPanel[None]):
             self._scrollbar.update(self._top)
 
 
-def _notes_shortname(plugin) -> str | None:
-    if plugin.notes_text:
-        return "✎" + plugin.notes_text.split('\n')[0].strip()
+def _notes_shortname(plugin: Plugin) -> str | None:
+    text = _notes_text(plugin)
+    if text:
+        return "✎" + text.split('\n')[0].strip()
     return None
 
 
-register(NOTES_URI, customization=PluginCustomization(panel_cls=NotesPanel, intercept_shortpress=True, display_name_fn=_notes_shortname))
+register(NOTES_URI, customization=PluginCustomization(
+    panel_cls=NotesPanel,
+    intercept_shortpress=True,
+    display_name_fn=_notes_shortname,
+    tile_active_color=(214, 217, 111),
+    extra_data_fn=_notes_extra_data,
+))
