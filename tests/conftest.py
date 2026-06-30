@@ -80,6 +80,17 @@ def _surface_to_rgb_bytes(surface) -> tuple[bytes, tuple[int, int]]:
     return rgb.tobytes(), rgb.size
 
 
+def _dirty_rect(a_bytes: bytes, b_bytes: bytes, size: tuple[int, int]) -> str:
+    """Human-readable bounding box of the pixels where two RGB frames differ."""
+    a = np.frombuffer(a_bytes, dtype=np.uint8).reshape(size[1], size[0], 3)
+    b = np.frombuffer(b_bytes, dtype=np.uint8).reshape(size[1], size[0], 3)
+    diff = np.any(a != b, axis=2)  # (H, W) bool mask of differing pixels
+    ys, xs = np.where(diff)
+    min_x, max_x = int(xs.min()), int(xs.max())
+    min_y, max_y = int(ys.min()), int(ys.max())
+    return f"({min_x}, {min_y})-({max_x}, {max_y}) [{max_x - min_x + 1}x{max_y - min_y + 1}px]"
+
+
 def assert_snapshot(surface: pygame.Surface, name: str, *, update: bool = False):
     path = _SNAPSHOT_DIR / f"{name}.png"
     rgb_bytes, size = _surface_to_rgb_bytes(surface)
@@ -95,16 +106,8 @@ def assert_snapshot(surface: pygame.Surface, name: str, *, update: bool = False)
     if rgb_bytes == expected_bytes:
         return
 
-    # Find dirty rectangle via numpy
-    a = np.frombuffer(rgb_bytes, dtype=np.uint8).reshape(size[1], size[0], 3)
-    b = np.frombuffer(expected_bytes, dtype=np.uint8).reshape(size[1], size[0], 3)
-    diff = np.any(a != b, axis=2)  # (H, W) bool mask of differing pixels
-    ys, xs = np.where(diff)
-    min_x, max_x = int(xs.min()), int(xs.max())
-    min_y, max_y = int(ys.min()), int(ys.max())
     raise AssertionError(
-        f"Snapshot mismatch: {name} - dirty rect ({min_x}, {min_y})-({max_x}, {max_y}) "
-        f"[{max_x - min_x + 1}x{max_y - min_y + 1}px] "
+        f"Snapshot mismatch: {name} - dirty rect {_dirty_rect(rgb_bytes, expected_bytes, size)} "
         f"(re-run with --snapshot-update to accept)"
     )
 
@@ -119,13 +122,27 @@ def snapshot(request, fake_lcd, snapshot_update):
     rel = Path(request.fspath).relative_to(_TESTS_DIR)
     module = str(rel.with_suffix(""))
     test = request.node.name
+    captured: dict[str, bytes] = {}
 
     def _assert(suffix=None):
         if suffix is None:
             suffix = str(counter[0])
             counter[0] += 1
         fake_lcd.flush()
-        assert_snapshot(fake_lcd.frames[-1], f"{module}/{test}/{suffix}", update=snapshot_update)
+        surface = fake_lcd.frames[-1]
+        name = f"{module}/{test}/{suffix}"
+        rgb_bytes, size = _surface_to_rgb_bytes(surface)
+
+        prior = captured.get(name)
+        if prior is not None and prior != rgb_bytes:
+            raise AssertionError(
+                f"Snapshot changed: '{name}' was captured earlier in this test with a "
+                f"different frame — the screen did not return to its prior state. "
+                f"Dirty rect {_dirty_rect(rgb_bytes, prior, size)}. "
+            )
+        captured[name] = rgb_bytes
+
+        assert_snapshot(surface, name, update=snapshot_update)
 
     return _assert
 
