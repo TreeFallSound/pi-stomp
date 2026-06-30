@@ -250,6 +250,8 @@ Types: `KNOB` and `EXPRESSION` (config-driven). When `autosync: true`, `initiali
 - **v1**: `pistomp/lcdgfx.py` — monochrome 128×64 display via gfxhat library. Direct PIL/ImageDraw rendering into fixed zones. No handler reference.
 - **v2/v3**: `pistomp/lcd320x240.py` — color 320×240 display. Widget-based UI (`uilib/`). Builder pattern constructs panels from pedalboard data. Receives handler reference for UI action callbacks.
 
+**Surface formats** — Never create a bare `pygame.Surface((w,h))`: it inherits the display format, which is opaque RGB headless (device/tests) but ARGB under a real window driver (the cocoa emulator). That stray alpha channel silently breaks SRCALPHA compositing (e.g. glyph pastes drop their fill). Always be explicit: `pygame.SRCALPHA` for alpha surfaces, or `depth=32, masks=(0xFF0000, 0xFF00, 0xFF, 0)` for opaque RGB ones (bit-identical to the device's headless 32-bit XRGB; `depth=24` differs in AA rounding).
+
 ### WebSocket Bridge (`modalapi/websocket_bridge.py`, `modalapi/ws_protocol.py`)
 
 `AsyncWebSocketBridge` manages a background daemon thread that owns the WebSocket connection. Queues:

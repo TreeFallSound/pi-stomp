@@ -41,7 +41,7 @@ class LcdPygame(LcdBase):
         self.width = width
         self.height = height
         self.spi_hz = spi_hz
-        self.surface = pygame.Surface((width, height))
+        self.surface = pygame.Surface((width, height), depth=32, masks=(0xFF0000, 0xFF00, 0xFF, 0))
         self._queue = queue.Queue()
         self._worker = threading.Thread(target=self._spi_worker, daemon=True)
         self._worker.start()
@@ -65,8 +65,8 @@ class LcdPygame(LcdBase):
         w, h = (self.width, self.height) if box is None else (box.width, box.height)
         return spi_transfer_ms(w * h, self.spi_hz)
 
-    def update(self, surface: pygame.Surface, box=None):
-        img_w, img_h = surface.get_size()
+    def update(self, image: pygame.Surface, box=None):
+        img_w, img_h = image.get_size()
 
         if box is not None:
             x0, y0, x1, y1 = box.rect
@@ -76,14 +76,14 @@ class LcdPygame(LcdBase):
             y1 = max(y0, min(y1, img_h))
             # Crop to the dirty region if the surface is larger
             if x0 != 0 or y0 != 0 or x1 != img_w or y1 != img_h:
-                surface = surface.subsurface(pygame.Rect(x0, y0, x1 - x0, y1 - y0))
+                image = image.subsurface(pygame.Rect(x0, y0, x1 - x0, y1 - y0))
             dest = (x0, y0)
         else:
             dest = (0, 0)
 
         # Copy on the main thread so the caller can keep mutating its surface;
         # the worker only ever touches this detached snapshot.
-        pg_surf = surface.copy()
+        pg_surf = image.copy()
         w, h = pg_surf.get_size()
         transfer_s = spi_transfer_ms(w * h, self.spi_hz) / 1000
         self._queue.put((pg_surf, dest, transfer_s, time.perf_counter()))

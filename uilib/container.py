@@ -115,7 +115,11 @@ class ContainerWidget(Widget):
         if self.has_alpha:
             self.surface = pygame.Surface((int(w), int(h)), pygame.SRCALPHA)
         else:
-            self.surface = pygame.Surface((int(w), int(h)))
+            # Pin 32-bit XRGB, no alpha. A bare Surface inherits the display
+            # format (ARGB under emulator/cocoa); a stray alpha channel breaks
+            # SRCALPHA paste compositing. See CLAUDE.md "Surface formats".
+            self.surface = pygame.Surface((int(w), int(h)), depth=32,
+                                          masks=(0xFF0000, 0xFF00, 0xFF, 0))
         self._dirty_region = Box(0, 0, int(w), int(h))
 
     def _viewport(self) -> Box:
