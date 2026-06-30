@@ -60,8 +60,15 @@ def make_notes_plugin(instance_id: str = "notes_1") -> Plugin:
     params: dict[str, Parameter] = {
         ":bypass": Parameter(bypass_info, 0.0, None, instance_id),
     }
-    plugin = Plugin(instance_id, params, {}, "Utility", uri=NOTES_URI, customization=lookup(NOTES_URI))
-    plugin.extra_data = NotesData(text=_NOTES_TEXT)
+    plugin = Plugin(
+        instance_id,
+        params,
+        {},
+        "Utility",
+        uri=NOTES_URI,
+        customization=lookup(NOTES_URI),
+        extra_data=NotesData(text=_NOTES_TEXT),
+    )
     plugin.has_footswitch = False
     plugin.pedalboard_snapshot = {":bypass": 0.0}
     return plugin

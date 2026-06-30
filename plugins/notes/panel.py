@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import Path
 
 from typing_extensions import override
 
@@ -32,19 +31,15 @@ class NotesData(PluginExtraData):
     text: str
 
 
-def _notes_extra_data(bundlepath: str, instance_number: int) -> NotesData | None:
-    ttl_path = Path(bundlepath) / f"effect-{instance_number}" / "effect.ttl"
-    try:
-        content = ttl_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    m = _NOTES_RE.search(content)
+def _parse_notes(ttl: str) -> NotesData | None:
+    m = _NOTES_RE.search(ttl)
     return NotesData(text=m.group(1)) if m else None
 
 
 def _notes_text(plugin: Plugin) -> str:
     data = extra_data_as(plugin, NotesData)
     return data.text if data is not None else ""
+
 
 # layout constants (shared with base)
 _W = 320
@@ -191,14 +186,17 @@ class NotesPanel(PluginPanel[None]):
 def _notes_shortname(plugin: Plugin) -> str | None:
     text = _notes_text(plugin)
     if text:
-        return "✎" + text.split('\n')[0].strip()
+        return "✎" + text.split("\n")[0].strip()
     return None
 
 
-register(NOTES_URI, customization=PluginCustomization(
-    panel_cls=NotesPanel,
-    intercept_shortpress=True,
-    display_name_fn=_notes_shortname,
-    tile_active_color=(214, 217, 111),
-    extra_data_fn=_notes_extra_data,
-))
+register(
+    NOTES_URI,
+    customization=PluginCustomization(
+        panel_cls=NotesPanel,
+        intercept_shortpress=True,
+        display_name_fn=_notes_shortname,
+        tile_active_color=(214, 217, 111),
+    ),
+    extra_data_fn=_parse_notes,
+)

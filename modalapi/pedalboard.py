@@ -28,7 +28,7 @@ import common.util as util
 import common.parameter as Parameter
 import modalapi.plugin as Plugin
 from modalapi.connections import Connection, build_connection
-from modalapi.plugin_customization import Customizer, PluginExtraData, default_customizer
+from modalapi.plugin_customization import Customizer, default_customizer
 
 
 class Pedalboard:
@@ -218,15 +218,14 @@ class Pedalboard:
                             parameters[symbol] = param
 
                     # logging.debug("  Label: %s" % label)
-            c = self._customizer(plugin_uri)
-            extra_data: PluginExtraData | None = None
-            if c.extra_data_fn is not None:
-                n_node = self.world.get(block, self.uri_instance_number, None)
-                if n_node is not None:
-                    try:
-                        extra_data = c.extra_data_fn(bundlepath, int(str(n_node)))
-                    except ValueError:
-                        pass
+            n_int: int | None = None
+            n_node = self.world.get(block, self.uri_instance_number, None)
+            if n_node is not None:
+                try:
+                    n_int = int(str(n_node))
+                except ValueError:
+                    logging.debug("Non-integer pedal:instanceNumber on %s: %r", instance_id, n_node)
+            c = self._customizer(plugin_uri, bundlepath, n_int)
             inst = Plugin.Plugin(
                 instance_id,
                 parameters,
@@ -234,7 +233,6 @@ class Pedalboard:
                 category,
                 uri=plugin_uri,
                 customization=c,
-                extra_data=extra_data,
             )
             inst.canvas_x = self._coord(block, self.uri_canvas_x)
             inst.canvas_y = self._coord(block, self.uri_canvas_y)
@@ -327,6 +325,10 @@ class Pedalboard:
             default_val = ranges.get("default")
             parameters[sym] = Parameter.Parameter(pp, default_val, None, instance_id)
 
+        # TODO: extra_data can't be populated here — mod-ui's `add` WS message
+        # doesn't include the numeric `pedal:instanceNumber`, so we can't address
+        # effect-N/effect.ttl. A protocol change (include the instance number
+        # on the wire) would let us pass the bundle + number to the customizer.
         inst = Plugin.Plugin(instance_id, parameters, info, category, uri=uri, customization=self._customizer(uri))
         inst.canvas_x = x
         inst.canvas_y = y

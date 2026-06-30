@@ -11,7 +11,6 @@ import os
 import re
 import urllib.parse
 from dataclasses import dataclass
-from pathlib import Path
 
 from common.color import RectBorder
 from modalapi.plugin import Plugin
@@ -29,7 +28,7 @@ _NAM_YELLOW = (224, 179, 0)
 _NAM_RED = (220, 20, 20)
 _NAM_BLUE = (20, 30, 220)
 
-_MODEL_RE = re.compile(r'<[^>]*#model>\s+<([^>]+)>')
+_MODEL_RE = re.compile(r"<[^>]*#model>\s+<([^>]+)>")
 
 
 @dataclass(frozen=True)
@@ -39,13 +38,8 @@ class NamData(PluginExtraData):
     model_path: str
 
 
-def _nam_extra_data(bundlepath: str, instance_number: int) -> NamData | None:
-    ttl_path = Path(bundlepath) / f"effect-{instance_number}" / "effect.ttl"
-    try:
-        content = ttl_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    m = _MODEL_RE.search(content)
+def _parse_nam(ttl: str) -> NamData | None:
+    m = _MODEL_RE.search(ttl)
     return NamData(model_path=m.group(1)) if m else None
 
 
@@ -84,6 +78,6 @@ register(
         ),
         display_name_fn=_nam_display_name,
         subtitle_fn=_nam_subtitle,
-        extra_data_fn=_nam_extra_data,
     ),
+    extra_data_fn=_parse_nam,
 )

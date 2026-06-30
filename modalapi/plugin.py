@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from common.color import RectBorder
@@ -58,14 +59,18 @@ class Plugin:
         self.category: str | None = category
         self.uri: str | None = uri
         self.pedalboard_snapshot: dict[str, float] = {}
-        # Customization is injected by the composition root, never looked up
-        # here — Plugin must not reach up into the plugins package.
-        self._customization: PluginCustomization = customization or PluginCustomization()
-        self.extra_data: PluginExtraData | None = extra_data
+        c: PluginCustomization = customization or PluginCustomization()
+        if extra_data is not None:
+            c = replace(c, extra_data=extra_data)
+        self.customization: PluginCustomization = c
+
+    @property
+    def extra_data(self) -> PluginExtraData | None:
+        return self.customization.extra_data
 
     @property
     def display_name(self) -> str:
-        c = self._customization
+        c = self.customization
         if c.display_name_fn:
             override = c.display_name_fn(self)
             if override is not None:
@@ -81,30 +86,30 @@ class Plugin:
 
     @property
     def subtitle(self) -> str | None:
-        c = self._customization
+        c = self.customization
         if c.subtitle_fn:
             return c.subtitle_fn(self)
         return None
 
     @property
     def tile_active_color(self) -> tuple[int, int, int] | None:
-        return self._customization.tile_active_color
+        return self.customization.tile_active_color
 
     @property
     def tile_border(self) -> RectBorder | None:
-        return self._customization.tile_border
+        return self.customization.tile_border
 
     @property
     def panel_cls(self) -> type[PluginPanel] | None:
-        return self._customization.panel_cls
+        return self.customization.panel_cls
 
     @property
     def menu_widget_cls(self) -> type[Widget] | None:
-        return self._customization.menu_widget_cls
+        return self.customization.menu_widget_cls
 
     @property
     def intercept_shortpress(self) -> bool:
-        return self._customization.intercept_shortpress
+        return self.customization.intercept_shortpress
 
     def is_bypassed(self) -> bool:
         param = self.parameters.get(":bypass")
