@@ -611,7 +611,8 @@ class Lcd(abstract_lcd.Lcd):
                 subtitle = f"{plugin.category}: {display_name}" if plugin.category else display_name
             tile = PluginTile(box=box, text=label, outline_radius=5,
                               parent=parent, action=self.plugin_event, object=plugin,
-                              subtitle=subtitle, border=customization.tile_border)
+                              subtitle=subtitle, border=customization.tile_border,
+                              backdrop=self.background)
             tile.set_font(self.small_font)
             self.color_plugin(tile, plugin)
             self.w_plugins.append(tile)

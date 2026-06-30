@@ -231,7 +231,7 @@ class TextWidget(Widget):
                 self.text_w, self.text_h = get_text_size(self.text, self.font, self.font_metrics)
             else:
                 _, line_h = get_text_size("", self.font)
-                self.text_w = max(get_text_size(l, self.font, self.font_metrics)[0] for l in lines)
+                self.text_w = max(get_text_size(line, self.font, self.font_metrics)[0] for line in lines)
                 self.text_h = line_h * len(lines)
             self.text_size_valid = True
         return (self.text_w, self.text_h)
@@ -365,10 +365,16 @@ class PluginTile(TextWidget):
     uses ``outline_color`` for all four sides, or is omitted entirely
     when ``outline_color`` is ``None`` (the active-tile case where the
     body fill is the only visual element).
+
+    ``backdrop`` is the color the tile floats on (the host panel's
+    background). The glyph's rounded corners are anti-aliased and thus
+    partially transparent, so to honor the leaf-paint contract — a
+    widget must fully, opaquely cover its own rect.
     """
 
-    def __init__(self, *, border: RectBorder | None = None, **kwargs):
+    def __init__(self, *, border: RectBorder | None = None, backdrop: tuple[int, int, int] = (0, 0, 0), **kwargs):
         self._custom_border = border
+        self._backdrop = backdrop
         super().__init__(**kwargs)
 
     def _get_border(self) -> RectBorder:
@@ -391,8 +397,11 @@ class PluginTile(TextWidget):
 
     @override
     def _draw_erase(self, ctx):
-        # Fill + border rendered as one opaque surface, then text on top
-        # by the base class, then selection reticule by _draw_selection.
+        # Lay the backdrop down first so the glyph's AA corners always
+        # composite against a known, opaque color, making redraws idempotent
+        erase = ctx.dirty_bounds
+        if not erase.is_empty():
+            ctx.draw_rectangle(erase, fill=self._backdrop)
         ctx.paste(self._make_glyph().render(), (0, 0))
 
     @override
