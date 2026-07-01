@@ -4,7 +4,6 @@ Green tests document existing behaviour.
 Red tests (encoder_switch_map, encoder longpress, footswitch disable) are
 written first and are expected to fail until the corresponding fixes land.
 """
-import pytest
 
 import common.token as Token
 from tests.types import SystemFixture
@@ -36,7 +35,6 @@ def test_footswitch_longpress_set_from_default(v3_system: SystemFixture):
 def test_footswitch_longpress_override(v3_system: SystemFixture):
     """Pedalboard config can change FS0 longpress to a different action."""
     hw = v3_system.hw
-    handler = v3_system.handler
 
     hw.reinit(_cfg(footswitches=[{"id": 0, "longpress": "toggle_bypass"}]))
 
@@ -112,7 +110,6 @@ def test_footswitch_disable_reset_to_enabled(v3_system: SystemFixture):
 
 def test_footswitch_disabled_does_not_respond(v3_system: SystemFixture):
     """A disabled footswitch ignores poll() events."""
-    import pistomp.switchstate as switchstate
 
     hw = v3_system.hw
     hw.reinit(_cfg(footswitches=[{"id": 0, "disable": True}]))

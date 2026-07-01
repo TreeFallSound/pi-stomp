@@ -24,7 +24,7 @@ def test_v1_bind_footswitch_and_analog(v1_system, make_plugin):
     fs_key = _key_of(hw, lambda c: isinstance(c, Footswitch))
     knob_key = _key_of(hw, lambda c: isinstance(c, AnalogMidiControl) and c.type == Token.KNOB)
     fs = hw.controllers[fs_key]
-    knob = hw.controllers[knob_key]
+    hw.controllers[knob_key]
 
     fuzz = make_plugin("fuzz", category="Distortion")
     fuzz.parameters[":bypass"].binding = fs_key

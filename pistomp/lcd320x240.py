@@ -469,7 +469,7 @@ class Lcd:
         items = [("Left",  self.handler.change_bypass_preference, Token.LEFT, pref == Token.LEFT),
                  ("Right", self.handler.change_bypass_preference, Token.RIGHT, pref == Token.RIGHT),
                  ("Left & Right",  self.handler.change_bypass_preference, Token.LEFT_RIGHT,
-                  pref == Token.LEFT_RIGHT or pref == None)]
+                  pref == Token.LEFT_RIGHT or pref is None)]
         self.draw_selection_menu(items, "Bypass Preference", auto_dismiss=True)
 
     #
@@ -662,7 +662,7 @@ class Lcd:
 
 
     def color_plugin(self, widget, plugin):
-        if plugin.is_bypassed() == True:
+        if plugin.is_bypassed():
             widget.set_outline(1, self.get_plugin_color(plugin))
             widget.set_background(self.background)
             widget.set_foreground(self.foreground)
@@ -822,7 +822,7 @@ class Lcd:
                     slot_w = wfs.box.width if wfs.box is not None else self.footswitch_width
                     footswitch.set_display_label(self.footswitch_label(footswitch, slot_w))
                     wfs.color = Category.get_category_color(footswitch.category)
-                wfs.toggle(footswitch.toggled == False)
+                wfs.toggle(not footswitch.toggled)
                 wfs.label = footswitch.get_display_label() or ""
                 wfs.refresh()
                 break
@@ -897,7 +897,7 @@ class Lcd:
 
     def draw_bank_menu(self, event):
         current_bank = self.handler.get_bank()
-        items = [("None (All pedalboards)", self.handler.set_bank, None, current_bank==None)]
+        items = [("None (All pedalboards)", self.handler.set_bank, None, current_bank is None)]
         for k,v in self.handler.get_banks().items():
             items.append((k, self.handler.set_bank, k, k==current_bank))
         self.draw_selection_menu(items, "Bank Select", auto_dismiss=True)

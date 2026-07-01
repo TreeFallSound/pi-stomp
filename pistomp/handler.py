@@ -51,6 +51,7 @@ class Handler(InputSink):
         self.lcd = None
         self.chord_helper = FootswitchChords()
         self._current: Current | None = None
+        self._hardware: "Hardware | None" = None
 
     @property
     def current(self) -> Current:
@@ -64,7 +65,13 @@ class Handler(InputSink):
         self._current = value
 
     @property
-    def hardware(self) -> "Hardware": ...
+    def hardware(self) -> "Hardware":
+        assert self._hardware is not None, "Hardware has not been initialized"
+        return self._hardware
+
+    @hardware.setter
+    def hardware(self, value: "Hardware | None") -> None:
+        self._hardware = value
 
     @property
     def lcd_poll_divisor(self) -> int:
@@ -202,6 +209,10 @@ class Handler(InputSink):
         pass
 
     def set_tuner_source_factory(self, factory: "TunerSourceFactory") -> None:
+        pass
+
+    def set_tuner_source_spec(self, spec: str) -> None:
+        # No-op for handlers without a tuner (v1/generic); Modhandler overrides.
         pass
 
     def is_symbol_locked(self, instance_id: str, symbol: str) -> bool:

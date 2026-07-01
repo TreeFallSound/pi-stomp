@@ -3,7 +3,6 @@
 import pistomp.switchstate as switchstate
 import common.token as Token
 from pistomp.encoder_controller import EncoderController
-from pistomp.input.event import SwitchEventKind
 
 
 def test_v3_startup_snapshot(v3_system, snapshot):
@@ -21,7 +20,6 @@ def test_v3_nav_to_system_menu(v3_system, snapshot):
 
 def test_v3_footswitch_press(v3_system, snapshot):
     """Footswitch 0 toggles enabled, sends MIDI CC 60, and updates the LCD."""
-    handler = v3_system.handler
     hw = v3_system.hw
     midiout = hw.midiout
 
@@ -50,7 +48,6 @@ def test_v3_tweak_encoder_longpress_fires_callback(v3_system, get_urls):
 
     enc1's default longpress is 'previous_snapshot'; at index 0 it wraps to the max.
     """
-    handler = v3_system.handler
     hw = v3_system.hw
     mock_get = v3_system.mock_get
 

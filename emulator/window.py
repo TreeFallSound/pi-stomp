@@ -147,7 +147,7 @@ class EmulatorWindow:
 
     def _build_ui(self):
         y = 15
-        bw, bh = 60, 30   # default button size
+        _bw, _bh = 60, 30   # default button size
 
         # --- Footswitches ----------------------------------------------------
         num_fs = len(self.hw.footswitches)

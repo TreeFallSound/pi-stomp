@@ -43,6 +43,8 @@ class DialogDecorator(PanelDecorator):
     def _adjust_box(self):
         trace(self, "DialogDecorator adjusting box ! pb=", self.panel.box)
         pb = self.panel.box
+        if pb is None:
+            return
 
         # Outline width
         o = self.outline
@@ -62,7 +64,10 @@ class DialogDecorator(PanelDecorator):
     def _draw_erase(self, ctx):
         # Paint only the titlebar strip — the panel body owns its own pixels,
         # and filling under it would leak through any transparent areas.
-        titlebar_h = self.panel.box.y0 - self.box.y0  # decorator-local
+        pb = self.panel.box
+        if pb is None or self.box is None:
+            return
+        titlebar_h = pb.y0 - self.box.y0  # decorator-local
         strip = Box(0, 0, self.box.width, titlebar_h)
         ctx.draw_rectangle(strip, fill=self.bkgnd_color, radius=Radius.top(self.outline_radius))
 
@@ -129,7 +134,8 @@ class MessageDialog(Dialog):
     def __init__(self, panelstack, message, title="Error", width=200, height=90):
         super(MessageDialog, self).__init__(width=width, height=height, title=title, auto_destroy=True)
 
-        char_w = Config().get_font("default_title").get_rect("a").width
+        font = Config().get_font("default_title")
+        char_w = font.get_rect("a").width if font else 0
         chars_per_line = width // max(1, int(char_w))
         chunks = textwrap.wrap(message, width=chars_per_line)
         wrapped = "\n".join(chunks)

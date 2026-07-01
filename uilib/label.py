@@ -47,6 +47,7 @@ class Label(Widget):
         )
 
         if self._text and text:
+            assert old_box is not None
             dirty = old_box.union(new_box)
         elif self._text:
             dirty = old_box
@@ -74,7 +75,7 @@ class Label(Widget):
         ctx.draw_rectangle(erase, fill=self.bkgnd_color)
 
     def _draw(self, ctx) -> None:
-        if not self._text:
+        if not self._text or self.box is None:
             return
         # ctx is frame-relative (0,0 = self.box top-left); the anchor is stored
         # in parent coords, so shift it by the frame origin.

@@ -1,7 +1,7 @@
 """Unit tests for JackMute — jack_lsp/jack_connect/jack_disconnect orchestration."""
 
 import subprocess
-from unittest.mock import patch, call
+from unittest.mock import patch
 
 import pytest
 

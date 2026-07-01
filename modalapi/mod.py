@@ -118,7 +118,7 @@ class Mod(Handler):
 
         logging.info("Init mod")
         if Mod.__single:
-            raise Mod.__single
+            raise RuntimeError("Mod already instantiated")
         Mod.__single = self
 
         self.audiocard = audiocard
@@ -137,8 +137,6 @@ class Mod(Handler):
         self.parameter_tweak_amount = 8
 
         self.plugin_dict = {}
-
-        self._hardware = None
 
         self.top_encoder_mode = TopEncoderMode.DEFAULT
         self.bot_encoder_mode = BotEncoderMode.DEFAULT
@@ -218,11 +216,6 @@ class Mod(Handler):
     #
     # Hardware
     #
-
-    @property
-    def hardware(self):
-        assert self._hardware is not None, "Hardware has not been initialized"
-        return self._hardware
 
     def add_hardware(self, hardware):
         self._hardware = hardware

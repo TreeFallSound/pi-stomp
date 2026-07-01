@@ -127,8 +127,8 @@ class TestPropagateDirtyScrollOffset:
         received = []
 
         class CapturingParent(Widget):
-            def propagate_dirty(self, clip):
-                received.append(clip)
+            def propagate_dirty(self, local_clip: Box):
+                received.append(local_clip)
 
         parent = CapturingParent(box=Box(0, 0, 200, 200))
         c = _container(w=100, h=100)
@@ -144,8 +144,8 @@ class TestPropagateDirtyScrollOffset:
         received = []
 
         class CapturingParent(Widget):
-            def propagate_dirty(self, clip):
-                received.append(clip)
+            def propagate_dirty(self, local_clip: Box):
+                received.append(local_clip)
 
         parent = CapturingParent(box=Box(0, 0, 200, 200))
         c = _container(w=100, h=100)

@@ -1,6 +1,5 @@
 """Label widget — unit tests (pygame ctx model)."""
 
-import pygame
 
 from uilib.box import Box
 from uilib.container import ContainerWidget
@@ -30,7 +29,8 @@ class _Parent(ContainerWidget):
         orig = label.refresh
 
         def spy(box=None):
-            self.refreshes.append(label.box.copy())
+            b = label.box
+            self.refreshes.append(b.copy() if b is not None else Box(0, 0, 0, 0))
             return orig(box)
 
         label.refresh = spy  # type: ignore[method-assign]
@@ -55,7 +55,7 @@ class TestLabelSetText:
         label = _label(parent)
         label.set_text("A4", WHITE)
         assert label.text == "A4"
-        assert label.box.width > 0
+        assert label.box is not None and label.box.width > 0
         assert len(parent.refreshes) == 1
 
     def test_same_text_color_and_x_no_refresh(self):
@@ -71,12 +71,14 @@ class TestLabelSetText:
         label = _label(parent)
         label.set_text("A4", WHITE)
         old_box = label.box
+        assert old_box is not None
         parent.refreshes.clear()
         label.set_text("C#4", WHITE)
         assert len(parent.refreshes) == 1
         dirty = parent.refreshes[0]
         # dirty must cover both the old and the new bbox
         assert dirty.x0 <= old_box.x0 and dirty.x1 >= old_box.x1
+        assert label.box is not None
         assert dirty.x0 <= label.box.x0 and dirty.x1 >= label.box.x1
 
     def test_color_change_refreshes(self):
@@ -92,12 +94,13 @@ class TestLabelSetText:
         label = _label(parent)
         label.set_text("A4", WHITE)
         old_box = label.box
+        assert old_box is not None
         parent.refreshes.clear()
         label.set_text(None, WHITE)
         assert len(parent.refreshes) == 1
         # dirty was the old box; the widget's own box is now zero-area
         assert parent.refreshes[0] == old_box
-        assert label.box.width == 0 and label.box.height == 0
+        assert label.box is not None and label.box.width == 0 and label.box.height == 0
         assert label.text is None
 
     def test_none_to_none_does_not_refresh(self):
@@ -112,9 +115,10 @@ class TestLabelSetText:
         label = _label(parent)
         label.set_text("X", WHITE)
         first = label.box
+        assert first is not None
         label.set_text("X", WHITE, x=80)
         # same text, but moved → bbox slid right
-        assert label.box.x0 > first.x0
+        assert label.box is not None and label.box.x0 > first.x0
 
 
 class TestLabelDrawing:
@@ -154,10 +158,10 @@ class TestLabelBbox:
         parent = _Parent()
         label = _label(parent)
         label.set_text("XX", WHITE)
-        assert label.box.width > 0
+        assert label.box is not None and label.box.width > 0
 
     def test_bbox_x_includes_anchor(self):
         parent = _Parent()
         label = _label(parent, 50, 5)
         label.set_text("X", WHITE)
-        assert label.box.x0 >= 49  # anchor - 1px padding
+        assert label.box is not None and label.box.x0 >= 49  # anchor - 1px padding

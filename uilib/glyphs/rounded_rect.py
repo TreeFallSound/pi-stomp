@@ -29,7 +29,6 @@ corners land exactly on the straight edges so they connect seamlessly.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from functools import lru_cache
 
 import numpy as np
@@ -161,10 +160,8 @@ def _render_filled_rounded_rect(
     rgb = np.zeros((H, W, 3), dtype=np.uint8)
     alpha = np.zeros((H, W), dtype=np.float32)
 
+    fill_rgb = _to_rgb(fill) if has_fill else None
     if has_fill:
-        # Normalize the fill so we can broadcast it to the rgb array
-        # (pygame accepts color names, but numpy needs an int tuple).
-        fill_rgb = _to_rgb(fill)
         # Fill is opaque for sdf < -bw - 0.5, transparent for sdf > 0.5.
         # Inside the border ring, the border overrides the fill color.
         fill_mask = sdf < bw + 0.5 if has_border else sdf < 0.5

@@ -339,11 +339,6 @@ class Modhandler(Handler):
         assert self._lcd is not None, "LCD has not been initialized"
         return self._lcd
 
-    @property
-    def hardware(self):
-        assert self._hardware is not None, "Hardware has not been initialized"
-        return self._hardware
-
     def poll_controls(self):
         if self.hardware:
             self.hardware.poll_controls()

@@ -25,7 +25,7 @@ class Audiocardfactory:
 
     def __init__(self, cwd):
         if Audiocardfactory.__single:
-            raise Audiocardfactory.__single
+            raise RuntimeError("Audiocardfactory already instantiated")
         Audiocardfactory.__single = self
         self.cwd = cwd
         self.system_card_file="/proc/asound/cards"

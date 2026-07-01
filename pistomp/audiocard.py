@@ -18,7 +18,6 @@ import mmap
 import os
 import re
 import subprocess
-from enum import Enum
 
 
 class Audiocard:
@@ -101,11 +100,11 @@ class Audiocard:
             self.store()
         return True
 
-    def get_bypass_left(self):
-        pass
+    def get_bypass_left(self) -> bool:
+        return False
 
-    def get_bypass_right(self):
-        pass
+    def get_bypass_right(self) -> bool:
+        return False
 
     def set_bypass_left(self, bypass):
         pass

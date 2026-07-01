@@ -10,7 +10,6 @@ import pistomp.switchstate as switchstate
 from pistomp.input.event import EncoderEvent, SwitchEvent, SwitchEventKind
 
 from emulator.controls import (
-    CONTROL_CHANGE,
     MockAnalogControl,
     MockEncoder,
     MockEncoderMidi,

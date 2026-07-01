@@ -136,7 +136,7 @@ def test_blend_deactivate_detaches_encoder(blend_system: SystemFixture):
     hw = blend_system.hw
     assert handler.active_blend_mode
 
-    enc = _blend_encoder(hw)
+    _blend_encoder(hw)
     blend_mode = handler.active_blend_mode
 
     blend_mode.deactivate()
@@ -146,7 +146,6 @@ def test_blend_deactivate_detaches_encoder(blend_system: SystemFixture):
 
 def test_pedalboard_switch_clears_blend_modes(blend_system: SystemFixture):
     handler = blend_system.handler
-    hw = blend_system.hw
 
     other_pb = handler.pedalboards["/path/to/new.pedalboard"]
     other_pb.plugins = []
@@ -168,7 +167,7 @@ def test_ws_pedal_snapshot_deactivates_blend(blend_system: SystemFixture):
     hw = blend_system.hw
     test_ws = cast(FakeWebSocketBridge, handler.ws_bridge)
 
-    enc = _blend_encoder(hw)
+    _blend_encoder(hw)
 
     # Inject a switch to a non-blend snapshot
     test_ws.inject("pedal_snapshot 0 Clean")
@@ -340,7 +339,6 @@ def test_switching_between_blend_modes_applies_correct_initial_values(
     """
     handler = v3_system.handler
     hw = v3_system.hw
-    lcd = v3_system.lcd
     mock_get = v3_system.mock_get
 
     snapshots_data = {

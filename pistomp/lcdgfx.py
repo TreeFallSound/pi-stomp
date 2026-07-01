@@ -16,7 +16,6 @@
 from common.fonts import font_path
 import common.token as Token
 import common.util as util
-import os
 
 from typing import Any
 import pygame

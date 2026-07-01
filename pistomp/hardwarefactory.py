@@ -26,7 +26,7 @@ class Hardwarefactory:
 
     def __init__(self):
         if Hardwarefactory.__single:
-            raise Hardwarefactory.__single
+            raise RuntimeError("Hardwarefactory already instantiated")
         Hardwarefactory.__single = self
 
     def create(self, cfg, handler, midiout):

@@ -30,6 +30,7 @@ from modalapi.ethernet import EthernetManager
 from modalapi.wifi import SavedConnection, ScannedNetwork, WifiStatus
 from modalapi.wifi.commands import CommandQueue
 from pistomp.audiocard import Audiocard
+import pistomp.relay
 
 
 class VirtualAudiocard(Audiocard):
@@ -307,7 +308,7 @@ class StubJackMute:
         self._muted = False
 
 
-class StubRelay:
+class StubRelay(pistomp.relay.Relay):
     """No-op relay; satisfies the Relay interface without GPIO."""
 
     def __init__(self):

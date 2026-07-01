@@ -47,7 +47,7 @@ class Pistompcore(hardware.Hardware):
     def __init__(self, cfg, mod, midiout, refresh_callback):
         super(Pistompcore, self).__init__(cfg, mod, midiout, refresh_callback)
         if Pistompcore.__single:
-            raise Pistompcore.__single
+            raise RuntimeError("Pistompcore already instantiated")
         Pistompcore.__single = self
 
         self.mod = mod

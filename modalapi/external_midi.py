@@ -20,7 +20,6 @@ import time
 from typing import TypedDict
 
 import rtmidi
-from rtmidi import MidiOut as RtMidiOut
 
 MidiMessage = list[int]
 

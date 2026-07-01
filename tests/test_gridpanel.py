@@ -7,7 +7,6 @@ exercise selection without an LCD.
 from __future__ import annotations
 
 import pytest
-from PIL import Image
 
 from modalapi.layout import build_layout_compress
 from modalapi.connections import Connection, Endpoint, EndpointKind

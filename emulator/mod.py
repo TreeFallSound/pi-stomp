@@ -70,7 +70,8 @@ class EmulatorMod(Mod):
 
     def system_info_load(self):
         self.eq_status = self.audiocard.get_switch_parameter(self.audiocard.DAC_EQ)
-        self.lcd.update_eq(self.eq_status)
+        if self.lcd is not None:
+            self.lcd.update_eq(self.eq_status)
 
     # -------------------------------------------------------------------------
     # System menu: shutdown exits the emulator; everything else is a no-op

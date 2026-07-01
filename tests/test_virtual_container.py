@@ -342,8 +342,8 @@ class TestScrollBlit:
         received = []
 
         class CapturingParent(Widget):
-            def propagate_dirty(self, clip):
-                received.append(clip.copy())
+            def propagate_dirty(self, local_clip: Box):
+                received.append(local_clip.copy())
 
         c = _virtual_container()
         _attach_items(c)

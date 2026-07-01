@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
 
 import pytest
 
@@ -12,8 +11,6 @@ from modalapi.plugin import Plugin
 from plugins import lookup, register, PluginCustomization
 from plugins.fullscreen import FullscreenPluginPanel
 from pistomp.input.event import EncoderEvent, SwitchEvent, SwitchEventKind
-from uilib.box import Box
-from uilib.panel import PanelStack
 
 
 # ── minimal fake infrastructure ─────────────────────────────────────────────

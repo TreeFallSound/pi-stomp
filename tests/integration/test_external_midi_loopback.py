@@ -15,7 +15,7 @@ from pistomp.controller import RoutingInfo
 from pistomp.footswitch import Footswitch
 from pistomp.encoder_controller import EncoderController
 from pistomp.analogmidicontrol import AnalogMidiControl
-from pistomp.input.event import AnalogEvent, EncoderEvent, SwitchEvent, SwitchEventKind
+from pistomp.input.event import AnalogEvent, EncoderEvent, SwitchEvent
 import pistomp.switchstate as switchstate
 
 

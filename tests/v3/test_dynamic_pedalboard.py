@@ -252,7 +252,7 @@ def test_v3_dynamic_add_known_plugin_updates_bypass_only(parallel_beths_system: 
     before = len(handler.current.pedalboard.plugins)
 
     # Chorus is in the model as bypassed=True from the fixture
-    ws_bridge.inject(f"add /graph/Chorus http://anything 300.0 50.0 0 1 1")
+    ws_bridge.inject("add /graph/Chorus http://anything 300.0 50.0 0 1 1")
     handler.poll_ws_messages()
 
     assert len(handler.current.pedalboard.plugins) == before
@@ -276,7 +276,7 @@ def test_v3_dynamic_add_suppressed_during_connect_dump(parallel_beths_system: Sy
         # Plugin must NOT appear in the model during a dump
         assert len(handler.current.pedalboard.plugins) == before
         # Bypass IS buffered for later application when the pedalboard finishes loading
-        assert handler._pending_dump_bypass.get("ExtraChorus") == False
+        assert not handler._pending_dump_bypass.get("ExtraChorus")
     finally:
         handler._is_pedalboard_loading = False
 

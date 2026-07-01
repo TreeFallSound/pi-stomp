@@ -41,7 +41,6 @@ from pistomp.audiocard import Audiocard
 import pistomp.audiocardfactory as Audiocardfactory
 import pistomp.config as config
 import pistomp.generichost as Generichost
-import pistomp.testhost as Testhost
 import pistomp.handlerfactory as Handlerfactory
 import pistomp.hardwarefactory as Hardwarefactory
 
@@ -66,7 +65,7 @@ def main():
         nargs="+",
         help="Plugin host to use. Example --host mod'",
         default=["mod"],
-        choices=["mod", "mod1", "generic", "test", "emulator_v1", "emulator_v2", "emulator_v3"],
+        choices=["mod", "mod1", "generic", "emulator_v1", "emulator_v2", "emulator_v3"],
     )
     parser.add_argument(
         "--tuner-source",
@@ -174,15 +173,6 @@ def main():
         factory = Hardwarefactory.Hardwarefactory()
         hw = factory.create(cfg, handler, midiout)
         handler.add_hardware(hw)
-
-    elif args.host[0] == "test":
-        handler = Testhost.Testhost(audiocard, homedir=cwd)
-        try:
-            factory = Hardwarefactory.Hardwarefactory()
-            hw = factory.create(cfg, handler, midiout)
-            handler.add_hardware(hw)
-        except:
-            raise
 
     elif is_emulator:
         from emulator.bootstrap import bootstrap_emulator

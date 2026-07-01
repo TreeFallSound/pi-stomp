@@ -70,7 +70,7 @@ class Pistomp(hardware.Hardware):
     def __init__(self, cfg, mod, midiout, refresh_callback):
         super(Pistomp, self).__init__(cfg, mod, midiout, refresh_callback)
         if Pistomp.__single:
-            raise Pistomp.__single
+            raise RuntimeError("Pistomp already instantiated")
         Pistomp.__single = self
 
         self.cfg = cfg
@@ -119,10 +119,11 @@ class Pistomp(hardware.Hardware):
         for f in FOOTSW:
             id = None
             tt = None
+            cfg_fs = None
             # look for any special functions defined in config file (eg. tap_tempo)
             for cfg_fs in cfg_fss:
                 id = Util.DICT_GET(cfg_fs, Token.ID)
-            if id:
+            if id and cfg_fs is not None:
                 tt = Util.DICT_GET(cfg_fs, Token.TAP_TEMPO)
 
             taptempo = (self.taptempo if tt else None)
@@ -162,6 +163,8 @@ class Pistomp(hardware.Hardware):
                 self.test_pass = False
                 timeout = 1000  # 10 seconds
                 led = fs.led
+                if led is None:
+                    continue
                 initial_value = led.is_lit
                 while self.test_pass is False and timeout > 0:
                     fs.poll()

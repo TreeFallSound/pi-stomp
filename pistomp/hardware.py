@@ -20,7 +20,6 @@ import sys
 import common.token as Token
 import common.util as Util
 from common.parameter import Parameter, TTL_PROPERTIES, TTL_INTEGER
-from pistomp.analogcontrol import AnalogControl
 import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.encoder_controller as EncoderController
 import pistomp.footswitch as Footswitch

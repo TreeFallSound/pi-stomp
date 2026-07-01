@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from modalapi.wifi import Command, CommandQueue
+from modalapi.wifi.manager import WifiManager
 
 
 @dataclass
@@ -22,12 +23,12 @@ class SleepCmd(Command[str]):
     name: str
     delay: float = 0.05
 
-    def run(self, ctx: _Ctx) -> str:
-        with ctx.lock:
-            ctx.started.append(self.name)
+    def run(self, wm: "WifiManager") -> str:
+        with wm.lock:
+            wm.started.append(self.name)
         time.sleep(self.delay)
-        with ctx.lock:
-            ctx.finished.append(self.name)
+        with wm.lock:
+            wm.finished.append(self.name)
         return self.name
 
     def key(self) -> str:
@@ -36,7 +37,7 @@ class SleepCmd(Command[str]):
 
 @dataclass
 class BoomCmd(Command[None]):
-    def run(self, ctx: _Ctx) -> None:
+    def run(self, wm: "WifiManager") -> None:
         raise RuntimeError("boom")
 
     def key(self) -> str:

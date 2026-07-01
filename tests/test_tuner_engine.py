@@ -1,9 +1,7 @@
 """Tuner engine — unit tests for freq_to_note and integration tests with ToneSource."""
 
-import math
 import time
 
-import numpy as np
 import pytest
 
 from pistomp.tuner.engine import TunerEngine, TunerReading, _freq_to_note

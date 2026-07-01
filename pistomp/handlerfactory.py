@@ -24,7 +24,7 @@ class Handlerfactory:
 
     def __init__(self):
         if Handlerfactory.__single:
-            raise Handlerfactory.__single
+            raise RuntimeError("Handlerfactory already instantiated")
         Handlerfactory.__single = self
 
     def create(self, cfg, audiocard, cwd):
