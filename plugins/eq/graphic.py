@@ -16,7 +16,7 @@ from plugins.eq.band_spec import GraphicBandSpec
 from plugins.eq.parametric import paint_band_node, _fmt_freq as _fmt_freq_long
 from uilib.box import Box
 from uilib.config import Config
-from uilib.misc import InputEvent, get_text_size
+from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size
 from uilib.widget import Widget
 
 # ── layout constants ────────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ class BarWidget(Widget):
         if self._state is None:
             return
 
-        shade = 0.45 if self._bypassed else 1.0
+        shade = INACTIVE_SHADE if self._bypassed else 1.0
         fv = self._first_visible
         visible = self._bands[fv : fv + VISIBLE_BANDS]
 

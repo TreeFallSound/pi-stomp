@@ -25,8 +25,9 @@ from plugins.eq.curve import (
 )
 from uilib.box import Box
 from uilib.config import Config
+from uilib.footswitch import tint_mask
 from uilib.glyphs.circle import CircleGlyph, RingGlyph
-from uilib.misc import InputEvent, get_text_size
+from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size
 from uilib.widget import Widget
 
 
@@ -58,29 +59,21 @@ CURVE_COLOR = (220, 220, 220)
 CURVE_THICKNESS = 1.3
 HALO_COLOR = (255, 255, 255)
 READOUT_COLOR = (200, 200, 200)
-INACTIVE_SHADE = 0.45
 
 NODE_R = 4
 HALO_R = 6
 
 
-def _tint_mask(mask: pygame.Surface, color: tuple[int, int, int]) -> pygame.Surface:
-    tinted = mask.copy()
-    color_surf = pygame.Surface(mask.get_size(), pygame.SRCALPHA)
-    color_surf.fill(color)
-    tinted.blit(color_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-    return tinted
-
-
 def paint_band_node(ctx, cx: int, cy: int, color: tuple[int, int, int], selected: bool) -> None:
     """Paint the parametric-EQ node circle (black eraser, coloured fill, optional halo)."""
     eraser = CircleGlyph(NODE_R + 2)
-    ctx.paste(_tint_mask(eraser.render(), BG_BLACK), (cx - eraser.radius, cy - eraser.radius))
+    ctx.paste(tint_mask(eraser.render(), BG_BLACK), (cx - eraser.radius, cy - eraser.radius))
     node = CircleGlyph(NODE_R)
-    ctx.paste(_tint_mask(node.render(), color), (cx - node.radius, cy - node.radius))
+    ctx.paste(tint_mask(node.render(), color), (cx - node.radius, cy - node.radius))
     if selected:
         halo = RingGlyph(HALO_R)
-        ctx.paste(_tint_mask(halo.render(), HALO_COLOR), (cx - halo.half_size, cy - halo.half_size))
+        ctx.paste(tint_mask(halo.render(), HALO_COLOR), (cx - halo.half_size, cy - halo.half_size))
+
 
 SMEAR_ALPHA = 0.65
 SMEAR_LENGTH_MAX = 60
@@ -209,7 +202,9 @@ class GraphWidget(Widget):
     Assumes the widget spans the full panel width with image x == local x.
     """
 
-    def __init__(self, box: Box, bands: Sequence[BandSpec], axis_font=None, show_axis_labels: bool = True, **kwargs) -> None:
+    def __init__(
+        self, box: Box, bands: Sequence[BandSpec], axis_font=None, show_axis_labels: bool = True, **kwargs
+    ) -> None:
         kwargs.setdefault("bkgnd_color", BG_BLACK)
         super().__init__(box=box, **kwargs)
         self._bands = bands
@@ -501,9 +496,7 @@ class GraphWidget(Widget):
                         pix_valid = (b > a) & valid[:, None]
                         u_a = np.where(down[:, None], a - yf[:, None], yf[:, None] - b)
                         u_b = np.where(down[:, None], b - yf[:, None], yf[:, None] - a)
-                        smear_alpha = top_alpha[:, None] * (
-                            (u_b - u_a) - (u_b * u_b - u_a * u_a) * inv_2len[:, None]
-                        )
+                        smear_alpha = top_alpha[:, None] * ((u_b - u_a) - (u_b * u_b - u_a * u_a) * inv_2len[:, None])
                         smear_alpha = np.where(pix_valid & (smear_alpha > 0.0), smear_alpha, 0.0)
                         sc = smear_colors[cx0:cx1].astype(np.float32) * shade
                         smear_blend = bg + (sc[:, None, :] - bg) * smear_alpha[:, :, None]

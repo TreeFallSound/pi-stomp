@@ -57,7 +57,7 @@ SMALL_FONT_THRESHOLD = 60
 TITLE_WHITE: Color = (255, 255, 255)
 
 
-def _tint_mask(mask: pygame.Surface, color: Color) -> pygame.Surface:
+def tint_mask(mask: pygame.Surface, color: Color) -> pygame.Surface:
     """Tint a white alpha-mask glyph into `color` (BLEND_RGBA_MULT on a copy)."""
     tinted = mask.copy()
     color_surf = pygame.Surface(mask.get_size(), pygame.SRCALPHA)
@@ -190,7 +190,7 @@ class FootswitchWidget(Widget):
         if is_on:
             dot_color = self.color if self.color is not None else self.DEFAULT_COLOR
             mask = CircleGlyph(DOT_RADIUS).render()
-            tinted = _tint_mask(mask, dot_color)
+            tinted = tint_mask(mask, dot_color)
             ox, oy = ctx._f().topleft
             ctx.surface.blit(tinted, (cx - DOT_RADIUS + ox, cy - DOT_RADIUS + oy))
             label_color = TITLE_WHITE
@@ -198,9 +198,9 @@ class FootswitchWidget(Widget):
             ring_color = self.BOUND_OFF_BG if self.color is not None else self.UNBOUND_OFF_BG
             ox, oy = ctx._f().topleft
             bg_r = DOT_RADIUS + 3
-            ctx.surface.blit(_tint_mask(CircleGlyph(bg_r).render(), (0, 0, 0)), (cx - bg_r + ox, cy - bg_r + oy))
+            ctx.surface.blit(tint_mask(CircleGlyph(bg_r).render(), (0, 0, 0)), (cx - bg_r + ox, cy - bg_r + oy))
             ring = RingGlyph(DOT_RADIUS)
-            tinted = _tint_mask(ring.render(), ring_color)
+            tinted = tint_mask(ring.render(), ring_color)
             ctx.surface.blit(tinted, (cx - ring.half_size + ox, cy - ring.half_size + oy))
             label_color = self.BOUND_OFF_LABEL if self.color is not None else self.UNBOUND_OFF_BG
 
@@ -217,12 +217,12 @@ class FootswitchWidget(Widget):
 
         fill = self.BADGE_ON_FILL if is_on else (0, 0, 0)
         fill_r = BADGE_RADIUS if is_on else BADGE_RADIUS + 3
-        ctx.surface.blit(_tint_mask(CircleGlyph(fill_r).render(), fill), (cx - fill_r + ox, cy - fill_r + oy))
+        ctx.surface.blit(tint_mask(CircleGlyph(fill_r).render(), fill), (cx - fill_r + ox, cy - fill_r + oy))
 
         if not is_on:
             ring = RingGlyph(BADGE_RADIUS)
             ctx.surface.blit(
-                _tint_mask(ring.render(), self.BADGE_OFF_BORDER), (cx - ring.half_size + ox, cy - ring.half_size + oy)
+                tint_mask(ring.render(), self.BADGE_OFF_BORDER), (cx - ring.half_size + ox, cy - ring.half_size + oy)
             )
 
     def refresh(self, box=None):

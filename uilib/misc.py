@@ -143,6 +143,16 @@ def step_for_param(param: Parameter) -> float:
     return max(0.01, (param.maximum - param.minimum) / 100.0)
 
 
+def fmt_hz(value: float) -> str:
+    if value >= 1000.0:
+        return f"{value / 1000.0:.1f}k"
+    return f"{value:.0f}"
+
+
+def fmt_db(value: float) -> str:
+    return f"{value:+.0f}dB"
+
+
 def get_text_bbox(text_string, font):
     """Return (x0, y0, x1, y1) of `text_string`'s ink, matching PIL's
     `ImageFont.getbbox(text)` with the default 'la' anchor.

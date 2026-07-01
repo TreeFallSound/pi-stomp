@@ -10,12 +10,12 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from common.parameter import Parameter, Type
+from common.parameter import Parameter
 from plugins.window import PluginWindow
 from uilib.box import Box
 from uilib.config import Config
 from uilib.glyphs.arc_ring import ArcRingGlyph
-from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size, shade_color
+from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size, shade_color, step_for_param
 from uilib.widget import Widget
 
 # ── layout constants ──────────────────────────────────────────────────────────
@@ -186,22 +186,11 @@ class ParamSlotWidget(Widget):
         param = self._param()
         if param is None or self._value is None:
             return False
-        new_value = self._value + rotations * self._compute_step(param)
+        new_value = self._value + rotations * step_for_param(param)
         new_value = max(param.minimum, min(param.maximum, new_value))
         if new_value != self._value:
             self.set_param(new_value)
         return True
-
-    @staticmethod
-    def _compute_step(param: Parameter) -> float:
-        t = param.type
-        if t in (Type.ENUMERATION, Type.INTEGER, Type.TOGGLED):
-            return 1.0
-        if t == Type.LOGARITHMIC:
-            # Multiplicative step: ~1/12 octave per detent.
-            ratio = 2.0 ** (1.0 / 12.0)
-            return max(0.01, (param.value or param.minimum) * (ratio - 1.0))
-        return max(0.01, (param.maximum - param.minimum) / 100.0)
 
     def set_selected(self, selected: bool) -> None:  # type: ignore[override]
         self.selected = selected
