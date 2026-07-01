@@ -41,6 +41,11 @@ import plugins.acomp  # noqa: F401
 import plugins.zamcomp  # noqa: F401
 import plugins.invadacompressor  # noqa: F401
 import plugins.tap_reverb  # noqa: F401
+import plugins.advanced_compressor  # noqa: F401
+import plugins.calf_monocompressor  # noqa: F401
+import plugins.caps_compress  # noqa: F401
+import plugins.mda_dynamics  # noqa: F401
+import plugins.system_compressor  # noqa: F401
 import plugins.multiband_menu  # noqa: F401  # MultibandWindow base
 import plugins.layouts  # noqa: F401  # Layout components
 
