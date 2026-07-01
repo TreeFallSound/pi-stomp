@@ -399,6 +399,59 @@ mod-ui echoes back → ParamSetMessage → plugin.set_param_value()  # caches va
 - **Trust MOD for audio** — pi-Stomp is a controller; audio processing lives in mod-host
 - **Fail gracefully** — Log warnings, continue operation where possible
 
+## Finding LV2 Plugin Port Symbols
+
+When building a custom plugin panel you need the LV2 port symbols (`lv2:symbol`),
+ranges (`lv2:minimum`/`lv2:maximum`), and the plugin URI (`lv2:prototype`).
+
+### Preferred: On-Device Inspection
+
+```bash
+# List installed plugin bundles (506 on a typical device)
+ssh pistomp@pistomp.local "ls ~/.lv2/"
+
+# Read a plugin's manifest to find its TTL file and URI
+ssh pistomp@pistomp.local "cat ~/.lv2/<name>.lv2/manifest.ttl"
+
+# Read the plugin TTL for port definitions
+ssh pistomp@pistomp.local "cat ~/.lv2/<name>.lv2/<name>.ttl" \
+  | grep -E "lv2:symbol|lv2:name|lv2:minimum|lv2:maximum|lv2:default"
+
+# List pedalboards on device (these show which plugins are actually used)
+ssh pistomp@pistomp.local "ls ~/data/.pedalboards/"
+
+# Extract plugin URIs from a pedalboard's TTL
+ssh pistomp@pistomp.local "grep 'lv2:prototype' ~/data/.pedalboards/<name>.pedalboard/*.ttl"
+```
+
+### Fallback: pi-gen-pistomp Cache
+
+The `pi-gen-pistomp` repo caches the full LV2 plugin archive at
+`../pi-gen-pistomp/cache/lv2plugins.tar.gz`. **NEVER extract the whole
+archive** — it's large and slow. Use `tar` to inspect and extract
+specific files:
+
+```bash
+# List plugin bundles in the archive
+tar -tzf ../pi-gen-pistomp/cache/lv2plugins.tar.gz | grep '\.lv2/$' | head -20
+
+# Read a specific plugin's manifest
+tar -xzf ../pi-gen-pistomp/cache/lv2plugins.tar.gz \
+  --to-stdout "<name>.lv2/manifest.ttl"
+
+# Read a specific plugin's TTL
+tar -xzf ../pi-gen-pistomp/cache/lv2plugins.tar.gz \
+  --to-stdout "<name>.lv2/<name>.ttl"
+
+# Extract a single plugin bundle to inspect locally
+tar -xzf ../pi-gen-pistomp/cache/lv2plugins.tar.gz \
+  "<name>.lv2/" -C /tmp/
+```
+
+The device is preferred because it has the actual installed versions and
+pedalboard data showing real-world usage. Use the cache only when the
+device is unreachable.
+
 ## On-Device Testing
 
 ```bash
