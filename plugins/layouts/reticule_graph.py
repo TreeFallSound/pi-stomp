@@ -20,7 +20,6 @@ _UNITY = (74, 104, 84)
 _CURVE = (120, 240, 150)
 _RETICULE = (255, 200, 90)
 _RETICULE_DIM = (150, 118, 58)
-_TEXT = (200, 224, 206)
 _LABEL = (150, 168, 156)
 _CURVE_THICKNESS = 1.4
 
@@ -60,7 +59,6 @@ class ReticuleGraphWidget(Widget):
         self._y_hi: np.ndarray | None = None
         self._ret_x: int | None = None
         self._ret_y: int | None = None
-        self._ret_gr: float = 0.0
         self._ret_valid = False
 
     def set_state(self, thr: float, ratio: float, knee: float, makeup: float) -> None:
@@ -95,23 +93,15 @@ class ReticuleGraphWidget(Widget):
         if valid == self._ret_valid and new_x == self._ret_x and new_y == self._ret_y:
             return
         old_x = self._ret_x
-        old_valid, old_gr = self._ret_valid, self._ret_gr
-        self._ret_x, self._ret_y, self._ret_gr, self._ret_valid = new_x, new_y, gr_db, valid
+        self._ret_x, self._ret_y, self._ret_valid = new_x, new_y, valid
         for x in (old_x, new_x):
             if x is not None:
                 self._refresh_strip(x)
-        if valid != old_valid or (valid and f"{gr_db:.1f}" != f"{old_gr:.1f}"):
-            self._refresh_readout()
 
     def _refresh_strip(self, x: int) -> None:
         bx = self.box
         assert bx is not None
         self.refresh(Box(bx.x0 + x - 9, bx.y0, bx.x0 + x + 10, bx.y1))
-
-    def _refresh_readout(self) -> None:
-        bx = self.box
-        assert bx is not None
-        self.refresh(Box(bx.x0 + 2, bx.y0 + 1, bx.x0 + 74, bx.y0 + 17))
 
     def _draw(self, ctx) -> None:
         shade = INACTIVE_SHADE if self._bypassed else 1.0
@@ -203,5 +193,3 @@ class ReticuleGraphWidget(Widget):
         cs.fill(col)
         tinted.blit(cs, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
         ctx.paste(tinted, (x - 7, y - 7))
-        if active:
-            ctx.draw_text((4, 3), f"GR {self._ret_gr:.1f}", fill=shade_color(_TEXT, shade), font=self._font)
