@@ -1,11 +1,9 @@
-"""Invada compressor (mono/stereo): no knee port, and threshold/ratio/gain are named differently."""
-
 from __future__ import annotations
 
-from plugins.acomp.panel import AcompPanel, CompressorSpec
+from plugins.compressor_base import CompressorPanel, CompressorSpec
 
 
-class InvadaCompressorPanel(AcompPanel):
+class InvadaCompressorPanel(CompressorPanel):
     SPEC = CompressorSpec(
         thr_sym="threshold",
         rat_sym="ratio",

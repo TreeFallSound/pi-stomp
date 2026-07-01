@@ -13,7 +13,11 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from __future__ import annotations
+
 from enum import Enum, Flag
+
+from common.parameter import Parameter, Type
 
 
 # Input events.
@@ -118,6 +122,25 @@ def get_text_size(text_string, font, metrics=None):
     left_edge = min(0.0, ink_left)
     width = int(round(right_edge - left_edge))
     return (width, line_height + glyph_desc)
+
+
+# ── common UI utilities ─────────────────────────────────────────────────────
+
+INACTIVE_SHADE = 0.45
+
+
+def shade_color(color: tuple[int, int, int], factor: float) -> tuple[int, int, int]:
+    return (int(color[0] * factor), int(color[1] * factor), int(color[2] * factor))
+
+
+def step_for_param(param: Parameter) -> float:
+    t = param.type
+    if t in (Type.ENUMERATION, Type.INTEGER, Type.TOGGLED):
+        return 1.0
+    if t == Type.LOGARITHMIC:
+        ratio = 2.0 ** (1.0 / 12.0)
+        return max(0.01, (param.value or param.minimum) * (ratio - 1.0))
+    return max(0.01, (param.maximum - param.minimum) / 100.0)
 
 
 def get_text_bbox(text_string, font):

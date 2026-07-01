@@ -1,9 +1,7 @@
-"""ZamComp: identical port layout to a-comp (thr/rat/kn/mak), so no SPEC override needed."""
-
 from __future__ import annotations
 
-from plugins.acomp.panel import AcompPanel
+from plugins.compressor_base import CompressorPanel, CompressorSpec
 
 
-class ZamCompPanel(AcompPanel):
-    pass
+class ZamCompPanel(CompressorPanel):
+    SPEC = CompressorSpec(thr_sym="thr", rat_sym="rat", mak_sym="mak", kn_sym="kn")

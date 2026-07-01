@@ -1,29 +1,16 @@
-"""Mode selector widget for the TAP Reverberator's 43-value enumeration.
-
-Renders ``‹  LABEL  ›`` centered with a thin progress strip showing the
-position within the 0..42 range. CLICK opens the parameter dialog (full
-list of modes); Tweak1 (when focused) cycles by one detent per index.
-"""
-
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Callable
 
+from common.parameter import Parameter
 from uilib.box import Box
 from uilib.config import Config
 from uilib.misc import InputEvent, get_text_size
 from uilib.widget import Widget
 
-if TYPE_CHECKING:
-    from plugins.tap_reverb.panel import TapReverbPanel
-
-# ── layout constants ───────────────────────────────────────────────────────
-
 _BAR_H = 3
-_BAR_Y_OFFSET = 6  # gap between label baseline and progress bar
-_TOP_PADDING = 4  # inset from the selection reticule's top edge
-
-# ── colours ─────────────────────────────────────────────────────────────────
+_BAR_Y_OFFSET = 6
+_TOP_PADDING = 4
 
 _BG = (0, 0, 0)
 _LABEL_FG = (255, 255, 255)
@@ -32,24 +19,34 @@ _BAR_FILL = (255, 230, 80)
 
 
 class ModeSelectorWidget(Widget):
-    """Full-width selector for the ``mode`` enumeration port.
-
-    The widget is a Nav-selectable leaf: Tweak1 edits the value when this
-    widget is ``sel_ref``, and CLICK opens the parameter dialog (the full
-    list of 43 modes as a scrollable selection menu).
-    """
-
     symbol: str = "mode"
 
-    def __init__(self, box: Box, panel: "TapReverbPanel", **kwargs) -> None:
+    def __init__(
+        self,
+        box: Box,
+        param: Parameter,
+        handler,
+        set_param: Callable[[str, float], None],
+        on_change: Callable[[int], None] | None = None,
+        **kwargs,
+    ) -> None:
         kwargs.setdefault("bkgnd_color", _BG)
         super().__init__(box=box, **kwargs)
-        self._panel = panel
+        self._param = param
+        self._handler = handler
+        self._set_param = set_param
+        self._on_change = on_change
         cfg = Config()
         self._font = cfg.get_font("footswitch")
         self._value: int = 0
         self._labels: list[str] = []
         self._max: int = 42
+
+        if param.enum_values:
+            labels = [item[0] for item in param.get_enum_value_list()]
+        else:
+            labels = [str(i) for i in range(int(param.maximum) - int(param.minimum) + 1)]
+        self.set_labels(labels)
 
     @property
     def value(self) -> int:
@@ -58,8 +55,6 @@ class ModeSelectorWidget(Widget):
     @property
     def max_index(self) -> int:
         return self._max
-
-    # ── public setters ──────────────────────────────────────────────────────
 
     def set_value(self, value: int) -> None:
         value = max(0, min(self._max, int(value)))
@@ -73,15 +68,35 @@ class ModeSelectorWidget(Widget):
         self._max = max(len(labels) - 1, 1)
         self.refresh()
 
-    # ── Widget overrides ────────────────────────────────────────────────────
-
-    def input_event(self, event) -> bool:  # type: ignore[override]
+    def input_event(self, event) -> bool:
         if event == InputEvent.CLICK:
-            self._panel._open_mode_dialog()
+            self._open_dialog()
             return True
         return False
 
-    def _draw_erase(self, ctx) -> None:  # type: ignore[override]
+    def _open_dialog(self) -> None:
+        lcd = self._handler.lcd
+        if lcd is None:
+            return
+        current_value = self._param.value
+        default_item: str | None = None
+        items = []
+        for label, value in self._param.get_enum_value_list():
+            selected = value == current_value
+            if selected:
+                default_item = f"\u2714 {label}"
+            items.append((label, self._commit_value, value, selected))
+        title = f"{self._param.instance_id}:{self._param.name}"
+        lcd.draw_selection_menu(items, title, auto_dismiss=True, default_item=default_item)
+
+    def _commit_value(self, value: float) -> None:
+        new_mode = int(value)
+        self._set_param(self.symbol, float(new_mode))
+        self.set_value(new_mode)
+        if self._on_change is not None:
+            self._on_change(new_mode)
+
+    def _draw_erase(self, ctx) -> None:
         ctx.draw_rectangle(ctx.dirty_bounds, fill=_BG)
 
     def _draw(self, ctx) -> None:
@@ -96,7 +111,6 @@ class ModeSelectorWidget(Widget):
 
         ctx.draw_text((cx - tw // 2, ty), text, fill=_LABEL_FG, font=self._font)
 
-        # Progress strip below the label — inset 4px from widget edges
         bar_y = ty + th + _BAR_Y_OFFSET
         bar_x0 = 4
         bar_x1 = ctx.width - 4
