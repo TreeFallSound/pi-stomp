@@ -17,7 +17,7 @@ import logging
 import os
 import time
 import socket
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from common.fonts import font_path
 import common.token as Token
 import common.util as util
@@ -25,7 +25,6 @@ from common.parameter import Parameter, Type
 from ui.ethernet_menu import EthernetMenu
 from ui.wifi_menu import WifiMenu
 import pistomp.category as Category
-import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
 import pygame
 
@@ -60,6 +59,10 @@ from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
 from pistomp.encoder_controller import EncoderController
 from blend.manager import BlendMode
 from plugins.base import PluginPanel
+from pistomp.fullscreen_panel import FullscreenPanel
+
+if TYPE_CHECKING:
+    from modalapi.modhandler import Modhandler
 
 # Parameter dialog auto-dismiss timeout (seconds)
 PARAMETER_DIALOG_TIMEOUT = 1.0
@@ -107,14 +110,14 @@ class Subtitle(TextWidget):
             self.parent.redraw_region(old.union(new))
 
 
-class Lcd(abstract_lcd.Lcd):
+class Lcd:
     CAPTURE_SOCKET_PATH = "/tmp/pistomp-lcd.sock"
 
-    def __init__(self, cwd, handler=None, flip=False, display=None, spi_speed_mhz=50):
+    def __init__(self, cwd, handler: "Modhandler", flip=False, display=None, spi_speed_mhz=50):
         self.cwd = cwd
         self.imagedir = os.path.join(cwd, "images")
         Config(os.path.join(cwd, 'ui', 'config.json'))
-        self.handler = handler
+        self.handler: "Modhandler" = handler
         self.flip = flip
         self.spi_speed_mhz = spi_speed_mhz
 
@@ -183,7 +186,6 @@ class Lcd(abstract_lcd.Lcd):
             for i in range(1, 4)
         ]
         self._wifi_frame_idx = -1  # -1 = static (not spinning)
-        self.wifi_menu: Optional[WifiMenu] = None
         self.ethernet_menu: EthernetMenu = EthernetMenu(self)
         self.w_eq = None
         self.w_power = None
@@ -193,7 +195,6 @@ class Lcd(abstract_lcd.Lcd):
         self.w_preset = None
         self.w_plugins = []
         self.grid_panel: Optional[GridPanel] = None
-        self._fullscreen_panel = None
         self.w_footswitches = []
         self.w_controls = []
         self.w_splash = None
@@ -213,11 +214,13 @@ class Lcd(abstract_lcd.Lcd):
         self.footswitch_panel = ShroudedPanel(box=Box.xywh(0, self.display_height - self.footswitch_height,
                                                             self.display_width, self.footswitch_height),
                                               shroud_alpha=255, gradient_start=0, gradient_pos=0.2, no_dim=True, accepts_input=False)
-        self._fullscreen_panel: Panel | None = None
+        self._fullscreen_panel: "FullscreenPanel | PluginPanel | None" = None
 
         self.pedalboards = {}
 
-        self.wifi_menu = WifiMenu(self)
+        # Constructed here (not with ethernet_menu above) because WifiMenu needs
+        # the PanelStack, which is created earlier in this block.
+        self.wifi_menu: WifiMenu = WifiMenu(self)
 
         if not display.has_system_splash:
             self.splash_show(True)
@@ -340,12 +343,13 @@ class Lcd(abstract_lcd.Lcd):
                 elif isinstance(icon.object, EncoderController):
                     midi_value = icon.object.midi_value
                 elif isinstance(icon.object, BlendMode):
-                    input_ctrl = icon.object.input_controller.controlled_input
-                    if input_ctrl:
+                    ic = icon.object.input_controller
+                    input_ctrl = ic.controlled_input if ic is not None else None
+                    if ic is not None and input_ctrl is not None:
                         position = input_ctrl.get_normalized_value()
                         midi_value = int(position * 127)
 
-                        stops = icon.object.input_controller.stops
+                        stops = ic.stops
                         closest_stop = min(stops, key=lambda s: abs(s.position - position))
                         snapshot_name = self.handler.current.presets.get(closest_stop.snapshot_index, "")
                         if snapshot_name and snapshot_name != icon.text:
@@ -405,7 +409,7 @@ class Lcd(abstract_lcd.Lcd):
         self.pstack.set_capture_callback(None)
         logging.info("LCD capture disabled")
 
-    def show_fullscreen_panel(self, panel: Panel) -> None:
+    def show_fullscreen_panel(self, panel: "FullscreenPanel | PluginPanel") -> None:
         self._fullscreen_panel = panel
         self.pstack.push_panel(panel)
         panel.refresh()
@@ -925,7 +929,7 @@ class Lcd(abstract_lcd.Lcd):
 
     def display_parameter_value(self, parameter: Parameter, value: float) -> None:
         d = self.draw_parameter_dialog(parameter, timeout=PARAMETER_DIALOG_TIMEOUT)
-        if d:
+        if isinstance(d, Parameterdialog):
             d.update_value(value)
 
     def draw_vu_calibration_dialog(self, symbol, value, commit_callback):
@@ -1117,11 +1121,13 @@ class Lcd(abstract_lcd.Lcd):
                 text_color = self.default_plugin_color
                 color = self.default_plugin_color
                 # Initialize label and progress bar from the current input position.
-                input_ctrl = icon_object.input_controller.controlled_input
-                if input_ctrl:
-                    blend_initial_progress = input_ctrl.get_normalized_value()
-                    stops = icon_object.input_controller.stops
-                    closest_stop = min(stops, key=lambda s: abs(s.position - blend_initial_progress))
+                ic = icon_object.input_controller
+                input_ctrl = ic.controlled_input if ic is not None else None
+                if ic is not None and input_ctrl is not None:
+                    position = input_ctrl.get_normalized_value()
+                    blend_initial_progress = position
+                    stops = ic.stops
+                    closest_stop = min(stops, key=lambda s: abs(s.position - position))
                     snapshot_name = self.handler.current.presets.get(closest_stop.snapshot_index, "")
                     if snapshot_name:
                         name = snapshot_name
