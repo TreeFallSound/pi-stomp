@@ -273,7 +273,7 @@ rendering, encoder routing, and state.
 
 | Combined | URI | Category | Suggested approach |
 |---|---:|---|---|
-| 24 | `http://guitarix.sourceforge.net/plugins/gx_cabinet#CABINET` | Cab sim | Fullscreen (model + 3-band EQ) |
+| 24 | `http://guitarix.sourceforge.net/plugins/gx_cabinet#CABINET` | Cab sim | Fullscreen — mode selector (`c_model`, 19 cab models) + 3 arc knobs (`CLevel`/`CBass`/`CTreble`), same shape as `TapReverbPanel` |
 | 16 | `http://moddevices.com/plugins/mod-devel/BigMuffPi` | Fuzz | MultibandWindow (3 knobs) |
 | 14 | `http://guitarix.sourceforge.net/plugins/gx_hotbox_#_hotbox_` | Amp sim | Fullscreen (preamp+EQ) |
 | 13 | `http://moddevices.com/plugins/tap/tubewarmth` | Saturation | MultibandWindow (1 knob) |
