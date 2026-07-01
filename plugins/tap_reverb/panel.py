@@ -295,20 +295,20 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
             parent=self,
         )
 
-        # Register selectables: Decay → Dry → Wet → Mode (chrome appended after)
+        # Register selectables: Mode → Decay → Dry → Wet (chrome appended after)
         self._knobs_by_symbol: dict[str, KnobWidget] = {
             "decay": self._knob_decay,
             "drylevel": self._knob_dry,
             "wetlevel": self._knob_wet,
         }
+        self.add_sel_widget(self._mode_selector)
         self.add_sel_widget(self._knob_decay)
         self.add_sel_widget(self._knob_dry)
         self.add_sel_widget(self._knob_wet)
-        self.add_sel_widget(self._mode_selector)
 
         # Apply initial state to widgets
         self.apply_state(self._state)
-        self.sel_widget(self._knob_decay)
+        self.sel_widget(self._mode_selector)
 
     # ── encoder dispatch ─────────────────────────────────────────────────────
 

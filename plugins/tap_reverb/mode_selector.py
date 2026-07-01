@@ -103,6 +103,6 @@ class ModeSelectorWidget(Widget):
         ctx.draw_rectangle(Box(bar_x0, bar_y, bar_x1, bar_y + _BAR_H), fill=_BAR_EMPTY)
 
         if self._max > 0:
-            fill_w = max(1, int(bar_w * (self._value / self._max)))
+            fill_w = int(bar_w * (self._value / self._max))
             if fill_w > 0:
                 ctx.draw_rectangle(Box(bar_x0, bar_y, bar_x0 + fill_w, bar_y + _BAR_H), fill=_BAR_FILL)

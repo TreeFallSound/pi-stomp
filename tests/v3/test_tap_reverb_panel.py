@@ -169,20 +169,24 @@ def long_press(handler) -> None:
 
 
 def test_tap_reverb_initial_render(v3_system: SystemFixture, snapshot):
-    """Panel opens with Decay selected, default values shown."""
+    """Panel opens with Mode selected, default values shown."""
     open_panel(v3_system)
     snapshot("opened")
 
 
 # ---------------------------------------------------------------------------
-# Saga 2 — nav cycles Decay → Dry → Wet → Mode → chrome
+# Saga 2 — nav cycles Mode → Decay → Dry → Wet → chrome
 # ---------------------------------------------------------------------------
 
 
 def test_tap_reverb_nav_cycles_values(v3_system: SystemFixture, nav_handler, snapshot):
-    """Forward-nav through Decay, Dry, Wet, Mode; readout follows."""
+    """Forward-nav through Mode, Decay, Dry, Wet; readout follows."""
     handler = v3_system.handler
     open_panel(v3_system)
+    snapshot("mode")
+
+    nav(nav_handler, 1)
+    handler.poll_lcd_updates()
     snapshot("decay")
 
     nav(nav_handler, 1)
@@ -192,10 +196,6 @@ def test_tap_reverb_nav_cycles_values(v3_system: SystemFixture, nav_handler, sna
     nav(nav_handler, 1)
     handler.poll_lcd_updates()
     snapshot("wet")
-
-    nav(nav_handler, 1)
-    handler.poll_lcd_updates()
-    snapshot("mode")
 
 
 # ---------------------------------------------------------------------------
@@ -208,8 +208,8 @@ def test_tap_reverb_tweak1_edits_focused(v3_system: SystemFixture, nav_handler, 
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
-    # Nav to Wet (2 steps: Decay → Dry → Wet)
-    nav(nav_handler, 2)
+    # Nav to Wet (3 steps: Mode → Decay → Dry → Wet)
+    nav(nav_handler, 3)
     handler.poll_lcd_updates()
     snapshot("wet_focused")
 
@@ -254,8 +254,7 @@ def test_tap_reverb_tweak3_edits_decay(v3_system: SystemFixture, nav_handler, sn
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
-    # Nav to Mode (3 steps)
-    nav(nav_handler, 3)
+    # Mode is already focused at open — no nav needed
     handler.poll_lcd_updates()
 
     # Tweak3: +5 detents → +500 ms → 2800 + 500 = 3300 ms
@@ -279,7 +278,7 @@ def test_tap_reverb_tweak1_edits_mode_when_focused(v3_system: SystemFixture, nav
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
-    nav(nav_handler, 3)  # Decay → Dry → Wet → Mode
+    # Mode is already focused at open
     handler.poll_lcd_updates()
     snapshot("mode_focused")
 
@@ -303,8 +302,8 @@ def test_tap_reverb_click_resets_to_default(v3_system: SystemFixture, nav_handle
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
-    # Focus Decay and edit
-    # (Decay is already focused at open)
+    # Focus Decay (1 step from Mode) and edit
+    nav(nav_handler, 1)
     for _ in range(10):
         tweak(handler, 1, 1)
     handler.poll_lcd_updates()
@@ -334,8 +333,7 @@ def test_tap_reverb_click_mode_opens_dialog(v3_system: SystemFixture, nav_handle
     for _ in range(5):
         tweak(handler, 2, 1)
 
-    # Nav to Mode
-    nav(nav_handler, 3)
+    # Mode is already focused at open
     handler.poll_lcd_updates()
     snapshot("mode_focused_at_5")
 
@@ -356,15 +354,12 @@ def test_tap_reverb_reset_restores_snapshot(v3_system: SystemFixture, nav_handle
     plugin = open_panel(v3_system)
     snapshot("opened")
 
-    # Edit decay via Tweak3
+    # Edit decay via Tweak3 (works from any focus)
     for _ in range(10):
         tweak(handler, 3, 1)
 
-    # Edit wet via Tweak1 (Decay is focused)
-    for _ in range(5):
-        tweak(handler, 1, 1)
-    # Wait — Tweak1 edits Decay (focused). Nav to Wet first.
-    nav(nav_handler, 2)  # → Wet
+    # Edit wet via Tweak1 — nav to Wet (3 steps: Mode → Decay → Dry → Wet)
+    nav(nav_handler, 3)
     for _ in range(5):
         tweak(handler, 1, 1)
 
@@ -375,8 +370,8 @@ def test_tap_reverb_reset_restores_snapshot(v3_system: SystemFixture, nav_handle
     handler.poll_lcd_updates()
     snapshot("after_edits")
 
-    # Nav to Reset: from Wet (index 2), forward: Mode (3), Back (4), Bypass (5), Reset (6)
-    nav(nav_handler, 4)
+    # Nav to Reset: from Wet (index 3), forward: Back (4), Bypass (5), Reset (6)
+    nav(nav_handler, 3)
     handler.poll_lcd_updates()
     snapshot("reset_focused")
 
@@ -403,7 +398,7 @@ def test_tap_reverb_bypass_toggle(v3_system: SystemFixture, nav_handler, snapsho
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
-    # Nav: Decay(0) → Dry(1) → Wet(2) → Mode(3) → Back(4) → Bypass(5)
+    # Nav: Mode(0) → Decay(1) → Dry(2) → Wet(3) → Back(4) → Bypass(5)
     nav(nav_handler, 5)
     handler.poll_lcd_updates()
     snapshot("bypass_focused")
@@ -432,7 +427,7 @@ def test_tap_reverb_tweak3_edits_decay_on_chrome(v3_system: SystemFixture, nav_h
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
-    # Nav to Back (4 steps from Decay)
+    # Nav to Back (4 steps: Mode → Decay → Dry → Wet → Back)
     nav(nav_handler, 4)
 
     def _lcd_consumes(enc_id: int) -> bool:
