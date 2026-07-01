@@ -10,7 +10,7 @@ Layout (320×240, content y=0..210, chrome y=210..240)::
     y=64 ├────────────────────────────────────────────────┤
          │                                                │
          │  ╭───────╮       ╭───────╮       ╭───────╮       │
-         │  │ Decay │       │  Dry  │       │  Wet  │       │  3 arc rings
+         │  │ DECAY │       │  DRY  │       │  WET  │       │  3 arc rings
          │  │ 2.8s  │       │ -4 dB │       │-12 dB │       │  (y=70..190)
          │  ╰───────╯       ╰───────╯       ╰───────╯       │
          │                                                │
@@ -49,9 +49,9 @@ READOUT_Y0 = 0
 READOUT_Y1 = 22
 
 MODE_Y0 = 24
-MODE_H = 30
+MODE_H = 34
 
-KNOB_Y0 = 58
+KNOB_Y0 = 62
 KNOB_Y1 = 200
 KNOB_H = KNOB_Y1 - KNOB_Y0
 
@@ -71,6 +71,9 @@ _READOUT_COLOR = (200, 200, 200)
 COLOR_DECAY = (255, 180, 80)
 COLOR_DRY = (110, 200, 230)
 COLOR_WET = (210, 130, 230)
+
+# Ring colour shade when the plugin is bypassed (matches plugins/eq/parametric.py)
+INACTIVE_SHADE = 0.45
 
 # ── tweak step sizes ────────────────────────────────────────────────────────
 
@@ -132,6 +135,7 @@ class KnobWidget(Widget):
         self._formatter = formatter
         self._panel = panel
         self._value: float = minimum
+        self._bypassed: bool = False
         self._ring = ArcRingGlyph(RING_RADIUS)
 
         cfg = Config()
@@ -145,6 +149,12 @@ class KnobWidget(Widget):
         self._value = value
         self.refresh()
 
+    def set_bypassed(self, bypassed: bool) -> None:
+        if bypassed == self._bypassed:
+            return
+        self._bypassed = bypassed
+        self.refresh()
+
     def _draw_erase(self, ctx) -> None:  # type: ignore[override]
         ctx.draw_rectangle(ctx.dirty_bounds, fill=_BG)
 
@@ -152,11 +162,16 @@ class KnobWidget(Widget):
         cx = ctx.width // 2
         cy = (ctx.height // 2) - 8
 
-        # Arc ring
+        # Arc ring — dimmed when the plugin is bypassed (matches parametric EQ)
+        shade = INACTIVE_SHADE if self._bypassed else 1.0
+        cr, cg, cb = self._color
+        ring_color = (int(cr * shade), int(cg * shade), int(cb * shade))
+        tr, tg, tb = _RING_TIP
+        tip_color = (int(tr * shade), int(tg * shade), int(tb * shade))
         span = self._maximum - self._minimum
         t = (self._value - self._minimum) / span if span > 0 else 0.0
         t = max(0.0, min(1.0, t))
-        ring = self._ring.render(t, self._color, _RING_EMPTY, _RING_TIP)
+        ring = self._ring.render(t, ring_color, _RING_EMPTY, tip_color)
         hs = self._ring.half_size
         ctx.paste(ring, (cx - hs, cy - hs))
 
@@ -187,11 +202,18 @@ class ReadoutWidget(Widget):
         super().__init__(box=box, **kwargs)
         self._font = font
         self._text = ""
+        self._subtitle = ""
 
     def set_text(self, text: str) -> None:
         if text == self._text:
             return
         self._text = text
+        self.refresh()
+
+    def set_subtitle(self, subtitle: str) -> None:
+        if subtitle == self._subtitle:
+            return
+        self._subtitle = subtitle
         self.refresh()
 
     def _draw_erase(self, ctx) -> None:  # type: ignore[override]
@@ -200,6 +222,9 @@ class ReadoutWidget(Widget):
     def _draw(self, ctx) -> None:
         if self._text:
             ctx.draw_text((6, 1), self._text, fill=_READOUT_COLOR, font=self._font)
+        if self._subtitle:
+            sw, _ = get_text_size(self._subtitle, self._font)
+            ctx.draw_text((ctx.width - sw - 6, 1), self._subtitle, fill=_READOUT_COLOR, font=self._font)
 
 
 # ── TapReverbPanel ──────────────────────────────────────────────────────────
@@ -264,7 +289,7 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         self._knob_decay = KnobWidget(
             box=Box.xywh(0 * col_w, KNOB_Y0, knob_w, KNOB_H),
             symbol="decay",
-            label="Decay",
+            label="DECAY",
             color=COLOR_DECAY,
             minimum=0.0,
             maximum=10000.0,
@@ -275,7 +300,7 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         self._knob_dry = KnobWidget(
             box=Box.xywh(1 * col_w, KNOB_Y0, knob_w, KNOB_H),
             symbol="drylevel",
-            label="Dry",
+            label="DRY",
             color=COLOR_DRY,
             minimum=-70.0,
             maximum=10.0,
@@ -286,7 +311,7 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         self._knob_wet = KnobWidget(
             box=Box.xywh(2 * col_w, KNOB_Y0, knob_w, KNOB_H),
             symbol="wetlevel",
-            label="Wet",
+            label="WET",
             color=COLOR_WET,
             minimum=-70.0,
             maximum=10.0,
@@ -345,11 +370,15 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         bypassed = self.plugin.is_bypassed()
         if bypassed != getattr(self, "_last_bypassed", None):
             self._last_bypassed = bypassed
-            self._update_readout()
+            self._refresh_bypass_style()
         super().tick()
 
     def _refresh_bypass_style(self) -> None:
         super()._refresh_bypass_style()
+        bypassed = self.plugin.is_bypassed()
+        self._knob_decay.set_bypassed(bypassed)
+        self._knob_dry.set_bypassed(bypassed)
+        self._knob_wet.set_bypassed(bypassed)
         self._update_readout()
 
     # ── state helpers ───────────────────────────────────────────────────────
@@ -427,18 +456,45 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
     # ── open parameter dialog for mode ──────────────────────────────────────
 
     def _open_mode_dialog(self) -> None:
-        """Open the LCD's parameter dialog for the mode enumeration.
+        """Open a selection menu of all 43 mode labels, starting on the
+        current value.
 
-        This is the same dialog the generic parameter menu uses for
-        ``lv2:enumeration`` ports — a scrollable selection menu of all
-        43 mode labels with a checkmark on the current value.
+        Built directly (rather than via ``lcd.draw_parameter_dialog``) so the
+        item action lands on ``_commit_mode`` — the generic dialog commits
+        through ``handler.parameter_value_commit``, which updates only the
+        cached ``Parameter.value`` and relies on mod-ui's WS echo to reach the
+        panel; that leaves this widget showing the old mode until (or unless)
+        the echo arrives. Nav/Tweak2 update it immediately, so the dialog
+        should too.
         """
         p = self.plugin.parameters.get("mode")
         if p is None:
             return
         lcd = self.handler.lcd
-        if lcd is not None:
-            lcd.draw_parameter_dialog(p)
+        if lcd is None:
+            return
+        current_value = p.value
+        default_item: str | None = None
+        items = []
+        for label, value in p.get_enum_value_list():
+            selected = value == current_value
+            if selected:
+                default_item = f"✔ {label}"
+            items.append((label, self._commit_mode, value, selected))
+        title = f"{p.instance_id}:{p.name}"
+        lcd.draw_selection_menu(items, title, auto_dismiss=True, default_item=default_item)
+
+    def _commit_mode(self, value: float) -> None:
+        new_mode = int(value)
+        self.set_param("mode", float(new_mode))
+        self._mode_selector.set_value(new_mode)
+        self._state = TapReverbState(
+            decay=self._current("decay"),
+            drylevel=self._current("drylevel"),
+            wetlevel=self._current("wetlevel"),
+            mode=new_mode,
+        )
+        self._update_readout()
 
     # ── readout ─────────────────────────────────────────────────────────────
 
@@ -446,9 +502,11 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         sel = self.sel_ref
         if isinstance(sel, KnobWidget):
             val = self._current(sel.symbol)
-            self._readout.set_text(f"{sel._label}: {sel._formatter(val)}")
+            self._readout.set_text(f"{sel._label.capitalize()}: {sel._formatter(val)}")
         elif isinstance(sel, ModeSelectorWidget):
-            self._readout.set_text("Reverb mode")
+            self._readout.set_text("Select reverb mode")
+            self._readout.set_subtitle(f"{self._mode_selector.value + 1} of {self._mode_selector.max_index + 1}")
+            return
         elif sel is self._btn_bypass:
             self._readout.set_text("Plugin bypassed" if self.plugin.is_bypassed() else "Bypass plugin")
         elif sel is self._btn_back:
@@ -457,6 +515,7 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
             self._readout.set_text("Reset to pedalboard")
         else:
             self._readout.set_text("TAP Reverberator")
+        self._readout.set_subtitle("")
 
     def _select_widget_ref(self, w):  # type: ignore[override]
         super()._select_widget_ref(w)

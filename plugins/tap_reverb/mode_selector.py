@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 _BAR_H = 3
 _BAR_Y_OFFSET = 6  # gap between label baseline and progress bar
+_TOP_PADDING = 4  # inset from the selection reticule's top edge
 
 # ── colours ─────────────────────────────────────────────────────────────────
 
@@ -28,7 +29,6 @@ _BG = (0, 0, 0)
 _LABEL_FG = (255, 255, 255)
 _BAR_EMPTY = (45, 45, 45)
 _BAR_FILL = (255, 230, 80)
-_INDEX_FG = (110, 110, 110)
 
 
 class ModeSelectorWidget(Widget):
@@ -47,10 +47,17 @@ class ModeSelectorWidget(Widget):
         self._panel = panel
         cfg = Config()
         self._font = cfg.get_font("footswitch")
-        self._index_font = cfg.get_font("tiny")
         self._value: int = 0
         self._labels: list[str] = []
         self._max: int = 42
+
+    @property
+    def value(self) -> int:
+        return self._value
+
+    @property
+    def max_index(self) -> int:
+        return self._max
 
     # ── public setters ──────────────────────────────────────────────────────
 
@@ -85,14 +92,9 @@ class ModeSelectorWidget(Widget):
 
         tw, th = get_text_size(text, self._font)
         cx = ctx.width // 2
-        ty = 0
+        ty = _TOP_PADDING
 
         ctx.draw_text((cx - tw // 2, ty), text, fill=_LABEL_FG, font=self._font)
-
-        # Index "N/42" at the right edge
-        idx_text = f"{self._value}/{self._max}"
-        iw, _ = get_text_size(idx_text, self._index_font)
-        ctx.draw_text((ctx.width - iw - 4, ty + 4), idx_text, fill=_INDEX_FG, font=self._index_font)
 
         # Progress strip below the label — inset 4px from widget edges
         bar_y = ty + th + _BAR_Y_OFFSET
