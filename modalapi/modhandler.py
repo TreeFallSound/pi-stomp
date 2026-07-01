@@ -37,6 +37,7 @@ import modalapi.wifi as Wifi
 # Importing the plugins package runs every plugin module's register() — this is
 # the explicit, deterministic load of the customization registry. lookup is then
 # injected into Pedalboard as its Customizer.
+from plugins.base import PluginPanel
 from plugins.customization import lookup as plugin_lookup
 import modalapi.external_midi as ExternalMidi
 from modalapi.external_midi import EXTERNAL_INSTANCE_ID
@@ -1450,6 +1451,8 @@ class Modhandler(Handler):
         """Dismiss the current plugin panel and clean up."""
         if self._fullscreen_panel is None:
             return
+        if isinstance(self._fullscreen_panel, PluginPanel):
+            self.lcd.refresh_plugin(self._fullscreen_panel.plugin)
         self.lcd.hide_fullscreen_panel()
         self._fullscreen_panel = None
 
