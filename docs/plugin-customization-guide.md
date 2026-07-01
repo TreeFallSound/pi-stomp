@@ -266,6 +266,7 @@ rendering, encoder routing, and state.
 | `http://guitarix.sourceforge.net/plugins/gx_barkgraphiceq_#_barkgraphiceq_` | `GxBarkGraphicEqPanel` | Graphic EQ |
 | `urn:zamaudio:ZamGEQ31` | `ZamGEQ31Panel` | Graphic EQ |
 | `http://moddevices.com/plugins/tap/reverb` | `TapReverbPanel` | Full panel |
+| `http://guitarix.sourceforge.net/plugins/gx_cabinet#CABINET` | `GxCabinetPanel` | Full panel (mode selector + 3 arc knobs, same shape as `TapReverbPanel`) |
 | `http://open-music-kontrollers.ch/lv2/notes#notes` | `NotesPanel` | Full panel (intercepts short-press) |
 | NAM (`neural-amp-modeler-lv2`, `gareus.org/.../nam`, `tone3000.com/plugins/nam`) | `NamCapturePanel` | Cosmetic only, opened from system menu |
 
@@ -273,7 +274,6 @@ rendering, encoder routing, and state.
 
 | Combined | URI | Category | Suggested approach |
 |---|---:|---|---|
-| 24 | `http://guitarix.sourceforge.net/plugins/gx_cabinet#CABINET` | Cab sim | Fullscreen — mode selector (`c_model`, 19 cab models) + 3 arc knobs (`CLevel`/`CBass`/`CTreble`), same shape as `TapReverbPanel` |
 | 16 | `http://moddevices.com/plugins/mod-devel/BigMuffPi` | Fuzz | MultibandWindow (3 knobs) |
 | 14 | `http://guitarix.sourceforge.net/plugins/gx_hotbox_#_hotbox_` | Amp sim | Fullscreen (preamp+EQ) |
 | 13 | `http://moddevices.com/plugins/tap/tubewarmth` | Saturation | MultibandWindow (1 knob) |
