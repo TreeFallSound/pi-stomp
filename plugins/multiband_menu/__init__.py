@@ -76,7 +76,7 @@ class MultibandWindow(PluginWindow[None]):
         assert value_font is not None and label_font is not None
 
         self._ring = ArcRingGlyph(radius=_ARC_RADIUS)
-        self._slot_widgets: list[_ParamSlotWidget] = []
+        self._slot_widgets: list[ParamSlotWidget] = []
 
         cb = self.content_box
         n = len(self.slots)
@@ -92,7 +92,7 @@ class MultibandWindow(PluginWindow[None]):
             cx = cb.x0 + col * cell_w + cell_w // 2
             cy = cb.y0 + row * cell_h + cell_h // 2
             box = Box.xywh(cx - ring_wh // 2, cy - ring_wh // 2, ring_wh, ring_wh)
-            w = _ParamSlotWidget(
+            w = ParamSlotWidget(
                 box=box,
                 slot=slot,
                 owner=self,
@@ -105,12 +105,12 @@ class MultibandWindow(PluginWindow[None]):
             self.add_sel_widget(w)
 
     def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:
-        if encoder_id == 1 and isinstance(self.sel_ref, _ParamSlotWidget):
+        if encoder_id == 1 and isinstance(self.sel_ref, ParamSlotWidget):
             return self.sel_ref.on_encoder_rotation(rotations)
         return False
 
 
-class _ParamSlotWidget(Widget):
+class ParamSlotWidget(Widget):
     """Single arc-ring + label + value slot. Edits route through the owner window."""
 
     def __init__(
