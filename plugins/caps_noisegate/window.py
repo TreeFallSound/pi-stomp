@@ -27,7 +27,7 @@ class CapsNoisegateWindow(MultibandWindow):
 
     @staticmethod
     def _fmt_ms(value: float) -> str:
-        return f"{value:.1f}m"
+        return f"{value:.0f}ms"
 
     @staticmethod
     def _fmt_hz(value: float) -> str:

@@ -31,10 +31,12 @@ class PluginWindow(PluginPanel[TState], Dialog):
     WIN_W: int = 304
     WIN_H: int = 208
 
-    @staticmethod
-    def _chrome_overhead() -> tuple[int, int]:
+    _CONTENT_PAD = 2  # top/bottom breathing room around content_box
+
+    @classmethod
+    def _chrome_overhead(cls) -> tuple[int, int]:
         """(top, bottom) pixels the chrome consumes inside the panel body."""
-        return (0, BTN_H + BTN_GAP * 2)
+        return (cls._CONTENT_PAD, BTN_H + BTN_GAP * 2 + cls._CONTENT_PAD)
 
     def _window_size(self) -> tuple[int, int]:
         return (self.WIN_W, self.WIN_H)
@@ -75,7 +77,8 @@ class PluginWindow(PluginPanel[TState], Dialog):
             on_reset=lambda *_: self._on_reset(),
         )
 
-        self.content_box = Box.xywh(0, 0, w, btn_y - BTN_GAP)
+        pad = self._CONTENT_PAD
+        self.content_box = Box.xywh(0, pad, w, btn_y - BTN_GAP - 2 * pad)
 
         self.build_widgets()
         self.add_sel_widget(self._btn_back)

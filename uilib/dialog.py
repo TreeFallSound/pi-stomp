@@ -81,13 +81,28 @@ class Dialog(RoundedPanel):
     must stay square (otherwise we'd clip the top of the first content widget).
     """
 
+    # nudge the whole dialog down if it's close to full height
+    _TRUE_CENTER_MIN_HEIGHT = 190
+
     def __init__(self, width, height, title, title_font=None, **kwargs):
         box = Box.xywh(0, 0, width, height)
         radius = 10
         if title_font is None:
             title_font = Config().get_font("default_title")
+        self._title_strip_h = get_text_size(title, title_font)[1] + 2
         deco = functools.partial(DialogDecorator, title=title, title_font=title_font, outline_radius=radius)
         super(Dialog, self).__init__(box=box, align=WidgetAlign.CENTRE, radius=radius, decorator=deco, **kwargs)
+
+    def _adjust_box(self):
+        super()._adjust_box()
+        if (
+            self.align & WidgetAlign.CENTRE_V
+            and self.box is not None
+            and self.box.height >= self._TRUE_CENTER_MIN_HEIGHT
+        ):
+            offset = self._title_strip_h / 2
+            self.box.y0 += offset
+            self.box.y1 += offset
 
     @override
     def _build_shape_mask(self) -> pygame.Surface:
