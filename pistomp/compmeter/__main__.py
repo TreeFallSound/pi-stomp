@@ -17,10 +17,10 @@ import ctypes
 import select
 import signal
 import sys
-from multiprocessing.shared_memory import SharedMemory
 
 from pistomp.compmeter.engine import GrEngine
 from pistomp.compmeter.source import build_source
+from pistomp.process_client import attach_shm
 
 
 class _GrFrame(ctypes.Structure):
@@ -51,40 +51,42 @@ def main() -> None:
     shm_name, in_port, out_port, source_spec, makeup = sys.argv[1:6]
     signal.signal(signal.SIGTERM, _on_sigterm)
 
-    shm = SharedMemory(name=shm_name, create=False)
+    shm = attach_shm(shm_name)
     assert shm.buf is not None
     frame = _GrFrame.from_buffer(shm.buf)
 
     source = build_source(source_spec, in_port, out_port, name="pistomp-compmeter")
     engine = GrEngine(source, makeup_db=float(makeup))
-    engine.start()
 
     try:
-        while _running:
-            rlist, _, _ = select.select([sys.stdin], [], [], 0.05)
-            if rlist:
-                line = sys.stdin.readline()
-                if not line or line.strip() == "stop":
-                    break
-                if line.startswith("makeup "):
-                    try:
-                        engine.set_makeup(float(line.split(None, 1)[1]))
-                    except (ValueError, IndexError):
-                        pass
+        try:
+            engine.start()
+            while _running:
+                rlist, _, _ = select.select([sys.stdin], [], [], 0.05)
+                if rlist:
+                    line = sys.stdin.readline()
+                    if not line or line.strip() == "stop":
+                        break
+                    if line.startswith("makeup "):
+                        try:
+                            engine.set_makeup(float(line.split(None, 1)[1]))
+                        except (ValueError, IndexError):
+                            pass
 
-            reading = engine.get_reading()
-            frame.seq += 1
-            if reading is None:
-                frame.valid = 0
-            else:
-                frame.in_db = reading.in_db
-                frame.out_db = reading.out_db
-                frame.gr_db = reading.gr_db
-                frame.ts = reading.ts
-                frame.valid = 1 if reading.valid else 0
-            frame.seq += 1
+                reading = engine.get_reading()
+                frame.seq += 1
+                if reading is None:
+                    frame.valid = 0
+                else:
+                    frame.in_db = reading.in_db
+                    frame.out_db = reading.out_db
+                    frame.gr_db = reading.gr_db
+                    frame.ts = reading.ts
+                    frame.valid = 1 if reading.valid else 0
+                frame.seq += 1
+        finally:
+            engine.stop()
     finally:
-        engine.stop()
         del frame
         shm.close()
 

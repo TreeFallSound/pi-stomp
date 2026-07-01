@@ -65,8 +65,8 @@ class DualJackSource:
                 cb(p_in.get_array(), p_out.get_array())  # pyright: ignore[reportAttributeAccessIssue]
 
         self._client.activate()
-        self._client.connect(self._in_port, p_in)
-        self._client.connect(self._out_port, p_out)
+        self._client.connect(self._resolve_source(self._in_port), p_in)
+        self._client.connect(self._resolve_source(self._out_port), p_out)
 
     def stop(self) -> None:
         if self._client is not None:
@@ -77,6 +77,20 @@ class DualJackSource:
             except Exception:
                 pass
             self._client = None
+
+    def _resolve_source(self, port_name: str) -> str:
+        """JACK connections only run output→input. ``port_name`` (e.g. a plugin's
+        own audio-in port) may itself be an input, so tap whatever feeds it instead.
+        """
+        assert self._client is not None
+        port = self._client.get_port_by_name(port_name)
+        if port.is_input:
+            # Not our own port, so OwnPort.connections isn't available —
+            # get_all_connections works for any port, foreign or not.
+            upstream = self._client.get_all_connections(port)
+            if upstream:
+                return upstream[0].name
+        return port_name
 
 
 class PairedToneSource:

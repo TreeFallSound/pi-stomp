@@ -17,11 +17,11 @@ import select
 import signal
 import sys
 import threading
-from multiprocessing.shared_memory import SharedMemory
 from pathlib import Path
 
 from pistomp.nam.capture_session import CaptureSession
 from pistomp.nam.wavio import load_wav_float32
+from pistomp.process_client import attach_shm
 
 
 class _NamFrame(ctypes.Structure):
@@ -70,7 +70,7 @@ def main() -> None:
 
     signal.signal(signal.SIGTERM, _on_sigterm)
 
-    shm = SharedMemory(name=shm_name, create=False)
+    shm = attach_shm(shm_name)
     assert shm.buf is not None
     frame = _NamFrame.from_buffer(shm.buf)
     exit_code = 3

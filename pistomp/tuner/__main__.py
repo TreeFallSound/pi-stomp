@@ -14,8 +14,8 @@ import ctypes
 import select
 import signal
 import sys
-from multiprocessing.shared_memory import SharedMemory
 
+from pistomp.process_client import attach_shm
 from pistomp.tuner.engine import TunerEngine
 from pistomp.tuner.source import build_source
 
@@ -48,35 +48,37 @@ def main() -> None:
     shm_name, capture_port, source_spec = sys.argv[1], sys.argv[2], sys.argv[3]
     signal.signal(signal.SIGTERM, _on_sigterm)
 
-    shm = SharedMemory(name=shm_name, create=False)
+    shm = attach_shm(shm_name)
     assert shm.buf is not None
     frame = _TunerFrame.from_buffer(shm.buf)
 
     source = build_source(source_spec, capture_port, name="pistomp-tuner")
     engine = TunerEngine(source)
-    engine.start()
 
     try:
-        while _running:
-            rlist, _, _ = select.select([sys.stdin], [], [], 0.05)
-            if rlist:
-                line = sys.stdin.readline()
-                if not line or line.strip() == "stop":
-                    break
+        try:
+            engine.start()
+            while _running:
+                rlist, _, _ = select.select([sys.stdin], [], [], 0.05)
+                if rlist:
+                    line = sys.stdin.readline()
+                    if not line or line.strip() == "stop":
+                        break
 
-            reading = engine.get_reading()
-            frame.seq += 1
-            if reading is None:
-                frame.valid = 0
-            else:
-                frame.midi_note = reading.midi_note
-                frame.cents = reading.cents
-                frame.freq_hz = reading.freq_hz
-                frame.ts = reading.ts
-                frame.valid = 1
-            frame.seq += 1
+                reading = engine.get_reading()
+                frame.seq += 1
+                if reading is None:
+                    frame.valid = 0
+                else:
+                    frame.midi_note = reading.midi_note
+                    frame.cents = reading.cents
+                    frame.freq_hz = reading.freq_hz
+                    frame.ts = reading.ts
+                    frame.valid = 1
+                frame.seq += 1
+        finally:
+            engine.stop()
     finally:
-        engine.stop()
         del frame
         shm.close()
 

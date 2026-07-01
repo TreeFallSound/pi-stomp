@@ -21,6 +21,22 @@ from multiprocessing.shared_memory import SharedMemory
 _SRC_ROOT = str(Path(__file__).resolve().parents[1])
 
 
+def attach_shm(name: str) -> SharedMemory:
+    """Attach to a SHM segment created by the parent's ``AudioProcessClient``.
+
+    ``SharedMemory.__init__`` registers with *this process's own*
+    resource_tracker even in attach mode, but only the parent (which alone
+    calls ``unlink()`` in ``_terminate()``) owns cleanup. Left registered, the
+    subprocess's tracker treats the segment as leaked and races the parent to
+    unlink it at exit (https://bugs.python.org/issue38119) — so drop it here.
+    """
+    from multiprocessing import resource_tracker
+
+    shm = SharedMemory(name=name, create=False)
+    resource_tracker.unregister(shm._name, "shared_memory")  # pyright: ignore[reportPrivateUsage]
+    return shm
+
+
 class AudioProcessClient:
     """Spawn, communicate with, and kill an audio subprocess.
 

@@ -32,12 +32,7 @@ from uilib.glyphs.circle import RingGlyph
 from uilib.misc import InputEvent, get_text_size
 from uilib.widget import Widget
 
-# ── LV2 port symbols (see docs/lv2-ttl-guide.md finder) ─────────────────────
-
-_THR = "thr"  # threshold dB (-60..0)
-_RAT = "rat"  # ratio (1..20)
-_KN = "kn"  # knee dB (0..8)
-_MAK = "mak"  # makeup dB (0..30)
+# ── LV2 port symbols vary per plugin; each registers a CompressorSpec ──────
 
 
 @dataclass(frozen=True)
@@ -48,13 +43,33 @@ class _ArcSpec:
     display_fn: object  # Callable[[float], str]
 
 
-# Column arcs, top to bottom (zigzag left/right — see _ARC_CENTERS).
-_ARCS: tuple[_ArcSpec, ...] = (
-    _ArcSpec(_THR, "THRESH", (255, 180, 80), lambda v: f"{v:+.0f}"),
-    _ArcSpec(_RAT, "RATIO", (130, 220, 110), lambda v: f"{v:.1f}:1"),
-    _ArcSpec(_KN, "KNEE", (110, 200, 230), lambda v: f"{v:.0f}"),
-    _ArcSpec(_MAK, "MAKEUP", (210, 130, 230), lambda v: f"+{v:.0f}"),
-)
+@dataclass(frozen=True)
+class CompressorSpec:
+    """Maps one compressor plugin's LV2 port symbols onto the panel's fixed layout.
+
+    ``kn_sym`` is optional — plugins without a knee control (e.g. Invada) get a
+    3-arc column and a hard-knee transfer curve.
+    """
+
+    thr_sym: str
+    rat_sym: str
+    mak_sym: str
+    kn_sym: str | None = None
+    # JACK port names for the GR meter's audio tap. mod-host and MOD Desktop both
+    # name ports after the plugin's raw LV2 symbol (not a generic in_1/out_1).
+    in_audio_sym: str = "lv2_audio_in_1"
+    out_audio_sym: str = "lv2_audio_out_1"
+
+
+def _build_arcs(spec: CompressorSpec) -> tuple[_ArcSpec, ...]:
+    arcs = [
+        _ArcSpec(spec.thr_sym, "THRESH", (255, 180, 80), lambda v: f"{v:+.0f}"),
+        _ArcSpec(spec.rat_sym, "RATIO", (130, 220, 110), lambda v: f"{v:.1f}:1"),
+    ]
+    if spec.kn_sym is not None:
+        arcs.append(_ArcSpec(spec.kn_sym, "KNEE", (110, 200, 230), lambda v: f"{v:.1f}"))
+    arcs.append(_ArcSpec(spec.mak_sym, "MAKEUP", (210, 130, 230), lambda v: f"+{v:.0f}"))
+    return tuple(arcs)
 
 # ── layout ──────────────────────────────────────────────────────────────────
 
@@ -68,7 +83,12 @@ _ARC_TIP = 3.0
 
 # Zigzag centres inside the column: even arcs left, odd arcs right. Boxes may
 # overlap; the circles never do (same-column pairs are 92 px apart vertically).
-_ARC_CENTERS: tuple[tuple[int, int], ...] = ((36, 30), (76, 76), (36, 122), (76, 168))
+_ARC_CENTERS_4: tuple[tuple[int, int], ...] = ((36, 30), (76, 76), (36, 122), (76, 168))
+_ARC_CENTERS_3: tuple[tuple[int, int], ...] = ((36, 40), (76, 105), (36, 170))
+
+
+def _centers_for(n: int) -> tuple[tuple[int, int], ...]:
+    return _ARC_CENTERS_3 if n == 3 else _ARC_CENTERS_4
 
 _GRAPH_SIDE = 206  # 1:1 square
 _GRAPH_X0 = _W - _GRAPH_SIDE  # 114
@@ -113,10 +133,10 @@ def _comp_output_db(x_db: float, thr: float, ratio: float, knee: float, makeup: 
     if ratio <= 0:
         ratio = 1.0
     over = x_db - thr
-    if knee > 0.0 and 2.0 * over < -knee:
-        y = x_db
-    elif knee > 0.0 and 2.0 * abs(over) <= knee:
+    if knee > 0.0 and 2.0 * abs(over) <= knee:
         y = x_db + (1.0 / ratio - 1.0) * (over + knee / 2.0) ** 2 / (2.0 * knee)
+    elif over <= 0.0:
+        y = x_db
     else:
         y = thr + over / ratio
     return y + makeup
@@ -134,16 +154,29 @@ def _step_for(param: Parameter) -> float:
 
 
 class AcompPanel(FullscreenPluginPanel[AcompState]):
-    """Full-screen compressor: staggered arc column + reticule transfer plot."""
+    """Full-screen compressor: staggered arc column + reticule transfer plot.
+
+    Generic across any plugin whose ports match ``SPEC``. Subclasses only
+    override ``SPEC`` to target a different compressor (see ``plugins/zamcomp``,
+    ``plugins/invadacompressor``).
+    """
+
+    SPEC: CompressorSpec = CompressorSpec(thr_sym="thr", rat_sym="rat", mak_sym="mak", kn_sym="kn")
 
     # ── PluginPanel contract ────────────────────────────────────────────────
 
     def snapshot_state(self) -> AcompState:
-        def _v(sym: str, default: float) -> float:
-            p = self.plugin.parameters.get(sym)
+        def _v(sym: str | None, default: float) -> float:
+            p = self.plugin.parameters.get(sym) if sym is not None else None
             return float(p.value) if p is not None and p.value is not None else default
 
-        return AcompState(thr=_v(_THR, 0.0), rat=_v(_RAT, 4.0), kn=_v(_KN, 0.0), mak=_v(_MAK, 0.0))
+        spec = self.SPEC
+        return AcompState(
+            thr=_v(spec.thr_sym, 0.0),
+            rat=_v(spec.rat_sym, 4.0),
+            kn=_v(spec.kn_sym, 0.0),
+            mak=_v(spec.mak_sym, 0.0),
+        )
 
     def apply_state(self, state: AcompState) -> None:
         self._column.sync()
@@ -165,15 +198,17 @@ class AcompPanel(FullscreenPluginPanel[AcompState]):
         self._graph.set_state(self.snapshot_state())
 
         # Arc column (left): one drawing widget + N invisible Nav selectables.
+        self._arcs = _build_arcs(self.SPEC)
         self._column = ArcColumnWidget(
             box=Box.xywh(0, 0, _COL_W, _CONTENT_H),
             owner=self,
+            arcs=self._arcs,
             value_font=value_font,
             label_font=label_font,
             parent=self,
         )
         self._selectables: list[_ArcSelectable] = []
-        for i, spec in enumerate(_ARCS):
+        for i, spec in enumerate(self._arcs):
             sel = _ArcSelectable(self, i, spec.symbol)
             self._selectables.append(sel)
             self.add_sel_widget(sel)
@@ -190,9 +225,9 @@ class AcompPanel(FullscreenPluginPanel[AcompState]):
         if encoder_id not in (1, 2, 3) or rotations == 0:
             return True  # consume so tweaks never leak to volume while open
         if encoder_id == 2:
-            self._edit_symbol(_THR, rotations)
+            self._edit_symbol(self.SPEC.thr_sym, rotations)
         elif encoder_id == 3:
-            self._edit_symbol(_RAT, rotations)
+            self._edit_symbol(self.SPEC.rat_sym, rotations)
         else:
             sel = self.sel_ref
             if isinstance(sel, _ArcSelectable):
@@ -220,7 +255,7 @@ class AcompPanel(FullscreenPluginPanel[AcompState]):
 
     def set_param(self, symbol: str, value: float) -> None:
         super().set_param(symbol, value)
-        if symbol == _MAK and self._meter is not None:
+        if symbol == self.SPEC.mak_sym and self._meter is not None:
             self._meter.set_makeup(value)
 
     def _select_widget_ref(self, w) -> None:  # type: ignore[override]
@@ -239,10 +274,10 @@ class AcompPanel(FullscreenPluginPanel[AcompState]):
             self._start_meter()
         if self._meter is not None:
             reading = self._meter.get_reading()
-            if reading is not None and reading.valid:
-                self._graph.set_reticule(reading.in_db, reading.out_db, reading.gr_db, True)
+            if reading is not None:
+                self._graph.set_reticule(reading.in_db, reading.out_db, reading.gr_db, reading.valid)
             else:
-                self._graph.set_reticule(0.0, 0.0, 0.0, False)
+                self._graph.set_reticule(_A_MIN, _A_MIN, 0.0, False)
         super().tick()
 
     def _refresh_bypass_style(self) -> None:
@@ -263,7 +298,9 @@ class AcompPanel(FullscreenPluginPanel[AcompState]):
             return  # can't address the JACK ports (headless / tests)
         try:
             meter = GrMeterClient()
-            meter.start(f"effect_{n}:in_1", f"effect_{n}:out_1", self.snapshot_state().mak)
+            in_port = f"effect_{n}:{self.SPEC.in_audio_sym}"
+            out_port = f"effect_{n}:{self.SPEC.out_audio_sym}"
+            meter.start(in_port, out_port, self.snapshot_state().mak)
             self._meter = meter
         except Exception as exc:  # spawn/SHM failure must not take down the panel
             logging.warning("a-comp GR meter failed to start: %s", exc)
@@ -320,28 +357,32 @@ class _ArcSelectable(Widget):
 class ArcColumnWidget(Widget):
     """Draws all four staggered arc rings; frames the selected one in a reticule."""
 
-    def __init__(self, *, box: Box, owner: AcompPanel, value_font, label_font, parent: Widget) -> None:
+    def __init__(
+        self, *, box: Box, owner: AcompPanel, arcs: tuple[_ArcSpec, ...], value_font, label_font, parent: Widget
+    ) -> None:
         super().__init__(box=box, bkgnd_color=_BG, parent=parent, visible=True)
         self._owner = owner
+        self._arcs = arcs
+        self._centers = _centers_for(len(arcs))
         self._value_font = value_font
         self._label_font = label_font
         self._ring = ArcRingGlyph(_ARC_RADIUS, ring_half=_ARC_RING_HALF, tip_radius=_ARC_TIP)
         self._selected: int | None = None
         self._bypassed = False
-        self._values: list[float | None] = [None] * len(_ARCS)
+        self._values: list[float | None] = [None] * len(arcs)
         self.sync()
 
     def _param(self, symbol: str) -> Parameter | None:
         return self._owner.plugin.parameters.get(symbol)
 
     def sync(self) -> None:
-        for i, spec in enumerate(_ARCS):
+        for i, spec in enumerate(self._arcs):
             p = self._param(spec.symbol)
             self._values[i] = p.value if p is not None else None
         self.refresh()
 
     def sync_symbol(self, symbol: str) -> None:
-        for i, spec in enumerate(_ARCS):
+        for i, spec in enumerate(self._arcs):
             if spec.symbol == symbol:
                 p = self._param(symbol)
                 self._values[i] = p.value if p is not None else None
@@ -364,14 +405,14 @@ class ArcColumnWidget(Widget):
         self.refresh()
 
     def _refresh_cell(self, index: int) -> None:
-        cx, cy = _ARC_CENTERS[index]
+        cx, cy = self._centers[index]
         r = _ARC_RADIUS + 12  # ring + reticule brackets + a little label room
         bx = self.box
         assert bx is not None
         self.refresh(Box(bx.x0 + cx - r, bx.y0 + cy - r, bx.x0 + cx + r, bx.y0 + cy + r + 12))
 
     def _value_t(self, index: int) -> float:
-        p = self._param(_ARCS[index].symbol)
+        p = self._param(self._arcs[index].symbol)
         v = self._values[index]
         if p is None or v is None or p.maximum == p.minimum:
             return 0.0
@@ -381,13 +422,13 @@ class ArcColumnWidget(Widget):
         v = self._values[index]
         if v is None:
             return "--"
-        return _ARCS[index].display_fn(v)  # type: ignore[operator]
+        return self._arcs[index].display_fn(v)  # type: ignore[operator]
 
     def _draw(self, ctx) -> None:
         shade = _INACTIVE_SHADE if self._bypassed else 1.0
         half = self._ring.half_size
-        for i, spec in enumerate(_ARCS):
-            cx, cy = _ARC_CENTERS[i]
+        for i, spec in enumerate(self._arcs):
+            cx, cy = self._centers[i]
             ring = self._ring.render(
                 self._value_t(i),
                 filled_color=_shade(spec.color, shade),
