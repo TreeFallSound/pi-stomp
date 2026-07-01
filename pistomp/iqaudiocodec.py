@@ -40,10 +40,10 @@ class IQaudioCodec(audiocard.Audiocard):
         self.bypass_left = not self.get_switch_parameter('Mixout Left DAC Left')
         self.bypass_right = not self.get_switch_parameter('Mixout Right DAC Right')
 
-    def get_bypass_left(self):
+    def get_bypass_left(self) -> bool:
         return self.bypass_left
 
-    def get_bypass_right(self):
+    def get_bypass_right(self) -> bool:
         return self.bypass_right
 
     def set_bypass_left(self, bypass):

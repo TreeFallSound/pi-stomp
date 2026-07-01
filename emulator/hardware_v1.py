@@ -55,5 +55,5 @@ class EmulatorHardwareV1(EmulatorHardwareBase):
         self.encoders.append(bot)
         self.tweak_encoders.append(bot)
 
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
+    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc) -> None:
         pass  # v1 has no config-driven encoders

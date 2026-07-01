@@ -50,7 +50,7 @@ class MockEncoder(encoder_controller.EncoderController):
         if direction != 0:
             self.refresh(direction)
 
-    def get_display_info(self) -> dict:
+    def get_display_info(self) -> controller.AnalogDisplayInfo:
         return {"type": self.type, "id": self.id, "category": None}
 
     def press(self, value):

@@ -24,6 +24,7 @@ Requires MOD Desktop running locally at http://127.0.0.1:18181.
 
 import logging
 import os
+from functools import cached_property
 
 import modalapi.pedalboard as Pedalboard
 from modalapi.modhandler import Modhandler
@@ -99,14 +100,16 @@ class EmulatorModhandler(Modhandler):
 
     def system_menu_reboot(self, arg):
         logging.info("Emulator: reboot is a no-op")
+        raise KeyboardInterrupt
 
     def system_menu_restart_sound(self, arg):
         logging.info("Emulator: restart sound is a no-op")
 
     def system_menu_reload(self, arg):
         logging.info("Emulator: reload configs is a no-op")
+        raise KeyboardInterrupt
 
-    @property
+    @cached_property
     def recovery_available(self) -> bool:
         return False  # no systemctl/recovery service on a dev machine
 

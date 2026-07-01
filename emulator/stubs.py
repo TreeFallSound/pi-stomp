@@ -51,30 +51,31 @@ class VirtualAudiocard(Audiocard):
         self._bypass_left  = False
         self._bypass_right = False
 
-    def get_volume_parameter(self, symbol):
-        return self._volumes.get(symbol, 0.0)
+    def get_volume_parameter(self, param_name):
+        return self._volumes.get(param_name, 0.0)
 
-    def set_volume_parameter(self, symbol, value):
-        self._volumes[symbol] = value
-
-    def get_switch_parameter(self, symbol):
-        return self._switches.get(symbol, False)
-
-    def set_switch_parameter(self, symbol, value):
-        self._switches[symbol] = value
+    def set_volume_parameter(self, param_name, value, store=True):
+        self._volumes[param_name] = value
         return True
 
-    def get_bypass_left(self):
+    def get_switch_parameter(self, param_name):
+        return self._switches.get(param_name, False)
+
+    def set_switch_parameter(self, param_name, value, store=True):
+        self._switches[param_name] = value
+        return True
+
+    def get_bypass_left(self) -> bool:
         return self._bypass_left
 
-    def set_bypass_left(self, value):
-        self._bypass_left = value
+    def set_bypass_left(self, bypass):
+        self._bypass_left = bypass
 
-    def get_bypass_right(self):
+    def get_bypass_right(self) -> bool:
         return self._bypass_right
 
-    def set_bypass_right(self, value):
-        self._bypass_right = value
+    def set_bypass_right(self, bypass):
+        self._bypass_right = bypass
 
     def set_output_muted(self, muted: bool) -> None:
         pass
@@ -276,8 +277,7 @@ class StubEthernetManager(EthernetManager):
     def read_jack_settings(self) -> tuple[Optional[int], Optional[int]]:
         return (48000, 128)
 
-    @staticmethod
-    def read_xrun_buckets() -> tuple[int, int, int]:
+    def read_xrun_buckets(self) -> tuple[int, int, int]:
         return (0, 0, 0)
 
     def start_service(self) -> None:

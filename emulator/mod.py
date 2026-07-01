@@ -83,12 +83,14 @@ class EmulatorMod(Mod):
 
     def system_menu_reboot(self):
         logging.info("Emulator: reboot is a no-op")
+        raise KeyboardInterrupt
 
     def system_menu_restart_sound(self):
         logging.info("Emulator: restart sound is a no-op")
 
     def system_menu_reload(self):
         logging.info("Emulator: reload configs is a no-op")
+        raise KeyboardInterrupt
 
     # -------------------------------------------------------------------------
     # Window integration — drain events every tick; couple LCD flush +

@@ -306,7 +306,7 @@ class Hardware(ABC):
                           (adc_input, midi_channel, midi_cc))
 
     @abstractmethod
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc) -> EncoderController.EncoderController:
+    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc) -> EncoderController.EncoderController | None:
         # This should be implemented by hardware subclasses that support tweak encoders (Tre at least)
         ...
 
@@ -334,7 +334,10 @@ class Hardware(ABC):
             # midi_port routing is applied later in __apply_midi_routing (external_midi is None here)
             try:
                 control = self.add_encoder(id, type, None, longpress_callback, midi_channel, midi_cc)
-                self.encoders.append(control)
+                # FIXME: add_encoder returns None for emulator v1/v2 stubs that don't
+                # implement config-driven encoders, forcing the return type to be optional.
+                if control is not None:
+                    self.encoders.append(control)
             except Exception:
                 logging.exception("Failed to create encoder with config: %s" % c)
                 continue
