@@ -13,10 +13,14 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from uilib.dialog import *
-from uilib.text import *
+from uilib.box import Box
+from uilib.config import Config
+from uilib.dialog import Dialog
+from uilib.misc import InputEvent, WidgetAlign, get_text_size
+from uilib.text import TextWidget
+from uilib.widget import Widget
 import common.util as util
-import common.parameter as Parameter
+from common.parameter import Parameter, Type
 
 import numpy as np
 import time
@@ -30,7 +34,7 @@ class Parameterdialog(Dialog):
         self.parameter: Parameter = parameter
         
         # adjustment amount per click
-        if self.parameter.type in (Parameter.Type.INTEGER, Parameter.Type.ENUMERATION, Parameter.Type.TOGGLED):
+        if self.parameter.type in (Type.INTEGER, Type.ENUMERATION, Type.TOGGLED):
             self.parameter_tweak_amount = 1
         else:
             self.parameter_tweak_amount = 8
@@ -54,7 +58,7 @@ class Parameterdialog(Dialog):
 
         self.w_value = None
         self.w_bars = []  # Reusable bar widgets
-        self.last_param_value = None  # Track previous value for incremental bar updates
+        self.last_param_value: float = self.parameter.value  # Track previous value for incremental bar updates
         self._draw_contents()
 
     def _calc_graph_points(self, x, min, max):
@@ -179,7 +183,7 @@ class Parameterdialog(Dialog):
             new_value = self.parameter.minimum
 
         # Integer rounding
-        if self.parameter.type in (Parameter.Type.INTEGER, Parameter.Type.ENUMERATION, Parameter.Type.TOGGLED):
+        if self.parameter.type in (Type.INTEGER, Type.ENUMERATION, Type.TOGGLED):
             new_value = round(new_value)
 
         if new_value == self.parameter.value:
@@ -197,6 +201,9 @@ class Parameterdialog(Dialog):
             self.parameter_value_change(-1)
         elif event == InputEvent.RIGHT:
             self.parameter_value_change(1)
+        else:
+            return False
+        return True
 
     def pop(self):
         if self.parent:

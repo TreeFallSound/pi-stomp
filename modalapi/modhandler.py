@@ -116,7 +116,7 @@ class Modhandler(Handler):
         self.bypass_left = False
         self.bypass_right = False
 
-        self.current: Current | None = None
+        self._current: Current | None = None
         self._lcd: Lcd | None = None
         self._hardware: Hardware | None = None
         self.volume_parameter = None
@@ -206,17 +206,6 @@ class Modhandler(Handler):
         self.ws_bridge.stop()
         logging.info("WebSocket bridge stopped")
         self.ethernet_manager.shutdown()
-
-    # Container for dynamic data which is unique to the "current" pedalboard
-    # The self.current pointed above will point to this object which gets
-    # replaced when a different pedalboard is made current (old Current object
-    # gets deleted and a new one added via self.set_current_pedalboard()
-    class Current:
-        def __init__(self, pedalboard: Pedalboard.Pedalboard):
-            self.pedalboard: Pedalboard.Pedalboard = pedalboard
-            self.presets: dict[int, str] = {}
-            self.preset_index: int = 0  # Assumes pedalboard loads at snapshot 0 (default behavior)
-            self.analog_controllers: dict[str, dict[str, Any]] = {}  # { type: (plugin_name, param_name) }
 
     def _rest_get(self, url: str) -> Response | None:
         try:
@@ -480,7 +469,7 @@ class Modhandler(Handler):
         Args:
             new_snapshot_index: Index of the new snapshot being loaded
         """
-        if not self.blend_modes or self.current is None:
+        if not self.blend_modes or self._current is None:
             return
 
         new_snapshot_name = self.current.presets.get(new_snapshot_index)
@@ -535,7 +524,7 @@ class Modhandler(Handler):
             if self.next_pedalboard_preset_index is not None:
                 # Check if we're still on the same pedalboard (stale flag from previous load)
                 mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
-                if mod_bundle and self.current and mod_bundle == self.current.pedalboard.bundle:
+                if mod_bundle and self._current is not None and mod_bundle == self._current.pedalboard.bundle:
                     # Same pedalboard - this is a new snapshot on current board, not a pre-switch
                     logging.debug(
                         f"WebSocket: Snapshot changed to {msg.snapshot_id} ({msg.snapshot_name}) - clearing stale pre-switch flag"
@@ -553,7 +542,7 @@ class Modhandler(Handler):
                     logging.debug(f"WebSocket: Pre-switch snapshot changed to {msg.snapshot_id}")
                     self.next_pedalboard_preset_index = msg.snapshot_id
             else:
-                assert self.current is not None, "Received snapshot message but no current pedalboard is set"
+                assert self._current is not None, "Received snapshot message but no current pedalboard is set"
                 logging.debug(f"WebSocket: Snapshot changed to {msg.snapshot_id} ({msg.snapshot_name})")
 
                 if msg.snapshot_id not in self.current.presets:
@@ -567,7 +556,7 @@ class Modhandler(Handler):
             # Buffer bypass for the connect-dump race (dump may drain before
             # last.json reload sets current).
             self._pending_dump_bypass[msg.instance] = msg.bypassed
-            if self.current is not None:
+            if self._current is not None:
                 known = next(
                     (p for p in self.current.pedalboard.plugins if p.instance_id == msg.instance),
                     None,
@@ -582,7 +571,7 @@ class Modhandler(Handler):
                     self._handle_dynamic_plugin_add(msg)
 
         elif isinstance(msg, PluginBypassMessage):
-            if self.current is not None:
+            if self._current is not None:
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
                         logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
@@ -593,7 +582,7 @@ class Modhandler(Handler):
         elif isinstance(msg, RemovePluginMessage):
             if self._is_pedalboard_loading:
                 logging.debug(f"WebSocket: remove {msg.instance} during load — suppressed")
-            elif self.current is not None:
+            elif self._current is not None:
                 before = len(self.current.pedalboard.plugins)
                 self.current.pedalboard.plugins = [
                     p for p in self.current.pedalboard.plugins if p.instance_id != msg.instance
@@ -618,7 +607,7 @@ class Modhandler(Handler):
         elif isinstance(msg, ConnectMessage):
             if self._is_pedalboard_loading:
                 logging.debug(f"WebSocket: connect {msg.port_from} -> {msg.port_to} during load — suppressed")
-            elif self.current is not None:
+            elif self._current is not None:
                 self.current.pedalboard.add_connection(msg.port_from, msg.port_to)
                 logging.info(f"WebSocket: Connected {msg.port_from} -> {msg.port_to}")
                 self.lcd.draw_main_panel()
@@ -626,7 +615,7 @@ class Modhandler(Handler):
         elif isinstance(msg, DisconnectMessage):
             if self._is_pedalboard_loading:
                 logging.debug(f"WebSocket: disconnect {msg.port_from} -> {msg.port_to} during load — suppressed")
-            elif self.current is not None:
+            elif self._current is not None:
                 self.current.pedalboard.remove_connection(msg.port_from, msg.port_to)
                 logging.info(f"WebSocket: Disconnected {msg.port_from} -> {msg.port_to}")
                 self.lcd.draw_main_panel()
@@ -643,7 +632,7 @@ class Modhandler(Handler):
             # at the current value) and sync any bound control. The connect-dump
             # delivers the real mod-ui state here — :bypass aside, nothing else
             # repaints a non-bypass footswitch.
-            if self.current is not None:
+            if self._current is not None:
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
                         plugin.set_param_value(msg.symbol, msg.value)
@@ -658,7 +647,7 @@ class Modhandler(Handler):
 
     def _handle_dynamic_plugin_add(self, msg: AddPluginMessage) -> None:
         """Handle an `add` WS message for a plugin not yet in the pedalboard model."""
-        assert self.current is not None
+        assert self._current is not None
         info = self.current.pedalboard.get_plugin_data(msg.uri)
         plugin = self.current.pedalboard._build_plugin(msg.instance, msg.uri, msg.x, msg.y, info)
         if plugin is None:
@@ -693,7 +682,7 @@ class Modhandler(Handler):
             self._is_pedalboard_loading = True
             self.lcd.draw_info_message("Loading...")
             mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
-            if mod_bundle and self.current and mod_bundle != self.current.pedalboard.bundle:
+            if mod_bundle and self._current is not None and mod_bundle != self._current.pedalboard.bundle:
                 logging.info(f"Pedalboard changed via MOD from: {self.current.pedalboard.bundle} to: {mod_bundle}")
 
                 if mod_bundle not in self.pedalboards:
@@ -707,7 +696,7 @@ class Modhandler(Handler):
                     subprocess.run(["pistomp-stamp", "stamp", mod_bundle], check=False)
                 except Exception:
                     logging.debug("pistomp-stamp failed", exc_info=True)
-            elif mod_bundle and self.current and self.next_pedalboard_preset_index is not None:
+            elif mod_bundle and self._current is not None and self.next_pedalboard_preset_index is not None:
                 # Same pedalboard reloaded with a pending snapshot - apply it now
                 logging.info(f"Applying pending snapshot {self.next_pedalboard_preset_index} to current pedalboard")
                 self.current.preset_index = self.next_pedalboard_preset_index
@@ -807,7 +796,7 @@ class Modhandler(Handler):
 
     def set_current_pedalboard(self, pedalboard):
         if self._fullscreen_panel is not None and not self._fullscreen_panel.should_persist_on_board_change():
-            self._lcd.hide_fullscreen_panel()
+            self.lcd.hide_fullscreen_panel()
             self._fullscreen_panel = None
 
         # Cleanup all previous blend modes if active
@@ -817,14 +806,14 @@ class Modhandler(Handler):
         self.active_blend_mode = None
 
         # Redraw analog assignments to revert any BlendMode icon substitution
-        if self.current and self.current.analog_controllers:
+        if self._current is not None and self._current.analog_controllers:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
         # Delete previous "current"
-        del self.current
+        del self._current
 
         # Create a new "current"
-        self.current = Current(pedalboard)
+        self._current = Current(pedalboard)
 
         if self.next_pedalboard_preset_index is not None:
             self.current.preset_index = self.next_pedalboard_preset_index
@@ -957,7 +946,7 @@ class Modhandler(Handler):
         if resp is None or resp.status_code != 200:
             return
 
-        if not self.current:
+        if not self._current:
             logging.error("Cannot load presets since current pedalboard is not set")
             return
 
@@ -981,7 +970,7 @@ class Modhandler(Handler):
                     break
 
     def preset_change(self, index):
-        if not self.current:
+        if not self._current:
             logging.error("Cannot change preset since current pedalboard is not set")
             return
 
@@ -1007,12 +996,12 @@ class Modhandler(Handler):
         # Bypass/param changes from the snapshot arrive via the WS drain (source of truth).
 
     def preset_incr_and_change(self, *argv):
-        assert self.current is not None, "Current pedalboard is not set"
+        assert self._current is not None, "Current pedalboard is not set"
         index = self.next_preset_index(self.current.presets, self.current.preset_index, True)
         self.preset_change(index)
 
     def preset_decr_and_change(self, *argv):
-        assert self.current is not None, "Current pedalboard is not set"
+        assert self._current is not None, "Current pedalboard is not set"
         index = self.next_preset_index(self.current.presets, self.current.preset_index, False)
         self.preset_change(index)
 
@@ -1194,7 +1183,7 @@ class Modhandler(Handler):
             self.lcd.draw_message_dialog("No USB device found")
 
     def system_menu_save_current_pb(self, _arg: None):
-        if self.current is None:
+        if self._current is None:
             logging.error("No current pedalboard set, cannot save")
             self.lcd.draw_message_dialog("No current pedalboard set, cannot save")
             return

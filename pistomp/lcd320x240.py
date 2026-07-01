@@ -20,7 +20,8 @@ import socket
 from typing import Optional
 from common.fonts import font_path
 import common.token as Token
-import common.parameter as Parameter
+import common.util as util
+from common.parameter import Parameter, Type
 from ui.ethernet_menu import EthernetMenu
 from ui.wifi_menu import WifiMenu
 import pistomp.category as Category
@@ -28,11 +29,29 @@ import pistomp.lcd as abstract_lcd
 import pistomp.switchstate as switchstate
 import pygame
 
-from uilib import *
+from uilib import (
+    Box,
+    Config,
+    ContainerWidget,
+    FootswitchWidget,
+    get_text_size,
+    Icon,
+    ImageWidget,
+    InputEvent,
+    load_surface,
+    Menu,
+    MessageDialog,
+    Panel,
+    PanelStack,
+    Parameterdialog,
+    ScrollingText,
+    ShroudedPanel,
+    TextWidget,
+)
 from uilib import profiling
 from uilib.gridpanel import GridPanel, TILE_W, CHANNEL
 from uilib.pygame_init import font as _make_font
-from uilib.lcd_ili9341 import *
+from uilib.lcd_ili9341 import LcdIli9341
 from uilib.text import PluginTile
 from modalapi.layout import build_layout_compress
 
@@ -717,13 +736,13 @@ class Lcd(abstract_lcd.Lcd):
         # Create a new dialog
         title = parameter.instance_id + ":" + parameter.name
         current_value = parameter.value
-        if parameter.type == Parameter.Type.ENUMERATION:
+        if parameter.type == Type.ENUMERATION:
             items = []
             for (label, value) in parameter.get_enum_value_list():
                 item = (label, self.parameter_commit_enum, (parameter, value), value==current_value)
                 items.append(item)
             d = self.draw_selection_menu(items, title, auto_dismiss=True)
-        elif parameter.type == Parameter.Type.TOGGLED:
+        elif parameter.type == Type.TOGGLED:
             items = [ ("On",  self.parameter_commit_enum, (parameter, 1), current_value==1),
                       ("Off", self.parameter_commit_enum, (parameter, 0), current_value==0)]
             d = self.draw_selection_menu(items, title, auto_dismiss=True)
@@ -904,7 +923,7 @@ class Lcd(abstract_lcd.Lcd):
         self.pstack.push_panel(d)
         return d
 
-    def display_parameter_value(self, parameter: Parameter.Parameter, value: float) -> None:
+    def display_parameter_value(self, parameter: Parameter, value: float) -> None:
         d = self.draw_parameter_dialog(parameter, timeout=PARAMETER_DIALOG_TIMEOUT)
         if d:
             d.update_value(value)
@@ -918,7 +937,7 @@ class Lcd(abstract_lcd.Lcd):
             Token.SYMBOL: symbol,
             Token.RANGES: {Token.MINIMUM: 0, Token.MAXIMUM: 1023}
         }
-        param = Parameter.Parameter(info, value, None)
+        param = Parameter(info, value, None)
         d = Parameterdialog(self.pstack, param,
                             width=270, height=130, auto_destroy=False, title=name, timeout=PARAMETER_DIALOG_TIMEOUT,
                             action=commit_callback, object=symbol)

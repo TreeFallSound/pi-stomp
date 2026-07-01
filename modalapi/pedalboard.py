@@ -25,7 +25,7 @@ from typing import Optional
 import common.token as Token
 
 import common.util as util
-import common.parameter as Parameter
+from common.parameter import Parameter
 import modalapi.plugin as Plugin
 from modalapi.connections import Connection, build_connection
 from modalapi.plugin_customization import Customizer, default_customizer
@@ -200,7 +200,7 @@ class Pedalboard:
                             "ranges": {"minimum": 0, "maximum": 1},
                         }  # TODO tokenize
                         v = 0.0 if value == 0 else 1.0
-                        param = Parameter.Parameter(info, v, binding, instance_id)
+                        param = Parameter(info, v, binding, instance_id)
                         parameters[symbol] = param
                         continue  # don't try to find matching symbol in plugin_dict
                     # Try to find a matching symbol in plugin_dict to obtain the remaining param details
@@ -213,7 +213,7 @@ class Pedalboard:
                         sym = util.DICT_GET(pp, Token.SYMBOL)
                         if sym == symbol:
                             # logging.debug("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
-                            param = Parameter.Parameter(pp, value, binding, instance_id)
+                            param = Parameter(pp, value, binding, instance_id)
                             # logging.debug("Param: %s %s %4.2f %4.2f %s" % (param.name, param.symbol, param.minimum, value, binding))
                             parameters[symbol] = param
 
@@ -304,14 +304,14 @@ class Pedalboard:
         if cat and len(cat) > 0:
             category = cat[0]
 
-        parameters: dict[str, Parameter.Parameter] = {}
+        parameters: dict[str, Parameter] = {}
 
         bypass_info: dict = {
             "shortName": "bypass",
             "symbol": Token.COLON_BYPASS,
             "ranges": {"minimum": 0, "maximum": 1},
         }
-        parameters[Token.COLON_BYPASS] = Parameter.Parameter(bypass_info, 0.0, None, instance_id)
+        parameters[Token.COLON_BYPASS] = Parameter(bypass_info, 0.0, None, instance_id)
 
         try:
             plugin_params = info[Token.PORTS][Token.CONTROL][Token.INPUT]
@@ -324,7 +324,7 @@ class Pedalboard:
                 continue
             ranges = util.DICT_GET(pp, Token.RANGES) or {}
             default_val = ranges.get("default")
-            parameters[sym] = Parameter.Parameter(pp, default_val, None, instance_id)
+            parameters[sym] = Parameter(pp, default_val, None, instance_id)
 
         # TODO: extra_data can't be populated here — mod-ui's `add` WS message
         # doesn't include the numeric `pedal:instanceNumber`, so we can't address

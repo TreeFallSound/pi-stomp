@@ -37,7 +37,7 @@ class Type(Enum):
 
 class Parameter:
 
-    def __init__(self, plugin_info, value, binding, instance_id=None):
+    def __init__(self, plugin_info, value: float, binding, instance_id=None):
         self.name = util.DICT_GET(plugin_info, Token.SHORTNAME)  # possibly use name if shortName is None
         if self.name is None:
             self.name = util.DICT_GET(plugin_info, Token.NAME)
@@ -45,7 +45,7 @@ class Parameter:
         self.minimum: float = util.DICT_GET(util.DICT_GET(plugin_info, Token.RANGES), Token.MINIMUM)
         self.maximum: float = util.DICT_GET(util.DICT_GET(plugin_info, Token.RANGES), Token.MAXIMUM)
         self.default: float = util.DICT_GET(util.DICT_GET(plugin_info, Token.RANGES), Token.DEFAULT)
-        self.value = value
+        self.value: float = value
         self.binding = binding
         self.instance_id = instance_id.lstrip("/") if instance_id else instance_id
         self.type = Type.DEFAULT

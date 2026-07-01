@@ -14,6 +14,9 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 
+from typing import Any
+
+
 def LILV_FOREACH(collection, func):
     itr = collection.begin()
     while itr:
@@ -23,9 +26,9 @@ def LILV_FOREACH(collection, func):
             break
 
 
-def DICT_GET(dict, key):
-    if key in dict:
-        return dict[key]
+def DICT_GET(d, key) -> Any:
+    if key in d:
+        return d[key]
     else:
         return None
 

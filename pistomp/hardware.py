@@ -19,8 +19,7 @@ import sys
 
 import common.token as Token
 import common.util as Util
-import common.parameter as Parameter
-from common.parameter import TTL_PROPERTIES, TTL_INTEGER
+from common.parameter import Parameter, TTL_PROPERTIES, TTL_INTEGER
 from pistomp.analogcontrol import AnalogControl
 import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.encoder_controller as EncoderController
@@ -369,7 +368,7 @@ class Hardware(ABC):
             TTL_PROPERTIES: [TTL_INTEGER]
         }
         val = getattr(controller, 'midi_value', 0)
-        return Parameter.Parameter(info, val, f"{midi_channel}:{midi_cc}", EXTERNAL_INSTANCE_ID)
+        return Parameter(info, val, f"{midi_channel}:{midi_cc}", EXTERNAL_INSTANCE_ID)
 
     def __validate_midi_port(self, port_name):
         if self.external_midi is None:
