@@ -76,28 +76,33 @@ def _build_arcs(spec: CompressorSpec) -> tuple[_ArcSpec, ...]:
 _W = 320
 _CONTENT_H = 210  # chrome (Back/Bypass/Reset) lives below this
 
-_COL_W = 112  # left arc column width
-_ARC_RADIUS = 26
+_GRAPH_SIDE = 188  # 1:1 square (shrunk from 206 to leave room for the GR bar above)
+_GRAPH_X0 = _W - _GRAPH_SIDE
+
+_COL_W = _GRAPH_X0  # left arc column spans up to the (now smaller) graph
+_ARC_RADIUS = 27  # smaller than the previous 30 — that clipped the top ring's reticule bracket off-screen
 _ARC_RING_HALF = 3.0  # thin vector stroke (default is 4.5 → looks like a donut)
 _ARC_TIP = 3.0
 
 # Zigzag centres inside the column: even arcs left, odd arcs right. Boxes may
-# overlap; the circles never do (same-column pairs are 92 px apart vertically).
-_ARC_CENTERS_4: tuple[tuple[int, int], ...] = ((36, 30), (76, 76), (36, 122), (76, 168))
-_ARC_CENTERS_3: tuple[tuple[int, int], ...] = ((36, 40), (76, 105), (36, 170))
+# overlap; the circles never do. Tightened alongside the smaller radius above.
+_ARC_CENTERS_4: tuple[tuple[int, int], ...] = ((41, 34), (95, 76), (41, 118), (95, 160))
+_ARC_CENTERS_3: tuple[tuple[int, int], ...] = ((41, 34), (95, 97), (41, 160))
 
 
 def _centers_for(n: int) -> tuple[tuple[int, int], ...]:
     return _ARC_CENTERS_3 if n == 3 else _ARC_CENTERS_4
 
-_GRAPH_SIDE = 206  # 1:1 square
-_GRAPH_X0 = _W - _GRAPH_SIDE  # 114
-_GRAPH_Y0 = 2
+_GR_BAR_Y = 2
+_GR_BAR_H = 14
+_GR_MAX_DB = 24.0  # bar full-scale
+
+_GRAPH_Y0 = _GR_BAR_Y + _GR_BAR_H + 4
 
 # ── colours (phosphor-vector palette) ───────────────────────────────────────
 
 _BG = (0, 0, 0)
-_GRID = (26, 36, 30)
+_GRID = (46, 64, 54)
 _FRAME = (52, 78, 64)
 _UNITY = (74, 104, 84)
 _CURVE = (120, 240, 150)
@@ -197,6 +202,12 @@ class AcompPanel(FullscreenPluginPanel[AcompState]):
         )
         self._graph.set_state(self.snapshot_state())
 
+        self._gr_bar = GrBarWidget(
+            box=Box.xywh(_GRAPH_X0, _GR_BAR_Y, _GRAPH_SIDE, _GR_BAR_H),
+            font=axis_font,
+            parent=self,
+        )
+
         # Arc column (left): one drawing widget + N invisible Nav selectables.
         self._arcs = _build_arcs(self.SPEC)
         self._column = ArcColumnWidget(
@@ -276,14 +287,17 @@ class AcompPanel(FullscreenPluginPanel[AcompState]):
             reading = self._meter.get_reading()
             if reading is not None:
                 self._graph.set_reticule(reading.in_db, reading.out_db, reading.gr_db, reading.valid)
+                self._gr_bar.set_gr(reading.gr_db if reading.valid else None)
             else:
                 self._graph.set_reticule(_A_MIN, _A_MIN, 0.0, False)
+                self._gr_bar.set_gr(None)
         super().tick()
 
     def _refresh_bypass_style(self) -> None:
         super()._refresh_bypass_style()
         bypassed = self.plugin.is_bypassed()
         self._graph.set_bypassed(bypassed)
+        self._gr_bar.set_bypassed(bypassed)
         self._column.set_bypassed(bypassed)
 
     def destroy(self) -> None:
@@ -479,7 +493,8 @@ class ReticuleGraphWidget(Widget):
     strip, so the meter animation never tears down the whole curve.
     """
 
-    _GRID_DBS = tuple(range(-54, 0, 6))  # dim grid dots, both axes
+    _GRID_DBS = tuple(range(-54, 0, 6))  # dim grid lines, both axes
+    _GRID_LABEL_DBS = tuple(range(-48, 0, 12))  # sparser labeled subset
 
     def __init__(self, *, box: Box, font, parent: Widget) -> None:
         super().__init__(box=box, bkgnd_color=_BG, parent=parent, visible=True)
@@ -562,14 +577,24 @@ class ReticuleGraphWidget(Widget):
 
     def _draw_grid(self, ctx, shade: float) -> None:
         grid = _shade(_GRID, shade)
+        label = _shade(_LABEL, shade)
+        s = _GRAPH_SIDE - 1
         for xd in self._GRID_DBS:
             gx = int(round(_x_px(xd)))
-            for yd in self._GRID_DBS:
-                gy = int(round(_y_px(yd)))
-                ctx.draw_rectangle(Box.xywh(gx, gy, 1, 1), fill=grid)
+            ctx.draw_line([(gx, 0), (gx, s)], fill=grid, width=1)
+        for yd in self._GRID_DBS:
+            gy = int(round(_y_px(yd)))
+            ctx.draw_line([(0, gy), (s, gy)], fill=grid, width=1)
+        for xd in self._GRID_LABEL_DBS:
+            gx = int(round(_x_px(xd)))
+            txt = f"{xd:.0f}"
+            tw, _th = get_text_size(txt, self._font)
+            ctx.draw_text((gx - tw // 2, s - 12), txt, fill=label, font=self._font)
+        for yd in self._GRID_LABEL_DBS:
+            gy = int(round(_y_px(yd)))
+            ctx.draw_text((2, gy - 6), f"{yd:.0f}", fill=label, font=self._font)
         # Frame border + corner ticks.
         frame = _shade(_FRAME, shade)
-        s = _GRAPH_SIDE - 1
         ctx.draw_line([(0, 0), (s, 0), (s, s), (0, s), (0, 0)], fill=_shade(_GRID, shade), width=1)
         for cx, cy, dx, dy in ((0, 0, 1, 1), (s, 0, -1, 1), (0, s, 1, -1), (s, s, -1, -1)):
             ctx.draw_line([(cx, cy), (cx + dx * 8, cy)], fill=frame, width=1)
@@ -637,3 +662,75 @@ class ReticuleGraphWidget(Widget):
         # GR readout, fixed at the top-left so it isn't part of the moving strip.
         if active:
             ctx.draw_text((4, 3), f"GR {self._ret_gr:.1f}", fill=_shade(_TEXT, shade), font=self._font)
+
+
+# ── GR bar meter ─────────────────────────────────────────────────────────────
+
+
+class GrBarWidget(Widget):
+    """Continuous gain-reduction fill bar below the graph.
+
+    Small and fixed in place (unlike the crosshair, which can jump anywhere
+    across the 206x206 graph), so a full-widget repaint on change stays a
+    cheap, bounded SPI transfer regardless of how far the value moves.
+    """
+
+    _LABEL_W = 22
+    _VALUE_W = 46
+    _PAD = 4
+
+    def __init__(self, *, box: Box, font, parent: Widget) -> None:
+        super().__init__(box=box, bkgnd_color=_BG, parent=parent, visible=True)
+        self._font = font
+        self._bypassed = False
+        self._gr_db: float | None = None  # None until the meter produces a reading
+
+    def set_gr(self, gr_db: float | None) -> None:
+        rounded = None if gr_db is None else round(max(0.0, min(_GR_MAX_DB, gr_db)), 1)
+        if rounded == self._gr_db:
+            return
+        self._gr_db = rounded
+        self.refresh()
+
+    def set_bypassed(self, bypassed: bool) -> None:
+        if bypassed == self._bypassed:
+            return
+        self._bypassed = bypassed
+        self.refresh()
+
+    def _bar_span(self) -> tuple[int, int]:
+        bx = self.box
+        assert bx is not None
+        w = bx.x1 - bx.x0
+        return self._LABEL_W + self._PAD, w - self._VALUE_W - self._PAD
+
+    def _fill_color(self, gr_db: float, shade: float) -> tuple[int, int, int]:
+        if gr_db < 6.0:
+            base = _CURVE
+        elif gr_db < 12.0:
+            base = _RETICULE
+        else:
+            base = (230, 90, 70)
+        return _shade(base, shade)
+
+    def _draw(self, ctx) -> None:
+        shade = _INACTIVE_SHADE if self._bypassed else 1.0
+        h = ctx.height
+        bar_y0, bar_y1 = 2, h - 2
+        bar_x0, bar_x1 = self._bar_span()
+
+        _lw, lh = get_text_size("GR", self._font)
+        ctx.draw_text((0, (h - lh) // 2), "GR", fill=_shade(_LABEL, shade), font=self._font)
+
+        ctx.draw_rectangle(Box(bar_x0, bar_y0, bar_x1, bar_y1), fill=_shade(_GRID, shade))
+        gr_db = self._gr_db
+        if gr_db is not None and gr_db > 0.0:
+            fill_w = int(round((bar_x1 - bar_x0) * (gr_db / _GR_MAX_DB)))
+            if fill_w > 0:
+                color = self._fill_color(gr_db, shade)
+                ctx.draw_rectangle(Box(bar_x0, bar_y0, bar_x0 + fill_w, bar_y1), fill=color)
+
+        val_text = "--" if gr_db is None else f"{gr_db:.1f}"
+        vw, vh = get_text_size(val_text, self._font)
+        w = ctx.width
+        ctx.draw_text((w - vw, (h - vh) // 2), val_text, fill=_shade(_TEXT, shade), font=self._font)

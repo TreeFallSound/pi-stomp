@@ -38,23 +38,18 @@ def _to_db(lin: float) -> float:
 
 
 class GrEngine:
-    """Envelope-follows paired input/output audio and derives gain reduction.
+    """Reads paired input/output audio blocks and derives gain reduction.
 
     ``GR ≈ in_db + makeup_db - out_db`` (clamped >= 0): the compressor's output is
     ``input · comp_gain · makeup``, so subtracting the known makeup isolates the
-    downward gain the compressor applied. A one-pole envelope on each block
-    smooths the block-RMS so the displayed meter does not flicker.
+    downward gain the compressor applied. No envelope smoothing — the reading is
+    the instantaneous per-block RMS, so attack/release stay visible in real time.
     """
-
-    # Envelope smoothing coefficient per block (~fast attack, matches metering).
-    _ENV_COEFF = 0.3
 
     def __init__(self, source: PairedAudioSource, makeup_db: float = 0.0) -> None:
         self._source = source
         self._lock = threading.Lock()
         self._makeup_db = makeup_db
-        self._env_in = 0.0
-        self._env_out = 0.0
         self._latest: GrReading | None = None
 
     def start(self) -> None:
@@ -72,15 +67,13 @@ class GrEngine:
         in_block: npt.NDArray[np.float32],
         out_block: npt.NDArray[np.float32],
     ) -> None:
-        rms_in = float(np.sqrt(np.mean(in_block.astype(np.float64) ** 2))) if in_block.size else 0.0
+        if in_block.size == 0:
+            return
+        rms_in = float(np.sqrt(np.mean(in_block.astype(np.float64) ** 2)))
         rms_out = float(np.sqrt(np.mean(out_block.astype(np.float64) ** 2))) if out_block.size else 0.0
 
-        a = self._ENV_COEFF
-        self._env_in = (1.0 - a) * self._env_in + a * rms_in
-        self._env_out = (1.0 - a) * self._env_out + a * rms_out
-
-        in_db = _to_db(self._env_in)
-        out_db = _to_db(self._env_out)
+        in_db = _to_db(rms_in)
+        out_db = _to_db(rms_out)
         with self._lock:
             makeup = self._makeup_db
 
