@@ -1,11 +1,12 @@
-"""Snapshot sagas for the DISTRHO a-comp compressor window.
+"""Snapshot sagas for the DISTRHO a-comp compressor panel.
 
-Long-press the compressor tile to open the windowed panel: a left column of
-arc-ring controls (Thr/Ratio/Knee/Makeup) and a transfer curve + GR bar on the
-right. Tweak1 adjusts the selected control; Nav cycles them.
+Long-press the compressor tile to open the full-screen panel: a staggered left
+column of arc-ring controls (Thresh/Ratio/Knee/Makeup) and a square reticule
+transfer-curve plot on the right. Tweak1 adjusts the selected control (Tweak2
+threshold, Tweak3 ratio); Nav cycles them.
 
 The fake plugin has no instance_number, so the JACK GR-meter subprocess is not
-spawned (the curve renders; the GR bar reads 0).
+spawned (the curve renders; the crosshair parks at the threshold knee).
 
 To regenerate snapshots after intentional UI changes:
     uv run pytest tests/v3/test_acomp_panel.py --snapshot-update
@@ -87,3 +88,19 @@ def test_acomp_tweak_ratio(v3_system: SystemFixture, nav_handler, snapshot):
         tweak(handler, 1, 1)
     handler.poll_lcd_updates()
     snapshot()
+
+
+def test_acomp_external_bypass_dims_visuals(v3_system: SystemFixture, snapshot):
+    """An external bypass (footswitch / mod-UI echo) must dim the column and curve.
+
+    Regression: the panel's tick() did not poll is_bypassed(), so the in-window
+    Bypass button and the arc/curve visuals stayed live while the plugin was
+    actually bypassed elsewhere.
+    """
+    plugin = open_panel(v3_system)
+    plugin.set_bypass(True)
+    v3_system.handler.poll_lcd_updates()
+    snapshot("bypassed")
+    plugin.set_bypass(False)
+    v3_system.handler.poll_lcd_updates()
+    snapshot("unbypassed")

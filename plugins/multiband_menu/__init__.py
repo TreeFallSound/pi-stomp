@@ -25,6 +25,12 @@ _ARC_MARGIN = 2
 _ROW_H = 70  # vertical space one arc-ring row (ring + label) wants
 _MAX_H = 236  # never exceed the 240px LCD (2px breathing room)
 
+INACTIVE_SHADE = 0.45  # ring/text dim factor when the plugin is bypassed
+
+
+def _shade(color: tuple[int, int, int], factor: float) -> tuple[int, int, int]:
+    return (int(color[0] * factor), int(color[1] * factor), int(color[2] * factor))
+
 
 @dataclass(frozen=True)
 class ParamSlot:
@@ -131,7 +137,14 @@ class ParamSlotWidget(Widget):
         self._value_font = value_font
         self._label_font = label_font
         self._value: float | None = None
+        self._bypassed: bool = False
         self.sync()
+
+    def set_bypassed(self, bypassed: bool) -> None:
+        if bypassed == self._bypassed:
+            return
+        self._bypassed = bypassed
+        self.refresh()
 
     def _param(self) -> Parameter | None:
         return self._owner.plugin.parameters.get(self.slot.symbol)
@@ -204,11 +217,12 @@ class ParamSlotWidget(Widget):
         ctx.draw_rectangle(ctx.bounds, fill=self.bkgnd_color)
 
     def _draw(self, ctx) -> None:
+        shade = INACTIVE_SHADE if self._bypassed else 1.0
         ring_surf = self._ring.render(
             self._value_as_t(),
-            filled_color=self.slot.color,
-            empty_color=(60, 60, 60),
-            tip_color=(255, 255, 255),
+            filled_color=_shade(self.slot.color, shade),
+            empty_color=_shade((60, 60, 60), shade),
+            tip_color=_shade((255, 255, 255), shade),
         )
         half = self._ring.half_size
         cx = ctx.width // 2
@@ -217,7 +231,7 @@ class ParamSlotWidget(Widget):
 
         value_text = self._format_value()
         tw, th = get_text_size(value_text, self._value_font)
-        ctx.draw_text(((ctx.width - tw) // 2, cy - th // 2), value_text, fill=(255, 255, 255), font=self._value_font)
+        ctx.draw_text(((ctx.width - tw) // 2, cy - th // 2), value_text, fill=_shade((255, 255, 255), shade), font=self._value_font)
 
         lw, _ = get_text_size(self.slot.label, self._label_font)
-        ctx.draw_text(((ctx.width - lw) // 2, cy + half + 2), self.slot.label, fill=(180, 180, 180), font=self._label_font)
+        ctx.draw_text(((ctx.width - lw) // 2, cy + half + 2), self.slot.label, fill=_shade((180, 180, 180), shade), font=self._label_font)
