@@ -141,3 +141,10 @@ class Lcd(ABC):
     @abstractmethod
     def plugin_panel(self) -> PluginPanel | None:
         pass
+
+    def draw_parameter_dialog(self, parameter, timeout=None):
+        """Open a parameter-editing dialog. Concrete color LCDs implement this
+        with a selection menu (enumeration/toggled) or a graph-bar dialog
+        (continuous). The base no-op lets panels call it without runtime
+        isinstance checks; v1 mono LCDs simply don't open a dialog."""
+        pass

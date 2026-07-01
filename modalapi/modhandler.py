@@ -646,6 +646,9 @@ class Modhandler(Handler):
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
                         plugin.set_param_value(msg.symbol, msg.value)
+                        panel = self._lcd.plugin_panel if self._lcd is not None else None
+                        if panel is not None and panel.plugin is plugin:
+                            panel.apply_state(panel.snapshot_state())
                         break
 
         elif isinstance(msg, MidiMapMessage):
