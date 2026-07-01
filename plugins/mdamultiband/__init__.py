@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from plugins.customization import PluginCustomization, register
-from plugins.mdamultiband.menu_widget import MdaMultiBandMenuWidget
+from plugins.mdamultiband.window import MdaMultiBandWindow
 
 MDA_MULTIBAND_URI = "http://moddevices.com/plugins/mda/MultiBand"
 
 register(
     MDA_MULTIBAND_URI,
     customization=PluginCustomization(
-        menu_widget_cls=MdaMultiBandMenuWidget,
+        panel_cls=MdaMultiBandWindow,
         display_name="MDA MultiBand",
     ),
 )

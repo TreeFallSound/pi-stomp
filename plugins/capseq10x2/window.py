@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from plugins.multiband_menu import CustomMenuWidget, ParamSlot
+from plugins.multiband_menu import MultibandWindow, ParamSlot
 
 
-class CapsEq10X2MenuWidget(CustomMenuWidget):
+class CapsEq10X2Window(MultibandWindow):
     def build_slots(self):
         return [
             ParamSlot("band31hz", "31 Hz", (255, 80, 80)),

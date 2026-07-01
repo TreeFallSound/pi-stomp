@@ -1,6 +1,6 @@
 """Snapshot sagas for the CAPS Noisegate custom-layout menu widget.
 
-Long-press the Noisegate plugin tile to open the CustomLayoutMenu with the
+Long-press the Noisegate plugin tile to open the arc-ring window with the
 4 arc-ring slots (Open, Close, Attack, Mains). Tweak1 adjusts the selected
 slot; navigation cycles slots via Nav.
 

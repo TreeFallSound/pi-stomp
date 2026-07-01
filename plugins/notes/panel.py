@@ -10,7 +10,7 @@ from typing_extensions import override
 import common.token as Token
 from modalapi.plugin import Plugin
 from modalapi.plugin_customization import PluginExtraData, extra_data_as
-from plugins.base import PluginPanel
+from plugins.fullscreen import FullscreenPluginPanel
 from plugins.customization import PluginCustomization, register
 from plugins.notes import NOTES_URI
 from pistomp.input.event import ControllerEvent, EncoderEvent
@@ -104,7 +104,7 @@ def _wrap_lines(text: str, font, max_w: int) -> list[str]:
     return out
 
 
-class NotesPanel(PluginPanel[None]):
+class NotesPanel(FullscreenPluginPanel[None]):
     """Read-only text viewer for Notes plugin instances.
 
     Nav encoder scrolls line by line; all other encoder and footswitch

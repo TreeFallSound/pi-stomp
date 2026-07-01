@@ -27,7 +27,6 @@ from pistomp.controller import Controller
 
 if TYPE_CHECKING:
     from plugins.base import PluginPanel
-    from uilib.widget import Widget
 
 Point = tuple[int, int]
 
@@ -45,8 +44,12 @@ class Plugin:
         uri: str | None = None,
         customization: PluginCustomization | None = None,
         extra_data: PluginExtraData | None = None,
+        instance_number: int | None = None,
     ) -> None:
         self.instance_id: str = instance_id.lstrip("/")
+        # mod-host's numeric instance (pedal:instanceNumber). Names its JACK
+        # ports "effect_<N>:<symbol>", so panels that tap a plugin's audio need it.
+        self.instance_number: int | None = instance_number
         self.info: dict | None = info
         self.name: str = (info or {}).get("name") or self.instance_id
         self.parameters: dict[str, Parameter] = parameters
@@ -102,10 +105,6 @@ class Plugin:
     @property
     def panel_cls(self) -> type[PluginPanel] | None:
         return self.customization.panel_cls
-
-    @property
-    def menu_widget_cls(self) -> type[Widget] | None:
-        return self.customization.menu_widget_cls
 
     @property
     def intercept_shortpress(self) -> bool:

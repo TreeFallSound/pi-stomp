@@ -51,10 +51,6 @@ class MockPlugin:
         return None
 
     @property
-    def menu_widget_cls(self):
-        return None
-
-    @property
     def intercept_shortpress(self) -> bool:
         return False
 

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from plugins.multiband_menu import CustomMenuWidget, ParamSlot
+from plugins.multiband_menu import MultibandWindow, ParamSlot
 
 
-class ThreeBandSplitterMenuWidget(CustomMenuWidget):
+class ThreeBandSplitterWindow(MultibandWindow):
     def build_slots(self):
         return [
             ParamSlot("low", "Low", (255, 180, 80)),

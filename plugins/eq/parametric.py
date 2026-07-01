@@ -12,7 +12,7 @@ from typing import Optional
 import numpy as np
 import pygame
 
-from plugins.base import PluginPanel
+from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import BandSpec
 from plugins.eq.curve import (
     GRAPH_W,
@@ -713,7 +713,7 @@ def _clip(v: float, lo: float, hi: float) -> float:
 # ── ParametricEqPanel (ABC) ──────────────────────────────────────────────────
 
 
-class ParametricEqPanel(PluginPanel[EqState]):
+class ParametricEqPanel(FullscreenPluginPanel[EqState]):
     """Abstract base for parametric EQ panels with frequency-response curve.
 
     Subclasses must implement ``build_band_specs()`` returning the list of

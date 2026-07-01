@@ -233,6 +233,7 @@ class Pedalboard:
                 category,
                 uri=plugin_uri,
                 customization=c,
+                instance_number=n_int,
             )
             inst.canvas_x = self._coord(block, self.uri_canvas_x)
             inst.canvas_y = self._coord(block, self.uri_canvas_y)

@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Optional
 
-from plugins.base import PluginPanel
+from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import GraphicBandSpec
 from plugins.eq.parametric import paint_band_node, _fmt_freq as _fmt_freq_long
 from uilib.box import Box
@@ -321,7 +321,7 @@ class GraphicBandSelectable(Widget):
 # ── GraphicEqPanel (ABC) ─────────────────────────────────────────────────────
 
 
-class GraphicEqPanel(PluginPanel[GraphicEqState]):
+class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
     """Abstract base for graphic EQ panels.
 
     Subclasses provide ``build_band_specs()`` returning the list of

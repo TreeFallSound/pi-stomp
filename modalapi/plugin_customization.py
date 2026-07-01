@@ -11,7 +11,6 @@ from common.color import RectBorder
 if TYPE_CHECKING:
     from modalapi.plugin import Plugin
     from plugins.base import PluginPanel
-    from uilib.widget import Widget
 
 
 @dataclass(frozen=True)
@@ -31,7 +30,6 @@ def extra_data_as(plugin: Plugin, kind: type[_TExtra]) -> _TExtra | None:
 @dataclass(frozen=True)
 class PluginCustomization:
     panel_cls: type[PluginPanel] | None = None
-    menu_widget_cls: type[Widget] | None = None
     display_name: str | None = None
     display_name_fn: Callable[[Plugin], str | None] | None = field(default=None, compare=False, hash=False)
     subtitle_fn: Callable[[Plugin], str | None] | None = field(default=None, compare=False, hash=False)

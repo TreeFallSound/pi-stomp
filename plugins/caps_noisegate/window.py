@@ -9,10 +9,10 @@ Control ports (from the plugin TTL):
 
 from __future__ import annotations
 
-from plugins.multiband_menu import CustomMenuWidget, ParamSlot
+from plugins.multiband_menu import MultibandWindow, ParamSlot
 
 
-class CapsNoisegateMenuWidget(CustomMenuWidget):
+class CapsNoisegateWindow(MultibandWindow):
     def build_slots(self):
         return [
             ParamSlot("open", "Open", (255, 180, 80), display_fn=self._fmt_db),

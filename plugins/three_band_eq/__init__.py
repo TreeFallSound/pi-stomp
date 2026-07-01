@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from plugins.customization import PluginCustomization, register
-from plugins.three_band_eq.menu_widget import ThreeBandEqMenuWidget
+from plugins.three_band_eq.window import ThreeBandEqWindow
 
 THREE_BAND_EQ_URI = "http://distrho.sf.net/plugins/3BandEQ"
 
 register(
     THREE_BAND_EQ_URI,
     customization=PluginCustomization(
-        menu_widget_cls=ThreeBandEqMenuWidget,
+        panel_cls=ThreeBandEqWindow,
         display_name="3 Band EQ",
     ),
 )

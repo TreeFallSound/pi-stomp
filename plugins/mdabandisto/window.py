@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from plugins.multiband_menu import CustomMenuWidget, ParamSlot
+from plugins.multiband_menu import MultibandWindow, ParamSlot
 
 
-class MdaBandistoMenuWidget(CustomMenuWidget):
+class MdaBandistoWindow(MultibandWindow):
     def build_slots(self):
         return [
             ParamSlot("l_m", "L↔M", (255, 180, 80), display_fn=self._fmt_hz),
