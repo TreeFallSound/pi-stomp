@@ -37,6 +37,7 @@ import plugins.three_band_splitter  # noqa: F401
 import plugins.mdamultiband    # noqa: F401
 import plugins.mdabandisto     # noqa: F401
 import plugins.caps_noisegate  # noqa: F401
+import plugins.tap_reverb   # noqa: F401
 import plugins.multiband_menu  # noqa: F401  # MultibandWindow base
 
 __all__ = [

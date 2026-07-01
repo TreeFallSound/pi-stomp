@@ -8,30 +8,14 @@ from modalapi.plugin import Plugin
 from pistomp.fullscreen_panel import FullscreenPanel
 from pistomp.handler import Handler
 from plugins.base import PluginPanel, TState
-from uilib.box import Box
+from plugins.chrome import BTN_GAP, BTN_H, build_bottom_row
 from uilib.config import Config
 from uilib.misc import get_text_size
-from uilib.text import Button
 
 # ── chrome layout ─────────────────────────────────────────────────────────────
 _W = 320
 _H = 240
-_BTN_GAP = 2
-_BTN_H = 28
-_BTN_Y = _H - _BTN_H - _BTN_GAP
-_BTN_W = (_W - 4 * _BTN_GAP) // 3
-
-
-def _build_btn(text: str, x: int, font, v_margin, parent, action) -> Button:
-    return Button(
-        box=Box.xywh(x, _BTN_Y, _BTN_W, _BTN_H),
-        text=text,
-        font=font,
-        v_margin=v_margin,
-        outline_radius=4,
-        parent=parent,
-        action=action,
-    )
+_BTN_Y = _H - BTN_H - BTN_GAP
 
 
 class FullscreenPluginPanel(PluginPanel[TState], FullscreenPanel):
@@ -63,16 +47,17 @@ class FullscreenPluginPanel(PluginPanel[TState], FullscreenPanel):
         self._btn_font = cfg.get_font("default")
         assert self._btn_font is not None, "FullscreenPluginPanel requires a 'default' font"
         _, btn_text_h = get_text_size("Bypass", self._btn_font)
-        self._btn_v_margin = max(0, (_BTN_H - btn_text_h) // 2)
+        self._btn_v_margin = max(0, (BTN_H - btn_text_h) // 2)
 
-        self._btn_back = _build_btn(
-            "Back", _BTN_GAP, self._btn_font, self._btn_v_margin, self, lambda *_: self._on_dismiss()
-        )
-        self._btn_bypass = _build_btn(
-            "Bypass", _BTN_GAP * 2 + _BTN_W, self._btn_font, self._btn_v_margin, self, lambda *_: self._on_toggle_bypass()
-        )
-        self._btn_reset = _build_btn(
-            "Reset", _BTN_GAP * 3 + _BTN_W * 2, self._btn_font, self._btn_v_margin, self, lambda *_: self._on_reset()
+        self._btn_back, self._btn_bypass, self._btn_reset = build_bottom_row(
+            panel=self,
+            width=_W,
+            bottom_y=_BTN_Y,
+            font=self._btn_font,
+            v_margin=self._btn_v_margin,
+            on_back=lambda *_: self._on_dismiss(),
+            on_bypass=lambda *_: self._on_toggle_bypass(),
+            on_reset=lambda *_: self._on_reset(),
         )
 
         # Subclass widgets first …

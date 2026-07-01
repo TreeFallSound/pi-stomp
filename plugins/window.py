@@ -1,8 +1,10 @@
-"""Windowed plugin panel: a centered rounded card with retro chrome.
+"""Windowed plugin panel: a centered rounded card sharing fullscreen's chrome.
 
-Chrome: plugin name + a retro square ``[X]`` close along a title band at the
-top, and a slim ``Bypass | Reset`` line at the bottom. The content area between
-them (``self.content_box``) is where ``build_widgets()`` places widgets.
+Chrome: plugin name along a title band at the top, and the same Back / Bypass
+/ Reset row ``FullscreenPluginPanel`` uses at the bottom (see
+``plugins.chrome``). The content area between them (``self.content_box``) is
+where ``build_widgets()`` places widgets, in a smaller font than the
+fullscreen panels since the card itself is smaller.
 
 Unlike the old ``CustomLayoutMenu`` (a bare pstack push), a ``PluginWindow`` is
 registered as the active plugin panel via ``handler.show_fullscreen_panel``, so
@@ -11,6 +13,8 @@ and participates in the fast-poll / board-change bookkeeping.
 
 Size is class-level (``WIN_W`` / ``WIN_H``) so subclasses can pick a compact
 card or a near-fullscreen one without touching the constructor signature.
+``WIN_W`` is clamped to ``plugins.chrome.MIN_CHROME_WIDTH`` so the three bottom
+buttons stay legible.
 """
 
 from __future__ import annotations
@@ -20,25 +24,21 @@ from collections.abc import Callable
 from modalapi.plugin import Plugin
 from pistomp.handler import Handler
 from plugins.base import PluginPanel, TState
+from plugins.chrome import BTN_GAP, BTN_H, MIN_CHROME_WIDTH, build_bottom_row
 from uilib.box import Box
 from uilib.config import Config
 from uilib.misc import WidgetAlign, get_text_size
 from uilib.panel import RoundedPanel
-from uilib.text import Button
 
 # In-window chrome bands (fixed across sizes).
 _TITLE_H = 24
-_CLOSE_SZ = 18  # retro square [X], top-right
-_CLOSE_PAD = 3
-_STRIP_H = 26  # slim Bypass | Reset line at the bottom
-_STRIP_GAP = 2
 
 
 class PluginWindow(PluginPanel[TState], RoundedPanel):
     """Compact, centered rounded-card plugin UI.
 
     Parameters mirror ``FullscreenPluginPanel``: ``plugin``, ``handler``, and an
-    ``on_dismiss`` callback fired by the ``[X]`` close. Subclasses may override
+    ``on_dismiss`` callback fired by the Back button. Subclasses may override
     ``WIN_W`` / ``WIN_H`` / ``WIN_RADIUS`` to resize the card.
     """
 
@@ -48,8 +48,8 @@ class PluginWindow(PluginPanel[TState], RoundedPanel):
 
     @staticmethod
     def _chrome_overhead() -> tuple[int, int]:
-        """(top, bottom) pixels the title band and Bypass|Reset strip consume."""
-        return (_TITLE_H, _STRIP_H + _STRIP_GAP * 2)
+        """(top, bottom) pixels the title band and button row consume."""
+        return (_TITLE_H, BTN_H + BTN_GAP * 2)
 
     def _window_size(self) -> tuple[int, int]:
         """Card (width, height). Override to size dynamically to content."""
@@ -65,6 +65,7 @@ class PluginWindow(PluginPanel[TState], RoundedPanel):
         self._init_plugin_state(plugin, handler, on_dismiss)
 
         w, h = self._window_size()
+        w = max(w, MIN_CHROME_WIDTH)
         self._win_w, self._win_h = w, h
         RoundedPanel.__init__(
             self,
@@ -79,48 +80,27 @@ class PluginWindow(PluginPanel[TState], RoundedPanel):
         self._btn_font = cfg.get_font("small") or cfg.get_font("default")
         assert self._title_font is not None and self._btn_font is not None
 
-        # Retro square close button, top-right.
-        _, close_text_h = get_text_size("✕", self._btn_font)
-        self._btn_close = Button(
-            box=Box.xywh(w - _CLOSE_SZ - _CLOSE_PAD, _CLOSE_PAD, _CLOSE_SZ, _CLOSE_SZ),
-            text="✕",
+        # Back / Bypass / Reset row at the bottom, shared with FullscreenPluginPanel.
+        btn_y = h - BTN_H - BTN_GAP
+        _, btn_text_h = get_text_size("Bypass", self._btn_font)
+        btn_v_margin = max(0, (BTN_H - btn_text_h) // 2)
+        self._btn_back, self._btn_bypass, self._btn_reset = build_bottom_row(
+            panel=self,
+            width=w,
+            bottom_y=btn_y,
             font=self._btn_font,
-            v_margin=max(0, (_CLOSE_SZ - close_text_h) // 2),
-            outline_radius=0,
-            parent=self,
-            action=lambda *_: self._on_dismiss(),
+            v_margin=btn_v_margin,
+            on_back=lambda *_: self._on_dismiss(),
+            on_bypass=lambda *_: self._on_toggle_bypass(),
+            on_reset=lambda *_: self._on_reset(),
         )
 
-        # Slim Bypass | Reset line at the bottom.
-        strip_y = h - _STRIP_H - _STRIP_GAP
-        strip_w = (w - 3 * _STRIP_GAP) // 2
-        _, strip_text_h = get_text_size("Bypass", self._btn_font)
-        strip_v_margin = max(0, (_STRIP_H - strip_text_h) // 2)
-        self._btn_bypass = Button(
-            box=Box.xywh(_STRIP_GAP, strip_y, strip_w, _STRIP_H),
-            text="Bypass",
-            font=self._btn_font,
-            v_margin=strip_v_margin,
-            outline_radius=4,
-            parent=self,
-            action=lambda *_: self._on_toggle_bypass(),
-        )
-        self._btn_reset = Button(
-            box=Box.xywh(_STRIP_GAP * 2 + strip_w, strip_y, strip_w, _STRIP_H),
-            text="Reset",
-            font=self._btn_font,
-            v_margin=strip_v_margin,
-            outline_radius=4,
-            parent=self,
-            action=lambda *_: self._on_reset(),
-        )
+        # Content area between title band and the button row.
+        self.content_box = Box.xywh(0, _TITLE_H, w, btn_y - BTN_GAP - _TITLE_H)
 
-        # Content area between title band and bottom strip.
-        self.content_box = Box.xywh(0, _TITLE_H, w, strip_y - _TITLE_H)
-
-        # Subclass widgets first, then chrome, so Nav cycles content → X → Bypass → Reset.
+        # Subclass widgets first, then chrome, so Nav cycles content → Back → Bypass → Reset.
         self.build_widgets()
-        self.add_sel_widget(self._btn_close)
+        self.add_sel_widget(self._btn_back)
         self.add_sel_widget(self._btn_bypass)
         self.add_sel_widget(self._btn_reset)
 

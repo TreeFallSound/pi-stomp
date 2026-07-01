@@ -5,12 +5,14 @@ plugin/handler references, the param-send coalescing queue, the bypass/reset
 actions, and the ``InputSink`` tweak-encoder dispatch. It does **not** commit to
 a window geometry or chrome layout.
 
-Two concrete children specialise the presentation (each in its own module):
+Two concrete children specialise the presentation (each in its own module),
+sharing the same Back / Bypass / Reset button row from ``plugins.chrome``:
 
-- ``plugins.fullscreen.FullscreenPluginPanel`` — whole 320x240 LCD with a
-  Back / Bypass / Reset button row along the bottom (every EQ / Notes panel).
-- ``plugins.window.PluginWindow`` — a centered rounded card with a retro ``[X]``
-  close and a slim ``Bypass | Reset`` line, for compact windowed UIs.
+- ``plugins.fullscreen.FullscreenPluginPanel`` — whole 320x240 LCD (every
+  EQ / Notes panel).
+- ``plugins.window.PluginWindow`` — a smaller, centered rounded card (at least
+  ``plugins.chrome.MIN_CHROME_WIDTH`` wide) with a smaller content font, for
+  compact windowed UIs.
 
 Both children share the constructor signature ``(*, plugin, handler,
 on_dismiss)`` so the LCD's ``show_fullscreen_panel`` dispatch is uniform, and
