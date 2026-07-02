@@ -8,14 +8,17 @@ are issued per frame push.
 Usage (on device, service stopped):
     SDL_VIDEODRIVER=dummy python tools/bench_spi_chunksize.py
 """
-import os, sys, time, statistics
+import os
+import time
+import statistics
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 import pygame
 pygame.init()
 pygame.display.set_mode((1, 1))
 
-import board, digitalio
+import board
+import digitalio
 from uilib.lcd_ili9341 import LcdIli9341
 from uilib.box import Box
 

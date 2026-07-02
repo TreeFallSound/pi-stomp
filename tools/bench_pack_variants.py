@@ -105,7 +105,6 @@ def pack_pixels2d(sub: pygame.Surface, out: np.ndarray) -> bytes:
     depends on the surface's pixel format; we query it at call time.
     """
     sh, sw = sub.get_height(), sub.get_width()
-    fmt = sub.get_masks()   # (Rmask, Gmask, Bmask, Amask)
     rshift = sub.get_shifts()[0]
     gshift = sub.get_shifts()[1]
     bshift = sub.get_shifts()[2]
@@ -135,7 +134,6 @@ def _check_all_match() -> None:
     pygame.surfarray.blit_array(surf, rgba[:, :, :3].transpose(1, 0, 2).copy())
 
     out = np.empty((h, w, 2), dtype=np.uint8)
-    out_col = np.empty((w, h, 2), dtype=np.uint8)
 
     ref = pack_tobytes(surf, out.copy())
 

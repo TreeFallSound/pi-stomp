@@ -8,7 +8,6 @@ from plugins.layouts.mode_selector import ModeSelectorWidget
 from plugins.layouts.readout_bar import ReadoutBar
 from uilib.box import Box
 from uilib.config import Config
-from uilib.misc import get_text_size
 
 _W = 320
 _H = 240
