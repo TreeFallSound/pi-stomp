@@ -14,7 +14,6 @@ from tests.conftest import FakeWebSocketBridge
 
 def _make_handler(selected_plugin):
     handler = Mod.__new__(Mod)  # skip heavy __init__ (audio card, ws thread, ...)
-    handler.wifi_manager = None  # __del__ touches it
     handler.ws_bridge = FakeWebSocketBridge()
     handler.lcd = MagicMock()
     handler.get_selected_instance = lambda: selected_plugin

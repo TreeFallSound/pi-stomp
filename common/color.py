@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from uilib.paint import ColorLike
 
 ColorRGB = tuple[int, int, int]
 
@@ -15,9 +19,13 @@ class RectBorder:
     border. Corner arcs take the color of the meeting horizontal edge —
     top for the top corners, bottom for the bottom corners — falling back
     to the vertical edge if the horizontal is unset.
+
+    Colors are typed as ``ColorLike`` so callers can pass through 4-tuples
+    (RGBA) when targeting alpha-aware surfaces; the actual renderer only
+    consumes RGB but accepts the wider type for symmetry with paint.py.
     """
 
-    top: ColorRGB | None = None
-    right: ColorRGB | None = None
-    bottom: ColorRGB | None = None
-    left: ColorRGB | None = None
+    top: "ColorLike | None" = None
+    right: "ColorLike | None" = None
+    bottom: "ColorLike | None" = None
+    left: "ColorLike | None" = None

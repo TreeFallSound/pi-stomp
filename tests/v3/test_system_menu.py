@@ -1,6 +1,6 @@
 """v3-specific system menu behaviour."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from tests.types import SystemFixture
 
@@ -8,6 +8,7 @@ from tests.types import SystemFixture
 def test_system_info_load(v3_system: SystemFixture):
     """On v3 (no relay), system_info_load reads bypass state from the audiocard."""
     handler = v3_system.handler
+    handler.audiocard = MagicMock()
     handler.audiocard.get_switch_parameter.return_value = True
     handler.audiocard.get_bypass_left.return_value = False
     handler.audiocard.get_bypass_right.return_value = True

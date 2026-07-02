@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generic, Protocol, TypeVar
+from typing import TYPE_CHECKING, Callable, Generic, Protocol, TypeVar
 from unittest.mock import MagicMock
 
 if TYPE_CHECKING:
@@ -19,6 +19,7 @@ class CapturedLcd(Protocol):
     """Test-double LCDs that record rendered frames (FakeLcd, FakeMonoLcd)."""
 
     frames: list[Image.Image]
+    flush_callback: Callable[[], None] | None
 
 
 @dataclass

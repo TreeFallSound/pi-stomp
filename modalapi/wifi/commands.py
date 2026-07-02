@@ -18,7 +18,7 @@ import queue
 import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Generic, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
 
 if TYPE_CHECKING:
     from .manager import WifiManager
@@ -35,7 +35,7 @@ class Command(ABC, Generic[T]):
     """
 
     @abstractmethod
-    def run(self, wm: "WifiManager") -> T: ...
+    def run(self, wm: Any) -> T: ...
 
     @abstractmethod
     def key(self) -> str: ...

@@ -104,15 +104,15 @@ def get_text_size(text_string, font, metrics=None):
         max_x = _signed(m[1])
         min_y = _signed(m[2])
         adv_x = m[4]
-        l = pen + min_x
-        r = pen + max_x
+        left = pen + min_x
+        right = pen + max_x
         if not has_any:
-            ink_left, ink_right, has_any = l, r, True
+            ink_left, ink_right, has_any = left, right, True
         else:
-            if l < ink_left:
-                ink_left = l
-            if r > ink_right:
-                ink_right = r
+            if left < ink_left:
+                ink_left = left
+            if right > ink_right:
+                ink_right = right
         pen += adv_x
         if min_y < 0 and -min_y > glyph_desc:
             glyph_desc = -min_y
@@ -174,14 +174,14 @@ def get_text_bbox(text_string, font):
         if m is None:
             continue
         g_min_x, g_max_x, g_min_y, g_max_y = (_signed(m[0]), _signed(m[1]), _signed(m[2]), _signed(m[3]))
-        l = pen + g_min_x
-        r = pen + g_max_x
+        left = pen + g_min_x
+        right = pen + g_max_x
         if not has_any:
-            ink_left, ink_right, has_any = l, r, True
+            ink_left, ink_right, has_any = left, right, True
             max_y, min_y = g_max_y, g_min_y
         else:
-            ink_left = min(ink_left, l)
-            ink_right = max(ink_right, r)
+            ink_left = min(ink_left, left)
+            ink_right = max(ink_right, right)
             max_y = max(max_y, g_max_y)
             min_y = min(min_y, g_min_y)
         pen += m[4]

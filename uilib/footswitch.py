@@ -96,6 +96,7 @@ class FootswitchWidget(Widget):
     small_font: pygame._freetype.Font | None
     label: str | None
     color: Color | None
+    num: int | None
     is_bypassed: bool
     taptempo: TapTempoProtocol | None
     _pulse_on: bool
@@ -116,6 +117,7 @@ class FootswitchWidget(Widget):
         self.small_font = small_font
         self.label = label
         self.color = color
+        self.num = None
         self.is_bypassed = is_bypassed
         self.taptempo = taptempo
         self._pulse_on = True

@@ -21,7 +21,6 @@ type checkers are satisfied, but bypasses any GPIO / SPI / ADC init.
 
 import time
 
-import pistomp.analogcontrol as analogcontrol
 import pistomp.analogmidicontrol as analogmidicontrol
 import pistomp.controller as controller
 import pistomp.encoder_controller as encoder_controller

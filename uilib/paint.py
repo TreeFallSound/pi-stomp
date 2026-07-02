@@ -29,9 +29,11 @@ import pygame.gfxdraw as gfxdraw
 from uilib.box import Box
 from uilib.radius import Radius
 
-
-# Color spec accepted by uilib's PaintContext primitives.
-ColorLike = Union[pygame.Color, str, int, Tuple[int, int, int], Tuple[int, int, int, int], Sequence[int]]
+# Hashable color forms only — Sequence[int] is excluded because it makes the
+# ColorLike unhashable, which breaks @lru_cache callers (e.g. RoundedRectGlyph).
+# In practice every color is one of these: a pygame.Color, a string ("white"),
+# an int (grayscale), or a 3/4-tuple of channel values.
+ColorLike = Union[pygame.Color, str, int, Tuple[int, int, int], Tuple[int, int, int, int]]
 Point = Tuple[int, int]
 PointSeq = Sequence[Point]
 FlatCoords = Sequence[int]

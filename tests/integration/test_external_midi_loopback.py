@@ -11,28 +11,42 @@ import pytest
 
 from rtmidi.midiconstants import CONTROL_CHANGE
 from modalapi.external_midi import ExternalMidiManager
-from pistomp.controller import RoutingInfo
+from pistomp.controller import Controller, RoutingInfo
 from pistomp.footswitch import Footswitch
+from pistomp.handler import Handler
+from pistomp.hardware import Hardware
 from pistomp.encoder_controller import EncoderController
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.input.event import AnalogEvent, EncoderEvent, SwitchEvent
 import pistomp.switchstate as switchstate
 
 
-class _FakeHardware:
+class _FakeHardware(Hardware):
     """Minimal hardware stub: just enough for _emit_midi to resolve routing."""
 
     def __init__(self, port_name: str):
+        # Hardware.__init__ takes (default_config, handler, midiout, refresh_callback);
+        # skip it — this fake doesn't need a config or real handler/refresh.
         self._port_name = port_name
         self.midiout = MagicMock()
         self.external_routing: dict = {}
 
-    def external_port_name(self, controller) -> str | None:
+    def external_port_name(self, controller: Controller) -> str | None:
         info = self.external_routing.get(controller)
         return info.port_name if info is not None else None
 
+    # Hardware has six abstract methods that the real subclasses implement.
+    # The fake never exercises any of these paths, so empty stubs are fine.
+    def init_analog_controls(self): pass
+    def init_encoders(self): pass
+    def init_footswitches(self): pass
+    def init_relays(self): pass
+    def cleanup(self): pass
+    def test(self): pass
+    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc): return None
 
-class _LoopbackHandler:
+
+class _LoopbackHandler(Handler):
     """Minimal InputSink that routes events → _emit_midi → ExternalMidiManager.
 
     Uses the real _handle_footswitch from pistomp.handler.Handler so the
@@ -40,10 +54,10 @@ class _LoopbackHandler:
     """
 
     def __init__(self, hw: _FakeHardware, mgr: ExternalMidiManager):
-        from pistomp.footswitch_chords import FootswitchChords
+        super().__init__()
         self.hardware = hw
         self.external_midi = mgr
-        self.chord_helper = FootswitchChords()
+        # chord_helper is set by Handler.__init__; we leave it as-is.
 
     def _emit_midi(self, controller, midi_value: int) -> None:
         if controller.midi_CC is None:
@@ -58,13 +72,12 @@ class _LoopbackHandler:
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
         pass
 
-    def get_callback(self, name):
+    def get_callback(self, callback_name):
         return None
 
     def handle(self, event) -> bool:
         if isinstance(event, SwitchEvent) and isinstance(event.controller, Footswitch):
-            from pistomp.handler import Handler
-            return Handler._handle_footswitch(self, event.controller, event.kind, event.timestamp)
+            return self._handle_footswitch(event.controller, event.kind, event.timestamp)
         if isinstance(event, EncoderEvent):
             self._emit_midi(event.controller, event.new_midi_value)
             return True

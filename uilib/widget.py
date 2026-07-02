@@ -21,7 +21,7 @@ from uilib import profiling
 from uilib.box import Box
 from uilib.config import Color
 from uilib.misc import InputEvent, WidgetAlign, trace
-from uilib.paint import PaintContext
+from uilib.paint import ColorLike, PaintContext
 
 if TYPE_CHECKING:
     from uilib.container import ContainerWidget
@@ -109,12 +109,16 @@ class Widget:
     outline_color: Color | None
     action: Callable | None
 
-    # Inheritable attributes (set via _setup_act_attrs / INH_ATTRS)
-    bkgnd_color: Color
-    fgnd_color: Color
-    sel_color: Color
-    sel_width: int
-    sel_radius: int | None
+    # Inheritable attributes (set via _setup_act_attrs / INH_ATTRS).
+    # Declared as class-level defaults so instance assignment is type-legal;
+    # ColorLike (4-tuple incl. alpha) is permitted because the underlying
+    # draw_rectangle/fill accepts it and callers (tests, blend mode, alpha
+    # surfaces) need the alpha channel.
+    bkgnd_color: ColorLike = (0, 0, 0)
+    fgnd_color: ColorLike = (255, 255, 255)
+    sel_color: ColorLike = (255, 255, 0)
+    sel_width: int = 2
+    sel_radius: int | None = None
 
     # Bookkeeping for the attribute-inheritance machinery
     default_attrs: dict
@@ -173,10 +177,6 @@ class Widget:
         # Finally attach to parent if requested
         if parent is not None:
             self.attach(parent)
-
-    # uncomment to verify we aren't leaking widgets
-    def __del__(self):
-        trace(self, "Debug deletion")
 
     @staticmethod
     def _get_arg(args, key, default):
@@ -548,6 +548,7 @@ class Widget:
                 radius = None
             from common.color import RectBorder
             from uilib.glyphs import RoundedRectGlyph
+
             sel_color = self.sel_color
             # Reticule is border-only with a transparent interior, so the
             # underlying widget (e.g. plugin tile fill) shows through.

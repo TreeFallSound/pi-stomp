@@ -70,7 +70,11 @@ def _effect_get_side_effect(*info_maps):
         resp.status_code = 200
         if "effect/get" in url:
             query = url.split("?", 1)[1] if "?" in url else ""
-            params = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
+            params: dict[str, str] = {}
+            for pair in query.split("&"):
+                if "=" in pair:
+                    k, v = pair.split("=", 1)
+                    params[k] = v
             requested = params.get("uri", "")
             if requested in encoded:
                 resp.text = json.dumps(encoded[requested])

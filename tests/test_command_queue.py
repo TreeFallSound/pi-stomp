@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from modalapi.wifi import Command, CommandQueue
-from modalapi.wifi.manager import WifiManager
+from modalapi.wifi.manager import WifiManager  # noqa: F401  (used as a type-annotation reference)
 
 
 @dataclass
@@ -23,7 +23,7 @@ class SleepCmd(Command[str]):
     name: str
     delay: float = 0.05
 
-    def run(self, wm: "WifiManager") -> str:
+    def run(self, wm: "_Ctx") -> str:
         with wm.lock:
             wm.started.append(self.name)
         time.sleep(self.delay)

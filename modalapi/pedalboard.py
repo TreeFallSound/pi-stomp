@@ -96,7 +96,7 @@ class Pedalboard:
         url = self.root_uri + "effect/get?uri=" + urllib.parse.quote(uri)
         try:
             resp = req.get(url, headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
-        except:  # TODO
+        except Exception:  # TODO
             logging.error("Cannot connect to mod-host.")
             sys.exit()
 

@@ -29,13 +29,30 @@ corners land exactly on the straight edges so they connect seamlessly.
 
 from __future__ import annotations
 
-from functools import lru_cache
-
 import numpy as np
 import pygame
 
 from common.color import ColorRGB, RectBorder
 from uilib.paint import ColorLike
+
+
+_GLYPH_CACHE: dict[tuple, pygame.Surface] = {}
+
+
+def _hashable(c: ColorLike | None) -> object:
+    """Coerce a ColorLike into a hashable cache key.
+
+    ColorLike includes Sequence[int] (unhashable), pygame.Color (which is
+    actually hashable but uses identity), and plain strings. We normalise
+    to a tuple so the cache key is purely value-based.
+    """
+    if c is None:
+        return None
+    if isinstance(c, (tuple, frozenset)):
+        return tuple(c)
+    if isinstance(c, pygame.Color):
+        return (c.r, c.g, c.b, c.a)
+    return c
 
 
 def _to_rgb(color: ColorLike | None) -> ColorRGB | None:
@@ -101,7 +118,6 @@ def _sdf_rounded_rect(width: int, height: int, radius: int) -> np.ndarray:
     return outside + inside - r
 
 
-@lru_cache(maxsize=256)
 def _render_filled_rounded_rect(
     width: int,
     height: int,
@@ -243,7 +259,9 @@ def _render_filled_rounded_rect(
             # h_color: top or bottom, depending on which band. (H, 1, 3)
             # v_color: left or right, depending on X position. (1, W, 3)
             h_color = top_c[None, None, :] * top_frac[:, :, None] + bot_c[None, None, :] * (1.0 - top_frac[:, :, None])
-            v_color = left_c[None, None, :] * left_frac[:, :, None] + right_c[None, None, :] * (1.0 - left_frac[:, :, None])
+            v_color = left_c[None, None, :] * left_frac[:, :, None] + right_c[None, None, :] * (
+                1.0 - left_frac[:, :, None]
+            )
 
             # Border weight: horizontal takes priority (corner rule), vertical fills in.
             # At a top-left corner: h_weight=1, v_valid=1 → border_weight=1, h_frac=1 → top color.
@@ -298,7 +316,7 @@ class RoundedRectGlyph:
         width: int,
         height: int,
         radius: int,
-        fill: ColorRGB | None = None,
+        fill: ColorLike | None = None,
         border: RectBorder | None = None,
         border_width: int = 1,
     ) -> None:
@@ -318,8 +336,29 @@ class RoundedRectGlyph:
         return self._h
 
     def render(self) -> pygame.Surface:
-        """Render fill + border as a single opaque SRCALPHA surface."""
-        return _render_filled_rounded_rect(
+        """Render fill + border as a single opaque SRCALPHA surface.
+
+        Cached by (w, h, r, fill, bw, top, right, bottom, left) so glyphs
+        that share a shape (and color) share the same surface. The cache
+        lives outside the renderer because pygame.Color's __hash__ isn't
+        typed in the pygame stubs, so lru_cache can't be applied to a
+        function taking ColorLike directly.
+        """
+        key = (
+            self._w,
+            self._h,
+            self._r,
+            _hashable(self._fill),
+            self._border_width,
+            _hashable(self._border.top),
+            _hashable(self._border.right),
+            _hashable(self._border.bottom),
+            _hashable(self._border.left),
+        )
+        cached = _GLYPH_CACHE.get(key)
+        if cached is not None:
+            return cached
+        surf = _render_filled_rounded_rect(
             self._w,
             self._h,
             self._r,
@@ -330,3 +369,7 @@ class RoundedRectGlyph:
             self._border.bottom,
             self._border.left,
         )
+        if len(_GLYPH_CACHE) >= 256:
+            _GLYPH_CACHE.pop(next(iter(_GLYPH_CACHE)))
+        _GLYPH_CACHE[key] = surf
+        return surf

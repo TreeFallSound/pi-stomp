@@ -26,7 +26,8 @@ from uilib.widget import Widget
 from uilib.panel import RoundedPanel
 from uilib.misc import InputEvent, TextHAlign, get_text_size, trace
 from uilib.config import Config
-from common.color import RectBorder
+from common.color import ColorRGB, RectBorder
+
 from uilib.glyphs import RoundedRectGlyph
 
 from common.fonts import font_path
@@ -89,14 +90,21 @@ class LetterSelector(Widget):
         for i in range(self.l_idx - self.l_half, self.l_idx + self.l_half):
             ci = i % len(cs)
             if ci == self.ctrl_OK:
-                color = (0, 255, 0)
+                base: ColorRGB = (0, 255, 0)
             elif ci == self.ctrl_CANCEL:
-                color = (255, 0, 0)
+                base = (255, 0, 0)
             else:
-                color = self.fgnd_color
+                fgnd = self.fgnd_color
+                # Indexing ColorLike generically isn't supported; the dims path
+                # only runs in the per-character selector, which always has an
+                # RGB-tuple fgnd_color at runtime.
+                assert isinstance(fgnd, tuple) and len(fgnd) >= 3, fgnd
+                base = (fgnd[0], fgnd[1], fgnd[2])
             if i != self.l_idx:
                 a = log(abs(self.l_idx - i) + 1) + 1
-                color = (int(color[0] / a), int(color[1] / a), int(color[2] / a))
+                color: ColorRGB = (int(base[0] / a), int(base[1] / a), int(base[2] / a))
+            else:
+                color = base
             ch = CHAR_TO_DISPLAY.get(cs[ci], cs[ci])
             ctx.draw_text(loc, ch, fill=color, font=self.font, anchor="mm")
             loc = (loc[0] + self.l_w, loc[1])

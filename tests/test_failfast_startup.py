@@ -80,6 +80,7 @@ def test_missing_last_json_recovery(tmp_path):
         mock_post.return_value = MagicMock(status_code=200, text="{}")
 
         handler = Modhandler(MagicMock(), str(PROJECT_ROOT), data_dir=str(data_dir))
+        handler.settings = MagicMock()
         handler.settings.get_setting.return_value = None
         handler.add_hardware(MagicMock())
         handler.add_lcd(MagicMock())

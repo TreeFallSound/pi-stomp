@@ -186,11 +186,6 @@ class Modhandler(Handler):
         # Footswitch longpress/chord resolver (rebuilt on pedalboard change)
         self.chord_helper = FootswitchChords()
 
-    def __del__(self):
-        logging.info("Handler cleanup")
-        if self.wifi_manager:
-            del self.wifi_manager
-
     def cleanup(self):
         if self._tuner_muted:
             self.audiocard.set_output_muted(False)
@@ -1085,7 +1080,7 @@ class Modhandler(Handler):
                     self.build_version = "{}-{}".format(build_tag, build_date)
             else:
                 logging.warning("Build file does not exist: %s" % self.build_file)
-        except:
+        except Exception:
             logging.error("Cannot read build file: %s" % self.build_file)
 
         self.eq_status = self.audiocard.get_switch_parameter(self.audiocard.DAC_EQ)

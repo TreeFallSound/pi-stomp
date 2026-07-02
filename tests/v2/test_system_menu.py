@@ -11,6 +11,7 @@ def test_system_info_load(v2_system: SystemFixture):
     hw = v2_system.hw
     hw.relay = MagicMock()
     hw.relay.get.return_value = False  # relay not engaged → bypass enabled
+    handler.audiocard = MagicMock()
     handler.audiocard.get_switch_parameter.return_value = True
 
     with patch("subprocess.check_output", return_value=b"v1.0.0-abc\n"):

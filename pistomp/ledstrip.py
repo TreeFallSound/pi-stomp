@@ -78,7 +78,7 @@ class Pixel:
                 pc = pygame.Color(c)
                 c = (pc.r, pc.g, pc.b)
                 self.color_cache[color] = c
-        except:
+        except Exception:
             c = color
         if c is None:
             c = (0, 0, 0)
@@ -87,6 +87,6 @@ class Pixel:
     def _render_color_rgb(self, r, g, b):
         try:
             self.strip[self.position] = (r, g, b) # Set the pixel color
-        except:
+        except Exception:
             logging.warning("Failed to set LED pixel color for pixel %d", self.position)
             pass

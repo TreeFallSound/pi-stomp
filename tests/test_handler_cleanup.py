@@ -1,8 +1,7 @@
-"""External MIDI must be closed exactly once, in cleanup() — not also in __del__.
-
-Closing in both leads to a double-close: cleanup() runs at shutdown, then __del__
-fires again at GC/interpreter teardown on the same (already-closed) manager.
-"""
+"""cleanup() closes external MIDI exactly once. The handler no longer has
+a __del__ — Python's GC is non-deterministic, and the previous __del__
+that deleted self.wifi_manager caused spurious AttributeError on
+interpreter teardown after cleanup() had run."""
 
 from unittest.mock import MagicMock
 
@@ -11,17 +10,8 @@ from modalapi.modhandler import Modhandler
 
 
 class TestModCleanup:
-    def test_del_does_not_close_external_midi(self):
-        h = object.__new__(Mod)
-        h.wifi_manager = None
-        h.external_midi = MagicMock()
-        h.ws_bridge = MagicMock()
-        h.__del__()
-        h.external_midi.close.assert_not_called()
-
     def test_cleanup_closes_external_midi(self):
         h = object.__new__(Mod)
-        h.wifi_manager = None
         h.lcd = None
         h.external_midi = MagicMock()
         h.ws_bridge = MagicMock()
@@ -30,16 +20,8 @@ class TestModCleanup:
 
 
 class TestModhandlerCleanup:
-    def test_del_does_not_close_external_midi(self):
-        h = object.__new__(Modhandler)
-        h.wifi_manager = None
-        h.external_midi = MagicMock()
-        h.__del__()
-        h.external_midi.close.assert_not_called()
-
     def test_cleanup_closes_external_midi(self):
         h = object.__new__(Modhandler)
-        h.wifi_manager = None
         h._tuner_muted = False
         h._fullscreen_panel = None
         h._lcd = None

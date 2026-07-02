@@ -1,5 +1,7 @@
 """v3-specific audio behaviour (audiocard bypass)."""
 
+from unittest.mock import MagicMock
+
 from tests.types import SystemFixture
 
 
@@ -11,6 +13,7 @@ def test_system_toggle_bypass_audiocard(v3_system: SystemFixture):
     handler.settings.get_setting.return_value = None  # pyright: ignore[reportAttributeAccessIssue]
     handler.bypass_left = False
     handler.bypass_right = False
+    handler.audiocard = MagicMock()
 
     handler.system_toggle_bypass()
 

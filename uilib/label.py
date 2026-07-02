@@ -1,5 +1,6 @@
 from uilib.box import Box
 from uilib.misc import get_text_bbox
+from uilib.paint import ColorLike
 from uilib.widget import Widget
 
 _PAD = 1  # px around bbox to absorb anti-aliasing fringe
@@ -24,7 +25,7 @@ class Label(Widget):
         self._anchor_x = x
         self._anchor_y = y
         self._text: str | None = None
-        self._color: tuple | None = None
+        self._color: ColorLike | None = None
 
     @property
     def text(self) -> str | None:
@@ -34,7 +35,7 @@ class Label(Widget):
         tb = get_text_bbox(text, self._font)
         return Box(x + tb[0] - _PAD, y + tb[1] - _PAD, x + tb[2] + _PAD, y + tb[3] + _PAD)
 
-    def set_text(self, text: str | None, color: tuple, *, x: int | None = None) -> None:
+    def set_text(self, text: str | None, color: ColorLike, *, x: int | None = None) -> None:
         rx = x if x is not None else self._anchor_x
         if text == self._text and color == self._color and rx == self._anchor_x:
             return

@@ -89,7 +89,9 @@ def test_separated_spans_union_into_one_pending():
 def test_unsorted_input_covered_by_pending():
     w = make_widget()
     w._flush_spans([(200, 4), (10, 2), (12, 2)])
-    x0, x1 = pending_x(w)
+    pending = pending_x(w)
+    assert pending is not None
+    x0, x1 = pending
     assert x0 <= 10 and x1 >= 204
 
 
@@ -123,7 +125,9 @@ def test_stripe_tail_and_lead_in_pending():
     ak = 2
     x = 50
     w._flush_spans([(x, ak), (x + StrobeWidget.STRIPE_W, ak)])
-    x0, x1 = pending_x(w)
+    pending = pending_x(w)
+    assert pending is not None
+    x0, x1 = pending
     assert x0 <= x and x1 >= x + StrobeWidget.STRIPE_W + ak
 
 
@@ -132,7 +136,9 @@ def test_six_spaced_stripes_union_into_one_pending():
     w = make_widget()
     spans = w._stripe_spans_at(0)
     w._flush_spans(spans)
-    x0, x1 = pending_x(w)
+    pending = pending_x(w)
+    assert pending is not None
+    x0, x1 = pending
     sw = StrobeWidget.STRIPE_W
     assert x0 == 0
     assert x1 == (StrobeWidget.N_STRIPES - 1) * StrobeWidget.STRIPE_P + sw
@@ -142,7 +148,7 @@ def test_flush_spans_does_not_call_refresh_directly():
     # refresh is called once by tick(), never by _flush_spans
     w = make_widget()
     calls = []
-    w.refresh = lambda b=None: calls.append(b)
+    w.refresh = lambda box=None: calls.append(box)
     w._flush_spans([(40, 6)])
     assert calls == []
     assert w._pending is not None

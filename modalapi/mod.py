@@ -189,11 +189,6 @@ class Mod(Handler):
         self.blend_modes: dict[str, Any] = {}  # {snapshot_name: BlendMode}
         self.active_blend_mode: Any | None = None  # Currently active blend mode
 
-    def __del__(self):
-        logging.info("Handler cleanup")
-        if self.wifi_manager:
-            del self.wifi_manager
-
     def cleanup(self):
         if self.lcd is not None:
             self.lcd.cleanup()
@@ -657,7 +652,7 @@ class Mod(Handler):
 
         try:
             resp = req.get(url)
-        except:  # TODO
+        except Exception:  # TODO
             logging.error("Cannot connect to mod-host")
             sys.exit()
 
@@ -847,7 +842,7 @@ class Mod(Handler):
             resp = req.get(url)
             if resp.status_code == 200:
                 pass
-        except:
+        except Exception:
             return None
         dict = json.loads(resp.text)
         for key, name in dict.items():
@@ -1217,7 +1212,7 @@ class Mod(Handler):
                 logging.error("Bad Rest request: %s status: %d" % (url, resp.status_code))
             else:
                 logging.debug("saved")
-        except:
+        except Exception:
             logging.error("status %s" % resp.status_code)  # pyright: ignore[reportPossiblyUnboundVariable]
             return
 

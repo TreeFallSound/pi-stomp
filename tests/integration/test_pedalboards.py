@@ -37,7 +37,6 @@ def test_banks_change_detected_via_poll(modhandler_system: SystemFixture, tmp_pa
     banks_file = tmp_path / "data" / "banks.json"
     banks_file.write_text(json.dumps(banks_data))
     handler.banks_file = str(banks_file)
-    handler.banks_file_timestamp = 0
 
     handler.poll_modui_changes()
 

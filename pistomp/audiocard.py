@@ -64,7 +64,7 @@ class Audiocard:
                                 self.store()
                             break
                     f.close()
-                except:
+                except Exception:
                     logging.error("Failed trying to restore audio card settings from: %s" % fname)
 
     def store(self):
@@ -74,7 +74,7 @@ class Audiocard:
         try:
             subprocess.run(['/usr/sbin/alsactl', '-f', self.config_file, 'store'], stderr=subprocess.DEVNULL)
             logging.info("audio card settings saved to: %s" % self.config_file)
-        except:
+        except Exception:
             logging.error("Failed trying to store audio card settings to: %s" % self.config_file)
 
     def _amixer_sget(self, param_name):

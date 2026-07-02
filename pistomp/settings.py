@@ -39,7 +39,7 @@ class Settings:
         try:
             with open(self.file, 'r') as ymlfile:
                 self.data = yaml.load(ymlfile, Loader=yaml.SafeLoader)
-        except:
+        except Exception:
             # File can't be opened so let's create an empty dict then calls to set_setting() will save/create the file
             self.data = {}
 
