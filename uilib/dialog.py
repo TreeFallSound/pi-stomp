@@ -69,7 +69,7 @@ class DialogDecorator(PanelDecorator):
             return
         titlebar_h = pb.y0 - self.box.y0  # decorator-local
         strip = Box(0, 0, self.box.width, titlebar_h)
-        ctx.draw_rectangle(strip, fill=self.bkgnd_color, radius=Radius.top(self.outline_radius))
+        ctx.draw_rectangle(strip, fill=self.bkgnd_color, radius=Radius.top(self.outline_radius or 0))
 
     def _draw(self, ctx):
         trace(self, "DialogDecorator draw, self.box=", self.box)

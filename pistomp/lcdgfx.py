@@ -455,6 +455,7 @@ class Lcd:
             for c in p.controllers:
                 if isinstance(c, Footswitch):
                     fs_id = c.id
+                    assert fs_id is not None
                     assert c.parameter
                     fss[fs_id] = None
                     if c.parameter.symbol != ":bypass":  # TODO token

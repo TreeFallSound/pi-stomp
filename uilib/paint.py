@@ -191,7 +191,7 @@ class PaintContext:
         pos: Sequence[int],
         text: str,
         fill: Optional[ColorLike] = None,
-        font: Optional[_freetype.Font] = None,
+        font: Optional["pygame._freetype.Font"] = None,  # pyright: ignore[reportAttributeAccessIssue]
         anchor: Optional[str] = None,
     ) -> None:
         """Draw text using a pygame._freetype Font.

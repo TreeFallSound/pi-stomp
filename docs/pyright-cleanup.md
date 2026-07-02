@@ -1,7 +1,7 @@
 # Pyright / Ruff cleanup — remaining work & how to fix it
 
 Goal: **zero pyright errors** in the in-scope trees **without adding any new inline
-`# type: ignore` / `# pyright: ignore`** (existing 57 stay), no new `getattr`/`hasattr`
+`# type: ignore` / `# pyright: ignore`** (existing 48 stay), no new `getattr`/`hasattr`
 (banned), dependencies remain a DAG. Ruff issues get cleaned up in every file we touch
 (the user asked for star-import removal specifically, plus the cheap wins).
 
@@ -9,20 +9,26 @@ Goal: **zero pyright errors** in the in-scope trees **without adding any new inl
 
 | | count |
 |---|---|
-| pyright errors (whole repo) | **127** (down from 356) |
-| pyright errors, in-scope only | **114** |
+| pyright errors (whole repo) | **51** (down from 356) |
+| pyright errors, in-scope only | **38** (all in `tests/`) |
 | pyright errors, out-of-scope (`tools/ ui/ plugins/ util/`) | 13 |
 | pyright warnings (`reportMissingModuleSource`, hardware imports) | 12 |
-| ruff findings | 86 (36 auto-fixable) |
+| ruff findings | 67 (27 remaining after `--fix`) |
 
 **In scope:** `pistomp/`, `modalapi/`, `uilib/`, `common/`, `blend/`, `tests/`,
 `emulator/`, root `modalapistomp.py`.
 **Out of scope (leave):** `tools/`, `ui/`, `plugins/`, `util/`.
 
-Done so far: G1 (module-as-type in `parameterdialog`), G2 (LCD DI + deletion of the
-vestigial `pistomp.lcd.Lcd` / dead `pistomp.lcdbase.Lcdbase`), G3 (asserting `@property`
-for `handler.current` / `ws_bridge`), G4 (deleted `pistomp/testhost.py`, dropped the
-`"test"` host, added no-op `set_tuner_source_spec` to the `Handler` base).
+Done so far:
+- **P5** — 5 singleton guards now raise `RuntimeError` instead of a class instance.
+- **P7** — 2 possibly-unbound variables (`cfg_fs` in `pistomp.py`, `fill_rgb` in `rounded_rect.py`).
+- **P1** — `Handler.hardware` is now an asserting `@property` with setter, matching `current`/`ws_bridge`.
+- **P3** — 22 optional-member-access errors fixed (emulator `lcd.update_eq`, `pistomp.py` `led.is_lit`, `dialog.py` `panel.box`, `label.py` `box.union`, etc.).
+- **P2** — 25 override mismatches fixed (emulator stubs subclass real types, param names aligned, return types matched).
+- **P4** — `_amixer_sget` returns `""` instead of `None`; TTL parse values coerced to `float`.
+- **P8** — `settings.py` subscript guard, `pistomp.py` `Path` arg, `dialog.py` `outline_radius`, `rounded_rect.py` `fill_rgb` type.
+- **P9** — Added `.pyi` stubs for `gpiozero`, `matplotlib`, `multiprocessing.shared_memory`; added `_freetype.pyi` to venv pygame stubs.
+- **Ruff** — 40 auto-fixable issues cleaned up.
 
 ---
 
@@ -112,10 +118,11 @@ not an exception. pyright is correct: this is a latent bug (raising a non-`BaseE
 prior instance. Behaviour-equivalent for the "already constructed" guard and actually
 valid. (Confirm no caller catches the instance by identity; none should.)
 
-### P6 — Tests assigning to methods / typed attrs (~15, mostly `tests/`)
+### P6 — Tests assigning to methods / typed attrs (~38, all in `tests/`)
 
-Two shapes:
-- **`return_value` on `MethodType`** (`test_system_menu`, `test_failfast_startup`) —
+Remaining errors in tests (38 total). Two shapes:
+
+- **`return_value` on `MethodType`** (`test_system_menu`, `test_failfast_startup`, `test_audio`) —
   test assigns `handler.foo.return_value = …` on a real bound method instead of a Mock.
   Fix the test to wrap the target in `unittest.mock.MagicMock` / use `patch.object`.
 - **Assigning to a typed slot the class declares differently** (`sink` on `Footswitch`/
@@ -123,6 +130,12 @@ Two shapes:
   `_SloppyWidget`/`StrobeWidget` attrs) — the test pokes an attribute the type says is
   read-only or another type. Prefer the real setter / constructor arg; if the attribute
   is legitimately settable in production too, fix the declaration at the source (P1).
+- **`InputSink.events`** — test accesses `.events` on an `InputSink` protocol that doesn't declare it.
+- **`_FakeEnc` not assignable to `Controller`** — test fake doesn't extend the real type.
+- **`FootswitchWidget.num`** — test accesses an attribute the class doesn't declare.
+- **`WifiManager.started/finished`** — test accesses attributes on a mock.
+- **`test_dynamic_pedalboard.py`** — `bytes` vs `str` type mismatch in mock data.
+- **`test_strobe_flush.py`** — `None` is not iterable, `StrobeWidget.refresh` assignment.
 
 `test_label.py` (12) and `test_footswitch.py` (5) are the biggest test files — expect a
 mix of P3/P4/P6 there.
@@ -181,14 +194,14 @@ imports become explicit.
 
 ## Suggested order
 
-1. **P5** (5) + **P7** (2) — tiny, self-contained, real bugs, no cascade risk.
-2. **P1** (`hardware` property on base) — cascades into P3, unblocks `Generichost`/emulator.
-3. **P3** re-measure, then narrow the survivors.
-4. **P2** override alignment (biggest single cluster; emulator-heavy).
-5. **P4** boundary coercions (`pedalboard.py`, `audiocard.py`).
-6. **P6** test fixups.
-7. **P8** stragglers.
-8. **P9** hardware stubs (config-level).
+1. ~~**P5** (5) + **P7** (2) — tiny, self-contained, real bugs, no cascade risk.~~ **DONE**
+2. ~~**P1** (`hardware` property on base) — cascades into P3, unblocks `Generichost`/emulator.~~ **DONE**
+3. ~~**P3** re-measure, then narrow the survivors.~~ **DONE**
+4. ~~**P2** override alignment (biggest single cluster; emulator-heavy).~~ **DONE**
+5. ~~**P4** boundary coercions (`pedalboard.py`, `audiocard.py`).~~ **DONE**
+6. **P6** test fixups (38 remaining).
+7. ~~**P8** stragglers.~~ **DONE**
+8. ~~**P9** hardware stubs (config-level).~~ **DONE**
 9. ruff sweep on touched files (`--fix` + explicit star-import expansion).
 
 ## Verify (task #8)

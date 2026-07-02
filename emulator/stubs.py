@@ -29,6 +29,7 @@ from typing import Callable, Optional
 from modalapi.ethernet import EthernetManager
 from modalapi.wifi import SavedConnection, ScannedNetwork, WifiStatus
 from modalapi.wifi.commands import CommandQueue
+from modalapi.wifi.manager import WifiManager
 from pistomp.audiocard import Audiocard
 import pistomp.relay
 
@@ -81,7 +82,7 @@ class VirtualAudiocard(Audiocard):
         pass
 
 
-class StubWifiManager:
+class StubWifiManager(WifiManager):
     """In-memory wifi manager; exercises the full WifiManager interface
     against a fake scan list and saved-profile store.
 

@@ -112,7 +112,7 @@ class FootswitchWidget(Widget):
     ):
         self._init_attrs(Widget.INH_ATTRS, kwargs)
         super(FootswitchWidget, self).__init__(box, **kwargs)
-        self.font = Config().get_font("footswitch")
+        self.font = Config().get_font("footswitch")  # pyright: ignore[reportAttributeAccessIssue]
         self.small_font = small_font
         self.label = label
         self.color = color

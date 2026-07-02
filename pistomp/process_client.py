@@ -64,6 +64,7 @@ class AudioProcessClient:
         env = os.environ.copy()
         existing = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = (_SRC_ROOT + ":" + existing) if existing else _SRC_ROOT
+        assert shm.name is not None
         self._proc = subprocess.Popen(
             [sys.executable, "-m", self._module, shm.name, *extra_args],
             stdin=subprocess.PIPE,

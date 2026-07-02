@@ -22,6 +22,8 @@ type checkers are satisfied, but bypasses any GPIO / SPI / ADC init.
 import time
 
 import pistomp.analogcontrol as analogcontrol
+import pistomp.analogmidicontrol as analogmidicontrol
+import pistomp.controller as controller
 import pistomp.encoder_controller as encoder_controller
 from pistomp.encoder_controller import EncoderController
 import pistomp.footswitch as footswitch
@@ -105,21 +107,15 @@ class MockFootswitch(footswitch.Footswitch):
         self.refresh_callback(footswitch=self)
 
 
-class MockAnalogControl(analogcontrol.AnalogControl):
+class MockAnalogControl(analogmidicontrol.AnalogMidiControl):
     """Expression pedal / knob with no SPI/ADC.  Value set externally."""
 
     def __init__(self, midi_CC, midi_channel, control_type=None, id=None, cfg=None, midiout=None):
-        # AnalogControl.__init__ only stores spi/channel/tolerance — safe with None
-        super().__init__(spi=None, adc_channel=None, tolerance=0)
-        self.midi_CC = midi_CC
-        self.midi_channel = midi_channel
+        super().__init__(spi=None, adc_channel=None, tolerance=0,
+                         midi_CC=midi_CC, midi_channel=midi_channel,
+                         type=control_type, id=id, cfg=cfg)
         self.midiout = midiout
-        self.type = control_type
-        self.id = id
-        self.cfg = cfg or {"type": control_type, "id": id}
         self.value = 64
-        self.parameter = None
-        self.value_change_callback = None
 
     def refresh(self):
         pass
@@ -127,8 +123,8 @@ class MockAnalogControl(analogcontrol.AnalogControl):
     def initialize(self):
         pass
 
-    def set_midi_channel(self, ch):
-        self.midi_channel = ch
+    def set_midi_channel(self, midi_channel):
+        self.midi_channel = midi_channel
 
     def set_value(self, value):
         self.value = int(value)

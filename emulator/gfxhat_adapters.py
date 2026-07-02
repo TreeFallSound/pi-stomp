@@ -41,7 +41,7 @@ class GfxLcd:
         # Production code stores pixels with both axes inverted (hardware orientation).
         # Rotate 180° to recover the correct image, then hand the pygame backend
         # a Surface (its update() contract matches the real LCD: surface in).
-        img = self._buf.transpose(Image.ROTATE_180).convert('RGB')
+        img = self._buf.transpose(Image.Transpose.ROTATE_180).convert('RGB')
         surf = pygame.image.frombytes(img.tobytes(), img.size, 'RGB')
         self._pygame.update(surf)
 

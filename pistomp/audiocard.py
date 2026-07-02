@@ -83,7 +83,7 @@ class Audiocard:
             output = subprocess.check_output(cmd, shell=True)
         except subprocess.CalledProcessError:
             logging.error("Failed trying to get audio card parameter")
-            return None
+            return ""
         return output.decode()
 
     def _amixer_sset(self, param_name, value, store):

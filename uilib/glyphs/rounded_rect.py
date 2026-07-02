@@ -160,8 +160,9 @@ def _render_filled_rounded_rect(
     rgb = np.zeros((H, W, 3), dtype=np.uint8)
     alpha = np.zeros((H, W), dtype=np.float32)
 
-    fill_rgb = _to_rgb(fill) if has_fill else None
+    fill_rgb = _to_rgb(fill) if has_fill else (0, 0, 0)
     if has_fill:
+        assert fill_rgb is not None
         # Fill is opaque for sdf < -bw - 0.5, transparent for sdf > 0.5.
         # Inside the border ring, the border overrides the fill color.
         fill_mask = sdf < bw + 0.5 if has_border else sdf < 0.5

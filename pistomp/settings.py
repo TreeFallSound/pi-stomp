@@ -51,6 +51,9 @@ class Settings:
         return None
 
     def set_setting(self, name, value):
+        if self.data is None:
+            self.load_settings()
+        assert self.data is not None
         self.data[name] = value
         # Each set results in a file dump
         with open(self.file, 'w') as ymlfile:

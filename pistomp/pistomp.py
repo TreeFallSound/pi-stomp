@@ -260,7 +260,7 @@ class Pistomp(hardware.Hardware):
                 time.sleep(3)
             else:
                 # create sentinel file so test procedure is skipped next boot
-                f = Path(self.test_sentinel)
+                f = Path(self.test_sentinel or "/tmp/pistomp_test_passed")
                 f.touch()
             self.mod.lcd.draw_info_message("Restarting...")
             time.sleep(1.2)

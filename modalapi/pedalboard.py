@@ -213,7 +213,7 @@ class Pedalboard:
                         sym = util.DICT_GET(pp, Token.SYMBOL)
                         if sym == symbol:
                             # logging.debug("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
-                            param = Parameter(pp, value, binding, instance_id)
+                            param = Parameter(pp, float(value) if value is not None else 0.0, binding, instance_id)
                             # logging.debug("Param: %s %s %4.2f %4.2f %s" % (param.name, param.symbol, param.minimum, value, binding))
                             parameters[symbol] = param
 
@@ -324,7 +324,7 @@ class Pedalboard:
                 continue
             ranges = util.DICT_GET(pp, Token.RANGES) or {}
             default_val = ranges.get("default")
-            parameters[sym] = Parameter(pp, default_val, None, instance_id)
+            parameters[sym] = Parameter(pp, float(default_val) if default_val is not None else 0.0, None, instance_id)
 
         # TODO: extra_data can't be populated here — mod-ui's `add` WS message
         # doesn't include the numeric `pedal:instanceNumber`, so we can't address
