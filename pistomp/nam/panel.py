@@ -53,7 +53,7 @@ import pistomp.switchstate as switchstate
 
 from uilib import profiling
 
-from pistomp.fullscreen_panel import FullscreenPanel
+from uilib.panel import Panel
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.nam import routing
 from pistomp.nam.engine import CaptureState, NamCaptureEngine
@@ -456,7 +456,7 @@ class StatusLed(Widget):
 # ── Main panel ────────────────────────────────────────────────────────────────
 
 
-class NamCapturePanel(FullscreenPanel):
+class NamCapturePanel(Panel):
     """Full-screen panel for NAM capture. Owns the engine lifecycle."""
 
     def __init__(
@@ -466,7 +466,7 @@ class NamCapturePanel(FullscreenPanel):
         reamp_wav: Path = _REAMP_WAV,
         handler=None,
     ) -> None:
-        super().__init__()
+        super().__init__(box=Box.xywh(0, 0, _W, _H), auto_destroy=True, no_dim=True)
         self._on_dismiss = on_dismiss
         self._handler = handler
         self._engine = self._create_engine(output_dir, reamp_wav)
@@ -674,6 +674,9 @@ class NamCapturePanel(FullscreenPanel):
         return NamCaptureEngine(output_dir, reamp_wav=reamp_wav)
 
     # ── Panel lifecycle ───────────────────────────────────────────────────────
+
+    def wants_fast_tick(self) -> bool:
+        return True
 
     def destroy(self) -> None:
         if self._handler is not None:

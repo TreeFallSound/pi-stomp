@@ -37,7 +37,7 @@ import statistics
 import sys
 import time
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Literal
 
 import numpy as np
 import pygame
@@ -198,7 +198,7 @@ def make_surface(w: int, h: int, fmt: str, fill: tuple = (40, 80, 120)) -> pygam
     return s
 
 
-def stage_tobytes(surf: pygame.Surface, fmt: str) -> Callable[[], None]:
+def stage_tobytes(surf: pygame.Surface, fmt: Literal["RGB"]) -> Callable[[], None]:
     def go() -> None:
         pygame.image.tobytes(surf, fmt)
 

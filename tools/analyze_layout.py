@@ -44,7 +44,7 @@ from uilib.gridpanel import (  # noqa: E402
     TILE_W,
     GridPanel,
 )
-from uilib.panel import Panel, PanelStack  # noqa: E402
+from uilib.panel import LcdBase, Panel, PanelStack  # noqa: E402
 from uilib.text import TextWidget  # noqa: E402
 
 MOD_ROOT_URI = "http://127.0.0.1:18181/"
@@ -174,7 +174,7 @@ _PLUGIN_FONT = ImageFont.truetype(str(_FONTS_DIR / "DejaVuSans.ttf"), 20)
 _PLUGIN_LABEL_LENGTH = 7
 
 
-class _CaptureLcd:
+class _CaptureLcd(LcdBase):
     """Minimal LcdBase: PanelStack composites into an image and hands it to
     update(); we keep a copy so the render can be saved."""
 

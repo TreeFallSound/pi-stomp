@@ -132,7 +132,7 @@ def stats(samples):
         steady = cents[max(1, len(cents) // 3) :]
         excursion = max(abs(c) for c in cents)
         worst = max(worst, excursion)
-        print(f"{note:>5}  {settled:10.2f}  {np.std(steady):9.2f}  {max(steady) - min(steady):9.2f}  {excursion:9.1f}")
+        print(f"{n.name:>5}  {settled:10.2f}  {np.std(steady):9.2f}  {max(steady) - min(steady):9.2f}  {excursion:9.1f}")
     print(f"\n  worst excursion across all plucks: {worst:.0f} cents")
     print("  (large maxExc on a single segment is usually a decay-tail/transition blip,")
     print("   not steady-state — cross-check with --mode timeline)")

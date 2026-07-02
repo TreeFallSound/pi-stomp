@@ -111,35 +111,35 @@ def _make_panel(engine: _FakeEngine, on_dismiss=None) -> NamCapturePanel:
 class TestNamPanelSnapshot:
     def test_idle_state(self, v3_system, snapshot):
         panel = _make_panel(_FakeEngine(CaptureState.IDLE))
-        v3_system.handler.lcd.show_fullscreen_panel(panel)
+        v3_system.handler.lcd.pstack.push_panel(panel)
         panel.tick()
         v3_system.handler.poll_lcd_updates()
         snapshot("idle")
 
     def test_capturing_state(self, v3_system, snapshot):
         panel = _make_panel(_FakeEngine(CaptureState.CAPTURING, progress=0.45))
-        v3_system.handler.lcd.show_fullscreen_panel(panel)
+        v3_system.handler.lcd.pstack.push_panel(panel)
         panel.tick()
         v3_system.handler.poll_lcd_updates()
         snapshot("capturing")
 
     def test_done_state(self, v3_system, snapshot):
         panel = _make_panel(_FakeEngine(CaptureState.DONE, progress=1.0))
-        v3_system.handler.lcd.show_fullscreen_panel(panel)
+        v3_system.handler.lcd.pstack.push_panel(panel)
         panel.tick()
         v3_system.handler.poll_lcd_updates()
         snapshot("done")
 
     def test_failed_state(self, v3_system, snapshot):
         panel = _make_panel(_FakeEngine(CaptureState.FAILED, progress=0.3))
-        v3_system.handler.lcd.show_fullscreen_panel(panel)
+        v3_system.handler.lcd.pstack.push_panel(panel)
         panel.tick()
         v3_system.handler.poll_lcd_updates()
         snapshot("failed")
 
     def test_aborted_state(self, v3_system, snapshot):
         panel = _make_panel(_FakeEngine(CaptureState.ABORTED, progress=0.6))
-        v3_system.handler.lcd.show_fullscreen_panel(panel)
+        v3_system.handler.lcd.pstack.push_panel(panel)
         panel.tick()
         v3_system.handler.poll_lcd_updates()
         snapshot("aborted")
@@ -232,8 +232,8 @@ class TestNamPanelLifecycle:
     def test_destroy_stops_engine(self, v3_system):
         engine = _FakeEngine(CaptureState.CAPTURING)
         panel = _make_panel(engine)
-        v3_system.handler.lcd.show_fullscreen_panel(panel)
-        v3_system.handler.lcd.hide_fullscreen_panel()  # pop_panel → auto_destroy → destroy()
+        v3_system.handler.lcd.pstack.push_panel(panel)
+        v3_system.handler.lcd.pstack.pop_panel(panel)  # auto_destroy → destroy()
         assert engine.stopped
 
     def test_analog_clipping_aborts_engine(self, v3_system):
@@ -279,17 +279,16 @@ class TestNamHandlerIntegration:
             patch("pistomp.nam.panel.wav_duration", return_value=190.0),
         ):
             handler._mount_nam_capture_panel()
-        assert isinstance(handler._fullscreen_panel, NamCapturePanel)
+        assert isinstance(handler.lcd.pstack.current, NamCapturePanel)
 
     def test_switching_board_stops_engine(self, v3_system):
         handler = v3_system.handler
         fake_engine = _FakeEngine(CaptureState.CAPTURING)
         panel = _make_panel(fake_engine)
-        handler._fullscreen_panel = panel
-        handler.lcd.show_fullscreen_panel(panel)
+        handler.lcd.pstack.push_panel(panel)
 
         pb = handler.current.pedalboard
         handler.set_current_pedalboard(pb)
 
         assert fake_engine.stopped
-        assert handler._fullscreen_panel is None
+        assert handler.lcd.pstack.find_panel_type(NamCapturePanel) is None

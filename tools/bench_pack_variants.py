@@ -185,7 +185,7 @@ class Result:
         return s[min(len(s) - 1, int(0.95 * len(s)))]
 
 
-def bench(label: str, fn: Callable[[], None], iters: int, warmup: int = 20) -> Result:
+def bench(label: str, fn: Callable[[], object], iters: int, warmup: int = 20) -> Result:
     for _ in range(warmup):
         fn()
     gc.collect()

@@ -23,7 +23,6 @@ class TestModhandlerCleanup:
     def test_cleanup_closes_external_midi(self):
         h = object.__new__(Modhandler)
         h._tuner_muted = False
-        h._fullscreen_panel = None
         h._lcd = None
         h._hardware = None
         h.external_midi = MagicMock()

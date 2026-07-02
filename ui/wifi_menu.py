@@ -362,8 +362,9 @@ class WifiMenu:
         if row.get("active"):
             segs.append(TextSeg(" " + ACTIVE_GLYPH))
         segs.append(Spacer())
-        if row.get("signal") is not None:
-            segs.append(IconSeg(SignalBarsGlyph(signal_bars_level(row["signal"]), height=h)))
+        signal = row.get("signal")
+        if signal is not None:
+            segs.append(IconSeg(SignalBarsGlyph(signal_bars_level(signal), height=h)))
         return segs
 
     @staticmethod
@@ -500,8 +501,10 @@ class WifiMenu:
         if was_active:
             fallback = self._pick_fallback_saved(forgotten_ssid)
             if fallback is not None:
+                profile = fallback["profile"]
+                assert profile is not None, "_pick_fallback_saved filters out rows with no profile"
                 self._wifi_manager.queue.submit(
-                    ConnectSavedCmd(name=fallback["profile"]["name"], ssid=fallback["ssid"]), self._on_op_done
+                    ConnectSavedCmd(name=profile["name"], ssid=fallback["ssid"]), self._on_op_done
                 )
         self.open()
 

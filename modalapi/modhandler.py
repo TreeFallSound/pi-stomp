@@ -162,9 +162,6 @@ class Modhandler(Handler):
         self._tuner_source_spec: str = "jack"
         self._tuner_muted: bool = False
 
-        # Full-screen panel state (tuner, NAM capture, or generic plugin panel)
-        self._fullscreen_panel = None  # Panel | None
-
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
         self.callbacks = {
@@ -190,9 +187,6 @@ class Modhandler(Handler):
         if self._tuner_muted:
             self.audiocard.set_output_muted(False)
             self._tuner_muted = False
-        if self._fullscreen_panel is not None and self._lcd is not None:
-            self._lcd.hide_fullscreen_panel()
-        self._fullscreen_panel = None
         if self._lcd is not None:
             self._lcd.cleanup()
         if self._hardware is not None:
@@ -436,13 +430,16 @@ class Modhandler(Handler):
 
     @property
     def lcd_poll_divisor(self) -> int:
-        # Tick the LCD on every 10 ms main-loop pass (~100 fps) while a
-        # fullscreen panel (tuner or plugin) is mounted, so its coalesced
-        # redraws flush promptly. Otherwise fall back to the SPI-clock-derived
-        # divisor computed by the LCD itself.
-        if self._lcd is not None and self._lcd.has_active_fullscreen_panel():
+        # Tick the LCD on every 10 ms main-loop pass (~100 fps) while the top
+        # panel wants fast redraws (tuner, NAM capture, plugin panel), so its
+        # coalesced redraws flush promptly. Otherwise fall back to the
+        # SPI-clock-derived divisor computed by the LCD itself.
+        if self._lcd is None:
+            return 8
+        top = self._lcd.pstack.current
+        if top is not None and top.wants_fast_tick():
             return 2
-        return self._lcd.poll_divisor if self._lcd is not None else 8
+        return self._lcd.poll_divisor
 
     def universal_encoder_select(self, direction):
         if self._lcd is not None:
@@ -626,7 +623,7 @@ class Modhandler(Handler):
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
                         plugin.set_param_value(msg.symbol, msg.value)
-                        panel = self._lcd.plugin_panel if self._lcd is not None else None
+                        panel = self._lcd.pstack.find_panel_type(PluginPanel) if self._lcd is not None else None
                         if panel is not None and panel.plugin is plugin:
                             panel.apply_state(panel.snapshot_state())
                         break
@@ -785,9 +782,14 @@ class Modhandler(Handler):
         return read_pedalboard_bundle(self.last_json_monitor.path)
 
     def set_current_pedalboard(self, pedalboard):
-        if self._fullscreen_panel is not None and not self._fullscreen_panel.should_persist_on_board_change():
-            self.lcd.hide_fullscreen_panel()
-            self._fullscreen_panel = None
+        # Pop non-persisting panels above the first persister (e.g. a parameter
+        # dialog or plugin panel is dismissed; the tuner survives).
+        pstack = self.lcd.pstack
+        while pstack.current is not None:
+            top = pstack.current
+            if top.should_persist_on_board_change():
+                break
+            pstack.pop_panel(top)
 
         # Cleanup all previous blend modes if active
         for blend_mode in self.blend_modes.values():
@@ -1363,7 +1365,7 @@ class Modhandler(Handler):
 
     @property
     def _tuner_panel(self) -> TunerPanel | None:
-        return self._fullscreen_panel if isinstance(self._fullscreen_panel, TunerPanel) else None
+        return self.lcd.pstack.find_panel_type(TunerPanel)
 
     @property
     def _tuner_engine(self) -> TunerBackend | None:
@@ -1385,8 +1387,7 @@ class Modhandler(Handler):
                 on_input_toggle=self._toggle_tuner_input,
                 muted=muted,
             )
-            self._fullscreen_panel = panel
-            self.lcd.show_fullscreen_panel(panel)
+            self.lcd.pstack.push_panel(panel)
         else:
             self._dismiss_tuner()
 
@@ -1394,8 +1395,9 @@ class Modhandler(Handler):
         if self._tuner_muted:
             self.audiocard.set_output_muted(False)
             self._tuner_muted = False
-        self.lcd.hide_fullscreen_panel()
-        self._fullscreen_panel = None
+        panel = self._tuner_panel
+        if panel is not None:
+            self.lcd.pstack.pop_panel(panel)
 
     def _toggle_tuner_mute(self) -> None:
         new_muted = not self._tuner_muted
@@ -1416,24 +1418,22 @@ class Modhandler(Handler):
 
     def show_fullscreen_panel(self, plugin, panel_cls) -> None:
         """Open a full-screen panel for *plugin* using the registered class."""
-        if self._fullscreen_panel is not None:
+        if self.lcd.pstack.find_panel_type(PluginPanel) is not None:
             return  # already open
         panel = panel_cls(
             plugin=plugin,
             handler=self,
             on_dismiss=self.hide_fullscreen_panel,
         )
-        self._fullscreen_panel = panel
-        self.lcd.show_fullscreen_panel(panel)
+        self.lcd.pstack.push_panel(panel)
 
     def hide_fullscreen_panel(self) -> None:
         """Dismiss the current plugin panel and clean up."""
-        if self._fullscreen_panel is None:
+        panel = self.lcd.pstack.find_panel_type(PluginPanel)
+        if panel is None:
             return
-        if isinstance(self._fullscreen_panel, PluginPanel):
-            self.lcd.refresh_plugin(self._fullscreen_panel.plugin)
-        self.lcd.hide_fullscreen_panel()
-        self._fullscreen_panel = None
+        self.lcd.refresh_plugin(panel.plugin)
+        self.lcd.pstack.pop_panel(panel)
 
     # ── NAM capture ───────────────────────────────────────────────────────────
 
@@ -1445,11 +1445,13 @@ class Modhandler(Handler):
             "Audio Recordings",
         )
         panel = NamCapturePanel(output_dir=output_dir, on_dismiss=self._dismiss_nam_capture, handler=self)
-        self._fullscreen_panel = panel
-        self.lcd.show_fullscreen_panel(panel)
+        self.lcd.pstack.push_panel(panel)
 
     def _dismiss_nam_capture(self) -> None:
-        # hide_fullscreen_panel → pop_panel → auto_destroy → panel.destroy() → engine.stop()
-        self.lcd.hide_fullscreen_panel()
-        self._fullscreen_panel = None
+        from pistomp.nam.panel import NamCapturePanel
+
+        # pop_panel → auto_destroy → panel.destroy() → engine.stop()
+        panel = self.lcd.pstack.find_panel_type(NamCapturePanel)
+        if panel is not None:
+            self.lcd.pstack.pop_panel(panel)
         self.lcd.draw_main_panel()

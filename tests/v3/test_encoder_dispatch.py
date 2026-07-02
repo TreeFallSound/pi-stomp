@@ -38,7 +38,7 @@ def _prime_main_panel(v3_system: SystemFixture) -> None:
     assert handler.current
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
-    assert handler.lcd._fullscreen_panel is None
+    assert handler.lcd.pstack.current is handler.lcd.main_panel
 
 
 # ---------------------------------------------------------------------------

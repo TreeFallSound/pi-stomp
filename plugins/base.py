@@ -40,8 +40,6 @@ from typing import Generic, TypeVar
 import common.token as Token
 from modalapi.plugin import Plugin
 from pistomp.handler import Handler
-from pistomp.input.event import ControllerEvent, EncoderEvent
-from pistomp.input.sink import InputSink
 from uilib.panel import Panel
 from uilib.text import Button
 
@@ -52,14 +50,14 @@ TState = TypeVar("TState")
 BYPASS_ACTIVE_COLOR = (140, 50, 0)
 
 
-class PluginPanel(Panel, InputSink, Generic[TState], ABC):
+class PluginPanel(Panel, Generic[TState], ABC):
     """Panel-kind-agnostic core for a plugin-editing UI.
 
     Inherits ``Panel`` (so subclasses get the widget/selection API) but never
     calls ``Panel.__init__`` itself — the concrete child picks the actual panel
-    flavour (``FullscreenPanel`` via ``FullscreenPluginPanel`` or
-    ``RoundedPanel`` via ``PluginWindow``) and initialises it. Children must,
-    during construction, create a bypass button named ``self._btn_bypass`` (its
+    flavour (a plain ``Panel`` via ``FullscreenPluginPanel`` or ``RoundedPanel``
+    via ``PluginWindow``) and initialises it. Children must, during
+    construction, create a bypass button named ``self._btn_bypass`` (its
     background reflects bypass state).
     """
 
@@ -171,12 +169,5 @@ class PluginPanel(Panel, InputSink, Generic[TState], ABC):
         bypassed = self.plugin.is_bypassed()
         self._btn_bypass.set_background(BYPASS_ACTIVE_COLOR if bypassed else (0, 0, 0))
 
-    # ── InputSink (LCD dispatches here when we are the top panel) ──────────
-
-    def handle(self, event: ControllerEvent) -> bool:
-        """Return *True* to stop the event from reaching the normal handler cascade."""
-        if isinstance(event, EncoderEvent):
-            cid = event.controller.id
-            if cid in (1, 2, 3):
-                return self.on_encoder_rotation(cid, event.rotations)
-        return False
+    def wants_fast_tick(self) -> bool:
+        return True

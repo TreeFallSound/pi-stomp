@@ -55,11 +55,11 @@ from uilib.text import PluginTile
 from modalapi.layout import build_layout_compress
 
 from pistomp.input.event import ControllerEvent
+from pistomp.input.sink import InputSink
 from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
 from pistomp.encoder_controller import EncoderController
 from blend.manager import BlendMode
 from plugins.base import PluginPanel
-from pistomp.fullscreen_panel import FullscreenPanel
 
 if TYPE_CHECKING:
     from modalapi.modhandler import Modhandler
@@ -208,13 +208,14 @@ class Lcd:
         self.pstack = PanelStack(display, image_format='RGB', use_dimming=True)
         self.splash_panel = Panel(box=Box.xywh(0, 0, self.display_width, self.display_height))
         self.pstack.push_panel(self.splash_panel, refresh=False)
-        self.main_panel = Panel(box=Box.xywh(0, 0, self.display_width, self.display_height))
+        self.main_panel = Panel(
+            box=Box.xywh(0, 0, self.display_width, self.display_height), persist_on_board_change=True
+        )
         self.main_panel_pushed = False
         self._is_pedalboard_load = False
         self.footswitch_panel = ShroudedPanel(box=Box.xywh(0, self.display_height - self.footswitch_height,
                                                             self.display_width, self.footswitch_height),
                                               shroud_alpha=255, gradient_start=0, gradient_pos=0.2, no_dim=True, accepts_input=False)
-        self._fullscreen_panel: "FullscreenPanel | PluginPanel | None" = None
 
         self.pedalboards = {}
 
@@ -294,12 +295,10 @@ class Lcd:
         #self.main_panel.refresh()
 
     def handle(self, event: ControllerEvent) -> bool:
-        # When a fullscreen panel is top-most and is an InputSink, ask it first.
-        # It returns True to stop the event from reaching the normal handler cascade.
-        if self._fullscreen_panel is not None:
-            if self._fullscreen_panel.handle(event):
-                return True
-        return False
+        # Ask the top input-accepting panel first. It returns True to stop the
+        # event from reaching the normal handler cascade.
+        top = self.pstack.current
+        return top.handle(event) if isinstance(top, InputSink) else False
 
     def poll_updates(self):
         with profiling.measure("poll_updates"):
@@ -316,8 +315,8 @@ class Lcd:
             wfs.tick()
 
         self.pstack.poll_updates()
-        if self._fullscreen_panel is not None and self.pstack.current is self._fullscreen_panel:
-            self._fullscreen_panel.tick()
+        if self.pstack.current is not None:
+            self.pstack.current.tick()
         self._poll_capture_socket()
 
         # Update control progress bars (analog controls and encoders)
@@ -409,22 +408,6 @@ class Lcd:
         self.pstack.set_capture_callback(None)
         logging.info("LCD capture disabled")
 
-    def show_fullscreen_panel(self, panel: "FullscreenPanel | PluginPanel") -> None:
-        self._fullscreen_panel = panel
-        self.pstack.push_panel(panel)
-        panel.refresh()
-
-    def hide_fullscreen_panel(self) -> None:
-        if self._fullscreen_panel is not None:
-            self.pstack.pop_panel(self._fullscreen_panel)
-        self._fullscreen_panel = None
-
-    def has_active_fullscreen_panel(self) -> bool:
-        return self._fullscreen_panel is not None
-
-    @property
-    def plugin_panel(self) -> PluginPanel | None:
-        return self._fullscreen_panel if isinstance(self._fullscreen_panel, PluginPanel) else None
 
     #
     # Toolbar
@@ -681,8 +664,9 @@ class Lcd:
         for w in self.w_plugins:
             plugin = w.object
             self.color_plugin(w, plugin)
-        if self.plugin_panel is not None:
-            self.plugin_panel.refresh()
+        panel = self.pstack.find_panel_type(PluginPanel)
+        if panel is not None:
+            panel.refresh()
         self.main_panel.refresh()
 
     def refresh_plugin(self, plugin):
@@ -960,8 +944,10 @@ class Lcd:
         self.splash_panel.refresh()
 
     def cleanup(self):
-        if self.pstack.current is not None:
-            self.pstack.pop_panel(None)
+        # Walk every input-accepting panel (dialogs, tuner, plugin panels, …)
+        # so buried panels are destroyed too, not just the top-most one.
+        while self.pstack.current is not None:
+            self.pstack.pop_panel(self.pstack.current)
         if self.footswitch_panel in self.pstack.stack:
             self.pstack.pop_panel(self.footswitch_panel)
         if self.main_panel_pushed and self.main_panel in self.pstack.stack:

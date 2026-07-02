@@ -85,6 +85,7 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
         )
 
         model_param = self.plugin.parameters.get("c_model")
+        assert model_param is not None, "gx_cabinet plugin is missing its c_model parameter"
         self._mode_selector = ModeSelectorWidget(
             box=Box.xywh(4, MODE_Y0, _W - 8, MODE_H),
             param=model_param,

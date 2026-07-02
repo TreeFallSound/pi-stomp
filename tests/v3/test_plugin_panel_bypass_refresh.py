@@ -72,7 +72,7 @@ def test_fullscreen_panel_bypass_refreshes_grid_tile(v3_system: SystemFixture, m
     _assert_tile_matches_bypass_state(tile, plugin)
 
     handler.show_fullscreen_panel(plugin, _DemoFullscreenPanel)
-    panel = cast(_DemoFullscreenPanel, handler._fullscreen_panel)
+    panel = cast(_DemoFullscreenPanel, handler.lcd.pstack.current)
     assert panel is not None
     panel._on_toggle_bypass()
     assert plugin.is_bypassed() is True
@@ -89,7 +89,7 @@ def test_plugin_window_bypass_refreshes_grid_tile(v3_system: SystemFixture, make
     _assert_tile_matches_bypass_state(tile, plugin)
 
     handler.show_fullscreen_panel(plugin, _DemoWindowPanel)
-    panel = cast(_DemoWindowPanel, handler._fullscreen_panel)
+    panel = cast(_DemoWindowPanel, handler.lcd.pstack.current)
     assert panel is not None
     panel._on_toggle_bypass()
     assert plugin.is_bypassed() is True

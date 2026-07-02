@@ -26,6 +26,9 @@ from uilib.widget import Widget
 from uilib.misc import InputEvent, trace
 from uilib.paint import PaintContext, _pg_rect
 
+from pistomp.input.event import ControllerEvent, EncoderEvent
+from pistomp.input.sink import InputSink
+
 #
 # Note about coordinates:
 #
@@ -35,16 +38,26 @@ from uilib.paint import PaintContext, _pg_rect
 #
 
 
-class Panel(ContainerWidget):
+class Panel(ContainerWidget, InputSink):
     """A Panel. Holds widgets, tracks selectable items, can be pushed onto a PanelStack."""
 
-    def __init__(self, auto_destroy=False, decorator=None, no_dim=False, accepts_input=True, opaque=False, **kwargs):
+    def __init__(
+        self,
+        auto_destroy=False,
+        decorator=None,
+        no_dim=False,
+        accepts_input=True,
+        opaque=False,
+        persist_on_board_change=False,
+        **kwargs,
+    ):
         self.sel_list = []
         self.sel_ref = None  # currently-selected leaf widget (resolved via sel_children)
         self.auto_destroy = auto_destroy
         self.no_dim = no_dim
         self.accepts_input = accepts_input
         self.opaque = opaque
+        self._persist_on_board_change = persist_on_board_change
         if decorator:
             self.decorator = decorator(self)
         else:
@@ -158,6 +171,27 @@ class Panel(ContainerWidget):
 
     def _get_panel(self):
         return self
+
+    # ── InputSink: tweak-encoder dispatch (NAV stays on the legacy enc_step path) ──
+
+    def handle(self, event: ControllerEvent) -> bool:
+        match event:
+            case EncoderEvent() if event.controller.id in (1, 2, 3):
+                return self.on_encoder_rotation(event.controller.id, event.rotations)
+        return False
+
+    def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:
+        return False  # default: release (let the handler cascade pick it up)
+
+    def wants_fast_tick(self) -> bool:
+        """Returns True iff this panel renders at a high refresh rate."""
+        return False
+
+    def should_persist_on_board_change(self) -> bool:
+        return self._persist_on_board_change
+
+    def tick(self) -> None:
+        pass
 
 
 class ShroudedPanel(Panel):

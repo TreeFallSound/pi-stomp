@@ -28,7 +28,7 @@ from uilib.label import Label
 from uilib.text import Button
 from uilib.widget import Widget
 
-from pistomp.fullscreen_panel import FullscreenPanel
+from uilib.panel import Panel
 
 from pistomp.tuner.engine import TunerBackend, TunerReading
 
@@ -348,7 +348,7 @@ class StrobeWidget(Widget):
 # ── TunerPanel ───────────────────────────────────────────────────────────────
 
 
-class TunerPanel(FullscreenPanel):
+class TunerPanel(Panel):
     STALE_SECS = 4.0
 
     def __init__(
@@ -360,7 +360,7 @@ class TunerPanel(FullscreenPanel):
         on_input_toggle: Callable[[], None],
         muted: bool = False,
     ) -> None:
-        super().__init__()
+        super().__init__(box=Box.xywh(0, 0, _W, 240), auto_destroy=True, no_dim=True)
         self._backend_factory = backend_factory
         self._engine: TunerBackend = self._create_engine(input_port)
 
@@ -419,6 +419,9 @@ class TunerPanel(FullscreenPanel):
         super().destroy()
 
     def should_persist_on_board_change(self) -> bool:
+        return True
+
+    def wants_fast_tick(self) -> bool:
         return True
 
     def switch_input_port(self, new_port: int) -> None:

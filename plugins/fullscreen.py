@@ -5,12 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from modalapi.plugin import Plugin
-from pistomp.fullscreen_panel import FullscreenPanel
 from pistomp.handler import Handler
 from plugins.base import PluginPanel, TState
 from plugins.chrome import BTN_GAP, BTN_H, build_bottom_row
+from uilib.box import Box
 from uilib.config import Config
 from uilib.misc import get_text_size
+from uilib.panel import Panel
 
 # ── chrome layout ─────────────────────────────────────────────────────────────
 _W = 320
@@ -18,7 +19,7 @@ _H = 240
 _BTN_Y = _H - BTN_H - BTN_GAP
 
 
-class FullscreenPluginPanel(PluginPanel[TState], FullscreenPanel):
+class FullscreenPluginPanel(PluginPanel[TState]):
     """Full-screen plugin UI with a Back / Bypass / Reset button row.
 
     Parameters
@@ -41,7 +42,7 @@ class FullscreenPluginPanel(PluginPanel[TState], FullscreenPanel):
     ) -> None:
         self._init_plugin_state(plugin, handler, on_dismiss)
 
-        FullscreenPanel.__init__(self)
+        Panel.__init__(self, box=Box.xywh(0, 0, _W, _H), auto_destroy=True, no_dim=True)
 
         cfg = Config()
         self._btn_font = cfg.get_font("default")

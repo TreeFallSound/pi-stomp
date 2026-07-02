@@ -91,6 +91,7 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         )
 
         mode_param = self.plugin.parameters.get("mode")
+        assert mode_param is not None, "tap_reverb plugin is missing its mode parameter"
         self._mode_selector = ModeSelectorWidget(
             box=Box.xywh(4, MODE_Y0, _W - 8, MODE_H),
             param=mode_param,
