@@ -983,8 +983,9 @@ class Modhandler(Handler):
             logging.error("Bad Rest request: %s" % url)
         self.current.preset_index = index
 
-        # Update name on lcd
+        # Update name on lcd, and relight any footswitch mapped to a snapshot
         self.lcd.draw_title()
+        self.lcd.update_footswitches()
         # Bypass/param changes from the snapshot arrive via the WS drain (source of truth).
 
     def preset_incr_and_change(self, *argv):

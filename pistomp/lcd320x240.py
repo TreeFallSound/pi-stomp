@@ -754,13 +754,16 @@ class Lcd:
     # Footswitches
     #
     def footswitch_label(self, footswitch, slot_width=None):
-        """Label for a footswitch bound to a plugin param"""
+        """Label for a footswitch bound to a snapshot index or a plugin param."""
+        width = slot_width if slot_width is not None else self.footswitch_width
+        if footswitch.preset_callback_arg is not None:
+            name = self.current.presets.get(footswitch.preset_callback_arg) if self.current else None
+            return self.shorten_name(name, width) if name else str(footswitch.preset_callback_arg)
         param = footswitch.parameter
         if param is None:
             return None
         if param.symbol != ":bypass":  # TODO token
             return param.name
-        width = slot_width if slot_width is not None else self.footswitch_width
         plugin = next((p for p in self.current.pedalboard.plugins
                        if p.instance_id == param.instance_id), None)
         if plugin is not None:
@@ -781,7 +784,15 @@ class Lcd:
         slot_w = pitch
         for fs in sorted(self.footswitches, key=lambda f: f.id):
             x = pitch * fs.id
-            if fs.parameter is not None:
+            if fs.preset_callback_arg is not None:
+                label = self.footswitch_label(fs, slot_w)
+                fs.set_display_label(label)
+                color = None
+                action = None
+                active = self.current is not None and self.current.preset_index == fs.preset_callback_arg
+                fs.toggled = active
+                fs.set_led(active)  # a press never touches toggled for preset switches
+            elif fs.parameter is not None:
                 label = self.footswitch_label(fs, slot_w)
                 fs.set_display_label(label)
                 color = Category.get_category_color(fs.category)
@@ -801,9 +812,14 @@ class Lcd:
     def update_footswitch(self, footswitch):
         for wfs in self.w_footswitches:
             if wfs.object == footswitch:
-                if footswitch.parameter is not None:
+                slot_w = wfs.box.width if wfs.box is not None else self.footswitch_width
+                if footswitch.preset_callback_arg is not None:
+                    footswitch.set_display_label(self.footswitch_label(footswitch, slot_w))
+                    active = self.current is not None and self.current.preset_index == footswitch.preset_callback_arg
+                    footswitch.toggled = active
+                    footswitch.set_led(active)
+                elif footswitch.parameter is not None:
                     # Binding may be new (e.g. MIDI learn) — reflect label + color.
-                    slot_w = wfs.box.width if wfs.box is not None else self.footswitch_width
                     footswitch.set_display_label(self.footswitch_label(footswitch, slot_w))
                     wfs.color = Category.get_category_color(footswitch.category)
                 wfs.toggle(not footswitch.toggled)
