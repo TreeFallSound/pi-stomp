@@ -123,9 +123,9 @@ def _assert_variants_match(seed: int = 42) -> None:
     c = image_to_data_no_pil(rgb_bytes, w, h)
     d = image_to_data_no_pil_opt(rgb_bytes, w, h)
     assert a == ref, f"tobytes variant mismatch: {a[:20]} vs {ref[:20]}"
-    assert b == ref, f"tobytes_contiguous variant mismatch"
-    assert c == ref, f"no_pil variant mismatch"
-    assert d == ref, f"no_pil_opt variant mismatch"
+    assert b == ref, "tobytes_contiguous variant mismatch"
+    assert c == ref, "no_pil variant mismatch"
+    assert d == ref, "no_pil_opt variant mismatch"
     # Sanity: byte length is w*h*2
     assert len(ref) == w * h * 2, f"bad length {len(ref)} vs {w * h * 2}"
 
@@ -269,16 +269,13 @@ def stage_end_to_end_no_pil(surf: pygame.Surface, w: int, h: int, rotation: int)
 
     This is the theoretical floor: pygame -> 565 bytes, no PIL.
     """
-    if rotation == 270:
-        rot = lambda a: np.rot90(a, k=3)
-    elif rotation == 90:
-        rot = lambda a: np.rot90(a, k=1)
-    elif rotation == 0:
-        rot = lambda a: a
-    elif rotation == 180:
-        rot = lambda a: np.rot90(a, k=2)
-    else:
+    rot90_turns = {0: 0, 90: 1, 180: 2, 270: 3}
+    if rotation not in rot90_turns:
         raise ValueError(rotation)
+    turns = rot90_turns[rotation]
+
+    def rot(a: np.ndarray) -> np.ndarray:
+        return np.rot90(a, k=turns) if turns else a
 
     def go() -> None:
         rgb = pygame.image.tobytes(surf, "RGB")

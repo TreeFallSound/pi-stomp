@@ -84,6 +84,9 @@ override-dependencies = ["rpi-gpio ; sys_platform == 'never'"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+extend-exclude = ["typings", ".claude"]
+
+[tool.ruff.lint]
 ignore = ["E402"]
 
 [tool.pytest.ini_options]
@@ -97,3 +100,4 @@ venvPath = "."
 venv = ".venv"
 stubPath = "typings"
 pythonVersion = "3.11"
+reportMissingModuleSource = "none"

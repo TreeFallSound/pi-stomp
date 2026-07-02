@@ -25,3 +25,26 @@ jobs:
 
       - name: Run tests
         run: uv run --python 3.11 pytest
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential libasound2-dev libjack-dev pkg-config
+
+      - name: Install dependencies
+        run: uv sync --group dev --python 3.11
+
+      - name: Run ruff
+        run: uv run --python 3.11 ruff check .
+
+      - name: Run pyright
+        run: uv run --python 3.11 pyright --warnings
