@@ -384,7 +384,7 @@ mod-ui echoes back → ParamSetMessage → plugin.set_param_value()  # caches va
 
 ## Coding principles
 
-- **Type safety is mandatory**
+- **Type safety is mandatory** -- pyright zero!
 - **Broad pyright ignores are a code smell**
 - **getattr and hasattr are banned**
 - **dependencies must form a DAG**
