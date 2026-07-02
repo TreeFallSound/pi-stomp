@@ -149,10 +149,10 @@ class Footswitch(controller.Controller):
 
     def set_value(self, bypass_value: float):
         self.toggled = (bypass_value < 1)
-        self._set_led(self.toggled)
+        self.set_led(self.toggled)
         self.refresh_callback(footswitch=self)
 
-    def _set_led(self, enabled):
+    def set_led(self, enabled):
         if self.led is not None:
             if self.taptempo:
                 tempo = self.taptempo.get_bpm()
@@ -228,7 +228,7 @@ class Footswitch(controller.Controller):
                         r.enable()
                     else:
                         r.disable()
-                self._set_led(self.toggled)
+                self.set_led(self.toggled)
                 self.refresh_callback(True)  # True means this is a bypass change only
             else:
                 # TODO consider case where relay and longpress are specified
@@ -257,7 +257,7 @@ class Footswitch(controller.Controller):
             logging.debug("Sending CC event: %d" % self.midi_CC)
             self.midiout.send_message(cc)
             if self.drives_display:
-                self._set_led(self.toggled)
+                self.set_led(self.toggled)
 
         if self.drives_display:
             self.refresh_callback(footswitch=self)
