@@ -6,3 +6,4 @@ __pycache__
 .opencode/plugins/emdash-notifications.js
 tools/renders/
 setup/nam/*.wav
+.claude/worktrees
