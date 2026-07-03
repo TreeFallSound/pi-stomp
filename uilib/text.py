@@ -530,8 +530,9 @@ class ScrollingText(TextWidget):
 
     @override
     def set_text(self, text: str) -> None:
+        if text != self.text:
+            self._clear_cache_and_restart()
         super().set_text(text)
-        self._clear_cache_and_restart()
 
     @override
     def set_font(self, font) -> None:
