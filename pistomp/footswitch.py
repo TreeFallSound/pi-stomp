@@ -179,4 +179,6 @@ class Footswitch(controller.Controller):
         self.display_label = None
         self.set_category(None)
         self.preset_callback = None
+        self.preset_callback_arg = None
+        self.parameter = None
         self.clear_relays()

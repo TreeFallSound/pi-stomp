@@ -163,3 +163,30 @@ class TestClearPedalboardInfo:
             assert fs.toggled is False
             assert fs.display_label is None
             assert fs.preset_callback is None
+
+    def test_clears_preset_callback_arg(self):
+        """Regression: clear_pedalboard_info must also reset preset_callback_arg.
+        get_display_label() short-circuits to "" only when both midi_CC and
+        preset_callback_arg are None, so a stale callback_arg makes the footswitch
+        keep acting like a preset switch and fall through to the else branch that
+        returns the (now-None) display_label — i.e. the old preset binding bleeds
+        onto the new pedalboard."""
+        with _make_footswitch(midi_CC=None) as (fs, _sink):
+            fs.add_preset(callback=MagicMock(), callback_arg=5)
+            fs.set_display_label("Lead")
+
+            fs.clear_pedalboard_info()
+
+            assert fs.preset_callback_arg is None
+            assert fs.get_display_label() == ""
+
+    def test_clears_parameter(self):
+        """Regression: clear_pedalboard_info must also reset parameter, so the
+        drives_display check (and any other consumer of fs.parameter) doesn't
+        see a stale plugin binding from a previous pedalboard."""
+        with _make_footswitch(midi_CC=None) as (fs, _sink):
+            fs.parameter = TestSetValue._param(":bypass", 0)
+
+            fs.clear_pedalboard_info()
+
+            assert fs.parameter is None
