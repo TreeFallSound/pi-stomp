@@ -128,7 +128,7 @@ class Footswitch(controller.Controller):
     def get_display_label(self):
         if self.taptempo and self.taptempo.is_enabled():
             return str(round(self.taptempo.get_bpm()))
-        elif self.midi_CC is None:
+        elif self.midi_CC is None and self.preset_callback_arg is None:
             return ""
         else:
             return self.display_label
