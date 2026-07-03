@@ -138,3 +138,21 @@ class TestClearPedalboardInfo:
             assert fs.toggled is False
             assert fs.display_label is None
             assert fs.preset_callback is None
+
+    def test_clears_preset_callback_arg(self):
+        with _make_footswitch(midi_CC=None) as fs:
+            fs.add_preset(callback=MagicMock(), callback_arg=5)
+            fs.set_display_label("Lead")
+
+            fs.clear_pedalboard_info()
+
+            assert fs.preset_callback_arg is None
+            assert fs.get_display_label() == ""
+
+    def test_clears_parameter(self):
+        with _make_footswitch(midi_CC=None) as fs:
+            fs.parameter = MagicMock()  # pyright: ignore[reportAttributeAccessIssue]
+
+            fs.clear_pedalboard_info()
+
+            assert fs.parameter is None
