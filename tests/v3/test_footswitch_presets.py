@@ -169,3 +169,44 @@ class TestPresetFootswitchIndicator:
         w1 = next(w for w in lcd.w_footswitches if w.object is fs1)
         assert w1.is_bypassed is False
         assert w0.is_bypassed is True
+
+
+class TestPresetFootswitchLabelSurvivesRelight:
+    """Regression: Hardware.__init_footswitches clears midi_CC for preset
+    footswitches configured via config.yml (see TestPresetConfigClearsDefaultMidiCC),
+    but Footswitch.get_display_label() treats `midi_CC is None` as "unbound,
+    show nothing" -- a rule written before preset switches could legitimately
+    have no CC. Anywhere that reads get_display_label() instead of the
+    freshly computed label (update_footswitch's `wfs.label = ...` line) blanks
+    the snapshot-name label the instant it's touched again, e.g. on the very
+    next preset_change()."""
+
+    def test_preset_change_does_not_blank_the_label(self, v3_system: SystemFixture, tmp_path, snapshot):
+        handler = v3_system.handler
+        hw = v3_system.hw
+        lcd = handler.lcd
+
+        # Footswitch 1 has midi_CC: 61 in default_config_pistomptre.yml -- the
+        # config overlay path (not fs.add_preset() called directly) is what
+        # triggers Hardware.__clear_footswitch_midi_cc and reproduces the bug.
+        bundle_dir = tmp_path / "preset_rig.pedalboard"
+        bundle_dir.mkdir()
+        (bundle_dir / "config.yml").write_text(
+            yaml.dump({"hardware": {"footswitches": [{"id": 1, "preset": 0}]}})
+        )
+        pb = handler.pedalboards["/path/to/new.pedalboard"]
+        pb.bundle = str(bundle_dir)
+        pb.plugins = []
+        handler.set_current_pedalboard(pb)
+
+        fs1 = hw.footswitches[1]
+        assert fs1.midi_CC is None  # cleared by the preset config, as expected
+
+        w1 = next(w for w in lcd.w_footswitches if w.object is fs1)
+        assert w1.label == "clean"  # correct immediately after the initial draw
+        snapshot("before_preset_change")
+
+        handler.preset_change(1)  # switches the active snapshot; fs1 stays mapped to 0
+
+        assert w1.label == "clean"  # BUG: get_display_label() blanks it to ""
+        snapshot("after_preset_change")
