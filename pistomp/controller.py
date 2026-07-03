@@ -18,6 +18,9 @@
 from enum import Enum
 import json
 import logging
+from typing import Optional
+
+from common.parameter import Parameter
 
 
 class Controller:
@@ -27,7 +30,7 @@ class Controller:
         self.midi_CC = midi_CC
         self.minimum = None
         self.maximum = None
-        self.parameter = None
+        self.parameter: Optional[Parameter] = None
         self.hardware_name = None
         #self.type = None  # this will conflict with encoder.type for EncoderMidiControl
         self.midi_min = 0
@@ -36,7 +39,7 @@ class Controller:
     def to_json(self):
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
 
-    def set_value(self, bypass_value: float):
+    def set_value(self, value: float):
         logging.error("Controller subclass hasn't overriden the set_value method")
 
 

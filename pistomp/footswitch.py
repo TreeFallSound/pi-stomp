@@ -18,6 +18,7 @@
 import logging
 import time
 import sys
+from typing import Any, Callable
 from rtmidi.midiconstants import CONTROL_CHANGE
 
 import common.token as Token
@@ -93,8 +94,8 @@ class Footswitch(controller.Controller):
         self.display_label = None
         self.toggled = False
         self.led = None
-        self.midiout = midiout
-        self.refresh_callback = refresh_callback
+        self.midiout: Any = midiout
+        self.refresh_callback: Callable[..., Any] = refresh_callback
         self.relay_list = []
         self.preset_callback = None
         self.preset_callback_arg = None
@@ -143,12 +144,16 @@ class Footswitch(controller.Controller):
 
     @property
     def drives_display(self) -> bool:
-        """True when unbound: no inbound echo will arrive, so the press updates
-        indicators itself. When bound to a plugin :bypass, the WS broadcast does."""
         return self.parameter is None
 
-    def set_value(self, bypass_value: float):
-        self.toggled = (bypass_value < 1)
+    def set_value(self, value: float):
+        param = self.parameter
+        if param is not None and param.symbol != Token.COLON_BYPASS:
+            lo = param.minimum if param.minimum is not None else 0
+            hi = param.maximum if param.maximum is not None else 1
+            self.toggled = value >= (lo + hi) / 2
+        else:
+            self.toggled = (value < 1)
         self.set_led(self.toggled)
         self.refresh_callback(footswitch=self)
 
@@ -209,11 +214,7 @@ class Footswitch(controller.Controller):
             info.timestamps.update({self.id: now})
 
     def pressed(self, state):
-        # If a footswitch can be mapped to control a relay, preset, MIDI or all 3
-        #
-        # The footswitch will only "toggle" if it's associated with a relay
-        # (in which case it will toggle with the relay) or with a Midi message
-        #
+        """Handle a footswitch press: route to relay, preset, or MIDI CC as configured."""
         new_toggled = not self.toggled
 
         # First handle Longpress Events
@@ -238,7 +239,7 @@ class Footswitch(controller.Controller):
         # Now short Press Events
 
         if self.taptempo and self.taptempo.is_enabled():
-            pass  # Don't process other events when in taptempo mode
+            return  # Don't process other events when in taptempo mode
 
         # If mapped to preset change
         elif self.preset_callback is not None:
@@ -267,7 +268,7 @@ class Footswitch(controller.Controller):
 
     def add_relay(self, relay):
         self.relay_list.append(relay)
-        self.set_value(not relay.init_state())
+        self.set_value(0.0 if relay.init_state() else 1.0)
 
     def clear_relays(self):
         self.relay_list.clear()
@@ -280,6 +281,7 @@ class Footswitch(controller.Controller):
         self.toggled = False
         self.disabled = False
         self.display_label = None
+        self.parameter = None
         self.set_category(None)
         self.preset_callback = None
         self.preset_callback_arg = None
