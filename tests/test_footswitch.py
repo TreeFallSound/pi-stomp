@@ -34,7 +34,7 @@ def _make_footswitch(**kwargs):
     )
     defaults.update(kwargs)
     fs = Footswitch(**defaults)
-    fs._set_led = MagicMock()  # type: ignore[method-assign]
+    fs.set_led = MagicMock()  # type: ignore[method-assign]
     yield fs
     Footswitch.callbacks = {}
     Footswitch.all_longpress_groups = {}
@@ -135,8 +135,8 @@ class TestPressed:
             fs.midiout.send_message.assert_not_called()
             assert isinstance(fs.refresh_callback, MagicMock)
             fs.refresh_callback.assert_not_called()
-            assert isinstance(fs._set_led, MagicMock)
-            fs._set_led.assert_not_called()
+            assert isinstance(fs.set_led, MagicMock)
+            fs.set_led.assert_not_called()
 
     def test_unbound_footswitch_refresh_callback_on_press(self):
         """A footswitch with MIDI but no bound parameter still refreshes the LCD immediately."""
@@ -222,8 +222,8 @@ class TestSetValue:
         with _make_footswitch() as fs:
             fs.parameter = self._param(":bypass", 0)
             fs.set_value(0)
-            assert isinstance(fs._set_led, MagicMock)
-            fs._set_led.assert_any_call(True)
+            assert isinstance(fs.set_led, MagicMock)
+            fs.set_led.assert_any_call(True)
             assert isinstance(fs.refresh_callback, MagicMock)
             fs.refresh_callback.assert_called_once_with(footswitch=fs)
 
@@ -285,4 +285,21 @@ class TestClearPedalboardInfo:
             assert fs.category is None
             assert fs.preset_callback is None
             assert len(fs.relay_list) == 0
+
+    def test_clears_preset_callback_arg(self):
+        with _make_footswitch(midi_CC=None) as fs:
+            fs.add_preset(callback=MagicMock(), callback_arg=5)
+            fs.set_display_label("Lead")
+
+            fs.clear_pedalboard_info()
+
+            assert fs.preset_callback_arg is None
+            assert fs.get_display_label() == ""
+
+    def test_clears_parameter(self):
+        with _make_footswitch(midi_CC=None) as fs:
+            fs.parameter = MagicMock()
+
+            fs.clear_pedalboard_info()
+
             assert fs.parameter is None

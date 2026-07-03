@@ -478,7 +478,10 @@ class Lcd(abstract_lcd.Lcd):
     # Footswitches
     #
     def footswitch_label(self, footswitch):
-        """Label for a footswitch bound to a plugin param: the param name, or the plugin instance for a :bypass binding."""
+        """Label for a footswitch bound to a snapshot index or a plugin param."""
+        if footswitch.preset_callback_arg is not None:
+            name = self.current.presets.get(footswitch.preset_callback_arg) if self.current else None
+            return self.shorten_name(name, self.footswitch_width) if name else str(footswitch.preset_callback_arg)
         param = footswitch.parameter
         if param is None:
             return None
@@ -490,6 +493,10 @@ class Lcd(abstract_lcd.Lcd):
         color = self.get_plugin_color(plugin)
         for c in plugin.controllers:
             if isinstance(c, Footswitch):
+                if c.preset_callback_arg is not None:
+                    # Preset-bound switches are drawn by draw_unbound_footswitches,
+                    # regardless of any (stale) plugin binding.
+                    continue
                 fs_id = c.id
                 label = self.footswitch_label(c)
                 c.set_display_label(label)
@@ -506,12 +513,23 @@ class Lcd(abstract_lcd.Lcd):
             if fs.id in self.footswitch_slots:
                 continue
             slot = fs.id
-            dl = fs.get_display_label()
-            label = "" if dl is None else dl
+            if fs.preset_callback_arg is not None:
+                label = self.footswitch_label(fs)
+                fs.set_display_label(label)
+                active = self.current is not None and self.current.preset_index == fs.preset_callback_arg
+                fs.toggled = active
+                fs.set_led(active)  # a press never touches toggled for preset switches
+                color = self.foreground
+                is_bypassed = not fs.toggled
+            else:
+                dl = fs.get_display_label()
+                label = "" if dl is None else dl
+                color = None
+                is_bypassed = True
             y = 0
             x = self.get_footswitch_pitch() * slot
             p = FootswitchWidget(Box.xywh(x, y, self.plugin_width, self.footswitch_height), self.small_font,
-                                 label, None, not fs.toggled, parent=self.footswitch_panel, object=fs)
+                                 label, color, is_bypassed, parent=self.footswitch_panel, object=fs)
             self.w_footswitches.append(p)
             self.footswitch_panel.add_widget(p)
         self.footswitch_panel.refresh()
@@ -519,7 +537,12 @@ class Lcd(abstract_lcd.Lcd):
     def update_footswitch(self, footswitch):
         for wfs in self.w_footswitches:
             if wfs.object == footswitch:
-                if footswitch.parameter is not None:
+                if footswitch.preset_callback_arg is not None:
+                    footswitch.set_display_label(self.footswitch_label(footswitch))
+                    active = self.current is not None and self.current.preset_index == footswitch.preset_callback_arg
+                    footswitch.toggled = active
+                    footswitch.set_led(active)
+                elif footswitch.parameter is not None:
                     # Binding may be new (e.g. MIDI learn) — reflect label + color.
                     footswitch.set_display_label(self.footswitch_label(footswitch))
                     wfs.color = self.get_category_color(footswitch.category)

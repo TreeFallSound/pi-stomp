@@ -129,7 +129,7 @@ class Footswitch(controller.Controller):
     def get_display_label(self):
         if self.taptempo and self.taptempo.is_enabled():
             return str(round(self.taptempo.get_bpm()))
-        elif self.midi_CC is None:
+        elif self.midi_CC is None and self.preset_callback_arg is None:
             return ""
         else:
             return self.display_label
@@ -142,22 +142,22 @@ class Footswitch(controller.Controller):
     def set_midi_channel(self, midi_channel):
         self.midi_channel = midi_channel
 
+    @property
+    def drives_display(self) -> bool:
+        return self.parameter is None
+
     def set_value(self, value: float):
         param = self.parameter
         if param is not None and param.symbol != Token.COLON_BYPASS:
-            # Non-:bypass binding: "on" is the max end (the value an on-press
-            # sends), so compare against the range midpoint. The bypass
-            # inversion below would light the LED for an OFF param.
             lo = param.minimum if param.minimum is not None else 0
             hi = param.maximum if param.maximum is not None else 1
             self.toggled = value >= (lo + hi) / 2
         else:
-            # :bypass (or relay, param is None): engaged when not bypassed.
             self.toggled = (value < 1)
-        self._set_led(self.toggled)
+        self.set_led(self.toggled)
         self.refresh_callback(footswitch=self)
 
-    def _set_led(self, enabled):
+    def set_led(self, enabled):
         if self.led is not None:
             if self.taptempo:
                 tempo = self.taptempo.get_bpm()
@@ -229,7 +229,7 @@ class Footswitch(controller.Controller):
                         r.enable()
                     else:
                         r.disable()
-                self._set_led(self.toggled)
+                self.set_led(self.toggled)
                 self.refresh_callback(True)  # True means this is a bypass change only
             else:
                 # TODO consider case where relay and longpress are specified
@@ -239,7 +239,7 @@ class Footswitch(controller.Controller):
         # Now short Press Events
 
         if self.taptempo and self.taptempo.is_enabled():
-            pass  # Don't process other events when in taptempo mode
+            return  # Don't process other events when in taptempo mode
 
         # If mapped to preset change
         elif self.preset_callback is not None:
@@ -257,12 +257,11 @@ class Footswitch(controller.Controller):
             cc = [self.midi_channel | CONTROL_CHANGE, self.midi_CC, 127 if self.toggled else 0]
             logging.debug("Sending CC event: %d" % self.midi_CC)
             self.midiout.send_message(cc)
-            self._set_led(self.toggled)
-            # LCD / plugin state is updated only when the echo arrives, so unbound
-            # footswitches (tap-tempo / relay / preset) still refresh immediately.
-            if self.parameter is None:
-                self.refresh_callback(footswitch=self)
-            return
+            if self.drives_display:
+                self.set_led(self.toggled)
+
+        if self.drives_display:
+            self.refresh_callback(footswitch=self)
 
     def set_display_label(self, label):
         self.display_label = label
@@ -285,4 +284,6 @@ class Footswitch(controller.Controller):
         self.parameter = None
         self.set_category(None)
         self.preset_callback = None
+        self.preset_callback_arg = None
+        self.parameter = None
         self.clear_relays()
