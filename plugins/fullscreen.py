@@ -46,7 +46,6 @@ class FullscreenPluginPanel(PluginPanel[TState]):
 
         cfg = Config()
         self._btn_font = cfg.get_font("default")
-        assert self._btn_font is not None, "FullscreenPluginPanel requires a 'default' font"
         _, btn_text_h = get_text_size("Bypass", self._btn_font)
         self._btn_v_margin = max(0, (BTN_H - btn_text_h) // 2)
 

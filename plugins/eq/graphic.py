@@ -362,7 +362,7 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
         self.bands = self.build_band_specs()
         self._state = self.snapshot_state()
         cfg = Config()
-        font = cfg.get_font("tiny") or cfg.get_font("default")
+        font = cfg.get_font("tiny")
         btn_font = cfg.get_font("default")
 
         self._readout = GraphicReadoutWidget(

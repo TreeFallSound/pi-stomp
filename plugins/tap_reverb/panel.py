@@ -22,7 +22,6 @@ KNOB_Y0 = 62
 KNOB_Y1 = 200
 KNOB_H = KNOB_Y1 - KNOB_Y0
 
-RING_RADIUS = 32
 RING_SPACING = _W // 3
 
 _BG = (0, 0, 0)
@@ -44,14 +43,14 @@ class TapReverbState:
     mode: int
 
 
-def _fmt_decay(ms: float) -> str:
+def _fmt_decay(ms: float) -> tuple[str, str]:
     if ms >= 1000.0:
-        return f"{ms / 1000.0:.1f}s"
-    return f"{int(ms)}ms"
+        return f"{ms / 1000.0:.1f}", "s"
+    return f"{int(ms)}", "ms"
 
 
-def _fmt_db(db: float) -> str:
-    return f"{db:+.0f}dB"
+def _fmt_db(db: float) -> tuple[str, str]:
+    return f"{db:+.0f}", "dB"
 
 
 class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
@@ -269,7 +268,7 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         sel = self.sel_ref
         if isinstance(sel, ArcKnobWidget):
             val = self._current(sel.symbol)
-            self._readout.set_text(f"{sel._label.capitalize()}: {sel._formatter(val)}")
+            self._readout.set_text(f"{sel._label.capitalize()}: {sel.reading_text(val)}")
         elif isinstance(sel, ModeSelectorWidget):
             self._readout.set_text("Select reverb mode")
             self._readout.set_subtitle(f"{self._mode_selector.value + 1} of {self._mode_selector.max_index + 1}")

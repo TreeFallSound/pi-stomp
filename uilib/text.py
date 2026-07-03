@@ -223,7 +223,6 @@ class TextWidget(Widget):
         self.text = text
         if font is None:
             font = Config().get_font("default")
-        assert font is not None  # the 'default' font is always registered
         self.font = font
         self.edit_message = edit_message
         self.h_margin = h_margin

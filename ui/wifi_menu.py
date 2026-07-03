@@ -147,7 +147,6 @@ def _glyph_height() -> int:
     once at construction (emoji model). RichTextWidget centers glyphs shorter
     than the row inside the row band; this picks a height that matches text."""
     font = Config().get_font("default")
-    assert font is not None
     return int(font.get_sized_ascender()) + abs(int(font.get_sized_descender()))
 
 

@@ -14,6 +14,7 @@ from common.parameter import Parameter
 from plugins.window import PluginWindow
 from uilib.box import Box
 from uilib.config import Config
+from uilib.glyphs.arc_dial import paint_arc_dial
 from uilib.glyphs.arc_ring import ArcRingGlyph
 from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size, shade_color, step_for_param
 from uilib.widget import Widget
@@ -28,9 +29,7 @@ _MAX_H = 236  # never exceed the 240px LCD (2px breathing room)
 def _slot_box_size() -> tuple[int, int]:
     """(width, height) one arc-ring slot needs, ring + label included."""
     ring_wh = ArcRingGlyph(radius=_ARC_RADIUS).size + _ARC_MARGIN * 2
-    cfg = Config()
-    label_font = cfg.get_font("tiny") or cfg.get_font("small") or cfg.get_font("default")
-    assert label_font is not None
+    label_font = Config().get_font("arc_label")
     _, label_h = get_text_size("Ag", label_font)
     return ring_wh, ring_wh + label_h + _ARC_MARGIN
 
@@ -81,11 +80,10 @@ class MultibandWindow(PluginWindow[None]):
 
     def build_widgets(self) -> None:
         cfg = Config()
-        value_font = cfg.get_font("small") or cfg.get_font("default")
-        label_font = cfg.get_font("tiny") or value_font
-        assert value_font is not None and label_font is not None
+        value_font = cfg.get_font("small")
+        label_font = cfg.get_font("arc_label")
 
-        self._ring = ArcRingGlyph(radius=_ARC_RADIUS)
+        self._ring = ArcRingGlyph(radius=_ARC_RADIUS, flip_v=False)
         self._slot_widgets: list[ParamSlotWidget] = []
 
         cb = self.content_box
@@ -211,21 +209,28 @@ class ParamSlotWidget(Widget):
 
     def _draw(self, ctx) -> None:
         shade = INACTIVE_SHADE if self._bypassed else 1.0
-        ring_surf = self._ring.render(
-            self._value_as_t(),
+        half = self._ring.half_size
+        cx = ctx.width // 2
+        _, label_h = get_text_size("Ag", self._label_font)
+        cy = label_h + _ARC_MARGIN + half
+        paint_arc_dial(
+            ctx,
+            cx=cx,
+            cy=cy,
+            glyph=self._ring,
+            t=self._value_as_t(),
             filled_color=shade_color(self.slot.color, shade),
             empty_color=shade_color((60, 60, 60), shade),
             tip_color=shade_color((255, 255, 255), shade),
+            label=self.slot.label,
+            value=self._format_value(),
+            unit="",
+            label_font=self._label_font,
+            value_font=self._value_font,
+            unit_font=self._value_font,
+            label_fg=shade_color((180, 180, 180), shade),
+            value_fg=shade_color((255, 255, 255), shade),
+            unit_fg=shade_color((170, 170, 180), shade),
+            label_pos="top",
+            two_line=False,
         )
-        half = self._ring.half_size
-        cx = ctx.width // 2
-        cy = half
-        ctx.paste(ring_surf, (cx - half, cy - half))
-
-        value_text = self._format_value()
-        tw, th = get_text_size(value_text, self._value_font)
-        ctx.draw_text(((ctx.width - tw) // 2, cy - th // 2), value_text, fill=shade_color((255, 255, 255), shade), font=self._value_font)
-
-        label = self.slot.label.upper()
-        lw, _ = get_text_size(label, self._label_font)
-        ctx.draw_text(((ctx.width - lw) // 2, 2 * half + _ARC_MARGIN), label, fill=shade_color((180, 180, 180), shade), font=self._label_font)

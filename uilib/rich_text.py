@@ -127,7 +127,6 @@ class RichTextWidget(Widget):
         self.segments: list[Segment] = list(segments)
         if font is None:
             font = Config().get_font("default")
-        assert font is not None  # the 'default' font is always registered
         self.font = font
         self.h_margin = h_margin
         self.v_margin = v_margin

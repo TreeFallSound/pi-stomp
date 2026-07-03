@@ -3,8 +3,9 @@ from __future__ import annotations
 from common.parameter import Parameter
 from plugins.layouts.compressor_spec import ArcSpec, arc_centers_for
 from uilib.box import Box
+from uilib.glyphs.arc_dial import paint_arc_dial
 from uilib.glyphs.arc_ring import ArcRingGlyph
-from uilib.misc import INACTIVE_SHADE, get_text_size, shade_color
+from uilib.misc import INACTIVE_SHADE, shade_color
 from uilib.widget import Widget
 
 _ARC_RADIUS = 27
@@ -60,7 +61,7 @@ class ArcColumnWidget(Widget):
         self._centers = arc_centers_for(len(arcs))
         self._value_font = value_font
         self._label_font = label_font
-        self._ring = ArcRingGlyph(_ARC_RADIUS, ring_half=_ARC_RING_HALF, tip_radius=_ARC_TIP)
+        self._ring = ArcRingGlyph(_ARC_RADIUS, ring_half=_ARC_RING_HALF, tip_radius=_ARC_TIP, flip_v=False)
         self._selected: int | None = None
         self._bypassed = False
         self._values: list[float | None] = [None] * len(arcs)
@@ -120,24 +121,29 @@ class ArcColumnWidget(Widget):
 
     def _draw(self, ctx) -> None:
         shade = INACTIVE_SHADE if self._bypassed else 1.0
-        half = self._ring.half_size
         for i, spec in enumerate(self._arcs):
             cx, cy = self._centers[i]
-            ring = self._ring.render(
-                self._value_t(i),
+            paint_arc_dial(
+                ctx,
+                cx=cx,
+                cy=cy,
+                glyph=self._ring,
+                t=self._value_t(i),
                 filled_color=shade_color(spec.color, shade),
                 empty_color=shade_color((56, 56, 56), shade),
                 tip_color=shade_color((255, 255, 255), shade),
+                label=spec.label,
+                value=self._format(i),
+                unit="",
+                label_font=self._label_font,
+                value_font=self._value_font,
+                unit_font=self._value_font,
+                label_fg=shade_color(_LABEL, shade),
+                value_fg=shade_color(_TEXT, shade),
+                unit_fg=shade_color(_LABEL, shade),
+                label_pos="bottom",
+                two_line=False,
             )
-            ctx.paste(ring, (cx - half, cy - half))
-
-            val = self._format(i)
-            vw, vh = get_text_size(val, self._value_font)
-            ctx.draw_text((cx - vw // 2, cy - vh // 2), val, fill=shade_color(_TEXT, shade), font=self._value_font)
-
-            lw, _lh = get_text_size(spec.label, self._label_font)
-            ctx.draw_text((cx - lw // 2, cy + half - 1), spec.label, fill=shade_color(_LABEL, shade), font=self._label_font)
-
             if i == self._selected:
                 self._draw_reticule(ctx, cx, cy, _RETICULE if not self._bypassed else _RETICULE_DIM)
 

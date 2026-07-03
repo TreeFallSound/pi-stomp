@@ -41,12 +41,12 @@ class GxCabinetState:
     model: int
 
 
-def _fmt_level(v: float) -> str:
-    return f"{v:.2f}x"
+def _fmt_level(v: float) -> tuple[str, str]:
+    return f"{v:.2f}", "×"
 
 
-def _fmt_tone(v: float) -> str:
-    return f"{v:+.1f}"
+def _fmt_tone(v: float) -> tuple[str, str]:
+    return f"{v:+.1f}", "dB"
 
 
 class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
@@ -260,7 +260,7 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
         sel = self.sel_ref
         if isinstance(sel, ArcKnobWidget):
             val = self._current(sel.symbol)
-            self._readout.set_text(f"{sel._label.capitalize()}: {sel._formatter(val)}")
+            self._readout.set_text(f"{sel._label.capitalize()}: {sel.reading_text(val)}")
         elif isinstance(sel, ModeSelectorWidget):
             self._readout.set_text("Select cabinet model")
             self._readout.set_subtitle(f"{self._mode_selector.value + 1} of {self._mode_selector.max_index + 1}")

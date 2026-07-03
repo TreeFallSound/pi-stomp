@@ -55,9 +55,8 @@ class PluginWindow(PluginPanel[TState], Dialog):
         self._win_w, self._win_h = w, h
 
         cfg = Config()
-        self._title_font = cfg.get_font("default_title") or cfg.get_font("default")
-        self._btn_font = cfg.get_font("small") or cfg.get_font("default")
-        assert self._title_font is not None and self._btn_font is not None
+        self._title_font = cfg.get_font("default_title")
+        self._btn_font = cfg.get_font("small")
 
         Dialog.__init__(
             self, width=w, height=h, title=plugin.display_name, title_font=self._title_font, auto_destroy=True

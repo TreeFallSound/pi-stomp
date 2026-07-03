@@ -19,6 +19,11 @@ A thick ring arc from 7-o'clock clockwise (210° → 5-o'clock, 300° travel),
 split at value position t ∈ [0, 1] between a filled colour and an empty
 colour. A small tip dot marks the current position.
 
+With ``flip_v=True`` the rendered image is reflected vertically so the gap
+sits at the **top** (12-o'clock): ``t=0`` fills from upper-left, ``t=1`` from
+upper-right — the intuitive min-left/max-right direction, leaving the top gap
+free for a label.
+
 The glyph renders to an SRCALPHA surface. Blit at (cx - half_size, cy -
 half_size) to centre on (cx, cy). The radial/angular grids are built once
 in __init__; only the per-t compositing runs in render().
@@ -44,9 +49,12 @@ class ArcRingGlyph:
     Blit render() at (cx - half_size, cy - half_size) to centre on (cx, cy).
     """
 
-    def __init__(self, radius: int, ring_half: float = 4.5, tip_radius: float = 3.5) -> None:
+    def __init__(
+        self, radius: int, ring_half: float = 4.5, tip_radius: float = 3.5, flip_v: bool = False
+    ) -> None:
         self._r = int(radius)
         self._tip_radius = float(tip_radius)
+        self._flip_v = bool(flip_v)
         margin = math.ceil(max(ring_half, tip_radius)) + 1
         self._half = self._r + margin
         size = 2 * self._half + 1
@@ -75,6 +83,23 @@ class ArcRingGlyph:
     @property
     def size(self) -> int:
         return self._size
+
+    @property
+    def tip_radius(self) -> float:
+        return self._tip_radius
+
+    def tip_center(self, t: float) -> tuple[float, float]:
+        """(x, y) of the tip dot centre within the surface for value ``t``.
+
+        Honors ``flip_v`` so consumers computing incremental dirty rects don't
+        have to re-derive the arc geometry.
+        """
+        t = max(0.0, min(1.0, t))
+        rad = math.radians(_START_DEG + t * _SWEEP_DEG)
+        x = self._half + self._r * math.sin(rad)
+        cos = self._r * math.cos(rad)
+        y = self._half + cos if self._flip_v else self._half - cos
+        return (x, y)
 
     def render(
         self,
@@ -110,6 +135,12 @@ class ArcRingGlyph:
         tip_cy = self._half - self._r * math.cos(tip_rad)
         tip_d = np.sqrt((self._X - tip_cx) ** 2 + (self._Y - tip_cy) ** 2)
         tip_cov = np.clip(self._tip_radius + 0.5 - tip_d, 0.0, 1.0)
+
+        if self._flip_v:
+            # True vertical reflection of the final image: gap moves to the top.
+            filled_cov = np.flipud(filled_cov)
+            empty_cov = np.flipud(empty_cov)
+            tip_cov = np.flipud(tip_cov)
 
         fr, fg_c, fb = filled_color
         er, eg, eb = empty_color

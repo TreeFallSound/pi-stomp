@@ -121,8 +121,7 @@ class NotesPanel(FullscreenPluginPanel[None]):
 
     def build_widgets(self) -> None:
         cfg = Config()
-        font = cfg.get_font("small") or cfg.get_font("default")
-        assert font is not None
+        font = cfg.get_font("small")
 
         _, line_h = get_text_size("", font)
         self._line_h = max(1, line_h)

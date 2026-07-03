@@ -54,10 +54,9 @@ class CompressorPanel(FullscreenPluginPanel[CompressorState]):
 
     def build_widgets(self) -> None:
         cfg = Config()
-        value_font = cfg.get_font("small") or cfg.get_font("default")
-        label_font = cfg.get_font("tiny") or value_font
-        axis_font = cfg.get_font("tiny") or value_font
-        assert value_font is not None and label_font is not None and axis_font is not None
+        value_font = cfg.get_font("small")
+        label_font = cfg.get_font("arc_label")
+        axis_font = cfg.get_font("tiny")
 
         self._graph = ReticuleGraphWidget(
             box=Box.xywh(_GRAPH_X0, _GRAPH_Y0, _GRAPH_SIDE, _GRAPH_SIDE),

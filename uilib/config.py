@@ -34,10 +34,11 @@ FontName = Literal[
     "footswitch",
     "footswitch_badge",
     "footswitch_tap_bpm",
-    "big_bold",
     "small",
     "tiny",
     "micro",
+    "arc_label",
+    "arc_label_lg",
 ]
 
 
@@ -77,6 +78,10 @@ class Config:
             self.add_font("small", font_path("DejaVuSans.ttf"), 13)
         if "micro" not in self.fonts:
             self.add_font("micro", font_path("DejaVuSans.ttf"), 8)
+        if "arc_label" not in self.fonts:
+            self.add_font("arc_label", font_path("DejaVuSans-Bold.ttf"), 11)
+        if "arc_label_lg" not in self.fonts:
+            self.add_font("arc_label_lg", font_path("DejaVuSans-Bold.ttf"), 14)
         if "default_fgnd" not in self.colors:
             self.add_color("default_fgnd", (255, 255, 255))
         if "default_bkgnd" not in self.colors:
@@ -95,8 +100,11 @@ class Config:
                 path = str(candidate)
         self.fonts[label] = _make_font(path, size)
 
-    def get_font(self, label: FontName) -> "pygame._freetype.Font | None":
-        return self.fonts.get(label)
+    def get_font(self, label: FontName) -> "pygame._freetype.Font":
+        # Total: every FontName is registered by _set_defaults (run in __init__
+        # after any load_config), so a valid label always resolves. Mirrors
+        # get_color; raises KeyError on a genuinely unregistered label.
+        return self.fonts[label]
 
     def has_font(self, label: FontName) -> bool:
         return label in self.fonts

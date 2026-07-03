@@ -40,7 +40,7 @@ from typing import Callable
 
 from uilib.box import Box
 from uilib.config import Config
-from uilib.glyphs import ArcRingGlyph
+from uilib.glyphs import ArcDialWidget, DialVariant
 from uilib.label import Label
 from uilib.misc import TextHAlign, get_text_bbox, get_text_size
 from uilib.paint import PaintContext
@@ -153,90 +153,28 @@ def _centred_x(text: str, font, width: int) -> int:
 # ── Custom widgets ────────────────────────────────────────────────────────────
 
 
-class KnobWidget(Widget):
-    """Arc-ring rotary display for audio parameter control."""
+class KnobWidget(ArcDialWidget):
+    """Arc-ring rotary display for audio (dB) parameter control."""
 
-    _VALUE_H = 20
+    _ARC_RADIUS = 39
 
-    def __init__(
-        self,
-        box: Box,
-        label: str,
-        min_val: float,
-        max_val: float,
-        default_font,
-        caption_font,
-        parent: Widget,
-    ) -> None:
-        super().__init__(box=box, bkgnd_color=(0, 0, 0), parent=parent)
-        self._label = label
-        self._min_val = min_val
-        self._max_val = max_val
-        self._default_font = default_font
-        self._caption_font = caption_font
-        self._value = min_val
-        arc_area_h = box.height - self._VALUE_H
-        self._arc_r = min(box.width // 2 - 10, arc_area_h // 2 - 8)
-        self._arc_tip_r = 7.0
-        self._arc = ArcRingGlyph(self._arc_r, tip_radius=self._arc_tip_r)
-
-    def set_value(self, value: float) -> None:
-        new_val = max(self._min_val, min(self._max_val, value))
-        if new_val == self._value:
-            return
-        old_t = self._t()
-        self._value = new_val
-        new_t = self._t()
-        self.refresh(self._dirty_rect(old_t, new_t))
-
-    def _t(self) -> float:
-        if self._max_val == self._min_val:
-            return 0.0
-        return max(0.0, min(1.0, (self._value - self._min_val) / (self._max_val - self._min_val)))
-
-    def _tip_rect_abs(self, t: float) -> Box:
-        """Absolute bounding box of the tip dot at value fraction t."""
-        assert self.box is not None
-        cx = self.box.x0 + self.box.width // 2
-        cy = self.box.y0 + (self.box.height - self._VALUE_H) // 2
-        rad = math.radians(210.0 + t * 300.0)
-        tx = cx + self._arc_r * math.sin(rad)
-        ty = cy - self._arc_r * math.cos(rad)
-        pad = int(self._arc_tip_r) + 1
-        return Box.xywh(int(tx) - pad, int(ty) - pad, 2 * pad + 1, 2 * pad + 1)
-
-    def _dirty_rect(self, old_t: float, new_t: float) -> Box:
-        """Tight absolute dirty rect for a value change from old_t to new_t.
-
-        For typical encoder ticks (< 10 % range) only the two tip dot areas
-        and the value-text strip need repainting — a ~5x reduction in pixels
-        pushed over SPI vs the full widget, keeping the push inline at all
-        supported SPI speeds including 33 MHz.  Large jumps fall back to the
-        full widget so the changed arc segment is never left stale.
-        """
-        assert self.box is not None
-        w, h = self.box.width, self.box.height
-        value_rect = Box.xywh(self.box.x0, self.box.y0 + h - self._VALUE_H, w, self._VALUE_H)
-        if abs(new_t - old_t) < 0.10:
-            res = self._tip_rect_abs(old_t).union(self._tip_rect_abs(new_t)).union(value_rect)
-            assert res is not None
-            return res
-        return self.box
-
-    def _draw(self, ctx: PaintContext) -> None:
-        w, h = ctx.width, ctx.height
-        cx = w // 2
-        cy = (h - self._VALUE_H) // 2
-
-        surf = self._arc.render(self._t(), _KNOB_ARC_FG, _KNOB_ARC_BG, _KNOB_TIP)
-        hs = self._arc.half_size
-        ctx.paste(surf, (cx - hs, cy - hs))
-
-        ctx.draw_text((cx, cy), self._label, fill=_KNOB_LABEL_FG, font=self._caption_font, anchor="mm")
-
-        value_text = f"{self._value:.1f} dB"
-        ctx.draw_text(
-            (cx, h - self._VALUE_H // 2), value_text, fill=_KNOB_VALUE_FG, font=self._default_font, anchor="mm"
+    def __init__(self, box: Box, label: str, min_val: float, max_val: float, parent: Widget) -> None:
+        super().__init__(
+            box=box,
+            label=label,
+            minimum=min_val,
+            maximum=max_val,
+            color=_KNOB_ARC_FG,
+            formatter=lambda v: (f"{v:.1f}", "dB"),
+            parent=parent,
+            radius=self._ARC_RADIUS,
+            tip_radius=7.0,
+            variant=DialVariant.LARGE,
+            empty_color=_KNOB_ARC_BG,
+            tip_color=_KNOB_TIP,
+            value_fg=_KNOB_VALUE_FG,
+            unit_fg=_KNOB_LABEL_FG,
+            label_fg=_KNOB_LABEL_FG,
         )
 
 
@@ -525,8 +463,6 @@ class NamCapturePanel(Panel):
             label="IN2",
             min_val=-19.75,
             max_val=12.0,
-            default_font=font,
-            caption_font=self._caption_font,
             parent=self,
         )
         self._knob_vol = KnobWidget(
@@ -534,8 +470,6 @@ class NamCapturePanel(Panel):
             label="OUT2",
             min_val=-25.75,
             max_val=self._max_out_db,
-            default_font=font,
-            caption_font=self._caption_font,
             parent=self,
         )
 
