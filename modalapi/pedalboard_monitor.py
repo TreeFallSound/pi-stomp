@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 """
@@ -57,3 +59,13 @@ def read_pedalboard_bundle(last_json_path: str) -> Optional[str]:
     except (json.JSONDecodeError, IOError) as e:
         logging.warning(f"Failed to read {last_json_path}: {e}")
         return None
+
+
+def write_last_json(last_json_path: str, bundle: str) -> None:
+    """Write last.json with the given bundle path."""
+    try:
+        with open(last_json_path, "w") as f:
+            json.dump({"bank": -2, "pedalboard": bundle, "supportsDividers": True}, f)
+        logging.info(f"Wrote {last_json_path} with bundle: {bundle}")
+    except IOError as e:
+        logging.error(f"Failed to write {last_json_path}: {e}")

@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
@@ -138,6 +140,8 @@ class Lcd(abstract_lcd.Lcd):
 
         self.wifi_menu = WifiMenu(self)
 
+        # Skip the in-app splash when early boot already showed one (/run/lcd.init).
+        # Hardware reset/clear still runs every process start (see LcdIli9341).
         if not display.has_system_splash:
             self.splash_show(True)
 

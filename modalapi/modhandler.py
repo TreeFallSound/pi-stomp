@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from pistomp.handler import Handler
@@ -277,13 +279,10 @@ class Modhandler(Handler):
 
     @property
     def lcd_poll_divisor(self) -> int:
-        # Tick the LCD on every 10 ms main-loop pass (~100 fps) while the
-        # tuner panel is mounted. Strobe's worst-case redraw at STRIPE_W=4
-        # is ~4.3 ms of SPI, well inside the 10 ms budget; typical ticks
-        # are sub-millisecond. Otherwise fall back to the SPI-clock-derived
-        # divisor computed by the LCD itself.
+        # 50 fps (every other 10 ms tick) while the tuner is active — fast enough
+        # for smooth strobe animation and leaves headroom for SPI transfers.
         if self._tuner_panel is not None:
-            return 1
+            return 2
         return self._lcd.poll_divisor if self._lcd is not None else 8
 
     def universal_encoder_select(self, direction):
@@ -645,7 +644,7 @@ class Modhandler(Handler):
         else:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
-    def pedalboard_change(self, pedalboard=None):
+    def pedalboard_change(self, pedalboard: Pedalboard.Pedalboard) -> None:
         logging.info("Pedalboard change")
         self.lcd.draw_info_message("Loading...")
 
@@ -654,19 +653,10 @@ class Modhandler(Handler):
             logging.error("Bad Reset request")
 
         uri = self.root_uri + "pedalboard/load_bundle/"
-
-        if pedalboard is None:
-            pedalboard = self.pedalboard_list[0]
-        #self.set_current_pedalboard(pedalboard)  # TODO is this necessary?
-        bundlepath = pedalboard.bundle
-        data = {"bundlepath": bundlepath}
+        data = {"bundlepath": pedalboard.bundle}
         resp2 = self._rest_post(uri, data=data)
         if resp2 is None or resp2.status_code != 200:
             logging.error("Bad Rest request: %s %s" % (uri, data))
-
-        # Now that it's presumably changed, load the dynamic "current" data
-        # TODO this seems to be no longer required since the MOD pedalboard change will call this via poll_modui_changes()
-        #self.set_current_pedalboard(pedalboard)
 
     #
     # Preset Stuff

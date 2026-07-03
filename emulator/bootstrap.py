@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
@@ -79,8 +81,12 @@ def bootstrap_emulator(version: EmulatorVersion, cwd: str):
     current_bundle = handler.get_current_pedalboard_bundle_path()
     if current_bundle and current_bundle in handler.pedalboards:
         handler.set_current_pedalboard(handler.pedalboards[current_bundle])
-    else:
-        handler.pedalboard_change()
+    elif handler.pedalboard_list:
+        from modalapi.pedalboard_monitor import write_last_json
+        pb = handler.pedalboard_list[0]
+        write_last_json(handler.last_json_monitor.path, pb.bundle)
+        handler.pedalboard_change(pb)
+        handler.set_current_pedalboard(pb)
 
     handler.system_info_load()
 

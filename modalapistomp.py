@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 # Configure logging BEFORE any imports to ensure it takes effect
@@ -33,6 +35,8 @@ import time
 
 from rtmidi.midiutil import open_midioutput
 
+from modalapi.pedalboard_monitor import write_last_json
+
 from pistomp.audiocard import Audiocard
 import pistomp.audiocardfactory as Audiocardfactory
 import pistomp.config as config
@@ -43,6 +47,7 @@ import pistomp.hardwarefactory as Hardwarefactory
 from pistomp.tuner.source import build_source
 
 EMULATOR_HOSTS = ("emulator_v1", "emulator_v2", "emulator_v3")
+
 
 def main():
     sys.settrace
@@ -87,7 +92,7 @@ def main():
         logging.getLogger().setLevel(log_level)
 
     # Disable websockets library debug logging (too noisy)
-    logging.getLogger('websockets').setLevel(logging.WARNING)
+    logging.getLogger("websockets").setLevel(logging.WARNING)
 
     # Current Working Dir
     cwd = os.path.dirname(os.path.realpath(__file__))
@@ -144,11 +149,27 @@ def main():
 
         # Load the current pedalboard as "current"
         current_pedal_board_bundle = handler.get_current_pedalboard_bundle_path()
-        if not current_pedal_board_bundle:
-            # Apparently, no pedalboard is currently loaded so just change to the default
-            handler.pedalboard_change()
-        else:
+        if current_pedal_board_bundle and current_pedal_board_bundle in handler.pedalboards:
             handler.set_current_pedalboard(handler.pedalboards[current_pedal_board_bundle])
+        else:
+            if not handler.pedalboard_list:
+                if current_pedal_board_bundle:
+                    logging.error(
+                        "last.json references %s but no pedalboards are available",
+                        current_pedal_board_bundle,
+                    )
+                else:
+                    logging.error("No pedalboards found; cannot recover from missing/malformed last.json")
+                sys.exit(1)
+            if current_pedal_board_bundle:
+                logging.warning(
+                    "last.json pedalboard %s not found; resetting to first available",
+                    current_pedal_board_bundle,
+                )
+            pb = handler.pedalboard_list[0]
+            write_last_json(handler.last_json_monitor.path, pb.bundle)
+            handler.pedalboard_change(pb)
+            handler.set_current_pedalboard(pb)
 
         # Load system info.  This can take a few seconds
         handler.system_info_load()
@@ -173,6 +194,7 @@ def main():
 
     elif is_emulator:
         from emulator.bootstrap import bootstrap_emulator
+
         handler, midiout = bootstrap_emulator(args.host[0], cwd)
 
     assert handler is not None

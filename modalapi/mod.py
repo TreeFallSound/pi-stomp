@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import json
@@ -228,7 +230,7 @@ class Mod(Handler):
                 self.preset_change()
                 self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
             elif mode == TopEncoderMode.PEDALBOARD_SELECTED:
-                self.pedalboard_change()
+                self.pedalboard_change(self.pedalboard_list[self.selected_pedalboard_index])
                 self.top_encoder_mode = TopEncoderMode.DEFAULT
             elif mode == TopEncoderMode.SYSTEM_MENU:
                 self.menu_action()
@@ -340,7 +342,7 @@ class Mod(Handler):
                     self.system_menu_show()
             elif mode == UniversalEncoderMode.PEDALBOARD_SELECT:
                 self.universal_encoder_mode = UniversalEncoderMode.LOADING
-                self.pedalboard_change()
+                self.pedalboard_change(self.pedalboard_list[self.selected_pedalboard_index])
                 self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
             elif mode == UniversalEncoderMode.PRESET_SELECT:
                 self.universal_encoder_mode = UniversalEncoderMode.LOADING
@@ -733,25 +735,22 @@ class Mod(Handler):
             self.lcd.draw_title(self.pedalboard_list[next_idx].title, None, True, False, highlight_only)
             self.selected_pedalboard_index = next_idx
 
-    def pedalboard_change(self):
+    def pedalboard_change(self, pedalboard: Pedalboard.Pedalboard) -> None:
         logging.info("Pedalboard change")
-        if self.selected_pedalboard_index < len(self.pedalboard_list):
-            self.lcd.draw_info_message("Loading...")
+        self.lcd.draw_info_message("Loading...")
 
-            resp1 = req.get(self.root_uri + "reset")
-            if resp1.status_code != 200:
-                logging.error("Bad Reset request")
+        resp1 = req.get(self.root_uri + "reset")
+        if resp1.status_code != 200:
+            logging.error("Bad Reset request")
 
-            uri = self.root_uri + "pedalboard/load_bundle/"
-            bundlepath = self.pedalboard_list[self.selected_pedalboard_index].bundle
-            data = {"bundlepath": bundlepath}
-            resp2 = req.post(uri, data)
-            if resp2.status_code != 200:
-                logging.error("Bad Rest request: %s %s  status: %d" % (uri, data, resp2.status_code))
+        uri = self.root_uri + "pedalboard/load_bundle/"
+        data = {"bundlepath": pedalboard.bundle}
+        resp2 = req.post(uri, data)
+        if resp2.status_code != 200:
+            logging.error("Bad Rest request: %s %s  status: %d" % (uri, data, resp2.status_code))
 
-            # Now that it's presumably changed, load the dynamic "current" data
-            self.set_current_pedalboard(self.pedalboard_list[self.selected_pedalboard_index])
-            self.bot_encoder_mode = BotEncoderMode.DEFAULT
+        self.set_current_pedalboard(pedalboard)
+        self.bot_encoder_mode = BotEncoderMode.DEFAULT
 
     #
     # Preset Stuff
