@@ -347,6 +347,13 @@ class Hardware(ABC):
             fs.clear_relays()
         self.__init_footswitches(self.cfg)
 
+    def __clear_footswitch_midi_cc(self, fs) -> None:
+        fs.set_midi_CC(None)
+        for k, v in self.controllers.items():
+            if v == fs:
+                self.controllers.pop(k)
+                break
+
     def __init_footswitches(self, cfg):
         if cfg is None or (Token.HARDWARE not in cfg) or (Token.FOOTSWITCHES not in cfg[Token.HARDWARE]):
             return
@@ -380,11 +387,7 @@ class Hardware(ABC):
                 if Token.MIDI_CC in f:
                     cc = f[Token.MIDI_CC]
                     if cc == Token.NONE:
-                        fs.set_midi_CC(None)
-                        for k, v in self.controllers.items():
-                            if v == fs:
-                                self.controllers.pop(k)
-                                break
+                        self.__clear_footswitch_midi_cc(fs)
                     else:
                         fs.set_midi_channel(self.midi_channel)
                         fs.set_midi_CC(cc)
@@ -393,6 +396,7 @@ class Hardware(ABC):
 
                 # Preset Control
                 if Token.PRESET in f:
+                    self.__clear_footswitch_midi_cc(fs)
                     preset_value = f[Token.PRESET]
                     if preset_value == Token.UP:
                         fs.add_preset(callback=self.handler.preset_incr_and_change)
