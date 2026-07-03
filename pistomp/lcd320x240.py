@@ -845,12 +845,12 @@ class Lcd:
     # System Menu
     #
     def draw_system_menu(self, event, widget):
-        items = [("System info", self.draw_system_info_dialog, None),
-                 ("Tuner", self._toggle_tuner_from_menu, None),
-                 ("NAM Capture", self._open_nam_capture_from_menu, None),
+        items = [("Tuner", self._toggle_tuner_from_menu, None),
                  ("System shutdown", self.handler.system_menu_shutdown, None),
                  ("System reboot",  self.handler.system_menu_reboot, None),
+                 ("System info", self.draw_system_info_dialog, None),
                  ("Restart sound engine", self.handler.system_menu_restart_sound, None),
+                 ("NAM Capture", self._open_nam_capture_from_menu, None),
                  ("Bank Select >", self.draw_bank_menu, None),
                  ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None)]
         if self.handler.recovery_available:
