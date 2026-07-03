@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Callable, NotRequired, Optional, Protocol, Typ
 
 from PIL import ImageFont
 
+from common.fonts import font_path
+
 import common.util as util
 from modalapi.wifi import (
     ConnectSavedCmd,
@@ -101,7 +103,7 @@ class _PassphraseEditor(RoundedPanel):
         self._on_submit = on_submit
         self._curline = ''
 
-        font = ImageFont.truetype("DejaVuSans.ttf", 18)
+        font = ImageFont.truetype(font_path("DejaVuSans.ttf"), 18)
         box = Box(0, 0, 300, 80)
         box = box.centre(pstack.box)
         super().__init__(box=box, parent=pstack, auto_destroy=True)

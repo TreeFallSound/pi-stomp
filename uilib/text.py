@@ -18,6 +18,8 @@
 from math import log
 from PIL import ImageFont
 
+from common.fonts import font_path
+
 from uilib.panel import *
 from uilib.misc import *
 from uilib.config import *
@@ -135,7 +137,7 @@ class TextEditor(RoundedPanel):
         self.set_outline(2, (255,255,255))
         self.outline = 2
         self.curline = widget.text
-        self.font = ImageFont.truetype("DejaVuSans.ttf", 18)
+        self.font = ImageFont.truetype(font_path("DejaVuSans.ttf"), 18)
         bbox = self.font.getbbox(widget.edit_message)
         msg_w, msg_h = bbox[2] - bbox[0], bbox[3]
         msg_box = Box.xywh(10, 10, msg_w, msg_h)

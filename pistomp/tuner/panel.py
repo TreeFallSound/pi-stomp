@@ -5,6 +5,8 @@ from typing import Callable, Literal
 
 from PIL import ImageFont
 
+from common.fonts import font_path
+
 from uilib.box import Box
 from uilib.config import Config
 from uilib.misc import get_text_size
@@ -347,7 +349,7 @@ class TunerPanel(Panel):
         super().__init__(box=Box.xywh(0, 0, _W, 240), auto_destroy=True)
         self._engine = engine
 
-        note_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 56)
+        note_font = ImageFont.truetype(font_path("DejaVuSans-Bold.ttf"), 56)
         btn_font = Config().get_font("default")
         _, btn_text_h = get_text_size("Mute", btn_font)
         btn_v_margin = max(0, (_BTN_H - btn_text_h) // 2)

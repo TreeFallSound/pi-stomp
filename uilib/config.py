@@ -18,6 +18,8 @@
 import json
 from PIL import ImageFont
 
+from common.fonts import font_path, FONTS_DIR
+
 
 class Config:
     _instance = None
@@ -40,9 +42,9 @@ class Config:
 
     def _set_defaults(self):
         if "default" not in self.fonts:
-            self.add_font("default", "DejaVuSans.ttf", 16)
+            self.add_font("default", font_path("DejaVuSans.ttf"), 16)
         if "default_title" not in self.fonts:
-            self.add_font("default_title", "DejaVuSans-Bold.ttf", 16)
+            self.add_font("default_title", font_path("DejaVuSans-Bold.ttf"), 16)
         if "default_fgnd" not in self.colors:
             self.add_color("default_fgnd", (255, 255, 255))
         if "default_bkgnd" not in self.colors:
@@ -90,7 +92,8 @@ class Config:
                 except KeyError as e:
                     print("Error loading font:", e)
                 else:
-                    self.add_font(l, n, s)
+                    candidate = FONTS_DIR / n
+                    self.add_font(l, str(candidate) if candidate.exists() else n, s)
         if "colors" in data:
             colors = data["colors"]
             for color_def in colors:

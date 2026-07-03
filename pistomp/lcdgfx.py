@@ -25,6 +25,8 @@ from PIL import Image, ImageFont, ImageDraw
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
 
+from common.fonts import font_path
+
 
 class Lcd(abstract_lcd.Lcd):
     __single = None
@@ -95,12 +97,12 @@ class Lcd(abstract_lcd.Lcd):
                      ImageDraw.Draw(self.images[6]), ImageDraw.Draw(self.images[7])]
 
         # Load fonts
-        self.splash_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 18)
-        self.title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 11)
-        self.label_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 10)
-        self.small_bold_font = ImageFont.truetype("DejaVuSansMono-Bold.ttf", 8)
-        #self.small_font = ImageFont.truetype("DejaVuSansMono.ttf", 8)
-        self.small_font = ImageFont.truetype(os.path.join(cwd, "fonts", "EtBt6001-JO47.ttf"), 6)
+        self.splash_font = ImageFont.truetype(font_path("DejaVuSans-Bold.ttf"), 18)
+        self.title_font = ImageFont.truetype(font_path("DejaVuSans-Bold.ttf"), 11)
+        self.label_font = ImageFont.truetype(font_path("DejaVuSans-Bold.ttf"), 10)
+        self.small_bold_font = ImageFont.truetype(font_path("DejaVuSansMono-Bold.ttf"), 8)
+        #self.small_font = ImageFont.truetype(font_path("DejaVuSansMono.ttf"), 8)
+        self.small_font = ImageFont.truetype(font_path("EtBt6001-JO47.ttf"), 6)
 
         # Splash
         text_im = Image.new('L', (103, 63))

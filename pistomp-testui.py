@@ -12,6 +12,8 @@ from pistomp import encoderswitch
 
 import random
 
+from common.fonts import font_path
+
 lcd = LcdIli9341(board.SPI(),
                  digitalio.DigitalInOut(board.CE0),
                  digitalio.DigitalInOut(board.D6),
@@ -81,7 +83,7 @@ def do_param_dialog(event, data):
 
 def do_main_screen():
 
-    title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 26)
+    title_font = ImageFont.truetype(font_path("DejaVuSans-Bold.ttf"), 26)
     display_width = 320
     display_height = 240
     plugin_width = 79

@@ -26,6 +26,9 @@ import adafruit_rgb_display.st7789 as st7789
 
 import ST7789
 
+from common.fonts import font_path
+
+
 class Lcd(ABC):
 
     def __init__(self, cwd):
@@ -61,9 +64,9 @@ class Lcd(ABC):
 
         # Font
         self.font_size = 26
-        self.font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', self.font_size)
+        self.font = ImageFont.truetype(font_path("DejaVuSans.ttf"), self.font_size)
         self.splash_font_size = 40
-        self.splash_font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', self.splash_font_size)
+        self.splash_font = ImageFont.truetype(font_path("DejaVuSans.ttf"), self.splash_font_size)
 
         # Turn on the backlight
         backlight = digitalio.DigitalInOut(board.D22)
