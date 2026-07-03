@@ -29,6 +29,7 @@ from uilib.config import Config
 from common.color import ColorRGB, RectBorder
 
 from uilib.glyphs import RoundedRectGlyph
+from uilib.radius import Radius
 
 from common.fonts import font_path
 
@@ -398,7 +399,7 @@ class PluginTile(TextWidget):
         return RoundedRectGlyph(
             width=self.box.width,
             height=self.box.height,
-            radius=self.outline_radius or 0,
+            radius=Radius.uniform(self.outline_radius or 0),
             fill=self.bkgnd_color,
             border=self._get_border(),
         )

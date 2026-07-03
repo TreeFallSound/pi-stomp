@@ -22,6 +22,7 @@ from uilib.box import Box
 from uilib.config import Color
 from uilib.misc import InputEvent, WidgetAlign, trace
 from uilib.paint import ColorLike, PaintContext
+from uilib.radius import Radius
 
 if TYPE_CHECKING:
     from uilib.container import ContainerWidget
@@ -557,7 +558,7 @@ class Widget:
             glyph = RoundedRectGlyph(
                 width=ctx.width,
                 height=ctx.height,
-                radius=radius or 0,
+                radius=Radius.uniform(radius or 0),
                 fill=None,
                 border=RectBorder(top=sel_color, right=sel_color, bottom=sel_color, left=sel_color),
                 border_width=self.sel_width,

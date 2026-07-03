@@ -22,6 +22,8 @@ import pygame
 from uilib import profiling
 from uilib.box import Box
 from uilib.container import ContainerWidget
+from uilib.glyphs import render_rounded_mask, render_rounded_outline
+from uilib.radius import Radius
 from uilib.widget import Widget
 from uilib.misc import InputEvent, trace
 from uilib.paint import PaintContext, _pg_rect
@@ -281,11 +283,7 @@ class RoundedPanel(Panel):
 
     def _build_shape_mask(self) -> pygame.Surface:
         """Build the per-corner viewport-sized alpha mask for this panel's outline shape."""
-        size = (int(self.box.width), int(self.box.height))
-        mask = pygame.Surface(size, pygame.SRCALPHA)
-        mask.fill((0, 0, 0, 0))
-        pygame.draw.rect(mask, (255, 255, 255, 255), pygame.Rect(0, 0, size[0], size[1]), 0, border_radius=self.radius)
-        return mask
+        return render_rounded_mask(int(self.box.width), int(self.box.height), Radius.uniform(self.radius))
 
     def _setup(self):
         super()._setup()
@@ -319,7 +317,8 @@ class RoundedPanel(Panel):
     def _draw_outline(self, ctx):
         if self.outline != 0:
             color = self.outline_color if self.outline_color is not None else self.fgnd_color
-            ctx.draw_rectangle(ctx.bounds, None, color, self.outline, radius=self.radius)
+            surf = render_rounded_outline(ctx.width, ctx.height, Radius.uniform(self.radius), color, self.outline)
+            ctx.paste(surf, (0, 0))
 
 
 class LcdBase(ABC):
