@@ -22,6 +22,7 @@ import pygame
 from uilib.box import Box
 from uilib.radius import Radius
 from uilib.config import Config
+from uilib.glyphs import render_rounded_fill, render_rounded_mask, render_rounded_outline
 from uilib.panel import PanelDecorator, RoundedPanel
 from uilib.text import TextWidget
 from uilib.misc import WidgetAlign, TextHAlign, get_text_size, trace
@@ -62,20 +63,32 @@ class DialogDecorator(PanelDecorator):
 
     @override
     def _draw_erase(self, ctx):
-        # Paint only the titlebar strip — the panel body owns its own pixels,
-        # and filling under it would leak through any transparent areas.
+        # Titlebar strip only — the panel body owns its pixels; filling under
+        # it would leak through any transparent areas.
         pb = self.panel.box
         if pb is None or self.box is None:
             return
         titlebar_h = pb.y0 - self.box.y0  # decorator-local
         strip = Box(0, 0, self.box.width, titlebar_h)
-        ctx.draw_rectangle(strip, fill=self.bkgnd_color, radius=Radius.top(self.outline_radius or 0))
+        surf = render_rounded_fill(strip.width, strip.height, Radius.top(self.outline_radius or 0), self.bkgnd_color)
+        ctx.paste(surf, (0, 0))
 
     def _draw(self, ctx):
         trace(self, "DialogDecorator draw, self.box=", self.box)
         y = self.th + 1
         # The +2 here is magic ... need to figure out what's up, otherwise we get only 1 pixel
         ctx.draw_line(((0, y), (ctx.width - self.outline, y)), fill=self.fgnd_color, width=self.outline + 2)
+
+    @override
+    def _draw_outline(self, ctx):
+        # Decorator box spans titlebar + body as one rounded rect; analytic-AA
+        # tiles instead of the base Widget's jaggy pygame.draw.rect stroke.
+        if self.outline != 0:
+            color = self.outline_color if self.outline_color is not None else self.fgnd_color
+            surf = render_rounded_outline(
+                ctx.width, ctx.height, Radius.uniform(self.outline_radius or 0), color, self.outline
+            )
+            ctx.paste(surf, (0, 0))
 
 
 class Dialog(RoundedPanel):
@@ -111,20 +124,9 @@ class Dialog(RoundedPanel):
 
     @override
     def _build_shape_mask(self) -> pygame.Surface:
-        # Only the bottom corners round — the titlebar decorator owns the top
-        # corners and the panel's top edge must stay square to meet it
-        # seamlessly.
-        size = (int(self.box.width), int(self.box.height))
-        mask = pygame.Surface(size, pygame.SRCALPHA)
-        mask.fill((0, 0, 0, 0))
-        pygame.draw.rect(
-            mask,
-            (255, 255, 255, 255),
-            pygame.Rect(0, 0, size[0], size[1]),
-            0,
-            **Radius.bottom(self.radius).as_pygame_kwargs(),
-        )
-        return mask
+        # Bottom corners only — the titlebar owns the top, so the panel's top
+        # edge must stay square to meet it seamlessly.
+        return render_rounded_mask(int(self.box.width), int(self.box.height), Radius.bottom(self.radius))
 
     def tick(self) -> None:
         pass
