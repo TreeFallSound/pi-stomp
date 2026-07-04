@@ -3,6 +3,7 @@
 from modalapi.ws_protocol import (
     AddHwPortMessage,
     AddPluginMessage,
+    BeatSyncMessage,
     ConnectMessage,
     DisconnectMessage,
     LoadingEndMessage,
@@ -233,6 +234,41 @@ def test_transport_malformed_bpm_is_unknown():
     assert parse_message("transport 1 4.0 notanumber Internal") == UnknownMessage(
         raw="transport 1 4.0 notanumber Internal"
     )
+
+
+# ---------------------------------------------------------------------------
+# beat_sync (beat_sync {bar} {t_us} {bpm} {bpb})
+# ---------------------------------------------------------------------------
+
+
+def test_beat_sync_basic():
+    assert parse_message("beat_sync 5 1234567890 120.0 4") == BeatSyncMessage(
+        bar=5, t_us=1234567890, bpm=120.0, bpb=4.0
+    )
+
+
+def test_beat_sync_bar_zero():
+    assert parse_message("beat_sync 0 0 60.0 3") == BeatSyncMessage(
+        bar=0, t_us=0, bpm=60.0, bpb=3.0
+    )
+
+
+def test_beat_sync_fractional_bpb():
+    assert parse_message("beat_sync 1 1000000 90.5 7") == BeatSyncMessage(
+        bar=1, t_us=1000000, bpm=90.5, bpb=7.0
+    )
+
+
+def test_beat_sync_too_few_fields_is_unknown():
+    assert isinstance(parse_message("beat_sync 5 1234567890 120.0"), UnknownMessage)
+
+
+def test_beat_sync_non_int_t_us_is_unknown():
+    assert isinstance(parse_message("beat_sync 5 notanumber 120.0 4"), UnknownMessage)
+
+
+def test_beat_sync_non_float_bpm_is_unknown():
+    assert isinstance(parse_message("beat_sync 5 1234567890 notanumber 4"), UnknownMessage)
 
 
 def test_plugin_bypass_nonzero_is_true():

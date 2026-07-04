@@ -55,6 +55,7 @@ from modalapi.ws_protocol import (
     PedalSnapshotMessage,
     PluginBypassMessage,
     TransportMessage,
+    BeatSyncMessage,
     AddPluginMessage,
     RemovePluginMessage,
     ConnectMessage,
@@ -70,6 +71,7 @@ from pistomp.current import Current
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
 from pistomp.footswitch_chords import FootswitchChords
+from pistomp.beatsync import BeatGrid
 from pistomp.input.event import (
     AnalogEvent,
     ControllerEvent,
@@ -83,6 +85,14 @@ from pistomp.tuner.client import TunerClient
 from pistomp.tuner.engine import TunerBackend, TunerEngine
 from rtmidi.midiconstants import CONTROL_CHANGE
 from pathlib import Path
+
+
+_METRONOME_DOWNBEAT_RGB = (255, 255, 255)
+_METRONOME_BEAT_RGB = (180, 180, 180)
+
+
+def _now_us() -> int:
+    return int(time.clock_gettime(time.CLOCK_MONOTONIC) * 1_000_000)
 
 
 class Modhandler(Handler):
@@ -182,6 +192,8 @@ class Modhandler(Handler):
 
         # Footswitch longpress/chord resolver (rebuilt on pedalboard change)
         self.chord_helper = FootswitchChords()
+
+        self.beat_grid = BeatGrid()
 
     def cleanup(self):
         if self._tuner_muted:
@@ -336,6 +348,33 @@ class Modhandler(Handler):
     def poll_indicators(self):
         if self.hardware:
             self.hardware.poll_indicators()
+        self._drive_metronome()
+
+    def _drive_metronome(self):
+        fs = self._taptempo_footswitch()
+        if fs is None:
+            return
+        state = self.beat_grid.tick(_now_us())
+        if state.is_flashing:
+            if fs.pixel is not None:
+                rgb = _METRONOME_DOWNBEAT_RGB if state.is_bar_start else _METRONOME_BEAT_RGB
+                fs.pixel.set_color(rgb)
+                fs.pixel.set_enable(True)
+            if fs.led is not None:
+                fs.led.on()
+        else:
+            if fs.pixel is not None:
+                fs.pixel.set_enable(False)
+            if fs.led is not None:
+                fs.led.off()
+
+    def _taptempo_footswitch(self):
+        if self.hardware is None:
+            return None
+        for fs in self.hardware.footswitches:
+            if fs.taptempo is not None:
+                return fs
+        return None
 
     def poll_wifi(self):
         self.wifi_manager.poll()
@@ -613,6 +652,11 @@ class Modhandler(Handler):
                 if self.hardware.taptempo.is_enabled():
                     fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
                     self.update_lcd_fs(footswitch=fs)
+            if not msg.rolling:
+                self.beat_grid.clear()
+
+        elif isinstance(msg, BeatSyncMessage):
+            self.beat_grid.on_anchor(msg)
 
         elif isinstance(msg, ParamSetMessage):
             # Mirror mod-ui's live value: refresh the cache (so a later edit opens

@@ -97,13 +97,23 @@ class TransportMessage:
 
 
 @dataclass
+class BeatSyncMessage:
+    """A downbeat occurred. `t_us` is back-dated to the actual downbeat frame (CLOCK_MONOTONIC)."""
+
+    bar: int
+    t_us: int
+    bpm: float
+    bpb: float
+
+
+@dataclass
 class AddPluginMessage:
     """Plugin present in a (re)connect/load dump, or dynamically added (add ...)."""
 
     instance: str  # canonical bare form, e.g. "CollisionDrive"
-    uri: str       # LV2 plugin URI
-    x: float       # mod-ui canvas X
-    y: float       # mod-ui canvas Y
+    uri: str  # LV2 plugin URI
+    x: float  # mod-ui canvas X
+    y: float  # mod-ui canvas Y
     bypassed: bool
 
 
@@ -119,7 +129,7 @@ class ConnectMessage:
     """Two ports connected in the active pedalboard (connect ...)."""
 
     port_from: str  # e.g. "/graph/PluginA/out_L"
-    port_to: str    # e.g. "/graph/PluginB/in_L"
+    port_to: str  # e.g. "/graph/PluginB/in_L"
 
 
 @dataclass
@@ -172,6 +182,7 @@ WebSocketMessage = Union[
     TrueBypassMessage,
     PluginBypassMessage,
     TransportMessage,
+    BeatSyncMessage,
     AddPluginMessage,
     RemovePluginMessage,
     ConnectMessage,
@@ -303,6 +314,16 @@ def parse_message(raw_message: str) -> WebSocketMessage:
             case ["transport", rolling, rest]:
                 bpm = float(rest.split()[1])
                 return TransportMessage(rolling=rolling != "0", bpm=bpm)
+
+            # Format: beat_sync {bar} {t_us} {bpm} {bpb}
+            case ["beat_sync", bar, rest]:
+                t_us, bpm, bpb = rest.split(" ")
+                return BeatSyncMessage(
+                    bar=int(bar),
+                    t_us=int(t_us),
+                    bpm=float(bpm),
+                    bpb=float(bpb),
+                )
 
     except (ValueError, IndexError) as e:
         logging.warning(f"Failed to parse WebSocket message '{raw_message}': {e}")
