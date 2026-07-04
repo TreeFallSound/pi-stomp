@@ -193,6 +193,7 @@ class Modhandler(Handler):
         self.chord_helper = FootswitchChords()
 
         self.beat_grid = BeatGrid()
+        self._taptempo_fs_cache: Footswitch | None = None
 
     def cleanup(self):
         if self._tuner_muted:
@@ -343,6 +344,11 @@ class Modhandler(Handler):
         if fs is None:
             return
         state = self.beat_grid.tick(_now_us())
+        if not state.is_anchored:
+            # Unanchored: leave the LED/pixel alone so Footswitch.set_led's
+            # own taptempo blink (or normal toggle state) isn't clobbered
+            # every 20ms tick.
+            return
         if state.is_flashing:
             if fs.pixel is not None:
                 rgb = _METRONOME_DOWNBEAT_RGB if state.is_bar_start else _METRONOME_BEAT_RGB
@@ -357,12 +363,12 @@ class Modhandler(Handler):
                 fs.led.off()
 
     def _taptempo_footswitch(self):
-        if self.hardware is None:
-            return None
-        for fs in self.hardware.footswitches:
-            if fs.taptempo is not None:
-                return fs
-        return None
+        if self._taptempo_fs_cache is None and self.hardware is not None:
+            for fs in self.hardware.footswitches:
+                if fs.taptempo is not None:
+                    self._taptempo_fs_cache = fs
+                    break
+        return self._taptempo_fs_cache
 
     def poll_wifi(self):
         self.wifi_manager.poll()

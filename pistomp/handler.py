@@ -151,7 +151,6 @@ class Handler(InputSink):
                 # (e.g. a plugin's "reset" port learned to this CC).
                 self._emit_midi(fs, 127, cc=fs.longpress_midi_CC)
             else:
-                # TODO: consider case where relay and longpress are specified
                 self.chord_helper.observe(fs, timestamp)
             return True
 
