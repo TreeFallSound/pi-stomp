@@ -33,7 +33,6 @@ import modalapi.wifi as Wifi
 import modalapi.external_midi as ExternalMidi
 from pistomp.encoder_controller import EncoderController
 from pistomp.input.event import AnalogEvent, ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
-from rtmidi.midiconstants import CONTROL_CHANGE
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
 from typing import Optional
@@ -260,19 +259,6 @@ class Mod(Handler):
         if isinstance(c, Footswitch):
             return self._handle_footswitch(c, event.kind, event.timestamp)
         return False
-
-    def _emit_midi(self, controller, midi_value: int) -> None:
-        if controller.midi_CC is None:
-            return
-        cc = [controller.midi_channel | CONTROL_CHANGE, controller.midi_CC, int(midi_value)]
-        port_name = self.hardware.external_port_name(controller)
-        if port_name is not None and self.external_midi is not None:
-            try:
-                if self.external_midi.send_raw(port_name, cc):
-                    return
-            except Exception as e:
-                logging.warning("External CC send failed on %s: %s", port_name, e)
-        self.hardware.midiout.send_message(cc)
 
     def add_lcd(self, lcd):
         self.lcd = lcd

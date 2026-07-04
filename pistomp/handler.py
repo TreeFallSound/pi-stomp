@@ -16,7 +16,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
+
+from rtmidi.midiconstants import CONTROL_CHANGE
 
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.current import Current
@@ -143,6 +146,10 @@ class Handler(InputSink):
                 fs.toggle_relays(new_toggled)
                 fs.set_led(new_toggled)
                 self.update_lcd_fs(bypass_change=True)
+            elif fs.longpress_midi_CC is not None:
+                # Momentary trigger CC, distinct from the short-press binding
+                # (e.g. a plugin's "reset" port learned to this CC).
+                self._emit_midi(fs, 127, cc=fs.longpress_midi_CC)
             else:
                 # TODO: consider case where relay and longpress are specified
                 self.chord_helper.observe(fs, timestamp)
@@ -174,8 +181,23 @@ class Handler(InputSink):
             if cb:
                 cb()
 
-    def _emit_midi(self, controller, midi_value: int) -> None:
-        raise NotImplementedError()
+    def _emit_midi(self, controller, midi_value: int, cc: int | None = None) -> None:
+        """Send a CC via this controller's binding, or an explicit override CC
+        (e.g. a footswitch's longpress trigger, distinct from its short-press
+        binding). Tries the controller's routed external port; falls back to
+        the virtual MIDI Through port."""
+        cc_num = cc if cc is not None else controller.midi_CC
+        if cc_num is None:
+            return
+        message = [controller.midi_channel | CONTROL_CHANGE, cc_num, int(midi_value)]
+        port_name = self.hardware.external_port_name(controller)
+        if port_name is not None and self.hardware.external_midi is not None:
+            try:
+                if self.hardware.external_midi.send_raw(port_name, message):
+                    return
+            except Exception as e:
+                logging.warning("External CC send failed on %s: %s", port_name, e)
+        self.hardware.midiout.send_message(message)
 
     def cleanup(self):
         raise NotImplementedError()

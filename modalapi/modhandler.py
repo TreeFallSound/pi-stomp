@@ -83,7 +83,6 @@ import pistomp.switchstate as switchstate
 from pistomp.tuner import TunerPanel, TunerSourceFactory
 from pistomp.tuner.client import TunerClient
 from pistomp.tuner.engine import TunerBackend, TunerEngine
-from rtmidi.midiconstants import CONTROL_CHANGE
 from pathlib import Path
 
 
@@ -320,17 +319,6 @@ class Modhandler(Handler):
         if isinstance(controller, Footswitch):
             return self._handle_footswitch(controller, event.kind, event.timestamp)
         return False
-
-    def _emit_midi(self, controller, midi_value: int) -> None:
-        """Send a CC. Tries the external port if routed; falls back to virtual."""
-        if controller.midi_CC is None:
-            return
-        cc = [controller.midi_channel | CONTROL_CHANGE, controller.midi_CC, int(midi_value)]
-        port_name = self.hardware.external_port_name(controller)
-        if port_name is not None and self.external_midi is not None:
-            if self.external_midi.send_raw(port_name, cc):
-                return
-        self.hardware.midiout.send_message(cc)
 
     def add_lcd(self, lcd):
         self._lcd = lcd

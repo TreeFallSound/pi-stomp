@@ -42,6 +42,7 @@ class Footswitch(controller.Controller):
         self.category = None
         self.pixel = pixel
         self.longpress_groups = []
+        self.longpress_midi_CC = None
         self.disabled = False
         self.taptempo = taptempo
 
@@ -133,6 +134,16 @@ class Footswitch(controller.Controller):
 
     def set_lcd_color(self, color):
         self.lcd_color = color
+
+    def set_longpress(self, value):
+        """Apply the raw 'longpress' config value: a group name, a list of
+        group names, a {midi_CC: N} object, or None."""
+        if isinstance(value, dict):
+            self.longpress_midi_CC = value.get(Token.MIDI_CC)
+            self.longpress_groups = []
+        else:
+            self.longpress_midi_CC = None
+            self.set_longpress_groups(value)
 
     def set_longpress_groups(self, groups):
         if groups is None:

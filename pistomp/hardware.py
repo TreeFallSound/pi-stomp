@@ -512,9 +512,9 @@ class Hardware(ABC):
                 if Token.COLOR in f:
                     fs.set_lcd_color(f[Token.COLOR])
 
-                # Longpress and longpress groups
-                if Token.LONGPRESS in f:  # Can be a list or a single (string)
-                    fs.set_longpress_groups(Util.DICT_GET(f, Token.LONGPRESS))
+                # Longpress: a group name, a list of group names, or {midi_CC: N}
+                if Token.LONGPRESS in f:
+                    fs.set_longpress(Util.DICT_GET(f, Token.LONGPRESS))
 
             idx += 1
 
