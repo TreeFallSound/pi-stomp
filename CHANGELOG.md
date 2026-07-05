@@ -4,6 +4,68 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [v3.2.0] - 2026-07-05
+### Added
+- Notes panel for pedalboard/plugin annotations, with `✎` prefix on the pedalboard grid
+- New plugin panels: CAPS Noisegate, DISTRHO Compressor, Reverb (with mode selector), GX Cabinet
+- More EQ plugin types (parametric, graphic, custom)
+- Plugin panels can now render as non-fullscreen dialogs
+- Footswitch preset switches show the snapshot name on the label and light the LCD indicator for the active snapshot
+- Hardware analog clipping detection during NAM capture
+
+### Changed
+- Analytic rounded-rect rendering for plugin windows, dialogs, and the selection reticule
+- Plugin window UI now consistent with menus; vertical centering for large dialogs
+- NAM plugins get their own distinct "T3K" visual style, subtitle, and label
+- Analog controls aligned to pedal columns
+- Re-ordered system menu; most useful things up top
+- NAM training: subprocess split, silence detection, lower CPU usage
+- NAM capture: improved silence detection/expiration decay and status messaging
+
+### Fixed
+- Fix inverted Q factor in x42 EQ panel (thanks @maarthome!)
+- Fix pedal layout overlapping
+- (v3) Fix plugin panels not refreshing bypass on main screen
+- Fix non-idempotent plugin tile renders
+- Fix dirty corner invalidation
+- Footswitch preset bindings no longer leak across pedalboard loads
+- Ethernet Audio Interface dialog: stop rebuilding every 2s and on every button press, fixing unresponsive buttons and SPI-blit visual glitches
+- Brighten disabled footswitch label text for legibility
+- Ensure parameter menus never crash
+
+## [v3.1.0] - 2026-06-20
+### Added
+- On-device (LCD) strobe tuner with mute (v3 hardware only). Defaults to longpress on footswitch C
+- Sync LCD and MOD-UI using WebSocket bridge (replaces last.json polling)
+- Blend mode for parameter blending between snapshots
+- Optional autosync for one-time send of MIDI CCs to current analog positions
+- New wifi menu with scanning, multiple saved networks and in-progress animation
+- Configurable LCD SPI speed via system menu
+- Unit and integration tests with test harness
+- `deploy.sh` to deploy your local code to the device
+- `update.sh` for git pull + uv sync on-device
+- `./run_emulator.sh [v1|v2|v3]`; v3 default; requires [MOD Desktop](https://mod.audio/desktop/)
+
+### Fixed
+- Users can now enter spaces in the letter selector (used for wifi config)
+- Reduced footswitch and encoder burst latency
+- Fix pedalboard reload detection crash
+- Fix analog endpoint clamping
+- Fix WiFi open networks and hotspot switching
+- Fix menu scrolling for long lists
+- Various type safety and dependency fixes (pillow, numpy, pi deps)
+
+### Changed
+- Upgrade Neural Amp Modeler plugin to version 2.0 which includes support for A2 models (and quality scaling)
+- Migrate dev dependencies to dependency-groups (uv)
+- Add pyright type checking, ruff linting
+- Move fonts to `fonts/` directory (DejaVu)
+
+## [v3.0.5] - 2026-06-12
+No functional changes relative to v3.0.4
+Prior releases did not correctly declare AGPL-3.0 licensing in accordance with included components.
+This release corrects that. We have superseded prior releases accordingly.
+
 ## [v3.0.4] - 2026-04-09
 ### Added
 - Add GUIDE.md for developer documentation
