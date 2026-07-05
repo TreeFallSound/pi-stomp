@@ -221,6 +221,14 @@ def test_system_menu_snapshot(lcd, snapshot):
     snapshot()
 
 
+def test_system_info_dialog_snapshot(lcd, snapshot):
+    """The System Info MessageDialog must show all 5 lines without clipping."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    instance.draw_system_info_dialog(None)
+    snapshot()
+
+
 def test_parameter_dialog_snapshot(lcd, snapshot):
     instance, _ = lcd
     setup_main_ui(instance)

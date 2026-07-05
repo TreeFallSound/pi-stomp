@@ -892,7 +892,7 @@ class Lcd:
             self.handler.SystemState,
             self.handler.temperature,
             self.handler.throttled)
-        d = MessageDialog(self.pstack, msg, title="System Info", width=300, height=130)
+        d = MessageDialog(self.pstack, msg, title="System Info", width=300, height=140)
         self.pstack.push_panel(d)
 
     def draw_bank_menu(self, event):

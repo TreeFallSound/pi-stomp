@@ -1049,27 +1049,45 @@ class Modhandler(Handler):
     # System Menu
     #
     def system_info_load(self):
-        try:
-            output = subprocess.check_output(
-                [
-                    "git",
-                    "--git-dir",
-                    self.homedir + "/.git",
-                    "--work-tree",
-                    self.homedir,
-                    "describe",
-                    "--dirty=*",
-                    "--always",
-                ]
-            )
-            if output:
-                self.software_version = output.decode()
-                logging.info("pi-Stomp Software Version: %s" % self.software_version)
-        except subprocess.CalledProcessError:
+        # see util/expand-git.sh
+        expanded = Path(self.homedir + "/.git/EXPANDED").exists()
+        if expanded:
+            try:
+                output = subprocess.check_output(
+                    [
+                        "git",
+                        "--git-dir",
+                        self.homedir + "/.git",
+                        "--work-tree",
+                        self.homedir,
+                        "describe",
+                        "--dirty=*",
+                        "--always",
+                    ]
+                )
+                if output:
+                    self.software_version = output.decode()
+                    logging.info("pi-Stomp Software Version: %s" % self.software_version)
+            except subprocess.CalledProcessError:
+                logging.error("Cannot obtain git software version info")
+        else:
             try:
                 output = subprocess.check_output(["dpkg-query", "--showformat=${Version}", "--show", "pi-stomp"])
                 self.software_version = output.decode().strip()
                 logging.info("pi-Stomp Software Version (pkg): %s" % self.software_version)
+                # dpkg equivalent of `git describe --dirty=*`: append an
+                # asterisk when on-disk package contents have drifted from
+                # the .deb's recorded md5sums (e.g. after ./deploy.sh or
+                # manual edits). Skipped silently on non-dpkg systems.
+                try:
+                    verify = subprocess.run(
+                        ["dpkg", "--verify", "pi-stomp"],
+                        capture_output=True, text=True, check=False,
+                    )
+                    if verify.stdout.strip() or verify.stderr.strip():
+                        self.software_version += "*"
+                except (FileNotFoundError, OSError):
+                    pass
             except subprocess.CalledProcessError:
                 logging.error("Cannot obtain software version info")
 
