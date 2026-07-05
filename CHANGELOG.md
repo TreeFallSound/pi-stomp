@@ -6,21 +6,29 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [v3.2.0] - 2026-07-05
 ### Added
+- Pedalboard signal-path routing: the main screen now derives the real plugin graph from MOD-UI and lays pedals out to reflect actual topology (linear chains, parallel splits, stereo chains, split/merge), instead of a flat list
+- Live pedalboard editing: plugins added, removed, or rewired in MOD-UI now update pi-Stomp's on-screen routing graph and footswitch/control bindings immediately over WebSocket, without a full pedalboard reload
+- Dedicated x42 (fil4) parametric EQ panel with a live frequency-response graph; select a band and use the encoders to tweak gain, frequency, and Q with the curve updating live
 - Notes panel for pedalboard/plugin annotations, with `✎` prefix on the pedalboard grid
-- New plugin panels: CAPS Noisegate, DISTRHO Compressor, Reverb (with mode selector), GX Cabinet
+- New plugin panels: CAPS Noisegate, DISTRHO Compressor, Reverb (with mode seector), GX Cabinet
 - More EQ plugin types (parametric, graphic, custom)
 - Plugin panels can now render as non-fullscreen dialogs
 - Footswitch preset switches show the snapshot name on the label and light the LCD indicator for the active snapshot
-- Hardware analog clipping detection during NAM capture
+- NAM Capture panel: record amp/pedal reamp sweeps to train Neural Amp Modeler profiles, with live input/output level meters, clipping detection, and progress display
+- External MIDI: route any control (footswitch, knob, expression pedal, encoder) to a real external MIDI device (e.g. Source Audio C4, Line 6 HX Stomp) via `midi_port:` config, with auto-detection by device name and automatic value sync to the external device on pedalboard load
+- Long pedalboard/preset names and menu text that don't fit the LCD now scroll (ping-pong) instead of being truncated
+- Recovery mode menu item in the system menu
 
 ### Changed
+- Footswitches redesigned: bypass/active state shown with consistent "dot" indicators across all screens, keycap-style labels, and a recessed shrouded tray for better legibility
+- Tap-tempo visual redesign
 - Analytic rounded-rect rendering for plugin windows, dialogs, and the selection reticule
 - Plugin window UI now consistent with menus; vertical centering for large dialogs
 - NAM plugins get their own distinct "T3K" visual style, subtitle, and label
 - Analog controls aligned to pedal columns
 - Re-ordered system menu; most useful things up top
-- NAM training: subprocess split, silence detection, lower CPU usage
-- NAM capture: improved silence detection/expiration decay and status messaging
+- More reliable clean shutdown on SIGTERM
+- JACK clients now run as their own subprocess to ensure pi-Stomp never takes R/T priority
 
 ### Fixed
 - Fix inverted Q factor in x42 EQ panel (thanks @maarthome!)
