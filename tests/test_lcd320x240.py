@@ -238,6 +238,71 @@ def test_parameter_dialog_snapshot(lcd, snapshot):
     snapshot()
 
 
+def _mock_param(**overrides):
+    defaults = dict(
+        name="Gain",
+        symbol="gain",
+        instance_id="delay",
+        value=0.5,
+        minimum=0.0,
+        maximum=1.0,
+        type=MockObject(value=0),
+        get_taper=lambda: 1,
+        format=lambda v: f"{v:.2f}",
+    )
+    defaults.update(overrides)
+    return MockObject(**defaults)
+
+
+def test_tweak_dialog_has_no_timeout_and_shows_close_button(lcd):
+    """Tweak-encoder edits (display_parameter_value) must stay open with a Close button."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    d = instance.draw_parameter_dialog(_mock_param())
+    assert d.timeout is None
+    assert any(getattr(w, "text", None) == "Close" for w in d.children)
+
+
+def test_tweak_dialog_never_autocloses(lcd):
+    instance, _ = lcd
+    setup_main_ui(instance)
+    d = instance.draw_parameter_dialog(_mock_param())
+    d.parameter_value_change(1)  # simulate a tweak; reset_timeout() is a no-op when timeout is None
+    assert d.expiry_time is None
+    d.tick()
+    assert d.parent is not None  # still open
+
+
+def test_volume_dialog_autocloses_and_has_no_close_button(lcd):
+    """The Volume/audio-card dialog must autoclose and never show a Close button."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    d = instance.draw_audio_parameter_dialog(_mock_param(name="Volume"), commit_callback=lambda *_: None)
+    assert d.timeout is not None
+    assert not any(getattr(w, "text", None) == "Close" for w in d.children)
+
+
+def test_volume_dialog_autocloses_after_timeout(lcd):
+    instance, _ = lcd
+    setup_main_ui(instance)
+    d = instance.draw_audio_parameter_dialog(_mock_param(name="Volume"), commit_callback=lambda *_: None)
+    d.expiry_time = 1  # force expiry without sleeping
+    d.tick()
+    assert d.parent is None  # popped
+
+
+def test_volume_dialog_still_autocloses_after_being_updated_again(lcd):
+    """Regression: turning the volume encoder again (update_value) must keep autoclose armed."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    d = instance.draw_audio_parameter_dialog(_mock_param(name="Volume"), commit_callback=lambda *_: None)
+    d.update_value(0.7)
+    assert d.timeout is not None
+    d.expiry_time = 1
+    d.tick()
+    assert d.parent is None
+
+
 def test_plugin_longpress_opens_parameter_menu(lcd, snapshot):
     """Long-click on a selected plugin widget opens the parameter menu."""
     instance, _ = lcd

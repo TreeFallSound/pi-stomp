@@ -928,7 +928,7 @@ class Lcd:
         return d
 
     def display_parameter_value(self, parameter: Parameter, value: float) -> None:
-        d = self.draw_parameter_dialog(parameter, timeout=PARAMETER_DIALOG_TIMEOUT)
+        d = self.draw_parameter_dialog(parameter)
         if isinstance(d, Parameterdialog):
             d.update_value(value)
 
