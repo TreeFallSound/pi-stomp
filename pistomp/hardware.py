@@ -24,6 +24,8 @@ import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.encoder_controller as EncoderController
 import pistomp.footswitch as Footswitch
 import pistomp.taptempo as taptempo
+from pistomp.midi_input_control import MidiInputControl
+from pistomp.midi_input_manager import MidiInputManager
 
 from abc import ABC, abstractmethod
 from rtmidi import MidiOut
@@ -52,7 +54,7 @@ class Hardware(ABC):
 
         # Standard hardware objects (not required to exist)
         self.relay: Relay.Relay | None = None
-        self.analog_controls: list[AnalogMidiControl.AnalogMidiControl] = []
+        self.analog_controls: list[AnalogMidiControl.AnalogMidiControl | MidiInputControl] = []
         self.encoders = []
         self.controllers: dict[str, Controller] = {}
         self.footswitches: list[Footswitch.Footswitch] = []
@@ -61,6 +63,9 @@ class Hardware(ABC):
         self.ledstrip = None
         self.taptempo = taptempo.TapTempo(None)
         self.external_midi: ExternalMidiManager | None = None
+        # Owns rtmidi input ports for wireless/USB expression pedals. Assigned by the
+        # handler (v2/v3 only) in add_hardware, mirroring external_midi; None on v1.
+        self.midi_input_manager: MidiInputManager | None = None
         # control → destination; absent means internal (virtual/mod-host).
         # Rebuilt every reinit in __apply_midi_routing. Identity-keyed; controllers
         # are stable across reinit (mutated in place).
@@ -159,6 +164,15 @@ class Hardware(ABC):
         # Register final longpress-group membership with the chord resolver.
         for fs in self.footswitches:
             self.handler.chord_helper.register(fs.longpress_groups)
+
+        # Wire wireless/USB MIDI inputs (channels/CCs are now finalized for this cfg).
+        self.__sync_midi_inputs()
+
+    def __sync_midi_inputs(self) -> None:
+        if self.midi_input_manager is None:
+            return
+        controls = [c for c in self.analog_controls if isinstance(c, MidiInputControl)]
+        self.midi_input_manager.rebuild(controls)
 
     @abstractmethod
     def init_analog_controls(self):
@@ -280,30 +294,54 @@ class Hardware(ABC):
                 continue
 
             id = Util.DICT_GET(c, Token.ID)
-            adc_input = Util.DICT_GET(c, Token.ADC_INPUT)
             midi_cc = Util.DICT_GET(c, Token.MIDI_CC)
             threshold = Util.DICT_GET(c, Token.THRESHOLD)
             control_type = Util.DICT_GET(c, Token.TYPE)
             autosync = Util.DICT_GET(c, Token.AUTOSYNC)
 
+            # Input source: an `input:` block (adc / alsa) or the legacy top-level
+            # `adc_input`. ADC drives an AnalogMidiControl; alsa drives a
+            # MidiInputControl fed by MidiInputManager.
+            input_cfg = Util.DICT_GET(c, Token.INPUT) or {}
+            adc_input = Util.DICT_GET(input_cfg, Token.ADC)
             if adc_input is None:
-                logging.error("Config file error.  Analog control specified without %s" % Token.ADC_INPUT)
-                continue
+                adc_input = Util.DICT_GET(c, Token.ADC_INPUT)
+            # alsa may be a single client name or an ordered list of candidates
+            # (e.g. try a BLE name before falling back to a USB name)
+            alsa = Util.DICT_GET(input_cfg, Token.ALSA)
+            if alsa is None:
+                device_candidates = []
+            elif isinstance(alsa, str):
+                device_candidates = [alsa]
+            else:
+                device_candidates = list(alsa)
+
             if midi_cc is None:
                 logging.error("Config file error.  Analog control specified without %s" % Token.MIDI_CC)
                 continue
-            if threshold is None:
-                threshold = 16  # Default, 1024 is full scale
-            if autosync is None:
-                autosync = False  # Default to False
+            if adc_input is None and not device_candidates:
+                logging.error("Config file error.  Analog control specified without %s or an %s source"
+                              % (Token.ADC_INPUT, Token.INPUT))
+                continue
 
-            control = AnalogMidiControl.AnalogMidiControl(self.spi, adc_input, threshold, midi_cc, midi_channel,
-                                                          control_type, id, c, autosync)
+            control: AnalogMidiControl.AnalogMidiControl | MidiInputControl
+            if adc_input is not None:
+                if threshold is None:
+                    threshold = 16  # Default, 1024 is full scale
+                if autosync is None:
+                    autosync = False  # Default to False
+                control = AnalogMidiControl.AnalogMidiControl(self.spi, adc_input, threshold, midi_cc, midi_channel,
+                                                              control_type, id, c, autosync)
+                logging.debug("Created AnalogMidiControl Input: %d, Midi Chan: %d, CC: %d" %
+                              (adc_input, midi_channel, midi_cc))
+            else:
+                control = MidiInputControl(midi_channel, midi_cc, control_type, id, device_candidates, c)
+                logging.debug("Created MidiInputControl Devices: %s, Midi Chan: %d, CC: %d" %
+                              (device_candidates, midi_channel, midi_cc))
+
             self.analog_controls.append(control)
             key = format("%d:%d" % (midi_channel, midi_cc))
             self.controllers[key] = control
-            logging.debug("Created AnalogMidiControl Input: %d, Midi Chan: %d, CC: %d" %
-                          (adc_input, midi_channel, midi_cc))
 
     @abstractmethod
     def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc) -> EncoderController.EncoderController | None:
@@ -428,7 +466,7 @@ class Hardware(ABC):
         self.midi_channel = self.get_real_midi_channel(cfg)
         # TODO could iterate thru all objects here instead of handling in __init_footswitches
         for ac in self.analog_controls:
-            if isinstance(ac, AnalogMidiControl.AnalogMidiControl):
+            if isinstance(ac, (AnalogMidiControl.AnalogMidiControl, MidiInputControl)):
                 ac.set_midi_channel(self.midi_channel)
 
     def __init_external_midi(self, cfg):

@@ -41,6 +41,7 @@ from plugins.base import PluginPanel
 from plugins.customization import lookup as plugin_lookup
 import modalapi.external_midi as ExternalMidi
 from modalapi.external_midi import EXTERNAL_INSTANCE_ID
+from pistomp.midi_input_manager import MidiInputManager
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
 from pistomp.lcd320x240 import Lcd
@@ -176,6 +177,9 @@ class Modhandler(Handler):
         # External MIDI device synchronization
         self.external_midi = ExternalMidi.ExternalMidiManager()
 
+        # MIDI input from wireless/USB expression pedals (v2/v3 only)
+        self.midi_input_manager = MidiInputManager()
+
         # Blend mode manager - multiple blend snapshots per pedalboard
         self.blend_modes: dict[str, Any] = {}  # {snapshot_name: BlendMode}
         self.active_blend_mode: Any | None = None  # Currently active blend mode
@@ -192,6 +196,7 @@ class Modhandler(Handler):
         if self._hardware is not None:
             self._hardware.cleanup()
         self.external_midi.close()
+        self.midi_input_manager.close()
         self.ws_bridge.stop()
         logging.info("WebSocket bridge stopped")
         self.ethernet_manager.shutdown()
@@ -213,6 +218,7 @@ class Modhandler(Handler):
     def add_hardware(self, hardware):
         self._hardware = hardware
         hardware.external_midi = self.external_midi
+        hardware.midi_input_manager = self.midi_input_manager
         self._controller_manager = ControllerManager(hardware)
         self.bind_volume_encoder()
         hardware.register_sink(self)

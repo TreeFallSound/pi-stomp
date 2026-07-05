@@ -26,7 +26,9 @@ class TestModhandlerCleanup:
         h._lcd = None
         h._hardware = None
         h.external_midi = MagicMock()
+        h.midi_input_manager = MagicMock()
         h.ethernet_manager = MagicMock()
         h.ws_bridge = MagicMock()
         h.cleanup()
         h.external_midi.close.assert_called_once()
+        h.midi_input_manager.close.assert_called_once()
