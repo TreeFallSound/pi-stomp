@@ -34,6 +34,7 @@ import common.util as util
 from common.parameter import Parameter
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
+
 # Importing the plugins package runs every plugin module's register() — this is
 # the explicit, deterministic load of the customization registry. lookup is then
 # injected into Pedalboard as its Customizer.
@@ -1087,27 +1088,47 @@ class Modhandler(Handler):
     # System Menu
     #
     def system_info_load(self):
-        try:
-            output = subprocess.check_output(
-                [
-                    "git",
-                    "--git-dir",
-                    self.homedir + "/.git",
-                    "--work-tree",
-                    self.homedir,
-                    "describe",
-                    "--dirty=*",
-                    "--always",
-                ]
-            )
-            if output:
-                self.software_version = output.decode()
-                logging.info("pi-Stomp Software Version: %s" % self.software_version)
-        except subprocess.CalledProcessError:
+        # see util/expand-git.sh
+        expanded = Path(self.homedir + "/.git/EXPANDED").exists()
+        if expanded:
+            try:
+                output = subprocess.check_output(
+                    [
+                        "git",
+                        "--git-dir",
+                        self.homedir + "/.git",
+                        "--work-tree",
+                        self.homedir,
+                        "describe",
+                        "--dirty=*",
+                        "--always",
+                    ]
+                )
+                if output:
+                    self.software_version = output.decode()
+                    logging.info("pi-Stomp Software Version: %s" % self.software_version)
+            except subprocess.CalledProcessError:
+                logging.error("Cannot obtain git software version info")
+        else:
             try:
                 output = subprocess.check_output(["dpkg-query", "--showformat=${Version}", "--show", "pi-stomp"])
                 self.software_version = output.decode().strip()
                 logging.info("pi-Stomp Software Version (pkg): %s" % self.software_version)
+                # dpkg equivalent of `git describe --dirty=*`: append an
+                # asterisk when on-disk package contents have drifted from
+                # the .deb's recorded md5sums (e.g. after ./deploy.sh or
+                # manual edits). Skipped silently on non-dpkg systems.
+                try:
+                    verify = subprocess.run(
+                        ["dpkg", "--verify", "pi-stomp"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if verify.stdout.strip() or verify.stderr.strip():
+                        self.software_version += "*"
+                except (FileNotFoundError, OSError):
+                    pass
             except subprocess.CalledProcessError:
                 logging.error("Cannot obtain software version info")
 
@@ -1477,7 +1498,15 @@ class Modhandler(Handler):
     # ── NAM capture ───────────────────────────────────────────────────────────
 
     def _mount_nam_capture_panel(self) -> None:
-        from pistomp.nam.panel import NamCapturePanel
+        from pistomp.nam.panel import _REAMP_WAV, NamCapturePanel
+
+        if not _REAMP_WAV.exists():
+            self.lcd.draw_message_dialog(
+                f"Reamp WAV not found:\n{_REAMP_WAV}\n\n"
+                "Download T3K-sweep-v3.wav from the NAM trainer and place it there.",
+                title="NAM Capture Unavailable",
+            )
+            return
 
         output_dir = os.path.join(
             os.environ.get("MOD_USER_FILES_DIR", os.path.expanduser("~/data/user-files")),

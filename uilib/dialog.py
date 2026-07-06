@@ -142,8 +142,12 @@ class MessageDialog(Dialog):
         chunks = textwrap.wrap(message, width=chars_per_line)
         wrapped = "\n".join(chunks)
 
+        line_h = get_text_size("", font)[1]
+        num_lines = wrapped.count("\n") + 1
+        text_h = line_h * num_lines
+        text_box_h = max(0, min(text_h, height - 34))
         t = TextWidget(
-            box=Box.xywh(5, 0, width - 10, 50),
+            box=Box.xywh(5, 0, width - 10, text_box_h),
             text=wrapped,
             parent=self,
             outline=0,

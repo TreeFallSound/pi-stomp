@@ -67,10 +67,11 @@ class Parameterdialog(Dialog):
         return points
 
     def _draw_contents(self):
-        # Always draw close button, even if using timeout autoclose
-        b = TextWidget(box=Box.xywh(108, 100, 0, 0), text='Close', parent=self, outline=1, sel_width=3,
-                       outline_radius=5, align=WidgetAlign.NONE, name='ok_btn')
-        b.set_selected(True)
+        if self.timeout is None:
+            # Only draw close button if not using timeout autoclose
+            b = TextWidget(box=Box.xywh(108, 100, 0, 0), text='Close', parent=self, outline=1, sel_width=3,
+                           outline_radius=5, align=WidgetAlign.NONE, name='ok_btn')
+            b.set_selected(True)
         self._draw_graph()
 
     def _update_text_widget(self):
