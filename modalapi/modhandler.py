@@ -34,6 +34,7 @@ import common.util as util
 from common.parameter import Parameter
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
+
 # Importing the plugins package runs every plugin module's register() — this is
 # the explicit, deterministic load of the customization registry. lookup is then
 # injected into Pedalboard as its Customizer.
@@ -1082,7 +1083,9 @@ class Modhandler(Handler):
                 try:
                     verify = subprocess.run(
                         ["dpkg", "--verify", "pi-stomp"],
-                        capture_output=True, text=True, check=False,
+                        capture_output=True,
+                        text=True,
+                        check=False,
                     )
                     if verify.stdout.strip() or verify.stderr.strip():
                         self.software_version += "*"
@@ -1457,7 +1460,15 @@ class Modhandler(Handler):
     # ── NAM capture ───────────────────────────────────────────────────────────
 
     def _mount_nam_capture_panel(self) -> None:
-        from pistomp.nam.panel import NamCapturePanel
+        from pistomp.nam.panel import _REAMP_WAV, NamCapturePanel
+
+        if not _REAMP_WAV.exists():
+            self.lcd.draw_message_dialog(
+                f"Reamp WAV not found:\n{_REAMP_WAV}\n\n"
+                "Download T3K-sweep-v3.wav from the NAM trainer and place it there.",
+                title="NAM Capture Unavailable",
+            )
+            return
 
         output_dir = os.path.join(
             os.environ.get("MOD_USER_FILES_DIR", os.path.expanduser("~/data/user-files")),
