@@ -109,3 +109,112 @@ def test_v3_midi_learn_unknown_instance_is_ignored(v3_system: SystemFixture, mak
 
     assert fs0.parameter is None
     assert plugin.has_footswitch is False
+
+
+def _make_loopjefe_plugin_with_advance(make_parameter, instance_id="loopjefe"):
+    """Build a loopjefe plugin with an `advance` parameter, using the loopjefe
+    customization directly (so the test doesn't depend on plugins/__init__.py
+    importing plugins.loopjefe)."""
+    from modalapi.plugin import Plugin
+    from modalapi.plugin_customization import PluginCustomization
+    from plugins.loopjefe import make_loopjefe_behavior
+
+    advance = make_parameter("advance", instance_id, value=0.0)
+    customization = PluginCustomization(
+        display_name="LoopJefe",
+        footswitch_behavior_fn=make_loopjefe_behavior,
+    )
+    return Plugin(instance_id, {"advance": advance}, {}, "Looper",
+                  uri="http://treefallsound.com/plugins/loopjefe",
+                  customization=customization)
+
+
+class TestMidiLearnAttachesBehavior:
+    """Regression: the live MIDI-learn path (Handler._apply_midi_binding →
+    _bind_controller_to_param) must attach a FootswitchBehavior when the plugin
+    has a footswitch_behavior_fn, and must refresh the WS output_set
+    subscription set. Without this, a footswitch MIDI-learned to loopjefe's
+    `advance` after pedalboard load keeps DefaultFootswitchBehavior (toggle,
+    no output_set subscription) — the LED never lights and short-press toggles
+    127/0 instead of sending a momentary 127."""
+
+    def test_midi_learn_attaches_loopjefe_behavior(self, v3_system: SystemFixture, make_parameter):
+        from plugins.loopjefe import LoopjefeBehavior
+
+        handler = v3_system.handler
+        hw = v3_system.hw
+        ws_bridge = v3_system.ws_bridge
+        assert handler.current
+
+        fs0 = hw.footswitches[0]
+        channel, cc = _binding_for(hw, fs0).split(":")
+
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        handler.current.pedalboard.plugins = [plugin]
+
+        ws_bridge.inject(f"midi_map /graph/loopjefe advance {channel} {cc} 0.0 1.0")
+        handler.poll_ws_messages()
+
+        assert fs0.parameter is plugin.parameters["advance"]
+        assert isinstance(fs0.behavior, LoopjefeBehavior), (
+            "midi_map must attach the plugin's footswitch_behavior_fn — "
+            "without it the LED never lights and short-press toggles instead of momentary"
+        )
+
+    def test_midi_learn_refreshes_interesting_outputs(self, v3_system: SystemFixture, make_parameter):
+        """Regression: after midi_map binds a footswitch to a plugin with
+        output_subscriptions, the WS bridge's interesting-set must include
+        those subscriptions so the behavior actually receives on_output calls."""
+        handler = v3_system.handler
+        hw = v3_system.hw
+        ws_bridge = v3_system.ws_bridge
+        assert handler.current
+
+        fs0 = hw.footswitches[0]
+        channel, cc = _binding_for(hw, fs0).split(":")
+
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        handler.current.pedalboard.plugins = [plugin]
+
+        ws_bridge.interesting_calls.clear()
+        ws_bridge.inject(f"midi_map /graph/loopjefe advance {channel} {cc} 0.0 1.0")
+        handler.poll_ws_messages()
+
+        # The last set_interesting_outputs call must include the loopjefe
+        # output_subscriptions for the bound instance.
+        assert ws_bridge.interesting_calls, "midi_map must trigger _update_interesting_outputs"
+        last = ws_bridge.interesting_calls[-1]
+        assert "loopjefe/state" in last
+        assert "loopjefe/measure_number" in last
+
+    def test_output_set_reaches_bound_behavior(self, v3_system: SystemFixture, make_parameter):
+        """End-to-end: after midi_map binds fs0 to loopjefe/advance, an
+        output_set for loopjefe/state must update the behavior's cached state
+        so the LED driver renders the right color."""
+        from modalapi.footswitch_behavior import LedDisplayStyle
+        from pistomp.beatsync import TickState
+
+        handler = v3_system.handler
+        hw = v3_system.hw
+        ws_bridge = v3_system.ws_bridge
+        assert handler.current
+
+        fs0 = hw.footswitches[0]
+        channel, cc = _binding_for(hw, fs0).split(":")
+
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        handler.current.pedalboard.plugins = [plugin]
+
+        ws_bridge.inject(f"midi_map /graph/loopjefe advance {channel} {cc} 0.0 1.0")
+        handler.poll_ws_messages()
+
+        # Drive a state change from mod-ui
+        ws_bridge.inject("output_set /graph/loopjefe state 2.0")
+        ws_bridge.inject("output_set /graph/loopjefe measure_number 1.0")
+        handler.poll_ws_messages()
+
+        beat = TickState(True, False, False, 120.0, 4.0, 0.0)
+        assert fs0.behavior is not None
+        color = fs0.behavior.led_color(beat)
+        assert color == (255, 0, 0)  # Recording → red
+        assert fs0.behavior.led_style(beat) == LedDisplayStyle.METRONOME

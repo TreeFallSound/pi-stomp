@@ -42,6 +42,7 @@ from plugins.base import PluginPanel
 from plugins.customization import lookup as plugin_lookup
 import modalapi.external_midi as ExternalMidi
 from modalapi.external_midi import EXTERNAL_INSTANCE_ID
+from modalapi.footswitch_behavior import LedDisplayStyle
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
 from pistomp.lcd320x240 import Lcd
@@ -53,6 +54,7 @@ from modalapi.ws_protocol import (
     parse_message,
     LoadingEndMessage,
     LoadingStartMessage,
+    OutputSetMessage,
     PedalSnapshotMessage,
     PluginBypassMessage,
     TransportMessage,
@@ -72,7 +74,7 @@ from pistomp.current import Current
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
 from pistomp.footswitch_chords import FootswitchChords
-from pistomp.beatsync import BeatGrid
+from pistomp.beatsync import BeatGrid, TickState
 from pistomp.input.event import (
     AnalogEvent,
     ControllerEvent,
@@ -334,34 +336,14 @@ class Modhandler(Handler):
         if self.hardware:
             self.hardware.poll_controls()
         self._tick_chords()
+        # Drive footswitch LEDs in the same 10ms tick as the press so there's
+        # no latency between a state change and the LED reflecting it. Both
+        # fs.pixel and fs.led are written here — the single source of truth.
+        self._drive_footswitch_leds()
 
     def poll_indicators(self):
         if self.hardware:
             self.hardware.poll_indicators()
-        self._drive_metronome()
-
-    def _drive_metronome(self):
-        fs = self._taptempo_footswitch()
-        if fs is None:
-            return
-        state = self.beat_grid.tick(_now_us())
-        if not state.is_anchored:
-            # Unanchored: leave the LED/pixel alone so Footswitch.set_led's
-            # own taptempo blink (or normal toggle state) isn't clobbered
-            # every 20ms tick.
-            return
-        if state.is_flashing:
-            if fs.pixel is not None:
-                rgb = _METRONOME_DOWNBEAT_RGB if state.is_bar_start else _METRONOME_BEAT_RGB
-                fs.pixel.set_color(rgb)
-                fs.pixel.set_enable(True)
-            if fs.led is not None:
-                fs.led.on()
-        else:
-            if fs.pixel is not None:
-                fs.pixel.set_enable(False)
-            if fs.led is not None:
-                fs.led.off()
 
     def _taptempo_footswitch(self):
         if self._taptempo_fs_cache is None and self.hardware is not None:
@@ -370,6 +352,99 @@ class Modhandler(Handler):
                     self._taptempo_fs_cache = fs
                     break
         return self._taptempo_fs_cache
+
+    def _drive_footswitch_leds(self, beat: TickState | None = None) -> None:
+        if self.hardware is None:
+            return
+        if beat is None:
+            beat = self.beat_grid.tick(_now_us())
+        taptempo_fs = self._taptempo_footswitch()
+        for fs in self.hardware.footswitches:
+            b = fs.behavior
+            if b is None:
+                continue
+            # The taptempo footswitch is driven by the metronome (transport-
+            # anchored beat grid, or taptempo blink when unanchored), not by
+            # its default behavior. All other footswitches use their behavior.
+            if fs is taptempo_fs:
+                self._render_taptempo_led(fs, beat)
+            else:
+                self._render_behavior_led(fs, b, beat)
+
+    def _render_taptempo_led(self, fs: Footswitch, beat: TickState) -> None:
+        """The taptempo footswitch flashes from whichever beat source is active:
+        transport-anchored beat grid, or taptempo.anchor + bpm when unanchored."""
+        if beat.is_anchored:
+            if beat.is_flashing:
+                rgb = _METRONOME_DOWNBEAT_RGB if beat.is_bar_start else _METRONOME_BEAT_RGB
+                self._write_led(fs, rgb)
+            else:
+                self._write_led_off(fs)
+            return
+        # Unanchored: if taptempo is enabled with a bpm, blink from the taptempo
+        # phase (on for the first ~100ms of each beat period). This replaces the
+        # old gpiozero hardware blink() with a 10ms-driver-computed on/off.
+        if fs.taptempo is not None and fs.taptempo.is_enabled() and fs.taptempo.get_bpm() > 0:
+            now_s = _now_us() / 1_000_000.0
+            period = 60.0 / fs.taptempo.get_bpm()
+            elapsed = now_s - fs.taptempo.anchor
+            phase_in_beat = elapsed % period
+            if phase_in_beat < 0.1:  # 100ms on-window
+                self._write_led(fs, _METRONOME_BEAT_RGB)
+            else:
+                self._write_led_off(fs)
+            return
+        # Taptempo disabled or no bpm yet: fall through to the default behavior.
+        b = fs.behavior
+        if b is not None:
+            color = b.led_color(beat)
+            if color is None:
+                self._write_led_off(fs)
+            else:
+                self._write_led(fs, color)
+
+    @staticmethod
+    def _render_behavior_led(fs: Footswitch, b, beat: TickState) -> None:
+        color = b.led_color(beat)
+        style = b.led_style(beat)
+        if color is None:
+            if fs.pixel is not None:
+                fs.pixel.set_enable(False)
+            if fs.led is not None:
+                fs.led.off()
+            return
+        if style == LedDisplayStyle.METRONOME and beat.is_anchored:
+            phase = beat.beat_phase
+            brightness = 1.0 - (phase * 0.7)
+            if beat.is_bar_start:
+                brightness = 1.0
+            scaled = tuple(int(c * brightness) for c in color)
+            if fs.pixel is not None:
+                fs.pixel.set_color(scaled)
+                fs.pixel.set_enable(True)
+            if fs.led is not None:
+                fs.led.on()
+        else:
+            if fs.pixel is not None:
+                fs.pixel.set_color(color)
+                fs.pixel.set_enable(True)
+            if fs.led is not None:
+                fs.led.on()
+
+    @staticmethod
+    def _write_led(fs: Footswitch, color: tuple[int, int, int]) -> None:
+        if fs.pixel is not None:
+            fs.pixel.set_color(color)
+            fs.pixel.set_enable(True)
+        if fs.led is not None:
+            fs.led.on()
+
+    @staticmethod
+    def _write_led_off(fs: Footswitch) -> None:
+        if fs.pixel is not None:
+            fs.pixel.set_enable(False)
+        if fs.led is not None:
+            fs.led.off()
 
     def poll_wifi(self):
         self.wifi_manager.poll()
@@ -671,6 +746,12 @@ class Modhandler(Handler):
             # MIDI learn in mod-ui assigned a hardware control to a parameter.
             self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
 
+        elif isinstance(msg, OutputSetMessage):
+            if self._current is not None:
+                for fs in self.hardware.footswitches:
+                    if fs.behavior is not None and fs.parameter is not None and fs.parameter.instance_id == msg.instance:
+                        fs.behavior.on_output(msg.symbol, msg.value)
+
     def _handle_dynamic_plugin_add(self, msg: AddPluginMessage) -> None:
         """Handle an `add` WS message for a plugin not yet in the pedalboard model."""
         assert self._current is not None
@@ -930,6 +1011,21 @@ class Modhandler(Handler):
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
         self._controller_manager.bind(self.current)
+        self._update_interesting_outputs()
+
+    def _update_interesting_outputs(self) -> None:
+        """Recompute the WS output_set subscription set from footswitch behaviors."""
+        if self.hardware is None:
+            self.ws_bridge.set_interesting_outputs(frozenset())
+            return
+        keys: set[str] = set()
+        for fs in self.hardware.footswitches:
+            b = fs.behavior
+            if b is None or fs.parameter is None:
+                continue
+            for sym in b.output_subscriptions():
+                keys.add(f"{fs.parameter.instance_id}/{sym}")
+        self.ws_bridge.set_interesting_outputs(frozenset(keys))
 
     def _redraw_after_binding(self, controller, is_footswitch):
         if is_footswitch:
@@ -937,6 +1033,11 @@ class Modhandler(Handler):
             self.lcd.update_footswitch(controller)
         else:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)
+
+    def _on_footswitch_binding_changed(self) -> None:
+        # A live MIDI-learn attached a behavior to a footswitch; recompute the
+        # WS output_set subscription set so the behavior receives on_output.
+        self._update_interesting_outputs()
 
     def pedalboard_change(self, pedalboard: Pedalboard.Pedalboard) -> None:
         logging.info("Pedalboard change")

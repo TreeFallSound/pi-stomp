@@ -150,6 +150,15 @@ class ParamSetMessage:
 
 
 @dataclass
+class OutputSetMessage:
+    """A plugin output-port value changed (output_set)."""
+
+    instance: str
+    symbol: str
+    value: float
+
+
+@dataclass
 class MidiMapMessage:
     """A MIDI binding was learned/assigned in mod-ui (midi_map ...)."""
 
@@ -188,6 +197,7 @@ WebSocketMessage = Union[
     ConnectMessage,
     DisconnectMessage,
     ParamSetMessage,
+    OutputSetMessage,
     MidiMapMessage,
     UnknownMessage,
 ]
@@ -291,6 +301,12 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                 instance = path.removeprefix("/graph/")
                 symbol, value_str = rest.split(" ", 1)
                 return ParamSetMessage(instance=instance, symbol=symbol, value=float(value_str))
+
+            # Format: output_set /graph/{instance} {symbol} {value}
+            case ["output_set", path, rest]:
+                instance = path.removeprefix("/graph/")
+                symbol, value_str = rest.split(" ", 1)
+                return OutputSetMessage(instance=instance, symbol=symbol, value=float(value_str))
 
             # Format: midi_map /graph/{instance} {symbol} {channel} {controller} {min} {max}
             case ["midi_map", path, rest]:

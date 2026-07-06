@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from rtmidi.midiconstants import CONTROL_CHANGE
 
+from modalapi.footswitch_behavior import attach_footswitch_behavior
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.current import Current
 from pistomp.encoder_controller import EncoderController
@@ -98,6 +99,13 @@ class Handler(InputSink):
     def poll_controls(self):
         raise NotImplementedError()
 
+    def _drive_footswitch_leds(self) -> None:
+        """Render footswitch LEDs from behaviors. Base implementation is a no-op;
+        Modhandler overrides with the beat-aware driver. Called from
+        poll_controls so the LED update happens in the same 10ms tick as the
+        press that triggered it."""
+        return
+
     def poll_modui_changes(self):
         raise NotImplementedError()
 
@@ -165,9 +173,12 @@ class Handler(InputSink):
                 fs.preset_callback()
             return True
         if fs.midi_CC is not None:
-            fs.toggled = not fs.toggled
-            fs.set_led(fs.toggled)
-            self._emit_midi(fs, 127 if fs.toggled else 0)
+            if fs.behavior is not None and fs.behavior.momentary:
+                self._emit_midi(fs, 127)
+            else:
+                fs.toggled = not fs.toggled
+                fs.set_led(fs.toggled)
+                self._emit_midi(fs, 127 if fs.toggled else 0)
         if fs.parameter is not None:
             fs.parameter.value = not fs.toggled  # FIXME: assumes mapped parameter is :bypass
         self.update_lcd_fs(footswitch=fs)
@@ -266,6 +277,8 @@ class Handler(InputSink):
         param.binding = binding
         is_footswitch = self._bind_controller_to_param(plugin, param, controller)
         self._redraw_after_binding(controller, is_footswitch)
+        if is_footswitch:
+            self._on_footswitch_binding_changed()
 
     def _bind_controller_to_param(self, plugin, param, controller) -> bool:
         # Wire a hardware controller to a plugin parameter. Returns True if the
@@ -280,6 +293,7 @@ class Handler(InputSink):
             # TODO sort this list so selection orders correctly (sort on midi_CC?)
             plugin.has_footswitch = True
             controller.set_category(plugin.category)
+            attach_footswitch_behavior(controller, plugin)
             return True
         elif isinstance(controller, (AnalogMidiControl, EncoderController)):
             key = "%s:%s" % (plugin.instance_id, param.name)
@@ -287,6 +301,12 @@ class Handler(InputSink):
             display_info["category"] = plugin.category
             self.current.analog_controllers[key] = display_info
         return False
+
+    def _on_footswitch_binding_changed(self) -> None:
+        """Hook fired after a live MIDI-learn binds a footswitch to a plugin.
+        Subclasses with output_set subscriptions (Modhandler) override to
+        recompute the WS interesting-set. Base no-op for v1 (Mod)."""
+        return
 
     def _redraw_after_binding(self, controller, is_footswitch):
         # Refresh the LCD after a learned binding. Subclasses redraw at their

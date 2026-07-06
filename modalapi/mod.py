@@ -519,6 +519,26 @@ class Mod(Handler):
         if self.universal_encoder_mode is not UniversalEncoderMode.LOADING:
             self.hardware.poll_controls()
             self._tick_chords()
+            self._drive_footswitch_leds()
+
+    def _drive_footswitch_leds(self) -> None:
+        """v1 has no beat_grid and no pixel (mono LCD) — just render the GPIO
+        LED from each footswitch's behavior. SOLID only; no metronome style."""
+        if self.hardware is None:
+            return
+        from pistomp.beatsync import TickState
+        beat = TickState(is_anchored=False, is_flashing=False, is_bar_start=False,
+                         bpm=0.0, bpb=0.0, beat_phase=0.0)
+        for fs in self.hardware.footswitches:
+            b = fs.behavior
+            if b is None:
+                continue
+            color = b.led_color(beat)
+            if fs.led is not None:
+                if color is None:
+                    fs.led.off()
+                else:
+                    fs.led.on()
 
     def poll_wifi(self):
         self.wifi_manager.poll()

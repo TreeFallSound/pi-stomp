@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Protocol, TypeVar
 from common.color import RectBorder
 
 if TYPE_CHECKING:
+    from modalapi.footswitch_behavior import FootswitchBehavior
     from modalapi.plugin import Plugin
     from plugins.base import PluginPanel
 
@@ -37,6 +38,9 @@ class PluginCustomization:
     tile_active_color: tuple[int, int, int] | None = None
     tile_border: RectBorder | None = None
     extra_data: PluginExtraData | None = None
+    footswitch_behavior_fn: Callable[[Plugin], FootswitchBehavior | None] | None = field(
+        default=None, compare=False, hash=False
+    )
 
 
 class Customizer(Protocol):

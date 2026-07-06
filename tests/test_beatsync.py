@@ -172,3 +172,40 @@ class TestTickState:
         except Exception:
             return
         raise AssertionError("TickState should be frozen")
+
+
+class TestBeatPhase:
+    """beat_phase is the normalized [0, 1) within-beat position the
+    footswitch-LED driver uses to scale brightness."""
+
+    def test_phase_zero_at_beat_boundary(self):
+        g = BeatGrid()
+        g.on_anchor(_anchor(bar=0, t_us=0, bpm=120.0, bpb=4.0))  # 120bpm → 500ms/beat
+        state = g.tick(now_us=500_000)  # exactly beat 1
+        assert state.beat_phase == 0.0
+
+    def test_phase_advances_within_beat(self):
+        g = BeatGrid()
+        g.on_anchor(_anchor(bar=0, t_us=0, bpm=120.0, bpb=4.0))
+        state = g.tick(now_us=125_000)  # 1/4 of a 500ms beat
+        assert 0.0 <= state.beat_phase < 1.0
+        assert abs(state.beat_phase - 0.25) < 0.01
+
+    def test_phase_resets_across_beat_boundary(self):
+        g = BeatGrid()
+        g.on_anchor(_anchor(bar=0, t_us=0, bpm=120.0, bpb=4.0))
+        g.tick(now_us=500_000)  # beat 1
+        state = g.tick(now_us=750_000)  # halfway through beat 2
+        assert abs(state.beat_phase - 0.5) < 0.01
+
+    def test_phase_in_range_zero_to_one(self):
+        g = BeatGrid()
+        g.on_anchor(_anchor(bar=0, t_us=0, bpm=120.0, bpb=4.0))
+        for t_us in range(0, 2_000_000, 50_000):
+            state = g.tick(now_us=t_us)
+            assert 0.0 <= state.beat_phase < 1.0
+
+    def test_phase_is_zero_when_unanchored(self):
+        g = BeatGrid()
+        state = g.tick(now_us=1_000_000)
+        assert state.beat_phase == 0.0

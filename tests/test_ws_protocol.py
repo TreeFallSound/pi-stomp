@@ -9,6 +9,7 @@ from modalapi.ws_protocol import (
     LoadingEndMessage,
     LoadingStartMessage,
     MidiMapMessage,
+    OutputSetMessage,
     PedalSnapshotMessage,
     ParamSetMessage,
     PluginBypassMessage,
@@ -389,3 +390,33 @@ def test_malformed_pedal_snapshot_non_int():
 def test_empty_string():
     msg = parse_message("")
     assert isinstance(msg, UnknownMessage)
+
+
+# ---------------------------------------------------------------------------
+# output_set (output_set /graph/{instance} {symbol} {value})
+# ---------------------------------------------------------------------------
+
+
+def test_output_set_parses_to_output_set_message():
+    msg = parse_message("output_set /graph/loopjefe state 2.0")
+    assert msg == OutputSetMessage(instance="loopjefe", symbol="state", value=2.0)
+
+
+def test_output_set_integer_port():
+    msg = parse_message("output_set /graph/loopjefe measure_number 0.0")
+    assert msg == OutputSetMessage(instance="loopjefe", symbol="measure_number", value=0.0)
+
+
+def test_output_set_missing_value_is_unknown():
+    msg = parse_message("output_set /graph/loopjefe state")
+    assert isinstance(msg, UnknownMessage)
+
+
+def test_output_set_non_float_value_is_unknown():
+    msg = parse_message("output_set /graph/loopjefe state notanumber")
+    assert isinstance(msg, UnknownMessage)
+
+
+def test_output_set_strips_graph_prefix():
+    msg = parse_message("output_set /graph/loopjefe state 4.0")
+    assert msg == OutputSetMessage(instance="loopjefe", symbol="state", value=4.0)
