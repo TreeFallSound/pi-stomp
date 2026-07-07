@@ -892,7 +892,7 @@ class Lcd:
             self.handler.SystemState,
             self.handler.temperature,
             self.handler.throttled)
-        d = MessageDialog(self.pstack, msg, title="System Info", width=300, height=130)
+        d = MessageDialog(self.pstack, msg, title="System Info", width=300, height=140)
         self.pstack.push_panel(d)
 
     def draw_bank_menu(self, event):
@@ -928,7 +928,7 @@ class Lcd:
         return d
 
     def display_parameter_value(self, parameter: Parameter, value: float) -> None:
-        d = self.draw_parameter_dialog(parameter, timeout=PARAMETER_DIALOG_TIMEOUT)
+        d = self.draw_parameter_dialog(parameter)
         if isinstance(d, Parameterdialog):
             d.update_value(value)
 
