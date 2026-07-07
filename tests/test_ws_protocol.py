@@ -238,25 +238,27 @@ def test_transport_malformed_bpm_is_unknown():
 
 
 # ---------------------------------------------------------------------------
-# beat_sync (beat_sync {bar} {t_us} {bpm} {bpb})
+# beat_sync (beat_sync {t_us} {bpm} {bpb} {beat_in_bar}) — a clock sample
+# (t_us=now), not a back-dated downbeat event. No absolute bar count — that's
+# DAW context mod-host doesn't need to expose.
 # ---------------------------------------------------------------------------
 
 
 def test_beat_sync_basic():
-    assert parse_message("beat_sync 5 1234567890 120.0 4") == BeatSyncMessage(
-        bar=5, t_us=1234567890, bpm=120.0, bpb=4.0
+    assert parse_message("beat_sync 1234567890 120.0 4 0.0") == BeatSyncMessage(
+        t_us=1234567890, bpm=120.0, bpb=4.0, beat_in_bar=0.0
     )
 
 
-def test_beat_sync_bar_zero():
-    assert parse_message("beat_sync 0 0 60.0 3") == BeatSyncMessage(
-        bar=0, t_us=0, bpm=60.0, bpb=3.0
+def test_beat_sync_zero_beat_in_bar():
+    assert parse_message("beat_sync 0 60.0 3 0.0") == BeatSyncMessage(
+        t_us=0, bpm=60.0, bpb=3.0, beat_in_bar=0.0
     )
 
 
 def test_beat_sync_fractional_bpb():
-    assert parse_message("beat_sync 1 1000000 90.5 7") == BeatSyncMessage(
-        bar=1, t_us=1000000, bpm=90.5, bpb=7.0
+    assert parse_message("beat_sync 1000000 90.5 7 2.5") == BeatSyncMessage(
+        t_us=1000000, bpm=90.5, bpb=7.0, beat_in_bar=2.5
     )
 
 

@@ -26,6 +26,7 @@ TTL_PROPERTIES  = 'properties'
 TTL_SCALEPOINTS = 'scalePoints'
 TTL_TAPTEMPO    = 'tapTempo'
 TTL_TOGGLED     = 'toggled'
+TTL_TRIGGER     = 'trigger'
 
 class Type(Enum):
     DEFAULT = 0      # No explicitly defined type (eg. linear float)
@@ -34,6 +35,7 @@ class Type(Enum):
     LOGARITHMIC = 3
     TAPTEMPO = 4
     TOGGLED = 5
+    TRIGGER = 6      # pprops:trigger — edge-triggered, self-clearing (momentary)
 
 class Parameter:
 
@@ -57,7 +59,9 @@ class Parameter:
 
         properties = util.DICT_GET(plugin_info, TTL_PROPERTIES)
         if properties is not None and len(properties) > 0:
-            if TTL_ENUMERATION in properties:
+            if TTL_TRIGGER in properties:
+                self.type = Type.TRIGGER
+            elif TTL_ENUMERATION in properties:
                 self.enum_values = util.DICT_GET(plugin_info, TTL_SCALEPOINTS)
                 self.type = Type.ENUMERATION
             elif TTL_INTEGER in properties:
@@ -68,6 +72,12 @@ class Parameter:
                 self.type = Type.TAPTEMPO
             elif TTL_TOGGLED in properties:
                 self.type = Type.TOGGLED
+
+    @property
+    def is_momentary(self) -> bool:
+        """True for edge-triggered, self-clearing ports (pprops:trigger) —
+        these need a one-shot 127 press rather than an absolute 127/0 toggle."""
+        return self.type == Type.TRIGGER
 
     def get_enum_value_list(self):
         ret = []

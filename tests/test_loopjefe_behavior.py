@@ -1,40 +1,28 @@
-"""LoopJefe footswitch behavior — state→color/style contract + registration.
+"""LoopJefe footswitch LED spec — state->color/style contract + registration.
 
 Pins:
   - The loopjefe URIs are registered (plugins/__init__.py imports plugins.loopjefe).
-  - make_loopjefe_behavior produces a behavior with momentary=True and the
-    expected output_subscriptions.
-  - led_color / led_style for all 9 states, including the measure_number==0
-    loop-downbeat tint.
-  - Brightness/pulse is the driver's job — not tested here.
+  - The registered LedSpec renders all 9 states correctly via the generic
+    render_led_spec driver, including the measure_number==0 loop-downbeat tint.
+  - Momentary press semantics come from the port (pprops:trigger on
+    advance/reset), not from anything here — not tested in this file.
+  - Brightness/pulse envelope is the driver's job — not tested here.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from modalapi.footswitch_behavior import LedDisplayStyle
-from modalapi.plugin import Plugin
-from pistomp.beatsync import TickState
+from modalapi.led_render import LedDisplayStyle, render_led_spec
+from modalapi.plugin_customization import LedSpec
 from plugins import lookup, registered_uris
-from plugins.loopjefe import LOOPJEFE_URIS, make_loopjefe_behavior
+from plugins.loopjefe import LOOPJEFE_URIS
 
 
-def _tick(beat_phase: float = 0.0, is_bar_start: bool = False) -> TickState:
-    return TickState(
-        is_anchored=True,
-        is_flashing=is_bar_start,
-        is_bar_start=is_bar_start,
-        bpm=120.0,
-        bpb=4.0,
-        beat_phase=beat_phase,
-    )
-
-
-def _make_plugin(uri: str = LOOPJEFE_URIS[0]) -> Plugin:
-    customization = lookup(uri)
-    # Plugin() requires a parameters dict; loopjefe behavior only reads instance_id.
-    return Plugin("loopjefe", {}, {}, "Looper", uri=uri, customization=customization)
+def _spec() -> LedSpec:
+    spec = lookup(LOOPJEFE_URIS[0]).led_spec
+    assert spec is not None
+    return spec
 
 
 class TestRegistration:
@@ -43,61 +31,34 @@ class TestRegistration:
         for uri in LOOPJEFE_URIS:
             assert uri in registered, f"{uri} not registered — plugins/__init__.py must import plugins.loopjefe"
 
-    def test_lookup_returns_loopjefe_customization_with_behavior_fn(self):
+    def test_lookup_returns_loopjefe_led_spec(self):
         for uri in LOOPJEFE_URIS:
             cust = lookup(uri)
-            assert cust.footswitch_behavior_fn is make_loopjefe_behavior, (
-                f"lookup({uri!r}) did not return the loopjefe customization"
-            )
-
-
-class TestBehaviorContract:
-    def test_momentary_short_press(self):
-        b = make_loopjefe_behavior(_make_plugin())
-        assert b.momentary is True
-
-    def test_output_subscriptions_state_and_measure_number(self):
-        b = make_loopjefe_behavior(_make_plugin())
-        assert set(b.output_subscriptions()) == {"state", "measure_number"}
-
-    def test_on_output_caches_state(self):
-        b = make_loopjefe_behavior(_make_plugin())
-        b.on_output("state", 2.0)
-        b.on_output("measure_number", 1.0)  # non-downbeat so base color is returned
-        assert b.led_color(_tick()) == (255, 0, 0)  # Recording
-
-    def test_on_output_caches_measure_number(self):
-        b = make_loopjefe_behavior(_make_plugin())
-        b.on_output("state", 1.0)  # Record Arm → blue
-        b.on_output("measure_number", 0.0)
-        # measure_number == 0 → downbeat tint (brighter)
-        assert b.led_color(_tick()) != (0, 80, 255)
-        b.on_output("measure_number", 3.0)
-        assert b.led_color(_tick()) == (0, 80, 255)
+            assert cust.led_spec is not None, f"lookup({uri!r}) did not return the loopjefe LedSpec"
+            assert cust.led_spec.state_symbol == "state"
+            assert cust.led_spec.downbeat_symbol == "measure_number"
 
 
 class TestStateColorAndStyle:
     @pytest.mark.parametrize("state,expected_color", [
-        (0, None),              # Empty → off
-        (1, (0, 80, 255)),      # Record Arm → blue
-        (2, (255, 0, 0)),       # Recording → red
-        (3, (0, 80, 255)),      # Record Close → blue
-        (4, (0, 255, 0)),       # Playback → green
-        (5, (80, 80, 80)),      # Stopped → steady grey
-        (6, (0, 80, 255)),      # Overdub Arm → blue
-        (7, (255, 140, 0)),     # Overdub → orange
-        (8, (0, 80, 255)),      # Overdub Close → blue
+        (0, None),              # Empty -> off
+        (1, (0, 80, 255)),      # Record Arm -> blue
+        (2, (255, 0, 0)),       # Recording -> red
+        (3, (0, 80, 255)),      # Record Close -> blue
+        (4, (0, 255, 0)),       # Playback -> green
+        (5, (80, 80, 80)),      # Stopped -> steady grey
+        (6, (0, 80, 255)),      # Overdub Arm -> blue
+        (7, (255, 140, 0)),     # Overdub -> orange
+        (8, (0, 80, 255)),      # Overdub Close -> blue
     ])
     def test_state_color_with_nonzero_measure(self, state, expected_color):
-        b = make_loopjefe_behavior(_make_plugin())
-        b.on_output("state", float(state))
-        b.on_output("measure_number", 1.0)  # not the loop downbeat
-        assert b.led_color(_tick()) == expected_color
+        color, _style = render_led_spec(_spec(), {"state": float(state), "measure_number": 1.0})
+        assert color == expected_color
 
     @pytest.mark.parametrize("state,expected_style", [
-        (0, LedDisplayStyle.SOLID),       # Empty → off, solid
-        (5, LedDisplayStyle.SOLID),       # Stopped → steady grey
-        (1, LedDisplayStyle.METRONOME),   # active → pulse
+        (0, LedDisplayStyle.SOLID),       # Empty -> off, solid
+        (5, LedDisplayStyle.SOLID),       # Stopped -> steady grey
+        (1, LedDisplayStyle.METRONOME),   # active -> pulse
         (2, LedDisplayStyle.METRONOME),
         (3, LedDisplayStyle.METRONOME),
         (4, LedDisplayStyle.METRONOME),
@@ -106,19 +67,14 @@ class TestStateColorAndStyle:
         (8, LedDisplayStyle.METRONOME),
     ])
     def test_state_style(self, state, expected_style):
-        b = make_loopjefe_behavior(_make_plugin())
-        b.on_output("state", float(state))
-        assert b.led_style(_tick()) == expected_style
+        _color, style = render_led_spec(_spec(), {"state": float(state), "measure_number": 1.0})
+        assert style == expected_style
 
 
 class TestLoopDownbeatTint:
     def test_measure_zero_returns_distinct_color(self):
-        b = make_loopjefe_behavior(_make_plugin())
-        b.on_output("state", 2.0)  # Recording → red
-        b.on_output("measure_number", 0.0)
-        downbeat = b.led_color(_tick())
-        b.on_output("measure_number", 2.0)
-        normal = b.led_color(_tick())
+        downbeat, _ = render_led_spec(_spec(), {"state": 2.0, "measure_number": 0.0})  # Recording -> red
+        normal, _ = render_led_spec(_spec(), {"state": 2.0, "measure_number": 2.0})
         assert downbeat is not None and normal is not None
         assert downbeat != normal
         # The downbeat tint brightens each channel that wasn't already at 255
@@ -126,7 +82,5 @@ class TestLoopDownbeatTint:
         assert any(d > n for d, n in zip(downbeat, normal))
 
     def test_measure_zero_empty_state_still_off(self):
-        b = make_loopjefe_behavior(_make_plugin())
-        b.on_output("state", 0.0)
-        b.on_output("measure_number", 0.0)
-        assert b.led_color(_tick()) is None
+        color, _style = render_led_spec(_spec(), {"state": 0.0, "measure_number": 0.0})
+        assert color is None

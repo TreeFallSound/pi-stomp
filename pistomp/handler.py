@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING, Any
 
 from rtmidi.midiconstants import CONTROL_CHANGE
 
-from modalapi.footswitch_behavior import attach_footswitch_behavior
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.current import Current
 from pistomp.encoder_controller import EncoderController
@@ -173,7 +172,7 @@ class Handler(InputSink):
                 fs.preset_callback()
             return True
         if fs.midi_CC is not None:
-            if fs.behavior is not None and fs.behavior.momentary:
+            if fs.parameter is not None and fs.parameter.is_momentary:
                 self._emit_midi(fs, 127)
             else:
                 fs.toggled = not fs.toggled
@@ -293,7 +292,6 @@ class Handler(InputSink):
             # TODO sort this list so selection orders correctly (sort on midi_CC?)
             plugin.has_footswitch = True
             controller.set_category(plugin.category)
-            attach_footswitch_behavior(controller, plugin)
             return True
         elif isinstance(controller, (AnalogMidiControl, EncoderController)):
             key = "%s:%s" % (plugin.instance_id, param.name)

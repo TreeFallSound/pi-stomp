@@ -7,6 +7,7 @@ exercised as production code, not re-implemented.
 
 from unittest.mock import MagicMock
 
+from common.parameter import Parameter, Type
 from pistomp.footswitch import Footswitch
 from pistomp.handler import Handler
 from pistomp.input.event import SwitchEventKind
@@ -81,35 +82,22 @@ class TestLongpressMidiCC:
         hw.midiout.send_message.assert_not_called()
 
 
-class _StubBehavior:
-    """Minimal behavior stub for momentary-press tests."""
-
-    def __init__(self, momentary: bool) -> None:
-        self.momentary = momentary
-
-    def output_subscriptions(self):
-        return ()
-
-    def on_output(self, symbol: str, value: float) -> None:
-        pass
-
-    def led_color(self, beat):
-        return None
-
-    def led_style(self, beat):
-        from modalapi.footswitch_behavior import LedDisplayStyle
-        return LedDisplayStyle.SOLID
+def _make_parameter(port_type: Type) -> Parameter:
+    info = {"symbol": "advance", "ranges": {"minimum": 0, "maximum": 1}}
+    p = Parameter(info, value=0.0, binding=None, instance_id="loopjefe")
+    p.type = port_type
+    return p
 
 
 class TestMomentaryShortPress:
-    """A footswitch whose behavior.momentary is True emits 127 every press
-    (rising-edge trigger semantics) — no toggled flip. Otherwise the existing
-    toggle behavior (127/0 alternating) is preserved."""
+    """A footswitch bound to a pprops:trigger port (Parameter.is_momentary)
+    emits 127 every press (rising-edge trigger semantics) — no toggled flip.
+    Otherwise the existing toggle behavior (127/0 alternating) is preserved."""
 
     def test_momentary_emits_127_every_press(self):
         handler, hw = _make_handler()
         fs = _make_footswitch(midi_CC=10)
-        fs.behavior = _StubBehavior(momentary=True)
+        fs.parameter = _make_parameter(Type.TRIGGER)
 
         for _ in range(3):
             handler._handle_footswitch(fs, SwitchEventKind.PRESS, timestamp=1.0)
@@ -122,7 +110,7 @@ class TestMomentaryShortPress:
     def test_non_momentary_toggles_as_before(self):
         handler, hw = _make_handler()
         fs = _make_footswitch(midi_CC=10)
-        fs.behavior = _StubBehavior(momentary=False)
+        fs.parameter = _make_parameter(Type.DEFAULT)
 
         handler._handle_footswitch(fs, SwitchEventKind.PRESS, timestamp=1.0)
         handler._handle_footswitch(fs, SwitchEventKind.PRESS, timestamp=2.0)
@@ -133,12 +121,12 @@ class TestMomentaryShortPress:
         assert messages[1][2] == 0    # second press → toggled False → 0
         assert fs.toggled is False
 
-    def test_no_behavior_toggles_as_before(self):
-        """Regression guard: a footswitch with behavior=None (e.g. a preset
+    def test_no_parameter_toggles_as_before(self):
+        """Regression guard: a footswitch with parameter=None (e.g. a preset
         switch that never went through ControllerManager.bind) still toggles."""
         handler, hw = _make_handler()
         fs = _make_footswitch(midi_CC=10)
-        fs.behavior = None
+        fs.parameter = None
 
         handler._handle_footswitch(fs, SwitchEventKind.PRESS, timestamp=1.0)
 

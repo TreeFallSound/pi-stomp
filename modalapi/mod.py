@@ -35,6 +35,8 @@ from pistomp.encoder_controller import EncoderController
 from pistomp.input.event import AnalogEvent, ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
+from modalapi.led_render import render_led_spec
+from pistomp.category import get_category_color
 from typing import Optional
 
 from blend.snapshot import SnapshotManager
@@ -522,23 +524,32 @@ class Mod(Handler):
             self._drive_footswitch_leds()
 
     def _drive_footswitch_leds(self) -> None:
-        """v1 has no beat_grid and no pixel (mono LCD) — just render the GPIO
-        LED from each footswitch's behavior. SOLID only; no metronome style."""
+        """v1 has no beat_grid and no pixel (mono LCD) — just render each
+        footswitch's GPIO on/off state from its bound plugin's LedSpec (if
+        any) or the default toggle/category behavior. No metronome style."""
         if self.hardware is None:
             return
-        from pistomp.beatsync import TickState
-        beat = TickState(is_anchored=False, is_flashing=False, is_bar_start=False,
-                         bpm=0.0, bpb=0.0, beat_phase=0.0)
         for fs in self.hardware.footswitches:
-            b = fs.behavior
-            if b is None:
-                continue
-            color = b.led_color(beat)
+            plugin = self._bound_plugin(fs)
+            if plugin is not None and plugin.customization.led_spec is not None:
+                color, _style = render_led_spec(plugin.customization.led_spec, plugin.output_values)
+            elif fs.toggled:
+                color = get_category_color(fs.category) if fs.category is not None else (255, 255, 255)
+            else:
+                color = None
             if fs.led is not None:
                 if color is None:
                     fs.led.off()
                 else:
                     fs.led.on()
+
+    def _bound_plugin(self, fs):
+        if fs.parameter is None or self._current is None:
+            return None
+        for plugin in self.current.pedalboard.plugins:
+            if plugin.instance_id == fs.parameter.instance_id:
+                return plugin
+        return None
 
     def poll_wifi(self):
         self.wifi_manager.poll()

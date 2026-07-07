@@ -98,12 +98,19 @@ class TransportMessage:
 
 @dataclass
 class BeatSyncMessage:
-    """A downbeat occurred. `t_us` is back-dated to the actual downbeat frame (CLOCK_MONOTONIC)."""
+    """A sample of the transport clock (t_us=now, CLOCK_MONOTONIC) — not a
+    back-dated downbeat event. Consumers forward-extrapolate
+    pos(t) = beat_in_bar + (t - t_us) * bpm / 60, so cadence controls
+    tightness, never correctness; each sample fully replaces any prior
+    anchor. Emitted on a new bar (heartbeat) and on any discrete bpm/bpb
+    change while rolling. No absolute bar count — that's DAW-context mod-host
+    doesn't need to expose; only the fractional position within the current
+    bar matters for phase/downbeat math."""
 
-    bar: int
     t_us: int
     bpm: float
     bpb: float
+    beat_in_bar: float
 
 
 @dataclass
@@ -331,14 +338,14 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                 bpm = float(rest.split()[1])
                 return TransportMessage(rolling=rolling != "0", bpm=bpm)
 
-            # Format: beat_sync {bar} {t_us} {bpm} {bpb}
-            case ["beat_sync", bar, rest]:
-                t_us, bpm, bpb = rest.split(" ")
+            # Format: beat_sync {t_us} {bpm} {bpb} {beat_in_bar}
+            case ["beat_sync", t_us, rest]:
+                bpm, bpb, beat_in_bar = rest.split(" ")
                 return BeatSyncMessage(
-                    bar=int(bar),
                     t_us=int(t_us),
                     bpm=float(bpm),
                     bpb=float(bpb),
+                    beat_in_bar=float(beat_in_bar),
                 )
 
     except (ValueError, IndexError) as e:

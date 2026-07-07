@@ -15,7 +15,6 @@
 
 import logging
 import sys
-from typing import TYPE_CHECKING
 from typing_extensions import override
 
 import common.token as Token
@@ -24,9 +23,6 @@ import pistomp.analogswitch as analogswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
 from pistomp.input.event import SwitchEvent, SwitchEventKind
-
-if TYPE_CHECKING:
-    from modalapi.footswitch_behavior import FootswitchBehavior
 
 
 class Footswitch(controller.Controller):
@@ -49,7 +45,6 @@ class Footswitch(controller.Controller):
         self.longpress_midi_CC = None
         self.disabled = False
         self.taptempo = taptempo
-        self.behavior: FootswitchBehavior | None = None
 
         if adc_input and gpio_input:
             logging.error("Switch cannot be specified with both %s and %s", (Token.ADC_INPUT, Token.GPIO_INPUT))
@@ -186,10 +181,4 @@ class Footswitch(controller.Controller):
         self.preset_callback = None
         self.preset_callback_arg = None
         self.parameter = None
-        # Reset to the default behavior; ControllerManager.bind overlays a
-        # plugin-specific one if this switch binds to a plugin parameter.
-        # Preset/relay/unbound switches keep the default so the per-tick LED
-        # driver still lights their pixel.
-        from modalapi.footswitch_behavior import DefaultFootswitchBehavior
-        self.behavior = DefaultFootswitchBehavior(self)
         self.clear_relays()

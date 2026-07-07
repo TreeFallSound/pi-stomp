@@ -28,7 +28,6 @@ import pistomp.taptempo as taptempo
 from abc import ABC, abstractmethod
 from rtmidi import MidiOut
 from modalapi.external_midi import ExternalMidiManager, EXTERNAL_INSTANCE_ID
-from modalapi.footswitch_behavior import DefaultFootswitchBehavior
 from pistomp.input.sink import InputSink
 from pistomp.controller import Controller, RoutingInfo, RoutingDestination
 import pistomp.relay as Relay
@@ -265,12 +264,6 @@ class Hardware(ABC):
                               (gpio_input, midi_channel, midi_cc))
 
             assert fs is not None, "No footswitch created for config: %s" % f
-            # Every footswitch always has a behavior. Plugin-bound switches get
-            # a plugin-specific one via ControllerManager.bind; preset/relay/
-            # unbound switches keep this default (toggle + category color) so
-            # the per-tick LED driver lights their pixel too.
-            if fs.behavior is None:
-                fs.behavior = DefaultFootswitchBehavior(fs)
             self.footswitches.append(fs)
             idx += 1
 

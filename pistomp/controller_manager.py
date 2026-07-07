@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING
 import common.token as Token
 from common.parameter import Parameter, TTL_PROPERTIES, TTL_INTEGER
 from modalapi.external_midi import EXTERNAL_INSTANCE_ID
-from modalapi.footswitch_behavior import attach_footswitch_behavior
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.controller import AnalogDisplayInfo
 from pistomp.current import Current
@@ -94,7 +93,6 @@ class ControllerManager:
                     plugin.has_footswitch = True
                     footswitch_plugins.append(plugin)
                     controller.set_category(plugin.category)
-                    attach_footswitch_behavior(controller, plugin)
                 else:
                     key = "%s:%s" % (plugin.instance_id, param.name)
                     display_info = controller.get_display_info()

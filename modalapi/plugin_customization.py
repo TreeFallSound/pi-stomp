@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Protocol, TypeVar
 from common.color import RectBorder
 
 if TYPE_CHECKING:
-    from modalapi.footswitch_behavior import FootswitchBehavior
     from modalapi.plugin import Plugin
     from plugins.base import PluginPanel
 
@@ -29,6 +28,29 @@ def extra_data_as(plugin: Plugin, kind: type[_TExtra]) -> _TExtra | None:
 
 
 @dataclass(frozen=True)
+class LedSpec:
+    """Declarative footswitch-LED rendering for a plugin, keyed off its own
+    (generically-mirrored) output ports. Interpreted by the handler's generic
+    LED driver — no per-plugin imperative code required.
+
+    state_symbol: the output port whose integer value selects `colors`.
+    downbeat_symbol: an optional second output port (e.g. loopjefe's
+      `measure_number`) whose value == 0 means "this is the loop's own
+      downbeat" — brightens the color by `downbeat_tint` per channel.
+    off_states / steady_states: state values that render as off, or as a
+      steady (non-pulsing) color even when `pulse` is True.
+    """
+
+    state_symbol: str
+    colors: dict[int, tuple[int, int, int]]
+    pulse: bool = False
+    off_states: frozenset[int] = frozenset()
+    steady_states: frozenset[int] = frozenset()
+    downbeat_symbol: str | None = None
+    downbeat_tint: int = 60
+
+
+@dataclass(frozen=True)
 class PluginCustomization:
     panel_cls: type[PluginPanel] | None = None
     display_name: str | None = None
@@ -38,9 +60,7 @@ class PluginCustomization:
     tile_active_color: tuple[int, int, int] | None = None
     tile_border: RectBorder | None = None
     extra_data: PluginExtraData | None = None
-    footswitch_behavior_fn: Callable[[Plugin], FootswitchBehavior | None] | None = field(
-        default=None, compare=False, hash=False
-    )
+    led_spec: LedSpec | None = None
 
 
 class Customizer(Protocol):
