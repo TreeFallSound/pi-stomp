@@ -271,12 +271,13 @@ class TestCaptureSessionSilence:
 
 
 class TestNamHandlerIntegration:
-    def test_nam_board_mounts_panel(self, v3_system):
+    def test_nam_mounts_panel(self, v3_system):
         handler = v3_system.handler
         fake_engine = _FakeEngine(CaptureState.IDLE)
         with (
             patch.object(NamCapturePanel, "_create_engine", return_value=fake_engine),
             patch("pistomp.nam.panel.wav_duration", return_value=190.0),
+            patch("pistomp.nam.panel.Path.exists", return_value=True),
         ):
             handler._mount_nam_capture_panel()
         assert isinstance(handler.lcd.pstack.current, NamCapturePanel)
