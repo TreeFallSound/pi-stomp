@@ -22,6 +22,7 @@ if [ -z "$1" ]
     exit
 fi
 
+jackdrc_file="/etc/jackdrc"
 config_dir="$HOME/data/config"
 config_file="$config_dir/default_config.yml"
 hwfile="$config_dir/hardware-descriptor.json"
@@ -37,25 +38,23 @@ mkdir -p $config_dir
 
 cp $default_hwfile $hwfile
 
-# JACK settings are not touched here. The period comes from JACK_PERIOD in
-# /etc/default/jack (written by firstboot from pistomp.conf) and the port cap is
-# derived from the board model by jackdrc. The sed that used to rewrite /etc/jackdrc
-# stopped matching when the period became a variable, and jackdrc has since moved to
-# /usr/lib/pistomp/ (shipped by jack2-pistomp).
 if awk "BEGIN {exit !($1 >= 3.0 )}"; then
     cp $pistomp_tre_config_file $config_file
+    sudo sed -i 's/-p [0-9]\+/-p 128/' $jackdrc_file
     if ! git -C "$pb_dir" checkout master 2>/dev/null && ! git -C "$pb_dir" checkout main 2>/dev/null; then
       echo "Git checkout failed (tried master and main)"
       exit 1
     fi
 elif awk "BEGIN {exit !($1 >= 2.0 )}"; then
     cp $pistomp_core_config_file $config_file
+    sudo sed -i 's/-p [0-9]\+/-p 256/' $jackdrc_file
     if ! git -C "$pb_dir" checkout v2; then
       echo "Git checkout failed"
       exit 1
     fi
 elif awk "BEGIN {exit !($1 >= 1.0 )}"; then
     cp $pistomp_orig_config_file $config_file
+    sudo sed -i 's/-p [0-9]\+/-p 256/' $jackdrc_file
     if ! git -C "$pb_dir" checkout v1; then
       echo "Git checkout failed"
       exit 1
