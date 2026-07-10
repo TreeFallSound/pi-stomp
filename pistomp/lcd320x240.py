@@ -889,7 +889,7 @@ class Lcd:
 
     def draw_system_info_dialog(self, arg):
         msg="Software:{}\nBuild:{}\nSystemState:{}\nTemperature:{}\nThrottled:{}".format(
-            self.handler.software_version,
+            self.handler.get_software_version(),
             self.handler.build_version,
             self.handler.SystemState,
             self.handler.temperature,
