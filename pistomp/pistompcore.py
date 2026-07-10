@@ -68,7 +68,9 @@ class Pistompcore(hardware.Hardware):
         # self.reinit(None)
 
     def init_lcd(self):
-        self.mod.add_lcd(Lcd.Lcd(self.mod.homedir, self.mod, flip=True, spi_speed_mhz=50))
+        # 66_666_667 = lowest request selecting CDIV=6; one Hz less gives 50 MHz.
+        self.mod.add_lcd(Lcd.Lcd(self.mod.homedir, self.mod, flip=True,
+                                 spi_speed_hz=66_666_667, reset=True))
 
     def init_encoders(self):
         top_enc = EncoderController.EncoderController(

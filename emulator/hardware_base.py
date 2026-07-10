@@ -54,7 +54,7 @@ class EmulatorHardwareBase(hardware.Hardware):
 
         self.lcd_pygame = LcdPygame(320, 240, spi_hz=50_000_000)
         self.handler.add_lcd(
-            Lcd.Lcd(self.handler.homedir, self.handler, flip=self.lcd_flip, display=self.lcd_pygame, spi_speed_mhz=50)
+            Lcd.Lcd(self.handler.homedir, self.handler, flip=self.lcd_flip, display=self.lcd_pygame, spi_speed_hz=50_000_000)
         )
 
     def init_footswitches(self):
