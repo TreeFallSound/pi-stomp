@@ -80,7 +80,6 @@ from pistomp.input.event import (
     SwitchEvent,
     SwitchEventKind,
 )
-import pistomp.switchstate as switchstate
 from pistomp.tuner import TunerPanel, TunerSourceFactory
 from pistomp.tuner.client import TunerClient
 from pistomp.tuner.engine import TunerBackend, TunerEngine
@@ -265,11 +264,8 @@ class Modhandler(Handler):
 
     def _handle_encoder(self, event: EncoderEvent) -> bool:
         c = event.controller
-        if c.type == Token.NAV:
-            # The multiplier is only honoured by panels that drive a continuous
-            # value (Parameterdialog); menu selection ignores it.
-            self.universal_encoder_select(event.rotations, event.multiplier)
-            return True
+        # NAV rotation is consumed by the panel stack in lcd.handle() upstream, so
+        # anything reaching here is a tweak/volume encoder the panel didn't take.
         # Volume encoder bypasses the mod-host commit path — there is no
         # backing plugin parameter, just the audio card.
         if c.type == Token.VOLUME and c.parameter is not None:
@@ -294,23 +290,13 @@ class Modhandler(Handler):
     def _handle_switch(self, event: SwitchEvent) -> bool:
         controller = event.controller
         if isinstance(controller, EncoderController):
-            if event.kind == SwitchEventKind.LONGPRESS:
-                # Give the LCD first crack so the selected widget sees LONG_CLICK.
-                # Only run the configured callback if nothing on the LCD consumed it.
-                # Only the nav encoder button routes through the LCD panel stack.
-                if (
-                    controller.type == Token.NAV
-                    and self._lcd is not None
-                    and self._lcd.enc_sw(switchstate.Value.LONGPRESSED)
-                ):
-                    return True
-                callback_name = controller.longpress
-                if callback_name:
-                    cb = self.get_callback(callback_name)
-                    if cb:
-                        cb()
-                return True
-            self.universal_encoder_sw(switchstate.Value.RELEASED)
+            # Encoder click/long-click was already offered to the selected widget
+            # via lcd.handle() upstream. A longpress the panel didn't consume runs
+            # the encoder's configured callback (e.g. tweak next/previous_snapshot).
+            if event.kind == SwitchEventKind.LONGPRESS and controller.longpress:
+                cb = self.get_callback(controller.longpress)
+                if cb:
+                    cb()
             return True
         if isinstance(controller, Footswitch):
             return self._handle_footswitch(controller, event.kind, event.timestamp)
@@ -447,14 +433,6 @@ class Modhandler(Handler):
         if top is not None and top.wants_fast_tick():
             return 2
         return self._lcd.poll_divisor
-
-    def universal_encoder_select(self, direction, multiplier: float = 1.0):
-        if self._lcd is not None:
-            self._lcd.enc_step(direction, multiplier)
-
-    def universal_encoder_sw(self, value, obj=None, timestamp=None):
-        if self._lcd is not None:
-            self._lcd.enc_sw(value)
 
     def _handle_blend_mode_snapshot_change(self, new_snapshot_index: int):
         """

@@ -71,6 +71,13 @@ def lcd(fake_lcd, mock_handler):
     return instance, fake_lcd
 
 
+def _enc_step(instance, d, multiplier=1.0):
+    """Step the top panel's nav selector, as the retired lcd.enc_step did."""
+    if d == 0:
+        return
+    instance.pstack.input_step(1 if d > 0 else -1, abs(d), multiplier)
+
+
 def setup_main_ui(instance):
     mock_gain = MockObject(
         name="Gain",
@@ -276,7 +283,7 @@ def test_parameter_dialog_batches_detents(lcd):
         original()
 
     dialog._draw_graph = counting_draw_graph
-    instance.enc_step(3)
+    _enc_step(instance, 3)
 
     # 0.5 sits on step 63 of the 128-step grid; 3 detents → step 66.
     assert dialog.parameter.value == pytest.approx(dialog.steps.values[66])
@@ -300,7 +307,7 @@ def test_parameter_dialog_applies_encoder_multiplier(lcd):
     dialog = instance.draw_parameter_dialog(mock_param)
 
     # 2 detents at 3x = 6 grid steps from the bottom.
-    instance.enc_step(2, multiplier=3.0)
+    _enc_step(instance, 2, multiplier=3.0)
     assert dialog.parameter.value == pytest.approx(dialog.steps.values[6])
 
 
@@ -310,11 +317,11 @@ def test_menu_ignores_encoder_multiplier(lcd):
     setup_main_ui(instance)
     panel = instance.pstack.current
 
-    instance.enc_step(2, multiplier=4.0)
+    _enc_step(instance, 2, multiplier=4.0)
     accelerated = panel.sel_ref
 
-    instance.enc_step(-2, multiplier=4.0)
-    instance.enc_step(2)
+    _enc_step(instance, -2, multiplier=4.0)
+    _enc_step(instance, 2)
 
     assert panel.sel_ref is accelerated
 
@@ -325,12 +332,12 @@ def test_menu_batches_detents_into_one_selection_move(lcd):
     setup_main_ui(instance)
     panel = instance.pstack.current
 
-    instance.enc_step(3)
+    _enc_step(instance, 3)
     batched = panel.sel_ref
 
-    instance.enc_step(-3)
+    _enc_step(instance, -3)
     for _ in range(3):
-        instance.enc_step(1)
+        _enc_step(instance, 1)
 
     assert panel.sel_ref is batched
 
@@ -368,6 +375,24 @@ def test_tweak_dialog_never_autocloses(lcd):
     assert d.expiry_time is None
     d.tick()
     assert d.parent is not None  # still open
+
+
+def test_tweak_button_click_closes_parameter_dialog(lcd):
+    """A tweak/volume encoder button press confirms & closes an open param dialog
+    (the NAV button isn't the only way to dismiss it)."""
+    from pistomp.controller import Controller
+    from pistomp.input.event import SwitchEvent, SwitchEventKind
+
+    instance, _ = lcd
+    setup_main_ui(instance)
+    d = instance.draw_parameter_dialog(_mock_param())
+    assert d.parent is not None  # open
+
+    knob = Controller(midi_channel=0, midi_CC=None)
+    knob.type = Token.KNOB
+    knob.id = 1
+    instance.handle(SwitchEvent(controller=knob, kind=SwitchEventKind.PRESS, timestamp=0.0))
+    assert d.parent is None  # closed by the tweak-button click
 
 
 def test_volume_dialog_autocloses_and_has_no_close_button(lcd):

@@ -19,6 +19,7 @@ from modalapi.connections import Connection, Endpoint, EndpointKind
 from plugins.customization import lookup
 from plugins.nam import NAM_URIS
 from uilib.text import TextWidget
+from tests.v3.nav_helpers import nav_click
 
 
 # ---------------------------------------------------------------------------
@@ -363,10 +364,10 @@ def test_v3_parameter_edit(v3_system: SystemFixture, nav_handler, make_parameter
     nav_handler(1)
     nav_handler(1)
 
-    handler.universal_encoder_sw(switchstate.Value.LONGPRESSED)
+    nav_click(handler, long=True)
     snapshot("param_menu")
 
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
     snapshot("param_dialog")
 
     nav_handler(1)
@@ -374,7 +375,7 @@ def test_v3_parameter_edit(v3_system: SystemFixture, nav_handler, make_parameter
     nav_handler(1)
     snapshot("param_tweaked")
 
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
     handler.poll_lcd_updates()
     snapshot("param_closed")
 

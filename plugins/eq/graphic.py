@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Optional
 
+from pistomp.input.event import ControllerEvent, EncoderEvent
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import GraphicBandSpec
 from plugins.eq.parametric import paint_band_node, _fmt_freq as _fmt_freq_long
@@ -387,8 +388,12 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
         self.apply_state(self.snapshot_state())
         self.sel_widget(self._band_sels[self.bands[0].name])
 
-    def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:
-        if encoder_id not in (1, 2, 3) or rotations == 0:
+    def on_event(self, event: ControllerEvent) -> bool:
+        if not isinstance(event, EncoderEvent) or event.controller.id not in (1, 2, 3):
+            return False
+        encoder_id = event.controller.id
+        rotations = event.rotations
+        if rotations == 0:
             return False
         band = self.selected_band
         if band is None:

@@ -11,7 +11,7 @@ from modalapi.plugin import Plugin
 from plugins import lookup, register, PluginCustomization
 from plugins.fullscreen import FullscreenPluginPanel
 from pistomp.controller import Controller
-from pistomp.input.event import EncoderEvent, SwitchEvent, SwitchEventKind
+from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 
 
 # ── minimal fake infrastructure ─────────────────────────────────────────────
@@ -54,9 +54,9 @@ class DemoPanel(FullscreenPluginPanel[DemoState]):
     def build_widgets(self) -> None:
         pass  # chrome only for the minimal test
 
-    def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:
-        if encoder_id == 1:
-            self.set_param("gain", self.plugin.parameters["gain"].value + rotations * 0.1)
+    def on_event(self, event: ControllerEvent) -> bool:
+        if isinstance(event, EncoderEvent) and event.controller.id == 1:
+            self.set_param("gain", self.plugin.parameters["gain"].value + event.rotations * 0.1)
             return True
         return False
 

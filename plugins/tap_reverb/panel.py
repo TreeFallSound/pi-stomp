@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pistomp.input.event import ControllerEvent, EncoderEvent
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.layouts.arc_knob import ArcKnobWidget
 from plugins.layouts.mode_selector import ModeSelectorWidget
@@ -149,8 +150,12 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         self.apply_state(self._state)
         self.sel_widget(self._mode_selector)
 
-    def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:
-        if encoder_id not in (1, 2, 3) or rotations == 0:
+    def on_event(self, event: ControllerEvent) -> bool:
+        if not isinstance(event, EncoderEvent) or event.controller.id not in (1, 2, 3):
+            return False
+        encoder_id = event.controller.id
+        rotations = event.rotations
+        if rotations == 0:
             return False
 
         if encoder_id == 2:

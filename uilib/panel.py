@@ -28,7 +28,8 @@ from uilib.widget import Widget
 from uilib.misc import InputEvent, trace
 from uilib.paint import PaintContext, _pg_rect
 
-from pistomp.input.event import ControllerEvent, EncoderEvent
+import common.token as Token
+from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.input.sink import InputSink
 
 #
@@ -204,16 +205,44 @@ class Panel(ContainerWidget, InputSink):
     def _get_panel(self):
         return self
 
-    # ── InputSink: tweak-encoder dispatch (NAV stays on the legacy enc_step path) ──
+    # ── InputSink: panels get first dibs via on_event(); the base owns NAV ──
 
     def handle(self, event: ControllerEvent) -> bool:
+        # Panels override on_event() to drive their own controls (tweak encoders,
+        # panel buttons) with full access to the typed event. Whatever on_event
+        # doesn't consume falls to the base NAV/selection default below — so a
+        # panel cannot accidentally break navigation by forgetting to delegate.
+        if self.on_event(event):
+            return True
         match event:
-            case EncoderEvent() if event.controller.id in (1, 2, 3):
-                return self.on_encoder_rotation(event.controller.id, event.rotations)
+            case EncoderEvent() if event.controller.type == Token.NAV:
+                d = event.rotations
+                if d == 0:
+                    return True
+                return self.input_step(1 if d > 0 else -1, abs(d), event.multiplier)
+            case SwitchEvent() if event.controller.type == Token.NAV:
+                # The dedicated nav control: both click and long-click act on the
+                # selection (long-click is a UI gesture, e.g. back/delete).
+                click = InputEvent.LONG_CLICK if event.kind is SwitchEventKind.LONGPRESS else InputEvent.CLICK
+                return self.input_event(click)
+            case SwitchEvent() if (
+                event.kind is SwitchEventKind.PRESS
+                and event.controller.type in (Token.KNOB, Token.VOLUME)
+            ):
+                # A tweak/volume encoder button borrows only the shared click =
+                # "confirm selection" affordance (handy for closing a parameter
+                # dialog). Its long-press is reserved for the encoder's configured
+                # callback (e.g. next/previous_snapshot), which runs downstream in
+                # the handler when this falls through unconsumed.
+                return self.input_event(InputEvent.CLICK)
         return False
 
-    def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:
-        return False  # default: release (let the handler cascade pick it up)
+    def on_event(self, event: ControllerEvent) -> bool:
+        """Handle this panel's own controls. Return True to consume — which also
+        preempts the base NAV default, letting a panel repurpose the NAV encoder
+        (e.g. scroll instead of step). Return False for anything the panel does
+        not own, crucially NAV events it wants to keep working."""
+        return False
 
     def wants_fast_tick(self) -> bool:
         """Returns True iff this panel renders at a high refresh rate."""

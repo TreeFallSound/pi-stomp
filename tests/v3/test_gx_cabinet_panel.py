@@ -10,7 +10,6 @@ To regenerate snapshots after intentional UI changes:
 
 from __future__ import annotations
 
-import pistomp.switchstate as switchstate
 from modalapi.parameter import Parameter
 from modalapi.plugin import Plugin
 from pistomp.controller import Controller
@@ -18,6 +17,7 @@ from pistomp.input.event import EncoderEvent
 from plugins.gx_cabinet import GX_CABINET_URI
 from plugins.gx_cabinet.panel import GxCabinetPanel
 from tests.types import SystemFixture
+from tests.v3.nav_helpers import nav_click
 
 # ── cab model labels (19 values from the plugin TTL) ────────────────────────
 
@@ -126,7 +126,7 @@ def tweak(handler, idx: int, rotations: int) -> bool:
 
 
 def short_press(handler) -> None:
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
 
 
 # ---------------------------------------------------------------------------

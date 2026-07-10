@@ -11,6 +11,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from common.parameter import Parameter
+from pistomp.input.event import ControllerEvent, EncoderEvent
 from plugins.window import PluginWindow
 from uilib.box import Box
 from uilib.config import Config
@@ -112,9 +113,13 @@ class MultibandWindow(PluginWindow[None]):
             self._slot_widgets.append(w)
             self.add_sel_widget(w)
 
-    def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:
-        if encoder_id == 1 and isinstance(self.sel_ref, ParamSlotWidget):
-            return self.sel_ref.on_encoder_rotation(rotations)
+    def on_event(self, event: ControllerEvent) -> bool:
+        if (
+            isinstance(event, EncoderEvent)
+            and event.controller.id == 1
+            and isinstance(self.sel_ref, ParamSlotWidget)
+        ):
+            return self.sel_ref.on_encoder_rotation(event.rotations)
         return False
 
 

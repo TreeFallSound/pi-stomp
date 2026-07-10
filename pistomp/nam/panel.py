@@ -42,14 +42,13 @@ from uilib.box import Box
 from uilib.config import Config
 from uilib.glyphs import ArcDialWidget, DialVariant
 from uilib.label import Label
-from uilib.misc import TextHAlign, get_text_bbox, get_text_size
+from uilib.misc import InputEvent, TextHAlign, get_text_bbox, get_text_size
 from uilib.paint import PaintContext
 from uilib.pygame_init import font as _make_font
 from uilib.text import Button, TextWidget
 from uilib.widget import Widget
 
 import common.token as Token
-import pistomp.switchstate as switchstate
 
 from uilib.panel import Panel
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
@@ -622,24 +621,23 @@ class NamCapturePanel(Panel):
 
     # ── Input handling ────────────────────────────────────────────────────────
 
-    def handle(self, event: ControllerEvent) -> bool:
-        cid = getattr(event.controller, "id", None)
+    def on_event(self, event: ControllerEvent) -> bool:
+        # Tweak1 (rotation + button) fully mirrors the NAV encoder; enc 2/3 nudge
+        # the capture-gain / output-volume knobs.
+        if isinstance(event, SwitchEvent) and event.controller.id == 1:
+            click = InputEvent.LONG_CLICK if event.kind == SwitchEventKind.LONGPRESS else InputEvent.CLICK
+            return self.input_event(click)
 
-        # Tweak1 (cid=1) mirrors the NAV encoder for the whole panel.
-        if cid == 1 and self._handler is not None:
-            if isinstance(event, EncoderEvent):
-                self._handler.universal_encoder_select(event.rotations)
-                return True
-            if isinstance(event, SwitchEvent) and event.kind == SwitchEventKind.LONGPRESS:
-                self._handler.universal_encoder_sw(switchstate.Value.LONGPRESSED)
-                return True
-            # PRESS falls through — modhandler already calls universal_encoder_sw(RELEASED).
+        if not isinstance(event, EncoderEvent) or event.controller.id not in (1, 2, 3):
             return False
+        encoder_id = event.controller.id
+        if event.rotations == 0:
+            return True
 
-        if not isinstance(event, EncoderEvent):
-            return False
-        if cid not in (2, 3):
-            return False
+        # Tweak1 mirrors the NAV encoder: scroll the panel selection.
+        if encoder_id == 1:
+            self.input_step(1 if event.rotations > 0 else -1, abs(event.rotations), event.multiplier)
+            return True
 
         state = self._engine.state
 
@@ -656,7 +654,7 @@ class NamCapturePanel(Panel):
         # DONE/ABORTED: swallow — the setup view knobs aren't visible.
         if state == CaptureState.IDLE and self._handler is not None:
             steps = int(round(event.rotations * event.multiplier))
-            self._nudge_audio(cid == 2, steps)
+            self._nudge_audio(encoder_id == 2, steps)
         return True
 
     # ── Polling ───────────────────────────────────────────────────────────────

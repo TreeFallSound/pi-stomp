@@ -6,7 +6,6 @@ To regenerate snapshots after intentional UI changes:
     uv run pytest tests/v3/test_notes_panel.py --snapshot-update
 """
 
-import pistomp.switchstate as switchstate
 from modalapi.parameter import Parameter
 from modalapi.plugin import Plugin
 from pistomp.controller import Controller
@@ -16,6 +15,7 @@ from plugins.notes import NOTES_URI
 from plugins.notes.panel import NotesData, NotesPanel
 from tests.types import SystemFixture
 import common.token as Token
+from tests.v3.nav_helpers import nav_click
 
 # ── sample text long enough to require scrolling ──────────────────────────────
 
@@ -120,6 +120,6 @@ def test_notes_panel_saga(v3_system: SystemFixture, snapshot):
     snapshot("at_bottom")
 
     # Press the nav encoder (RELEASED = short press) → activates Back button.
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
     handler.poll_lcd_updates()
     snapshot("closed")

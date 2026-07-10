@@ -10,7 +10,6 @@ To regenerate snapshots after intentional UI changes:
 
 from __future__ import annotations
 
-import pistomp.switchstate as switchstate
 from modalapi.parameter import Parameter
 from modalapi.plugin import Plugin
 from pistomp.controller import Controller
@@ -18,6 +17,7 @@ from pistomp.input.event import EncoderEvent
 from plugins.customization import lookup
 from uilib.misc import InputEvent
 from tests.types import SystemFixture
+from tests.v3.nav_helpers import nav_click
 
 
 CAPS_NOISEGATE_URI = "http://moddevices.com/plugins/caps/Noisegate"
@@ -82,8 +82,8 @@ def tweak(handler, idx: int, rotations: int) -> bool:
 
 
 def long_press(handler) -> None:
-    handler.universal_encoder_sw(switchstate.Value.LONGPRESSED)
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler, long=True)
+    nav_click(handler)
 
 
 # ---------------------------------------------------------------------------
