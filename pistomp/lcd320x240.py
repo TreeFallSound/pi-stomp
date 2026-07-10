@@ -229,32 +229,6 @@ class Lcd:
             self.splash_show(True)
 
     #
-    # Navigation
-    #
-
-    def enc_step_widget(self, widget, direction):
-        # TODO check if widget is type
-        if direction == 0:
-            return
-        event = InputEvent.RIGHT if direction > 0 else InputEvent.LEFT
-        for _ in range(abs(direction)):
-            widget.input_event(event)
-
-    def enc_step(self, d, multiplier: float = 1.0):
-        if d == 0:
-            return
-        # The top panel decides what a batch of detents means: menus scan one
-        # step at a time, a parameter dialog jumps straight to the end value.
-        self.pstack.input_step(1 if d > 0 else -1, abs(d), multiplier)
-
-    def enc_sw(self, v):
-        if v == switchstate.Value.RELEASED:
-            return self.pstack.input_event(InputEvent.CLICK)
-        elif v == switchstate.Value.LONGPRESSED:
-            return self.pstack.input_event(InputEvent.LONG_CLICK)
-        return False
-
-    #
     # Main
     #
     def link_data(self, pedalboards, current, footswitches):

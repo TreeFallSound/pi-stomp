@@ -5,8 +5,8 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pistomp.switchstate as switchstate
 from tests.types import SystemFixture
+from tests.v3.nav_helpers import nav_click
 
 
 def test_v3_pedalboard_change_via_modui(v3_system: SystemFixture, make_plugin, snapshot):
@@ -54,9 +54,9 @@ def test_v3_pedalboard_change_via_lcd(v3_system: SystemFixture, nav_handler, mak
     handler.pedalboards["/path/to/new.pedalboard"].plugins = [make_plugin("fuzz")]
 
     nav_handler(1)
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
     nav_handler(1)
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
 
     assert any("pedalboard/load_bundle" in u for u in get_urls(mock_post))
     assert any("reset" in u for u in get_urls(mock_get))
@@ -110,7 +110,7 @@ def test_v3_pedalboard_selection_menu_shows_all_boards(
     nav_handler(1)
 
     # Click to open the selection menu
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
     handler.poll_lcd_updates()
 
     snapshot()

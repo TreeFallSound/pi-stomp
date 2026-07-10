@@ -158,15 +158,13 @@ class NotesPanel(FullscreenPluginPanel[None]):
     # ── encoder routing ────────────────────────────────────────────────────
 
     @override
-    def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:  # noqa: ARG002
-        return False  # Tweak encoders fall through
-
-    @override
-    def handle(self, event: ControllerEvent) -> bool:
+    def on_event(self, event: ControllerEvent) -> bool:
+        # Repurpose the NAV encoder to scroll the note text (preempts the base
+        # step-selection). Tweak encoders fall through to normal handling.
         if isinstance(event, EncoderEvent) and event.controller.type == Token.NAV:
             self._scroll(event.rotations)
             return True
-        return super().handle(event)
+        return False
 
     # ── internal ───────────────────────────────────────────────────────────
 

@@ -15,6 +15,7 @@ from modalapi.wifi import SavedConnection, ScannedNetwork
 from tests.conftest import FakeWebSocketBridge
 from tests.integration.conftest import _v3_stack
 from tests.types import SystemFixture
+from tests.v3.nav_helpers import nav_step
 from ui.wifi_menu import _PassphraseEditor
 from uilib.misc import InputEvent
 from uilib.text import LetterSelector, TextEditor
@@ -383,16 +384,17 @@ def type_in_editor():
 
 @pytest.fixture
 def nav_lcd(v3_system):
-    """nav_lcd(d) — step the LCD nav selector by ``d`` detents, then poll.
+    """nav_lcd(d) — step the nav selector by ``d`` detents, then poll the LCD.
 
-    Mirrors the main loop's step-then-poll: enc_step advances the selector
-    (small clips push inline), poll_updates ticks dialogs and flushes any
-    coalesced large clips.
+    Mirrors the main loop's step-then-poll: a NAV EncoderEvent advances the
+    selector through the handler cascade (small clips push inline), poll_updates
+    ticks dialogs and flushes any coalesced large clips.
     """
-    lcd = v3_system.handler._lcd
+    handler = v3_system.handler
+    lcd = handler._lcd
 
     def _nav(d: int) -> None:
-        lcd.enc_step(d)
+        nav_step(handler, d)
         lcd.poll_updates()
 
     return _nav
@@ -400,16 +402,16 @@ def nav_lcd(v3_system):
 
 @pytest.fixture
 def nav_handler(v3_system):
-    """nav_handler(d) — step the handler nav selector by ``d`` detents, then poll.
+    """nav_handler(d) — step the nav selector by ``d`` detents, then poll.
 
-    Mirrors the main loop's step-then-poll: universal_encoder_select advances
-    the selector via the LCD, poll_lcd_updates ticks dialogs and flushes any
-    coalesced large clips (e.g. the EQ curve).
+    Mirrors the main loop's step-then-poll: a NAV EncoderEvent advances the
+    selector via handler.handle → LCD, poll_lcd_updates ticks dialogs and flushes
+    any coalesced large clips (e.g. the EQ curve).
     """
     handler = v3_system.handler
 
     def _nav(d: int) -> None:
-        handler.universal_encoder_select(d)
+        nav_step(handler, d)
         handler.poll_lcd_updates()
 
     return _nav

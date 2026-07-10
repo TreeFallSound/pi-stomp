@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pistomp.switchstate as switchstate
 from tests.types import SystemFixture
 from uilib.misc import get_text_size
+from tests.v3.nav_helpers import nav_click
 
 
 def test_v3_preset_change_via_footswitch_longpress(v3_system: SystemFixture, snapshot, get_urls):
@@ -31,13 +32,13 @@ def test_v3_preset_change_via_lcd(v3_system: SystemFixture, nav_handler, snapsho
 
     nav_handler(1)
     nav_handler(1)
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
     snapshot("nav_B")
 
     nav_handler(1)
     snapshot("nav_C")
 
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
     assert any("snapshot/load?id=1" in u for u in get_urls(mock_get))
     snapshot("nav_D")
 

@@ -25,7 +25,8 @@ Subclass checklist
 2. Implement ``apply_state(state)``.
 3. Implement ``build_widgets()`` (add widgets to ``self``; the concrete base
    appends its chrome afterward).
-4. Optionally override ``on_encoder_rotation(encoder_id, rotations) -> bool``.
+4. Optionally override ``on_event(event) -> bool`` to drive this panel's own
+   controls (return True to consume; False lets NAV and the handler cascade run).
 5. Use ``self.set_param(symbol, value)`` for every live parameter edit.
 6. A subclass ``tick()`` override must call ``super().tick()`` so the coalesce
    queue drains.
@@ -39,6 +40,7 @@ from typing import Generic, TypeVar
 
 import common.token as Token
 from modalapi.plugin import Plugin
+from pistomp.input.event import ControllerEvent
 from pistomp.handler import Handler
 from uilib.panel import Panel
 from uilib.text import Button
@@ -97,11 +99,13 @@ class PluginPanel(Panel, Generic[TState], ABC):
         Nav cycling. The concrete base appends its chrome *after* this returns.
         """
 
-    def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:
-        """Called for Tweak1/2/3 encoder events when this panel is visible.
+    def on_event(self, event: ControllerEvent) -> bool:
+        """Called first for every input event when this panel is visible.
 
-        Return ``True`` to consume the event; ``False`` lets it fall through to
-        normal parameter editing / volume control.
+        Override to drive this panel's own controls (typically the Tweak1/2/3
+        encoders). Return ``True`` to consume — which also preempts the base NAV
+        default. Return ``False`` for anything this panel does not own so NAV and
+        normal parameter editing / volume control keep working.
         """
         return False
 

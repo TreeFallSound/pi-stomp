@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 
 from pistomp.compmeter.client import GrMeterClient
+from pistomp.input.event import ControllerEvent, EncoderEvent
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.layouts.arc_column import ArcColumnWidget, ArcSelectable
 from plugins.layouts.compressor_spec import CompressorSpec, build_arc_specs
@@ -93,8 +94,12 @@ class CompressorPanel(FullscreenPluginPanel[CompressorState]):
 
         self._meter: GrMeterClient | None = None
 
-    def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:
-        if encoder_id not in (1, 2, 3) or rotations == 0:
+    def on_event(self, event: ControllerEvent) -> bool:
+        if not isinstance(event, EncoderEvent) or event.controller.id not in (1, 2, 3):
+            return False
+        encoder_id = event.controller.id
+        rotations = event.rotations
+        if rotations == 0:
             return True
         if encoder_id == 2:
             self._edit_symbol(self.SPEC.thr_sym, rotations)
