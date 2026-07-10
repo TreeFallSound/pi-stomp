@@ -157,6 +157,7 @@ def main():
                 sys.exit(1)
             pb = handler.pedalboard_list[0]
             write_last_json(handler.last_json_monitor.path, pb.bundle)
+            handler.last_json_monitor.reset()
             handler.pedalboard_change(pb)
             handler.set_current_pedalboard(pb)
         else:
