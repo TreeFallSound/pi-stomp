@@ -77,6 +77,7 @@ class Pistompcore(hardware.Hardware):
             TOP_ENC_PIN_D, TOP_ENC_PIN_CLK,
             type=Token.NAV,
             sw_pin=1,
+            max_drain=1,
         )
         self.encoders.append(top_enc)
         # XXX: user-added encoders via config are not supported here yet (see v3).
