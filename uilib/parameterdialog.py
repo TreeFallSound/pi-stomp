@@ -20,8 +20,8 @@ from uilib.image import ImageWidget
 from uilib.misc import InputEvent, WidgetAlign, get_text_size
 from uilib.text import TextWidget
 from uilib.widget import Widget
-import common.util as util
-from common.parameter import Parameter, Type
+from common.parameter import Parameter
+from common.parameter_steps import ParameterSteps
 
 import numpy as np
 import pygame
@@ -53,15 +53,10 @@ class Parameterdialog(Dialog):
         )
         self.parameter: Parameter = parameter
 
-        # adjustment amount per click
-        if self.parameter.type in (Type.INTEGER, Type.ENUMERATION, Type.TOGGLED):
-            self.parameter_tweak_amount = 1
-        else:
-            self.parameter_tweak_amount = 8
-
-        self.tweak = util.renormalize_float(
-            self.parameter_tweak_amount, 0, 127, self.parameter.minimum, self.parameter.maximum
-        )
+        # The nav encoder steps this dialog through the same quantized grid a v3
+        # tweak encoder uses, so a detent moves the value identically whichever
+        # control you turn (v2 nav, v3 nav, v3 tweak).
+        self.steps = ParameterSteps.for_parameter(self.parameter)
 
         self.timeout = timeout
         self.expiry_time = None
@@ -144,13 +139,18 @@ class Parameterdialog(Dialog):
             TextWidget(
                 box=Box.xywh(220, y0, 0, 0), text=max_text, parent=self, outline=0, align=WidgetAlign.NONE, name="value"
             )
-        else:
-            # Update text (refreshes old box area)
-            self.w_value.set_text(val_text)
-            # Update box position and width (realign=True) without triggering full parent refresh
-            self.w_value.set_box(Box.xywh(x_centered, 23, text_width, text_height), realign=True, refresh=False)
-            # Refresh new box area
-            self.w_value.refresh()
+        elif val_text != self.w_value.text:
+            # set_text() would refresh at the *old* box, painting the new string
+            # in the old (uncentered) position and pushing it before we move the
+            # box — a visible stale label and a wasted SPI push. Update in place
+            # and recompose the union of both boxes once, as Subtitle does.
+            assert self.w_value.box is not None  # visible ⇒ box set
+            old = self.w_value.box.copy()
+            new = Box.xywh(x_centered, 23, text_width, text_height)
+            self.w_value.text = val_text
+            self.w_value.text_size_valid = False
+            self.w_value.set_box(new, realign=True, refresh=False)
+            self.redraw_region(old.union(new))
 
     def _filled_count(self, value: float) -> int:
         """Number of leading bars filled at `value`."""
@@ -224,25 +224,22 @@ class Parameterdialog(Dialog):
         """Update display with new value (controller already calculated it)."""
         self.reset_timeout()
         self.parameter.value = new_value
-        self._update_text_widget()
-        self._draw_graph()
+        self.steps.set_value(new_value)  # resync: a tweak encoder moved it
+        self._draw_graph()  # updates the value text too
 
-    def parameter_value_change(self, direction, count: int = 1):
+    def parameter_value_change(self, direction, count: int = 1, multiplier: float = 1.0):
         self.reset_timeout()
 
-        # Calculate new value
-        new_value = self.parameter.value + (direction * count * self.tweak)
+        # Resync if the value was changed externally (tweak encoder, MOD-UI echo).
+        if abs(self.parameter.value - self.steps.value) > 1e-9:
+            self.steps.set_value(self.parameter.value)
 
-        # Clamp
-        if new_value > self.parameter.maximum:
-            new_value = self.parameter.maximum
-        if new_value < self.parameter.minimum:
-            new_value = self.parameter.minimum
-
-        # Integer rounding
-        if self.parameter.type in (Type.INTEGER, Type.ENUMERATION, Type.TOGGLED):
-            new_value = round(new_value)
-
+        # Same arithmetic as EncoderController.refresh: the multiplier scales the
+        # number of grid steps, not the value.
+        delta = int(round(direction * count * multiplier))
+        if delta == 0:
+            return
+        new_value = self.steps.move(delta)
         if new_value == self.parameter.value:
             return
 
@@ -262,12 +259,13 @@ class Parameterdialog(Dialog):
             return False
         return True
 
-    def input_step(self, direction: int, count: int) -> bool:
+    def input_step(self, direction: int, count: int, multiplier: float = 1.0) -> bool:
         # A value slider has no intermediate states worth rendering: apply the
         # whole batch at once. On v2 the nav encoder is the only encoder, so
         # this is the sole path into the dialog and a fast spin would otherwise
-        # cost one render + LCD push per detent.
-        self.parameter_value_change(1 if direction > 0 else -1, count)
+        # cost one render + LCD push per detent. `multiplier` is the encoder's
+        # speed factor, which the nav path otherwise discards.
+        self.parameter_value_change(1 if direction > 0 else -1, count, multiplier)
         return True
 
     def pop(self):

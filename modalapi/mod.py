@@ -457,7 +457,8 @@ class Mod(Handler):
                 self.universal_encoder_mode = UniversalEncoderMode.DEFAULT
                 self.update_lcd()
 
-    def universal_encoder_select(self, direction):
+    def universal_encoder_select(self, direction, multiplier: float = 1.0):
+        # multiplier is unused: the v1 mono LCD has no parameter dialog to accelerate.
         # State machine for universal encoder
         mode = self.universal_encoder_mode
         if mode == UniversalEncoderMode.LOADING:
