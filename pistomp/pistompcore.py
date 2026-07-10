@@ -80,9 +80,6 @@ class Pistompcore(hardware.Hardware):
             TOP_ENC_PIN_CLK,
             type=Token.NAV,
             sw_pin=1,
-            # Unlike v3, this is the only encoder: it drives the parameter
-            # dialog as well as menu navigation. Drain the full batch each tick
-            # so a fast spin is one render, not one per detent (Panel.input_step).
         )
         self.encoders.append(top_enc)
         # XXX: user-added encoders via config are not supported here yet (see v3).

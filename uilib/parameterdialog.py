@@ -23,9 +23,37 @@ from uilib.widget import Widget
 from common.parameter import Parameter
 from common.parameter_steps import ParameterSteps
 
+from functools import lru_cache
+
 import numpy as np
 import pygame
 import time
+
+
+# Bar geometry/colors are fixed constants so the
+# rendered bar surface depends only on taper and color
+@lru_cache(maxsize=None)
+def _render_bar_surface(
+    taper: float,
+    num_points: int,
+    bar_width: int,
+    graph_x_offset: int,
+    graph_y0: int,
+    graph_width: int,
+    graph_height: int,
+    color: tuple,
+) -> pygame.Surface:
+    x = np.linspace(1, num_points, num_points)
+    graph_points = num_points * ((x / len(x)) ** taper)
+
+    surf = pygame.Surface((graph_width, graph_height), pygame.SRCALPHA)
+    for idx in range(num_points):
+        g = int(graph_points[idx])
+        if g <= 0:
+            continue
+        x0 = graph_x_offset + idx * bar_width
+        pygame.draw.rect(surf, color, pygame.Rect(x0, graph_y0 - g, bar_width, g), 1)
+    return surf
 
 
 class _GraphWidget(ImageWidget):
@@ -69,11 +97,9 @@ class Parameterdialog(Dialog):
         self.num_points = 60
         self.bar_width = 4
         self.actual_abscissa = np.linspace(0, self.num_actual, self.num_actual)
-        self.graph_abscissa = np.linspace(1, self.num_points, self.num_points)
         self.actual_points = self._calc_graph_points(
             self.actual_abscissa, self.parameter.minimum, self.parameter.maximum
         )
-        self.graph_points = self._calc_graph_points(self.graph_abscissa, 0, self.num_points)  # TODO
 
         # Value at which each bar becomes filled. Nondecreasing, so the filled
         # bars are always the prefix [0, k) and a value change dirties only the
@@ -156,17 +182,6 @@ class Parameterdialog(Dialog):
         """Number of leading bars filled at `value`."""
         return int(np.searchsorted(self.bar_thresholds, value, side="right"))
 
-    def _render_bars(self, color) -> pygame.Surface:
-        """Pre-render every bar in one color; strips are blitted out of these."""
-        surf = pygame.Surface((self.graph_width, self.graph_height), pygame.SRCALPHA)
-        for idx in range(self.num_points):
-            g = int(self.graph_points[idx])
-            if g <= 0:
-                continue
-            x = self.GRAPH_X_OFFSET + idx * self.bar_width
-            pygame.draw.rect(surf, color, pygame.Rect(x, self.GRAPH_Y0 - g, self.bar_width, g), 1)
-        return surf
-
     def _blit_bars(self, lo: int, hi: int, filled: bool) -> Box:
         """Repaint bars [lo, hi) from the matching pre-rendered surface.
 
@@ -189,8 +204,17 @@ class Parameterdialog(Dialog):
 
         if self.w_graph is None:
             self._graph_surface = pygame.Surface((self.graph_width, self.graph_height), pygame.SRCALPHA)
-            self._bars_filled = self._render_bars(self.BAR_FILLED)
-            self._bars_unfilled = self._render_bars(self.BAR_UNFILLED)
+            args = (
+                self.taper,
+                self.num_points,
+                self.bar_width,
+                self.GRAPH_X_OFFSET,
+                self.GRAPH_Y0,
+                self.graph_width,
+                self.graph_height,
+            )
+            self._bars_filled = _render_bar_surface(*args, self.BAR_FILLED)
+            self._bars_unfilled = _render_bar_surface(*args, self.BAR_UNFILLED)
             self.w_graph = _GraphWidget(
                 image=self._graph_surface,
                 box=Box.xywh(0, 0, self.graph_width, self.graph_height),
