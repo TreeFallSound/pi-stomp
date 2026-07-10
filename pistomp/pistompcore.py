@@ -27,6 +27,7 @@ import pistomp.hardware as hardware
 import pistomp.relay as Relay
 
 import pistomp.lcd320x240 as Lcd
+from uilib.lcd_ili9341 import has_system_splash
 
 # Pins (Unless the hardware has been changed, these should not be altered)
 TOP_ENC_PIN_D = 17
@@ -69,12 +70,14 @@ class Pistompcore(hardware.Hardware):
 
     def init_lcd(self):
         # 66_666_667 = lowest request selecting CDIV=6; one Hz less gives 50 MHz.
-        self.mod.add_lcd(Lcd.Lcd(self.mod.homedir, self.mod, flip=True,
-                                 spi_speed_hz=66_666_667, reset=True))
+        self.mod.add_lcd(
+            Lcd.Lcd(self.mod.homedir, self.mod, flip=True, spi_speed_hz=66_666_667, reset=not has_system_splash())
+        )
 
     def init_encoders(self):
         top_enc = EncoderController.EncoderController(
-            TOP_ENC_PIN_D, TOP_ENC_PIN_CLK,
+            TOP_ENC_PIN_D,
+            TOP_ENC_PIN_CLK,
             type=Token.NAV,
             sw_pin=1,
         )
