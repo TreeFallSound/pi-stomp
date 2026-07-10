@@ -247,6 +247,57 @@ def test_parameter_dialog_snapshot(lcd, snapshot):
     snapshot()
 
 
+def test_parameter_dialog_batches_detents(lcd):
+    """A tick's worth of detents advances the value once, in a single render.
+
+    On v2 the nav encoder is the only way into this dialog, so a per-detent
+    render would put a fast spin over the 10ms tick budget.
+    """
+    instance, _ = lcd
+    setup_main_ui(instance)
+    mock_param = MockObject(
+        name="Gain",
+        instance_id="delay",
+        value=0.5,
+        minimum=0.0,
+        maximum=1.0,
+        type=MockObject(value=0),
+        get_taper=lambda: 1,
+        format=lambda v: f"{v:.2f}",
+    )
+    dialog = instance.draw_parameter_dialog(mock_param)
+
+    renders = 0
+    original = dialog._draw_graph
+
+    def counting_draw_graph():
+        nonlocal renders
+        renders += 1
+        original()
+
+    dialog._draw_graph = counting_draw_graph
+    instance.enc_step(3)
+
+    assert dialog.parameter.value == pytest.approx(0.5 + 3 * dialog.tweak)
+    assert renders == 1
+
+
+def test_menu_batches_detents_into_one_selection_move(lcd):
+    """A batch of detents lands on the same widget as the same number of singles."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    panel = instance.pstack.current
+
+    instance.enc_step(3)
+    batched = panel.sel_ref
+
+    instance.enc_step(-3)
+    for _ in range(3):
+        instance.enc_step(1)
+
+    assert panel.sel_ref is batched
+
+
 def _mock_param(**overrides):
     defaults = dict(
         name="Gain",

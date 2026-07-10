@@ -227,11 +227,11 @@ class Parameterdialog(Dialog):
         self._update_text_widget()
         self._draw_graph()
 
-    def parameter_value_change(self, direction):
+    def parameter_value_change(self, direction, count: int = 1):
         self.reset_timeout()
 
         # Calculate new value
-        new_value = self.parameter.value + (direction * self.tweak)
+        new_value = self.parameter.value + (direction * count * self.tweak)
 
         # Clamp
         if new_value > self.parameter.maximum:
@@ -260,6 +260,14 @@ class Parameterdialog(Dialog):
             self.parameter_value_change(1)
         else:
             return False
+        return True
+
+    def input_step(self, direction: int, count: int) -> bool:
+        # A value slider has no intermediate states worth rendering: apply the
+        # whole batch at once. On v2 the nav encoder is the only encoder, so
+        # this is the sole path into the dialog and a fast spin would otherwise
+        # cost one render + LCD push per detent.
+        self.parameter_value_change(1 if direction > 0 else -1, count)
         return True
 
     def pop(self):
