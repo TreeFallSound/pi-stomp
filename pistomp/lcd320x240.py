@@ -113,11 +113,10 @@ class Subtitle(TextWidget):
 class Lcd:
     CAPTURE_SOCKET_PATH = "/tmp/pistomp-lcd.sock"
 
-    def __init__(self, cwd, handler: "Modhandler", flip=False, display=None,
-                 spi_speed_hz=50_000_000, reset=True):
+    def __init__(self, cwd, handler: "Modhandler", flip=False, display=None, spi_speed_hz=50_000_000, reset=True):
         self.cwd = cwd
         self.imagedir = os.path.join(cwd, "images")
-        Config(os.path.join(cwd, 'ui', 'config.json'))
+        Config(os.path.join(cwd, "ui", "config.json"))
         self.handler: "Modhandler" = handler
         self.flip = flip
         self.spi_speed_hz = spi_speed_hz
@@ -132,13 +131,16 @@ class Lcd:
         if display is None:
             import board
             import digitalio
+
             reset_pin = digitalio.DigitalInOut(board.D5) if reset else None
-            display = LcdIli9341(board.SPI(),
-                                 digitalio.DigitalInOut(board.CE0),
-                                 digitalio.DigitalInOut(board.D6),
-                                 reset_pin,
-                                 spi_speed_hz,
-                                 flip)
+            display = LcdIli9341(
+                board.SPI(),
+                digitalio.DigitalInOut(board.CE0),
+                digitalio.DigitalInOut(board.D6),
+                reset_pin,
+                spi_speed_hz,
+                flip,
+            )
 
         # Colors
         self.background = (0, 0, 0)
@@ -147,18 +149,18 @@ class Lcd:
         self.color_splash_down = (255, 20, 20)
         self.default_plugin_color = "Silver"
         self.category_color_map = {
-            'Delay': "MediumVioletRed",
-            'Distortion': "Lime",
-            'Dynamics': "OrangeRed",
-            'Filter': (205, 133, 40),
-            'Generator': "Indigo",
-            'Midiutility': "Gray",
-            'Modulator': (50, 50, 255),
-            'Reverb': (20, 160, 255),
-            'Simulator': "SaddleBrown",
-            'Spacial': "Gray",
-            'Spectral': "Red",
-            'Utility': "Gray"
+            "Delay": "MediumVioletRed",
+            "Distortion": "Lime",
+            "Dynamics": "OrangeRed",
+            "Filter": (205, 133, 40),
+            "Generator": "Indigo",
+            "Midiutility": "Gray",
+            "Modulator": (50, 50, 255),
+            "Reverb": (20, 160, 255),
+            "Simulator": "SaddleBrown",
+            "Spacial": "Gray",
+            "Spectral": "Red",
+            "Utility": "Gray",
         }
 
         # TODO get fonts from config.json
@@ -184,8 +186,7 @@ class Lcd:
         # widgets
         self.w_wifi = None
         self._wifi_frames: list[pygame.Surface] = [
-            load_surface(os.path.join(self.imagedir, f'wifi_processing_{i}.png'))
-            for i in range(1, 4)
+            load_surface(os.path.join(self.imagedir, f"wifi_processing_{i}.png")) for i in range(1, 4)
         ]
         self._wifi_frame_idx = -1  # -1 = static (not spinning)
         self.ethernet_menu: EthernetMenu = EthernetMenu(self)
@@ -202,12 +203,12 @@ class Lcd:
         self.w_splash = None
         self.w_info_msg = None
         self.w_subtitle: Optional[Subtitle] = None
-        self._subtitle_desc = ""           # last selection description seen
-        self._subtitle_changed_at = 0.0    # monotonic time of last nav change
+        self._subtitle_desc = ""  # last selection description seen
+        self._subtitle_changed_at = 0.0  # monotonic time of last nav change
         self.w_parameter_dialogs = {}
 
         # panels
-        self.pstack = PanelStack(display, image_format='RGB', use_dimming=True)
+        self.pstack = PanelStack(display, image_format="RGB", use_dimming=True)
         self.splash_panel = Panel(box=Box.xywh(0, 0, self.display_width, self.display_height))
         self.pstack.push_panel(self.splash_panel, refresh=False)
         self.main_panel = Panel(
@@ -215,9 +216,14 @@ class Lcd:
         )
         self.main_panel_pushed = False
         self._is_pedalboard_load = False
-        self.footswitch_panel = ShroudedPanel(box=Box.xywh(0, self.display_height - self.footswitch_height,
-                                                            self.display_width, self.footswitch_height),
-                                              shroud_alpha=255, gradient_start=0, gradient_pos=0.2, no_dim=True, accepts_input=False)
+        self.footswitch_panel = ShroudedPanel(
+            box=Box.xywh(0, self.display_height - self.footswitch_height, self.display_width, self.footswitch_height),
+            shroud_alpha=255,
+            gradient_start=0,
+            gradient_pos=0.2,
+            no_dim=True,
+            accepts_input=False,
+        )
 
         self.pedalboards = {}
 
@@ -247,7 +253,8 @@ class Lcd:
         # PanelStack.propagate_dirty), so a turn scans rather than jumps.
         event = InputEvent.RIGHT if d > 0 else InputEvent.LEFT
         for _ in range(abs(d)):
-            self.pstack.input_event(event)
+            with profiling.measure("enc_step"):
+                self.pstack.input_event(event)
 
     def enc_sw(self, v):
         if v == switchstate.Value.RELEASED:
@@ -286,7 +293,11 @@ class Lcd:
             # selectable; updated from the current selection in _poll_updates.
             self.w_subtitle = Subtitle(
                 box=Box.xywh(Subtitle.ANCHOR_X, Subtitle.ANCHOR_Y, 0, 0),
-                text="", font=self.subtitle_font, parent=self.main_panel, outline=0, sel_width=0,
+                text="",
+                font=self.subtitle_font,
+                parent=self.main_panel,
+                outline=0,
+                sel_width=0,
             )
             self.w_subtitle.set_foreground((120, 120, 120))
         if not self.main_panel_pushed:
@@ -294,7 +305,7 @@ class Lcd:
             self.pstack.push_panel(self.footswitch_panel, refresh=False)
             self.main_panel_pushed = True
             self.pstack.refresh()
-        #self.main_panel.refresh()
+        # self.main_panel.refresh()
 
     def handle(self, event: ControllerEvent) -> bool:
         # Ask the top input-accepting panel first. It returns True to stop the
@@ -410,7 +421,6 @@ class Lcd:
         self.pstack.set_capture_callback(None)
         logging.info("LCD capture disabled")
 
-
     #
     # Toolbar
     #
@@ -422,7 +432,7 @@ class Lcd:
             return
         self.w_wifi = ImageWidget(
             box=Box.xywh(210, 0, 20, 20),
-            image=os.path.join(self.imagedir, 'wifi_gray.png'),
+            image=os.path.join(self.imagedir, "wifi_gray.png"),
             parent=self.main_panel,
             action=self.wifi_menu.open,
             subtitle="Network",
@@ -430,17 +440,29 @@ class Lcd:
         self.main_panel.add_sel_widget(self.w_wifi)
         if self.w_eq is not None:
             return
-        self.w_eq = ImageWidget(box=Box.xywh(240, 0, 20, 20), image=os.path.join(self.imagedir,
-                                  'eq_blue.png'), parent=self.main_panel, action=self.draw_audio_menu,
-                                subtitle="Audio")
+        self.w_eq = ImageWidget(
+            box=Box.xywh(240, 0, 20, 20),
+            image=os.path.join(self.imagedir, "eq_blue.png"),
+            parent=self.main_panel,
+            action=self.draw_audio_menu,
+            subtitle="Audio",
+        )
         self.main_panel.add_sel_widget(self.w_eq)
-        self.w_power = ImageWidget(box=Box.xywh(270, 0, 20, 20), image=os.path.join(self.imagedir,
-                                   'power_gray.png'), parent=self.main_panel, action=self.toggle_bypass,
-                                   subtitle="Bypass")
+        self.w_power = ImageWidget(
+            box=Box.xywh(270, 0, 20, 20),
+            image=os.path.join(self.imagedir, "power_gray.png"),
+            parent=self.main_panel,
+            action=self.toggle_bypass,
+            subtitle="Bypass",
+        )
         self.main_panel.add_sel_widget(self.w_power)
-        self.w_wrench = ImageWidget(box=Box.xywh(296, 0, 20, 20), image=os.path.join(self.imagedir,
-                             'wrench_silver.png'), parent=self.main_panel, action=self.draw_system_menu,
-                             subtitle="System")
+        self.w_wrench = ImageWidget(
+            box=Box.xywh(296, 0, 20, 20),
+            image=os.path.join(self.imagedir, "wrench_silver.png"),
+            parent=self.main_panel,
+            action=self.draw_system_menu,
+            subtitle="System",
+        )
         self.main_panel.add_sel_widget(self.w_wrench)
 
     def toggle_bypass(self, event, widget):
@@ -451,10 +473,16 @@ class Lcd:
 
     def draw_bypass_preference(self):
         pref = self.handler.settings.get_setting(Token.BYPASS)
-        items = [("Left",  self.handler.change_bypass_preference, Token.LEFT, pref == Token.LEFT),
-                 ("Right", self.handler.change_bypass_preference, Token.RIGHT, pref == Token.RIGHT),
-                 ("Left & Right",  self.handler.change_bypass_preference, Token.LEFT_RIGHT,
-                  pref == Token.LEFT_RIGHT or pref is None)]
+        items = [
+            ("Left", self.handler.change_bypass_preference, Token.LEFT, pref == Token.LEFT),
+            ("Right", self.handler.change_bypass_preference, Token.RIGHT, pref == Token.RIGHT),
+            (
+                "Left & Right",
+                self.handler.change_bypass_preference,
+                Token.LEFT_RIGHT,
+                pref == Token.LEFT_RIGHT or pref is None,
+            ),
+        ]
         self.draw_selection_menu(items, "Bypass Preference", auto_dismiss=True)
 
     #
@@ -540,17 +568,19 @@ class Lcd:
                     if p.title == b:
                         items.append((p.title, pedalboard_change, p))
 
-        self.draw_selection_menu(items, "Pedalboards", auto_dismiss=True, dismiss_option=True,
-                                 default_item=self.current.pedalboard.title)
+        self.draw_selection_menu(
+            items, "Pedalboards", auto_dismiss=True, dismiss_option=True, default_item=self.current.pedalboard.title
+        )
 
     def draw_preset_menu(self, event, widget):
         items = []
-        for (i, name) in self.current.presets.items():
+        for i, name in self.current.presets.items():
             items.append((name, self.handler.preset_change, i))
         self.draw_selection_menu(items, "Snapshots", auto_dismiss=True, dismiss_option=True)
 
-    def draw_selection_menu(self, items, title="", auto_dismiss=False, dismiss_option=False,
-                            font=None, title_font=None, default_item=None):
+    def draw_selection_menu(
+        self, items, title="", auto_dismiss=False, dismiss_option=False, font=None, title_font=None, default_item=None
+    ):
         # items is a list of tuples: (label, callback, arg) or (label, callback, arg, is_active)
         # or (label, callback, arg, is_active, long_callback) where long_callback is called
         # instead of callback on a long press.
@@ -565,11 +595,21 @@ class Lcd:
 
         extra = {}
         if font is not None:
-            extra['font'] = font
+            extra["font"] = font
         if title_font is not None:
-            extra['title_font'] = title_font
-        m = Menu(title=title, items=items, auto_destroy=True, default_item=default_item, max_width=180, max_height=200,
-                 auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action, **extra)
+            extra["title_font"] = title_font
+        m = Menu(
+            title=title,
+            items=items,
+            auto_destroy=True,
+            default_item=default_item,
+            max_width=180,
+            max_height=200,
+            auto_dismiss=auto_dismiss,
+            dismiss_option=dismiss_option,
+            action=menu_action,
+            **extra,
+        )
         self.pstack.push_panel(m)
         return m
 
@@ -599,13 +639,20 @@ class Lcd:
         def tile_factory(node, box, parent):
             plugin = plugins_by_id[node.id]
             display_name = plugin.display_name
-            label = display_name[:self.plugin_label_length].replace("_", "")
+            label = display_name[: self.plugin_label_length].replace("_", "")
             label = self.shorten_name(label, box.width)
             subtitle = plugin.subtitle or (f"{plugin.category}: {display_name}" if plugin.category else display_name)
-            tile = PluginTile(box=box, text=label, outline_radius=5,
-                              parent=parent, action=self.plugin_event, object=plugin,
-                              subtitle=subtitle, border=plugin.tile_border,
-                              backdrop=self.background)
+            tile = PluginTile(
+                box=box,
+                text=label,
+                outline_radius=5,
+                parent=parent,
+                action=self.plugin_event,
+                object=plugin,
+                subtitle=subtitle,
+                border=plugin.tile_border,
+                backdrop=self.background,
+            )
             tile.set_font(self.small_font)
             self.color_plugin(tile, plugin)
             self.w_plugins.append(tile)
@@ -614,7 +661,8 @@ class Lcd:
         # Grid area: below title (y=78) to bottom of LCD (y=240).
         # footswitch_panel is pushed on top of pstack and renders over this.
         self.grid_panel = GridPanel(
-            layout, tile_factory,
+            layout,
+            tile_factory,
             box=Box.xywh(0, 78, self.display_width, self.display_height - 78),
             bottom_inset=self.footswitch_height,
             parent=self.main_panel,
@@ -644,7 +692,6 @@ class Lcd:
             footswitch._on_switch(switchstate.Value.RELEASED, time.monotonic())
         elif event == InputEvent.LONG_CLICK:
             footswitch._on_switch(switchstate.Value.LONGPRESSED, time.monotonic())
-
 
     def color_plugin(self, widget, plugin):
         if plugin.is_bypassed():
@@ -712,7 +759,7 @@ class Lcd:
     #
     def draw_parameter_menu(self, plugin):
         items = []
-        for (name, param) in sorted(plugin.parameters.items()):
+        for name, param in sorted(plugin.parameters.items()):
             if name != Token.COLON_BYPASS:
                 items.append((name, self.draw_parameter_dialog, param))
         self.draw_selection_menu(items, "Parameters")
@@ -728,18 +775,28 @@ class Lcd:
         current_value = parameter.value
         if parameter.type == Type.ENUMERATION:
             items = []
-            for (label, value) in parameter.get_enum_value_list():
-                item = (label, self.parameter_commit_enum, (parameter, value), value==current_value)
+            for label, value in parameter.get_enum_value_list():
+                item = (label, self.parameter_commit_enum, (parameter, value), value == current_value)
                 items.append(item)
             d = self.draw_selection_menu(items, title, auto_dismiss=True)
         elif parameter.type == Type.TOGGLED:
-            items = [ ("On",  self.parameter_commit_enum, (parameter, 1), current_value==1),
-                      ("Off", self.parameter_commit_enum, (parameter, 0), current_value==0)]
+            items = [
+                ("On", self.parameter_commit_enum, (parameter, 1), current_value == 1),
+                ("Off", self.parameter_commit_enum, (parameter, 0), current_value == 0),
+            ]
             d = self.draw_selection_menu(items, title, auto_dismiss=True)
         else:
-            d = Parameterdialog(self.pstack, parameter,
-                                width=270, height=130, auto_destroy=True, title=title, timeout=timeout,
-                                action=self.parameter_commit, object=parameter)
+            d = Parameterdialog(
+                self.pstack,
+                parameter,
+                width=270,
+                height=130,
+                auto_destroy=True,
+                title=title,
+                timeout=timeout,
+                action=self.parameter_commit,
+                object=parameter,
+            )
             self.pstack.push_panel(d)
 
         self.w_parameter_dialogs[parameter.name] = d
@@ -766,8 +823,7 @@ class Lcd:
             return None
         if param.symbol != ":bypass":  # TODO token
             return param.name
-        plugin = next((p for p in self.current.pedalboard.plugins
-                       if p.instance_id == param.instance_id), None)
+        plugin = next((p for p in self.current.pedalboard.plugins if p.instance_id == param.instance_id), None)
         if plugin is not None:
             name = plugin.display_name
         else:
@@ -803,10 +859,17 @@ class Lcd:
                 label = fs.get_display_label() or ""
                 color = None
                 action = None
-            p = FootswitchWidget(Box.xywh(x, 0, slot_w, self.footswitch_height),
-                                 label, color, not fs.toggled,
-                                 small_font=self.tiny_font, taptempo=getattr(fs, 'taptempo', None),
-                                 parent=self.footswitch_panel, action=action, object=fs)
+            p = FootswitchWidget(
+                Box.xywh(x, 0, slot_w, self.footswitch_height),
+                label,
+                color,
+                not fs.toggled,
+                small_font=self.tiny_font,
+                taptempo=getattr(fs, "taptempo", None),
+                parent=self.footswitch_panel,
+                action=action,
+                object=fs,
+            )
             self.w_footswitches.append(p)
             # self.footswitch_panel.add_sel_widget(p)  # TODO: re-enable footswitch selection
         self.footswitch_panel.refresh()
@@ -847,14 +910,16 @@ class Lcd:
     # System Menu
     #
     def draw_system_menu(self, event, widget):
-        items = [("Tuner", self._toggle_tuner_from_menu, None),
-                 ("System shutdown", self.handler.system_menu_shutdown, None),
-                 ("System reboot",  self.handler.system_menu_reboot, None),
-                 ("System info", self.draw_system_info_dialog, None),
-                 ("Restart sound engine", self.handler.system_menu_restart_sound, None),
-                 ("NAM Capture", self._open_nam_capture_from_menu, None),
-                 ("Bank Select >", self.draw_bank_menu, None),
-                 ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None)]
+        items = [
+            ("Tuner", self._toggle_tuner_from_menu, None),
+            ("System shutdown", self.handler.system_menu_shutdown, None),
+            ("System reboot", self.handler.system_menu_reboot, None),
+            ("System info", self.draw_system_info_dialog, None),
+            ("Restart sound engine", self.handler.system_menu_restart_sound, None),
+            ("NAM Capture", self._open_nam_capture_from_menu, None),
+            ("Bank Select >", self.draw_bank_menu, None),
+            ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None),
+        ]
         if self.handler.recovery_available:
             items.insert(5, ("Recovery Mode...", self.handler.system_menu_recovery_mode, None))
         self.draw_selection_menu(items, "System Menu")
@@ -868,11 +933,13 @@ class Lcd:
         self.handler._mount_nam_capture_panel()
 
     def draw_pedalboard_mgmt_menu(self, arg):
-        items = [("Save current pedalboard", self.handler.system_menu_save_current_pb, None),
-                 ("Reload pedalboards", self.handler.system_menu_reload, None),
-                 ("Update sample pedalboards", self.update_sample_pedalboards, None),
-                 ("Backup data", self.handler.user_backup_data, None),
-                 ("Restore Backup data", self.handler.user_restore_data, None)]
+        items = [
+            ("Save current pedalboard", self.handler.system_menu_save_current_pb, None),
+            ("Reload pedalboards", self.handler.system_menu_reload, None),
+            ("Update sample pedalboards", self.update_sample_pedalboards, None),
+            ("Backup data", self.handler.user_backup_data, None),
+            ("Restore Backup data", self.handler.user_restore_data, None),
+        ]
         self.draw_selection_menu(items, "Pedalboard Management")
 
     def update_sample_pedalboards(self, arg):
@@ -888,43 +955,53 @@ class Lcd:
         self.pstack.push_panel(d)
 
     def draw_system_info_dialog(self, arg):
-        msg="Software:{}\nBuild:{}\nSystemState:{}\nTemperature:{}\nThrottled:{}".format(
+        msg = "Software:{}\nBuild:{}\nSystemState:{}\nTemperature:{}\nThrottled:{}".format(
             self.handler.get_software_version(),
             self.handler.build_version,
             self.handler.SystemState,
             self.handler.temperature,
-            self.handler.throttled)
+            self.handler.throttled,
+        )
         d = MessageDialog(self.pstack, msg, title="System Info", width=300, height=140)
         self.pstack.push_panel(d)
 
     def draw_bank_menu(self, event):
         current_bank = self.handler.get_bank()
         items = [("None (All pedalboards)", self.handler.set_bank, None, current_bank is None)]
-        for k,v in self.handler.get_banks().items():
-            items.append((k, self.handler.set_bank, k, k==current_bank))
+        for k, v in self.handler.get_banks().items():
+            items.append((k, self.handler.set_bank, k, k == current_bank))
         self.draw_selection_menu(items, "Bank Select", auto_dismiss=True)
 
     def draw_audio_menu(self, event, widget):
-        items = [("Output Volume", self.handler.system_menu_headphone_volume, None),
-                 ("Input Gain", self.handler.system_menu_input_gain, None),
-                 ("VU Calibration", self.handler.system_menu_vu_calibration, None),
-                 ("Global EQ", self.handler.system_toggle_eq, None),
-                 ("Low Band Gain", self.handler.system_menu_eq1_gain, None),
-                 ("Low-Mid Band Gain", self.handler.system_menu_eq2_gain, None),
-                 ("Mid Band Gain", self.handler.system_menu_eq3_gain, None),
-                 ("High-Mid Band Gain", self.handler.system_menu_eq4_gain, None),
-                 ("High Band Gain", self.handler.system_menu_eq5_gain, None)]
-        self.draw_selection_menu(items, "Audio Menu") 
+        items = [
+            ("Output Volume", self.handler.system_menu_headphone_volume, None),
+            ("Input Gain", self.handler.system_menu_input_gain, None),
+            ("VU Calibration", self.handler.system_menu_vu_calibration, None),
+            ("Global EQ", self.handler.system_toggle_eq, None),
+            ("Low Band Gain", self.handler.system_menu_eq1_gain, None),
+            ("Low-Mid Band Gain", self.handler.system_menu_eq2_gain, None),
+            ("Mid Band Gain", self.handler.system_menu_eq3_gain, None),
+            ("High-Mid Band Gain", self.handler.system_menu_eq4_gain, None),
+            ("High Band Gain", self.handler.system_menu_eq5_gain, None),
+        ]
+        self.draw_selection_menu(items, "Audio Menu")
 
     def draw_audio_parameter_dialog(self, parameter, commit_callback):
         d = util.DICT_GET(self.w_parameter_dialogs, parameter.name)
         if d is not None and d.parent is not None:
             return d
 
-        d = Parameterdialog(self.pstack, parameter,
-                            width=270, height=130, auto_destroy=True, title=parameter.name,
-                            timeout=PARAMETER_DIALOG_TIMEOUT,
-                            action=commit_callback, object=parameter.symbol)
+        d = Parameterdialog(
+            self.pstack,
+            parameter,
+            width=270,
+            height=130,
+            auto_destroy=True,
+            title=parameter.name,
+            timeout=PARAMETER_DIALOG_TIMEOUT,
+            action=commit_callback,
+            object=parameter.symbol,
+        )
         self.w_parameter_dialogs[parameter.name] = d
         self.pstack.push_panel(d)
         return d
@@ -938,15 +1015,19 @@ class Lcd:
         if value is None:
             value = 512  # 1024 / 2
         name = "VU Calibration"
-        info = {
-            Token.NAME: name,
-            Token.SYMBOL: symbol,
-            Token.RANGES: {Token.MINIMUM: 0, Token.MAXIMUM: 1023}
-        }
+        info = {Token.NAME: name, Token.SYMBOL: symbol, Token.RANGES: {Token.MINIMUM: 0, Token.MAXIMUM: 1023}}
         param = Parameter(info, value, None)
-        d = Parameterdialog(self.pstack, param,
-                            width=270, height=130, auto_destroy=False, title=name, timeout=PARAMETER_DIALOG_TIMEOUT,
-                            action=commit_callback, object=symbol)
+        d = Parameterdialog(
+            self.pstack,
+            param,
+            width=270,
+            height=130,
+            auto_destroy=False,
+            title=name,
+            timeout=PARAMETER_DIALOG_TIMEOUT,
+            action=commit_callback,
+            object=symbol,
+        )
         self.pstack.push_panel(d)
         return d
 
@@ -956,8 +1037,12 @@ class Lcd:
     def splash_show(self, boot=True):
         color = self.color_splash_up if boot else self.color_splash_down
         if self.w_splash is None:
-            self.w_splash = TextWidget(box=Box.xywh(12, 80, self.display_width, self.display_height),
-                           text="pi Stomp!", font=self.splash_font, parent=self.splash_panel)
+            self.w_splash = TextWidget(
+                box=Box.xywh(12, 80, self.display_width, self.display_height),
+                text="pi Stomp!",
+                font=self.splash_font,
+                parent=self.splash_panel,
+            )
         self.w_splash.set_foreground(color)
         self.splash_panel.refresh()
 
@@ -996,9 +1081,9 @@ class Lcd:
             self.w_wifi.replace_img(self._resolved_wifi_png(wifi_status))
 
     def _resolved_wifi_png(self, wifi_status):
-        if util.DICT_GET(wifi_status, 'hotspot_active'):
+        if util.DICT_GET(wifi_status, "hotspot_active"):
             img = "wifi_orange.png"
-        elif util.DICT_GET(wifi_status, 'wifi_connected'):
+        elif util.DICT_GET(wifi_status, "wifi_connected"):
             img = "wifi_silver.png"
         else:
             img = "wifi_gray.png"
@@ -1011,13 +1096,13 @@ class Lcd:
         if self.w_power is None:
             return
         if not bypass_left and not bypass_right:
-            img = 'power_green.png'
+            img = "power_green.png"
         elif not bypass_left:
-            img = 'power_left.png'
+            img = "power_left.png"
         elif not bypass_right:
-            img = 'power_right.png'
+            img = "power_right.png"
         else:
-            img = 'power_gray.png'
+            img = "power_gray.png"
         image_path = os.path.join(self.imagedir, img)
         self.w_power.replace_img(image_path)
 
@@ -1025,15 +1110,15 @@ class Lcd:
         pass
 
     # Menu Screens (uses deep_edit image and draw objects)
-    
+
     def menu_show(self, page_title, menu_items):
         pass
-    
+
     def menu_highlight(self, index):
         pass
 
     # Parameter Value Edit
-    
+
     def draw_value_edit(self, plugin_name, parameter, value):
         pass
 
@@ -1102,9 +1187,9 @@ class Lcd:
                     color = self.default_plugin_color
                     text_color = color
                 else:
-                    port_name = util.DICT_GET(v, 'port_name')
+                    port_name = util.DICT_GET(v, "port_name")
                     if port_name:
-                        midi_cc = util.DICT_GET(v, 'midi_cc')
+                        midi_cc = util.DICT_GET(v, "midi_cc")
                         subtitle = f"{port_name}:{midi_cc} (external MIDI)"
                         name = self.shorten_name(f"{port_name}:{midi_cc}", text_per_control)
                         color = self.default_plugin_color
@@ -1167,18 +1252,19 @@ class Lcd:
                 if blend_initial_progress is not None:
                     w.set_progress(blend_initial_progress)
                 self.w_controls.append(w)
-    
+
     def draw_info_message(self, text, refresh=False):
         if self.w_info_msg is None:
-            self.w_info_msg = TextWidget(box=Box.xywh(0, 0, 0, 0), text='', parent=self.main_panel, outline=0,
-                                         sel_width=0)
+            self.w_info_msg = TextWidget(
+                box=Box.xywh(0, 0, 0, 0), text="", parent=self.main_panel, outline=0, sel_width=0
+            )
         else:
             self.w_info_msg.set_text(text)
         if refresh:
             self.main_panel.refresh()
 
     # Plugins
-    
+
     def draw_plugin_select(self, plugin=None):
         pass
 
@@ -1187,10 +1273,10 @@ class Lcd:
 
     def refresh_zone(self, zone_idx):
         pass
-    
+
     def shorten_name(self, name, width):
         text = ""
-        for x in name.lower().replace('=', '').replace('_', '').replace('/', '').replace(' ', ''):
+        for x in name.lower().replace("=", "").replace("_", "").replace("/", "").replace(" ", ""):
             test = text + x
             tw, _ = get_text_size(test, self.small_font)
             if tw >= width:

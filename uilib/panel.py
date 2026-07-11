@@ -16,6 +16,7 @@
 from typing import Optional, Tuple
 from typing_extensions import override
 from abc import ABC
+from contextlib import contextmanager
 
 import pygame
 
@@ -77,7 +78,8 @@ class Panel(ContainerWidget, InputSink):
         """Lazy-expand sel_list via each entry's sel_children() into a flat
         list of leaf widgets. Rebuilt on every nav — cheap for ≤30 items
         and keeps us correct when subtrees change between calls."""
-        return self.sel_children()
+        with profiling.measure("panel._flat_sel"):
+            return self.sel_children()
 
     def del_sel_widget(self, widget):
         previously_selectable = widget.selectable
@@ -111,10 +113,23 @@ class Panel(ContainerWidget, InputSink):
         self.sel_list.append(widget)  # TODO if a widget is not selectable, adding to sel_list seems wrong
 
     def _select_widget_ref(self, w):
-        if self.sel_ref is not None and self.sel_ref is not w:
-            self.sel_ref.set_selected(False)
-        self.sel_ref = w
-        w.set_selected(True)
+        # Batch the deselect + select so both dirty rects coalesce into a
+        # single LCD push, avoiding a two-frame artifact where the deselected
+        # widget pops inline before the selected widget's update arrives.
+        # During construction (before the panel is pushed onto a PanelStack)
+        # there is no LCD to push to, so skip batching.
+        stack = self.parent
+        if isinstance(stack, PanelStack):
+            with stack.batch():
+                if self.sel_ref is not None and self.sel_ref is not w:
+                    self.sel_ref.set_selected(False)
+                self.sel_ref = w
+                w.set_selected(True)
+        else:
+            if self.sel_ref is not None and self.sel_ref is not w:
+                self.sel_ref.set_selected(False)
+            self.sel_ref = w
+            w.set_selected(True)
 
     def _notify_detach(self, widget):
         if widget in self.sel_list:
@@ -133,14 +148,15 @@ class Panel(ContainerWidget, InputSink):
         return False
 
     def _step_sel(self, delta):
-        flat = self._flat_sel()
-        if not flat:
-            return
-        if self.sel_ref in flat:
-            idx = (flat.index(self.sel_ref) + delta) % len(flat)
-        else:
-            idx = 0 if delta >= 0 else len(flat) - 1
-        self._select_widget_ref(flat[idx])
+        with profiling.measure("panel._step_sel"):
+            flat = self._flat_sel()
+            if not flat:
+                return
+            if self.sel_ref in flat:
+                idx = (flat.index(self.sel_ref) + delta) % len(flat)
+            else:
+                idx = 0 if delta >= 0 else len(flat) - 1
+            self._select_widget_ref(flat[idx])
 
     def sel_next(self):
         self._step_sel(1)
@@ -378,6 +394,24 @@ class PanelStack(ContainerWidget):
         self.lcd_needs_update = False
         self._pending_lcd_clip: Optional[Box] = None  # None = full screen or nothing pending
         self.capture_callback = None
+        self._batching = False
+
+    @contextmanager
+    def batch(self):
+        """Suppress inline LCD pushes so multiple dirty rects coalesce into one flush.
+
+        During a batch, ``propagate_dirty`` always coalesces into
+        ``_pending_lcd_clip`` instead of pushing small clips inline.
+        On exit, any coalesced dirty region is flushed in a single
+        ``lcd.update()`` call.
+        """
+        self._batching = True
+        try:
+            yield
+        finally:
+            self._batching = False
+            if self.lcd_needs_update:
+                self._flush_lcd()
 
     def poll_updates(self):
         if self.lcd_needs_update:
@@ -452,7 +486,7 @@ class PanelStack(ContainerWidget):
         if self.capture_callback:
             self.capture_callback(self.surface)
 
-        if self.lcd.transfer_ms(clip) <= self.INLINE_BUDGET_MS:
+        if not self._batching and self.lcd.transfer_ms(clip) <= self.INLINE_BUDGET_MS:
             self.lcd.update(self.surface, clip)
             return
 

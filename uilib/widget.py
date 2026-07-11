@@ -323,14 +323,15 @@ class Widget:
         self._invalidate_self()
 
     def set_selected(self, selected):
-        if self.selected is not selected:
-            self.selected = selected
-            self._dirty = True
-        if selected:
-            if self.scroll_into_view():
-                # Don't refresh if scroll has made it happen
-                return
-        self.refresh()
+        with profiling.measure("widget.set_selected"):
+            if self.selected is not selected:
+                self.selected = selected
+                self._dirty = True
+            if selected:
+                if self.scroll_into_view():
+                    # Don't refresh if scroll has made it happen
+                    return
+            self.refresh()
 
     def set_background(self, color):
         self.bkgnd_color = color
@@ -481,12 +482,13 @@ class Widget:
             box = self.box
         if box is None:
             return
-        target = self._build_paint_target(box)
-        if target is None:
-            return
-        container, frame, clip = target
-        if clip.is_empty():
-            return
+        with profiling.measure("widget.refresh"):
+            target = self._build_paint_target(box)
+            if target is None:
+                return
+            container, frame, clip = target
+            if clip.is_empty():
+                return
         if container.virtual and not container._viewport().intersects(frame):
             self._dirty = True
             return

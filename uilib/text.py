@@ -28,6 +28,7 @@ from uilib.misc import InputEvent, TextHAlign, get_text_size, trace
 from uilib.config import Config
 from common.color import ColorRGB, RectBorder
 
+from uilib.paint import ColorLike
 from uilib.glyphs import RoundedRectGlyph
 from uilib.radius import Radius
 
@@ -230,6 +231,8 @@ class TextWidget(Widget):
         self.text_halign = text_halign
         self.font_metrics = None  # legacy field, pygame.freetype encodes size in get_rect
         self.text_size_valid = False
+        self._text_cache: Optional[pygame.Surface] = None
+        self._text_cache_key: tuple | None = None
         super(TextWidget, self).__init__(box, **kwargs)
 
     def _get_text_size(self):
@@ -284,11 +287,21 @@ class TextWidget(Widget):
         trace(self, "resulting box=", self.box)
         super(TextWidget, self)._adjust_box()
 
+    def _clear_text_cache(self) -> None:
+        self._text_cache = None
+        self._text_cache_key = None
+
+    def set_foreground(self, color) -> None:
+        self.fgnd_color = color
+        self._clear_text_cache()
+        self._invalidate_self()
+
     def set_text(self, text):
         if self.text == text:
             return
         self.text = text
         self.text_size_valid = False
+        self._clear_text_cache()
         self.refresh()
 
     def set_edit_message(self, message):
@@ -298,6 +311,7 @@ class TextWidget(Widget):
         self.font = font
         self.font_metrics = None
         self.text_size_valid = False
+        self._clear_text_cache()
         self.refresh()
 
     @override
@@ -309,19 +323,33 @@ class TextWidget(Widget):
         if hroom < 0 or vroom < 0:
             return
 
+        # Build cache key from all parameters that affect rendered output.
+        cache_key = (self.text, self.fgnd_color, id(self.font), hroom, vroom, self.text_halign)
+        if self._text_cache is not None and self._text_cache_key == cache_key:
+            assert self._text_cache is not None
+            ctx.paste(self._text_cache, (h_margin, v_margin))
+            return
+
+        # Render into a transparent surface sized to the content area.
+        surf = pygame.Surface((max(1, hroom), max(1, vroom)), pygame.SRCALPHA)
+        surf.fill((0, 0, 0, 0))
+
         if self.SPLIT_SEP in self.text:
             parts = self.text.split(self.SPLIT_SEP)
             if len(parts) == 2:
                 left, right = parts
                 lw, _ = get_text_size(left, self.font)
                 rw, _ = get_text_size(right, self.font)
-                ctx.draw_text((h_margin, v_margin), left, fill=self.fgnd_color, font=self.font)
-                ctx.draw_text((ctx.width - h_margin - rw, v_margin), right, fill=self.fgnd_color, font=self.font)
+                self._render_line_to(surf, (0, 0), left, self.fgnd_color)
+                self._render_line_to(surf, (hroom - rw, 0), right, self.fgnd_color)
+                self._text_cache = surf
+                self._text_cache_key = cache_key
+                ctx.paste(surf, (h_margin, v_margin))
                 return
 
         lines = self.text.split("\n")
         _, line_h = get_text_size("", self.font)
-        y = v_margin
+        y = 0
         for line in lines:
             tw, _ = get_text_size(line, self.font)
             if tw > hroom:
@@ -332,10 +360,29 @@ class TextWidget(Widget):
                 hoffset = hroom - tw
             else:
                 hoffset = int((hroom - tw) / 2)
-            ctx.draw_text((h_margin + hoffset, y), line, fill=self.fgnd_color, font=self.font)
+            self._render_line_to(surf, (hoffset, y), line, self.fgnd_color)
             y += line_h
-            if y >= v_margin + vroom:
+            if y >= vroom:
                 break
+
+        self._text_cache = surf
+        self._text_cache_key = cache_key
+        ctx.paste(surf, (h_margin, v_margin))
+
+    def _render_line_to(self, surf: pygame.Surface, pos: tuple[int, int], text: str, color: "ColorLike") -> None:
+        """Render a single line of text onto *surf* at *pos* using the widget's font."""
+        if not text:
+            return
+        c = color
+        if isinstance(c, (list, tuple)) and len(c) == 3:
+            c = tuple(c) + (255,)
+        asc = int(self.font.get_sized_ascender())
+        prev = self.font.origin
+        self.font.origin = True
+        try:
+            self.font.render_to(surf, (pos[0], pos[1] + asc), text, fgcolor=c)
+        finally:
+            self.font.origin = prev
 
     def tick(self):
         """Override in subclasses for animation."""
@@ -527,6 +574,11 @@ class ScrollingText(TextWidget):
         self.scroll_offset = 0
         self._anchor_time = None
         self._last_tick_time = None
+
+    @override
+    def set_foreground(self, color) -> None:
+        self._clear_cache_and_restart()
+        super().set_foreground(color)
 
     @override
     def set_text(self, text: str) -> None:
