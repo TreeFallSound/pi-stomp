@@ -46,7 +46,7 @@ from uilib import (
     WidgetAlign,
 )
 from uilib.glyphs import PillGlyph, SignalBarsGlyph, EthernetCableGlyph
-from uilib.menu import Menu, MenuItem
+from uilib.menu import Menu, MenuItem, label_key
 from uilib.rich_text import IconSeg, Segment, Spacer, TextSeg
 
 if TYPE_CHECKING:
@@ -138,6 +138,24 @@ def signal_bars_level(signal: int) -> int:
     return max(1, min(4, (signal + 12) // 25))
 
 
+# What a rendered row actually shows. Signal is bucketed to the drawn bar count,
+# so ordinary dBm jitter doesn't count as a change.
+RowSig = tuple[str, Optional[str], bool, bool, Optional[int]]
+
+
+def _rows_sig(rows: list["Row"]) -> tuple[RowSig, ...]:
+    return tuple(
+        (
+            r["ssid"],
+            r.get("display_name"),
+            r["saved"],
+            r["active"],
+            None if r["signal"] is None else signal_bars_level(r["signal"]),
+        )
+        for r in rows
+    )
+
+
 def is_open_network(security: Optional[str]) -> bool:
     return not security or security == "--"
 
@@ -162,6 +180,11 @@ class WifiMenu:
         self._root_menu: Optional["Menu"] = None
         self._nearby_menu: Optional["Menu"] = None
         self._cached_scanned: list[ScannedNetwork] = []
+        # False until the first scan result lands: distinguishes "still scanning"
+        # from "scan done, nothing to list".
+        self._scan_completed: bool = False
+        self._root_sig: tuple[RowSig, ...] = ()
+        self._nearby_sig: tuple[RowSig, ...] = ()
 
     @property
     def _host(self) -> _WifiHost:
@@ -209,36 +232,68 @@ class WifiMenu:
         if not networks and self._cached_scanned:
             return
         self._cached_scanned = networks
-        if self._nearby_menu is not None and self._pstack.current is self._nearby_menu:
-            keep = self._current_label(self._nearby_menu)
-            old = self._nearby_menu
-            self._nearby_menu = None
-            self._pstack.pop_panel(old)
-            self._render_nearby_menu(default_label=keep)
+        first_result = not self._scan_completed
+        self._scan_completed = True
+
+        # Rebuild whichever menu the user is looking at, but only when the scan
+        # actually changed its contents — tick() rescans every 2s, and a blind
+        # pop/push would reset the cursor and scroll under the user.
+        root_rows, nearby_rows = self._current_rows()
+        current = self._pstack.current
+        if self._nearby_menu is not None and current is self._nearby_menu:
+            if first_result or _rows_sig(nearby_rows) != self._nearby_sig:
+                self._rerender_nearby()
+        elif self._root_menu is not None and current is self._root_menu:
+            if _rows_sig(root_rows) != self._root_sig:
+                self._rerender_root()
+
+    def _current_rows(self) -> tuple[list[Row], list[Row]]:
+        scanned = self._cached_scanned
+        return self._build_rows(
+            scanned,
+            self._saved_by_ssid,
+            {n["ssid"] for n in scanned},
+            util.DICT_GET(self._wifi_status, "connection"),
+        )
+
+    def _rerender_root(self) -> None:
+        assert self._root_menu is not None
+        keep = self._current_label(self._root_menu)
+        old = self._root_menu
+        self._root_menu = None
+        self._pstack.pop_panel(old)
+        self._render_root_menu(default_label=keep)
+
+    def _rerender_nearby(self) -> None:
+        assert self._nearby_menu is not None
+        keep = self._current_label(self._nearby_menu)
+        old = self._nearby_menu
+        self._nearby_menu = None
+        self._pstack.pop_panel(old)
+        self._render_nearby_menu(default_label=keep)
 
     def _render_root_menu(self, default_label: Optional[str] = None) -> None:
         wifi_status = self._wifi_status
         hotspot_active = bool(util.DICT_GET(wifi_status, "hotspot_active"))
         supported = util.DICT_GET(wifi_status, "wifi_supported") is not False
         active_name = util.DICT_GET(wifi_status, "connection")
-        scanned = self._cached_scanned
-        saved_by_ssid = self._saved_by_ssid
-        scanned_ssids = {n["ssid"] for n in scanned}
-        rows, _ = self._build_rows(scanned, saved_by_ssid, scanned_ssids, active_name)
+        rows, _ = self._current_rows()
         title = self._title(wifi_status, active_name)
         items = self._build_items(rows, hotspot_active, supported)
+        self._root_sig = _rows_sig(rows)
         self._root_menu = self.lcd.draw_selection_menu(items, title, dismiss_option=True, default_item=default_label)
 
     def _render_nearby_menu(self, default_label: Optional[str] = None) -> None:
-        scanned = self._cached_scanned
-        saved_by_ssid = self._saved_by_ssid
-        scanned_ssids = {n["ssid"] for n in scanned}
-        active_name = util.DICT_GET(self._wifi_status, "connection")
-        _, nearby = self._build_rows(scanned, saved_by_ssid, scanned_ssids, active_name)
+        _, nearby = self._current_rows()
         if nearby:
             items: list[MenuItem] = [(self._row_segments(r), self._on_network_tap, r) for r in nearby]
+        elif self._scan_completed:
+            # Saved networks live on the root menu, so an in-range-but-saved
+            # SSID legitimately leaves this list empty.
+            items = [("No other networks found", None, None)]
         else:
             items = [("Scanning...", None, None)]
+        self._nearby_sig = _rows_sig(nearby)
         self._nearby_menu = self.lcd.draw_selection_menu(
             items, "Nearby Networks", dismiss_option=True, default_item=default_label
         )
@@ -248,11 +303,7 @@ class WifiMenu:
         in place, preserving cursor; no-op if root isn't the top panel."""
         if self._root_menu is None or self._pstack.current is not self._root_menu:
             return
-        keep = self._current_label(self._root_menu)
-        old = self._root_menu
-        self._root_menu = None
-        self._pstack.pop_panel(old)
-        self._render_root_menu(default_label=keep)
+        self._rerender_root()
 
     @staticmethod
     def _current_label(menu: "Menu") -> Optional[str]:
@@ -260,7 +311,7 @@ class WifiMenu:
         if sel_ref is None:
             return None
         try:
-            return sel_ref.data[0]
+            return label_key(sel_ref.data[0])
         except (IndexError, AttributeError):
             return None
 
@@ -460,6 +511,15 @@ class WifiMenu:
         profile = row["profile"]
         assert profile is not None
         self._pstack.pop_panel(None)
+        # Predict the outcome so the ✔ clears now; the status poll reconciles.
+        status = self._wifi_status
+        self._wifi_manager.set_status(
+            {
+                "wifi_supported": util.DICT_GET(status, "wifi_supported") is not False,
+                "wifi_connected": False,
+                "hotspot_active": False,
+            }
+        )
         self._wifi_manager.queue.submit(DisconnectCmd(name=profile["name"], ssid=row["ssid"]), self._on_disconnect_done)
 
     def _on_disconnect_done(self, err: Optional[bytes]) -> None:

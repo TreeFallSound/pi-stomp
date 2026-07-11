@@ -35,6 +35,8 @@ class WifiManager:
         self.changed: bool = False
         self.on_status_change: Optional[Callable[[WifiStatus], None]] = on_status_change
         self.stop: threading.Event = threading.Event()
+        self._wake: threading.Event = threading.Event()
+        self._force_publish: bool = False
         self.wireless_supported: bool = False
         self.wireless_file: str = os.path.join(os.sep, "sys", "class", "net", self.iface_name, "wireless")
         self.operstate_file: str = os.path.join(os.sep, "sys", "class", "net", self.iface_name, "operstate")
@@ -46,8 +48,33 @@ class WifiManager:
         logging.info("Wifi monitor cleanup")
         self.shutdown()
 
+    def set_status(self, status: WifiStatus) -> None:
+        """Optimistically overwrite cached status and publish it now, on the
+        calling (main) thread, through the same callback the poller uses.
+
+        For UI actions whose outcome we can predict — a disconnect drops the
+        active connection — so the screen doesn't sit on stale state for a poll
+        cycle. The next poll observes reality and overwrites this, so a wrong
+        prediction is corrected rather than compounded."""
+        with self.lock:
+            self.last_status = status
+            self.changed = False
+        if self.on_status_change is not None:
+            self.on_status_change(status)
+        self.request_refresh()
+
+    def request_refresh(self) -> None:
+        """Poll status now rather than waiting out the 5s tick, and publish the
+        result even if it's unchanged. Write ops need a definitive repaint, not
+        just a diff — a failed op leaves status identical but the UI may have
+        painted optimistically and must be reconciled back."""
+        with self.lock:
+            self._force_publish = True
+        self._wake.set()
+
     def shutdown(self) -> None:
         self.stop.set()
+        self._wake.set()
         try:
             self.queue.shutdown()
         except Exception:
@@ -96,6 +123,12 @@ class WifiManager:
 
     def _polling_thread(self) -> None:
         while True:
+            # Claimed up front: a refresh requested *while* we're mid-poll refers
+            # to state we haven't read yet, so it must survive into the next pass.
+            with self.lock:
+                forced = self._force_publish
+                self._force_publish = False
+
             new_status: WifiStatus = {}
             supported = new_status["wifi_supported"] = self._is_wifi_supported()
             connected = new_status["wifi_connected"] = self._is_wifi_connected()
@@ -110,13 +143,20 @@ class WifiManager:
 
             with self.lock:
                 self._cached_saved = saved
-                if new_status != self.last_status:
+                if forced or new_status != self.last_status:
                     logging.debug("Wifi status changed:" + str(new_status))
                     self.last_status = new_status
                     self.changed = True
 
-            if self.stop.wait(5.0):
+            if self._wait_next_poll(5.0):
                 break
+
+    def _wait_next_poll(self, timeout: float) -> bool:
+        """Sleep out the poll interval, cut short by request_refresh() or
+        shutdown(). Returns True when we're shutting down."""
+        self._wake.wait(timeout)
+        self._wake.clear()
+        return self.stop.is_set()
 
     def poll(self) -> None:
         """Main-thread tick. Drains write-op callbacks and fires

@@ -180,6 +180,14 @@ class CommandQueue:
                 self._pending_keys.discard(cmd.key())
                 if bumps_pending:
                     self._pending_op_count -= 1
+            if bumps_pending:
+                # A write op just changed (or tried to change) connectivity —
+                # don't make the UI wait out the status poll's 5s tick. Guarded:
+                # an escape here would kill the worker and wedge every later op.
+                try:
+                    self._wm.request_refresh()
+                except Exception:
+                    logging.exception("Status refresh request failed")
             self._result_queue.put((on_done, result))
 
     def poll(self) -> None:

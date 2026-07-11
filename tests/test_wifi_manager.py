@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from modalapi.wifi import KeyMgmt, WifiManager
+from modalapi.wifi import KeyMgmt, WifiManager, WifiStatus
 from modalapi.wifi import ops
 
 
@@ -284,13 +284,7 @@ def test_polling_thread_iteration_refreshes_status_and_saved():
     with patch.object(WifiManager, "_polling_thread", lambda self: None):
         wm = WifiManager(ifname="wlan0")
 
-    # Stop the loop after a single pass.
-    original_wait = wm.stop.wait
-
-    def stop_after_first(_timeout):
-        wm.stop.set()
-        return original_wait(0)
-
+    # Stop the loop after a single pass: the inter-poll wait reports shutdown.
     with (
         patch.object(wm, "_is_wifi_supported", return_value=True),
         patch.object(wm, "_is_wifi_connected", return_value=True),
@@ -300,7 +294,7 @@ def test_polling_thread_iteration_refreshes_status_and_saved():
             side_effect=lambda s: s.update(ssid="Home", ip4_address="10.0.0.2", hotspot_active=False),
         ),
         patch.object(ops, "list_connections", return_value=saved),
-        patch.object(wm.stop, "wait", side_effect=stop_after_first),
+        patch.object(wm, "_wait_next_poll", return_value=True),
     ):
         WifiManager._polling_thread(wm)
 
@@ -312,21 +306,63 @@ def test_polling_thread_iteration_refreshes_status_and_saved():
     assert wm.changed is True
 
 
+def test_set_status_publishes_immediately_and_requests_refresh():
+    """An optimistic status write reaches on_status_change on the calling thread
+    (no waiting out a poll) and asks the poller for confirming truth."""
+    seen: list[WifiStatus] = []
+
+    def record(status: WifiStatus) -> None:
+        seen.append(status)
+
+    with patch.object(WifiManager, "_polling_thread", lambda self: None):
+        wm = WifiManager(ifname="wlan0", on_status_change=record)
+
+    wm.set_status({"wifi_supported": True, "wifi_connected": False, "hotspot_active": False})
+
+    assert seen == [{"wifi_supported": True, "wifi_connected": False, "hotspot_active": False}]
+    assert wm.last_status.get("wifi_connected") is False
+    assert wm._force_publish is True
+    assert wm._wake.is_set()
+
+
+def test_forced_publish_survives_a_refresh_requested_mid_poll():
+    """A refresh requested while the poller is mid-pass refers to state that pass
+    hasn't read, so it must not be consumed by it — it carries to the next pass."""
+    with patch.object(WifiManager, "_polling_thread", lambda self: None):
+        wm = WifiManager(ifname="wlan0")
+    wm.last_status = {"wifi_supported": True, "wifi_connected": True, "hotspot_active": False}
+
+    # Fire the request from inside the poll, after _force_publish was claimed.
+    def racing_probe() -> bool:
+        wm.request_refresh()
+        return True
+
+    with (
+        patch.object(wm, "_is_wifi_supported", return_value=True),
+        patch.object(wm, "_is_wifi_connected", side_effect=racing_probe),
+        patch.object(wm, "_get_wpa_status", side_effect=lambda s: None),
+        patch.object(ops, "list_connections", return_value=[]),
+        patch.object(wm, "_wait_next_poll", return_value=True),
+    ):
+        WifiManager._polling_thread(wm)
+
+    # Status is unchanged, so this pass published nothing — but the request is
+    # still armed for the pass that can actually observe the new state.
+    assert wm.changed is False
+    assert wm._force_publish is True
+
+
 def test_polling_thread_skips_saved_when_wifi_unsupported():
     """When wifi isn't supported, the polling thread must not call
     list_connections (no nmcli on the box) and _cached_saved stays empty."""
     with patch.object(WifiManager, "_polling_thread", lambda self: None):
         wm = WifiManager(ifname="wlan0")
 
-    def stop_after_first(_timeout):
-        wm.stop.set()
-        return True
-
     with (
         patch.object(wm, "_is_wifi_supported", return_value=False),
         patch.object(wm, "_is_wifi_connected", return_value=False),
         patch.object(ops, "list_connections") as list_conns,
-        patch.object(wm.stop, "wait", side_effect=stop_after_first),
+        patch.object(wm, "_wait_next_poll", return_value=True),
     ):
         WifiManager._polling_thread(wm)
         list_conns.assert_not_called()
