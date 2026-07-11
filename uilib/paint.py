@@ -14,7 +14,8 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from dataclasses import dataclass, replace
-from typing import Generator, Optional, Sequence, Tuple, Union
+from functools import lru_cache
+from typing import TYPE_CHECKING, Generator, Optional, Sequence, Tuple, Union
 from contextlib import contextmanager
 
 from uilib.pygame_init import freetype as _get_freetype
@@ -28,6 +29,9 @@ import pygame.gfxdraw as gfxdraw
 
 from uilib.box import Box
 from uilib.radius import Radius
+
+if TYPE_CHECKING:
+    import pygame._freetype
 
 # Hashable color forms only — Sequence[int] is excluded because it makes the
 # ColorLike unhashable, which breaks @lru_cache callers (e.g. RoundedRectGlyph).
@@ -48,8 +52,36 @@ def _color(c: ColorLike) -> pygame.Color:
     return pygame.Color(*c) if not isinstance(c, int) else pygame.Color(c)
 
 
+# Public alias for callers outside this module (e.g. uilib.glyphs.tint).
+as_color = _color
+
+
 def _ipt(p: Sequence[int]) -> Point:
     return (int(p[0]), int(p[1]))
+
+
+# Padding around the cached glyph run, in px. Covers ink that overhangs the pen
+# box (negative LSB, accents above the ascender) so nothing is clipped.
+_TEXT_PAD = 8
+
+
+@lru_cache(maxsize=512)
+def _text_surface(text: str, font: "pygame._freetype.Font", color: Tuple[int, int, int, int]) -> pygame.Surface:  # pyright: ignore[reportAttributeAccessIssue]
+    """Cached RGBA surface of `text`, pen origin at (_TEXT_PAD, _TEXT_PAD + ascender)."""
+    from uilib.misc import get_text_size  # local: uilib.misc imports uilib.paint
+
+    asc = int(font.get_sized_ascender())
+    desc = abs(int(font.get_sized_descender()))
+    tw, _ = get_text_size(text, font)
+    surf = pygame.Surface((tw + 2 * _TEXT_PAD, asc + desc + 2 * _TEXT_PAD), pygame.SRCALPHA)
+    surf.fill((0, 0, 0, 0))
+    prev_origin = font.origin
+    font.origin = True
+    try:
+        font.render_to(surf, (_TEXT_PAD, _TEXT_PAD + asc), text, fgcolor=pygame.Color(*color))
+    finally:
+        font.origin = prev_origin
+    return surf
 
 
 def _pg_rect(box: Box) -> pygame.Rect:
@@ -223,22 +255,12 @@ class PaintContext:
             base_dst = (int(x - tw / 2), int(y - (asc + desc) / 2))
         else:
             base_dst = (int(x), int(y))
-        # pygame._freetype.Font.render_to bypasses surface.set_clip (it clamps
-        # only to the destination surface's bounds). To enforce the active
-        # clip without a temp+blit, render into a subsurface of the current
-        # clip rect — the rasterizer then clamps to that, giving us SDL-style
-        # clipping for free. `painting()` guarantees a non-empty clip.
-        clip = self.surface.get_clip()
-        if clip.width <= 0 or clip.height <= 0:
-            return
-        sub = self.surface.subsurface(clip)
-        pen = (base_dst[0] - clip.x, base_dst[1] + asc - clip.y)
-        prev_origin = font.origin
-        font.origin = True
-        try:
-            font.render_to(sub, pen, text, fgcolor=color)
-        finally:
-            font.origin = prev_origin
+        # Blit a cached glyph run rather than rasterizing per draw: text is
+        # re-drawn on every widget refresh, so freetype rasterization otherwise
+        # dominates the hot paths (meters, readouts, axis labels). The blit
+        # honors surface.set_clip, which font.render_to does not.
+        surf = _text_surface(text, font, (color.r, color.g, color.b, color.a))
+        self.surface.blit(surf, (base_dst[0] - _TEXT_PAD, base_dst[1] - _TEXT_PAD))
 
     def draw_arc_aa(self, cx: int, cy: int, r: int, clip: Box, color: ColorLike) -> None:
         """AA circle arc clipped to a quadrant box (widget-relative).

@@ -490,9 +490,18 @@ class PanelStack(ContainerWidget):
             self.lcd.update(self.surface, clip)
             return
 
-        # Coalesce into the pending push; None means a full-screen redraw is
-        # already pending (from push/pop).
-        if self._pending_lcd_clip is not None:
+        # Coalesce into the pending push. ``_pending_lcd_clip`` is None only
+        # when a full-screen redraw is already pending (from push/pop); in
+        # that case, leave it None (full screen ⊇ any clip). Otherwise, union
+        # the clip into the pending region — if nothing was pending yet, this
+        # establishes the clip as the pending region.
+        if self._pending_lcd_clip is None:
+            # A structural change (push/pop) set None = full screen pending.
+            # If lcd_needs_update is False, nothing is actually pending and we
+            # should start a new coalesced region with this clip.
+            if not self.lcd_needs_update:
+                self._pending_lcd_clip = clip
+        else:
             self._pending_lcd_clip = self._pending_lcd_clip.union(clip)
         self.lcd_needs_update = True
 
