@@ -20,6 +20,7 @@ import bisect
 import json
 import logging
 import os
+import shutil
 import time
 import requests as req
 from requests import Response
@@ -134,7 +135,6 @@ class Modhandler(Handler):
         self._pending_dump_bypass: dict[str, bool] = {}
 
         # Backup
-        self.backup_dir = "/media/usb0/backups"
         self.backup_file = "pistomp_backup.zip"
         self.data_dir = data_dir
 
@@ -1127,55 +1127,97 @@ class Modhandler(Handler):
         logging.info("Entering recovery mode")
         os.system("sudo systemctl --no-block start pistomp-recovery")
 
-    def check_usb(self):
-        self.usbflash = False
-        if not os.path.exists(self.backup_dir):
-            os.mkdir(self.backup_dir)
-        stat = subprocess.call(["systemctl", "is-active", "--quiet", "usbmount@dev-sda1"])
-        if stat == 0:
-            self.usbflash = True
+    def _usb_media_mounts(self) -> list[str]:
+        # /media is populated solely by pi-gen-pistomp's pistomp-usb-mount udev
+        # script (one subdir per mounted USB partition, named by fs label or
+        # kernel device); anything mounted there is USB content storage.
+        media_root = "/media"
+        if not os.path.isdir(media_root):
+            return []
+        return [
+            os.path.join(media_root, name)
+            for name in sorted(os.listdir(media_root))
+            if os.path.ismount(os.path.join(media_root, name))
+        ]
+
+    def check_usb(self) -> list[str]:
+        # One backups dir per mounted stick, created if needed.
+        backup_dirs = []
+        for mount in self._usb_media_mounts():
+            backup_dir = os.path.join(mount, "backups")
+            if not os.path.exists(backup_dir):
+                os.mkdir(backup_dir)
+            backup_dirs.append(backup_dir)
+        return backup_dirs
+
+    @staticmethod
+    def _human_size(num_bytes: int) -> str:
+        value = float(num_bytes)
+        for unit in ("B", "KB", "MB", "GB"):
+            if value < 1000 or unit == "GB":
+                return f"{value:.0f}{unit}" if unit == "B" else f"{value:.1f}{unit}"
+            value /= 1000
+        return f"{value:.1f}GB"
+
+    def _drive_label(self, backup_dir: str) -> str:
+        mount = os.path.dirname(backup_dir)
+        try:
+            size = self._human_size(shutil.disk_usage(mount).total)
+        except OSError:
+            return os.path.basename(mount)
+        return f"{os.path.basename(mount)} ({size})"
+
+    def _choose_usb_drive(self, backup_dirs: list[str], action):
+        # Runs action(backup_dir) directly for a single stick; with several,
+        # lets the user pick one from an LCD menu first.
+        if not backup_dirs:
+            logging.info("No USB device found")
+            self.lcd.draw_message_dialog("No USB device found")
+        elif len(backup_dirs) == 1:
+            action(backup_dirs[0])
         else:
-            self.usbflash = False
+            items = [(self._drive_label(d), action, d) for d in backup_dirs]
+            self.lcd.draw_selection_menu(items, "Choose USB drive", auto_dismiss=True, dismiss_option=True)
 
     def user_backup_data(self, arg):
-        self.check_usb()
-        if self.usbflash:
-            self.lcd.draw_info_message("Backing up, please wait...", refresh=True)
-            logging.info("Data backup...")
-            cmd = os.path.join(self.homedir, "util", "data-backup.sh")
-            try:
-                subprocess.check_output([cmd, os.path.join(self.backup_dir, self.backup_file), self.data_dir])
-                self.lcd.draw_message_dialog("Backup complete", "Info")
-                logging.info("Backup complete")
-            except subprocess.CalledProcessError as e:
-                logging.error("user_backup_data:" + str(e.output))
-                return e.output.decode("utf-8")
-            finally:
-                self.lcd.draw_info_message("", refresh=True)
-        else:
-            logging.info("No USB device found")
-            self.lcd.draw_message_dialog("No USB device found")
+        self._choose_usb_drive(self.check_usb(), self._do_backup_data)
+
+    def _do_backup_data(self, backup_dir: str):
+        self.lcd.draw_info_message("Backing up, please wait...", refresh=True)
+        logging.info("Data backup...")
+        cmd = os.path.join(self.homedir, "util", "data-backup.sh")
+        try:
+            subprocess.check_output([cmd, os.path.join(backup_dir, self.backup_file), self.data_dir])
+            self.lcd.draw_message_dialog("Backup complete", "Info")
+            logging.info("Backup complete")
+        except subprocess.CalledProcessError as e:
+            logging.error("user_backup_data:" + str(e.output))
+        finally:
+            self.lcd.draw_info_message("", refresh=True)
 
     def user_restore_data(self, arg):
-        self.check_usb()
-        if self.usbflash:
-            self.lcd.draw_info_message("Restoring, please wait...", refresh=True)
-            logging.info("Restoring data backup...")
-            cmd = os.path.join(self.homedir, "util", "data-restore.sh")
-            try:
-                subprocess.check_output(
-                    ["sudo", "-u", self.username, cmd, os.path.join(self.backup_dir, self.backup_file), self.data_dir]
-                )
-                logging.info("Restore complete")
-                self.system_menu_restart_sound(None)
-            except subprocess.CalledProcessError as e:
-                self.lcd.draw_message_dialog(e.output.decode("utf-8"))
-                logging.error("user_restore_data: " + e.output.decode("utf-8"))
-            finally:
-                self.lcd.draw_info_message("", refresh=True)
-        else:
-            logging.info("No USB device found")
-            self.lcd.draw_message_dialog("No USB device found")
+        # Only offer drives that actually hold a backup — no point asking the
+        # user to choose when just one (or none) does.
+        restorable = [d for d in self.check_usb() if os.path.exists(os.path.join(d, self.backup_file))]
+        self._choose_usb_drive(restorable, self._do_restore_data)
+
+    def _do_restore_data(self, backup_dir: str):
+        self.lcd.draw_info_message("Restoring, please wait...", refresh=True)
+        logging.info("Restoring data backup...")
+        cmd = os.path.join(self.homedir, "util", "data-restore.sh")
+        try:
+            subprocess.check_output(
+                ["sudo", "-u", self.username, cmd, os.path.join(backup_dir, self.backup_file), self.data_dir]
+            )
+            logging.info("Restore complete")
+            self.lcd.draw_message_dialog(
+                "Restore complete. Press OK to restart.", "Info", on_dismiss=lambda: self.system_menu_restart_sound(None)
+            )
+        except subprocess.CalledProcessError as e:
+            self.lcd.draw_message_dialog(e.output.decode("utf-8"))
+            logging.error("user_restore_data: " + e.output.decode("utf-8"))
+        finally:
+            self.lcd.draw_info_message("", refresh=True)
 
     def system_menu_save_current_pb(self, _arg: None):
         if self._current is None:
