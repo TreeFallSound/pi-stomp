@@ -19,6 +19,7 @@ import common.util as util
 import pistomp.analogcontrol as analogcontrol
 import pistomp.controller as controller
 from pistomp.controller import AnalogDisplayInfo
+from pistomp.input.analog_connection import AnalogConnectionMonitor
 from pistomp.input.event import AnalogEvent
 
 
@@ -38,6 +39,7 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
         self.last_read = 0
         self.value = None
         self.cfg: dict[str, Any] = cfg or {}
+        self._connection = AnalogConnectionMonitor()
 
     def set_midi_channel(self, midi_channel):
         self.midi_channel = midi_channel
@@ -65,12 +67,22 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
         ))
 
     def send_current_value(self):
-        """Force-send the current ADC value unconditionally. Used by sync_analog_controls()."""
+        """Force-send the current ADC value unconditionally. Used by sync_analog_controls().
+
+        Suppressed while the connection monitor has not yet classified the
+        channel or has classified it as floating (ASLEEP) — autosyncing a
+        disconnected pin would emit a spurious MIDI CC for the noise floor.
+        """
+        if not self._connection.is_awake:
+            return
         value = self._clamp_endpoints(self.readChannel())
         self._send_value(value)
 
     def refresh(self):
         value = self._clamp_endpoints(self.readChannel())
+        self._connection.observe(value)
+        if not self._connection.is_awake:
+            return
         if abs(value - self.last_read) > self.tolerance:
             self._send_value(value)
 
