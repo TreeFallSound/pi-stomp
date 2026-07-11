@@ -19,7 +19,6 @@ import numpy as np
 from uilib.panel import LcdBase, Box
 from uilib.spi_timing import actual_spi_hz
 from uilib.spi_timing import transfer_ms as spi_transfer_ms
-from uilib import profiling
 import logging
 import threading
 import os
@@ -193,16 +192,14 @@ class LcdIli9341(LcdBase):
             # Landscape-native: surface coords map straight to the panel address
             # window, so the RGB565 sub-rect ships row-major with no rotation.
             sw, sh = sub.get_size()
-            with profiling.measure("lcd.update:pack"):
-                arr = pygame.surfarray.pixels3d(sub).transpose(1, 0, 2)
+            arr = pygame.surfarray.pixels3d(sub).transpose(1, 0, 2)
 
-                pix = self._pixels[:sh, :sw]
-                g = arr[:, :, 1]
-                pix[:, :, 0] = (arr[:, :, 0] & 0xF8) | (g >> 5)
-                pix[:, :, 1] = ((g & 0x1C) << 3) | (arr[:, :, 2] >> 3)
-                pixels_bytes = pix.tobytes()
+            pix = self._pixels[:sh, :sw]
+            g = arr[:, :, 1]
+            pix[:, :, 0] = (arr[:, :, 0] & 0xF8) | (g >> 5)
+            pix[:, :, 1] = ((g & 0x1C) << 3) | (arr[:, :, 2] >> 3)
+            pixels_bytes = pix.tobytes()
 
-            with profiling.measure("lcd.update:_block(SPI)"):
-                self.disp._block(x1, y1, x1 + sw - 1, y1 + sh - 1, pixels_bytes)
+            self.disp._block(x1, y1, x1 + sw - 1, y1 + sh - 1, pixels_bytes)
         finally:
             self.lock.release()

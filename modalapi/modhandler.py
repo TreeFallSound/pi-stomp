@@ -264,28 +264,26 @@ class Modhandler(Handler):
         return False
 
     def _handle_encoder(self, event: EncoderEvent) -> bool:
-        from uilib import profiling
-        with profiling.measure("modhandler._handle_encoder"):
-            c = event.controller
-            if c.type == Token.NAV:
-                self.universal_encoder_select(event.rotations)
-                return True
-            # Volume encoder bypasses the mod-host commit path — there is no
-            # backing plugin parameter, just the audio card.
-            if c.type == Token.VOLUME and c.parameter is not None:
-                self.audiocard.set_volume_parameter(self.audiocard.MASTER, event.new_value)
-                d = self.lcd.draw_audio_parameter_dialog(c.parameter, self.audio_parameter_commit)
-                if d is not None:
-                    d.update_value(event.new_value)
-                return True
-
-            if c.parameter is not None:
-                self.lcd.display_parameter_value(c.parameter, event.new_value)
-                if not self.hardware.is_external(c):
-                    self.parameter_value_commit(c.parameter, event.new_value)
-
-            self._emit_midi(c, event.new_midi_value)
+        c = event.controller
+        if c.type == Token.NAV:
+            self.universal_encoder_select(event.rotations)
             return True
+        # Volume encoder bypasses the mod-host commit path — there is no
+        # backing plugin parameter, just the audio card.
+        if c.type == Token.VOLUME and c.parameter is not None:
+            self.audiocard.set_volume_parameter(self.audiocard.MASTER, event.new_value)
+            d = self.lcd.draw_audio_parameter_dialog(c.parameter, self.audio_parameter_commit)
+            if d is not None:
+                d.update_value(event.new_value)
+            return True
+
+        if c.parameter is not None:
+            self.lcd.display_parameter_value(c.parameter, event.new_value)
+            if not self.hardware.is_external(c):
+                self.parameter_value_commit(c.parameter, event.new_value)
+
+        self._emit_midi(c, event.new_midi_value)
+        return True
 
     def _handle_analog(self, event: AnalogEvent) -> bool:
         self._emit_midi(event.controller, event.midi_value)

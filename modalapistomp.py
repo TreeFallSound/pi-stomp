@@ -192,9 +192,6 @@ def main():
     if not is_emulator and args.tuner_source:
         handler.set_tuner_source_spec(args.tuner_source)
 
-    from uilib import profiling
-    profiling.maybe_start()
-
     logging.info("Entering main loop. Press Control-C to exit.")
     period = 0
     # Fixed 10 ms base cadence (100 Hz) for the control critical path. The loop is

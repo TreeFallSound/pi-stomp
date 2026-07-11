@@ -9,7 +9,6 @@ from typing import Protocol
 import numpy as np
 import numpy.typing as npt
 
-from uilib import profiling
 from pistomp.tuner.ringbuffer import RingBuffer
 from pistomp.tuner.source import AudioSource
 from pistomp.tuner.yin import YinDetector
@@ -136,8 +135,7 @@ class TunerEngine:
         if not self._ring.read_latest(self.FRAME_SIZE, self._frame):
             return
 
-        with profiling.measure("rms", bin_override="dsp"):
-            rms = float(np.sqrt(np.mean(self._frame**2)))
+        rms = float(np.sqrt(np.mean(self._frame**2)))
 
         if rms < self.SILENCE_RMS:
             self._freq_history.clear()
@@ -160,9 +158,8 @@ class TunerEngine:
             self._onset_holdoff -= 1
             return
 
-        with profiling.measure("detect_pitch(YIN)", bin_override="dsp"):
-            assert self._detector is not None
-            estimate = self._detector.detect(self._frame)
+        assert self._detector is not None
+        estimate = self._detector.detect(self._frame)
         if estimate is None:
             return
 
