@@ -66,18 +66,13 @@ def wifi_profile_ssid_mode(uuid: str) -> tuple[str, str]:
     return kv.get("802-11-wireless.ssid", ""), kv.get("802-11-wireless.mode", "")
 
 
-def request_rescan(iface_name: str) -> Optional[bytes]:
-    """Ask NetworkManager for a fresh broadcast scan. Sudo necessary to get real results."""
-    _, err = nmcli(["device", "wifi", "rescan", "ifname", iface_name], sudo=True, timeout=30)
-    return err
-
-
 def scan_networks(iface_name: str) -> list[ScannedNetwork]:
-    """Return NM's cached AP list, deduplicated by SSID (strongest wins), sorted by signal desc."""
+    """Scan and return visible networks, deduplicated by SSID (strongest wins)."""
     stdout, err = nmcli(
-        ["dev", "wifi", "list", "--rescan", "no", "ifname", iface_name],
+        ["dev", "wifi", "list", "--rescan", "yes", "ifname", iface_name],
+        sudo=True,
         terse_fields=["IN-USE", "SSID", "SIGNAL", "SECURITY"],
-        timeout=15,
+        timeout=30,
     )
     if err is not None or stdout is None:
         logging.error("nmcli dev wifi list failed: " + (err or b"").decode("utf-8", "replace"))
@@ -124,11 +119,7 @@ def delete_connection(name: str) -> Optional[bytes]:
 
 
 def connect_scanned(iface_name: str, ssid: str, security: str, psk: Optional[str] = None) -> Optional[bytes]:
-    """Create a profile for an SSID and activate it; on failure the new profile is deleted.
-
-    Activating a client profile via `nmcli connection up` on wlan0 implicitly
-    deactivates whatever is currently active on the device — including a
-    running AP — so no explicit hotspot teardown is needed first."""
+    """Create a profile for an SSID and activate it; on failure the new profile is deleted."""
     try:
         km = KeyMgmt.from_scan_security(security)
     except ValueError as e:
@@ -153,10 +144,11 @@ def connect_scanned(iface_name: str, ssid: str, security: str, psk: Optional[str
         "connection.autoconnect",
         "yes",
     ]
-    # nmcli treats wifi-sec.key-mgmt=none as WEP. For a genuinely open AP,
-    # the wifi-sec section must be omitted entirely.
+    # nmcli treats wifi-sec.key-mgmt=none as WEP; omit the section for open APs.
     if km != KeyMgmt.NONE:
         add_args += ["wifi-sec.key-mgmt", km]
+        if km == KeyMgmt.WPA_PSK:
+            add_args += ["wifi-sec.pmf", "optional"]
     if km in (KeyMgmt.WPA_PSK, KeyMgmt.SAE) and psk:
         add_args += ["wifi-sec.psk", psk]
     _, err = nmcli(add_args, sudo=True, timeout=20)
@@ -190,11 +182,7 @@ def is_profile_activated(name: str) -> bool:
 
 
 def connect_saved(name: str, wait: bool = True, reconnect: bool = False) -> Optional[bytes]:
-    """Activate a saved profile; with wait=False, NM keeps retrying in the background.
-
-    `nmcli connection up` on a wifi profile implicitly deactivates whatever is
-    currently active on wlan0 — including an AP-mode hotspot — so no explicit
-    teardown is needed first."""
+    """Activate a saved profile; with wait=False, NM keeps retrying in the background."""
     if not reconnect and is_profile_activated(name):
         return None
     args = ["--wait", "0", "connection", "up", name] if not wait else ["connection", "up", name]
@@ -242,11 +230,7 @@ def replace_psk(name: str, psk: str) -> Optional[bytes]:
 
 
 def find_hotspot_profile() -> Optional[str]:
-    """Return the name of an existing AP-mode wifi profile, or None.
-
-    The boot-fallback `wifi-hotspot.service` (shipped by both pi-gen-pistomp
-    and pistomp-arch) typically creates `pistomp-hotspot` on first run. Older
-    images may name it `Hotspot`. We accept whichever AP-mode profile exists."""
+    """Return the name of an existing AP-mode wifi profile, or None."""
     stdout, err = nmcli(
         ["connection", "show"],
         terse_fields=["NAME", "UUID", "TYPE"],
@@ -300,11 +284,7 @@ def _create_default_hotspot_profile(iface_name: str) -> Optional[bytes]:
 
 
 def enable_hotspot(iface_name: str) -> Optional[bytes]:
-    """Activate the AP-mode profile on wlan0, creating it if missing.
-
-    Drives NetworkManager directly — does not touch the systemd unit. NM will
-    deactivate any currently-active client connection on the device as a side
-    effect of bringing the AP up."""
+    """Activate the AP-mode profile on wlan0, creating it if missing."""
     name = find_hotspot_profile()
     if name is None:
         err = _create_default_hotspot_profile(iface_name)
@@ -316,11 +296,7 @@ def enable_hotspot(iface_name: str) -> Optional[bytes]:
 
 
 def disable_hotspot(iface_name: str) -> Optional[bytes]:
-    """Tear down the AP and reactivate the most-recent saved client profile.
-
-    NM doesn't autoconnect a client profile after AP teardown, so we drive
-    the reconnect explicitly. Returns None on success or when no saved
-    profile is available; nmcli stderr bytes otherwise."""
+    """Tear down the AP and reactivate the most-recent saved client profile."""
     name = find_hotspot_profile()
     if name is not None:
         _, err = nmcli(["connection", "down", name], sudo=True, timeout=20)

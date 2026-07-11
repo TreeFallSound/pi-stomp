@@ -25,8 +25,6 @@ from .types import SavedConnection, ScannedNetwork, WifiStatus
 
 
 class WifiManager:
-    # Hard-wired wifi interface to avoid scrubbing sysfs.
-    # Hotspot state is read from / mutates via NetworkManager directly.
     def __init__(self, ifname: str = "wlan0", on_status_change: Optional[Callable[[WifiStatus], None]] = None) -> None:
         self.iface_name: str = ifname
         self.lock: threading.Lock = threading.Lock()
@@ -49,13 +47,8 @@ class WifiManager:
         self.shutdown()
 
     def set_status(self, status: WifiStatus) -> None:
-        """Optimistically overwrite cached status and publish it now, on the
-        calling (main) thread, through the same callback the poller uses.
-
-        For UI actions whose outcome we can predict — a disconnect drops the
-        active connection — so the screen doesn't sit on stale state for a poll
-        cycle. The next poll observes reality and overwrites this, so a wrong
-        prediction is corrected rather than compounded."""
+        """Optimistically overwrite cached status and publish it now. The next
+        poll reconciles against truth."""
         with self.lock:
             self.last_status = status
             self.changed = False
@@ -64,10 +57,7 @@ class WifiManager:
         self.request_refresh()
 
     def request_refresh(self) -> None:
-        """Poll status now rather than waiting out the 5s tick, and publish the
-        result even if it's unchanged. Write ops need a definitive repaint, not
-        just a diff — a failed op leaves status identical but the UI may have
-        painted optimistically and must be reconciled back."""
+        """Poll status now and publish even if unchanged."""
         with self.lock:
             self._force_publish = True
         self._wake.set()
@@ -96,7 +86,6 @@ class WifiManager:
             return False
 
     def _get_wpa_status(self, status: WifiStatus) -> None:
-        # `device show` rejects per-setting fields; fetch SSID/mode via `connection show` below.
         stdout, err = nmcli(
             ["device", "show", self.iface_name],
             terse_fields=["GENERAL.STATE", "GENERAL.CONNECTION", "IP4.ADDRESS"],
@@ -123,8 +112,8 @@ class WifiManager:
 
     def _polling_thread(self) -> None:
         while True:
-            # Claimed up front: a refresh requested *while* we're mid-poll refers
-            # to state we haven't read yet, so it must survive into the next pass.
+            # Claimed up front: a refresh requested mid-poll refers to state we
+            # haven't read yet, so it survives into the next pass.
             with self.lock:
                 forced = self._force_publish
                 self._force_publish = False
@@ -132,9 +121,6 @@ class WifiManager:
             new_status: WifiStatus = {}
             supported = new_status["wifi_supported"] = self._is_wifi_supported()
             connected = new_status["wifi_connected"] = self._is_wifi_connected()
-            # Default false; _get_wpa_status flips it when the active wlan0
-            # connection has mode=ap. operstate is "up" in both client and AP
-            # modes, so `connected` covers both cases.
             new_status["hotspot_active"] = False
             if supported and connected:
                 self._get_wpa_status(new_status)
@@ -152,15 +138,13 @@ class WifiManager:
                 break
 
     def _wait_next_poll(self, timeout: float) -> bool:
-        """Sleep out the poll interval, cut short by request_refresh() or
-        shutdown(). Returns True when we're shutting down."""
+        """Sleep out the poll interval, cut short by request_refresh()."""
         self._wake.wait(timeout)
         self._wake.clear()
         return self.stop.is_set()
 
     def poll(self) -> None:
-        """Main-thread tick. Drains write-op callbacks and fires
-        on_status_change when the polling thread has new status."""
+        """Main-thread tick: drain callbacks and publish status changes."""
         self.queue.poll()
         update: Optional[WifiStatus] = None
         with self.lock:
@@ -179,9 +163,6 @@ class WifiManager:
 
     def scan_networks(self) -> list[ScannedNetwork]:
         return ops.scan_networks(self.iface_name)
-
-    def request_rescan(self) -> Optional[bytes]:
-        return ops.request_rescan(self.iface_name)
 
     def connect_scanned(self, ssid: str, security: str, psk: Optional[str] = None) -> Optional[bytes]:
         return ops.connect_scanned(self.iface_name, ssid, security, psk)

@@ -312,7 +312,6 @@ def wifi_state(v3_system):
     def _set(scanned=(), saved=(), active=None, hotspot=False, supported=True):
         wm = v3_system.handler.wifi_manager
         wm.scan_networks.return_value = list(scanned)
-        wm.request_rescan.return_value = None
         wm.list_connections.return_value = list(saved)
         wm.get_cached_saved.return_value = list(saved)
 

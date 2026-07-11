@@ -446,28 +446,17 @@ def _ok_run(calls):
     return _eff
 
 
-def test_request_rescan_runs_privileged(wm):
-    """The wifi.scan polkit action denies our session-less daemon, so a rescan
-    must go through sudo — unprivileged, nmcli exits 0 with a stale cache."""
-    calls: list[list[str]] = []
-    with patch("subprocess.run", side_effect=_ok_run(calls)):
-        err = wm.request_rescan()
-
-    assert err is None
-    assert calls == [["sudo", "nmcli", "device", "wifi", "rescan", "ifname", "wlan0"]]
-
-
-def test_scan_networks_reads_cache_without_rescanning(wm):
-    """The 2s UI read must not trigger a scan: --rescan yes would block for the
-    scan plus NM's 8s rate limit."""
+def test_scan_networks_runs_privileged_rescan(wm):
+    """scan_networks triggers a real scan via sudo. Unprivileged --rescan yes
+    silently exits 0 with a stale cache (polkit denies our session-less daemon)."""
     calls: list[list[str]] = []
     with patch("subprocess.run", side_effect=_ok_run(calls)):
         wm.scan_networks()
 
     assert len(calls) == 1
     argv = calls[0]
-    assert "sudo" not in argv
-    assert argv[argv.index("--rescan") + 1] == "no"
+    assert argv[0] == "sudo"
+    assert argv[argv.index("--rescan") + 1] == "yes"
 
 
 def test_connect_scanned_wpa2_passes_explicit_key_mgmt(wm):
@@ -481,6 +470,7 @@ def test_connect_scanned_wpa2_passes_explicit_key_mgmt(wm):
     assert err is None
     add = next(c for c in calls if "add" in c)
     assert "wifi-sec.key-mgmt" in add and "wpa-psk" in add
+    assert "wifi-sec.pmf" in add and "optional" in add
     assert "wifi-sec.psk" in add and "secret" in add
 
 
@@ -494,8 +484,6 @@ def test_connect_scanned_open_omits_security_fields(wm):
 
     assert err is None
     add = next(c for c in calls if "add" in c)
-    # nmcli treats wifi-sec.key-mgmt=none as WEP, breaking association with
-    # genuinely open APs. The wifi-sec section must be omitted entirely.
     assert "wifi-sec.psk" not in add
     assert "wifi-sec.key-mgmt" not in add
 

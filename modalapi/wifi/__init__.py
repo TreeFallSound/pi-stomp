@@ -21,7 +21,6 @@ from .commands import (
     DisconnectCmd,
     ForgetCmd,
     ReplacePskCmd,
-    RescanCmd,
     ScanCmd,
     ToggleHotspotCmd,
 )
@@ -38,7 +37,6 @@ __all__ = [
     "KeyMgmt",
     "ReplacePskCmd",
     "SavedConnection",
-    "RescanCmd",
     "ScanCmd",
     "ScannedNetwork",
     "ToggleHotspotCmd",
