@@ -46,6 +46,10 @@ class FileChangeMonitor:
             return True
         return False
 
+    def reset(self) -> None:
+        """Re-capture the current mtime as the baseline."""
+        self._last_timestamp = self._current_timestamp()
+
 
 def read_pedalboard_bundle(last_json_path: str) -> Optional[str]:
     """Read the current pedalboard bundle name from last.json."""
