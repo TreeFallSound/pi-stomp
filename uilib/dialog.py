@@ -133,7 +133,7 @@ class Dialog(RoundedPanel):
 
 
 class MessageDialog(Dialog):
-    def __init__(self, panelstack, message, title="Error", width=200, height=90):
+    def __init__(self, panelstack, message, title="Error", width=200, height=90, on_dismiss=None):
         super(MessageDialog, self).__init__(width=width, height=height, title=title, auto_destroy=True)
 
         font = Config().get_font("default_title")
@@ -155,6 +155,12 @@ class MessageDialog(Dialog):
             align=WidgetAlign.NONE,
         )
         self.add_widget(t)
+
+        def _dismiss(x, y):
+            panelstack.pop_panel(self)
+            if on_dismiss:
+                on_dismiss()
+
         b = TextWidget(
             box=Box.xywh(int((width / 2) - 20), height - 30, 0, 0),
             text="Ok",
@@ -162,7 +168,7 @@ class MessageDialog(Dialog):
             outline=1,
             sel_width=3,
             outline_radius=5,
-            action=lambda x, y: panelstack.pop_panel(self),
+            action=_dismiss,
             align=WidgetAlign.NONE,
             name="ok_btn",
         )
