@@ -229,7 +229,6 @@ class TextWidget(Widget):
         self.h_margin = h_margin
         self.v_margin = v_margin
         self.text_halign = text_halign
-        self.font_metrics = None  # legacy field, pygame.freetype encodes size in get_rect
         self.text_size_valid = False
         self._text_cache: Optional[pygame.Surface] = None
         self._text_cache_key: tuple | None = None
@@ -239,10 +238,10 @@ class TextWidget(Widget):
         if not self.text_size_valid:
             lines = self.text.split("\n")
             if len(lines) == 1:
-                self.text_w, self.text_h = get_text_size(self.text, self.font, self.font_metrics)
+                self.text_w, self.text_h = get_text_size(self.text, self.font)
             else:
                 _, line_h = get_text_size("", self.font)
-                self.text_w = max(get_text_size(line, self.font, self.font_metrics)[0] for line in lines)
+                self.text_w = max(get_text_size(line, self.font)[0] for line in lines)
                 self.text_h = line_h * len(lines)
             self.text_size_valid = True
         return (self.text_w, self.text_h)
@@ -309,7 +308,6 @@ class TextWidget(Widget):
 
     def set_font(self, font):
         self.font = font
-        self.font_metrics = None
         self.text_size_valid = False
         self._clear_text_cache()
         self.refresh()

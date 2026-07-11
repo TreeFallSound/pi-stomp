@@ -54,7 +54,7 @@ class DialogDecorator(PanelDecorator):
         # Extra margin around text
         tmargin = 2
 
-        self.tw, self.th = get_text_size(self.title.text, self.title.font, self.title.font_metrics)
+        self.tw, self.th = get_text_size(self.title.text, self.title.font)
         self.box = Box(pb.x0 - m, pb.y0 - self.th - m - tmargin, pb.x1 + m, pb.y1 + m)
         trace(self, "new box=", self.box)
         tbox = Box(o, o, self.box.width - o, self.th + o)
