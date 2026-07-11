@@ -37,6 +37,13 @@ class Encoder:
         self._lock = threading.Lock()
         self.data: Any = None
         self.clk: Any = None
+
+        self.prevNextCode = 0
+        self.store = 0
+        self.direction = 0
+        # 16 grey codes; 1 = valid transition, 0 = bounce.
+        self.rot_enc_table = [0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0]
+
         if d_pin is not None:
             from gpiozero import Button  # pyright: ignore[reportMissingImports]
 
@@ -46,12 +53,6 @@ class Encoder:
             self.clk = Button(clk_pin)
             self.clk.when_pressed = self._gpio_callback
             self.clk.when_released = self._gpio_callback
-
-        self.prevNextCode = 0
-        self.store = 0
-        self.direction = 0
-        # 16 grey codes; 1 = valid transition, 0 = bounce.
-        self.rot_enc_table = [0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0]
 
     def __del__(self):
         if self.data is not None:

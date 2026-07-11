@@ -86,6 +86,36 @@ def test_v3_pedalboard_change_via_lcd(v3_system: SystemFixture, nav_handler, mak
     snapshot()
 
 
+def test_v3_pedalboard_selection_menu_shows_all_boards(
+    v3_system: SystemFixture, nav_handler, make_plugin, snapshot
+):
+    """Starting from a loaded pedalboard, open the pedalboard selection menu
+    showing 6 boards with distinct titles."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+
+    titles = ["Blues Rig", "Doom Bass", "Shoegaze", "Ambient Pad", "Metal", "Jazz Clean"]
+    from unittest.mock import MagicMock
+    for i, title in enumerate(titles):
+        pb = MagicMock()
+        pb.title = title
+        pb.bundle = f"/path/to/pb{i}.pedalboard"
+        handler.pedalboards[pb.bundle] = pb
+        handler.pedalboard_list.append(pb)
+
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    # Navigate from wrench to pedalboard title (1 step right)
+    nav_handler(1)
+
+    # Click to open the selection menu
+    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    handler.poll_lcd_updates()
+
+    snapshot()
+
+
 
 def test_v3_outbound_ws_suppressed_during_pedalboard_change(v3_system: SystemFixture, make_plugin):
     """While a pedalboard change is in flight, outbound param_set messages are dropped."""

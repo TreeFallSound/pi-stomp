@@ -38,7 +38,10 @@ class LcdIli9341(LcdBase):
     def __init__(self, spi, cs_pin, dc_pin, reset_pin, baudrate, flip=True):
         import adafruit_rgb_display.ili9341 as ili9341
 
-        rst = reset_pin if not self.has_system_splash else None
+        is_v2 = flip
+        needs_init = is_v2 or not self.has_system_splash
+        rst = reset_pin if needs_init else None
+
         self.disp = ili9341.ILI9341(spi, cs=cs_pin, dc=dc_pin, rst=rst, baudrate=baudrate)
         self.disp._block = self._block_fast
         self.baudrate = baudrate
@@ -49,7 +52,7 @@ class LcdIli9341(LcdBase):
         # it's pretty clear we need to fork adafruit_rgb_display...
         # idea: maybe we can query the display's current state and only run init() if it's uninitialized?
 
-        if not self.has_system_splash:
+        if is_v2 or not self.has_system_splash:
             self.clear()  # full-panel black while still in Adafruit's portrait MADCTL
             self._set_stamp()
 

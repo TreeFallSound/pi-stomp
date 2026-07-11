@@ -571,8 +571,8 @@ class Lcd:
         self.pstack.push_panel(m)
         return m
 
-    def draw_message_dialog(self, text, title="Error"):
-        d = MessageDialog(self.pstack, text, title=title)
+    def draw_message_dialog(self, text, title="Error", on_dismiss=None):
+        d = MessageDialog(self.pstack, text, title=title, on_dismiss=on_dismiss)
         self.pstack.push_panel(d)
 
     #
