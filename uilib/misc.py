@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from enum import Enum, Flag
+from functools import lru_cache
 
 from common.parameter import Parameter, Type
 
@@ -66,7 +67,10 @@ def trace(obj, *args):
 
 
 # Utility function (from stack overflow). TODO: Move to a TextUtils
-def get_text_size(text_string, font, metrics=None):
+# Cached: walking font.get_metrics() glyph-by-glyph costs ~20us, and callers hit
+# this several times per widget draw (per *character* when truncating a label).
+@lru_cache(maxsize=1024)
+def get_text_size(text_string, font):
     """Return (width, height) of `text_string` rendered with `font`.
 
     Width matches PIL's `font.getbbox(text)[2] - getbbox(text)[0]` exactly:
@@ -153,6 +157,7 @@ def fmt_db(value: float) -> str:
     return f"{value:+.0f}dB"
 
 
+@lru_cache(maxsize=1024)
 def get_text_bbox(text_string, font):
     """Return (x0, y0, x1, y1) of `text_string`'s ink, matching PIL's
     `ImageFont.getbbox(text)` with the default 'la' anchor.

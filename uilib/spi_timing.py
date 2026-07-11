@@ -18,10 +18,60 @@
 One source of truth for "how long does it take to push N pixels at this SPI
 clock", used by the LCD drivers' transfer_ms (the inline-push gate), the
 emulator's transfer-time simulation, and lcd320x240's poll_divisor.
+
+Callers must pass the *actual* clock, not the requested one — see actual_spi_hz.
 """
 
-# Device target: BAUDR=4 → 50.00 MHz actual (Pi 4/5; see pistomp-arch firstboot.sh).
-DEVICE_SPI_HZ: float = 50_000_000.0
+import math
+from pathlib import Path
+from typing import Optional
+
+_DT_COMPATIBLE = Path("/proc/device-tree/compatible")
+
+# SPI controller source clock by SoC. spi-bcm2835 (Pi <=4) divides the VPU core
+# clock; spi-dw (Pi 5, inside RP1) divides RP1_CLK_SYS.
+SPI_SOURCE_HZ: dict[str, int] = {
+    "brcm,bcm2837": 400_000_000,  # Pi 3 (v2)
+    "brcm,bcm2711": 500_000_000,  # Pi 4
+    "brcm,bcm2712": 200_000_000,  # Pi 5 (v3)
+}
+
+# Off-device (tests, emulator).
+DEFAULT_SOURCE_HZ: int = 200_000_000
+
+
+def spi_source_hz() -> int:
+    """SPI controller source clock for the running host."""
+    try:
+        raw = _DT_COMPATIBLE.read_bytes()
+    except OSError:
+        return DEFAULT_SOURCE_HZ
+    for entry in raw.decode("ascii", errors="replace").split("\0"):
+        source = SPI_SOURCE_HZ.get(entry)
+        if source is not None:
+            return source
+    return DEFAULT_SOURCE_HZ
+
+
+def actual_spi_hz(requested_hz: float, source_hz: Optional[int] = None) -> float:
+    """The clock the SPI controller will really run at for `requested_hz`.
+
+    Both drivers take ceil(source / requested) then round that divisor up to an
+    even number, so the achieved clock lands on source/even and never exceeds
+    the request. One hertz below an exact divisor point costs a whole step: on a
+    Pi 3, 66_666_666 gives 50 MHz and 66_666_667 gives 66.67 MHz.
+    """
+    if requested_hz <= 0:
+        raise ValueError(f"requested_hz must be positive, got {requested_hz}")
+    source = spi_source_hz() if source_hz is None else source_hz
+
+    # Integer DIV_ROUND_UP; float division rounds the wrong way at divisor points.
+    divisor = -(-source // math.floor(requested_hz))
+    if divisor < 2:
+        divisor = 2
+    elif divisor % 2:
+        divisor += 1
+    return source / divisor
 
 # Constants fit from on-device timing of LcdIli9341.update() at 20 MHz, 33.3 MHz,
 # and 50 MHz actual (Pi 5 / Python 3.14, tools/bench_lcd_device.py).

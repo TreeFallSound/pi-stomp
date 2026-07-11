@@ -17,13 +17,18 @@ import pygame
 import numpy as np
 
 from uilib.panel import LcdBase, Box
+from uilib.spi_timing import actual_spi_hz
 from uilib.spi_timing import transfer_ms as spi_transfer_ms
-from uilib import profiling
 import logging
 import threading
 import os
 
 INIT_STAMP = "/run/lcd.init"
+
+
+def has_system_splash() -> bool:
+    """True if lcd-splash already initialised the panel this boot."""
+    return os.path.exists(INIT_STAMP)
 
 
 try:
@@ -38,13 +43,19 @@ class LcdIli9341(LcdBase):
     def __init__(self, spi, cs_pin, dc_pin, reset_pin, baudrate, flip=True):
         import adafruit_rgb_display.ili9341 as ili9341
 
-        is_v2 = flip
-        needs_init = is_v2 or not self.has_system_splash
-        rst = reset_pin if needs_init else None
+        # reset_pin=None adopts the panel as lcd-splash left it.
+        needs_reset = reset_pin is not None
 
-        self.disp = ili9341.ILI9341(spi, cs=cs_pin, dc=dc_pin, rst=rst, baudrate=baudrate)
+        self.disp = ili9341.ILI9341(spi, cs=cs_pin, dc=dc_pin, rst=reset_pin, baudrate=baudrate)
         self.disp._block = self._block_fast
-        self.baudrate = baudrate
+
+        # transfer_ms gates inline pushes, so it must model the achieved clock.
+        self.requested_baudrate = baudrate
+        self.baudrate = actual_spi_hz(baudrate)
+        if self.baudrate != baudrate:
+            logging.info(
+                "SPI %.2f MHz requested, %.2f MHz actual", baudrate / 1e6, self.baudrate / 1e6
+            )
 
         self.lock = threading.Lock()
 
@@ -52,7 +63,7 @@ class LcdIli9341(LcdBase):
         # it's pretty clear we need to fork adafruit_rgb_display...
         # idea: maybe we can query the display's current state and only run init() if it's uninitialized?
 
-        if is_v2 or not self.has_system_splash:
+        if needs_reset:
             self.clear()  # full-panel black while still in Adafruit's portrait MADCTL
             self._set_stamp()
 
@@ -131,7 +142,7 @@ class LcdIli9341(LcdBase):
 
     @property
     def has_system_splash(self) -> bool:
-        return os.path.exists(INIT_STAMP)
+        return has_system_splash()
 
     def _set_stamp(self):
         try:
@@ -181,16 +192,14 @@ class LcdIli9341(LcdBase):
             # Landscape-native: surface coords map straight to the panel address
             # window, so the RGB565 sub-rect ships row-major with no rotation.
             sw, sh = sub.get_size()
-            with profiling.measure("lcd.update:pack"):
-                arr = pygame.surfarray.pixels3d(sub).transpose(1, 0, 2)
+            arr = pygame.surfarray.pixels3d(sub).transpose(1, 0, 2)
 
-                pix = self._pixels[:sh, :sw]
-                g = arr[:, :, 1]
-                pix[:, :, 0] = (arr[:, :, 0] & 0xF8) | (g >> 5)
-                pix[:, :, 1] = ((g & 0x1C) << 3) | (arr[:, :, 2] >> 3)
-                pixels_bytes = pix.tobytes()
+            pix = self._pixels[:sh, :sw]
+            g = arr[:, :, 1]
+            pix[:, :, 0] = (arr[:, :, 0] & 0xF8) | (g >> 5)
+            pix[:, :, 1] = ((g & 0x1C) << 3) | (arr[:, :, 2] >> 3)
+            pixels_bytes = pix.tobytes()
 
-            with profiling.measure("lcd.update:_block(SPI)"):
-                self.disp._block(x1, y1, x1 + sw - 1, y1 + sh - 1, pixels_bytes)
+            self.disp._block(x1, y1, x1 + sw - 1, y1 + sh - 1, pixels_bytes)
         finally:
             self.lock.release()

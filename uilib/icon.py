@@ -17,6 +17,7 @@ import pygame
 
 from uilib.box import Box
 from uilib.glyphs import ExpressionPedalGlyph, KnobGlyph
+from uilib.glyphs.tint import tint_mask
 from uilib.text import TextWidget
 
 
@@ -74,15 +75,7 @@ class Icon(TextWidget):
             ox, oy = ctx._f().topleft
             # Vertically center the square glyph in the widget height.
             gy = loc[1] + (ctx.height - mask.get_height()) // 2
-            # Tint the white mask into the fgnd colour: blit a solid colour
-            # fill onto a copy of the mask using BLEND_RGBA_MULT, then blit
-            # the tinted copy onto the target. A plain MULT against the mask
-            # in-place would corrupt the cached surface.
-            tinted = mask.copy()
-            color_surf = pygame.Surface(mask.get_size(), pygame.SRCALPHA)
-            color_surf.fill(self.fgnd_color)
-            tinted.blit(color_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-            ctx.surface.blit(tinted, (loc[0] + ox, gy + oy))
+            ctx.surface.blit(tint_mask(mask, self.fgnd_color), (loc[0] + ox, gy + oy))
 
         text_x = loc[0] + self.height + h_margin
         text_y = loc[1]

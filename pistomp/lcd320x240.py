@@ -47,7 +47,6 @@ from uilib import (
     ShroudedPanel,
     TextWidget,
 )
-from uilib import profiling
 from uilib.gridpanel import GridPanel, TILE_W, CHANNEL
 from uilib.pygame_init import font as _make_font
 from uilib.lcd_ili9341 import LcdIli9341
@@ -113,29 +112,31 @@ class Subtitle(TextWidget):
 class Lcd:
     CAPTURE_SOCKET_PATH = "/tmp/pistomp-lcd.sock"
 
-    def __init__(self, cwd, handler: "Modhandler", flip=False, display=None, spi_speed_mhz=50):
+    def __init__(self, cwd, handler: "Modhandler", flip=False, display=None,
+                 spi_speed_hz=50_000_000, reset=True):
         self.cwd = cwd
         self.imagedir = os.path.join(cwd, "images")
         Config(os.path.join(cwd, 'ui', 'config.json'))
         self.handler: "Modhandler" = handler
         self.flip = flip
-        self.spi_speed_mhz = spi_speed_mhz
+        self.spi_speed_hz = spi_speed_hz
 
         self._capture_socket = None
         self._capture_check_tick = 0
 
         # UI poll cadence scales with SPI speed: slower clock → more ticks per frame push.
-        self.poll_divisor = 8 if spi_speed_mhz <= 24 else 2
+        self.poll_divisor = 8 if spi_speed_hz <= 24_000_000 else 2
 
         # TODO would be good to decouple the actual LCD hardware.  This file should work for any 320x240 display
         if display is None:
             import board
             import digitalio
+            reset_pin = digitalio.DigitalInOut(board.D5) if reset else None
             display = LcdIli9341(board.SPI(),
                                  digitalio.DigitalInOut(board.CE0),
                                  digitalio.DigitalInOut(board.D6),
-                                 digitalio.DigitalInOut(board.D5),
-                                 spi_speed_mhz * 1_000_000,
+                                 reset_pin,
+                                 spi_speed_hz,
                                  flip)
 
         # Colors
@@ -301,8 +302,7 @@ class Lcd:
         return top.handle(event) if isinstance(top, InputSink) else False
 
     def poll_updates(self):
-        with profiling.measure("poll_updates"):
-            self._poll_updates()
+        self._poll_updates()
 
     def _poll_updates(self):
         for d in self.w_parameter_dialogs.values():
@@ -887,7 +887,7 @@ class Lcd:
 
     def draw_system_info_dialog(self, arg):
         msg="Software:{}\nBuild:{}\nSystemState:{}\nTemperature:{}\nThrottled:{}".format(
-            self.handler.software_version,
+            self.handler.get_software_version(),
             self.handler.build_version,
             self.handler.SystemState,
             self.handler.temperature,
