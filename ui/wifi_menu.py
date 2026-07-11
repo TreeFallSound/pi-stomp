@@ -591,7 +591,7 @@ class WifiMenu:
             # Join dialog has no scan context: infer security from psk presence.
             # "WPA2" → wpa-psk; "" → open. Users on WPA3-only / enterprise networks
             # need to use the scan flow instead.
-            security = "WPA2" if psk else ""
+            security = "WPA2 WPA3" if psk else ""
             self._wifi_manager.queue.submit(
                 ConnectScannedCmd(ssid=ssid, security=security, psk=psk or None), self._on_op_done
             )
