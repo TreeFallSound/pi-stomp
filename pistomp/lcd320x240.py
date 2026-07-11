@@ -239,14 +239,12 @@ class Lcd:
         for _ in range(abs(direction)):
             widget.input_event(event)
 
-    def enc_step(self, d):
+    def enc_step(self, d, multiplier: float = 1.0):
         if d == 0:
             return
-        # One selector step per detent; small selection clips push inline (see
-        # PanelStack.propagate_dirty), so a turn scans rather than jumps.
-        event = InputEvent.RIGHT if d > 0 else InputEvent.LEFT
-        for _ in range(abs(d)):
-            self.pstack.input_event(event)
+        # The top panel decides what a batch of detents means: menus scan one
+        # step at a time, a parameter dialog jumps straight to the end value.
+        self.pstack.input_step(1 if d > 0 else -1, abs(d), multiplier)
 
     def enc_sw(self, v):
         if v == switchstate.Value.RELEASED:

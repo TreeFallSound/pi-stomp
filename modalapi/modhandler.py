@@ -266,7 +266,9 @@ class Modhandler(Handler):
     def _handle_encoder(self, event: EncoderEvent) -> bool:
         c = event.controller
         if c.type == Token.NAV:
-            self.universal_encoder_select(event.rotations)
+            # The multiplier is only honoured by panels that drive a continuous
+            # value (Parameterdialog); menu selection ignores it.
+            self.universal_encoder_select(event.rotations, event.multiplier)
             return True
         # Volume encoder bypasses the mod-host commit path — there is no
         # backing plugin parameter, just the audio card.
@@ -446,9 +448,9 @@ class Modhandler(Handler):
             return 2
         return self._lcd.poll_divisor
 
-    def universal_encoder_select(self, direction):
+    def universal_encoder_select(self, direction, multiplier: float = 1.0):
         if self._lcd is not None:
-            self._lcd.enc_step(direction)
+            self._lcd.enc_step(direction, multiplier)
 
     def universal_encoder_sw(self, value, obj=None, timestamp=None):
         if self._lcd is not None:
