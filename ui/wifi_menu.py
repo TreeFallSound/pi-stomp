@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+import logging
+import time
 from typing import TYPE_CHECKING, Callable, NotRequired, Optional, Protocol, TypedDict, cast
 
 from common.fonts import font_path
@@ -26,6 +28,7 @@ from modalapi.wifi import (
     DisconnectCmd,
     ForgetCmd,
     ReplacePskCmd,
+    RescanCmd,
     SavedConnection,
     ScanCmd,
     ScannedNetwork,
@@ -67,6 +70,10 @@ class _WifiHost(Protocol):
 
 ACTIVE_GLYPH = "\u2714"  # ✔
 SEP = "\u00b7"  # ·
+
+
+# NM rate-limits explicit scans to one per 8s while connected; leave headroom.
+RESCAN_INTERVAL_S = 10.0
 
 
 class Row(TypedDict):
@@ -185,6 +192,7 @@ class WifiMenu:
         self._scan_completed: bool = False
         self._root_sig: tuple[RowSig, ...] = ()
         self._nearby_sig: tuple[RowSig, ...] = ()
+        self._last_rescan: float = 0.0
 
     @property
     def _host(self) -> _WifiHost:
@@ -215,14 +223,34 @@ class WifiMenu:
 
     def open(self, event: object = None, widget: object = None) -> None:
         self._render_root_menu()
-        self._wifi_manager.queue.submit_scan(ScanCmd(), self._on_scan)
+        self._poll_networks(rescan=True)
 
     def tick(self) -> None:
-        """Handler poll hook. Kicks a rescan while any wifi menu is open
-        so the nearby cache stays warm. Deduped if a scan is in flight."""
+        """Handler poll hook (2s). Keeps the list warm while a wifi menu is open."""
         current = self._pstack.current
         if current is self._root_menu or current is self._nearby_menu:
-            self._wifi_manager.queue.submit_scan(ScanCmd(), self._on_scan)
+            self._poll_networks()
+
+    def _poll_networks(self, rescan: bool = False) -> None:
+        """Read NM's AP cache, and periodically make NM go refill it.
+
+        The read is cheap and drives the UI. The rescan is the expensive part
+        (seconds, and NM rate-limits it to one per 8s while connected), but
+        without it the cache decays to just the connected SSID — see
+        ops.request_rescan. Both dedupe if one is already in flight."""
+        self._wifi_manager.queue.submit_scan(ScanCmd(), self._on_scan)
+        now = time.monotonic()
+        if rescan or now - self._last_rescan >= RESCAN_INTERVAL_S:
+            self._last_rescan = now
+            self._wifi_manager.queue.submit_scan(RescanCmd(), self._on_rescan)
+
+    def _on_rescan(self, err: Optional[bytes]) -> None:
+        """A failed rescan just means a stale list, not a failed user action —
+        log it, don't interrupt with a dialog."""
+        if isinstance(err, Exception):
+            err = str(err).encode("utf-8")
+        if err is not None:
+            logging.warning("wifi rescan failed: %s", parse_nmcli_error(err))
 
     def _on_scan(self, networks: list[ScannedNetwork]) -> None:
         if isinstance(networks, Exception):

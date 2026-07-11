@@ -119,11 +119,25 @@ class ToggleHotspotCmd(Command[Optional[bytes]]):
 
 @dataclass
 class ScanCmd(Command[list]):
+    """Read NM's cached AP list. Cheap; safe to run every UI tick."""
+
     def run(self, wm: "WifiManager") -> list:
         return wm.scan_networks()
 
     def key(self) -> str:
         return "scan"
+
+
+@dataclass
+class RescanCmd(Command[Optional[bytes]]):
+    """Ask NM to actually go and scan. Blocks for seconds — pace it (see
+    WifiMenu.RESCAN_INTERVAL_S); NM rate-limits to one per 8s while connected."""
+
+    def run(self, wm: "WifiManager") -> Optional[bytes]:
+        return wm.request_rescan()
+
+    def key(self) -> str:
+        return "rescan"
 
 
 _SHUTDOWN_SENTINEL = object()

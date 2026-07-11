@@ -66,10 +66,16 @@ def wifi_profile_ssid_mode(uuid: str) -> tuple[str, str]:
     return kv.get("802-11-wireless.ssid", ""), kv.get("802-11-wireless.mode", "")
 
 
+def request_rescan(iface_name: str) -> Optional[bytes]:
+    """Ask NetworkManager for a fresh broadcast scan. Sudo necessary to get real results."""
+    _, err = nmcli(["device", "wifi", "rescan", "ifname", iface_name], sudo=True, timeout=30)
+    return err
+
+
 def scan_networks(iface_name: str) -> list[ScannedNetwork]:
-    """Return visible nearby networks, deduplicated by SSID (strongest wins), sorted by signal desc."""
+    """Return NM's cached AP list, deduplicated by SSID (strongest wins), sorted by signal desc."""
     stdout, err = nmcli(
-        ["dev", "wifi", "list", "--rescan", "yes", "ifname", iface_name],
+        ["dev", "wifi", "list", "--rescan", "no", "ifname", iface_name],
         terse_fields=["IN-USE", "SSID", "SIGNAL", "SECURITY"],
         timeout=15,
     )

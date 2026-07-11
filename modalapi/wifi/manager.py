@@ -180,6 +180,9 @@ class WifiManager:
     def scan_networks(self) -> list[ScannedNetwork]:
         return ops.scan_networks(self.iface_name)
 
+    def request_rescan(self) -> Optional[bytes]:
+        return ops.request_rescan(self.iface_name)
+
     def connect_scanned(self, ssid: str, security: str, psk: Optional[str] = None) -> Optional[bytes]:
         return ops.connect_scanned(self.iface_name, ssid, security, psk)
 

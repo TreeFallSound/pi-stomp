@@ -5,11 +5,13 @@ to accept baselines on first run.
 """
 
 import time
+from typing import cast
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from tests.v3.conftest import make_saved, make_scanned
-from ui.wifi_menu import Row, WifiMenu, _PassphraseEditor
+from ui.wifi_menu import RESCAN_INTERVAL_S, Row, WifiMenu, _PassphraseEditor
 from uilib.dialog import Dialog, MessageDialog
 from uilib.misc import InputEvent
 from uilib.text import LetterSelector, TextEditor, TextWidget
@@ -98,6 +100,27 @@ def test_nearby_loading_then_populated(v3_system, wifi_state, snapshot):
     for cmd, on_done in pending:
         on_done(cmd.run(wm_mock))
     snapshot("nearby_populated")
+
+
+def test_rescan_is_paced_but_cache_is_read_every_tick(v3_system, wifi_state):
+    """Every tick reads NM's cache; the scan NM actually has to run is paced,
+    since NM only honours one per 8s while connected."""
+    wifi_state(scanned=[make_scanned("Home", signal=80)], saved=[])
+    wm, _lcd = _open(v3_system)
+
+    def _cmds() -> list[str]:
+        submit_scan = cast(MagicMock, wm._wifi_manager.queue.submit_scan)
+        return [type(c.args[0]).__name__ for c in submit_scan.call_args_list]
+
+    assert _cmds() == ["ScanCmd", "RescanCmd"]  # open() kicks one immediately
+
+    with patch("ui.wifi_menu.time.monotonic", return_value=wm._last_rescan + 2.0):
+        wm.tick()
+    assert _cmds() == ["ScanCmd", "RescanCmd", "ScanCmd"]  # too soon to rescan
+
+    with patch("ui.wifi_menu.time.monotonic", return_value=wm._last_rescan + RESCAN_INTERVAL_S):
+        wm.tick()
+    assert _cmds() == ["ScanCmd", "RescanCmd", "ScanCmd", "ScanCmd", "RescanCmd"]
 
 
 def test_nearby_empty_when_every_network_is_saved(v3_system, wifi_state, nav_lcd, snapshot):

@@ -446,6 +446,30 @@ def _ok_run(calls):
     return _eff
 
 
+def test_request_rescan_runs_privileged(wm):
+    """The wifi.scan polkit action denies our session-less daemon, so a rescan
+    must go through sudo — unprivileged, nmcli exits 0 with a stale cache."""
+    calls: list[list[str]] = []
+    with patch("subprocess.run", side_effect=_ok_run(calls)):
+        err = wm.request_rescan()
+
+    assert err is None
+    assert calls == [["sudo", "nmcli", "device", "wifi", "rescan", "ifname", "wlan0"]]
+
+
+def test_scan_networks_reads_cache_without_rescanning(wm):
+    """The 2s UI read must not trigger a scan: --rescan yes would block for the
+    scan plus NM's 8s rate limit."""
+    calls: list[list[str]] = []
+    with patch("subprocess.run", side_effect=_ok_run(calls)):
+        wm.scan_networks()
+
+    assert len(calls) == 1
+    argv = calls[0]
+    assert "sudo" not in argv
+    assert argv[argv.index("--rescan") + 1] == "no"
+
+
 def test_connect_scanned_wpa2_passes_explicit_key_mgmt(wm):
     calls: list[list[str]] = []
     with (
