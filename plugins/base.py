@@ -42,6 +42,7 @@ from typing import Generic, TypeVar
 
 import common.token as Token
 from common.contexts import ControlClass, ControlRef, EventKind
+from common.param_roles import ParamRole, edit_value
 from modalapi.plugin import Plugin
 from pistomp.input.dispatch import fire, resolve_local
 from pistomp.input.event import ControllerEvent, EncoderEvent
@@ -105,15 +106,8 @@ class PluginPanel(Panel, Generic[TState], ABC):
         """
 
     def on_event(self, event: ControllerEvent) -> bool:
-        """Resolve this panel's own declare_bindings() rows against the event
-        and fire the winner. Panels with no rotate rows (or that still own a
-        state-machine on_event, e.g. NAM) should override this directly.
-
-        Tries TWEAK then VOLUME for the controller's id rather than switching
-        on controller.type: a panel's own declared rows are unambiguous per
-        id (only one of the two classes is ever declared for a given id), and
-        this stays correct even when a controller's type isn't set (e.g. a
-        test double), matching the pre-migration id-only dispatch."""
+        """Resolve declare_bindings() against the event and fire the winner.
+        Panels with a state-machine on_event (e.g. NAM) should override this."""
         if not isinstance(event, EncoderEvent):
             return False
         rows = self.declare_bindings()
@@ -125,14 +119,15 @@ class PluginPanel(Panel, Generic[TState], ABC):
         return False
 
     def edit_symbol(self, symbol: str, rotations: int) -> bool:
-        """Compute the new value for `symbol` from `rotations`, clamp it, and
-        commit it via set_param. Returns True iff the value changed (so an
-        override can skip refreshing display on a no-op edit). Override to
-        change the step/taper math or add a widget refresh."""
+        """Step, clamp, and commit symbol's value; returns True iff changed."""
         p = self.plugin.parameters.get(symbol)
         if p is None or p.value is None:
             return False
-        new_val = max(p.minimum, min(p.maximum, float(p.value) + rotations * step_for_param(p)))
+        role = self.plugin.customization.param_roles.get(symbol, ParamRole.GENERIC)
+        if role is ParamRole.GENERIC:
+            new_val = max(p.minimum, min(p.maximum, float(p.value) + rotations * step_for_param(p)))
+        else:
+            new_val = edit_value(role, float(p.value), rotations, p.minimum, p.maximum)
         if new_val == p.value:
             return False
         self.set_param(symbol, new_val)

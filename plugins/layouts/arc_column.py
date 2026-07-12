@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from common.param_roles import ParamRole
 from common.parameter import Parameter
 from plugins.layouts.compressor_spec import ArcSpec, arc_centers_for
 from uilib.box import Box
@@ -40,6 +41,9 @@ class ArcSelectable(Widget):
 
     def scroll_into_view(self) -> bool:
         return False
+
+    def symbol_for(self, role: ParamRole) -> str | None:
+        return self.symbol
 
     def _draw(self, ctx) -> None:
         pass

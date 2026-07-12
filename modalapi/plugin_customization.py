@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from common.color import RectBorder
+from common.param_roles import ParamRole
 
 if TYPE_CHECKING:
     from modalapi.plugin import Plugin
@@ -37,6 +38,10 @@ class PluginCustomization:
     tile_active_color: tuple[int, int, int] | None = None
     tile_border: RectBorder | None = None
     extra_data: PluginExtraData | None = None
+
+    # Per-symbol edit-math classification, supplementing the LV2 port's
+    #  Symbols absent here are ParamRole.GENERIC.
+    param_roles: dict[str, ParamRole] = field(default_factory=dict, compare=False, hash=False)
 
 
 class Customizer(Protocol):

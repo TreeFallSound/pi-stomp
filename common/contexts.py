@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Callable, Union
 
+from common.param_roles import ParamRole
+
 
 class ControlClass(Enum):
     NAV = auto()  # the meta-control; axiomatically unbindable
@@ -116,10 +118,9 @@ class TapTempoEffect(Effect):
 
 @dataclass(frozen=True)
 class SelectionEditEffect(Effect):
-    """Edit the symbol of the currently-selected widget of the owning panel.
-    Resolved at fire time from panel.sel_ref.symbol."""
+    """Resolved at fire time via sel_ref.symbol_for(role)."""
 
-    fallback_symbol: str | None = None  # None = no-op if selection has no symbol
+    role: ParamRole = ParamRole.GENERIC
 
 
 @dataclass(frozen=True)

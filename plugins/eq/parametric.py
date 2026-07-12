@@ -12,6 +12,16 @@ from typing import Optional
 import numpy as np
 import pygame
 
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextRef,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    SelectionEditEffect,
+)
+from common.param_roles import ParamRole, edit_value
 from pistomp.input.event import ControllerEvent, EncoderEvent
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import BandSpec
@@ -669,6 +679,17 @@ class BandSelectable(Widget):
     def _draw_selection(self, ctx) -> None:
         pass
 
+    def symbol_for(self, role: ParamRole) -> str | None:
+        match role:
+            case ParamRole.GAIN_DB:
+                return self.band.gain_sym
+            case ParamRole.FREQUENCY_HZ:
+                return self.band.freq_sym
+            case ParamRole.Q_FACTOR:
+                return self.band.q_sym
+            case _:
+                return None
+
 
 # ── readout formatting ──────────────────────────────────────────────────────
 
@@ -691,17 +712,6 @@ def band_readout_fields(band: BandSpec, p: BandParams) -> tuple[str, str, str, s
     else:
         gain = f"{p.gain_db:+.1f} dB"
     return name, freq, q, gain
-
-
-# ── tweak step sizes ────────────────────────────────────────────────────────
-
-_GAIN_STEP_DB = 0.5
-_FREQ_STEP = 2.0 ** (1.0 / 12.0)
-_Q_STEP = 0.05
-
-
-def _clip(v: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, v))
 
 
 # ── ParametricEqPanel (ABC) ──────────────────────────────────────────────────
@@ -781,43 +791,53 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
         self.sel_widget(self._band_sels[self.bands[0].name])
 
     def on_event(self, event: ControllerEvent) -> bool:
-        if not isinstance(event, EncoderEvent) or event.controller.id not in (1, 2, 3):
-            return False
-        encoder_id = event.controller.id
-        rotations = event.rotations
-        if rotations == 0:
-            return False
+        # No band selected (chrome focused): Q/Tweak3 falls through to volume; gain/freq absorbed.
+        if isinstance(event, EncoderEvent) and event.controller.id in (1, 2, 3) and self.selected_band is None:
+            return event.controller.id != 3
+        return super().on_event(event)
+
+    def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        ctx = ContextRef(kind=ContextKind.PANEL, name="parametric_eq")
+        return (
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=1),
+                event_kind=EventKind.ROTATE,
+                effects=(SelectionEditEffect(role=ParamRole.GAIN_DB),),
+                context=ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=2),
+                event_kind=EventKind.ROTATE,
+                effects=(SelectionEditEffect(role=ParamRole.FREQUENCY_HZ),),
+                context=ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=3),
+                event_kind=EventKind.ROTATE,
+                effects=(SelectionEditEffect(role=ParamRole.Q_FACTOR),),
+                context=ctx,
+            ),
+        )
+
+    def edit_symbol(self, symbol: str, rotations: int) -> bool:
         band = self.selected_band
         if band is None:
-            return encoder_id != 3
-        delta = rotations
+            return False
         p = self._state.bands[band.name]
-        if encoder_id == 1:
-            if band.gain_sym is None:
-                return True
-            new_gain = _clip(p.gain_db + delta * _GAIN_STEP_DB, band.gain_min, band.gain_max)
-            if new_gain == p.gain_db:
-                return True
-            self.set_param(band.gain_sym, new_gain)
-            self._replace_band(band, gain_db=new_gain)
-            return True
-        elif encoder_id == 2:
-            new_freq = _clip(p.freq * (_FREQ_STEP**delta), band.freq_min, band.freq_max)
-            if new_freq == p.freq:
-                return True
-            self.set_param(band.freq_sym, new_freq)
-            self._replace_band(band, freq=new_freq)
-            return True
-        elif encoder_id == 3:
-            if band.q_sym is None:
-                return True
-            new_q = _clip(p.q + delta * _Q_STEP, band.q_min, band.q_max)
-            if new_q == p.q:
-                return True
-            self.set_param(band.q_sym, new_q)
-            self._replace_band(band, q=new_q)
-            return True
-        return False
+        if symbol == band.gain_sym:
+            role, current, lo, hi, field_name = ParamRole.GAIN_DB, p.gain_db, band.gain_min, band.gain_max, "gain_db"
+        elif symbol == band.freq_sym:
+            role, current, lo, hi, field_name = ParamRole.FREQUENCY_HZ, p.freq, band.freq_min, band.freq_max, "freq"
+        elif symbol == band.q_sym:
+            role, current, lo, hi, field_name = ParamRole.Q_FACTOR, p.q, band.q_min, band.q_max, "q"
+        else:
+            return super().edit_symbol(symbol, rotations)
+        new_val = edit_value(role, current, rotations, lo, hi)
+        if new_val == current:
+            return False
+        self.set_param(symbol, new_val)
+        self._replace_band(band, **{field_name: new_val})
+        return True
 
     def tick(self) -> None:
         bypassed = self.plugin.is_bypassed()
