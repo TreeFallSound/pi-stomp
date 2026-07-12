@@ -58,10 +58,19 @@ class BindingDecl:
 
 `Effect` is a closed union: `ParamEffect`, `MidiCcEffect`, `AudioCardEffect`,
 `CallbackEffect`, `RelayEffect`, `PresetEffect`, `TapTempoEffect`,
-`SelectionEditEffect`, `AliasEffect`, `NoneEffect` (R2 §2.2). Each variant maps
+`SelectionEditEffect`, `NoneEffect` (R2 §2.2). Each variant maps
 1:1 to an effect kind found in the R1 census — no new kind should be needed
 for existing panels; if one comes up mid-migration, that's a signal the
 census missed a row.
+
+**`AliasEffect` removed (deviates from R2 §2.2).** R2 originally specified an
+`AliasEffect` (re-dispatch to a target control's own base behavior, e.g. "NAV
+mirror") for exactly one row: NAM's Tweak1. Since no other panel ever needed
+it, and NAM's Tweak1 is being swallowed rather than mirrored (see §8), the
+whole variant — plus `fire()`'s case for it and `PanelOps.input_step` — was
+deleted rather than built for a single now-unused call site. If a future
+panel genuinely needs re-dispatch-as-another-control semantics, reintroduce
+it then, informed by that panel's actual requirements rather than NAM's.
 
 `SelectionSymbol` is the one sentinel: "resolve to `panel.sel_ref`'s symbol at
 fire/render time." It's what keeps selection-dependent bindings (compressor
@@ -235,9 +244,19 @@ transitions and their side effects on `routing.connect_monitor` /
 driving a real state machine, not a binding set). Everything else about NAM
 becomes declarations:
 
-- enc1 → NAV mirror, enc1-click/longclick → NAV click/longclick: `AliasEffect`
-  rows (R1 #17–19).
+- enc1 (rotation + click + longclick) is swallowed outright — a `NoneEffect`
+  row, consumed, no-op (R1 #17–19). **Deviates from the original plan**,
+  which had enc1 mirror the NAV encoder's own behavior via an `AliasEffect`.
+  Simpler: Tweak1 does nothing on the NAM screen; NAV is still there for
+  navigation on any board that has both. Not worth a whole `Effect` variant
+  for one row.
 - enc2/enc3 audio nudges in IDLE: `AudioCardEffect` rows (R1 #20–21).
+  `AudioCardEffect` fires through the *same* `ops.edit_symbol(symbol,
+  rotations)` call as `ParamEffect` (merged into one `fire()` match arm) —
+  CAPTURE_VOLUME/MASTER aren't LV2 params, but "rotations → commit" is the
+  identical shape, and no migrated panel's `edit_symbol` ever consulted
+  `event.multiplier` anyway, so there was nothing left to justify a separate
+  `PanelOps.audio_nudge` member.
 - enc2/enc3 swallowed during CAPTURING/DONE/ABORTED: `enabled_when` predicates
   gating a `NoneEffect` row, rather than hand-written `if state == ...: return
   True` branches (R1 #22, #24; R2 §6.1's finding that this narrows the escape
@@ -278,13 +297,9 @@ mechanical once the state-predicate mechanism exists, not a design question.
      parametric EQ's gain/q guards).
    - `fire(decl, ops, event)` executes `ParamEffect`/`SelectionEditEffect` via
      `ops.edit_symbol(symbol, rotations)` (panel-owned value math — see
-     below), `NoneEffect` (consume, no-op), and `AliasEffect` (calls
-     `ops.input_step` directly — the same base-NAV entry point
-     `Panel.handle()` itself uses, no second cascade; only the ROTATE case is
-     implemented so far, since no migrated panel needs PRESS/LONGPRESS
-     aliasing yet — build `input_event` support when NAM migrates, §8).
+     below) and `NoneEffect` (consume, no-op).
    - `ops: PanelOps` is a small structural `Protocol` (`sel_ref`,
-     `edit_symbol`, `input_step`), not the concrete `Panel` type —
+     `edit_symbol`), not the concrete `Panel` type —
      `pistomp/input/` must not import `uilib.Panel` back (`uilib` already
      imports `pistomp.input.event`/`sink`; importing the other direction
      would cycle).
@@ -446,8 +461,55 @@ mechanical once the state-predicate mechanism exists, not a design question.
    math. `tests/v3/test_caps_noisegate_menu.py` (the one exercised subclass
    with a snapshot suite) passes byte-identical.
 
-   Remaining: NAM (per §8's escape-hatch design).
+   **NAM migrated** (`pistomp/nam/panel.py`) — the state-machine transitions
+   stay imperative per §8; everything else is `declare_bindings()`. This is
+   the first real use of `enabled_when` in production code (previously only
+   exercised by `tests/test_contexts.py` — parametric EQ's "no band selected"
+   guard turned out to be hand-written `on_event` code, not an `enabled_when`
+   row, despite §9 step 4 describing it that way). Three states per control
+   for enc2/enc3 need three different rows at the same `(control, event_kind)`
+   key: `AudioCardEffect` enabled in IDLE, `NoneEffect` enabled in
+   CAPTURING/DONE/ABORTED, and — the interesting case — *neither* enabled in
+   FAILED, so `resolve_local` returns `None` and `on_event` falls through
+   unconsumed, exactly reproducing the old `if state == FAILED: return False`
+   passthrough to the vanilla parameter overlay. See the appendix below on
+   what this pattern implies architecturally. `NamCapturePanel` isn't a
+   `PluginPanel` (no LV2 plugin backing it), so it implements `declare_bindings`
+   /`edit_symbol` itself rather than inheriting them, and calls
+   `resolve_local`/`fire` directly from its own `on_event`.
+
+   Census complete: every panel from R1 is now either declared
+   (`declare_bindings`) or the one accepted escape hatch (NAM's state
+   machine, §8).
 ```
+
+### Appendix: NAM's `enabled_when` rows are a sub-panel smell
+
+Noted during NAM's migration (step 8), not acted on — logged so it isn't
+re-discovered from scratch later.
+
+NAM's enc2/enc3 rows need three mutually-exclusive `enabled_when` predicates
+per control because the same physical control means something different in
+IDLE vs CAPTURING/DONE/ABORTED vs FAILED. But `NamCapturePanel` already models
+that exact split internally: `_switch_to_capture_view()`/
+`_switch_to_setup_view()` swap widget visibility and rebuild `sel_list` for
+"setup mode" vs "capture mode" — all inside one `Panel` instance, never
+pushed/popped on the `PanelStack`. The `enabled_when` predicates are a second,
+parallel place tracking the same mode.
+
+The architecturally cleaner shape: split `NamCapturePanel` into real
+sub-panels (e.g. an idle/setup panel and a capturing panel) pushed/popped
+together with the existing view switch. Each would declare its rows
+unconditionally — no `enabled_when` anywhere, because `declare_bindings()` is
+re-evaluated fresh per panel per §2's "called once at attach-time" model.
+
+Not done now because it means restructuring NAM's view-switching mechanism
+itself, which is a materially bigger change than any other panel migration in
+this plan, and NAM's state machine is already the one deliberate exception
+carved out in §8. Revisit if `enabled_when` grows a second real use case
+elsewhere — two independent occurrences of "same control, mode-dependent
+behavior inside one panel" would be the signal that the sub-panel refactor is
+worth doing generally, not just for NAM.
 
 ## 10. Acceptance gate (charter requirements, unchanged)
 

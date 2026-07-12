@@ -127,16 +127,6 @@ class SelectionEditEffect(Effect):
 
 
 @dataclass(frozen=True)
-class AliasEffect(Effect):
-    """Re-dispatch the event as the aliased control's own base behavior (e.g.
-    NAV's input_step/input_event). No second cascade; the target's own
-    bindings are not consulted."""
-
-    target_control: ControlRef
-    target_event_kind: EventKind | None = None  # None = same kind
-
-
-@dataclass(frozen=True)
 class NoneEffect(Effect):
     """Consume but do nothing. Meaningful only with consume=True."""
 

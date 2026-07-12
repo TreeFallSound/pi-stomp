@@ -42,16 +42,27 @@ from uilib.box import Box
 from uilib.config import Config
 from uilib.glyphs import ArcDialWidget, DialVariant
 from uilib.label import Label
-from uilib.misc import InputEvent, TextHAlign, get_text_bbox, get_text_size
+from uilib.misc import TextHAlign, get_text_bbox, get_text_size
 from uilib.paint import PaintContext
 from uilib.pygame_init import font as _make_font
 from uilib.text import Button, TextWidget
 from uilib.widget import Widget
 
 import common.token as Token
+from common.contexts import (
+    AudioCardEffect,
+    BindingDecl,
+    ContextKind,
+    ContextRef,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    NoneEffect,
+)
 
 from uilib.panel import Panel
-from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
+from pistomp.input.dispatch import fire, resolve_local
+from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent
 from pistomp.nam import routing
 from pistomp.nam.engine import CaptureState, NamCaptureEngine
 from pistomp.nam.wavio import wav_duration
@@ -619,39 +630,76 @@ class NamCapturePanel(Panel):
     # ── Input handling ────────────────────────────────────────────────────────
 
     def on_event(self, event: ControllerEvent) -> bool:
-        # Tweak1 (rotation + button) fully mirrors the NAV encoder; enc 2/3 nudge
-        # the capture-gain / output-volume knobs.
+        # Tweak1 press/longpress: swallowed outright, no effect.
         if isinstance(event, SwitchEvent) and event.controller.id == 1:
-            click = InputEvent.LONG_CLICK if event.kind == SwitchEventKind.LONGPRESS else InputEvent.CLICK
-            return self.input_event(click)
+            return True
 
         if not isinstance(event, EncoderEvent) or event.controller.id not in (1, 2, 3):
             return False
-        encoder_id = event.controller.id
         if event.rotations == 0:
             return True
 
-        # Tweak1 mirrors the NAV encoder: scroll the panel selection.
-        if encoder_id == 1:
-            self.input_step(1 if event.rotations > 0 else -1, abs(event.rotations), event.multiplier)
-            return True
-
-        state = self._engine.state
-
-        # Swallow enc 2/3 during capture — no level changes mid-recording.
-        if state == CaptureState.CAPTURING:
-            return True
-
-        # Only on failure: pass through so the vanilla parameter overlay pops
-        # up and the user can adjust levels before retrying.
-        if state == CaptureState.FAILED:
+        decl = resolve_local(
+            self.declare_bindings(), ControlRef(cls=ControlClass.TWEAK, id=event.controller.id), EventKind.ROTATE
+        )
+        # No enabled row (FAILED state, enc 2/3): pass through so the vanilla
+        # parameter overlay pops up and the user can adjust levels before retrying.
+        if decl is None:
             return False
+        return fire(decl, self, event)
 
-        # IDLE: handle locally and update the on-screen knobs.
-        # DONE/ABORTED: swallow — the setup view knobs aren't visible.
-        if state == CaptureState.IDLE and self._handler is not None:
-            steps = int(round(event.rotations * event.multiplier))
-            self._nudge_audio(encoder_id == 2, steps)
+    def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        ctx = ContextRef(kind=ContextKind.PANEL, name="nam_capture")
+
+        def idle() -> bool:
+            return self._engine.state == CaptureState.IDLE
+
+        def swallowed() -> bool:
+            return self._engine.state in (CaptureState.CAPTURING, CaptureState.DONE, CaptureState.ABORTED)
+
+        return (
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=1),
+                event_kind=EventKind.ROTATE,
+                effects=(NoneEffect(),),
+                context=ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=2),
+                event_kind=EventKind.ROTATE,
+                effects=(AudioCardEffect(param_symbol="CAPTURE_VOLUME"),),
+                context=ctx,
+                enabled_when=idle,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=2),
+                event_kind=EventKind.ROTATE,
+                effects=(NoneEffect(),),
+                context=ctx,
+                enabled_when=swallowed,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=3),
+                event_kind=EventKind.ROTATE,
+                effects=(AudioCardEffect(param_symbol="MASTER"),),
+                context=ctx,
+                enabled_when=idle,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=3),
+                event_kind=EventKind.ROTATE,
+                effects=(NoneEffect(),),
+                context=ctx,
+                enabled_when=swallowed,
+            ),
+        )
+
+    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+        """AudioCardEffect's target: CAPTURE_VOLUME/MASTER aren't LV2 params,
+        but the edit shape (rotations -> commit) is identical."""
+        if self._handler is None or symbol not in ("CAPTURE_VOLUME", "MASTER"):
+            return False
+        self._nudge_audio(symbol == "CAPTURE_VOLUME", rotations)
         return True
 
     # ── Polling ───────────────────────────────────────────────────────────────
