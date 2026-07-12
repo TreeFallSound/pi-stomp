@@ -347,23 +347,38 @@ mechanical once the state-predicate mechanism exists, not a design question.
    also appends a `BindingDecl` tagged `ShadowState.ORPHANED` (test:
    `test_orphaned_ttl_binding_recorded_in_effective_table`).
 
-   Deferred, each for its own reason:
-   - **Multi-binding cache (§6.2)** has no caller yet — no code path today
-     produces two `ACTIVE` rows for the same control, so rebuilding
-     `Controller.parameter` from a resolved table would be scaffolding
-     without a bug it fixes (same reasoning as the step-2 footswitch guard).
-     It becomes load-bearing once blend rows and pedalboard rows can
-     genuinely collide on one control — i.e. once §6.3 lands.
-   - **Blend as a context (§6.3)**, which fixes the real R3 §7d bug (blend's
-     CC claim silently kills a co-located MIDI-learned parameter), needs a
-     new `Effect` variant — blend does live interpolation, not a clean fit
-     for any existing closed-union member — plus rewiring
-     `modhandler.handle`'s `active_blend_mode.intercept(event)`
-     short-circuit to consult the resolver instead. That is a second
-     nontrivial schema decision (what does a blend `Effect` look like) on
-     top of this slice's `ControlRef` one; scoped out to keep this slice
-     additive and low-risk. Do §6.2 and §6.3 together next, in that order —
-     §6.2's cache needs §6.3's resolved winner to have something to cache.
+   **§6.3 (blend as a context) also landed, in the same slice.** Added
+   `BlendEffect(input_controller: object)` to the closed union — a typed
+   reference to the live `InputController`, not a string-keyed
+   `CallbackEffect` lookup, since it's one specific stateful attachment, not
+   a generic named action. `Modhandler` now owns a `_blend_layer:
+   ContextLayer` (`ContextKind.BLEND`), rebuilt by `_rebuild_blend_layer()`
+   after every `activate()`/`deactivate()`/failed-activate from
+   `_handle_blend_mode_snapshot_change`, keyed by the attached controller's
+   own `f"{midi_channel}:{midi_CC}"` — the same identity space as pedalboard
+   rows (blend's config `input_id` is a display-position int in a *different*
+   space; the row is built from the live attached `Controller` object after
+   `attach_to_input`, not straight from config). `Modhandler.handle`'s old
+   `active_blend_mode.intercept(event)` short-circuit is replaced by
+   `_fire_blend_row`, which resolves `ContextStack(layers=[*effective_table.
+   layers, blend_layer])` and fires only if the winner is a `BlendEffect` —
+   a pedalboard-only control (no blend row) falls through to legacy dispatch
+   unchanged. Because `ControlClass.ANALOG`'s chain is `(BLEND, PEDALBOARD)`
+   (`common/contexts.py` `_CHAINS`), a blend row now correctly wins over a
+   co-located pedalboard TTL row and tags it `SHADOWED` via the resolver's
+   normal side effect — fixing R3 §7d (the pedalboard row no longer goes
+   silent with no trace). `BlendMode.intercept()` itself is untouched and
+   still unit-tested directly (`tests/input_router/test_blend_interception.
+   py`); the new integration coverage is
+   `tests/input_router/test_blend_context_shadowing.py`.
+
+   **Multi-binding cache (§6.2) still deferred** — even with §6.3 landed, no
+   code path produces two genuinely `ACTIVE` `ParamEffect` rows on the same
+   control at once (the blend/pedalboard collision above is a consumption
+   decision made by `_fire_blend_row`, not a change to `Controller.
+   parameter`; the pedalboard row's controller keeps its plugin binding for
+   the LED/display reconcile path regardless of blend). Revisit only if a
+   real two-plugins-share-one-CC case surfaces (R3 §7e).
 6. Read docs/r4-badge-surfaces.md; wire the badge renderer off the effective
    table (§7).
 7. tests/v2/conftest.py v2_system fixture, built now that a real migrated
