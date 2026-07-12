@@ -12,7 +12,6 @@ runtime deps).
 
 from __future__ import annotations
 
-import math
 import wave
 from pathlib import Path
 
@@ -42,17 +41,7 @@ def load_wav_float32(path: Path | str) -> npt.NDArray[np.float32]:
 
     buf = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 3)
     n = len(buf)
-    # Left-shift the 24-bit value by 8 bits into int32 so that the int24 MSB
-    # lands at the int32 MSB (preserving sign) and we can scale by 1/2^31.
-    # Little-endian layout: [0x00, B0(LSB), B1, B2(MSB)]
     padded = np.zeros((n, 4), dtype=np.uint8)
-    padded[:, 1:] = buf  # 24-bit bytes at positions 1,2,3; position 0 = 0x00
+    padded[:, 1:] = buf
     int32 = padded.view(np.dtype("<i4")).reshape(-1)
     return (int32.astype(np.float32)) / np.float32(2**31)
-
-
-def wav_peak_dbfs(path: Path | str) -> float:
-    """Return the peak level in dBFS of *path* (always ≤ 0.0)."""
-    samples = load_wav_float32(path)
-    peak = float(np.max(np.abs(samples)))
-    return 20.0 * math.log10(max(peak, 1e-10))

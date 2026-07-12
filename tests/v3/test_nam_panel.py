@@ -98,7 +98,6 @@ def _make_panel(engine: _FakeEngine, on_dismiss=None) -> NamCapturePanel:
     with (
         patch.object(NamCapturePanel, "_create_engine", return_value=engine),
         patch("pistomp.nam.panel.wav_duration", return_value=190.0),
-        patch("pistomp.nam.panel.wav_peak_dbfs", return_value=-6.0),
     ):
         return NamCapturePanel(output_dir="/tmp", on_dismiss=on_dismiss)
 

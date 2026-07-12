@@ -21,7 +21,6 @@ dependencies = [
     "jsonschema>=4.0",
     "JACK-Client>=0.5.5",
     "python-rtmidi>=1.4",
-    "requests>=2.28",
     "Pillow>=9.4",
     "numpy>=2.4",
     "pyalsaaudio>=0.9; sys_platform == 'linux'",

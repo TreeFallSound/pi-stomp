@@ -14,10 +14,8 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import json
-import lilv  # pyright: ignore[reportMissingImports] -- lilv is system-installed
 import logging
-import os
-import requests as req
+import pistomp.httpclient as req
 import sys
 import urllib.parse
 from typing import Optional
@@ -42,55 +40,7 @@ class Pedalboard:
         self._customizer: Customizer = customizer or default_customizer
         self.plugins = []
         self.connections: list[Connection] = []
-
-        self.world = lilv.World()
-
-        # this is needed when loading specific bundles instead of load_all
-        # (these functions are not exposed via World yet)
-        self.world.load_specifications()
-        self.world.load_plugin_classes()
-
-        self.uri_arc = self.world.new_uri("http://drobilla.net/ns/ingen#arc")
-        self.uri_block = self.world.new_uri("http://drobilla.net/ns/ingen#block")
-        self.uri_canvas_x = self.world.new_uri("http://drobilla.net/ns/ingen#canvasX")
-        self.uri_canvas_y = self.world.new_uri("http://drobilla.net/ns/ingen#canvasY")
-        self.uri_head = self.world.new_uri("http://drobilla.net/ns/ingen#head")
-        self.uri_port = self.world.new_uri("http://lv2plug.in/ns/lv2core#port")
-        self.uri_tail = self.world.new_uri("http://drobilla.net/ns/ingen#tail")
-        self.uri_value = self.world.new_uri("http://drobilla.net/ns/ingen#value")
-        self.uri_instance_number = self.world.new_uri("http://moddevices.com/ns/modpedal#instanceNumber")
-
-    def get_pedalboard_plugin(self, world, bundlepath):
-        # lilv wants the last character as the separator
-        bundle = os.path.abspath(bundlepath)
-        if not bundle.endswith(os.sep):
-            bundle += os.sep
-        # convert bundle string into a lilv node
-        bundlenode = self.world.new_file_uri(None, bundle)
-
-        # load the bundle
-        self.world.load_bundle(bundlenode)
-
-        # free bundlenode, no longer needed
-        # self.world.node_free(bundlenode)  # TODO find out why this is no longer necessary (why did API method go away)
-
-        # get all plugins in the bundle
-        ps = self.world.get_all_plugins()
-
-        # make sure the bundle includes 1 and only 1 plugin (the pedalboard)
-        if len(ps) != 1:
-            raise Exception("get_pedalboard_info({}) - bundle has 0 or > 1 plugin".format(bundle))
-
-        # no indexing in python-lilv yet, just get the first item
-        plugin = None
-        for p in ps:
-            plugin = p
-            break
-
-        if plugin is None:
-            raise Exception("get_pedalboard_plugin({}) - no plugin found".format(bundle))
-
-        return plugin
+        self.hydrated = False
 
     def get_plugin_data(self, uri):
         url = self.root_uri + "effect/get?uri=" + urllib.parse.quote(uri)
@@ -107,187 +57,127 @@ class Pedalboard:
 
         return json.loads(resp.text)
 
-    def _coord(self, block, uri) -> float:
-        """Read an ingen canvas coordinate (float literal) off a block."""
-        node = self.world.get(block, uri, None)
-        if node is None:
-            return 0.0
+    def get_pedalboard_info(self) -> dict:
+        """mod-ui's own parse of the bundle. It walks the TTL in C++; doing it here
+        through the lilv python bindings cost ~0.8s per board at startup."""
+        url = self.root_uri + "pedalboard/info/?bundlepath=" + urllib.parse.quote(self.bundle)
         try:
-            return float(str(node))
-        except ValueError:
-            return 0.0
+            resp = req.get(url)
+        except Exception:
+            logging.error("Cannot connect to mod-ui.")
+            sys.exit()
 
-    # Get info from an lv2 bundle
-    # @a bundle is a string, consisting of a directory in the filesystem (absolute pathname).
-    def load_bundle(self, bundlepath, plugin_dict):
-        # Load the bundle, return the single plugin for the pedalboard
-        plugin = self.get_pedalboard_plugin(self.world, bundlepath)
+        if resp.status_code != 200:
+            logging.error("mod-ui not able to get pedalboard info: %s  Status: %s" % (url, resp.status_code))
+            return {}
 
-        # check if the plugin is a pedalboard
-        def fill_in_type(node):
-            if node is not None and node.is_uri():
-                return node
+        return json.loads(resp.text)
+
+    @staticmethod
+    def _binding(cc: dict | None) -> Optional[str]:
+        # channel -1 is mod-ui's "unmapped" sentinel (utils_lilv.cpp).
+        if not cc or cc.get("channel", -1) < 0:
             return None
+        return "%d:%d" % (cc["channel"], cc["control"])
 
-        u = self.world.new_uri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-        plugin_types = [i for i in util.LILV_FOREACH(plugin.get_value(u), fill_in_type)]
-        if "http://moddevices.com/ns/modpedal#Pedalboard" not in plugin_types:
-            raise Exception(f"get_pedalboard_info({bundlepath}) - plugin has no mod:Pedalboard type")
+    def hydrate(self, plugin_dict) -> None:
+        """Populate plugins and connections from mod-ui. Idempotent."""
+        if self.hydrated:
+            return
 
-        # Iterate blocks (plugins). Order is imposed afterward from canvas
-        # coordinates (see below), so block iteration order doesn't matter.
+        info = self.get_pedalboard_info()
+        if not info:
+            return
+
         all_plugins: list[Plugin.Plugin] = []
         instance_to_info: dict[str, Optional[dict]] = {}
-        blocks = plugin.get_value(self.uri_block)
-        for block in blocks:
-            if block is None or block.is_blank():
-                continue
 
-            # Add plugin data (from plugin registry) to global plugin dictionary
-            plugin_info = {}
+        for pb_plugin in info.get("plugins", []):
+            instance_id = pb_plugin["instance"].lstrip("/")
+            plugin_uri = pb_plugin["uri"]
+
+            plugin_info = plugin_dict.get(plugin_uri)
+            if plugin_info is None:
+                plugin_info = self.get_plugin_data(plugin_uri)
+                if plugin_info:
+                    plugin_dict[plugin_uri] = plugin_info
+
             category = None
-            plugin_uri = None
-            prototype = self.world.find_nodes(block, self.world.ns.lv2.prototype, None)
-            if len(prototype) > 0:
-                # logging.debug("prototype %s" % prototype[0])
-                plugin_uri = str(prototype[0])  # plugin.get_uri()
-                if plugin_uri not in plugin_dict:
-                    plugin_info = self.get_plugin_data(plugin_uri)
-                    if plugin_info:
-                        logging.debug("added %s" % plugin_uri)
-                        plugin_dict[plugin_uri] = plugin_info
-                else:
-                    plugin_info = plugin_dict[plugin_uri]
-                if plugin_info is not None:
-                    cat = util.DICT_GET(plugin_info, Token.CATEGORY)
-                    if cat is not None and len(cat) > 0:
-                        category = cat[0]
+            cat = util.DICT_GET(plugin_info, Token.CATEGORY)
+            if cat is not None and len(cat) > 0:
+                category = cat[0]
 
-            # Extract Parameter data
-            instance_id = str(block.get_path()).replace(bundlepath, "", 1).lstrip("/")
-            nodes = self.world.find_nodes(block, self.world.ns.lv2.port, None)
             parameters = {}
-            if len(nodes) > 0:
-                # These are the port nodes used to define parameter controls
-                for port in nodes:
-                    param_value = self.world.get(port, self.uri_value, None)
-                    # logging.debug("port: %s  value: %s" % (port, param_value))
-                    binding = self.world.get(port, self.world.ns.midi.binding, None)
-                    if binding is not None:
-                        controller_num = self.world.get(binding, self.world.ns.midi.controllerNumber, None)
-                        channel = self.world.get(binding, self.world.ns.midi.channel, None)
-                        if (controller_num is not None) and (channel is not None):
-                            binding = "%d:%d" % (
-                                self.world.new_int(int(channel)),
-                                self.world.new_int(int(controller_num)),
-                            )
-                            logging.debug("  MIDI CC binding %s" % binding)
-                    path = str(port)
-                    symbol = os.path.basename(path)
-                    value = None
-                    if param_value is not None:
-                        if param_value.is_float():
-                            value = float(self.world.new_float(param_value))
-                        elif param_value.is_int():
-                            value = int(self.world.new_int(int(param_value)))
-                        else:
-                            value = str(value)
-                    # Bypass "parameter" is a special case without an entry in the plugin definition
-                    if symbol == Token.COLON_BYPASS:
-                        info = {
-                            "shortName": "bypass",
-                            "symbol": symbol,
-                            "ranges": {"minimum": 0, "maximum": 1},
-                        }  # TODO tokenize
-                        v = 0.0 if value == 0 else 1.0
-                        param = Parameter(info, v, binding, instance_id)
-                        parameters[symbol] = param
-                        continue  # don't try to find matching symbol in plugin_dict
-                    # Try to find a matching symbol in plugin_dict to obtain the remaining param details
-                    try:
-                        plugin_params = (plugin_info or {})[Token.PORTS][Token.CONTROL][Token.INPUT]
-                    except KeyError:
-                        logging.warning("plugin port info not found, could be missing LV2 for: %s", instance_id)
-                        continue
-                    for pp in plugin_params:
-                        sym = util.DICT_GET(pp, Token.SYMBOL)
-                        if sym == symbol:
-                            # logging.debug("PARAM: %s %s %s" % (util.DICT_GET(pp, 'name'), info[uri], category))
-                            param = Parameter(pp, float(value) if value is not None else 0.0, binding, instance_id)
-                            # logging.debug("Param: %s %s %4.2f %4.2f %s" % (param.name, param.symbol, param.minimum, value, binding))
-                            parameters[symbol] = param
 
-                    # logging.debug("  Label: %s" % label)
-            n_int: int | None = None
-            n_node = self.world.get(block, self.uri_instance_number, None)
-            if n_node is not None:
-                try:
-                    n_int = int(str(n_node))
-                except ValueError:
-                    logging.debug("Non-integer pedal:instanceNumber on %s: %r", instance_id, n_node)
-            c = self._customizer(plugin_uri, bundlepath, n_int)
+            # mod-ui reports bypass as a bool alongside the ports, not as a port row.
+            bypass_info = {
+                "shortName": "bypass",
+                "symbol": Token.COLON_BYPASS,
+                "ranges": {"minimum": 0, "maximum": 1},
+            }
+            parameters[Token.COLON_BYPASS] = Parameter(
+                bypass_info,
+                1.0 if pb_plugin.get("bypassed") else 0.0,
+                self._binding(pb_plugin.get("bypassCC")),
+                instance_id,
+            )
+
+            try:
+                plugin_params = (plugin_info or {})[Token.PORTS][Token.CONTROL][Token.INPUT]
+            except KeyError:
+                logging.warning("plugin port info not found, could be missing LV2 for: %s", instance_id)
+                plugin_params = []
+
+            by_symbol = {util.DICT_GET(pp, Token.SYMBOL): pp for pp in plugin_params}
+            for port in pb_plugin.get("ports", []):
+                symbol = port["symbol"]
+                pp = by_symbol.get(symbol)
+                if pp is None:
+                    continue
+                parameters[symbol] = Parameter(
+                    pp,
+                    float(port["value"]),
+                    self._binding(port.get("midiCC")),
+                    instance_id,
+                )
+
+            n_int = pb_plugin.get("instanceNumber")
+            if n_int is not None and n_int < 0:
+                n_int = None
+
             inst = Plugin.Plugin(
                 instance_id,
                 parameters,
                 plugin_info,
                 category,
                 uri=plugin_uri,
-                customization=c,
+                customization=self._customizer(plugin_uri, self.bundle, n_int),
                 instance_number=n_int,
             )
-            inst.canvas_x = self._coord(block, self.uri_canvas_x)
-            inst.canvas_y = self._coord(block, self.uri_canvas_y)
-            instance_to_info[instance_id.lstrip("/")] = plugin_info
+            inst.canvas_x = float(pb_plugin.get("x", 0.0))
+            inst.canvas_y = float(pb_plugin.get("y", 0.0))
+            instance_to_info[instance_id] = plugin_info
             all_plugins.append(inst)
-            # logging.debug("dump: %s" % inst.to_json())
 
         # Order by MOD-UI canvas position: left-to-right (audio flow), then
-        # top-to-bottom. Deterministic regardless of lilv's block iteration
-        # order; instance_id breaks any exact-coordinate tie.
+        # top-to-bottom. instance_id breaks any exact-coordinate tie.
         self.plugins = sorted(all_plugins, key=lambda p: (p.canvas_x, p.canvas_y, p.instance_id))
 
-        self.connections = self._extract_connections(plugin, bundlepath, instance_to_info)
+        self.connections = []
+        for arc in info.get("connections", []):
+            try:
+                # mod-ui already strips the bundle path off both endpoints.
+                self.connections.append(build_connection(arc["source"], arc["target"], "", instance_to_info))
+            except Exception as e:
+                logging.warning("Failed to parse arc %s -> %s: %s", arc.get("source"), arc.get("target"), e)
 
-        # Capture parse-time snapshot of all parameter values for Reset
+        # Capture snapshot of all parameter values for Reset
         for plugin in self.plugins:
             plugin.pedalboard_snapshot = {
                 sym: float(p.value) if p.value is not None else 0.0 for sym, p in plugin.parameters.items()
             }
 
-        # Done obtaining relevant lilv for the pedalboard
-        return
-
-    def _extract_connections(
-        self,
-        pedalboard_plugin,
-        bundlepath: str,
-        instance_to_info: dict[str, Optional[dict]],
-    ) -> list[Connection]:
-        """Enumerate ingen:arc objects on the pedalboard and resolve each to a
-        Connection. Mirrors mod-ui's approach (utils_lilv.cpp:4992)."""
-        connections: list[Connection] = []
-        arcs = pedalboard_plugin.get_value(self.uri_arc)
-        if arcs is None:
-            return connections
-        for arc in arcs:
-            if arc is None:
-                continue
-            tail = self.world.get(arc, self.uri_tail, None)
-            head = self.world.get(arc, self.uri_head, None)
-            if tail is None or head is None:
-                continue
-            try:
-                connections.append(
-                    build_connection(
-                        str(tail),
-                        str(head),
-                        bundlepath,
-                        instance_to_info,
-                    )
-                )
-            except Exception as e:
-                logging.warning("Failed to parse arc %s -> %s: %s", tail, head, e)
-        return connections
+        self.hydrated = True
 
     def _build_plugin(self, instance_id: str, uri: str, x: float, y: float, info: dict) -> Optional[Plugin.Plugin]:
         """Build a Plugin from REST metadata (no LILV). Used for dynamic adds.

@@ -144,7 +144,7 @@ def main():
         hw = factory.create(cfg, handler, midiout)
         handler.add_hardware(hw)
 
-        # Load all pedalboard info from the lilv ttl file
+        # Load all pedalboard info (titles/bundles; graphs hydrate on selection)
         handler.load_banks()
         handler.load_pedalboards()
 

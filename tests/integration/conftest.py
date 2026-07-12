@@ -93,10 +93,10 @@ def _build_stack(
     fake_bridge = FakeWebSocketBridge()
 
     with (
-        patch("requests.get") as mock_get,
-        patch("requests.post") as mock_post,
+        patch("pistomp.httpclient.get") as mock_get,
+        patch("pistomp.httpclient.post") as mock_post,
         patch("pistomp.settings.Settings") as mock_settings_cls,
-        patch("modalapi.pedalboard.Pedalboard.load_bundle"),
+        patch("modalapi.pedalboard.Pedalboard.hydrate"),
         patch("modalapi.wifi.WifiManager") as mock_wm_cls,
         patch("subprocess.check_output", return_value=b"SystemState=running"),
         patch("pistomp.lcd320x240.LcdIli9341", return_value=fake_lcd),
@@ -216,9 +216,9 @@ def _v1_stack(tmp_path) -> Generator[SystemFixtureLegacy, None, None]:
         hw_self.mod.add_lcd(MonoLcd(hw_self.mod.homedir, lcd=fake_dev, backlight=MagicMock(), touch=MagicMock()))
 
     with (
-        patch("requests.get") as mock_get,
-        patch("requests.post") as mock_post,
-        patch("modalapi.pedalboard.Pedalboard.load_bundle"),
+        patch("pistomp.httpclient.get") as mock_get,
+        patch("pistomp.httpclient.post") as mock_post,
+        patch("modalapi.pedalboard.Pedalboard.hydrate"),
         patch("modalapi.wifi.WifiManager") as mock_wm_cls,
         patch("modalapi.mod.AsyncWebSocketBridge", return_value=fake_bridge),
         patch("modalapi.mod.ExternalMidi.ExternalMidiManager"),

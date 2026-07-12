@@ -83,9 +83,9 @@ def emulator_env(tmp_path, monkeypatch):
     _reset_singletons()
 
     with ExitStack() as stack:
-        mock_get = stack.enter_context(patch("requests.get", side_effect=_mod_get))
-        mock_post = stack.enter_context(patch("requests.post", side_effect=_mod_post))
-        stack.enter_context(patch("modalapi.pedalboard.Pedalboard.load_bundle"))
+        mock_get = stack.enter_context(patch("pistomp.httpclient.get", side_effect=_mod_get))
+        mock_post = stack.enter_context(patch("pistomp.httpclient.post", side_effect=_mod_post))
+        stack.enter_context(patch("modalapi.pedalboard.Pedalboard.hydrate"))
         stack.enter_context(patch("modalapi.mod.AsyncWebSocketBridge"))
         stack.enter_context(patch("modalapi.modhandler.AsyncWebSocketBridge"))
         stack.enter_context(patch("emulator.mod.AsyncWebSocketBridge"))
