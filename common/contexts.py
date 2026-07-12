@@ -53,7 +53,10 @@ class ShadowState(Enum):
 @dataclass(frozen=True)
 class ControlRef:
     cls: ControlClass
-    id: int | None  # None = "any id of this class" (aliases only)
+    # int: panel tweak/volume slot (1-3). str: physical "channel:CC" identity
+    # (ANALOG/FOOTSWITCH, matches Hardware.controllers' key). None = "any id
+    # of this class" (aliases only).
+    id: int | str | None
 
 
 @dataclass(frozen=True)

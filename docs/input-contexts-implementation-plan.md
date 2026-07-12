@@ -261,9 +261,109 @@ mechanical once the state-predicate mechanism exists, not a design question.
    they exercise static + selection-dependent bindings and the densest
    screens). Each migration replaces on_event with declare_bindings();
    track against the R1 census table (declared / escape-hatched / remaining).
+
+   **Scoping decision (this slice only, revisit at step 5):** don't wire
+   `ContextStack` into `PanelStack` push/pop yet. Until step 5,
+   `ControllerManager` still owns pedalboard-level TWEAK bindings the old way,
+   so a panel is the only context ever in play while it's open — there is no
+   cross-context shadowing to resolve, and building the full stack now would
+   be scaffolding with no caller (same mistake as the footswitch guard in
+   step 2). Instead:
+   - `Panel.declare_bindings()` returns this panel's own rows; a
+     `resolve_local(rows, control, event_kind)` helper in
+     `pistomp/input/dispatch.py` walks just that list (reusing
+     `ContextStack`'s single-layer logic, not duplicating it) and returns the
+     first row whose `enabled_when` is true — same semantics as worked
+     example (g) (two rows, same key, mutually exclusive predicates, e.g.
+     parametric EQ's gain/q guards).
+   - `fire(decl, ops, event)` executes `ParamEffect`/`SelectionEditEffect` via
+     `ops.edit_symbol(symbol, rotations)` (panel-owned value math — see
+     below), `NoneEffect` (consume, no-op), and `AliasEffect` (calls
+     `ops.input_step` directly — the same base-NAV entry point
+     `Panel.handle()` itself uses, no second cascade; only the ROTATE case is
+     implemented so far, since no migrated panel needs PRESS/LONGPRESS
+     aliasing yet — build `input_event` support when NAM migrates, §8).
+   - `ops: PanelOps` is a small structural `Protocol` (`sel_ref`,
+     `edit_symbol`, `input_step`), not the concrete `Panel` type —
+     `pistomp/input/` must not import `uilib.Panel` back (`uilib` already
+     imports `pistomp.input.event`/`sink`; importing the other direction
+     would cycle).
+   - **Schema addition: `ParamRole`** (`common/param_roles.py`) — GENERIC,
+     GAIN_DB (additive, fixed dB step), FREQUENCY_HZ (multiplicative,
+     equal-tempered step), Q_FACTOR (additive, fixed step). One vocabulary
+     used two ways: (1) `SelectionEditEffect.role` — which symbol to pull off
+     `sel_ref` (`sel_ref.symbol_for(role)`; a compressor arc returns the same
+     symbol for any role, an EQ band selection returns a different symbol per
+     role); (2) `PluginCustomization.param_roles: dict[str, ParamRole]` —
+     which step math applies to a resolved symbol, a classification
+     supplementing the LV2 port's range/type ground truth (the same seam
+     `panel_cls`/`tile_border`/etc. already use). Originally built as two
+     separate mechanisms (an ad hoc `attr` string on the effect, a separate
+     enum for step math) and collapsed into one after review — they were the
+     same classification spelled two ways. `PluginPanel.edit_symbol` is the
+     one place that reads `param_roles`; a panel overrides it only to add a
+     widget refresh or, for a per-band lookup like parametric EQ, to resolve
+     which band field a symbol belongs to before delegating to
+     `common.param_roles.edit_value`.
+   - The VOLUME opt-in guard (step 3) got its first real exercise here:
+     compressor's enc-3 `rat` row is declared with `control.cls =
+     ControlClass.VOLUME` and the row's own `context=ContextRef(
+     override_volume=True)`, per §4's decision that Tweak3/Volume stays
+     freely assignable. This also fixed a bug in the guard itself: it must
+     check the *row's* declared `context`, not the containing layer's `ref`
+     — `resolve_local` rebuilds an ad hoc layer from already-authored rows on
+     every call, so a shared layer-level flag can't carry per-row intent.
+   - **Schema gap found, not yet generalized:** parametric EQ's Tweak3 (Q)
+     must fall through to the volume encoder when no band is selected (chrome
+     focused), while Tweak1/2 (gain/freq) stay silently absorbed — a
+     per-row, state-conditional *consume* the schema only expresses via
+     `enabled_when` on the *effect* row, not on whether the event is
+     consumed at all when no row matches. Handled with a small imperative
+     guard in `ParametricEqPanel.on_event` before falling into declarative
+     resolution, documented inline. Revisit if a third panel needs the same
+     shape — that would be the signal to add real schema support rather than
+     a third copy of the guard.
+   - Panels never declare `ANALOG` rows (§4.2: chain is `BLEND → PEDALBOARD`
+     only) — enforced by absence, not by a check in this slice.
+
+   **Status: compressor and parametric EQ migrated, all tests + pyright
+   green.** Remaining census panels (gx_cabinet, tap_reverb, graphic EQ,
+   multiband menu, NAM) are step 8.
 5. Controller.parameter -> effects-list / multi-binding support (§6.2),
    ControllerManager.bind becomes the table builder (§6.1), blend becomes a
    context (§6.3).
+
+   **Status: §6.1 (table builder) landed as an additive slice; §6.2/§6.3
+   deferred.** `ControlRef.id` widened to `int | str` — panel rows keep the
+   `1-3` tweak/volume slot ints, pedalboard-level ANALOG/FOOTSWITCH rows use
+   the same `"channel:CC"` string already keying `Hardware.controllers`, so
+   one `ControlRef` shape covers both without a second identity field.
+   `ControllerManager.bind` now builds `self.effective_table` (a
+   `ContextStack` with one `PEDALBOARD` layer) alongside the legacy
+   `current.analog_controllers` / `controller.parameter` writes — same
+   traversal, no behavior change, nothing yet reads the table. The one new
+   behavior: a TTL `param.binding` with no matching physical controller
+   (previously silently dropped via `if controller is None: continue`) now
+   also appends a `BindingDecl` tagged `ShadowState.ORPHANED` (test:
+   `test_orphaned_ttl_binding_recorded_in_effective_table`).
+
+   Deferred, each for its own reason:
+   - **Multi-binding cache (§6.2)** has no caller yet — no code path today
+     produces two `ACTIVE` rows for the same control, so rebuilding
+     `Controller.parameter` from a resolved table would be scaffolding
+     without a bug it fixes (same reasoning as the step-2 footswitch guard).
+     It becomes load-bearing once blend rows and pedalboard rows can
+     genuinely collide on one control — i.e. once §6.3 lands.
+   - **Blend as a context (§6.3)**, which fixes the real R3 §7d bug (blend's
+     CC claim silently kills a co-located MIDI-learned parameter), needs a
+     new `Effect` variant — blend does live interpolation, not a clean fit
+     for any existing closed-union member — plus rewiring
+     `modhandler.handle`'s `active_blend_mode.intercept(event)`
+     short-circuit to consult the resolver instead. That is a second
+     nontrivial schema decision (what does a blend `Effect` look like) on
+     top of this slice's `ControlRef` one; scoped out to keep this slice
+     additive and low-risk. Do §6.2 and §6.3 together next, in that order —
+     §6.2's cache needs §6.3's resolved winner to have something to cache.
 6. Read docs/r4-badge-surfaces.md; wire the badge renderer off the effective
    table (§7).
 7. tests/v2/conftest.py v2_system fixture, built now that a real migrated

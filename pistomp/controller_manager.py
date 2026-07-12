@@ -19,6 +19,18 @@ import logging
 from typing import TYPE_CHECKING
 
 import common.token as Token
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextLayer,
+    ContextRef,
+    ContextStack,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    ParamEffect,
+    ShadowState,
+)
 from common.parameter import Parameter, TTL_PROPERTIES, TTL_INTEGER
 from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -43,6 +55,12 @@ class ControllerManager:
     def __init__(self, hardware: "Hardware", *, reorder_footswitch_plugins: bool = False):
         self._hw = hardware
         self._reorder_footswitch_plugins = reorder_footswitch_plugins
+        # Effective table (docs/input-contexts-implementation-plan.md §6): a
+        # PEDALBOARD-layer diagnostic view built alongside the legacy dict
+        # outputs below, not yet consumed by them. ORPHANED rows record TTL
+        # bindings with no matching physical controller, which the legacy
+        # path today drops silently.
+        self.effective_table = ContextStack(layers=[])
 
     def bind(self, current: Current | None) -> None:
         """Rebind all controllers for the active pedalboard state."""
@@ -55,16 +73,18 @@ class ControllerManager:
                 controller.parameter = None
 
         current.analog_controllers = {}
+        pedalboard_layer = ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD))
 
         if current.pedalboard:
-            footswitch_plugins = self._bind_plugin_parameters(current)
+            footswitch_plugins = self._bind_plugin_parameters(current, pedalboard_layer)
             self._bind_volume_encoders(current)
             if self._reorder_footswitch_plugins:
                 self._move_footswitch_plugins_to_end(current, footswitch_plugins)
 
         self._bind_external_controllers(current)
+        self.effective_table = ContextStack(layers=[pedalboard_layer])
 
-    def _bind_plugin_parameters(self, current) -> list:
+    def _bind_plugin_parameters(self, current, pedalboard_layer: ContextLayer) -> list:
         """Bind controllers referenced by plugin parameters; return the plugins
         that gained a footswitch."""
         footswitch_plugins = []
@@ -76,6 +96,15 @@ class ControllerManager:
                     continue
                 controller = self._hw.controllers.get(param.binding)
                 if controller is None:
+                    pedalboard_layer.add(
+                        BindingDecl(
+                            control=ControlRef(cls=ControlClass.ANALOG, id=param.binding),
+                            event_kind=EventKind.ROTATE,
+                            effects=(ParamEffect(plugin=plugin, symbol=param.name),),
+                            context=pedalboard_layer.ref,
+                            shadow_state=ShadowState.ORPHANED,
+                        )
+                    )
                     continue
 
                 # External controllers aren't bound to plugin parameters.
@@ -93,11 +122,24 @@ class ControllerManager:
                     plugin.has_footswitch = True
                     footswitch_plugins.append(plugin)
                     controller.set_category(plugin.category)
+                    event_kind = EventKind.PRESS
+                    cls = ControlClass.FOOTSWITCH
                 else:
                     key = "%s:%s" % (plugin.instance_id, param.name)
                     display_info = controller.get_display_info()
                     display_info["category"] = plugin.category
                     current.analog_controllers[key] = display_info
+                    event_kind = EventKind.ROTATE
+                    cls = ControlClass.ANALOG
+
+                pedalboard_layer.add(
+                    BindingDecl(
+                        control=ControlRef(cls=cls, id=param.binding),
+                        event_kind=event_kind,
+                        effects=(ParamEffect(plugin=plugin, symbol=param.name),),
+                        context=pedalboard_layer.ref,
+                    )
+                )
         return footswitch_plugins
 
     def _bind_volume_encoders(self, current) -> None:

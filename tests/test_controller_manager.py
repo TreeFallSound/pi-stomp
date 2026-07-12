@@ -1,8 +1,11 @@
 """ControllerManager.bind() — controller→parameter binding, version-flagged."""
 
+from typing import cast
 from unittest.mock import MagicMock
 
 import common.token as Token
+from common.contexts import ControlClass, EventKind, ShadowState
+from modalapi.plugin import Plugin
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.controller_manager import ControllerManager
 from pistomp.current import Current
@@ -67,3 +70,29 @@ def test_external_controller_bound_and_displayed():
     assert entry.get("category") == "External"
     assert entry.get("port_name") == "c4"
     assert entry.get("midi_cc") == 75
+
+
+def test_orphaned_ttl_binding_recorded_in_effective_table():
+    """A TTL param.binding with no matching physical controller is dropped
+    silently by the legacy path but must surface as an ORPHANED table row."""
+    param = MagicMock()
+    param.binding = "0:99"
+    param.name = "gain"
+    plugin = MagicMock()
+    plugin.parameters = {"gain": param}
+    plugin.controllers = []
+
+    hw = MagicMock()
+    hw.controllers = {}
+    hw.encoders = []
+    hw.is_external.return_value = False
+
+    current = _make_current()
+    current.pedalboard.plugins = cast(list[Plugin], [plugin])
+    manager = ControllerManager(hw)
+    manager.bind(current)
+
+    rows = manager.effective_table.layers[0].rows[(ControlClass.ANALOG, EventKind.ROTATE)]
+    orphaned = [r for r in rows if r.control.id == "0:99"]
+    assert len(orphaned) == 1
+    assert orphaned[0].shadow_state == ShadowState.ORPHANED
