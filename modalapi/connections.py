@@ -1,7 +1,7 @@
 """Connection domain model for parsed pedalboard graphs.
 
-Pure logic — no lilv dependency — so it stays unit-testable. The lilv arc
-walk that feeds into `build_connection` lives in `modalapi.pedalboard`.
+Pure logic, so it stays unit-testable. What feeds `build_connection` — mod-ui's
+pedalboard/info arc list — lives in `modalapi.pedalboard`.
 """
 
 from __future__ import annotations
@@ -106,7 +106,7 @@ def build_connection(
     bundlepath: str,
     instance_to_info: dict[str, Optional[dict]],
 ) -> Connection:
-    """Pure builder used by both the lilv arc walk and unit tests."""
+    """Pure builder used by both the pedalboard/info arc list and unit tests."""
     src_id, src_sym = split_port_uri(tail_uri, bundlepath)
     dst_id, dst_sym = split_port_uri(head_uri, bundlepath)
     src_kind = classify_endpoint(src_id)
@@ -129,10 +129,11 @@ def build_connection(
 def audio_connections(connections: Iterable[Connection]) -> list[Connection]:
     """Audio-only connections (drop midi/HW ports), in a canonical order.
 
-    lilv enumerates ingen:arc objects in a hash-randomised order, so the raw
-    connection list varies run-to-run. The layout pipeline (dummy numbering,
-    barycentric row tie-breaks) is order-sensitive, so we sort to a stable key
-    here — the single chokepoint every layout consumer funnels through.
+    Arc order is not guaranteed (mod-ui walks ingen:arc objects in a
+    hash-randomised order), so the raw connection list varies run-to-run. The
+    layout pipeline (dummy numbering, barycentric row tie-breaks) is
+    order-sensitive, so we sort to a stable key here — the single chokepoint
+    every layout consumer funnels through.
     """
     audio = {EndpointKind.PLUGIN, EndpointKind.SOURCE, EndpointKind.SINK}
     return sorted(

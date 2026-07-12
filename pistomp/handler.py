@@ -25,11 +25,11 @@ from pistomp.footswitch import Footswitch
 from pistomp.footswitch_chords import FootswitchChords
 from pistomp.input.event import ControllerEvent, SwitchEventKind
 from pistomp.input.sink import InputSink
-from pistomp.tuner.source import TunerSourceFactory
 
 if TYPE_CHECKING:
     from modalapi.websocket_bridge import AsyncWebSocketBridge
     from pistomp.hardware import Hardware
+    from pistomp.tuner.source import TunerSourceFactory
 
 
 class Handler(InputSink):

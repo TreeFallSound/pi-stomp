@@ -22,8 +22,8 @@ import logging
 import os
 import shutil
 import time
-import requests as req
-from requests import Response
+import pistomp.httpclient as req
+from pistomp.httpclient import Response
 import subprocess
 import sys
 import yaml
@@ -755,14 +755,13 @@ class Modhandler(Handler):
 
         pbs = json.loads(resp.text)
         for pb in pbs:
-            logging.info("Loading pedalboard info: %s" % pb[Token.TITLE])
             bundle = pb[Token.BUNDLE]
             title = pb[Token.TITLE]
+            # Left unhydrated: only the current board's graph is ever read, and
+            # hydrating all of them here cost ~10s of startup.
             pedalboard = Pedalboard.Pedalboard(title, bundle, root_uri=self.root_uri, customizer=plugin_lookup)
-            pedalboard.load_bundle(bundle, self.plugin_dict)
             self.pedalboards[bundle] = pedalboard
             self.pedalboard_list.append(pedalboard)
-            # logging.debug("dump: %s" % pedalboard.to_json())
 
     def reload_pedalboard(self, bundle):
         # find the current pedalboard object associated with that bundle
@@ -771,7 +770,7 @@ class Modhandler(Handler):
 
         # create a new one
         pedalboard = Pedalboard.Pedalboard(title, bundle, root_uri=self.root_uri, customizer=plugin_lookup)
-        pedalboard.load_bundle(bundle, self.plugin_dict)
+        pedalboard.hydrate(self.plugin_dict)
         self.pedalboards[bundle] = pedalboard
 
         # replace the pedalboard in pedalboard_list with the new one
@@ -789,6 +788,8 @@ class Modhandler(Handler):
         return read_pedalboard_bundle(self.last_json_monitor.path)
 
     def set_current_pedalboard(self, pedalboard):
+        pedalboard.hydrate(self.plugin_dict)
+
         # Pop non-persisting panels above the first persister (e.g. a parameter
         # dialog or plugin panel is dismissed; the tuner survives).
         pstack = self.lcd.pstack
