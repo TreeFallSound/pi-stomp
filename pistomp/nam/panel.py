@@ -57,7 +57,7 @@ from uilib.panel import Panel
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.nam import routing
 from pistomp.nam.engine import CaptureState, NamCaptureEngine
-from pistomp.nam.wavio import wav_duration, wav_peak_dbfs
+from pistomp.nam.wavio import wav_duration
 
 _W = 320
 _H = 240
@@ -181,12 +181,12 @@ class KnobWidget(ArcDialWidget):
 class ProgressBarWidget(Widget):
     """Segmented colour-gradient progress bar with elapsed/remaining time labels."""
 
-    _MARGIN = 12        # left/right inset
-    _BAR_Y = 30         # top of bar within widget
-    _BAR_H = 30         # bar height
-    _LABEL_GAP = 10     # gap between bar bottom and label top
-    _N_SEGS = 40        # number of colour segments
-    _SEG_GAP = 2        # gap between segments in pixels
+    _MARGIN = 12  # left/right inset
+    _BAR_Y = 30  # top of bar within widget
+    _BAR_H = 30  # bar height
+    _LABEL_GAP = 10  # gap between bar bottom and label top
+    _N_SEGS = 40  # number of colour segments
+    _SEG_GAP = 2  # gap between segments in pixels
 
     def __init__(self, box: Box, total_seconds: float, font, caption_font, parent: Widget) -> None:
         super().__init__(box=box, bkgnd_color=(0, 0, 0), parent=parent)
@@ -416,10 +416,7 @@ class NamCapturePanel(Panel):
         self._pending_path_shown: bool = False
         self._analog_clip_ticks: int = 0
         self._duration = wav_duration(reamp_wav)
-        try:
-            self._max_out_db: float = min(6.0, -wav_peak_dbfs(reamp_wav))
-        except Exception:
-            self._max_out_db = 6.0
+        self._max_out_db: float = 0  # works for the sweep file we have
         self._muted: bool = False
         self._gain_val: float = -10.0
         self._vol_val: float = -3.0
@@ -700,10 +697,8 @@ class NamCapturePanel(Panel):
                 hw = self._handler.hardware
                 if hw is not None:
                     from pistomp.analogVU import AnalogVU, VuState
-                    is_clipping = any(
-                        isinstance(ind, AnalogVU) and ind.state == VuState.CLIP
-                        for ind in hw.indicators
-                    )
+
+                    is_clipping = any(isinstance(ind, AnalogVU) and ind.state == VuState.CLIP for ind in hw.indicators)
                     if is_clipping:
                         self._analog_clip_ticks += 1
                         if self._analog_clip_ticks >= 5:
