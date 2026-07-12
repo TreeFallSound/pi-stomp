@@ -682,7 +682,13 @@ def band_readout_fields(band: BandSpec, p: BandParams) -> tuple[str, str, str, s
     """Format readout fields for a parametric band. Returns (name, freq, q, gain)."""
     name = band.name
     freq = _fmt_freq(p.freq)
-    disp_q = 1.0 / p.q if band.kind == "peak" and p.q > 0 else p.q
+    if band.kind == "peak" and p.q > 0:
+        _n = 2.0 ** p.q
+        disp_q = _n ** 0.5 / (_n - 1.0)
+    elif band.kind == "shelf":
+        disp_q = 0.2129 + p.q / 2.25
+    else:
+        disp_q = p.q
     q = f"Q {disp_q:.2f}"
     if not p.enabled:
         gain = "disabled"
