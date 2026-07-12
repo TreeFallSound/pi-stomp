@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pistomp.input.event import ControllerEvent, EncoderEvent
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextRef,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    ParamEffect,
+    SelectionEditEffect,
+)
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.layouts.arc_knob import ArcKnobWidget
 from plugins.layouts.mode_selector import ModeSelectorWidget
@@ -33,7 +42,8 @@ COLOR_WET = (210, 130, 230)
 
 _DECAY_STEP_MS = 100.0
 _DB_STEP = 0.8
-_MODE_STEP = 1.0
+
+_KNOB_STEPS = {"decay": _DECAY_STEP_MS, "drylevel": _DB_STEP, "wetlevel": _DB_STEP}
 
 
 @dataclass(frozen=True)
@@ -150,36 +160,69 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         self.apply_state(self._state)
         self.sel_widget(self._mode_selector)
 
-    def on_event(self, event: ControllerEvent) -> bool:
-        if not isinstance(event, EncoderEvent) or event.controller.id not in (1, 2, 3):
+        self._last_bypassed = self.plugin.is_bypassed()
+
+    def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        panel_ctx = ContextRef(kind=ContextKind.PANEL, name="tap_reverb")
+        # enc3 is chassis-labeled Tweak3/Volume; decay stays bound there as a
+        # deliberate, explicit override (docs/r2-schema-precedence.md §4/§8 Q4).
+        volume_ctx = ContextRef(kind=ContextKind.PANEL, name="tap_reverb", override_volume=True)
+        return (
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=1),
+                event_kind=EventKind.ROTATE,
+                effects=(SelectionEditEffect(),),
+                context=panel_ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=2),
+                event_kind=EventKind.ROTATE,
+                effects=(ParamEffect(plugin=self.plugin, symbol="mode"),),
+                context=panel_ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.VOLUME, id=3),
+                event_kind=EventKind.ROTATE,
+                effects=(ParamEffect(plugin=self.plugin, symbol="decay"),),
+                context=volume_ctx,
+            ),
+        )
+
+    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+        step = _KNOB_STEPS.get(symbol)
+        if step is not None:
+            p = self.plugin.parameters.get(symbol)
+            if p is None or p.value is None:
+                return False
+            new_val = max(p.minimum, min(p.maximum, float(p.value) + rotations * step))
+            if new_val == p.value:
+                return False
+            self.set_param(symbol, new_val)
+        elif symbol == "mode":
+            p = self.plugin.parameters.get(symbol)
+            if p is None or p.value is None:
+                return False
+            new_val = max(int(p.minimum), min(int(p.maximum), int(p.value) + int(rotations)))
+            if new_val == p.value:
+                return False
+            self.set_param(symbol, float(new_val))
+        elif not super().edit_symbol(symbol, rotations):
             return False
-        encoder_id = event.controller.id
-        rotations = event.rotations
-        if rotations == 0:
-            return False
-
-        if encoder_id == 2:
-            self._cycle_mode(rotations)
-            return True
-
-        if encoder_id == 3:
-            self._edit_knob("decay", rotations)
-            return True
-
-        sel = self.sel_ref
-        if sel is None:
-            return True
-        if isinstance(sel, ArcKnobWidget):
-            self._edit_knob(sel.symbol, rotations)
-            return True
-        if isinstance(sel, ModeSelectorWidget):
-            self._cycle_mode(rotations)
-            return True
+        self._sync_after_edit(symbol)
         return True
+
+    def _sync_after_edit(self, symbol: str) -> None:
+        knob = self._knobs_by_symbol.get(symbol)
+        if knob is not None:
+            knob.set_value(self._current(symbol))
+        elif symbol == "mode":
+            self._mode_selector.set_value(int(self._current(symbol)))
+        self._state = self.snapshot_state()
+        self._update_readout()
 
     def tick(self) -> None:
         bypassed = self.plugin.is_bypassed()
-        if bypassed != getattr(self, "_last_bypassed", None):
+        if bypassed != self._last_bypassed:
             self._last_bypassed = bypassed
             self._refresh_bypass_style()
         super().tick()
@@ -192,82 +235,22 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         self._knob_wet.set_bypassed(bypassed)
         self._update_readout()
 
-    def _edit_knob(self, symbol: str, rotations: int) -> None:
-        p = self.plugin.parameters.get(symbol)
-        if p is None:
-            return
-        current = float(p.value) if p.value is not None else 0.0
-        if symbol == "decay":
-            step = _DECAY_STEP_MS
-        elif symbol in ("drylevel", "wetlevel"):
-            step = _DB_STEP
-        else:
-            step = (p.maximum - p.minimum) / 100.0 if p.maximum and p.minimum else 1.0
-        new_val = max(p.minimum, min(p.maximum, current + rotations * step))
-        if new_val == current:
-            return
-        self.set_param(symbol, new_val)
-        knob = self._knobs_by_symbol.get(symbol)
-        if knob is not None:
-            knob.set_value(new_val)
-        self._state = TapReverbState(
-            decay=self._current("decay"),
-            drylevel=self._current("drylevel"),
-            wetlevel=self._current("wetlevel"),
-            mode=int(self._current("mode")),
-        )
-        self._update_readout()
-
-    def _cycle_mode(self, rotations: int) -> None:
-        p = self.plugin.parameters.get("mode")
-        if p is None:
-            return
-        current = int(float(p.value) if p.value is not None else 0.0)
-        new_mode = max(int(p.minimum), min(int(p.maximum), current + int(rotations)))
-        if new_mode == current:
-            return
-        self.set_param("mode", float(new_mode))
-        self._mode_selector.set_value(new_mode)
-        self._state = TapReverbState(
-            decay=self._current("decay"),
-            drylevel=self._current("drylevel"),
-            wetlevel=self._current("wetlevel"),
-            mode=new_mode,
-        )
-        self._update_readout()
-
     def _current(self, symbol: str) -> float:
         p = self.plugin.parameters.get(symbol)
         return float(p.value) if p is not None and p.value is not None else 0.0
 
     def _on_mode_changed(self, new_mode: int) -> None:
-        self._state = TapReverbState(
-            decay=self._current("decay"),
-            drylevel=self._current("drylevel"),
-            wetlevel=self._current("wetlevel"),
-            mode=new_mode,
-        )
+        """Wired as ModeSelectorWidget's on_change — fires from its own
+        selection-dialog commit path, not the encoder/edit_symbol path."""
+        self._state = self.snapshot_state()
         self._update_readout()
 
     def _reset_to_default(self, symbol: str) -> None:
         p = self.plugin.parameters.get(symbol)
         if p is None or p.default is None:
             return
-        default_val = float(p.default)
-        self.set_param(symbol, default_val)
-        if symbol == "mode":
-            self._mode_selector.set_value(int(default_val))
-        else:
-            knob = self._knobs_by_symbol.get(symbol)
-            if knob is not None:
-                knob.set_value(default_val)
-        self._state = TapReverbState(
-            decay=self._current("decay"),
-            drylevel=self._current("drylevel"),
-            wetlevel=self._current("wetlevel"),
-            mode=int(self._current("mode")),
-        )
-        self._update_readout()
+        self.set_param(symbol, float(p.default))
+        self._sync_after_edit(symbol)
 
     def _update_readout(self) -> None:
         sel = self.sel_ref

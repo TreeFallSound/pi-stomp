@@ -401,7 +401,20 @@ mechanical once the state-predicate mechanism exists, not a design question.
    `c_model`-shaped GENERIC editing it doesn't otherwise handle. All 8
    snapshot sagas in `tests/v3/test_gx_cabinet_panel.py` pass byte-identical,
    no snapshot regeneration needed — the migration is behavior-preserving.
-   Remaining: tap_reverb, graphic EQ, multiband menu, NAM.
+
+   **tap_reverb migrated** (`plugins/tap_reverb/panel.py`) — same three-row
+   shape as gx_cabinet: enc1 `SelectionEditEffect()`, enc2 a fixed `ParamEffect`
+   on `mode`, enc3 `decay` on a `VOLUME`/`override_volume=True` row (chassis
+   Tweak3/Volume). `decay`/`drylevel`/`wetlevel` steps (100ms / 0.8dB) don't
+   fit an existing `ParamRole`, so `edit_symbol` is overridden the same way —
+   panel step table first, `super().edit_symbol` only as the `mode`-shaped
+   fallback path is unreachable here since `mode` is handled explicitly too
+   (kept symmetric with gx_cabinet's `c_model` branch for consistency). The
+   old `on_event`/`_edit_knob`/`_cycle_mode` trio (each rebuilding
+   `TapReverbState` by hand) collapsed into `edit_symbol` +
+   `_sync_after_edit`, matching gx_cabinet's post-migration shape. All 11
+   snapshot sagas in `tests/v3/test_tap_reverb_panel.py` pass byte-identical.
+   Remaining: graphic EQ, multiband menu, NAM.
 ```
 
 ## 10. Acceptance gate (charter requirements, unchanged)
