@@ -142,6 +142,16 @@ class NoneEffect(Effect):
 
 
 @dataclass(frozen=True)
+class BlendEffect(Effect):
+    """Live interpolation via a BlendMode's InputController. Carries the
+    controller directly (typed object — common/ must not import blend/) rather
+    than a string lookup, since it's one specific stateful attachment, not a
+    generic named action."""
+
+    input_controller: object
+
+
+@dataclass(frozen=True)
 class BindingDecl:
     control: ControlRef
     event_kind: EventKind

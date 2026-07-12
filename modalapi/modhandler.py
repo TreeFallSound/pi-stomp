@@ -32,7 +32,19 @@ from typing import cast, Any
 
 import common.token as Token
 import common.util as util
+from common.contexts import (
+    BindingDecl,
+    BlendEffect,
+    ContextKind,
+    ContextLayer,
+    ContextRef,
+    ContextStack,
+    ControlClass,
+    ControlRef,
+    EventKind,
+)
 from common.parameter import Parameter
+from blend.input_controller import InputController
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
 
@@ -183,6 +195,7 @@ class Modhandler(Handler):
         # Blend mode manager - multiple blend snapshots per pedalboard
         self.blend_modes: dict[str, Any] = {}  # {snapshot_name: BlendMode}
         self.active_blend_mode: Any | None = None  # Currently active blend mode
+        self._blend_layer = ContextLayer(ref=ContextRef(kind=ContextKind.BLEND))
 
         # Footswitch longpress/chord resolver (rebuilt on pedalboard change)
         self.chord_helper = FootswitchChords()
@@ -247,11 +260,13 @@ class Modhandler(Handler):
 
     def handle(self, event: ControllerEvent) -> bool:
         """Default sink. The LCD gets first crack (panels can intercept);
-        blend mode gets second crack; if neither consumes, dispatch by event type.
+        blend mode gets second crack (resolved against the effective table, so
+        a co-located pedalboard MIDI binding is shadowed visibly rather than
+        silently starved — R3 §7d); if neither consumes, dispatch by event type.
         Returns True if handled."""
         if self._lcd is not None and self._lcd.handle(event):
             return True
-        if self.active_blend_mode and self.active_blend_mode.intercept(event):
+        if self._fire_blend_row(event):
             return True
         match event:
             case EncoderEvent():
@@ -261,6 +276,43 @@ class Modhandler(Handler):
             case SwitchEvent():
                 return self._handle_switch(event)
         return False
+
+    def _fire_blend_row(self, event: ControllerEvent) -> bool:
+        """Resolve the effective table (pedalboard + blend layers) for this
+        control; fire only if the winner is a BlendEffect. A pedalboard row
+        winning (or no row at all) falls through to the legacy dispatch below,
+        unchanged."""
+        if not isinstance(event, (AnalogEvent, EncoderEvent)):
+            return False
+        c = event.controller
+        if c.midi_CC is None:
+            return False
+        control = ControlRef(cls=ControlClass.ANALOG, id=f"{c.midi_channel}:{c.midi_CC}")
+        stack = ContextStack(layers=[*self._controller_manager.effective_table.layers, self._blend_layer])
+        decl = stack.resolve(control, EventKind.ROTATE)
+        if decl is None or not isinstance(decl.effects[0], BlendEffect):
+            return False
+        input_controller = decl.effects[0].input_controller
+        assert isinstance(input_controller, InputController)
+        return input_controller.handle_event(event)
+
+    def _rebuild_blend_layer(self) -> None:
+        """Recompute the BLEND context layer from the currently active blend
+        mode's live attachment. Called after activate()/deactivate()."""
+        layer = ContextLayer(ref=ContextRef(kind=ContextKind.BLEND))
+        active = self.active_blend_mode
+        input_controller = active.input_controller if active is not None else None
+        controlled = input_controller.controlled_input if input_controller is not None else None
+        if controlled is not None and controlled.midi_CC is not None:
+            layer.add(
+                BindingDecl(
+                    control=ControlRef(cls=ControlClass.ANALOG, id=f"{controlled.midi_channel}:{controlled.midi_CC}"),
+                    event_kind=EventKind.ROTATE,
+                    effects=(BlendEffect(input_controller=input_controller),),
+                    context=layer.ref,
+                )
+            )
+        self._blend_layer = layer
 
     def _handle_encoder(self, event: EncoderEvent) -> bool:
         c = event.controller
@@ -458,6 +510,7 @@ class Modhandler(Handler):
                 logging.info(f"Deactivating blend mode '{old_name}' (switching to '{new_snapshot_name}')")
                 active.deactivate()
                 self.active_blend_mode = None
+                self._rebuild_blend_layer()
                 self.lcd.draw_analog_assignments(self.current.analog_controllers)
             else:
                 logging.debug(f"Staying on blend mode '{old_name}'")
@@ -472,10 +525,12 @@ class Modhandler(Handler):
                 # to ensure we have the latest stop data (user may have just saved a snapshot)
                 new_active.check_for_snapshot_changes()
                 new_active.activate()
+                self._rebuild_blend_layer()
                 self.lcd.draw_analog_assignments(self.current.analog_controllers)
             except Exception as e:
                 logging.error(f"Failed to activate blend mode '{new_snapshot_name}': {e}")
                 self.active_blend_mode = None
+                self._rebuild_blend_layer()
         else:
             logging.debug(f"Snapshot '{new_snapshot_name}' is not a blend snapshot")
 
