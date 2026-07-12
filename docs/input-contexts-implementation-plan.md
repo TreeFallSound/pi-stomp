@@ -251,8 +251,10 @@ mechanical once the state-predicate mechanism exists, not a design question.
 ```
 1. common/contexts.py — BindingDecl, Effect union, ControlRef, ContextRef,
    ContextStack, ContextLayer. Pure data + the resolve() chains (§1-3).
-2. Footswitch-piercing guard wired into Modhandler.handle (§5), with its
-   dedicated test.
+2. **Deferred: footswitch-piercing guard.** §5's guard and `Panel.declare_bindings()`
+   were prototyped and reverted — no panel claims a footswitch today, so the
+   guard has no caller and would be dead code. Build it when the first panel
+   in step 4/8 actually needs to opt in to a footswitch row, not before.
 3. VOLUME opt-in mechanism: override_volume registration check + visible
    on-screen state requirement (§4).
 4. Migrate compressor and parametric EQ panels first (charter's choice —
