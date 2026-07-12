@@ -17,7 +17,7 @@ import json
 import lilv  # pyright: ignore[reportMissingImports] -- lilv is system-installed
 import logging
 import os
-import requests as req
+import pistomp.httpclient as req
 import sys
 import urllib.parse
 from typing import Optional

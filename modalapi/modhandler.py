@@ -22,8 +22,8 @@ import logging
 import os
 import shutil
 import time
-import requests as req
-from requests import Response
+import pistomp.httpclient as req
+from pistomp.httpclient import Response
 import subprocess
 import sys
 import yaml

@@ -32,8 +32,8 @@ def test_modhandler_init_propagates_ws_bridge_construction_failure(tmp_path):
     data_dir = _data_dir(tmp_path)
 
     with (
-        patch("requests.get"),
-        patch("requests.post"),
+        patch("pistomp.httpclient.get"),
+        patch("pistomp.httpclient.post"),
         patch("pistomp.settings.Settings"),
         patch("modalapi.pedalboard.Pedalboard.load_bundle"),
         patch("modalapi.wifi.WifiManager"),
@@ -53,8 +53,8 @@ def test_missing_last_json_recovery(tmp_path):
     # Intentionally no last.json
 
     with (
-        patch("requests.get") as mock_get,
-        patch("requests.post") as mock_post,
+        patch("pistomp.httpclient.get") as mock_get,
+        patch("pistomp.httpclient.post") as mock_post,
         patch("pistomp.settings.Settings"),
         patch("modalapi.pedalboard.Pedalboard.load_bundle"),
         patch("modalapi.wifi.WifiManager"),
@@ -118,8 +118,8 @@ def test_modhandler_init_propagates_ws_bridge_start_failure(tmp_path):
     failing_bridge.start.side_effect = RuntimeError("start boom")
 
     with (
-        patch("requests.get"),
-        patch("requests.post"),
+        patch("pistomp.httpclient.get"),
+        patch("pistomp.httpclient.post"),
         patch("pistomp.settings.Settings"),
         patch("modalapi.pedalboard.Pedalboard.load_bundle"),
         patch("modalapi.wifi.WifiManager"),

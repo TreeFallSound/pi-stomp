@@ -18,7 +18,7 @@ import json
 import logging
 import os
 import time
-import requests as req
+import pistomp.httpclient as req
 import subprocess
 import sys
 import yaml

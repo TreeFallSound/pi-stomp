@@ -17,7 +17,7 @@
 
 import json
 import logging
-import requests as req
+import pistomp.httpclient as req
 from pathlib import Path
 
 from blend.types import (
