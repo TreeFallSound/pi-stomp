@@ -662,14 +662,12 @@ class Mod(Handler):
 
         pbs = json.loads(resp.text)
         for pb in pbs:
-            logging.info("Loading pedalboard info: %s" % pb[Token.TITLE])
             bundle = pb[Token.BUNDLE]
             title = pb[Token.TITLE]
+            # Hydrated on selection; see modhandler.load_pedalboards.
             pedalboard = Pedalboard.Pedalboard(title, bundle, root_uri=self.root_uri)
-            pedalboard.load_bundle(bundle, self.plugin_dict)
             self.pedalboards[bundle] = pedalboard
             self.pedalboard_list.append(pedalboard)
-            #logging.debug("dump: %s" % pedalboard.to_json())
 
         # TODO - example of querying host
         #bund = self.get_current_pedalboard()
@@ -681,6 +679,8 @@ class Mod(Handler):
         return read_pedalboard_bundle(self.last_json_monitor.path)
 
     def set_current_pedalboard(self, pedalboard):
+        pedalboard.hydrate(self.plugin_dict)
+
         # Cleanup all previous blend modes if active
         for blend_mode in self.blend_modes.values():
             blend_mode.cleanup()

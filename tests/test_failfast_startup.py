@@ -35,7 +35,7 @@ def test_modhandler_init_propagates_ws_bridge_construction_failure(tmp_path):
         patch("pistomp.httpclient.get"),
         patch("pistomp.httpclient.post"),
         patch("pistomp.settings.Settings"),
-        patch("modalapi.pedalboard.Pedalboard.load_bundle"),
+        patch("modalapi.pedalboard.Pedalboard.hydrate"),
         patch("modalapi.wifi.WifiManager"),
         patch("subprocess.check_output", return_value=b"SystemState=running"),
 
@@ -56,7 +56,7 @@ def test_missing_last_json_recovery(tmp_path):
         patch("pistomp.httpclient.get") as mock_get,
         patch("pistomp.httpclient.post") as mock_post,
         patch("pistomp.settings.Settings"),
-        patch("modalapi.pedalboard.Pedalboard.load_bundle"),
+        patch("modalapi.pedalboard.Pedalboard.hydrate"),
         patch("modalapi.wifi.WifiManager"),
         patch("subprocess.check_output", return_value=b"SystemState=running"),
         patch("modalapi.modhandler.AsyncWebSocketBridge", return_value=MagicMock()),
@@ -121,7 +121,7 @@ def test_modhandler_init_propagates_ws_bridge_start_failure(tmp_path):
         patch("pistomp.httpclient.get"),
         patch("pistomp.httpclient.post"),
         patch("pistomp.settings.Settings"),
-        patch("modalapi.pedalboard.Pedalboard.load_bundle"),
+        patch("modalapi.pedalboard.Pedalboard.hydrate"),
         patch("modalapi.wifi.WifiManager"),
         patch("subprocess.check_output", return_value=b"SystemState=running"),
 

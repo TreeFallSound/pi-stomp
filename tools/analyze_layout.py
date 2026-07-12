@@ -266,7 +266,7 @@ def render_png(layout: Layout, plugins_by_id: dict, path: Path) -> None:
 def load_layout(bundle: Path, max_rows: int = 4) -> tuple[Pedalboard, Layout]:
     title = bundle.stem
     pb = Pedalboard(title, str(bundle), root_uri=MOD_ROOT_URI)
-    pb.load_bundle(str(bundle), {})
+    pb.hydrate({})
     ids = [p.instance_id.lstrip("/") for p in pb.plugins]
     layout = build_layout_compress(ids, pb.connections, height_cap=max_rows)
     return pb, layout
