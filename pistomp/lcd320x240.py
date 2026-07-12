@@ -21,11 +21,13 @@ from typing import TYPE_CHECKING, Optional
 from common.fonts import font_path
 import common.token as Token
 import common.util as util
+from common.contexts import ControlClass, EventKind, ParamEffect, ShadowState
 from common.parameter import Parameter, Type
 from ui.ethernet_menu import EthernetMenu
 from ui.wifi_menu import WifiMenu
 import pistomp.category as Category
 import pistomp.switchstate as switchstate
+from pistomp.footswitch import Footswitch
 import pygame
 
 from uilib import (
@@ -48,6 +50,7 @@ from uilib import (
     TextWidget,
 )
 from uilib.gridpanel import GridPanel, TILE_W, CHANNEL
+from uilib.menu import BadgedLabel
 from uilib.pygame_init import font as _make_font
 from uilib.lcd_ili9341 import LcdIli9341
 from uilib.text import PluginTile
@@ -680,11 +683,45 @@ class Lcd:
     #
     # Parameter Editing
     #
+    def footswitch_badge_letter(self, plugin, param) -> str | None:
+        """(A)-(D): the footswitch bound to this parameter, read from the
+        handler's effective binding table (badge honesty — shadowed rows
+        show nothing). None if no footswitch is bound."""
+        if self.handler is None:
+            return None
+        for layer in self.handler.effective_table.layers:
+            for decl in layer.rows.get((ControlClass.FOOTSWITCH, EventKind.PRESS), []):
+                if decl.shadow_state is not ShadowState.ACTIVE:
+                    continue
+                if not isinstance(decl.control.id, str):
+                    continue
+                for effect in decl.effects:
+                    if isinstance(effect, ParamEffect) and effect.plugin is plugin and effect.symbol == param.name:
+                        controller = self.handler.hardware.controllers.get(decl.control.id)
+                        if isinstance(controller, Footswitch) and controller.id is not None:
+                            return chr(ord('A') + controller.id)
+        return None
+
+    def toggle_plugin_bypass_from_menu(self, plugin):
+        """A5: :bypass is a parameter row, not just chrome — the row's action
+        drives the same toggle path as a tile short-press."""
+        widget = next((w for w in self.w_plugins if w.object == plugin), None)
+        self.handler.toggle_plugin_bypass(widget, plugin)
+
     def draw_parameter_menu(self, plugin):
         items = []
         for (name, param) in sorted(plugin.parameters.items()):
             if name != Token.COLON_BYPASS:
-                items.append((name, self.draw_parameter_dialog, param))
+                letter = self.footswitch_badge_letter(plugin, param)
+                items.append((BadgedLabel(name, letter), self.draw_parameter_dialog, param))
+        # A5: :bypass is a row too, not just tile chrome — appended last so it
+        # doesn't shift the selection index of the existing parameter rows.
+        bypass_param = plugin.parameters.get(Token.COLON_BYPASS)
+        if bypass_param is not None:
+            letter = self.footswitch_badge_letter(plugin, bypass_param)
+            state = "On" if plugin.is_bypassed() else "Off"
+            label = BadgedLabel(f"Bypass: {state}", letter)
+            items.append((label, self.toggle_plugin_bypass_from_menu, plugin))
         self.draw_selection_menu(items, "Parameters")
 
     def draw_parameter_dialog(self, parameter, timeout=None):

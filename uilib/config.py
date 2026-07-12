@@ -34,6 +34,7 @@ FontName = Literal[
     "footswitch",
     "footswitch_badge",
     "footswitch_tap_bpm",
+    "menu_badge",
     "small",
     "tiny",
     "micro",
@@ -72,6 +73,9 @@ class Config:
             self.add_font("footswitch_badge", font_path("DejaVuSans-Bold.ttf"), 14)
         if "footswitch_tap_bpm" not in self.fonts:
             self.add_font("footswitch_tap_bpm", font_path("DejaVuSans-Bold.ttf"), 16)
+        if "menu_badge" not in self.fonts:
+            # Small enough to fit the 12-13px BadgeGlyph disc without clipping.
+            self.add_font("menu_badge", font_path("DejaVuSans-Bold.ttf"), 8)
         if "tiny" not in self.fonts:
             self.add_font("tiny", font_path("DejaVuSans.ttf"), 10)
         if "small" not in self.fonts:

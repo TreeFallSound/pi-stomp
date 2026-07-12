@@ -31,6 +31,7 @@ from common.color import ColorRGB, RectBorder
 from uilib.paint import ColorLike
 from uilib.glyphs import RoundedRectGlyph
 from uilib.radius import Radius
+from uilib.rich_text import Glyph
 
 from common.fonts import font_path
 
@@ -219,7 +220,8 @@ class TextWidget(Widget):
     font: "pygame._freetype.Font"
 
     def __init__(
-        self, box, text="", font=None, edit_message=None, h_margin=None, v_margin=None, text_halign=None, **kwargs
+        self, box, text="", font=None, edit_message=None, h_margin=None, v_margin=None, text_halign=None,
+        badge: "Glyph | None" = None, badge_gap: int = 3, **kwargs
     ):
         self.text = text
         if font is None:
@@ -232,6 +234,11 @@ class TextWidget(Widget):
         self.text_size_valid = False
         self._text_cache: Optional[pygame.Surface] = None
         self._text_cache_key: tuple | None = None
+        # Badge glyph (docs/r4-badge-surfaces.md §5): anchored to the left of
+        # the rendered text, wherever that lands — the text's own position
+        # (left/centre/right aligned) never moves to make room for it.
+        self.badge = badge
+        self.badge_gap = badge_gap
         super(TextWidget, self).__init__(box, **kwargs)
 
     def _get_text_size(self):
@@ -312,6 +319,33 @@ class TextWidget(Widget):
         self._clear_text_cache()
         self.refresh()
 
+    def set_badge(self, badge: "Glyph | None") -> None:
+        if badge == self.badge:
+            return
+        self.badge = badge
+        self.refresh()
+
+    def _draw_badge(self, ctx, h_margin: int, hroom: int) -> None:
+        """Blit the badge glyph immediately left of the first line's
+        rendered text position (left/centre/right, matching the text's own
+        alignment), with `badge_gap` px of padding. The text itself is drawn
+        elsewhere and never moves to accommodate this."""
+        if self.badge is None:
+            return
+        line = self.text.split("\n")[0]
+        tw, _ = get_text_size(line, self.font)
+        if self.text_halign == TextHAlign.LEFT:
+            hoffset = 0
+        elif self.text_halign == TextHAlign.RIGHT:
+            hoffset = hroom - tw
+        else:
+            hoffset = int((hroom - tw) / 2)
+        text_x = h_margin + hoffset
+        bx = text_x - self.badge_gap - self.badge.width
+        by = (ctx.height - self.badge.height) // 2
+        ox, oy = ctx._f().topleft
+        ctx.surface.blit(self.badge.render(), (bx + ox, by + oy))
+
     @override
     def _draw(self, ctx):
         h_margin, v_margin = self._get_margins()
@@ -326,6 +360,7 @@ class TextWidget(Widget):
         if self._text_cache is not None and self._text_cache_key == cache_key:
             assert self._text_cache is not None
             ctx.paste(self._text_cache, (h_margin, v_margin))
+            self._draw_badge(ctx, h_margin, hroom)
             return
 
         # Render into a transparent surface sized to the content area.
@@ -343,6 +378,7 @@ class TextWidget(Widget):
                 self._text_cache = surf
                 self._text_cache_key = cache_key
                 ctx.paste(surf, (h_margin, v_margin))
+                self._draw_badge(ctx, h_margin, hroom)
                 return
 
         lines = self.text.split("\n")
@@ -366,6 +402,7 @@ class TextWidget(Widget):
         self._text_cache = surf
         self._text_cache_key = cache_key
         ctx.paste(surf, (h_margin, v_margin))
+        self._draw_badge(ctx, h_margin, hroom)
 
     def _render_line_to(self, surf: pygame.Surface, pos: tuple[int, int], text: str, color: "ColorLike") -> None:
         """Render a single line of text onto *surf* at *pos* using the widget's font."""

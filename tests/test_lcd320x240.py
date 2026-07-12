@@ -9,6 +9,19 @@ import pytest
 
 from tests.conftest import PROJECT_ROOT
 from tests import pedalboard_fixtures
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextLayer,
+    ContextRef,
+    ContextStack,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    ParamEffect,
+    ShadowState,
+)
+from pistomp.footswitch import Footswitch
 from pistomp.lcd320x240 import Lcd
 from pistomp.taptempo import TapTempo
 import common.token as Token
@@ -433,6 +446,73 @@ def test_plugin_longpress_opens_parameter_menu(lcd, snapshot):
     instance.main_panel.sel_widget(instance.w_plugins[0])
     # Simulate the long-press event that travels through the panel stack
     instance.main_panel.input_event(InputEvent.LONG_CLICK)
+    snapshot()
+
+
+def _footswitch_row(plugin, symbol, control_id, shadow_state=ShadowState.ACTIVE):
+    return BindingDecl(
+        control=ControlRef(cls=ControlClass.FOOTSWITCH, id=control_id),
+        event_kind=EventKind.PRESS,
+        effects=(ParamEffect(plugin=plugin, symbol=symbol),),
+        context=ContextRef(kind=ContextKind.PEDALBOARD),
+        shadow_state=shadow_state,
+    )
+
+
+def test_footswitch_badge_letter_from_effective_table(lcd):
+    """(A)-(D): footswitch_badge_letter reads the effective binding table and
+    resolves the physical footswitch's slot letter, not the CC identity."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    distortion = instance.current.pedalboard.plugins[0]
+    gain_param = distortion.parameters["gain"]
+
+    fs = Footswitch(id=2, led_pin=None, pixel=None, midi_CC=10, midi_channel=0, refresh_callback=MagicMock())
+    instance.handler.hardware.controllers = {"0:10": fs}
+    instance.handler.effective_table = ContextStack(layers=[
+        ContextLayer(
+            ref=ContextRef(kind=ContextKind.PEDALBOARD),
+            rows={(ControlClass.FOOTSWITCH, EventKind.PRESS): [_footswitch_row(distortion, gain_param.name, "0:10")]},
+        )
+    ])
+
+    assert instance.footswitch_badge_letter(distortion, gain_param) == "C"
+
+
+def test_footswitch_badge_letter_none_when_shadowed(lcd):
+    """Badge honesty (requirement 5): a SHADOWED row must not surface a badge."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    distortion = instance.current.pedalboard.plugins[0]
+    gain_param = distortion.parameters["gain"]
+
+    fs = Footswitch(id=0, led_pin=None, pixel=None, midi_CC=10, midi_channel=0, refresh_callback=MagicMock())
+    instance.handler.hardware.controllers = {"0:10": fs}
+    row = _footswitch_row(distortion, "gain", "0:10", shadow_state=ShadowState.SHADOWED)
+    instance.handler.effective_table = ContextStack(layers=[
+        ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD), rows={(ControlClass.FOOTSWITCH, EventKind.PRESS): [row]})
+    ])
+
+    assert instance.footswitch_badge_letter(distortion, gain_param) is None
+
+
+def test_parameter_menu_shows_footswitch_badge(lcd, snapshot):
+    """The parameter-list menu prepends the (X) badge to a footswitch-bound row."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    distortion = instance.current.pedalboard.plugins[0]
+    gain_param = distortion.parameters["gain"]
+
+    fs = Footswitch(id=0, led_pin=None, pixel=None, midi_CC=10, midi_channel=0, refresh_callback=MagicMock())
+    instance.handler.hardware.controllers = {"0:10": fs}
+    instance.handler.effective_table = ContextStack(layers=[
+        ContextLayer(
+            ref=ContextRef(kind=ContextKind.PEDALBOARD),
+            rows={(ControlClass.FOOTSWITCH, EventKind.PRESS): [_footswitch_row(distortion, gain_param.name, "0:10")]},
+        )
+    ])
+
+    instance.draw_parameter_menu(distortion)
     snapshot()
 
 

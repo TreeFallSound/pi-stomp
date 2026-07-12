@@ -13,19 +13,33 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
 from uilib.box import Box
 from uilib.config import Config
 from uilib.dialog import Dialog
+from uilib.glyphs import BadgeGlyph
 from uilib.misc import InputEvent, TextHAlign, get_text_size, trace
 from uilib.rich_text import RichTextWidget, Segment, TextSeg
 from uilib.text import TextWidget
 
-# A menu row label. Either a plain string (rendered as a `TextWidget`) or a
+
+@dataclass(frozen=True)
+class BadgedLabel:
+    """A plain-text row label with a binding-marker badge anchored to the
+    left of the (still centered) text — see `TextWidget.badge`
+    (docs/r4-badge-surfaces.md §5). `char` is None for an unbadged row."""
+
+    text: str
+    char: str | None = None
+    color: tuple[int, int, int] = (130, 130, 130)
+
+
+# A menu row label: a plain string, a badged string (see `BadgedLabel`), or a
 # sequence of `Segment`s (rendered as a `RichTextWidget` — emoji-style glyphs,
 # spacers for left/right alignment, etc.).
-Label = str | Sequence[Segment]
+Label = str | BadgedLabel | Sequence[Segment]
 
 # Action stored in slot 1 of a `MenuItem`. The menu framework never invokes
 # this directly — the per-item callable is decorative context that the
@@ -56,6 +70,8 @@ def label_key(label: Label) -> str:
     segment lists are rebuilt per render and never compare equal."""
     if isinstance(label, str):
         return label
+    if isinstance(label, BadgedLabel):
+        return label.text
     return "".join(s.text for s in label if isinstance(s, TextSeg))
 
 
@@ -93,12 +109,14 @@ class Menu(Dialog):
         for i in self.items:
             t = _item_label(i)
             b = Box.xywh(0, h, self.box.width, self.item_h)
-            if isinstance(t, str):
+            if isinstance(t, (str, BadgedLabel)):
+                text = t.text if isinstance(t, BadgedLabel) else t
                 if _item_selected(i):
-                    t = '\u2714 ' + t
+                    text = '\u2714 ' + text
+                badge = BadgeGlyph(t.char, t.color) if isinstance(t, BadgedLabel) and t.char is not None else None
                 w: TextWidget | RichTextWidget = TextWidget(
                     box=b, text_halign=self.text_halign, font=self.font,
-                    text=t, parent=self, action=self._item_action)
+                    text=text, badge=badge, parent=self, action=self._item_action)
             else:
                 # Rich rows ignore `selected` for now — the checkmark prefix
                 # only makes sense on string labels.
@@ -158,8 +176,8 @@ class Menu(Dialog):
         item_h = line_h
         for i in self.items:
             t = _item_label(i)
-            if isinstance(t, str):
-                _, th = get_text_size(t, self.font)
+            if isinstance(t, (str, BadgedLabel)):
+                _, th = get_text_size(t.text if isinstance(t, BadgedLabel) else t, self.font)
                 th = th + v_margin * 2
             else:
                 # Rich rows: 1px top inset, no bottom padding.

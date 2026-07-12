@@ -1067,6 +1067,12 @@ class Modhandler(Handler):
     def get_num_footswitches(self):
         return len(self.hardware.footswitches)
 
+    @property
+    def effective_table(self) -> ContextStack:
+        """The pedalboard-layer binding table (docs/input-contexts-implementation-plan.md
+        §6), for badge rendering (§7) — the single source of binding truth."""
+        return self._controller_manager.effective_table
+
     #
     # Parameter Stuff
     #

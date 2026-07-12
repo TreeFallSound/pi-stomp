@@ -23,6 +23,7 @@ DEFAULT_COLOR: tuple[int, int, int] = (255, 255, 255)
 from common.color import RectBorder
 from uilib.glyphs.arc_dial import ArcDialWidget, DialFormatter, DialVariant, paint_arc_dial
 from uilib.glyphs.arc_ring import ArcRingGlyph
+from uilib.glyphs.badge import BadgeGlyph
 from uilib.glyphs.circle import CircleGlyph, RingGlyph
 from uilib.glyphs.ethernet_cable import EthernetCableGlyph
 from uilib.glyphs.expression_pedal import ExpressionPedalGlyph
@@ -40,6 +41,7 @@ __all__ = [
     "ArcDialWidget",
     "RectBorder",
     "ArcRingGlyph",
+    "BadgeGlyph",
     "DialFormatter",
     "DialVariant",
     "CircleGlyph",
