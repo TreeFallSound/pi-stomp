@@ -11,6 +11,7 @@ from typing import Literal
 
 
 BandKind = Literal["peak", "shelf", "hp", "lp"]
+FilterTopology = Literal["rbj", "regalia_mitra"]
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,7 @@ class BandSpec:
     color: tuple[int, int, int]
     gain_min: float = -18.0
     gain_max: float = 18.0
+    filter_topology: FilterTopology = "rbj"
 
 
 @dataclass(frozen=True)
