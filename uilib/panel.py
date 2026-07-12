@@ -29,6 +29,7 @@ from uilib.misc import InputEvent, trace
 from uilib.paint import PaintContext, _pg_rect
 
 import common.token as Token
+from common.contexts import BindingDecl
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.input.sink import InputSink
 
@@ -231,6 +232,12 @@ class Panel(ContainerWidget, InputSink):
         """Handle this panel's own non-NAV controls. NAV is owned by the base
         panel and never reaches here."""
         return False
+
+    def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        """This panel's own TWEAK/VOLUME(opt-in)/FOOTSWITCH(opt-in) rows.
+        Base returns (); override to declare bindings resolved via
+        pistomp.input.dispatch.resolve_local/fire."""
+        return ()
 
     def wants_fast_tick(self) -> bool:
         """Returns True iff this panel renders at a high refresh rate."""

@@ -3,8 +3,17 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextRef,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    ParamEffect,
+    SelectionEditEffect,
+)
 from pistomp.compmeter.client import GrMeterClient
-from pistomp.input.event import ControllerEvent, EncoderEvent
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.layouts.arc_column import ArcColumnWidget, ArcSelectable
 from plugins.layouts.compressor_spec import CompressorSpec, build_arc_specs
@@ -12,7 +21,6 @@ from plugins.layouts.gr_bar import GrBarWidget
 from plugins.layouts.reticule_graph import ReticuleGraphWidget
 from uilib.box import Box
 from uilib.config import Config
-from uilib.misc import step_for_param
 
 
 @dataclass(frozen=True)
@@ -94,34 +102,39 @@ class CompressorPanel(FullscreenPluginPanel[CompressorState]):
 
         self._meter: GrMeterClient | None = None
 
-    def on_event(self, event: ControllerEvent) -> bool:
-        if not isinstance(event, EncoderEvent) or event.controller.id not in (1, 2, 3):
-            return False
-        encoder_id = event.controller.id
-        rotations = event.rotations
-        if rotations == 0:
-            return True
-        if encoder_id == 2:
-            self._edit_symbol(self.SPEC.thr_sym, rotations)
-        elif encoder_id == 3:
-            self._edit_symbol(self.SPEC.rat_sym, rotations)
-        else:
-            sel = self.sel_ref
-            if isinstance(sel, ArcSelectable):
-                self._edit_symbol(sel.symbol, rotations)
-        return True
+    def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        panel_ctx = ContextRef(kind=ContextKind.PANEL, name="compressor")
+        # enc3 is chassis-labeled Tweak3/Volume; rat stays bound there as a
+        # deliberate, explicit override (docs/r2-schema-precedence.md §4/§8 Q4).
+        volume_ctx = ContextRef(kind=ContextKind.PANEL, name="compressor", override_volume=True)
+        return (
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=1),
+                event_kind=EventKind.ROTATE,
+                effects=(SelectionEditEffect(),),
+                context=panel_ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=2),
+                event_kind=EventKind.ROTATE,
+                effects=(ParamEffect(plugin=self.plugin, symbol=self.SPEC.thr_sym),),
+                context=panel_ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.VOLUME, id=3),
+                event_kind=EventKind.ROTATE,
+                effects=(ParamEffect(plugin=self.plugin, symbol=self.SPEC.rat_sym),),
+                context=volume_ctx,
+            ),
+        )
 
-    def _edit_symbol(self, symbol: str, rotations: int) -> None:
-        p = self.plugin.parameters.get(symbol)
-        if p is None or p.value is None:
-            return
-        new_val = max(p.minimum, min(p.maximum, float(p.value) + rotations * step_for_param(p)))
-        if new_val == p.value:
-            return
-        self.set_param(symbol, new_val)
+    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+        if not super().edit_symbol(symbol, rotations):
+            return False
         self._column.sync_symbol(symbol)
         state = self.snapshot_state()
         self._graph.set_state(state.thr, state.rat, state.kn, state.mak)
+        return True
 
     def _reset_symbol(self, symbol: str) -> None:
         snap = self.plugin.pedalboard_snapshot
