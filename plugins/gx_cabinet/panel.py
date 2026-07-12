@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pistomp.input.event import ControllerEvent, EncoderEvent
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextRef,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    ParamEffect,
+    SelectionEditEffect,
+)
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.layouts.arc_knob import ArcKnobWidget
 from plugins.layouts.mode_selector import ModeSelectorWidget
@@ -31,7 +40,8 @@ COLOR_TREBLE = (210, 130, 230)
 
 _LEVEL_STEP = 0.05
 _TONE_STEP = 0.4
-_MODE_STEP = 1.0
+
+_KNOB_STEPS = {"CLevel": _LEVEL_STEP, "CBass": _TONE_STEP, "CTreble": _TONE_STEP}
 
 
 @dataclass(frozen=True)
@@ -147,36 +157,69 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
         self.apply_state(self._state)
         self.sel_widget(self._mode_selector)
 
-    def on_event(self, event: ControllerEvent) -> bool:
-        if not isinstance(event, EncoderEvent) or event.controller.id not in (1, 2, 3):
+        self._last_bypassed = self.plugin.is_bypassed()
+
+    def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        panel_ctx = ContextRef(kind=ContextKind.PANEL, name="gx_cabinet")
+        # enc3 is chassis-labeled Tweak3/Volume; CLevel stays bound there as a
+        # deliberate, explicit override (docs/r2-schema-precedence.md §4/§8 Q4).
+        volume_ctx = ContextRef(kind=ContextKind.PANEL, name="gx_cabinet", override_volume=True)
+        return (
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=1),
+                event_kind=EventKind.ROTATE,
+                effects=(SelectionEditEffect(),),
+                context=panel_ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=2),
+                event_kind=EventKind.ROTATE,
+                effects=(ParamEffect(plugin=self.plugin, symbol="c_model"),),
+                context=panel_ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.VOLUME, id=3),
+                event_kind=EventKind.ROTATE,
+                effects=(ParamEffect(plugin=self.plugin, symbol="CLevel"),),
+                context=volume_ctx,
+            ),
+        )
+
+    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+        step = _KNOB_STEPS.get(symbol)
+        if step is not None:
+            p = self.plugin.parameters.get(symbol)
+            if p is None or p.value is None:
+                return False
+            new_val = max(p.minimum, min(p.maximum, float(p.value) + rotations * step))
+            if new_val == p.value:
+                return False
+            self.set_param(symbol, new_val)
+        elif symbol == "c_model":
+            p = self.plugin.parameters.get(symbol)
+            if p is None or p.value is None:
+                return False
+            new_val = max(int(p.minimum), min(int(p.maximum), int(p.value) + int(rotations)))
+            if new_val == p.value:
+                return False
+            self.set_param(symbol, float(new_val))
+        elif not super().edit_symbol(symbol, rotations):
             return False
-        encoder_id = event.controller.id
-        rotations = event.rotations
-        if rotations == 0:
-            return False
-
-        if encoder_id == 2:
-            self._cycle_model(rotations)
-            return True
-
-        if encoder_id == 3:
-            self._edit_knob("CLevel", rotations)
-            return True
-
-        sel = self.sel_ref
-        if sel is None:
-            return True
-        if isinstance(sel, ArcKnobWidget):
-            self._edit_knob(sel.symbol, rotations)
-            return True
-        if isinstance(sel, ModeSelectorWidget):
-            self._cycle_model(rotations)
-            return True
+        self._sync_after_edit(symbol)
         return True
+
+    def _sync_after_edit(self, symbol: str) -> None:
+        knob = self._knobs_by_symbol.get(symbol)
+        if knob is not None:
+            knob.set_value(self._current(symbol))
+        elif symbol == "c_model":
+            self._mode_selector.set_value(int(self._current(symbol)))
+        self._state = self.snapshot_state()
+        self._update_readout()
 
     def tick(self) -> None:
         bypassed = self.plugin.is_bypassed()
-        if bypassed != getattr(self, "_last_bypassed", None):
+        if bypassed != self._last_bypassed:
             self._last_bypassed = bypassed
             self._refresh_bypass_style()
         super().tick()
@@ -189,77 +232,22 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
         self._knob_treble.set_bypassed(bypassed)
         self._update_readout()
 
-    def _edit_knob(self, symbol: str, rotations: int) -> None:
-        p = self.plugin.parameters.get(symbol)
-        if p is None:
-            return
-        current = float(p.value) if p.value is not None else 0.0
-        step = _LEVEL_STEP if symbol == "CLevel" else _TONE_STEP
-        new_val = max(p.minimum, min(p.maximum, current + rotations * step))
-        if new_val == current:
-            return
-        self.set_param(symbol, new_val)
-        knob = self._knobs_by_symbol.get(symbol)
-        if knob is not None:
-            knob.set_value(new_val)
-        self._state = GxCabinetState(
-            level=self._current("CLevel"),
-            bass=self._current("CBass"),
-            treble=self._current("CTreble"),
-            model=int(self._current("c_model")),
-        )
-        self._update_readout()
-
-    def _cycle_model(self, rotations: int) -> None:
-        p = self.plugin.parameters.get("c_model")
-        if p is None:
-            return
-        current = int(float(p.value) if p.value is not None else 0.0)
-        new_model = max(int(p.minimum), min(int(p.maximum), current + int(rotations)))
-        if new_model == current:
-            return
-        self.set_param("c_model", float(new_model))
-        self._mode_selector.set_value(new_model)
-        self._state = GxCabinetState(
-            level=self._current("CLevel"),
-            bass=self._current("CBass"),
-            treble=self._current("CTreble"),
-            model=new_model,
-        )
-        self._update_readout()
-
     def _current(self, symbol: str) -> float:
         p = self.plugin.parameters.get(symbol)
         return float(p.value) if p is not None and p.value is not None else 0.0
 
     def _on_model_changed(self, new_model: int) -> None:
-        self._state = GxCabinetState(
-            level=self._current("CLevel"),
-            bass=self._current("CBass"),
-            treble=self._current("CTreble"),
-            model=new_model,
-        )
+        """Wired as ModeSelectorWidget's on_change — fires from its own
+        selection-dialog commit path, not the encoder/edit_symbol path."""
+        self._state = self.snapshot_state()
         self._update_readout()
 
     def _reset_to_default(self, symbol: str) -> None:
         p = self.plugin.parameters.get(symbol)
         if p is None or p.default is None:
             return
-        default_val = float(p.default)
-        self.set_param(symbol, default_val)
-        if symbol == "c_model":
-            self._mode_selector.set_value(int(default_val))
-        else:
-            knob = self._knobs_by_symbol.get(symbol)
-            if knob is not None:
-                knob.set_value(default_val)
-        self._state = GxCabinetState(
-            level=self._current("CLevel"),
-            bass=self._current("CBass"),
-            treble=self._current("CTreble"),
-            model=int(self._current("c_model")),
-        )
-        self._update_readout()
+        self.set_param(symbol, float(p.default))
+        self._sync_after_edit(symbol)
 
     def _update_readout(self) -> None:
         sel = self.sel_ref

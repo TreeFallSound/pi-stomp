@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from common.param_roles import ParamRole
 from common.parameter import Parameter
 from uilib.box import Box
 from uilib.config import Config
@@ -55,6 +56,9 @@ class ModeSelectorWidget(Widget):
     @property
     def max_index(self) -> int:
         return self._max
+
+    def symbol_for(self, role: ParamRole) -> str | None:
+        return self.symbol
 
     def set_value(self, value: int) -> None:
         value = max(0, min(self._max, int(value)))

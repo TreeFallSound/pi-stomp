@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from common.param_roles import ParamRole
 from uilib.box import Box
 from uilib.glyphs.arc_dial import ArcDialWidget, DialFormatter
 from uilib.misc import InputEvent
@@ -41,6 +42,9 @@ class ArcKnobWidget(ArcDialWidget):
         )
         self.symbol = symbol
         self._panel = panel
+
+    def symbol_for(self, role: ParamRole) -> str | None:
+        return self.symbol
 
     def input_event(self, event) -> bool:
         if event == InputEvent.CLICK:
