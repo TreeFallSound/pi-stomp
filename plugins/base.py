@@ -26,7 +26,9 @@ Subclass checklist
 3. Implement ``build_widgets()`` (add widgets to ``self``; the concrete base
    appends its chrome afterward).
 4. Optionally override ``on_event(event) -> bool`` to drive this panel's own
-   controls (return True to consume; False lets NAV and the handler cascade run).
+   non-NAV controls (return True to consume). NAV events never reach
+   ``on_event`` — the base panel owns NAV and shapes it only through the
+   selection model.
 5. Use ``self.set_param(symbol, value)`` for every live parameter edit.
 6. A subclass ``tick()`` override must call ``super().tick()`` so the coalesce
    queue drains.
@@ -100,13 +102,8 @@ class PluginPanel(Panel, Generic[TState], ABC):
         """
 
     def on_event(self, event: ControllerEvent) -> bool:
-        """Called first for every input event when this panel is visible.
-
-        Override to drive this panel's own controls (typically the Tweak1/2/3
-        encoders). Return ``True`` to consume — which also preempts the base NAV
-        default. Return ``False`` for anything this panel does not own so NAV and
-        normal parameter editing / volume control keep working.
-        """
+        """Drive this panel's own non-NAV controls (typically Tweak1/2/3).
+        NAV never reaches here."""
         return False
 
     # ── param-send coalescing ─────────────────────────────────────────────

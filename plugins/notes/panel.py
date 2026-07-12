@@ -7,13 +7,11 @@ from dataclasses import dataclass
 
 from typing_extensions import override
 
-import common.token as Token
 from modalapi.plugin import Plugin
 from modalapi.plugin_customization import PluginExtraData, extra_data_as
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.customization import PluginCustomization, register
 from plugins.notes import NOTES_URI
-from pistomp.input.event import ControllerEvent, EncoderEvent
 from uilib.box import Box
 from uilib.config import Config
 from uilib.misc import TextHAlign, get_text_size
@@ -155,18 +153,14 @@ class NotesPanel(FullscreenPluginPanel[None]):
         # Expand Back to span the full chrome row.
         self._btn_back.box = Box.xywh(_BTN_GAP, _H - _BTN_H - _BTN_GAP, _W - 2 * _BTN_GAP, _BTN_H)
 
-    # ── encoder routing ────────────────────────────────────────────────────
+    # ── internal ───────────────────────────────────────────────────────────
 
     @override
-    def on_event(self, event: ControllerEvent) -> bool:
-        # Repurpose the NAV encoder to scroll the note text (preempts the base
-        # step-selection). Tweak encoders fall through to normal handling.
-        if isinstance(event, EncoderEvent) and event.controller.type == Token.NAV:
-            self._scroll(event.rotations)
-            return True
-        return False
-
-    # ── internal ───────────────────────────────────────────────────────────
+    def input_step(self, direction: int, count: int, multiplier: float = 1.0) -> bool:
+        # NAV rotates scroll the text rather than moving selection — the
+        # sanctioned override point for shaping NAV's effect.
+        self._scroll(direction * count)
+        return True
 
     def _visible_text(self) -> str:
         return "\n".join(self._lines[self._top : self._top + self._vis_count])
