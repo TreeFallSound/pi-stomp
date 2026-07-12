@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Analyse pedalboard grid layouts against the real layout pipeline.
 
-Loads one or more .pedalboard bundles via the same lilv + MOD-Desktop path
-the device uses, runs modalapi.layout.build_layout_compress, and reports
-metrics + an ASCII render of the grid.
+Loads one or more .pedalboard bundles via the same MOD-Desktop path the device
+uses, runs modalapi.layout.build_layout_compress, and reports metrics + an
+ASCII render of the grid.
 
-Run via ./analyze_layout.sh (sets up lilv on PYTHONPATH/DYLD_LIBRARY_PATH).
-Requires MOD Desktop running at http://127.0.0.1:18181 to resolve plugin
-audio-port ordering.
+Run via ./analyze_layout.sh. Requires MOD Desktop running at
+http://127.0.0.1:18181: it parses the bundles and resolves plugin audio-port
+ordering.
 
 Usage:
     ./analyze_layout.sh <bundle.pedalboard> [more.pedalboard ...]

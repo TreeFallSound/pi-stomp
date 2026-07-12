@@ -40,7 +40,6 @@ _PI_MODULES = [
     "gpiozero",
     "neopixel",
     "spidev",
-    "lilv",
     "matplotlib",
     "adafruit_mcp3xxx",
     "adafruit_mcp3xxx.analog_in",
