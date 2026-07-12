@@ -414,7 +414,39 @@ mechanical once the state-predicate mechanism exists, not a design question.
    `TapReverbState` by hand) collapsed into `edit_symbol` +
    `_sync_after_edit`, matching gx_cabinet's post-migration shape. All 11
    snapshot sagas in `tests/v3/test_tap_reverb_panel.py` pass byte-identical.
-   Remaining: graphic EQ, multiband menu, NAM.
+
+   **Graphic EQ migrated** (`plugins/eq/graphic.py`) — enc1 is
+   `SelectionEditEffect(role=GAIN_DB)` (`GraphicBandSelectable.symbol_for`
+   returns the focused band's `gain_sym`, `None` for band-less), enc2/enc3 are
+   declared `NoneEffect()` rows (always-consumed no-ops — graphic EQ bands have
+   no freq/Q to tweak, unlike parametric). This is the **second** panel
+   needing the "no band selected → Tweak3 falls through, others absorbed"
+   guard the plan flagged as a signal to generalize at a third occurrence
+   (§9 step 4's schema-gap note) — kept as a second copy of the same small
+   `on_event` guard for now, one occurrence short of that threshold.
+   `edit_symbol` overrides to route through `_replace_band`/`_bar_widget`
+   sync, same shape as gx_cabinet/tap_reverb/parametric. All 7 snapshot sagas
+   in `tests/v3/test_graphic_eq_panel.py` pass byte-identical.
+   `graphiceq`/`barkgraphiceq` subclasses inherit unchanged.
+
+   **Multiband menu migrated** (`plugins/multiband_menu/__init__.py`) — the
+   shared `MultibandWindow` base (arc-ring grid, one `ParamSlotWidget` per
+   band) gets a single `declare_bindings()`/`edit_symbol` pair covering all
+   seven subclasses at once (mdamultiband, mdabandisto, three_band_eq,
+   three_band_splitter, caps_noisegate, capseq10x2, system_compressor) since
+   none override `on_event`. enc1 is `SelectionEditEffect()` (generic role —
+   `ParamSlotWidget.symbol_for` returns `self.slot.symbol` unconditionally,
+   same shape as `ArcKnobWidget`); enc2/enc3 have no declared rows (unchanged:
+   unconsumed, falls through). No guard needed — unlike the EQ panels, every
+   selectable here already resolves to a real symbol, and a chrome-button
+   selection silently absorbing enc1 (rather than falling through) matches
+   the precedent already accepted in gx_cabinet/tap_reverb. `edit_symbol`
+   delegates to the existing `ParamSlotWidget.on_encoder_rotation` (which
+   already did the clamp + widget refresh) rather than duplicating its step
+   math. `tests/v3/test_caps_noisegate_menu.py` (the one exercised subclass
+   with a snapshot suite) passes byte-identical.
+
+   Remaining: NAM (per §8's escape-hatch design).
 ```
 
 ## 10. Acceptance gate (charter requirements, unchanged)

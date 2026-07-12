@@ -11,6 +11,17 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Optional
 
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextRef,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    NoneEffect,
+    SelectionEditEffect,
+)
+from common.param_roles import ParamRole, edit_value
 from pistomp.input.event import ControllerEvent, EncoderEvent
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import GraphicBandSpec
@@ -25,25 +36,25 @@ from uilib.widget import Widget
 _W = 320
 _H = 240
 
-VISIBLE_BANDS  = 10
-COL_W          = _W // VISIBLE_BANDS   # 32 px per column
-BAR_W          = 3                      # track + fill width (matches node diameter)
+VISIBLE_BANDS = 10
+COL_W = _W // VISIBLE_BANDS  # 32 px per column
+BAR_W = 3  # track + fill width (matches node diameter)
 
-READOUT_H      = 22
-FREQ_LABEL_H   = 14
-BAR_Y0         = 6                      # bars start 6px from widget top (halo clearance from readout)
-BAR_Y1         = 164                    # bar area ends 8px before freq labels (halo clearance)
-BAR_H          = BAR_Y1 - BAR_Y0      # 158
-FREQ_LABEL_Y   = BAR_Y1 + 8            # 172 — 6px halo + 2px padding below bars
-WIDGET_H       = FREQ_LABEL_Y + FREQ_LABEL_H  # 186 — includes freq labels
+READOUT_H = 22
+FREQ_LABEL_H = 14
+BAR_Y0 = 6  # bars start 6px from widget top (halo clearance from readout)
+BAR_Y1 = 164  # bar area ends 8px before freq labels (halo clearance)
+BAR_H = BAR_Y1 - BAR_Y0  # 158
+FREQ_LABEL_Y = BAR_Y1 + 8  # 172 — 6px halo + 2px padding below bars
+WIDGET_H = FREQ_LABEL_Y + FREQ_LABEL_H  # 186 — includes freq labels
 
 # ── colours ──────────────────────────────────────────────────────────────────
 
-BG_BLACK        = (0, 0, 0)
-TRACK_COLOR     = (40, 40, 40)
-FILL_INACTIVE   = (160, 160, 160)
-FILL_ACTIVE     = (240, 240, 240)
-READOUT_COLOR   = (200, 200, 200)
+BG_BLACK = (0, 0, 0)
+TRACK_COLOR = (40, 40, 40)
+FILL_INACTIVE = (160, 160, 160)
+FILL_ACTIVE = (240, 240, 240)
+READOUT_COLOR = (200, 200, 200)
 FREQ_LABEL_COLOR = (110, 110, 110)
 
 
@@ -227,7 +238,13 @@ class GraphicReadoutWidget(Widget):
         self._message: Optional[str] = None
 
     def set_fields(self, band_idx: int, band_total: int, freq: str, gain: str) -> None:
-        if self._message is None and band_idx == self._band_idx and band_total == self._band_total and freq == self._freq and gain == self._gain:
+        if (
+            self._message is None
+            and band_idx == self._band_idx
+            and band_total == self._band_total
+            and freq == self._freq
+            and gain == self._gain
+        ):
             return
         self._band_idx = band_idx
         self._band_total = band_total
@@ -318,6 +335,9 @@ class GraphicBandSelectable(Widget):
     def _draw_selection(self, ctx) -> None:
         pass
 
+    def symbol_for(self, role: ParamRole) -> str | None:
+        return self.band.gain_sym if role is ParamRole.GAIN_DB else None
+
 
 # ── GraphicEqPanel (ABC) ─────────────────────────────────────────────────────
 
@@ -389,27 +409,45 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
         self.sel_widget(self._band_sels[self.bands[0].name])
 
     def on_event(self, event: ControllerEvent) -> bool:
-        if not isinstance(event, EncoderEvent) or event.controller.id not in (1, 2, 3):
-            return False
-        encoder_id = event.controller.id
-        rotations = event.rotations
-        if rotations == 0:
-            return False
+        # No band selected (chrome focused): Tweak3 falls through to volume; gain/2 absorbed.
+        if isinstance(event, EncoderEvent) and event.controller.id in (1, 2, 3) and self.selected_band is None:
+            return event.controller.id != 3
+        return super().on_event(event)
+
+    def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        ctx = ContextRef(kind=ContextKind.PANEL, name="graphic_eq")
+        return (
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=1),
+                event_kind=EventKind.ROTATE,
+                effects=(SelectionEditEffect(role=ParamRole.GAIN_DB),),
+                context=ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=2),
+                event_kind=EventKind.ROTATE,
+                effects=(NoneEffect(),),
+                context=ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=3),
+                event_kind=EventKind.ROTATE,
+                effects=(NoneEffect(),),
+                context=ctx,
+            ),
+        )
+
+    def edit_symbol(self, symbol: str, rotations: int) -> bool:
         band = self.selected_band
-        if band is None:
-            return encoder_id != 3
-        delta = rotations
+        if band is None or symbol != band.gain_sym:
+            return super().edit_symbol(symbol, rotations)
         p = self._state.bands[band.name]
-        if encoder_id == 1:
-            new_gain = max(band.gain_min, min(band.gain_max, p.gain_db + delta * 0.5))
-            if new_gain == p.gain_db:
-                return True
-            self.set_param(band.gain_sym, new_gain)
-            self._replace_band(band, gain_db=new_gain)
-            return True
-        elif encoder_id in (2, 3):
-            return True  # consume but no-op
-        return False
+        new_gain = edit_value(ParamRole.GAIN_DB, p.gain_db, rotations, band.gain_min, band.gain_max)
+        if new_gain == p.gain_db:
+            return False
+        self.set_param(band.gain_sym, new_gain)
+        self._replace_band(band, gain_db=new_gain)
+        return True
 
     def tick(self) -> None:
         bypassed = self.plugin.is_bypassed()

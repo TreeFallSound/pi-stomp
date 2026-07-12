@@ -10,8 +10,17 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextRef,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    SelectionEditEffect,
+)
 from common.parameter import Parameter
-from pistomp.input.event import ControllerEvent, EncoderEvent
+from common.param_roles import ParamRole
 from plugins.window import PluginWindow
 from uilib.box import Box
 from uilib.config import Config
@@ -113,14 +122,21 @@ class MultibandWindow(PluginWindow[None]):
             self._slot_widgets.append(w)
             self.add_sel_widget(w)
 
-    def on_event(self, event: ControllerEvent) -> bool:
-        if (
-            isinstance(event, EncoderEvent)
-            and event.controller.id == 1
-            and isinstance(self.sel_ref, ParamSlotWidget)
-        ):
-            return self.sel_ref.on_encoder_rotation(event.rotations)
-        return False
+    def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        return (
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=1),
+                event_kind=EventKind.ROTATE,
+                effects=(SelectionEditEffect(),),
+                context=ContextRef(kind=ContextKind.PANEL, name="multiband_menu"),
+            ),
+        )
+
+    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+        widget = next((w for w in self._slot_widgets if w.slot.symbol == symbol), None)
+        if widget is None:
+            return super().edit_symbol(symbol, rotations)
+        return widget.on_encoder_rotation(rotations)
 
 
 class ParamSlotWidget(Widget):
@@ -204,6 +220,9 @@ class ParamSlotWidget(Widget):
         if new_value != self._value:
             self.set_param(new_value)
         return True
+
+    def symbol_for(self, role: ParamRole) -> str | None:
+        return self.slot.symbol
 
     def set_selected(self, selected: bool) -> None:  # type: ignore[override]
         self.selected = selected
