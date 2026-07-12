@@ -387,6 +387,21 @@ mechanical once the state-predicate mechanism exists, not a design question.
 8. Continue migrating remaining panels (gx_cabinet, tap_reverb, graphic EQ,
    multiband menu, NAM per §8) against the R1 checklist until every row is
    either declared or explicitly escape-hatched (requirement 4).
+
+   **Status: gx_cabinet migrated** (`plugins/gx_cabinet/panel.py`) — enc1 is
+   `SelectionEditEffect()` (resolved via the focused `ArcKnobWidget`'s or
+   `ModeSelectorWidget`'s new `symbol_for`), enc2 is a fixed `ParamEffect`
+   on `c_model` (cycles the cab model regardless of focus, matching the old
+   `on_event`), enc3 is `CLevel` on a `VOLUME`/`override_volume=True` row
+   (chassis Tweak3/Volume, same opt-in shape as compressor's `rat`). Step
+   math for `CLevel`/`CBass`/`CTreble` doesn't fit an existing `ParamRole`
+   (fixed additive steps of 0.05/0.4, not GAIN_DB's 0.5 or Q_FACTOR's 0.05
+   with different range), so `edit_symbol` is overridden to apply the
+   panel's own step table and delegates to `super().edit_symbol` only for
+   `c_model`-shaped GENERIC editing it doesn't otherwise handle. All 8
+   snapshot sagas in `tests/v3/test_gx_cabinet_panel.py` pass byte-identical,
+   no snapshot regeneration needed — the migration is behavior-preserving.
+   Remaining: tap_reverb, graphic EQ, multiband menu, NAM.
 ```
 
 ## 10. Acceptance gate (charter requirements, unchanged)
