@@ -64,12 +64,12 @@ def _biquad_mag_db(b0: float, b1: float, b2: float, a1: float, a2: float) -> np.
 # ── RBJ biquad coefficient helpers ───────────────────────────────────────────
 
 
-def _rbj_peaking(f0: float, q: float, gain_db: float) -> tuple[float, float, float, float, float]:
+def _rbj_peaking(f0: float, bw_oct: float, gain_db: float) -> tuple[float, float, float, float, float]:
     A = 10.0 ** (gain_db / 40.0)
     w0 = 2.0 * math.pi * f0 / FS
     cosw0 = math.cos(w0)
-    q_rbj = 1.0 / max(q, 1e-4)
-    alpha = math.sin(w0) / (2.0 * q_rbj)
+    sinw0 = math.sin(w0)
+    alpha = sinw0 * math.sinh(math.log(2) / 2.0 * bw_oct * w0 / max(sinw0, 1e-12))
     a0 = 1.0 + alpha / A
     b0 = (1.0 + alpha * A) / a0
     b1 = (-2.0 * cosw0) / a0
