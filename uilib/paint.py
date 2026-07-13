@@ -66,7 +66,7 @@ _TEXT_PAD = 8
 
 
 @lru_cache(maxsize=512)
-def _text_surface(text: str, font: "pygame._freetype.Font", color: Tuple[int, int, int, int]) -> pygame.Surface:  # pyright: ignore[reportAttributeAccessIssue]
+def _text_surface(text: str, font: "pygame._freetype.Font", color: Tuple[int, int, int, int]) -> pygame.Surface:
     """Cached RGBA surface of `text`, pen origin at (_TEXT_PAD, _TEXT_PAD + ascender)."""
     from uilib.misc import get_text_size  # local: uilib.misc imports uilib.paint
 

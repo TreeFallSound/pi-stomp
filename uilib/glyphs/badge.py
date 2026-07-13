@@ -52,7 +52,7 @@ def _lanczos_downscale(surf: pygame.Surface, size: tuple[int, int]) -> pygame.Su
     # box/bilinear and visibly blur glyph strokes at this radius. Route
     # through Pillow (already a dependency) for a sharper resample.
     img = Image.frombytes("RGBA", surf.get_size(), pygame.image.tobytes(surf, "RGBA"))
-    img = img.resize(size, Image.LANCZOS)
+    img = img.resize(size, Image.Resampling.LANCZOS)
     return pygame.image.frombytes(img.tobytes(), size, "RGBA")
 
 
@@ -63,7 +63,8 @@ def _badge_surface(char: str, radius: int) -> pygame.Surface:
     if font is None:
         return surf
     d = 2 * radius + 1
-    big_size = font.size * _SS
+    base_size = font.size if isinstance(font.size, (int, float)) else font.size[0]
+    big_size = base_size * _SS
     tw, th = get_text_size(char, font, size=big_size)
     asc = int(font.get_sized_ascender(big_size))
     nudge = round(_X_NUDGE_HALF.get(char, 0) * _SS / 2)
@@ -74,7 +75,7 @@ def _badge_surface(char: str, radius: int) -> pygame.Surface:
     try:
         x = (d * _SS - tw) // 2 + nudge
         y = (d * _SS - th) // 2 + asc
-        font.render_to(text_layer, (x, y), char, fgcolor=_TEXT, size=big_size)
+        font.render_to(text_layer, (x, y), char, fgcolor=_TEXT, size=big_size)  # pyright: ignore[reportCallIssue]
     finally:
         font.origin = prev
     surf.blit(_lanczos_downscale(text_layer, (d, d)), (0, 0))

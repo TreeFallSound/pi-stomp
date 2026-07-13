@@ -594,10 +594,10 @@ class GraphWidget(Widget):
 
 _READOUT_COLS_LEFT: tuple[tuple[str, int], ...] = (
     ("name", 6),
-    ("freq", 60),
-    ("q", 160),
+    ("gain", 60),
+    ("freq", 160),
+    ("q", 250),
 )
-_READOUT_GAIN_RIGHT: int = _W - 6
 
 # enc1/2/3 are all live simultaneously here (gain/freq/Q of the selected
 # band) — unlike every other migrated panel's readout, which needs at most
@@ -605,6 +605,8 @@ _READOUT_GAIN_RIGHT: int = _W - 6
 # column, and overrides `_draw_badge` to paint all of them, leaving the
 # inherited single-slot `Widget._badge`/`set_badge()` untouched and unused
 # on this class (see the multi-badge pattern in uilib/README.md's Badges section).
+# Column order mirrors the tweak-knob order (1=gain, 2=freq, 3=q), not the
+# tuple's insertion order.
 _COL_BADGES: dict[str, BadgeGlyph] = {
     "gain": BadgeGlyph("1"),
     "freq": BadgeGlyph("2"),
@@ -658,29 +660,20 @@ class ReadoutWidget(Widget):
             text = self._fields.get(key, "")
             if text:
                 ctx.draw_text((x, 1), text, fill=READOUT_COLOR, font=self._font)
-        gain = self._fields.get("gain", "")
-        if gain:
-            tw, _ = get_text_size(gain, self._font)
-            x = _READOUT_GAIN_RIGHT - tw
-            ctx.draw_text((x, 1), gain, fill=READOUT_COLOR, font=self._font)
 
     def _draw_badge(self, ctx) -> None:
         """One badge per live encoder, each sitting in its column's left
-        gutter without shifting that column's (fixed-position) text."""
+        gutter without shifting that column's (fixed-position) text. A column
+        with no text (e.g. gain on a band with no gain param) gets no badge
+        either — nothing for that encoder to do."""
         if not self._badged or self._message is not None:
             return
         for key, x in _READOUT_COLS_LEFT:
             badge = _COL_BADGES.get(key)
-            if badge is None:
+            if badge is None or not self._fields.get(key, ""):
                 continue
             by = (ctx.height - badge.height) // 2
             ctx.paste(badge.render(), (x - _BADGE_GAP - badge.width, by))
-        gain = self._fields.get("gain", "")
-        badge = _COL_BADGES["gain"]
-        tw, _ = get_text_size(gain, self._font) if gain else (0, 0)
-        gain_x = _READOUT_GAIN_RIGHT - tw
-        by = (ctx.height - badge.height) // 2
-        ctx.paste(badge.render(), (gain_x - _BADGE_GAP - badge.width, by))
 
 
 # ── invisible band selectable ────────────────────────────────────────────────
@@ -755,14 +748,19 @@ def _fmt_freq(hz: float) -> str:
 
 
 def band_readout_fields(band: BandSpec, p: BandParams) -> tuple[str, str, str, str]:
-    """Format readout fields for a parametric band. Returns (name, freq, q, gain)."""
+    """Format readout fields for a parametric band. Returns (name, freq, q, gain).
+
+    gain is "" for bands with no gain param at all (e.g. HP/LP filters) \u2014 enc1
+    is a no-op there (see ParametricEqPanel.edit_symbol), so a live-looking
+    badge over a permanent em-dash was just noise.
+    """
     name = band.name
     freq = _fmt_freq(p.freq)
     q = f"Q {p.q:.2f}"
-    if not p.enabled:
+    if band.gain_sym is None:
+        gain = ""
+    elif not p.enabled:
         gain = "disabled"
-    elif band.gain_sym is None:
-        gain = "\u2014"
     else:
         gain = f"{p.gain_db:+.1f} dB"
     return name, freq, q, gain
