@@ -236,6 +236,15 @@ class Parameterdialog(Dialog):
 
         self.last_param_value = value
 
+    def _draw_badge(self, ctx) -> None:
+        """Override of `Widget._draw_badge`: top-left corner of the dialog
+        body, under the title strip (which is the decorator's, not ours) —
+        the base's left-edge-centred default would land inside the bar
+        graph."""
+        if self._badge is None:
+            return
+        ctx.paste(self._badge.render(), (4, 4))
+
     def reset_timeout(self):
         if self.timeout is not None:
             self.expiry_time = time.time() + self.timeout

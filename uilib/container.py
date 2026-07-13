@@ -159,6 +159,7 @@ class ContainerWidget(Widget):
                         c._dirty = True
             self._draw_outline(ctx)
             self._draw_selection(ctx)
+            self._draw_badge(ctx)
             self._finalize_cache()
             self._dirty_region = None
             if self.visible and self.parent is not None:
@@ -175,6 +176,7 @@ class ContainerWidget(Widget):
                     c.do_draw(ctx, c.box.offset(local_frame))
             self._draw_outline(ctx)
             self._draw_selection(ctx)
+            self._draw_badge(ctx)
             self._finalize_cache()
             self._dirty_region = None
             if self.visible and self.parent is not None:
@@ -224,6 +226,7 @@ class ContainerWidget(Widget):
                                 c.do_draw(full_ctx, cf)
                     self._draw_outline(full_ctx)
                     self._draw_selection(full_ctx)
+                    self._draw_badge(full_ctx)
                 self._finalize_cache()
                 self._dirty_region = None
 

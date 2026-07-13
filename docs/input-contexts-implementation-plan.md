@@ -390,7 +390,49 @@ panels R4 called out) and the badge mechanism itself unified.** Two threads:
    `KnobWidget` subclass specifically, rather than changing the shared
    `ArcDialWidget` default that gx_cabinet/tap_reverb already rely on.
 
-Remaining R4 gaps: `Parameterdialog`, edit-in-place, main-panel plugin grid.
+**`Parameterdialog` and the parameter menu's tweak badges: done.** Both read a
+new `tweak_badge_number(plugin, param)` helper (`pistomp/lcd320x240.py`),
+mirroring `footswitch_badge_letter` but over the effective table's
+`(ControlClass.ANALOG, EventKind.ROTATE)` rows instead of `FOOTSWITCH`/
+`PRESS`. This is the *legacy* TTL/config binding path (`param.binding` →
+`Hardware.controllers`) — the fallback `Modhandler._handle_encoder` uses when
+no open custom panel's `declare_bindings()` claims the encoder first. TWEAK
+rows themselves are always panel-scoped (never pedalboard-level), so this
+ANALOG-class row is the *only* way a bare `Parameterdialog` or the generic
+parameter menu (both reachable only for plugins without a `panel_cls`) can
+ever show a live encoder binding. `Parameterdialog` gets a single top-left
+badge (`_draw_badge` override, since the base `Widget` default — left-edge,
+vertically centred — lands inside the bar graph); the parameter menu reuses
+the row's existing single badge slot (`footswitch_badge_letter` or
+`tweak_badge_number`, never both — `param.binding` names exactly one physical
+controller, so the two are mutually exclusive per row). New helper
+`_badge_letter(plugin, param)` picks whichever applies.
+
+**Found and fixed a real framework bug along the way:** `ContainerWidget`
+(`uilib/container.py`) — the base every `Panel`/`Dialog` inherits — has its
+own `refresh()`/`do_draw()` paint paths that never called `_draw_badge()`.
+Every prior badge consumer (`ArcDialWidget`, `ModeSelectorWidget`,
+`ReadoutBar`, `TextWidget`) happened to be a plain `Widget`, so the gap was
+unexercised until `Parameterdialog.set_badge()` (a `ContainerWidget`) painted
+nothing. Fixed by adding the `_draw_badge()` call to all three of
+`ContainerWidget`'s paint paths (virtual refresh, non-virtual refresh, the
+dirty-rect rebuild inside `do_draw`), right after `_draw_selection()`, same
+ordering as the base `Widget.do_draw()`. Verified inert everywhere else — all
+1144 pre-existing snapshots stayed byte-identical; only the new
+badge-carrying snapshots changed.
+
+**Edit-in-place: not a badging gap, a missing feature.** Charter A4 ("click a
+value widget to edit it directly, no dialog") isn't implemented anywhere in
+the codebase — `Panel.input_event`/`Widget.input_event` have no edit-mode
+state at all. There's nothing to badge until A4 itself gets built; revisit
+then.
+
+**Main-panel plugin grid: rejected, not deferred.** R4's table entry assumed
+a free top-right gutter per tile (`60,2..72,12` in a 74×28 tile). The actual
+rendered grid (`test_main_panel_snapshot/0.png`) shows tiles as solid-color
+blocks with centred labels already spanning most of the tile width — no
+reserved gutter exists, so a corner badge would collide with the label or
+float on bare fill with no anchor. The tile is too tight for that to be worth forcing in footswitches or analog inputs bound to its parameters, but we should consider how we want to show this in the future as it helps someone learn the pedalboard. Need to think through where an overall "MIDI Map" would live.
 
 **L1/L2/L3 degradation ladder: rejected, not deferred.** Reconsidered after a
 walkthrough and dropped, not just postponed:

@@ -21,6 +21,7 @@ from common.contexts import (
     ParamEffect,
     ShadowState,
 )
+from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
 from pistomp.lcd320x240 import Lcd
 from pistomp.taptempo import TapTempo
@@ -494,6 +495,97 @@ def test_footswitch_badge_letter_none_when_shadowed(lcd):
     ])
 
     assert instance.footswitch_badge_letter(distortion, gain_param) is None
+
+
+def _analog_row(plugin, symbol, control_id, shadow_state=ShadowState.ACTIVE):
+    return BindingDecl(
+        control=ControlRef(cls=ControlClass.ANALOG, id=control_id),
+        event_kind=EventKind.ROTATE,
+        effects=(ParamEffect(plugin=plugin, symbol=symbol),),
+        context=ContextRef(kind=ContextKind.PEDALBOARD),
+        shadow_state=shadow_state,
+    )
+
+
+def test_tweak_badge_number_from_effective_table(lcd):
+    """1/2/3: tweak_badge_number reads the effective table's legacy
+    ANALOG-class binding — the TTL/config-bound tweak encoder, independent of
+    any open custom panel (TWEAK rows themselves are always panel-scoped)."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    distortion = instance.current.pedalboard.plugins[0]
+    gain_param = distortion.parameters["gain"]
+
+    enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=2)
+    instance.handler.hardware.controllers = {"encoder2": enc}
+    instance.handler.effective_table = ContextStack(layers=[
+        ContextLayer(
+            ref=ContextRef(kind=ContextKind.PEDALBOARD),
+            rows={(ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.name, "encoder2")]},
+        )
+    ])
+
+    assert instance.tweak_badge_number(distortion, gain_param) == 2
+
+
+def test_tweak_badge_number_none_when_shadowed(lcd):
+    """Badge honesty: a SHADOWED analog row must not surface a tweak badge."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    distortion = instance.current.pedalboard.plugins[0]
+    gain_param = distortion.parameters["gain"]
+
+    enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=2)
+    instance.handler.hardware.controllers = {"encoder2": enc}
+    row = _analog_row(distortion, gain_param.name, "encoder2", shadow_state=ShadowState.SHADOWED)
+    instance.handler.effective_table = ContextStack(layers=[
+        ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD), rows={(ControlClass.ANALOG, EventKind.ROTATE): [row]})
+    ])
+
+    assert instance.tweak_badge_number(distortion, gain_param) is None
+
+
+def test_parameter_menu_shows_tweak_badge(lcd, snapshot):
+    """The parameter-list menu prepends the digit badge to a tweak-bound row,
+    same slot the footswitch letter uses (mutually exclusive: a parameter has
+    exactly one `binding`)."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    distortion = instance.current.pedalboard.plugins[0]
+    gain_param = distortion.parameters["gain"]
+
+    enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=3)
+    instance.handler.hardware.controllers = {"encoder3": enc}
+    instance.handler.effective_table = ContextStack(layers=[
+        ContextLayer(
+            ref=ContextRef(kind=ContextKind.PEDALBOARD),
+            rows={(ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.name, "encoder3")]},
+        )
+    ])
+
+    instance.draw_parameter_menu(distortion)
+    snapshot()
+
+
+def test_parameter_dialog_shows_tweak_badge_snapshot(lcd, snapshot):
+    """Parameterdialog badges itself ② when opened for a parameter that's
+    TTL/config-bound to a physical tweak encoder."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    distortion = instance.current.pedalboard.plugins[0]
+    gain_param = distortion.parameters["gain"]
+
+    enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=2)
+    instance.handler.hardware.controllers = {"encoder2": enc}
+    instance.handler.effective_table = ContextStack(layers=[
+        ContextLayer(
+            ref=ContextRef(kind=ContextKind.PEDALBOARD),
+            rows={(ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.name, "encoder2")]},
+        )
+    ])
+
+    instance.draw_parameter_dialog(gain_param)
+    snapshot()
 
 
 def test_parameter_menu_shows_footswitch_badge(lcd, snapshot):

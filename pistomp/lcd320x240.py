@@ -27,6 +27,7 @@ from ui.ethernet_menu import EthernetMenu
 from ui.wifi_menu import WifiMenu
 import pistomp.category as Category
 import pistomp.switchstate as switchstate
+from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
 import pygame
 
@@ -49,6 +50,7 @@ from uilib import (
     ShroudedPanel,
     TextWidget,
 )
+from uilib.glyphs.badge import BadgeGlyph
 from uilib.gridpanel import GridPanel, TILE_W, CHANNEL
 from uilib.menu import BadgedLabel
 from uilib.pygame_init import font as _make_font
@@ -74,6 +76,10 @@ SUBTITLE_TIMEOUT = 1.3
 
 # Wifi "processing" spinner full-cycle rate (Hz), wall-clock paced.
 WIFI_SPINNER_HZ = 1.5
+
+# ①②③: which tweak encoder (if any) is TTL/config-bound to Parameterdialog's
+# parameter (legacy ANALOG binding, independent of any open custom panel).
+_TWEAK_BADGES = {1: BadgeGlyph("1"), 2: BadgeGlyph("2"), 3: BadgeGlyph("3")}
 
 
 class Subtitle(TextWidget):
@@ -702,6 +708,42 @@ class Lcd:
                             return chr(ord('A') + controller.id)
         return None
 
+    def tweak_badge_number(self, plugin, param: Parameter) -> int | None:
+        """1/2/3: the tweak encoder TTL/config-bound directly to this
+        parameter (the legacy ANALOG-class binding `_handle_encoder` falls
+        back to when no open panel's `declare_bindings()` claims the encoder
+        first — TWEAK rows themselves are always panel-scoped, never
+        pedalboard-level, so this is the only way a bare parameter can be
+        encoder-bound outside a custom panel)."""
+        if self.handler is None:
+            return None
+        for layer in self.handler.effective_table.layers:
+            for decl in layer.rows.get((ControlClass.ANALOG, EventKind.ROTATE), []):
+                if decl.shadow_state is not ShadowState.ACTIVE:
+                    continue
+                if not isinstance(decl.control.id, str):
+                    continue
+                for effect in decl.effects:
+                    if isinstance(effect, ParamEffect) and effect.plugin is plugin and effect.symbol == param.name:
+                        controller = self.handler.hardware.controllers.get(decl.control.id)
+                        if (
+                            isinstance(controller, EncoderController)
+                            and controller.type not in (Token.NAV, Token.VOLUME)
+                            and controller.id is not None
+                        ):
+                            return controller.id
+        return None
+
+    def _badge_letter(self, plugin, param: Parameter) -> str | None:
+        """(A)-(D) or 1/2/3: whichever physical control this parameter is
+        bound to — footswitch and tweak encoder are mutually exclusive since
+        `param.binding` names exactly one physical controller."""
+        letter = self.footswitch_badge_letter(plugin, param)
+        if letter is not None:
+            return letter
+        n = self.tweak_badge_number(plugin, param)
+        return str(n) if n is not None else None
+
     def toggle_plugin_bypass_from_menu(self, plugin):
         """A5: :bypass is a parameter row, not just chrome — the row's action
         drives the same toggle path as a tile short-press."""
@@ -712,13 +754,13 @@ class Lcd:
         items = []
         for (name, param) in sorted(plugin.parameters.items()):
             if name != Token.COLON_BYPASS:
-                letter = self.footswitch_badge_letter(plugin, param)
+                letter = self._badge_letter(plugin, param)
                 items.append((BadgedLabel(name, letter), self.draw_parameter_dialog, param))
         # A5: :bypass is a row too, not just tile chrome — appended last so it
         # doesn't shift the selection index of the existing parameter rows.
         bypass_param = plugin.parameters.get(Token.COLON_BYPASS)
         if bypass_param is not None:
-            letter = self.footswitch_badge_letter(plugin, bypass_param)
+            letter = self._badge_letter(plugin, bypass_param)
             state = "On" if plugin.is_bypassed() else "Off"
             label = BadgedLabel(f"Bypass: {state}", letter)
             items.append((label, self.toggle_plugin_bypass_from_menu, plugin))
@@ -747,6 +789,12 @@ class Lcd:
             d = Parameterdialog(self.pstack, parameter,
                                 width=270, height=130, auto_destroy=True, title=title, timeout=timeout,
                                 action=self.parameter_commit, object=parameter)
+            plugin = (
+                next((p for p in self.current.pedalboard.plugins if p.instance_id == parameter.instance_id), None)
+                if self.current is not None else None
+            )
+            n = self.tweak_badge_number(plugin, parameter) if plugin is not None else None
+            d.set_badge(_TWEAK_BADGES.get(n) if n is not None else None)
             self.pstack.push_panel(d)
 
         self.w_parameter_dialogs[parameter.name] = d
