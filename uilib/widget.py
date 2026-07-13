@@ -25,6 +25,7 @@ from uilib.radius import Radius
 
 if TYPE_CHECKING:
     from uilib.container import ContainerWidget
+    from uilib.glyphs.badge import BadgeGlyph
     from uilib.panel import PanelStack
 
 # This is the root of all evil: the Widget class, parent of all things
@@ -158,6 +159,7 @@ class Widget:
         self.selectable = False
         self._painted = False
         self._dirty = False
+        self._badge: BadgeGlyph | None = None
 
         # Non-inherited attributes
         self.label = self._get_arg(kwargs, "label", None)
@@ -526,6 +528,7 @@ class Widget:
                     c.do_draw(pctx, c.box.offset(child_origin))
             self._draw_outline(pctx)
             self._draw_selection(pctx)
+            self._draw_corner_badge(pctx)
 
     def _draw_erase(self, ctx: PaintContext):
         erase = ctx.dirty_bounds
@@ -565,6 +568,27 @@ class Widget:
 
     def _draw(self, ctx: PaintContext):
         pass
+
+    # ── input-context badge (R4) ────────────────────────────────────────────
+    #
+    # Any widget can host a fixed encoder-binding marker (docs/r4-badge-
+    # surfaces.md §5) without knowing about panels or the binding table —
+    # the panel just calls set_badge() on whichever widget the binding is
+    # permanently attached to. Default placement is centred on the left edge;
+    # widgets with more specific geometry (e.g. ArcDialWidget, which knows
+    # where its own label sits) override _draw_corner_badge for a better spot.
+
+    def set_badge(self, badge: BadgeGlyph | None) -> None:
+        if badge == self._badge:
+            return
+        self._badge = badge
+        self.refresh()
+
+    def _draw_corner_badge(self, ctx: PaintContext) -> None:
+        if self._badge is None:
+            return
+        by = (ctx.height - self._badge.height) // 2
+        ctx.paste(self._badge.render(), (2, by))
 
     def sel_children(self):
         """Selection-tree expansion. Default: only self.

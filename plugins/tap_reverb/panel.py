@@ -46,8 +46,8 @@ _DB_STEP = 0.8
 
 _KNOB_STEPS = {"decay": _DECAY_STEP_MS, "drylevel": _DB_STEP, "wetlevel": _DB_STEP}
 
-_BADGE_TWEAK1 = BadgeGlyph("1")  # enc1, selection-dependent (SelectionEditEffect) — shown in the readout
-_BADGE_TWEAK2 = BadgeGlyph("2")  # enc2, fixed to mode — shown beside the mode readout's subtitle
+_BADGE_TWEAK1 = BadgeGlyph("1")  # enc1, selection-dependent (SelectionEditEffect) — shown in the readout only
+_BADGE_TWEAK2 = BadgeGlyph("2")  # enc2, fixed to mode — drawn on the mode selector itself (static, not selection-dependent)
 _BADGE_TWEAK3 = BadgeGlyph("3")  # enc3/Volume, fixed to decay — drawn on the knob itself (static, not selection-dependent)
 
 
@@ -115,6 +115,7 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
             parent=self,
         )
         self._mode_selector.set_value(self._state.mode)
+        self._mode_selector.set_badge(_BADGE_TWEAK2)
 
         col_w = _W // 3
         knob_w = RING_SPACING
@@ -260,7 +261,6 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
 
     def _update_readout(self) -> None:
         sel = self.sel_ref
-        self._readout.set_subtitle_badge(None)
         if isinstance(sel, ArcKnobWidget):
             val = self._current(sel.symbol)
             self._readout.set_text(f"{sel._label.capitalize()}: {sel.reading_text(val)}")
@@ -268,8 +268,10 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         elif isinstance(sel, ModeSelectorWidget):
             self._readout.set_text("Select reverb mode")
             self._readout.set_subtitle(f"{self._mode_selector.value + 1} of {self._mode_selector.max_index + 1}")
-            self._readout.set_badge(None)
-            self._readout.set_subtitle_badge(_BADGE_TWEAK2)
+            # enc1 still edits the selection here too (same symbol enc2 is fixed
+            # to) — the readout badge means "enc1 edits your selection", a fact
+            # that's true regardless of what's selected, not "enc2 is bound".
+            self._readout.set_badge(_BADGE_TWEAK1)
             return
         elif sel is self._btn_bypass:
             self._readout.set_text("Plugin bypassed" if self.plugin.is_bypassed() else "Bypass plugin")

@@ -37,7 +37,6 @@ from typing import Callable, Literal
 from uilib.box import Box
 from uilib.config import Color, Config, FontName
 from uilib.glyphs.arc_ring import ArcRingGlyph, ColorRGB
-from uilib.glyphs.badge import BadgeGlyph
 from uilib.misc import INACTIVE_SHADE, get_text_bbox, shade_color
 from uilib.paint import PaintContext
 from uilib.widget import Widget
@@ -191,7 +190,6 @@ class ArcDialWidget(Widget):
         kwargs.setdefault("bkgnd_color", (0, 0, 0))
         super().__init__(box=box, parent=parent, **kwargs)
         self._label = label
-        self._badge: BadgeGlyph | None = None
         self._minimum = minimum
         self._maximum = maximum
         self._color = color
@@ -215,15 +213,21 @@ class ArcDialWidget(Widget):
 
     # ── input-context badge (R4) ────────────────────────────────────────────
 
-    def set_badge(self, badge: BadgeGlyph | None) -> None:
-        """A fixed encoder-binding badge, drawn out of flow in the widget's
-        top-left corner — never joins the label string, so it can't nudge the
-        centred label/value text (R4 §5 places it "out of the flow", the same
-        placement idea as `TextWidget`'s left-margin badge)."""
-        if badge == self._badge:
+    def _draw_corner_badge(self, ctx: PaintContext) -> None:
+        """Centred on the opposite side of the ring from the label — the one
+        other symmetric spot on this widget, and never touches the label/value
+        text (`Widget.set_badge` stores it; this only overrides placement)."""
+        if self._badge is None:
             return
-        self._badge = badge
-        self.refresh()
+        cx = ctx.width // 2
+        cy = self._cy()
+        half = self._ring.half_size
+        bx = cx - self._badge.width // 2
+        if self._label_pos == "top":
+            by = cy + half + _LABEL_GAP
+        else:
+            by = cy - half - _LABEL_GAP - self._badge.height
+        ctx.paste(self._badge.render(), (bx, by))
 
     # ── ring vertical centre within the widget box ──────────────────────────
 
@@ -323,5 +327,3 @@ class ArcDialWidget(Widget):
             two_line=self._two_line,
             ring_dy=_RING_NUDGE_Y,
         )
-        if self._badge is not None:
-            ctx.paste(self._badge.render(), (2, 2))

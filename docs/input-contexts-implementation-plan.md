@@ -248,35 +248,63 @@ at 11pt renders the circled-digit glyph too small to read, and every surface
 should share one legible size, not one sized to whatever font the label
 happens to use.
 
-Landed instead, reusing machinery already built for the parameter menu:
-`uilib/glyphs/badge.py`'s `BadgeGlyph` (a fixed-size filled disc with a baked
-character — already used by `Menu`/`TextWidget`'s out-of-flow badge, R4 §5)
-is now also `ArcDialWidget`'s mechanism (`set_badge(BadgeGlyph | None)`,
-`uilib/glyphs/arc_dial.py`) — pasted at a fixed top-left corner offset,
-never touching the label string. `ReadoutBar` (`plugins/layouts/readout_bar.py`)
-gained the same idea for its two text slots: `set_badge`/`set_subtitle_badge`,
-each drawn immediately left of that slot's text with the text's start
-position shifted to make room (the tight 6px readout margin has no room to
-overflow further left the way `TextWidget` does).
+**Golden rule established (second pass, after a live walkthrough of
+gx_cabinet):** ① is special — every migrated panel binds enc1 to
+`SelectionEditEffect` ("edit whatever is currently selected"), so ① belongs
+**in the status bar only, shown persistently** whenever a selection exists,
+never on the selected widget itself. This teaches the invariant ("enc1 always
+edits your selection") the same way the main menu's brief top-left flash
+teaches a selection change, except here it's persistent because the
+association needs to be learned, not just confirmed. enc2/enc3 are the
+opposite case in `gx_cabinet`/`tap_reverb`: both are **fixed** bindings
+(`c_model`, `CLevel`/`decay`) that don't depend on what's selected, so they
+badge the widget they're permanently bound to, not the status bar. The status
+bar is reserved for enc2/enc3 only on panels where *those* are themselves
+contextual/selection-dependent (parametric EQ's freq/Q-of-selected-band is
+the one example so far, not yet migrated to badges).
 
-Split by row, per `gx_cabinet`/`tap_reverb` (identical three-row shape):
-- **enc3/Volume** (fixed `ParamEffect`, e.g. `CLevel`/`decay`) — a static fact
-  about that knob regardless of selection, so it stays a `BadgeGlyph` pasted
-  on the knob itself, set once at `build_widgets` time.
-- **enc1** (`SelectionEditEffect`, follows whichever knob is focused) — moved
-  entirely off the knobs and into `ReadoutBar.set_badge`, shown beside the
-  `"Level: 1.00 ×"`-style readout text whenever an `ArcKnobWidget` is
-  selected.
-- **enc2** (fixed `ParamEffect` on `c_model`/`mode`, targets
-  `ModeSelectorWidget`) — also moved to the status bar,
-  `ReadoutBar.set_subtitle_badge`, shown beside the `"1 of 19"` counter (the
-  mode selector has no label-text slot of its own to badge).
+Mechanism, reusing `uilib/glyphs/badge.py`'s `BadgeGlyph` (a fixed-size white
+disc with a baked black character — the same glyph already used by
+`Menu`/`TextWidget`'s out-of-flow left-margin badge, R4 §5) everywhere:
+- **`Widget` itself** (`uilib/widget.py`) now hosts a generic
+  `set_badge(BadgeGlyph | None)` / `_draw_corner_badge()`, called from
+  `do_draw` after selection/outline. Default placement is the top-left
+  corner. This is the answer to "can a widget join our hierarchy" — any
+  widget gets a badge for free by calling `set_badge()`; no per-widget
+  plumbing required. (`uilib.glyphs.badge` is imported under `TYPE_CHECKING`
+  only in `widget.py` to avoid a real cycle: `uilib/glyphs/__init__.py`
+  already imports `ArcDialWidget`, which imports `Widget` — `widget.py`
+  importing `uilib.glyphs.badge` at module scope would import the whole
+  `uilib.glyphs` package first and deadlock. Same pattern `_draw_selection`
+  already uses for `RoundedRectGlyph`.)
+- **`ArcDialWidget`** overrides `_draw_corner_badge` to place its badge
+  centred on the ring's horizontal axis, on the opposite side from the label
+  (bottom if `label_pos="top"`, and vice versa) — "the one other symmetric
+  spot on the widget," not a corner, since the ring itself is centred.
+- **`ModeSelectorWidget`** needed zero changes — it inherits the default
+  left-edge (vertically centred) placement from `Widget` and just calls
+  `set_badge()`.
+- **`ReadoutBar`** (`plugins/layouts/readout_bar.py`) shadows the base
+  `Widget.set_badge` with its own (stored as `_readout_badge` to avoid
+  colliding with the base `_badge` field, which stays permanently `None` and
+  inert here) — its badge tracks whichever text is currently displayed, so
+  it's drawn immediately left of that text rather than in a fixed corner.
+
+Applied to `gx_cabinet`/`tap_reverb` (identical three-row shape):
+- **enc3/Volume** (fixed, e.g. `CLevel`/`decay`) — `BadgeGlyph` on the arc
+  knob itself, set once at `build_widgets` time, opposite the label.
+- **enc2** (fixed, `c_model`/`mode`) — `BadgeGlyph` on the mode selector
+  itself, set once at `build_widgets` time, default left-edge placement.
+- **enc1** (`SelectionEditEffect`) — `ReadoutBar.set_badge`, shown beside
+  whatever readout text is current, for *every* selection state (an
+  `ArcKnobWidget` or the `ModeSelectorWidget` alike — enc1 does something
+  meaningful in both, so the badge's claim is true in both).
 
 All three verified visually (cropped/zoomed snapshot PNGs), not just by
-pyright/pytest: the corner badge is legible and doesn't collide with the
-knob label, both readout badges sit cleanly beside their text, and the
-corner badge and the readout badge compose correctly when both are active on
-the same knob.
+pyright/pytest: ① persists in the status bar across every selection state, ②
+and ③ sit fixed on their respective widgets regardless of what's selected,
+and nothing collides when a knob carries both its own fixed badge and the
+selection ring simultaneously.
 
 Deliberately out of scope for this slice, left as gaps:
 - **No L1/L2/L3 degradation** (shadowed-dot, no-binding coach mark, generic
@@ -286,11 +314,19 @@ Deliberately out of scope for this slice, left as gaps:
   always-`ACTIVE` (no `enabled_when`), so there was nothing to distinguish.
   NAM (§8), which does have real `enabled_when` shadowing, is the natural
   next target to force L1 into existence.
+- **The status-bar-only-for-contextual-tweaks half of the golden rule is
+  unexercised** — no migrated panel yet has a genuinely contextual enc2/enc3
+  (parametric EQ's freq/Q-of-selected-band is the candidate; parametric EQ
+  itself isn't migrated to badges yet). `ReadoutBar` has no
+  "subtitle badge"/second-slot mechanism anymore (removed after this
+  review) — add it back when a real contextual-enc2/3 panel needs it, rather
+  than speculatively now.
 - **Other 6+ R4 surfaces** (footswitch strip, parameter-list menu,
   `Parameterdialog`, edit-in-place, EQ readout strips, multiband/NAM) still
-  unbadged. Each needs its own placement per §5.1's table; the status-bar
-  pattern established here (selection-dependent bindings go in the readout,
-  not on the selected widget) generalizes to any panel with a readout bar.
+  unbadged. Each needs its own placement per §5.1's table; the
+  `Widget.set_badge` mechanism generalizes to any of them directly, and the
+  golden rule (① in the status bar only; fixed tweaks on their own widget)
+  decides placement without further debate.
 
 ## 8. Escape hatches
 
