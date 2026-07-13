@@ -28,7 +28,7 @@ from uilib.text import TextWidget
 @dataclass(frozen=True)
 class BadgedLabel:
     """A plain-text row label with a binding-marker badge anchored to the
-    left of the (still centered) text — see `TextWidget.badge`
+    left of the (still centered) text — see `TextWidget.set_badge`
     (docs/r4-badge-surfaces.md §5). `char` is None for an unbadged row."""
 
     text: str

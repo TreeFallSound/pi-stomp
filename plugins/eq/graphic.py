@@ -28,6 +28,7 @@ from plugins.eq.band_spec import GraphicBandSpec
 from plugins.eq.parametric import paint_band_node, _fmt_freq as _fmt_freq_long
 from uilib.box import Box
 from uilib.config import Config
+from uilib.glyphs.badge import BadgeGlyph
 from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size
 from uilib.widget import Widget
 
@@ -56,6 +57,11 @@ FILL_INACTIVE = (160, 160, 160)
 FILL_ACTIVE = (240, 240, 240)
 READOUT_COLOR = (200, 200, 200)
 FREQ_LABEL_COLOR = (110, 110, 110)
+
+# enc1 is always SelectionEditEffect here — badge lives in the readout, not
+# on any bar, since the dense 32px columns have no room for it (R4 §3a).
+_BADGE_TWEAK1 = BadgeGlyph("1")
+_BADGE_GAP = 3
 
 
 # ── label helpers ────────────────────────────────────────────────────────────
@@ -266,9 +272,12 @@ class GraphicReadoutWidget(Widget):
         if self._message is not None:
             ctx.draw_text((6, 1), self._message, fill=READOUT_COLOR, font=self._font)
             return
-        # Left: band number
+        # Left: badge (if any, drawn by `_draw_badge`) + band number
+        band_x = 6
+        if self._badge is not None:
+            band_x += self._badge.width + _BADGE_GAP
         band_str = f"Band {self._band_idx + 1}/{self._band_total}"
-        ctx.draw_text((6, 1), band_str, fill=READOUT_COLOR, font=self._font)
+        ctx.draw_text((band_x, 1), band_str, fill=READOUT_COLOR, font=self._font)
         # Center: frequency
         if self._freq:
             tw, _ = get_text_size(self._freq, self._font)
@@ -277,6 +286,14 @@ class GraphicReadoutWidget(Widget):
         if self._gain:
             tw, _ = get_text_size(self._gain, self._font)
             ctx.draw_text((_W - 6 - tw, 1), self._gain, fill=READOUT_COLOR, font=self._font)
+
+    def _draw_badge(self, ctx) -> None:
+        """enc1 badge for the selected band — see `_BADGE_TWEAK1`. Suppressed
+        while a message occupies the strip (no band selected)."""
+        if self._badge is None or self._message is not None:
+            return
+        by = (ctx.height - self._badge.height) // 2
+        ctx.paste(self._badge.render(), (6, by))
 
 
 # ── GraphicEqState ──────────────────────────────────────────────────────────
@@ -497,14 +514,19 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
                 else:
                     gain = f"{p.gain_db:+.1f} dB"
                 self._readout.set_fields(idx, len(self.bands), freq, gain)
+            self._readout.set_badge(_BADGE_TWEAK1)
         elif sel_w is self._btn_bypass:
             self._readout.set_message("Plugin bypassed" if self.plugin.is_bypassed() else "Bypass plugin")
+            self._readout.set_badge(None)
         elif sel_w is self._btn_back:
             self._readout.set_message("Close EQ")
+            self._readout.set_badge(None)
         elif sel_w is self._btn_reset:
             self._readout.set_message("Reset to pedalboard")
+            self._readout.set_badge(None)
         else:
             self._readout.set_message("")
+            self._readout.set_badge(None)
 
     def _select_widget_ref(self, w):  # type: ignore[override]
         super()._select_widget_ref(w)

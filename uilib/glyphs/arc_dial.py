@@ -213,7 +213,7 @@ class ArcDialWidget(Widget):
 
     # ── input-context badge (R4) ────────────────────────────────────────────
 
-    def _draw_corner_badge(self, ctx: PaintContext) -> None:
+    def _draw_badge(self, ctx: PaintContext) -> None:
         """Centred on the opposite side of the ring from the label — the one
         other symmetric spot on this widget, and never touches the label/value
         text (`Widget.set_badge` stores it; this only overrides placement)."""

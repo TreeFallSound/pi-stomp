@@ -36,11 +36,11 @@ from plugins.eq.curve import (
 )
 from uilib.box import Box
 from uilib.config import Config
+from uilib.glyphs.badge import BadgeGlyph
 from uilib.glyphs.tint import tint_mask
 from uilib.glyphs.circle import CircleGlyph, RingGlyph
 from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size
 from uilib.widget import Widget
-
 
 # Type alias for the per-band geometry we cache for diff-paint
 # (image_x, image_y, color_rgb, enabled).
@@ -599,6 +599,19 @@ _READOUT_COLS_LEFT: tuple[tuple[str, int], ...] = (
 )
 _READOUT_GAIN_RIGHT: int = _W - 6
 
+# enc1/2/3 are all live simultaneously here (gain/freq/Q of the selected
+# band) — unlike every other migrated panel's readout, which needs at most
+# one badge at a time. `ReadoutWidget` stores its own three glyphs, keyed by
+# column, and overrides `_draw_badge` to paint all of them, leaving the
+# inherited single-slot `Widget._badge`/`set_badge()` untouched and unused
+# on this class (docs/input-contexts-implementation-plan.md §9 step 4/8).
+_COL_BADGES: dict[str, BadgeGlyph] = {
+    "gain": BadgeGlyph("1"),
+    "freq": BadgeGlyph("2"),
+    "q": BadgeGlyph("3"),
+}
+_BADGE_GAP = 3
+
 
 class ReadoutWidget(Widget):
     """Top-bar with statically-positioned name / freq / Q / gain columns."""
@@ -610,6 +623,7 @@ class ReadoutWidget(Widget):
         self._fields: dict[str, str] = {k: "" for k, _ in _READOUT_COLS_LEFT}
         self._fields["gain"] = ""
         self._message: Optional[str] = None
+        self._badged: bool = False
 
     def set_fields(self, name: str, freq: str, q: str, gain: str) -> None:
         new = {"name": name, "freq": freq, "q": q, "gain": gain}
@@ -623,6 +637,14 @@ class ReadoutWidget(Widget):
         if self._message == text:
             return
         self._message = text
+        self.refresh()
+
+    def set_badged(self, badged: bool) -> None:
+        """Show/hide the gain/freq/Q badges — on whenever a band is
+        selected (all three encoders are then live), off otherwise."""
+        if badged == self._badged:
+            return
+        self._badged = badged
         self.refresh()
 
     def _draw_erase(self, ctx) -> None:
@@ -641,6 +663,24 @@ class ReadoutWidget(Widget):
             tw, _ = get_text_size(gain, self._font)
             x = _READOUT_GAIN_RIGHT - tw
             ctx.draw_text((x, 1), gain, fill=READOUT_COLOR, font=self._font)
+
+    def _draw_badge(self, ctx) -> None:
+        """One badge per live encoder, each sitting in its column's left
+        gutter without shifting that column's (fixed-position) text."""
+        if not self._badged or self._message is not None:
+            return
+        for key, x in _READOUT_COLS_LEFT:
+            badge = _COL_BADGES.get(key)
+            if badge is None:
+                continue
+            by = (ctx.height - badge.height) // 2
+            ctx.paste(badge.render(), (x - _BADGE_GAP - badge.width, by))
+        gain = self._fields.get("gain", "")
+        badge = _COL_BADGES["gain"]
+        tw, _ = get_text_size(gain, self._font) if gain else (0, 0)
+        gain_x = _READOUT_GAIN_RIGHT - tw
+        by = (ctx.height - badge.height) // 2
+        ctx.paste(badge.render(), (gain_x - _BADGE_GAP - badge.width, by))
 
 
 # ── invisible band selectable ────────────────────────────────────────────────
@@ -876,17 +916,23 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
             p = self._state.bands.get(sel_w.band.name)
             if p is None:
                 self._readout.set_message("")
+                self._readout.set_badged(False)
             else:
                 name, freq, q, gain = band_readout_fields(sel_w.band, p)
                 self._readout.set_fields(name, freq, q, gain)
+                self._readout.set_badged(True)
         elif sel_w is self._btn_bypass:
             self._readout.set_message("Plugin bypassed" if self.plugin.is_bypassed() else "Bypass plugin")
+            self._readout.set_badged(False)
         elif sel_w is self._btn_back:
             self._readout.set_message("Close EQ")
+            self._readout.set_badged(False)
         elif sel_w is self._btn_reset:
             self._readout.set_message("Reset to pedalboard")
+            self._readout.set_badged(False)
         else:
             self._readout.set_message("")
+            self._readout.set_badged(False)
 
     def _select_widget_ref(self, w):  # type: ignore[override]
         super()._select_widget_ref(w)

@@ -528,7 +528,7 @@ class Widget:
                     c.do_draw(pctx, c.box.offset(child_origin))
             self._draw_outline(pctx)
             self._draw_selection(pctx)
-            self._draw_corner_badge(pctx)
+            self._draw_badge(pctx)
 
     def _draw_erase(self, ctx: PaintContext):
         erase = ctx.dirty_bounds
@@ -571,12 +571,21 @@ class Widget:
 
     # ── input-context badge (R4) ────────────────────────────────────────────
     #
-    # Any widget can host a fixed encoder-binding marker (docs/r4-badge-
+    # `do_draw` always calls `_draw_badge` once, right after `_draw`/outline/
+    # selection — this is the *only* badge call site in the framework. Any
+    # widget can host a fixed encoder-binding marker (docs/r4-badge-
     # surfaces.md §5) without knowing about panels or the binding table —
     # the panel just calls set_badge() on whichever widget the binding is
     # permanently attached to. Default placement is centred on the left edge;
     # widgets with more specific geometry (e.g. ArcDialWidget, which knows
-    # where its own label sits) override _draw_corner_badge for a better spot.
+    # where its own label sits; TextWidget, which anchors to the rendered
+    # text) override `_draw_badge` for a better spot instead of adding a
+    # second call site — that duplication is what caused a real double-paint
+    # bug once already. A widget that legitimately needs more than one badge
+    # at a time (e.g. parametric EQ's readout: gain/freq/Q are three
+    # simultaneously-live bindings) stores its own glyph(s) under its own
+    # field name and overrides `_draw_badge` to paint them all, leaving this
+    # base `_badge`/`set_badge()` untouched and inert on that class.
 
     def set_badge(self, badge: BadgeGlyph | None) -> None:
         if badge == self._badge:
@@ -584,7 +593,7 @@ class Widget:
         self._badge = badge
         self.refresh()
 
-    def _draw_corner_badge(self, ctx: PaintContext) -> None:
+    def _draw_badge(self, ctx: PaintContext) -> None:
         if self._badge is None:
             return
         by = (ctx.height - self._badge.height) // 2

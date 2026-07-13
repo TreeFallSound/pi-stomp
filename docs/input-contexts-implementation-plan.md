@@ -314,19 +314,59 @@ Deliberately out of scope for this slice, left as gaps:
   always-`ACTIVE` (no `enabled_when`), so there was nothing to distinguish.
   NAM (§8), which does have real `enabled_when` shadowing, is the natural
   next target to force L1 into existence.
-- **The status-bar-only-for-contextual-tweaks half of the golden rule is
-  unexercised** — no migrated panel yet has a genuinely contextual enc2/enc3
-  (parametric EQ's freq/Q-of-selected-band is the candidate; parametric EQ
-  itself isn't migrated to badges yet). `ReadoutBar` has no
-  "subtitle badge"/second-slot mechanism anymore (removed after this
-  review) — add it back when a real contextual-enc2/3 panel needs it, rather
-  than speculatively now.
-- **Other 6+ R4 surfaces** (footswitch strip, parameter-list menu,
-  `Parameterdialog`, edit-in-place, EQ readout strips, multiband/NAM) still
-  unbadged. Each needs its own placement per §5.1's table; the
-  `Widget.set_badge` mechanism generalizes to any of them directly, and the
-  golden rule (① in the status bar only; fixed tweaks on their own widget)
-  decides placement without further debate.
+- **Other surfaces** (`Parameterdialog`, edit-in-place, main-panel plugin
+  grid, multiband menu slots, NAM setup-view knobs) still unbadged. Each
+  needs its own placement per §5.1's table; the mechanism generalizes to any
+  of them directly, and the golden rule (① in the status bar only; fixed
+  tweaks on their own widget) decides placement without further debate.
+
+**Status: second slice landed — EQ readout strips (the worst-case density
+panels R4 called out) and the badge mechanism itself unified.** Two threads:
+
+1. **Badge mechanism unification.** Building the EQ badges surfaced a real
+   footgun: `ReadoutBar` and a hand-copied `GraphicReadoutWidget` version each
+   shadowed `Widget.set_badge()` with their own field (`_readout_badge`) to
+   get text-relative positioning instead of the base's fixed-corner spot —
+   documented as deliberate, but the *documentation* didn't stop a second
+   copy from re-introducing the exact bug the first one was written to avoid:
+   naming its shadow field `_badge` (the base class's own field), which made
+   `do_draw()`'s automatic corner-badge paint fire *in addition to* the
+   widget's own manual paste, rendering the glyph twice. Fixed by collapsing
+   to one call site: `Widget.do_draw()` now calls a single `_draw_badge(ctx)`
+   hook (renamed from `_draw_corner_badge`) unconditionally after `_draw()`;
+   any widget needing custom placement overrides that hook directly instead
+   of adding a second, parallel draw call. `ArcDialWidget` (already an
+   overrider) just got renamed; `TextWidget` (the parameter-menu/footswitch
+   row badge, pre-existing R4 work) and `ReadoutBar`/`GraphicReadoutWidget`
+   were migrated onto the shared `_badge`/`set_badge()` storage, deleting
+   their shadow fields entirely. All 1144 tests pass byte-identical — the
+   unification is behavior-preserving, not a visual change.
+2. **Graphic EQ** (`GraphicReadoutWidget`) gets a single ① badge, prepended
+   to "Band X/Y" in the readout strip, shown whenever a band is selected
+   (enc1 is its only live binding — enc2/enc3 are permanent `NoneEffect`s per
+   the existing `declare_bindings()`) and hidden for chrome-button selection.
+3. **Parametric EQ** (`ReadoutWidget`) is the first panel to exercise the
+   golden rule's other half, flagged as an open gap in the first badge slice:
+   a genuinely contextual enc2/enc3 (gain/freq/Q of the selected band are
+   *all three* simultaneously live and selection-dependent — no other
+   migrated panel has more than one). One widget, three badges at once,
+   which doesn't fit the base class's single-slot `_badge`/`set_badge()` — so
+   `ReadoutWidget` stores its own `dict[str, BadgeGlyph]` keyed by readout
+   column and overrides `_draw_badge` to paint all three (①=gain, ②=freq,
+   ③=Q), leaving the inherited single-slot field untouched and unused on
+   this class, same non-collision pattern as before but now built on the one
+   canonical hook instead of a second one. Each badge sits in its column's
+   left gutter without shifting that column's fixed-position text (`name` is
+   unbadged — it's the band's identity, not something an encoder edits).
+   Badges show/hide together via `set_badged(bool)`, in lockstep with the
+   panel's `on_event` guard that already governs whether these encoders are
+   live for the current selection state. All snapshots regenerated and
+   visually confirmed (band-selected: `②158 Hz　③Q 1.00　①disabled`;
+   chrome-selected: no badges).
+
+Remaining R4 gaps unchanged from the list above: L1/L2/L3 degradation,
+`Parameterdialog`, edit-in-place, main-panel plugin grid, multiband menu
+slots, NAM setup-view knobs.
 
 ## 8. Escape hatches
 
