@@ -59,8 +59,6 @@ uv-managed venv. Don't try to pip-install the system ones.
 
 ## Traps
 
-Things that cost hours if you don't know them. None are derivable from reading the code.
-
 - **Never create a bare `pygame.Surface((w, h))`.** It inherits the display format —
   opaque RGB when headless (device/tests) but ARGB under a real window driver (the
   cocoa emulator). The stray alpha silently breaks SRCALPHA compositing; glyph pastes
