@@ -182,8 +182,10 @@ class ParamSlotWidget(Widget):
 
     def sync(self) -> None:
         param = self._param()
-        self._value = param.value if param is not None else None
-        self.refresh()
+        new_value = param.value if param is not None else None
+        if new_value != self._value:
+            self._value = new_value
+            self.refresh()
 
     def set_param(self, value: float) -> None:
         self._value = value

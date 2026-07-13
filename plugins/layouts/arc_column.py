@@ -73,10 +73,15 @@ class ArcColumnWidget(Widget):
         return self._owner.plugin.parameters.get(symbol)
 
     def sync(self) -> None:
+        changed = False
         for i, spec in enumerate(self._arcs):
             p = self._param(spec.symbol)
-            self._values[i] = p.value if p is not None else None
-        self.refresh()
+            v = p.value if p is not None else None
+            if v != self._values[i]:
+                self._values[i] = v
+                changed = True
+        if changed:
+            self.refresh()
 
     def sync_symbol(self, symbol: str) -> None:
         for i, spec in enumerate(self._arcs):
