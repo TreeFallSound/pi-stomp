@@ -1,6 +1,15 @@
 import pytest
 
-from uilib.spi_timing import DEFAULT_SOURCE_HZ, actual_spi_hz, spi_source_hz, transfer_ms
+from uilib.spi_timing import (
+    DEFAULT_PROFILE,
+    DEFAULT_SOURCE_HZ,
+    PUSH_PROFILE,
+    SPI_SOURCE_HZ,
+    actual_spi_hz,
+    push_profile,
+    spi_source_hz,
+    transfer_ms,
+)
 
 PI3 = 400_000_000  # v2 — BCM2837 VPU core clock
 PI5 = 200_000_000  # v3 — RP1 CLK_SYS
@@ -88,9 +97,49 @@ def test_source_defaults_on_unknown_soc(monkeypatch, tmp_path):
     assert spi_source_hz() == DEFAULT_SOURCE_HZ
 
 
+def test_every_known_soc_has_a_push_profile():
+    # push_profile() indexes PUSH_PROFILE with whatever soc_key() returns, and
+    # soc_key() answers from SPI_SOURCE_HZ. A SoC in one dict but not the other
+    # is a KeyError on that board and nowhere else.
+    assert SPI_SOURCE_HZ.keys() == PUSH_PROFILE.keys()
+
+
+def test_pi3_push_costs_more_than_pi5(tmp_path, monkeypatch):
+    # The CPU-bound terms are why the profile is per-SoC at all: an A53 pack is
+    # ~7x an A76's, and treating them alike over-admits inline pushes on v2.
+    dt = tmp_path / "compatible"
+
+    dt.write_bytes(b"brcm,bcm2837\0")
+    monkeypatch.setattr("uilib.spi_timing._DT_COMPATIBLE", dt)
+    pi3 = push_profile()
+
+    dt.write_bytes(b"brcm,bcm2712\0")
+    pi5 = push_profile()
+
+    assert pi3.pipeline_ms_per_px > 5 * pi5.pipeline_ms_per_px
+    assert pi3.fixed_ms > pi5.fixed_ms
+
+
+def test_unknown_soc_on_a_real_board_gets_the_slow_profile(tmp_path, monkeypatch):
+    # A Pi 2, or a Pi 6 we've never benched: guessing Pi 5's costs here would
+    # over-admit inline pushes and stall the poll loop.
+    dt = tmp_path / "compatible"
+    dt.write_bytes(b"brcm,bcm9999\0")
+    monkeypatch.setattr("uilib.spi_timing._DT_COMPATIBLE", dt)
+    assert push_profile() == PUSH_PROFILE["brcm,bcm2837"]
+
+
+def test_off_device_gets_the_default_profile(tmp_path, monkeypatch):
+    # No device tree at all (mac, emulator, CI) — pair with DEFAULT_SOURCE_HZ.
+    monkeypatch.setattr("uilib.spi_timing._DT_COMPATIBLE", tmp_path / "absent")
+    assert push_profile() == DEFAULT_PROFILE
+
+
 def test_transfer_ms_scales_with_clock():
     slow = transfer_ms(76800, 50_000_000)
     fast = transfer_ms(76800, 400_000_000 / 6)
     assert slow > fast
     # Wire time dominates a full frame: 66.67 MHz should be meaningfully cheaper.
-    assert fast / slow == pytest.approx(0.79, abs=0.03)
+    # The floor is the pure wire ratio, 50/66.67 = 0.75; the CPU-bound terms are
+    # what hold it above that, so this tracks the host's push profile.
+    assert fast / slow == pytest.approx(0.76, abs=0.03)
