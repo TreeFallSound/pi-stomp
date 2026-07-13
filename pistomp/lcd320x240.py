@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+import functools
 import logging
 import os
 import time
@@ -55,7 +56,6 @@ from uilib import (
 from uilib.glyphs.badge import BadgeGlyph
 from uilib.gridpanel import GridPanel, TILE_W, CHANNEL
 from uilib.menu import BadgedLabel
-from uilib.rich_text import RichTextWidget
 from uilib.pygame_init import font as _make_font
 from uilib.lcd_ili9341 import LcdIli9341
 from uilib.text import PluginTile
@@ -65,7 +65,7 @@ from pistomp.input.event import ControllerEvent
 from pistomp.input.sink import InputSink
 from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
 from blend.manager import BlendMode
-from plugins.base import BYPASS_ACTIVE_COLOR, PluginPanel
+from plugins.base import PluginPanel
 
 if TYPE_CHECKING:
     from modalapi.modhandler import Modhandler
@@ -531,7 +531,7 @@ class Lcd:
         self.draw_selection_menu(items, "Snapshots", auto_dismiss=True, dismiss_option=True)
 
     def draw_selection_menu(self, items, title="", auto_dismiss=False, dismiss_option=False,
-                            font=None, title_font=None, default_item=None, footer_items=()):
+                            font=None, title_font=None, default_item=None):
         # items is a list of tuples: (label, callback, arg) or (label, callback, arg, is_active)
         # or (label, callback, arg, is_active, long_callback) where long_callback is called
         # instead of callback on a long press.
@@ -550,8 +550,7 @@ class Lcd:
         if title_font is not None:
             extra['title_font'] = title_font
         m = Menu(title=title, items=items, auto_destroy=True, default_item=default_item, max_width=180, max_height=200,
-                 auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action,
-                 footer_items=footer_items, **extra)
+                 auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action, **extra)
         self.pstack.push_panel(m)
         return m
 
@@ -619,7 +618,15 @@ class Lcd:
             if panel_cls is not None:
                 self.handler.show_fullscreen_panel(plugin, panel_cls)
             else:
-                self.draw_parameter_menu(plugin)
+                from plugins.parameter_window import ParameterWindow
+                badge_fn = functools.partial(self._badge_letter, plugin)
+                panel = ParameterWindow(
+                    plugin=plugin,
+                    handler=self.handler,
+                    on_dismiss=self.handler.hide_fullscreen_panel,
+                    badge_fn=badge_fn,
+                )
+                self.pstack.push_panel(panel)
 
     def footswitch_event(self, event, widget, footswitch):
         if event == InputEvent.CLICK:
@@ -705,7 +712,9 @@ class Lcd:
                 if not isinstance(decl.control.id, str):
                     continue
                 for effect in decl.effects:
-                    if isinstance(effect, ParamEffect) and effect.plugin is plugin and effect.symbol == param.name:
+                    # Match on symbol, not name: `name` is the shortName, and for
+                    # :bypass the two differ ("bypass" vs ":bypass").
+                    if isinstance(effect, ParamEffect) and effect.plugin is plugin and effect.symbol == param.symbol:
                         controller = self.handler.hardware.controllers.get(decl.control.id)
                         if isinstance(controller, Footswitch) and controller.id is not None:
                             return chr(ord('A') + controller.id)
@@ -727,7 +736,7 @@ class Lcd:
                 if not isinstance(decl.control.id, str):
                     continue
                 for effect in decl.effects:
-                    if isinstance(effect, ParamEffect) and effect.plugin is plugin and effect.symbol == param.name:
+                    if isinstance(effect, ParamEffect) and effect.plugin is plugin and effect.symbol == param.symbol:
                         controller = self.handler.hardware.controllers.get(decl.control.id)
                         if (
                             isinstance(controller, EncoderController)
@@ -746,42 +755,6 @@ class Lcd:
             return letter
         n = self.tweak_badge_number(plugin, param)
         return str(n) if n is not None else None
-
-    def toggle_plugin_bypass_from_menu(self, plugin):
-        """A5: :bypass is a menu action, not just tile chrome — the footer
-        button drives the same toggle path as a tile short-press."""
-        widget = next((w for w in self.w_plugins if w.object == plugin), None)
-        self.handler.toggle_plugin_bypass(widget, plugin)
-
-    def draw_parameter_menu(self, plugin):
-        items = []
-        for (name, param) in sorted(plugin.parameters.items()):
-            if name != Token.COLON_BYPASS:
-                letter = self._badge_letter(plugin, param)
-                items.append((BadgedLabel(name, letter), self.draw_parameter_dialog, param))
-
-        bypass_param = plugin.parameters.get(Token.COLON_BYPASS)
-        if bypass_param is None:
-            self.draw_selection_menu(items, "Parameters")
-            return
-
-        # A5: :bypass shares the back-arrow row rather than costing a whole one.
-        # A UI bypass gets no echo, so restyle the button off local state.
-        btn: TextWidget | RichTextWidget | None = None
-
-        def toggle(p):
-            self.toggle_plugin_bypass_from_menu(p)
-            if btn is not None:
-                btn.set_background(BYPASS_ACTIVE_COLOR if p.is_bypassed() else (0, 0, 0))
-                btn.refresh()
-
-        letter = self._badge_letter(plugin, bypass_param)
-        footer = ((BadgedLabel("Bypass", letter), toggle, plugin),)
-        m = self.draw_selection_menu(items, "Parameters", footer_items=footer)
-        btn = m.footer_widgets[-1]  # the back arrow is prepended ahead of ours
-        if plugin.is_bypassed():
-            btn.set_background(BYPASS_ACTIVE_COLOR)
-            btn.refresh()
 
     def draw_symbol_menu(
         self, plugin: Plugin, rows: tuple[tuple[str, str], ...], title: str = "", on_change: Callable[[], None] | None = None

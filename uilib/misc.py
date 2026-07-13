@@ -70,7 +70,7 @@ def trace(obj, *args):
 # Cached: walking font.get_metrics() glyph-by-glyph costs ~20us, and callers hit
 # this several times per widget draw (per *character* when truncating a label).
 @lru_cache(maxsize=1024)
-def get_text_size(text_string, font):
+def get_text_size(text_string, font, size=0):
     """Return (width, height) of `text_string` rendered with `font`.
 
     Width matches PIL's `font.getbbox(text)[2] - getbbox(text)[0]` exactly:
@@ -83,9 +83,12 @@ def get_text_size(text_string, font):
 
     Height = font ascender + font descender + per-text glyph descent overflow
     (for descender glyphs like g/p/y), matching PIL's `bbox[3] + descent`.
+
+    `size` overrides the font's default point size for this measurement only
+    (e.g. for supersampled rendering) — 0 means "use the font's own size".
     """
-    asc = int(font.get_sized_ascender())
-    desc = abs(int(font.get_sized_descender()))
+    asc = int(font.get_sized_ascender(size))
+    desc = abs(int(font.get_sized_descender(size)))
     line_height = asc + desc
     if not text_string:
         return (0, line_height)
@@ -101,7 +104,7 @@ def get_text_size(text_string, font):
     ink_right = 0.0
     has_any = False
     glyph_desc = 0
-    for m in font.get_metrics(text_string):
+    for m in font.get_metrics(text_string, size=size):
         if m is None:
             continue
         min_x = _signed(m[0])
@@ -131,6 +134,23 @@ def get_text_size(text_string, font):
 # ── common UI utilities ─────────────────────────────────────────────────────
 
 INACTIVE_SHADE = 0.45
+
+# Per-unit arc-ring colours. Derived from the parameter's unit_symbol at render
+# time so subclasses don't need to pick colours per slot.
+_UNIT_COLORS: dict[str, tuple[int, int, int]] = {
+    "dB": (255, 180, 80),
+    "Hz": (110, 200, 230),
+    "ms": (130, 220, 110),
+    "s": (130, 220, 110),
+    "%": (200, 200, 200),
+}
+
+
+def color_for_param(param) -> tuple[int, int, int]:
+    """Return an arc-ring colour derived from *param*'s unit symbol."""
+    if param is not None and param.unit_symbol is not None:
+        return _UNIT_COLORS.get(param.unit_symbol, (200, 200, 200))
+    return (200, 200, 200)
 
 
 def shade_color(color: tuple[int, int, int], factor: float) -> tuple[int, int, int]:

@@ -29,6 +29,18 @@ def extra_data_as(plugin: Plugin, kind: type[_TExtra]) -> _TExtra | None:
 
 
 @dataclass(frozen=True)
+class PinnedParam:
+    """One arc-ring slot in a parameter window.
+
+    Color is derived from the parameter's unit at render time, not stored here.
+    """
+
+    symbol: str
+    label: str
+    display_fn: Callable[[float], str] | None = None
+
+
+@dataclass(frozen=True)
 class PluginCustomization:
     panel_cls: type[PluginPanel] | None = None
     display_name: str | None = None
@@ -42,6 +54,10 @@ class PluginCustomization:
     # Per-symbol edit-math classification, supplementing the LV2 port's
     #  Symbols absent here are ParamRole.GENERIC.
     param_roles: dict[str, ParamRole] = field(default_factory=dict, compare=False, hash=False)
+
+    # Arc-ring slots pinned to the top of the parameter window. When set, these
+    # replace the heuristic (first N continuous params). None = use heuristic.
+    pinned_params: tuple[PinnedParam, ...] | None = None
 
 
 class Customizer(Protocol):

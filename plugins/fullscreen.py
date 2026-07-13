@@ -50,7 +50,7 @@ class FullscreenPluginPanel(PluginPanel[TState]):
         self._btn_v_margin = max(0, (BTN_H - btn_text_h) // 2)
 
         self._btn_back, self._btn_bypass, self._btn_reset = build_bottom_row(
-            panel=self,
+            parent=self,
             width=_W,
             bottom_y=_BTN_Y,
             font=self._btn_font,

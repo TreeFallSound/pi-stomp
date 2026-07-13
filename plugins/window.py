@@ -13,6 +13,7 @@ from modalapi.plugin import Plugin
 from pistomp.handler import Handler
 from plugins.base import PluginPanel, TState
 from plugins.chrome import BTN_GAP, BTN_H, MIN_CHROME_WIDTH, build_bottom_row
+from plugins.scheme import scheme_for_category
 from uilib.box import Box
 from uilib.config import Config
 from uilib.dialog import Dialog
@@ -58,15 +59,17 @@ class PluginWindow(PluginPanel[TState], Dialog):
         self._title_font = cfg.get_font("default_title")
         self._btn_font = cfg.get_font("small")
 
+        scheme = scheme_for_category(plugin.category)
+
         Dialog.__init__(
-            self, width=w, height=h, title=plugin.display_name, title_font=self._title_font, auto_destroy=True
+            self, width=w, height=h, title=plugin.display_name, title_font=self._title_font, auto_destroy=True, scheme=scheme
         )
 
         btn_y = h - BTN_H - BTN_GAP
         _, btn_text_h = get_text_size("Bypass", self._btn_font)
         btn_v_margin = max(0, (BTN_H - btn_text_h) // 2)
         self._btn_back, self._btn_bypass, self._btn_reset = build_bottom_row(
-            panel=self,
+            parent=self,
             width=w,
             bottom_y=btn_y,
             font=self._btn_font,

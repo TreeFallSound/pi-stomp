@@ -15,10 +15,10 @@ from plugins.multiband_menu import MultibandWindow, ParamSlot
 class CapsNoisegateWindow(MultibandWindow):
     def build_slots(self):
         return [
-            ParamSlot("open", "Open", (255, 180, 80), display_fn=self._fmt_db),
-            ParamSlot("close", "Close", (210, 130, 230), display_fn=self._fmt_db),
-            ParamSlot("attack", "Attack", (130, 220, 110), display_fn=self._fmt_ms),
-            ParamSlot("mains", "Mains", (110, 200, 230), display_fn=self._fmt_hz),
+            ParamSlot("open", "Open", display_fn=self._fmt_db),
+            ParamSlot("close", "Close", display_fn=self._fmt_db),
+            ParamSlot("attack", "Attack", display_fn=self._fmt_ms),
+            ParamSlot("mains", "Mains", display_fn=self._fmt_hz),
         ]
 
     @staticmethod

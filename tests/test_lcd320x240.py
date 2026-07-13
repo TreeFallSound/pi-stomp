@@ -28,13 +28,17 @@ from pistomp.taptempo import TapTempo
 import common.token as Token
 from uilib.misc import InputEvent
 from modalapi.connections import Connection, Endpoint, EndpointKind
+from modalapi.plugin_customization import PluginCustomization
 
 
 class MockObject:
     preset_callback_arg = None  # footswitch default; override via kwargs
+    unit_symbol = None
 
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
+        if not hasattr(self, 'customization'):
+            self.customization = PluginCustomization()
 
     @property
     def subtitle(self):
@@ -95,6 +99,7 @@ def _enc_step(instance, d, multiplier=1.0):
 def setup_main_ui(instance):
     mock_gain = MockObject(
         name="Gain",
+        symbol="gain",
         instance_id="distortion",
         value=0.5,
         minimum=0.0,
@@ -102,9 +107,11 @@ def setup_main_ui(instance):
         type=MockObject(value=0),
         get_taper=lambda: 1,
         format=lambda v: f"{v:.2f}",
+        format_value=lambda v: f"{v:.2f}",
     )
     mock_time = MockObject(
         name="Time",
+        symbol="time",
         instance_id="delay",
         value=0.3,
         minimum=0.0,
@@ -112,9 +119,11 @@ def setup_main_ui(instance):
         type=MockObject(value=0),
         get_taper=lambda: 1,
         format=lambda v: f"{v:.2f}",
+        format_value=lambda v: f"{v:.2f}",
     )
     mock_mix = MockObject(
         name="Mix",
+        symbol="mix",
         instance_id="reverb",
         value=0.4,
         minimum=0.0,
@@ -122,6 +131,7 @@ def setup_main_ui(instance):
         type=MockObject(value=0),
         get_taper=lambda: 1,
         format=lambda v: f"{v:.2f}",
+        format_value=lambda v: f"{v:.2f}",
     )
     plugins = [
         MockObject(
@@ -132,7 +142,7 @@ def setup_main_ui(instance):
             category="Distortion",
             has_footswitch=True,
             controllers=[],
-            parameters={":bypass": MockObject(name=":bypass"), "gain": mock_gain},
+            parameters={":bypass": MockObject(name="bypass", symbol=":bypass"), "gain": mock_gain},
         ),
         MockObject(
             instance_id="delay",
@@ -142,7 +152,7 @@ def setup_main_ui(instance):
             category="Delay",
             has_footswitch=True,
             controllers=[],
-            parameters={":bypass": MockObject(name=":bypass"), "time": mock_time},
+            parameters={":bypass": MockObject(name="bypass", symbol=":bypass"), "time": mock_time},
         ),
         MockObject(
             instance_id="reverb",
@@ -156,7 +166,7 @@ def setup_main_ui(instance):
             category="Reverb",
             has_footswitch=True,
             controllers=[],
-            parameters={":bypass": MockObject(name=":bypass"), "mix": mock_mix},
+            parameters={":bypass": MockObject(name="bypass", symbol=":bypass"), "mix": mock_mix},
         ),
         MockObject(
             instance_id="chorus",
@@ -170,7 +180,7 @@ def setup_main_ui(instance):
             category="Modulator",
             has_footswitch=False,
             controllers=[],
-            parameters={":bypass": MockObject(name=":bypass")},
+            parameters={":bypass": MockObject(name="bypass", symbol=":bypass")},
         ),
     ]
     ids = [p.instance_id for p in plugins]  # pyright: ignore[reportAttributeAccessIssue]
@@ -263,6 +273,7 @@ def test_parameter_dialog_snapshot(lcd, snapshot):
         type=MockObject(value=0),
         get_taper=lambda: 1,
         format=lambda v: f"{v:.2f}",
+        format_value=lambda v: f"{v:.2f}",
     )
     instance.draw_parameter_dialog(mock_param)
     snapshot()
@@ -285,6 +296,7 @@ def test_parameter_dialog_batches_detents(lcd):
         type=MockObject(value=0),
         get_taper=lambda: 1,
         format=lambda v: f"{v:.2f}",
+        format_value=lambda v: f"{v:.2f}",
     )
     dialog = instance.draw_parameter_dialog(mock_param)
 
@@ -317,6 +329,7 @@ def test_parameter_dialog_applies_encoder_multiplier(lcd):
         type=MockObject(value=0),
         get_taper=lambda: 1,
         format=lambda v: f"{v:.2f}",
+        format_value=lambda v: f"{v:.2f}",
     )
     dialog = instance.draw_parameter_dialog(mock_param)
 
@@ -367,6 +380,7 @@ def _mock_param(**overrides):
         type=MockObject(value=0),
         get_taper=lambda: 1,
         format=lambda v: f"{v:.2f}",
+        format_value=lambda v: f"{v:.2f}",
     )
     defaults.update(overrides)
     return MockObject(**defaults)
@@ -473,7 +487,7 @@ def test_footswitch_badge_letter_from_effective_table(lcd):
     instance.handler.effective_table = ContextStack(layers=[
         ContextLayer(
             ref=ContextRef(kind=ContextKind.PEDALBOARD),
-            rows={(ControlClass.FOOTSWITCH, EventKind.PRESS): [_footswitch_row(distortion, gain_param.name, "0:10")]},
+            rows={(ControlClass.FOOTSWITCH, EventKind.PRESS): [_footswitch_row(distortion, gain_param.symbol, "0:10")]},
         )
     ])
 
@@ -521,7 +535,7 @@ def test_tweak_badge_number_from_effective_table(lcd):
     instance.handler.effective_table = ContextStack(layers=[
         ContextLayer(
             ref=ContextRef(kind=ContextKind.PEDALBOARD),
-            rows={(ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.name, "encoder2")]},
+            rows={(ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.symbol, "encoder2")]},
         )
     ])
 
@@ -537,7 +551,7 @@ def test_tweak_badge_number_none_when_shadowed(lcd):
 
     enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=2)
     instance.handler.hardware.controllers = {"encoder2": enc}
-    row = _analog_row(distortion, gain_param.name, "encoder2", shadow_state=ShadowState.SHADOWED)
+    row = _analog_row(distortion, gain_param.symbol, "encoder2", shadow_state=ShadowState.SHADOWED)
     instance.handler.effective_table = ContextStack(layers=[
         ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD), rows={(ControlClass.ANALOG, EventKind.ROTATE): [row]})
     ])
@@ -546,9 +560,7 @@ def test_tweak_badge_number_none_when_shadowed(lcd):
 
 
 def test_parameter_menu_shows_tweak_badge(lcd, snapshot):
-    """The parameter-list menu prepends the digit badge to a tweak-bound row,
-    same slot the footswitch letter uses (mutually exclusive: a parameter has
-    exactly one `binding`)."""
+    """The parameter window shows badge on list rows for tweak-bound params."""
     instance, _ = lcd
     setup_main_ui(instance)
     distortion = instance.current.pedalboard.plugins[0]
@@ -559,11 +571,13 @@ def test_parameter_menu_shows_tweak_badge(lcd, snapshot):
     instance.handler.effective_table = ContextStack(layers=[
         ContextLayer(
             ref=ContextRef(kind=ContextKind.PEDALBOARD),
-            rows={(ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.name, "encoder3")]},
+            rows={(ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.symbol, "encoder3")]},
         )
     ])
 
-    instance.draw_parameter_menu(distortion)
+    # Long-press opens ParameterWindow
+    instance.main_panel.sel_widget(instance.w_plugins[0])
+    instance.main_panel.input_event(InputEvent.LONG_CLICK)
     snapshot()
 
 
@@ -580,7 +594,7 @@ def test_parameter_dialog_shows_tweak_badge_snapshot(lcd, snapshot):
     instance.handler.effective_table = ContextStack(layers=[
         ContextLayer(
             ref=ContextRef(kind=ContextKind.PEDALBOARD),
-            rows={(ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.name, "encoder2")]},
+            rows={(ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.symbol, "encoder2")]},
         )
     ])
 
@@ -589,7 +603,7 @@ def test_parameter_dialog_shows_tweak_badge_snapshot(lcd, snapshot):
 
 
 def test_parameter_menu_shows_footswitch_badge(lcd, snapshot):
-    """The parameter-list menu prepends the (X) badge to a footswitch-bound row."""
+    """The parameter window shows badge on list rows for footswitch-bound params."""
     instance, _ = lcd
     setup_main_ui(instance)
     distortion = instance.current.pedalboard.plugins[0]
@@ -600,11 +614,13 @@ def test_parameter_menu_shows_footswitch_badge(lcd, snapshot):
     instance.handler.effective_table = ContextStack(layers=[
         ContextLayer(
             ref=ContextRef(kind=ContextKind.PEDALBOARD),
-            rows={(ControlClass.FOOTSWITCH, EventKind.PRESS): [_footswitch_row(distortion, gain_param.name, "0:10")]},
+            rows={(ControlClass.FOOTSWITCH, EventKind.PRESS): [_footswitch_row(distortion, gain_param.symbol, "0:10")]},
         )
     ])
 
-    instance.draw_parameter_menu(distortion)
+    # Long-press opens ParameterWindow
+    instance.main_panel.sel_widget(instance.w_plugins[0])
+    instance.main_panel.input_event(InputEvent.LONG_CLICK)
     snapshot()
 
 

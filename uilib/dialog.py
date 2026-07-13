@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from dataclasses import dataclass
 import functools
 import textwrap
 from typing_extensions import override
@@ -28,14 +29,33 @@ from uilib.text import TextWidget
 from uilib.misc import WidgetAlign, TextHAlign, get_text_size, trace
 
 
+@dataclass(frozen=True)
+class DialogScheme:
+    """Colour scheme for a dialog's title bar, outline, and accent elements.
+
+    When None is passed to Dialog/DialogDecorator, the current Config defaults
+    are used (system menus render pixel-identical).
+    """
+    title_fgnd: tuple[int, int, int]
+    title_bkgnd: tuple[int, int, int]
+    outline_color: tuple[int, int, int]
+    accent: tuple[int, int, int]
+
+
 class DialogDecorator(PanelDecorator):
-    def __init__(self, panel, title, title_font, **kwargs):
+    def __init__(self, panel, title, title_font, scheme=None, **kwargs):
         # Dialog comes with standard defaults
         kwargs["outline"] = self._get_arg(kwargs, "outline", 2)
         kwargs["outline_radius"] = self._get_arg(kwargs, "outline_radius", 10)
-        kwargs["outline_color"] = self._get_arg(kwargs, "outline_color", (255, 255, 255))
-        kwargs["bkgnd_color"] = self._get_arg(kwargs, "bkgnd_color", Config().get_color("default_title_bkgnd"))
-        title_color = self._get_arg(kwargs, "title_color", Config().get_color("default_title_fgnd"))
+        if scheme is not None:
+            kwargs["outline_color"] = self._get_arg(kwargs, "outline_color", scheme.outline_color)
+            kwargs["bkgnd_color"] = self._get_arg(kwargs, "bkgnd_color", scheme.title_bkgnd)
+            kwargs["fgnd_color"] = self._get_arg(kwargs, "fgnd_color", scheme.outline_color)
+            title_color = self._get_arg(kwargs, "title_color", scheme.title_fgnd)
+        else:
+            kwargs["outline_color"] = self._get_arg(kwargs, "outline_color", (255, 255, 255))
+            kwargs["bkgnd_color"] = self._get_arg(kwargs, "bkgnd_color", Config().get_color("default_title_bkgnd"))
+            title_color = self._get_arg(kwargs, "title_color", Config().get_color("default_title_fgnd"))
         super(DialogDecorator, self).__init__(panel, **kwargs)
         self.title = TextWidget(
             box=None, text_halign=TextHAlign.CENTRE, text=title, font=title_font, parent=self, fgnd_color=title_color
@@ -102,13 +122,13 @@ class Dialog(RoundedPanel):
     # nudge the whole dialog down if it's close to full height
     _TRUE_CENTER_MIN_HEIGHT = 190
 
-    def __init__(self, width, height, title, title_font=None, **kwargs):
+    def __init__(self, width, height, title, title_font=None, scheme=None, **kwargs):
         box = Box.xywh(0, 0, width, height)
         radius = 10
         if title_font is None:
             title_font = Config().get_font("default_title")
         self._title_strip_h = get_text_size(title, title_font)[1] + 2
-        deco = functools.partial(DialogDecorator, title=title, title_font=title_font, outline_radius=radius)
+        deco = functools.partial(DialogDecorator, title=title, title_font=title_font, outline_radius=radius, scheme=scheme)
         super(Dialog, self).__init__(box=box, align=WidgetAlign.CENTRE, radius=radius, decorator=deco, **kwargs)
 
     def _adjust_box(self):

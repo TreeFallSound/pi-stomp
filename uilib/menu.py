@@ -87,19 +87,14 @@ class Menu(Dialog):
                  max_width: int | None = None, max_height: int | None = None,
                  text_halign: TextHAlign = TextHAlign.CENTRE,
                  auto_dismiss: bool = True, dismiss_option: bool = False,
-                 default_item: str | None = None,
-                 footer_items: Sequence[MenuItem] = (), **kwargs) -> None:
+                 default_item: str | None = None, **kwargs) -> None:
         self.max_height = max_height
         self.max_width = max_width
         self.items: list[MenuItem] = items
         self.auto_dismiss = auto_dismiss
-        # One row split into equal columns: extra actions sit beside the back
-        # arrow instead of eating a row each.
-        self.footer_items: list[MenuItem] = list(footer_items)
         if auto_dismiss is False or dismiss_option is True:
             # without auto_dismiss provide a back arrow to close menu
-            self.footer_items.insert(0, ('\u2b05', self._dismiss, None))
-        self.footer_widgets: list[TextWidget | RichTextWidget] = []
+            self.items.append(('\u2b05', self._dismiss, None))
         if font is None:
             font = Config().get_font('default')
         self.font = font
@@ -115,13 +110,6 @@ class Menu(Dialog):
             if self.default_item is not None and label_key(_item_label(i)) == self.default_item:
                 self.sel_widget(w)
             h = h + self.item_h
-
-        n = len(self.footer_items)
-        col_w = self.box.width // n if n else 0
-        for idx, i in enumerate(self.footer_items):
-            x = idx * col_w
-            width = self.box.width - x if idx == n - 1 else col_w
-            self.footer_widgets.append(self._make_row_widget(i, Box.xywh(x, h, width, self.item_h)))
 
         self.refresh()
 
@@ -188,7 +176,7 @@ class Menu(Dialog):
         # get_text_size; rich rows measure each segment.
         _, line_h = get_text_size('', self.font)
         item_h = line_h
-        for i in self.items + self.footer_items:
+        for i in self.items:
             t = _item_label(i)
             if isinstance(t, (str, BadgedLabel)):
                 _, th = get_text_size(t.text if isinstance(t, BadgedLabel) else t, self.font)
@@ -200,7 +188,7 @@ class Menu(Dialog):
             if th > item_h:
                 item_h = th
         self.item_h = item_h
-        h = item_h * (len(self.items) + (1 if self.footer_items else 0))
+        h = item_h * len(self.items)
         mw = self.max_width
         mh = self.max_height
         if mw is not None and w > mw:

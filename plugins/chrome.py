@@ -11,8 +11,8 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from uilib.box import Box
-from uilib.panel import Panel
 from uilib.text import Button
+from uilib.widget import Widget
 
 BTN_GAP = 2
 BTN_H = 28
@@ -23,7 +23,7 @@ MIN_CHROME_WIDTH = 210
 
 def build_bottom_row(
     *,
-    panel: Panel,
+    parent: Widget,
     width: int,
     bottom_y: int,
     font,
@@ -32,7 +32,12 @@ def build_bottom_row(
     on_bypass: Callable[..., None],
     on_reset: Callable[..., None],
 ) -> tuple[Button, Button, Button]:
-    """Create a Back / Bypass / Reset row spanning *width*, parented to *panel*.
+    """Create a Back / Bypass / Reset row spanning *width*, parented to *parent*.
+
+    *parent* is a panel when the row is fixed chrome, or a scrolling
+    ``ContainerWidget`` when the row is the last thing in a scrolling body —
+    it must be the real parent at construction, since ``Widget.attach`` is what
+    puts a widget in a container's child list.
 
     Returns the three buttons in Nav order. Callers are responsible for
     ``add_sel_widget``.
@@ -46,7 +51,7 @@ def build_bottom_row(
             font=font,
             v_margin=v_margin,
             outline_radius=4,
-            parent=panel,
+            parent=parent,
             action=action,
         )
 

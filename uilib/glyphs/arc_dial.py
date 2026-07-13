@@ -156,6 +156,18 @@ def paint_arc_dial(
     ctx.draw_text((int(round(ox)), int(round(oy))), text, fill=label_fg, font=label_font)
 
 
+def dial_box_size(radius: int, label_font, sel_width: int = 2) -> tuple[int, int]:
+    """Smallest box a top-labelled dial fits in: the content block (label + gap
+    + ring, plus the ring's optical nudge) with `sel_width` of padding at every
+    edge for the selection reticule. Callers laying out a grid of dials should
+    size cells from this rather than from the ring alone."""
+    ring = ArcRingGlyph(radius)
+    _, _, _, lh = _ink_metrics("Ag", label_font)
+    w = ring.size + 2 * sel_width
+    h = lh + _LABEL_GAP + ring.size + _RING_NUDGE_Y + 2 * sel_width
+    return w, h
+
+
 class ArcDialWidget(Widget):
     """One arc-ring dial as a Widget: flipped ring, bold label in the top gap,
     ink-centred value with an optional unit line.
@@ -214,17 +226,19 @@ class ArcDialWidget(Widget):
     # ── input-context badge (R4) ────────────────────────────────────────────
 
     def _draw_badge(self, ctx: PaintContext) -> None:
-        """Centred on the opposite side of the ring from the label — the one
-        other symmetric spot on this widget, and never touches the label/value
-        text (`Widget.set_badge` stores it; this only overrides placement)."""
+        """Opposite the label, and never touching the label/value text
+        (`Widget.set_badge` stores it; this only overrides placement).
+
+        With the label on top the badge sits *in* the ring's bottom cutout —
+        the arc's own gap — so a badged dial costs no extra height."""
         if self._badge is None:
             return
         cx = ctx.width // 2
-        cy = self._cy()
+        cy = self._cy() + _RING_NUDGE_Y
         half = self._ring.half_size
         bx = cx - self._badge.width // 2
         if self._label_pos == "top":
-            by = cy + half + _LABEL_GAP
+            by = cy + half - self._badge.height
         else:
             by = cy - half - _LABEL_GAP - self._badge.height
         ctx.paste(self._badge.render(), (bx, by))
@@ -232,15 +246,24 @@ class ArcDialWidget(Widget):
     # ── ring vertical centre within the widget box ──────────────────────────
 
     def _cy(self) -> int:
-        """Ring centre y: vertically centred in the box, but nudged inward just
-        enough that the outside label never clips past the box edge."""
+        """Ring centre y, derived by centring the whole *content block* — label
+        plus gap plus ring — inside the box's padding, not by centring the ring
+        and letting the label hang out of flow above it.
+
+        Centring the ring alone pools all the slack below it (the label only
+        eats into the top half), so a tight box clips the label against the
+        selection reticule while the bottom sits empty. `sel_width` is reserved
+        as padding at both edges: the reticule is an inset border, and content
+        never enters it."""
         assert self.box is not None
         half = self._ring.half_size
-        center = self.box.height // 2
         _, _, _, lh = _ink_metrics(self._label.upper(), self._label_font)
+        pad = self.sel_width
+        block_h = lh + _LABEL_GAP + 2 * half
+        top = pad + max(0, (self.box.height - 2 * pad - block_h) // 2)
         if self._label_pos == "top":
-            return max(center, half + _LABEL_GAP + lh)
-        return min(center, self.box.height - (half + _LABEL_GAP + lh))
+            return int(top + lh + _LABEL_GAP + half)
+        return int(top + half)
 
     # ── value state ─────────────────────────────────────────────────────────
 

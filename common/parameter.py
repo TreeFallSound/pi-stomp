@@ -78,12 +78,15 @@ class Parameter:
     def get_taper(self):
         return 2 if self.type == Type.LOGARITHMIC else 1
 
-    def format(self, value):
+    def format_value(self, value) -> str:
+        """The numeric text alone. Callers that lay value and unit out
+        separately (arc dials) need them unglued."""
         if self.type == Type.INTEGER or self.type == Type.TOGGLED or self.type == Type.ENUMERATION:
-             text = "%d" % round(float(value))
-        else:
-             text = util.format_float(value)
+            return "%d" % round(float(value))
+        return util.format_float(value)
 
+    def format(self, value):
+        text = self.format_value(value)
         if self.unit_symbol:
             text = f"{text} {self.unit_symbol}"
         return text

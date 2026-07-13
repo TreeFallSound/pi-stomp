@@ -24,6 +24,7 @@ blit time."""
 from functools import lru_cache
 
 import pygame
+from PIL import Image
 
 from uilib.config import Config
 from uilib.glyphs.circle import CircleGlyph
@@ -33,6 +34,27 @@ from uilib.misc import get_text_size
 _FILL = (255, 255, 255)
 _TEXT = (0, 0, 0, 255)
 
+# Sub-pixel hinting at this font size leaves a few glyphs visibly off the
+# advance-width center; nudge those by eye, in half-pixel units (1 == 0.5px,
+# fractional values allowed — e.g. 0.5 == a quarter pixel). Rendered via
+# supersampling (see _SS below) so these are real sub-pixel shifts.
+_X_NUDGE_HALF = {"A": 0.5, "C": -1, "D": 1, "3": 1}
+
+# Supersample factor for the text layer only: render at _SS× size/position,
+# then downscale, so a half-pixel nudge is an actual sub-pixel shift instead
+# of rounding to the nearest whole pixel. Cached per (char, radius), so this
+# costs nothing at draw time.
+_SS = 4
+
+
+def _lanczos_downscale(surf: pygame.Surface, size: tuple[int, int]) -> pygame.Surface:
+    # pygame.transform has no Lanczos filter — smoothscale/rotozoom are both
+    # box/bilinear and visibly blur glyph strokes at this radius. Route
+    # through Pillow (already a dependency) for a sharper resample.
+    img = Image.frombytes("RGBA", surf.get_size(), pygame.image.tobytes(surf, "RGBA"))
+    img = img.resize(size, Image.LANCZOS)
+    return pygame.image.frombytes(img.tobytes(), size, "RGBA")
+
 
 @lru_cache(maxsize=32)
 def _badge_surface(char: str, radius: int) -> pygame.Surface:
@@ -41,14 +63,21 @@ def _badge_surface(char: str, radius: int) -> pygame.Surface:
     if font is None:
         return surf
     d = 2 * radius + 1
-    tw, th = get_text_size(char, font)
-    asc = int(font.get_sized_ascender())
+    big_size = font.size * _SS
+    tw, th = get_text_size(char, font, size=big_size)
+    asc = int(font.get_sized_ascender(big_size))
+    nudge = round(_X_NUDGE_HALF.get(char, 0) * _SS / 2)
+
+    text_layer = pygame.Surface((d * _SS, d * _SS), pygame.SRCALPHA)
     prev = font.origin
     font.origin = True
     try:
-        font.render_to(surf, ((d - tw) // 2, (d - th) // 2 + asc), char, fgcolor=_TEXT)
+        x = (d * _SS - tw) // 2 + nudge
+        y = (d * _SS - th) // 2 + asc
+        font.render_to(text_layer, (x, y), char, fgcolor=_TEXT, size=big_size)
     finally:
         font.origin = prev
+    surf.blit(_lanczos_downscale(text_layer, (d, d)), (0, 0))
     return surf
 
 

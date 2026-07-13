@@ -10,9 +10,23 @@ To regenerate snapshots after intentional UI changes:
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextLayer,
+    ContextRef,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    ParamEffect,
+    ShadowState,
+)
 from modalapi.parameter import Parameter
 from modalapi.plugin import Plugin
 from pistomp.controller import Controller
+from pistomp.footswitch import Footswitch
 from pistomp.input.event import EncoderEvent
 from plugins.customization import lookup
 from uilib.misc import InputEvent
@@ -58,6 +72,31 @@ def make_noisegate_plugin(instance_id: str = "Gate") -> Plugin:
         for sym, p in params.items()
     }
     return plugin
+
+
+def bind_footswitch(handler, plugin: Plugin, symbol: str, fs_id: int) -> None:
+    """Bind *symbol* to footswitch *fs_id* in the effective table, which is
+    where the badge letters are resolved from."""
+    control_id = f"0:{10 + fs_id}"
+    fs = Footswitch(
+        id=fs_id, led_pin=None, pixel=None, midi_CC=10 + fs_id, midi_channel=0, refresh_callback=MagicMock()
+    )
+    handler.hardware.controllers[control_id] = fs
+    row = BindingDecl(
+        control=ControlRef(cls=ControlClass.FOOTSWITCH, id=control_id),
+        event_kind=EventKind.PRESS,
+        effects=(ParamEffect(plugin=plugin, symbol=symbol),),
+        context=ContextRef(kind=ContextKind.PEDALBOARD),
+        shadow_state=ShadowState.ACTIVE,
+    )
+    key = (ControlClass.FOOTSWITCH, EventKind.PRESS)
+    for layer in handler.effective_table.layers:
+        if layer.ref.kind is ContextKind.PEDALBOARD:
+            layer.rows.setdefault(key, []).append(row)
+            return
+    handler.effective_table.layers.append(
+        ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD), rows={key: [row]})
+    )
 
 
 def open_menu(v3_system: SystemFixture) -> Plugin:
@@ -119,3 +158,52 @@ def test_noisegate_menu_nav_to_mains(v3_system: SystemFixture, nav_handler, snap
         nav_handler(1)
         handler.poll_lcd_updates()
     snapshot()
+
+
+def test_parameter_window_scrolls_when_content_overflows(v3_system: SystemFixture, snapshot):
+    """A plugin with many params: 4 pinned rings + 8 list rows. The list
+    overflows the window; the last rows and the Back/Bypass/Reset row must be
+    reachable by scrolling, and a bound param must badge whether it renders as
+    a pinned ring or a list row."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+
+    assert handler.current
+    params: dict[str, Parameter] = {
+        ":bypass": Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "many"),
+    }
+    for i in range(12):
+        sym = f"param_{i:02d}"
+        params[sym] = _param(sym, 0.5, 0.0, 1.0, "many", unit="dB")
+    plugin = Plugin("many", params, {}, "Dynamics")
+    plugin.has_footswitch = True
+    plugin.pedalboard_snapshot = {sym: 0.5 for sym in params}
+
+    handler.current.pedalboard.plugins = [plugin]
+    handler.current.pedalboard.connections = []
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    # param_00 pins to a ring, param_05 lands in the list, :bypass drives the
+    # footer button — all three must surface their badge.
+    bind_footswitch(handler, plugin, "param_00", fs_id=0)
+    bind_footswitch(handler, plugin, "param_05", fs_id=1)
+    bind_footswitch(handler, plugin, ":bypass", fs_id=2)
+
+    lcd = handler.lcd
+    lcd.main_panel.sel_widget(lcd.w_plugins[0])
+    lcd.main_panel.input_event(InputEvent.LONG_CLICK)
+    handler.poll_lcd_updates()
+    snapshot("initial")
+
+    # Nav down past the 4 rings into the list, then keep going to the last row
+    for _ in range(4 + 7):  # 4 rings + 7 nav steps to reach last of 8 list rows
+        lcd.pstack.input_step(1, 1, 1.0)
+        handler.poll_lcd_updates()
+    snapshot("scrolled_to_last")
+
+    # One more step lands on Back: the button row scrolls into view as the last
+    # body element, it is not fixed chrome.
+    lcd.pstack.input_step(1, 1, 1.0)
+    handler.poll_lcd_updates()
+    snapshot("scrolled_to_footer")

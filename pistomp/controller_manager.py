@@ -100,7 +100,7 @@ class ControllerManager:
                         BindingDecl(
                             control=ControlRef(cls=ControlClass.ANALOG, id=param.binding),
                             event_kind=EventKind.ROTATE,
-                            effects=(ParamEffect(plugin=plugin, symbol=param.name),),
+                            effects=(ParamEffect(plugin=plugin, symbol=param.symbol),),
                             context=pedalboard_layer.ref,
                             shadow_state=ShadowState.ORPHANED,
                         )
@@ -136,7 +136,7 @@ class ControllerManager:
                     BindingDecl(
                         control=ControlRef(cls=cls, id=param.binding),
                         event_kind=event_kind,
-                        effects=(ParamEffect(plugin=plugin, symbol=param.name),),
+                        effects=(ParamEffect(plugin=plugin, symbol=param.symbol),),
                         context=pedalboard_layer.ref,
                     )
                 )
