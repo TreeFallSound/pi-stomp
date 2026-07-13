@@ -37,6 +37,7 @@ from typing import Callable, Literal
 from uilib.box import Box
 from uilib.config import Color, Config, FontName
 from uilib.glyphs.arc_ring import ArcRingGlyph, ColorRGB
+from uilib.glyphs.badge import BadgeGlyph
 from uilib.misc import INACTIVE_SHADE, get_text_bbox, shade_color
 from uilib.paint import PaintContext
 from uilib.widget import Widget
@@ -190,6 +191,7 @@ class ArcDialWidget(Widget):
         kwargs.setdefault("bkgnd_color", (0, 0, 0))
         super().__init__(box=box, parent=parent, **kwargs)
         self._label = label
+        self._badge: BadgeGlyph | None = None
         self._minimum = minimum
         self._maximum = maximum
         self._color = color
@@ -210,6 +212,18 @@ class ArcDialWidget(Widget):
         self._label_font = cfg.get_font(label_name)
         self._value_font = cfg.get_font(value_name)
         self._unit_font = self._value_font  # unit shares the value font
+
+    # ── input-context badge (R4) ────────────────────────────────────────────
+
+    def set_badge(self, badge: BadgeGlyph | None) -> None:
+        """A fixed encoder-binding badge, drawn out of flow in the widget's
+        top-left corner — never joins the label string, so it can't nudge the
+        centred label/value text (R4 §5 places it "out of the flow", the same
+        placement idea as `TextWidget`'s left-margin badge)."""
+        if badge == self._badge:
+            return
+        self._badge = badge
+        self.refresh()
 
     # ── ring vertical centre within the widget box ──────────────────────────
 
@@ -309,3 +323,5 @@ class ArcDialWidget(Widget):
             two_line=self._two_line,
             ring_dy=_RING_NUDGE_Y,
         )
+        if self._badge is not None:
+            ctx.paste(self._badge.render(), (2, 2))

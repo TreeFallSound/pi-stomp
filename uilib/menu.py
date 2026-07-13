@@ -33,7 +33,6 @@ class BadgedLabel:
 
     text: str
     char: str | None = None
-    color: tuple[int, int, int] = (130, 130, 130)
 
 
 # A menu row label: a plain string, a badged string (see `BadgedLabel`), or a
@@ -113,7 +112,7 @@ class Menu(Dialog):
                 text = t.text if isinstance(t, BadgedLabel) else t
                 if _item_selected(i):
                     text = '\u2714 ' + text
-                badge = BadgeGlyph(t.char, t.color) if isinstance(t, BadgedLabel) and t.char is not None else None
+                badge = BadgeGlyph(t.char) if isinstance(t, BadgedLabel) and t.char is not None else None
                 w: TextWidget | RichTextWidget = TextWidget(
                     box=b, text_halign=self.text_halign, font=self.font,
                     text=text, badge=badge, parent=self, action=self._item_action)

@@ -18,6 +18,7 @@ from plugins.layouts.mode_selector import ModeSelectorWidget
 from plugins.layouts.readout_bar import ReadoutBar
 from uilib.box import Box
 from uilib.config import Config
+from uilib.glyphs.badge import BadgeGlyph
 
 _W = 320
 _H = 240
@@ -44,6 +45,10 @@ _DECAY_STEP_MS = 100.0
 _DB_STEP = 0.8
 
 _KNOB_STEPS = {"decay": _DECAY_STEP_MS, "drylevel": _DB_STEP, "wetlevel": _DB_STEP}
+
+_BADGE_TWEAK1 = BadgeGlyph("1")  # enc1, selection-dependent (SelectionEditEffect) — shown in the readout
+_BADGE_TWEAK2 = BadgeGlyph("2")  # enc2, fixed to mode — shown beside the mode readout's subtitle
+_BADGE_TWEAK3 = BadgeGlyph("3")  # enc3/Volume, fixed to decay — drawn on the knob itself (static, not selection-dependent)
 
 
 @dataclass(frozen=True)
@@ -152,6 +157,7 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
             "drylevel": self._knob_dry,
             "wetlevel": self._knob_wet,
         }
+        self._knob_decay.set_badge(_BADGE_TWEAK3)
         self.add_sel_widget(self._mode_selector)
         self.add_sel_widget(self._knob_decay)
         self.add_sel_widget(self._knob_dry)
@@ -254,21 +260,29 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
 
     def _update_readout(self) -> None:
         sel = self.sel_ref
+        self._readout.set_subtitle_badge(None)
         if isinstance(sel, ArcKnobWidget):
             val = self._current(sel.symbol)
             self._readout.set_text(f"{sel._label.capitalize()}: {sel.reading_text(val)}")
+            self._readout.set_badge(_BADGE_TWEAK1)
         elif isinstance(sel, ModeSelectorWidget):
             self._readout.set_text("Select reverb mode")
             self._readout.set_subtitle(f"{self._mode_selector.value + 1} of {self._mode_selector.max_index + 1}")
+            self._readout.set_badge(None)
+            self._readout.set_subtitle_badge(_BADGE_TWEAK2)
             return
         elif sel is self._btn_bypass:
             self._readout.set_text("Plugin bypassed" if self.plugin.is_bypassed() else "Bypass plugin")
+            self._readout.set_badge(None)
         elif sel is self._btn_back:
             self._readout.set_text("Close")
+            self._readout.set_badge(None)
         elif sel is self._btn_reset:
             self._readout.set_text("Reset to pedalboard")
+            self._readout.set_badge(None)
         else:
             self._readout.set_text("TAP Reverberator")
+            self._readout.set_badge(None)
         self._readout.set_subtitle("")
 
     def _select_widget_ref(self, w):

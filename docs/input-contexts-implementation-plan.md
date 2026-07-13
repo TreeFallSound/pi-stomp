@@ -235,6 +235,63 @@ correction to make while there: R4's surface-census table cites
 Nothing in §1–6 depends on badge geometry, so there's no cost to deferring
 this reading.
 
+**Status: first slice landed (L0 badge only, two surfaces), revised after
+first-pass review.** The first attempt prepended a Unicode circled-number
+glyph (①②③) straight into the knob's label string. Rejected on review for
+three reasons: (1) a badge for the *currently selected* control doesn't
+belong on the control's own widget at all — it's transient context that
+belongs in the panel's status bar, next to the value it's currently editing;
+(2) prepending into a centred label string nudges the label to make room,
+which is exactly the "in the flow" placement R4 explicitly rejected in favor
+of the parameter-menu's out-of-flow left-margin badge; (3) the arc-label font
+at 11pt renders the circled-digit glyph too small to read, and every surface
+should share one legible size, not one sized to whatever font the label
+happens to use.
+
+Landed instead, reusing machinery already built for the parameter menu:
+`uilib/glyphs/badge.py`'s `BadgeGlyph` (a fixed-size filled disc with a baked
+character — already used by `Menu`/`TextWidget`'s out-of-flow badge, R4 §5)
+is now also `ArcDialWidget`'s mechanism (`set_badge(BadgeGlyph | None)`,
+`uilib/glyphs/arc_dial.py`) — pasted at a fixed top-left corner offset,
+never touching the label string. `ReadoutBar` (`plugins/layouts/readout_bar.py`)
+gained the same idea for its two text slots: `set_badge`/`set_subtitle_badge`,
+each drawn immediately left of that slot's text with the text's start
+position shifted to make room (the tight 6px readout margin has no room to
+overflow further left the way `TextWidget` does).
+
+Split by row, per `gx_cabinet`/`tap_reverb` (identical three-row shape):
+- **enc3/Volume** (fixed `ParamEffect`, e.g. `CLevel`/`decay`) — a static fact
+  about that knob regardless of selection, so it stays a `BadgeGlyph` pasted
+  on the knob itself, set once at `build_widgets` time.
+- **enc1** (`SelectionEditEffect`, follows whichever knob is focused) — moved
+  entirely off the knobs and into `ReadoutBar.set_badge`, shown beside the
+  `"Level: 1.00 ×"`-style readout text whenever an `ArcKnobWidget` is
+  selected.
+- **enc2** (fixed `ParamEffect` on `c_model`/`mode`, targets
+  `ModeSelectorWidget`) — also moved to the status bar,
+  `ReadoutBar.set_subtitle_badge`, shown beside the `"1 of 19"` counter (the
+  mode selector has no label-text slot of its own to badge).
+
+All three verified visually (cropped/zoomed snapshot PNGs), not just by
+pyright/pytest: the corner badge is legible and doesn't collide with the
+knob label, both readout badges sit cleanly beside their text, and the
+corner badge and the readout badge compose correctly when both are active on
+the same knob.
+
+Deliberately out of scope for this slice, left as gaps:
+- **No L1/L2/L3 degradation** (shadowed-dot, no-binding coach mark, generic
+  MIDI badge) and no `enabled_when`/`ShadowState` read at all yet — this
+  slice reads only the panel's own static `declare_bindings()` shape, not the
+  resolver's shadow tagging. Both panels here happen to have every row
+  always-`ACTIVE` (no `enabled_when`), so there was nothing to distinguish.
+  NAM (§8), which does have real `enabled_when` shadowing, is the natural
+  next target to force L1 into existence.
+- **Other 6+ R4 surfaces** (footswitch strip, parameter-list menu,
+  `Parameterdialog`, edit-in-place, EQ readout strips, multiband/NAM) still
+  unbadged. Each needs its own placement per §5.1's table; the status-bar
+  pattern established here (selection-dependent bindings go in the readout,
+  not on the selected widget) generalizes to any panel with a readout bar.
+
 ## 8. Escape hatches
 
 Only one survives migration: the **NAM capture state machine**
