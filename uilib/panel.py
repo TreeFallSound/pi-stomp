@@ -372,8 +372,6 @@ class PanelStack(ContainerWidget):
             box = Box((0, 0), lcd.dimensions())
         if image_format is None:
             image_format = lcd.default_format()
-        if use_dimming:
-            image_format = "RGBA"
 
         trace(self, "Panel stack initializing with box=", box)
         super(PanelStack, self).__init__(box=box, image_format=image_format)
