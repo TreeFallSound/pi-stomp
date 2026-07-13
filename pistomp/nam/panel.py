@@ -41,6 +41,7 @@ from typing import Callable
 from uilib.box import Box
 from uilib.config import Config
 from uilib.glyphs import ArcDialWidget, DialVariant
+from uilib.glyphs.badge import BadgeGlyph
 from uilib.label import Label
 from uilib.misc import TextHAlign, get_text_bbox, get_text_size
 from uilib.paint import PaintContext
@@ -80,8 +81,16 @@ _TITLE_H = 26
 _NAME_Y = 30
 _NAME_H = 28
 _KNOB_Y = 82
-_KNOB_H = 114
+_KNOB_H = 124  # a few px taller than the ring/label strictly need, so the
+# enc2/enc3 badge (left of the label) has clearance above the box's top edge
 _KNOB_W = 148
+
+# enc2/enc3 are only ever live while the setup view is showing (both rows'
+# enabled_when is idle(); the capture view swaps these knobs out entirely),
+# so a badge set once at construction is accurate for as long as it's
+# visible — same fixed-knob pattern as gx_cabinet/tap_reverb.
+_BADGE_TWEAK2 = BadgeGlyph("2")
+_BADGE_TWEAK3 = BadgeGlyph("3")
 
 # Chrome row — shared between views
 _BTN_GAP = 2
@@ -184,6 +193,30 @@ class KnobWidget(ArcDialWidget):
             unit_fg=_KNOB_LABEL_FG,
             label_fg=_KNOB_LABEL_FG,
         )
+
+    def _draw_badge(self, ctx: PaintContext) -> None:
+        """Left of the label, out of flow — the base class's below-ring spot
+        (`ArcDialWidget._draw_badge`) gets clipped by this knob's shorter
+        box. The label text itself never moves to make room. `_KNOB_H` carries
+        a few px of slack above the label's ink-top so a badge centred on the
+        label's line doesn't clip the box's top edge."""
+        if self._badge is None:
+            return
+        text = self._label.upper()
+        x0, y0, x1, y1 = get_text_bbox(text, self._label_font)
+        lw, lh = x1 - x0, y1 - y0
+        cx = ctx.width // 2
+        cy = self._cy()
+        half = self._ring.half_size
+        gap = 2  # matches arc_dial._LABEL_GAP, the spacing the label itself uses
+        if self._label_pos == "top":
+            oy = (cy - half - gap) - (y0 + lh)
+        else:
+            oy = (cy + half + gap) - y0
+        ox = cx - (x0 + lw / 2)
+        by = int(round(oy + y0 + lh / 2 - self._badge.height / 2)) + 1
+        bx = int(round(ox)) - gap - self._badge.width - 2
+        ctx.paste(self._badge.render(), (bx, by))
 
 
 class ProgressBarWidget(Widget):
@@ -469,6 +502,7 @@ class NamCapturePanel(Panel):
             max_val=12.0,
             parent=self,
         )
+        self._knob_gain.set_badge(_BADGE_TWEAK2)
         self._knob_vol = KnobWidget(
             box=Box.xywh(_W - _KNOB_W - 8, _KNOB_Y, _KNOB_W, _KNOB_H),
             label="OUT2",
@@ -476,6 +510,7 @@ class NamCapturePanel(Panel):
             max_val=self._max_out_db,
             parent=self,
         )
+        self._knob_vol.set_badge(_BADGE_TWEAK3)
 
         self._btn_setup_close = Button(
             box=Box.xywh(_BTN_X_CLOSE, _BTN_Y, _BTN_W, _BTN_H),

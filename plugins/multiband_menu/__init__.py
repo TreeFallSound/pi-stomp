@@ -24,8 +24,10 @@ from common.param_roles import ParamRole
 from plugins.window import PluginWindow
 from uilib.box import Box
 from uilib.config import Config
+from uilib.dialog import DialogDecorator
 from uilib.glyphs.arc_dial import paint_arc_dial
 from uilib.glyphs.arc_ring import ArcRingGlyph
+from uilib.glyphs.badge import BadgeGlyph
 from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size, shade_color, step_for_param
 from uilib.widget import Widget
 
@@ -34,6 +36,8 @@ from uilib.widget import Widget
 _ARC_RADIUS = 28
 _ARC_MARGIN = 2
 _MAX_H = 236  # never exceed the 240px LCD (2px breathing room)
+
+_BADGE_TWEAK1 = BadgeGlyph("1")
 
 
 def _slot_box_size() -> tuple[int, int]:
@@ -121,6 +125,10 @@ class MultibandWindow(PluginWindow[None]):
             )
             self._slot_widgets.append(w)
             self.add_sel_widget(w)
+
+        deco = self.decorator
+        assert isinstance(deco, DialogDecorator), "MultibandWindow is always Dialog-decorated"
+        deco.title.set_badge(_BADGE_TWEAK1)
 
     def declare_bindings(self) -> tuple[BindingDecl, ...]:
         return (

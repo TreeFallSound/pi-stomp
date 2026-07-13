@@ -364,9 +364,34 @@ panels R4 called out) and the badge mechanism itself unified.** Two threads:
    visually confirmed (band-selected: `②158 Hz　③Q 1.00　①disabled`;
    chrome-selected: no badges).
 
-Remaining R4 gaps unchanged from the list above: L1/L2/L3 degradation,
-`Parameterdialog`, edit-in-place, main-panel plugin grid, multiband menu
-slots, NAM setup-view knobs.
+4. **Multiband menu** (`MultibandWindow`) gets a static ① badge on the
+   window's title-bar text (`self.decorator.title`, a `TextWidget` — set once
+   in `build_widgets()`). enc1 is a single, permanently-live
+   `SelectionEditEffect` here and every slot resolves a real symbol (no
+   per-selection toggling needed, unlike the EQ readouts), and the window has
+   no persistent status-bar element to piggyback on the way gx_cabinet/
+   tap_reverb do — the title strip, always visible and never repainted per
+   selection, stands in for one.
+5. **NAM setup view** (`pistomp/nam/panel.py`) gets ②/③ on the input-gain/
+   headphone-volume knobs (`_knob_gain`/`_knob_vol`), set once at construction
+   — both rows' `enabled_when` is `idle()` and the setup view is only ever
+   shown in `IDLE` state (the capture view swaps the knobs out entirely), so
+   a static badge is accurate for as long as it's visible. This one needed
+   real debugging, not just wiring: the base `ArcDialWidget._draw_badge`
+   places the badge on the ring's opposite side from the label, which is
+   fine for gx_cabinet/tap_reverb's taller knob boxes but got clipped by
+   NAM's tighter `_KNOB_H` — first at the bottom (badge painted past the
+   box's bottom edge), then, after switching to a left-of-label placement
+   instead, at the *top* (the label's own ink sits with zero headroom above
+   the box's top edge by construction of `ArcDialWidget._cy()`'s clamp, and
+   a 13px badge centred on a 10px-tall label line pokes ~1.5px above that).
+   Fixed by giving `_KNOB_H` a few px of slack (114→124, comfortably clear
+   of the `_BTN_Y` row below) and overriding `_draw_badge` on NAM's
+   `KnobWidget` subclass specifically, rather than changing the shared
+   `ArcDialWidget` default that gx_cabinet/tap_reverb already rely on.
+
+Remaining R4 gaps: L1/L2/L3 degradation, `Parameterdialog`, edit-in-place,
+main-panel plugin grid.
 
 ## 8. Escape hatches
 
