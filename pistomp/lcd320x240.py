@@ -55,6 +55,7 @@ from uilib import (
 from uilib.glyphs.badge import BadgeGlyph
 from uilib.gridpanel import GridPanel, TILE_W, CHANNEL
 from uilib.menu import BadgedLabel
+from uilib.rich_text import RichTextWidget
 from uilib.pygame_init import font as _make_font
 from uilib.lcd_ili9341 import LcdIli9341
 from uilib.text import PluginTile
@@ -63,9 +64,8 @@ from modalapi.layout import build_layout_compress
 from pistomp.input.event import ControllerEvent
 from pistomp.input.sink import InputSink
 from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
-from pistomp.encoder_controller import EncoderController
 from blend.manager import BlendMode
-from plugins.base import PluginPanel
+from plugins.base import BYPASS_ACTIVE_COLOR, PluginPanel
 
 if TYPE_CHECKING:
     from modalapi.modhandler import Modhandler
@@ -531,7 +531,7 @@ class Lcd:
         self.draw_selection_menu(items, "Snapshots", auto_dismiss=True, dismiss_option=True)
 
     def draw_selection_menu(self, items, title="", auto_dismiss=False, dismiss_option=False,
-                            font=None, title_font=None, default_item=None):
+                            font=None, title_font=None, default_item=None, footer_items=()):
         # items is a list of tuples: (label, callback, arg) or (label, callback, arg, is_active)
         # or (label, callback, arg, is_active, long_callback) where long_callback is called
         # instead of callback on a long press.
@@ -550,7 +550,8 @@ class Lcd:
         if title_font is not None:
             extra['title_font'] = title_font
         m = Menu(title=title, items=items, auto_destroy=True, default_item=default_item, max_width=180, max_height=200,
-                 auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action, **extra)
+                 auto_dismiss=auto_dismiss, dismiss_option=dismiss_option, action=menu_action,
+                 footer_items=footer_items, **extra)
         self.pstack.push_panel(m)
         return m
 
@@ -747,8 +748,8 @@ class Lcd:
         return str(n) if n is not None else None
 
     def toggle_plugin_bypass_from_menu(self, plugin):
-        """A5: :bypass is a parameter row, not just chrome — the row's action
-        drives the same toggle path as a tile short-press."""
+        """A5: :bypass is a menu action, not just tile chrome — the footer
+        button drives the same toggle path as a tile short-press."""
         widget = next((w for w in self.w_plugins if w.object == plugin), None)
         self.handler.toggle_plugin_bypass(widget, plugin)
 
@@ -758,15 +759,29 @@ class Lcd:
             if name != Token.COLON_BYPASS:
                 letter = self._badge_letter(plugin, param)
                 items.append((BadgedLabel(name, letter), self.draw_parameter_dialog, param))
-        # A5: :bypass is a row too, not just tile chrome — appended last so it
-        # doesn't shift the selection index of the existing parameter rows.
+
         bypass_param = plugin.parameters.get(Token.COLON_BYPASS)
-        if bypass_param is not None:
-            letter = self._badge_letter(plugin, bypass_param)
-            state = "On" if plugin.is_bypassed() else "Off"
-            label = BadgedLabel(f"Bypass: {state}", letter)
-            items.append((label, self.toggle_plugin_bypass_from_menu, plugin))
-        self.draw_selection_menu(items, "Parameters")
+        if bypass_param is None:
+            self.draw_selection_menu(items, "Parameters")
+            return
+
+        # A5: :bypass shares the back-arrow row rather than costing a whole one.
+        # A UI bypass gets no echo, so restyle the button off local state.
+        btn: TextWidget | RichTextWidget | None = None
+
+        def toggle(p):
+            self.toggle_plugin_bypass_from_menu(p)
+            if btn is not None:
+                btn.set_background(BYPASS_ACTIVE_COLOR if p.is_bypassed() else (0, 0, 0))
+                btn.refresh()
+
+        letter = self._badge_letter(plugin, bypass_param)
+        footer = ((BadgedLabel("Bypass", letter), toggle, plugin),)
+        m = self.draw_selection_menu(items, "Parameters", footer_items=footer)
+        btn = m.footer_widgets[-1]  # the back arrow is prepended ahead of ours
+        if plugin.is_bypassed():
+            btn.set_background(BYPASS_ACTIVE_COLOR)
+            btn.refresh()
 
     def draw_symbol_menu(
         self, plugin: Plugin, rows: tuple[tuple[str, str], ...], title: str = "", on_change: Callable[[], None] | None = None
