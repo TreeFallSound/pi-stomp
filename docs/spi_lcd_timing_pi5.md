@@ -102,6 +102,31 @@ dominates and the PCIe stall is near-zero at 50 MHz.
 
 ---
 
+## The pack
+
+`LcdIli9341.update()` quantises the composed surface to RGB565 with a **single SDL
+convert-blit** into a preallocated 16-bit staging surface — not a numpy
+channel-mask pipeline.  Measured full-frame on this board:
+
+| Term | Value |
+|---|---|
+| `fixed_ms` | 0.2727 ms |
+| `pipeline_ms_per_px` | 3.83e-6 ms/px (**0.29 ms** full frame) |
+| `bits_per_pixel` | 16.03 — no framing overhead |
+
+The blit source **must be opaque**; `PanelStack`'s root is XRGB for exactly this
+reason.  An `SRCALPHA` source silently takes SDL's per-pixel alpha-blending path
+instead of a format convert and is *slower than the numpy pack it replaced*.  See
+CLAUDE.md "Traps" and `tools/bench_pack_variants.py`.
+
+At 50 MHz the pack is now **~1%** of a full-frame push (0.29 ms of 25 ms) — wire
+time is overwhelmingly the cost, and dirty-rect culling remains the only lever
+that matters.  The pack is *not* negligible on v2, where it is 6.2× dearer; the
+cost model is per-SoC for that reason.  See
+[`spi_lcd_timing_pi3.md`](spi_lcd_timing_pi3.md).
+
+---
+
 ## The PCIe DMA stall
 
 At 100 MHz SPI clock (BAUDR=2), the TX FIFO drains 16 bytes in **1.28 µs**.
@@ -159,7 +184,7 @@ poll loop (10 ms cadence)
 
 _do_update()                              # runs on worker thread
   lock.acquire()
-  numpy pack + rot90   (~1 ms)
+  SDL 565 convert-blit (~0.3 ms)         # no rot90: panel is landscape-native
   os.write(spidev_fd, data)              # blocks ~25 ms on worker thread
   lock.release()
 ```
@@ -228,9 +253,8 @@ runs in a DRM worker thread.
    would need redesigning.
 
 **Python-side changes**: Replace `LcdIli9341` with a thin writer that opens
-`/dev/fb0`, packs RGB565, and calls `write()`.  Rotation must be pre-applied
-in numpy (same as today) or configured via `MADCTL` in the firmware blob to
-make the panel landscape-native (eliminating the `rot90` step entirely).
+`/dev/fb0`, packs RGB565, and calls `write()`.  Rotation needs no work — the
+driver already sets `MADCTL` in `__init__` so the panel is landscape-native.
 
 **When to prefer this over the background thread**: If DRM integration is
 wanted for other reasons (console on the display, compositor, hardware
@@ -284,7 +308,9 @@ optimization and requires no kernel or boot changes.
 | 66.7 MHz achievable? | **No** — requires BAUDR=3 (odd, forbidden) |
 | Safe maximum setting | Any value 56–99 MHz (all give 50 MHz actual) |
 | Configured in `pistomptre.py` | `spi_speed_hz=50_000_000` |
-| Full-frame time @ 50 MHz | ~25 ms (24.6 ms wire + ~0 PCIe stall + ~0.4 ms overhead) |
+| Full-frame time @ 50 MHz | **25.19 ms** measured (24.6 ms wire + ~0 PCIe stall + 0.56 ms pack/overhead) |
+| RGB565 pack | SDL convert-blit; source **must be opaque**. 0.29 ms/full frame |
+| Cost-model constants | `spi_timing.PUSH_PROFILE["brcm,bcm2712"]` — per-SoC; v2's differ 6.2× |
 | DMA/IRQ crossover | 128 bytes (FIFO depth × 2-byte words) |
 | Optimal `spidev.bufsiz` | ≥153,600 (set to 163,840 in `pistomp-arch/files/cmdline.txt`) |
 | Primary optimization lever | Dirty-rect culling (linear in pixel count) |
