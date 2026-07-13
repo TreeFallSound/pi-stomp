@@ -390,8 +390,22 @@ panels R4 called out) and the badge mechanism itself unified.** Two threads:
    `KnobWidget` subclass specifically, rather than changing the shared
    `ArcDialWidget` default that gx_cabinet/tap_reverb already rely on.
 
-Remaining R4 gaps: L1/L2/L3 degradation, `Parameterdialog`, edit-in-place,
-main-panel plugin grid.
+Remaining R4 gaps: `Parameterdialog`, edit-in-place, main-panel plugin grid.
+
+**L1/L2/L3 degradation ladder: rejected, not deferred.** Reconsidered after a
+walkthrough and dropped, not just postponed:
+- L1 (shadowed → dot): the shadowing context (blend, a modal) occupies the
+  screen while it's active, so there's no stale badge for a user to be
+  misled by — the case the dot was meant to solve doesn't arise in practice.
+- L2 (no binding → blank, first-time coach mark): blank is already the
+  correct, unambiguous default for "nothing bound here." No change needed.
+- L3 (unnamed external MIDI → generic disc): legitimate future need, but
+  premature now — pi-stomp has no defined MIDI-flow map across the whole
+  ecosystem yet, so there's no ground truth to render honestly against.
+  Revisit once that map exists.
+
+More basic functionality gaps outrank this work; don't pick the ladder back
+up without a concrete trigger (e.g. the MIDI-flow map landing for L3).
 
 ## 8. Escape hatches
 
