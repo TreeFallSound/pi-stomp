@@ -254,6 +254,8 @@ Types: `KNOB` and `EXPRESSION` (config-driven). When `autosync: true`, `initiali
 
 **Surface formats** — Never create a bare `pygame.Surface((w,h))`: it inherits the display format, which is opaque RGB headless (device/tests) but ARGB under a real window driver (the cocoa emulator). That stray alpha channel silently breaks SRCALPHA compositing (e.g. glyph pastes drop their fill). Always be explicit: `pygame.SRCALPHA` for alpha surfaces, or `depth=32, masks=(0xFF0000, 0xFF00, 0xFF, 0)` for opaque RGB ones (bit-identical to the device's headless 32-bit XRGB; `depth=24` differs in AA rounding).
 
+**`PanelStack`'s root surface must stay opaque.** `LcdIli9341.update` quantises it to RGB565 with an SDL convert-blit; give that blit an `SRCALPHA` source and SDL silently switches to its per-pixel *alpha-blending* blitter — ~7x slower, and it lands on every LCD push. The root is a blend *destination*, so it needs 32-bit for blend precision but gains nothing from a dest alpha channel (a dimmer over black yields the same `(128,128,128)` either way). Panel surfaces (`ShroudedPanel`, `RoundedPanel`) are blit *sources* and do still need `RGBA`. Benchmark the pack path with `tools/bench_pack_variants.py`.
+
 ### WebSocket Bridge (`modalapi/websocket_bridge.py`, `modalapi/ws_protocol.py`)
 
 `AsyncWebSocketBridge` manages a background daemon thread that owns the WebSocket connection. Queues:
