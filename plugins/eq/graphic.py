@@ -332,11 +332,8 @@ class GraphicBandSelectable(Widget):
         self.selected = selected
 
     def input_event(self, event) -> bool:  # type: ignore[override]
-        if event == InputEvent.CLICK:
-            self._panel._reset_band_gain(self.band)
-            return True
         if event == InputEvent.LONG_CLICK:
-            self._panel._reset_band_to_snapshot(self.band)
+            self._panel._reset_band_gain(self.band)
             return True
         return False
 
@@ -353,7 +350,7 @@ class GraphicBandSelectable(Widget):
         pass
 
     def symbol_for(self, role: ParamRole) -> str | None:
-        return self.band.gain_sym if role is ParamRole.GAIN_DB else None
+        return self.band.gain_sym if role in (ParamRole.GAIN_DB, ParamRole.GENERIC) else None
 
 
 # ── GraphicEqPanel (ABC) ─────────────────────────────────────────────────────
@@ -553,9 +550,3 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
             return
         self.set_param(band.gain_sym, 0.0)
         self._replace_band(band, gain_db=0.0)
-
-    def _reset_band_to_snapshot(self, band: GraphicBandSpec) -> None:
-        snap = self.plugin.pedalboard_snapshot
-        if band.gain_sym in snap and not self._is_symbol_locked(self.plugin.instance_id, band.gain_sym):
-            self.set_param(band.gain_sym, snap[band.gain_sym])
-        self.apply_state(self.snapshot_state())

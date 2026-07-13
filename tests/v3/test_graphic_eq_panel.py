@@ -31,9 +31,16 @@ class _FakeEnc(Controller):
 
 
 def _param(
-    symbol: str, value: float, minimum: float = 0.0, maximum: float = 1.0, instance_id: str = "eq10"
+    symbol: str,
+    value: float,
+    minimum: float = 0.0,
+    maximum: float = 1.0,
+    instance_id: str = "eq10",
+    unit: str | None = None,
 ) -> Parameter:
-    info = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
+    info: dict = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
+    if unit is not None:
+        info["units"] = {"symbol": unit}
     return Parameter(info, value, None, instance_id)
 
 
@@ -49,7 +56,7 @@ def make_capseq10_plugin(instance_id: str = "eq10") -> Plugin:
     params["enable"] = _param("enable", 1.0, instance_id=instance_id)
 
     for b in BAND_SPECS:
-        params[b.gain_sym] = _param(b.gain_sym, 0.0, b.gain_min, b.gain_max, instance_id=instance_id)
+        params[b.gain_sym] = _param(b.gain_sym, 0.0, b.gain_min, b.gain_max, instance_id=instance_id, unit="dB")
 
     plugin = Plugin(instance_id, params, {}, "EQ", uri=CAPSEQ10_URI)
     plugin.has_footswitch = False
@@ -93,7 +100,6 @@ def short_press(handler) -> None:
 
 def long_press(handler) -> None:
     nav_click(handler, long=True)
-    nav_click(handler)
 
 
 # ---------------------------------------------------------------------------

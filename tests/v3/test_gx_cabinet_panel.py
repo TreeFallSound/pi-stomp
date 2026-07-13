@@ -60,6 +60,7 @@ def _param(
     default: float,
     instance_id: str = "cabinet",
     enum_values: list | None = None,
+    unit: str | None = None,
 ) -> Parameter:
     info: dict = {
         "shortName": symbol,
@@ -69,6 +70,8 @@ def _param(
     if enum_values is not None:
         info["properties"] = ["enumeration"]
         info["scalePoints"] = enum_values
+    if unit is not None:
+        info["units"] = {"symbol": unit}
     return Parameter(info, value, None, instance_id)
 
 
@@ -81,9 +84,9 @@ def make_gx_cabinet_plugin(instance_id: str = "cabinet") -> Plugin:
             None,
             instance_id,
         ),
-        "CLevel": _param("CLevel", 1.0, 0.5, 5.0, 1.0, instance_id),
-        "CBass": _param("CBass", 0.0, -10.0, 10.0, 0.0, instance_id),
-        "CTreble": _param("CTreble", 0.0, -10.0, 10.0, 0.0, instance_id),
+        "CLevel": _param("CLevel", 1.0, 0.5, 5.0, 1.0, instance_id, unit="×"),
+        "CBass": _param("CBass", 0.0, -10.0, 10.0, 0.0, instance_id, unit="dB"),
+        "CTreble": _param("CTreble", 0.0, -10.0, 10.0, 0.0, instance_id, unit="dB"),
         "c_model": _param("c_model", 0.0, 0.0, 18.0, 0.0, instance_id, enum_values=_MODEL_SCALEPOINTS),
     }
     plugin = Plugin(instance_id, params, {}, "GxCabinet", uri=GX_CABINET_URI)
@@ -127,6 +130,10 @@ def tweak(handler, idx: int, rotations: int) -> bool:
 
 def short_press(handler) -> None:
     nav_click(handler)
+
+
+def long_press(handler) -> None:
+    nav_click(handler, long=True)
 
 
 # ---------------------------------------------------------------------------
@@ -231,12 +238,12 @@ def test_gx_cabinet_tweak3_edits_level(v3_system: SystemFixture, snapshot):
 
 
 # ---------------------------------------------------------------------------
-# Saga 6 — CLICK resets value to lv2:default
+# Saga 6 — LONGPRESS resets value to lv2:default
 # ---------------------------------------------------------------------------
 
 
 def test_gx_cabinet_click_resets_to_default(v3_system: SystemFixture, nav_handler, snapshot):
-    """Edit Bass, click it -> resets to lv2:default (0.0)."""
+    """Edit Bass, longpress it -> resets to lv2:default (0.0)."""
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
@@ -247,7 +254,7 @@ def test_gx_cabinet_click_resets_to_default(v3_system: SystemFixture, nav_handle
     handler.poll_lcd_updates()
     snapshot("bass_edited")
 
-    short_press(handler)
+    long_press(handler)
     handler.poll_lcd_updates()
     snapshot("bass_reset")
 

@@ -47,7 +47,7 @@ class ArcKnobWidget(ArcDialWidget):
         return self.symbol
 
     def input_event(self, event) -> bool:
-        if event == InputEvent.CLICK:
+        if event == InputEvent.LONG_CLICK:
             self._panel._reset_to_default(self.symbol)
             return True
         return False

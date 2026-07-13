@@ -17,12 +17,14 @@ import logging
 import os
 import time
 import socket
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Optional
 from common.fonts import font_path
 import common.token as Token
 import common.util as util
 from common.contexts import ControlClass, EventKind, ParamEffect, ShadowState
 from common.parameter import Parameter, Type
+from modalapi.plugin import Plugin
 from ui.ethernet_menu import EthernetMenu
 from ui.wifi_menu import WifiMenu
 import pistomp.category as Category
@@ -766,11 +768,37 @@ class Lcd:
             items.append((label, self.toggle_plugin_bypass_from_menu, plugin))
         self.draw_selection_menu(items, "Parameters")
 
-    def draw_parameter_dialog(self, parameter, timeout=None):
+    def draw_symbol_menu(
+        self, plugin: Plugin, rows: tuple[tuple[str, str], ...], title: str = "", on_change: Callable[[], None] | None = None
+    ) -> None:
+        """A compound NAV selection (e.g. an EQ band's gain/freq/Q): a submenu
+        over just `rows` symbols, each opening the same per-parameter dialog
+        draw_parameter_menu's rows do."""
+        items = []
+        for (label, symbol) in rows:
+            param = plugin.parameters.get(symbol)
+            if param is None:
+                continue
+            letter = self._badge_letter(plugin, param)
+            open_dialog = (lambda p, oc=on_change: self.draw_parameter_dialog(p, on_change=oc)) if on_change else self.draw_parameter_dialog
+            items.append((BadgedLabel(label, letter), open_dialog, param))
+        self.draw_selection_menu(items, title)
+
+    def draw_parameter_dialog(self, parameter, timeout=None, on_change: Callable[[], None] | None = None):
         # If we already have an active dialog for the parameter, use it
         d = util.DICT_GET(self.w_parameter_dialogs, parameter.name)
         if d is not None and d.parent is not None:
             return d
+
+        def commit(param, value):
+            self.parameter_commit(param, value)
+            if on_change is not None:
+                on_change()
+
+        def commit_enum(param_value_tuple):
+            self.parameter_commit_enum(param_value_tuple)
+            if on_change is not None:
+                on_change()
 
         # Create a new dialog
         title = parameter.instance_id + ":" + parameter.name
@@ -778,17 +806,17 @@ class Lcd:
         if parameter.type == Type.ENUMERATION:
             items = []
             for (label, value) in parameter.get_enum_value_list():
-                item = (label, self.parameter_commit_enum, (parameter, value), value==current_value)
+                item = (label, commit_enum, (parameter, value), value==current_value)
                 items.append(item)
             d = self.draw_selection_menu(items, title, auto_dismiss=True)
         elif parameter.type == Type.TOGGLED:
-            items = [ ("On",  self.parameter_commit_enum, (parameter, 1), current_value==1),
-                      ("Off", self.parameter_commit_enum, (parameter, 0), current_value==0)]
+            items = [ ("On",  commit_enum, (parameter, 1), current_value==1),
+                      ("Off", commit_enum, (parameter, 0), current_value==0)]
             d = self.draw_selection_menu(items, title, auto_dismiss=True)
         else:
             d = Parameterdialog(self.pstack, parameter,
                                 width=270, height=130, auto_destroy=True, title=title, timeout=timeout,
-                                action=self.parameter_commit, object=parameter)
+                                action=commit, object=parameter)
             plugin = (
                 next((p for p in self.current.pedalboard.plugins if p.instance_id == parameter.instance_id), None)
                 if self.current is not None else None

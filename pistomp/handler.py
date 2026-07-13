@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -27,6 +28,8 @@ from pistomp.input.event import ControllerEvent, SwitchEventKind
 from pistomp.input.sink import InputSink
 
 if TYPE_CHECKING:
+    from common.parameter import Parameter
+    from modalapi.plugin import Plugin
     from modalapi.websocket_bridge import AsyncWebSocketBridge
     from pistomp.hardware import Hardware
     from pistomp.tuner.source import TunerSourceFactory
@@ -87,6 +90,28 @@ class Handler(InputSink):
         raise NotImplementedError()
 
     def add_lcd(self, lcd):
+        raise NotImplementedError()
+
+    def open_parameter_dialog(self, parameter: "Parameter", on_change: Callable[[], None] | None = None) -> None:
+        """NAV CLICK on a selection resolving to a single symbol: open the
+        same user-dismissable editor the generic plugin-parameter-menu uses.
+        `on_change` fires after every commit (including each rotation tick,
+        not just on close) — the panel's own resync hook, since this dialog
+        writes straight to plugin.parameters and has no other way to tell a
+        panel open underneath it to repaint from the new value."""
+        raise NotImplementedError()
+
+    def open_parameter_submenu(
+        self, plugin: "Plugin", rows: tuple[tuple[str, str], ...], title: str, on_change: Callable[[], None] | None = None
+    ) -> None:
+        """NAV CLICK on a compound selection (e.g. an EQ band's gain/freq/Q):
+        open a submenu over just these symbols, each row opening the same
+        per-parameter dialog as open_parameter_dialog (same on_change)."""
+        raise NotImplementedError()
+
+    def open_audio_parameter_dialog(self, parameter: "Parameter", commit_callback: Callable[[str, float], None]) -> None:
+        """Same as open_parameter_dialog, for a synthetic audio-card
+        parameter (no backing LV2 plugin, e.g. NAM's capture gain/volume)."""
         raise NotImplementedError()
 
     def add_hardware(self, hardware):

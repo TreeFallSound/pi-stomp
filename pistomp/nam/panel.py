@@ -60,9 +60,11 @@ from common.contexts import (
     EventKind,
     NoneEffect,
 )
+from common.param_roles import ParamRole
+from common.parameter import Parameter
 
 from uilib.panel import Panel
-from pistomp.input.dispatch import fire, resolve_local
+from pistomp.input.dispatch import Selectable, fire, resolve_local
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent
 from pistomp.nam import routing
 from pistomp.nam.engine import CaptureState, NamCaptureEngine
@@ -175,7 +177,9 @@ class KnobWidget(ArcDialWidget):
 
     _ARC_RADIUS = 39
 
-    def __init__(self, box: Box, label: str, min_val: float, max_val: float, parent: Widget) -> None:
+    def __init__(
+        self, box: Box, label: str, symbol: str, min_val: float, max_val: float, parent: Widget
+    ) -> None:
         super().__init__(
             box=box,
             label=label,
@@ -193,6 +197,10 @@ class KnobWidget(ArcDialWidget):
             unit_fg=_KNOB_LABEL_FG,
             label_fg=_KNOB_LABEL_FG,
         )
+        self.symbol = symbol
+
+    def symbol_for(self, role: ParamRole) -> str | None:
+        return self.symbol
 
     def _draw_badge(self, ctx: PaintContext) -> None:
         """Left of the label, out of flow — the base class's below-ring spot
@@ -498,6 +506,7 @@ class NamCapturePanel(Panel):
         self._knob_gain = KnobWidget(
             box=Box.xywh(8, _KNOB_Y, _KNOB_W, _KNOB_H),
             label="IN2",
+            symbol="CAPTURE_VOLUME",
             min_val=-19.75,
             max_val=12.0,
             parent=self,
@@ -506,6 +515,7 @@ class NamCapturePanel(Panel):
         self._knob_vol = KnobWidget(
             box=Box.xywh(_W - _KNOB_W - 8, _KNOB_Y, _KNOB_W, _KNOB_H),
             label="OUT2",
+            symbol="MASTER",
             min_val=-25.75,
             max_val=self._max_out_db,
             parent=self,
@@ -539,6 +549,8 @@ class NamCapturePanel(Panel):
             self._btn_start,
         ]
         self.add_sel_widget(self._name_btn)
+        self.add_sel_widget(self._knob_gain)
+        self.add_sel_widget(self._knob_vol)
         self.add_sel_widget(self._btn_setup_close)
         self.add_sel_widget(self._btn_start)
 
@@ -736,6 +748,40 @@ class NamCapturePanel(Panel):
             return False
         self._nudge_audio(symbol == "CAPTURE_VOLUME", rotations)
         return True
+
+    def _open_editor_for_selection(self) -> bool:
+        """NAV CLICK on the gain/vol knob: not a PluginPanel, so open a
+        synthetic-Parameter audio dialog instead of an LV2 one. Only
+        meaningful in IDLE — same gate declare_bindings() applies to the
+        Tweak encoders for these same two symbols."""
+        if self._handler is None or self._engine.state != CaptureState.IDLE:
+            return False
+        sel = self.sel_ref
+        symbol = sel.symbol_for(ParamRole.GENERIC) if isinstance(sel, Selectable) else None
+        if symbol not in ("CAPTURE_VOLUME", "MASTER"):
+            return False
+        is_gain = symbol == "CAPTURE_VOLUME"
+        name = "Input Gain" if is_gain else "Output Volume"
+        value = self._gain_val if is_gain else self._vol_val
+        minimum = -19.75 if is_gain else -25.75
+        maximum = 12.0 if is_gain else self._max_out_db
+        info = {Token.NAME: name, Token.SYMBOL: symbol, Token.RANGES: {Token.MINIMUM: minimum, Token.MAXIMUM: maximum}}
+        param = Parameter(info, value, None)
+        param.unit_symbol = "dB"
+        self._handler.open_audio_parameter_dialog(param, self._commit_audio_dialog_value)
+        return True
+
+    def _commit_audio_dialog_value(self, symbol: str, value: float) -> None:
+        if self._handler is None or symbol not in ("CAPTURE_VOLUME", "MASTER"):
+            return
+        if symbol == "CAPTURE_VOLUME":
+            self._gain_val = value
+            self._handler.audio_parameter_commit(self._handler.audiocard.CAPTURE_VOLUME, value)
+            self._knob_gain.set_value(value)
+        else:
+            self._vol_val = value
+            self._handler.audio_parameter_commit(self._handler.audiocard.MASTER, value)
+            self._knob_vol.set_value(value)
 
     # ── Polling ───────────────────────────────────────────────────────────────
 
@@ -960,7 +1006,7 @@ class NamCapturePanel(Panel):
         self.refresh()
 
     def _switch_to_capture_view(self) -> None:
-        for w in (self._name_btn, self._btn_setup_close, self._btn_start):
+        for w in (self._name_btn, self._knob_gain, self._knob_vol, self._btn_setup_close, self._btn_start):
             self.del_sel_widget(w)
         for w in self._setup_group:
             w.hide(refresh=False)
@@ -981,6 +1027,8 @@ class NamCapturePanel(Panel):
         for w in self._setup_group:
             w.show(refresh=False)
         self.add_sel_widget(self._name_btn)
+        self.add_sel_widget(self._knob_gain)
+        self.add_sel_widget(self._knob_vol)
         self.add_sel_widget(self._btn_setup_close)
         self.add_sel_widget(self._btn_start)
         self._in_capture_view = False

@@ -703,8 +703,7 @@ class BandSelectable(Widget):
             self._panel._toggle_band_enable(self.band)
             return True
         if event == InputEvent.LONG_CLICK:
-            self._panel._reset_band_to_snapshot(self.band)
-            return True
+            return self._panel._open_editor_for_selection()
         return False
 
     def scroll_into_view(self) -> bool:
@@ -729,6 +728,21 @@ class BandSelectable(Widget):
                 return self.band.q_sym
             case _:
                 return None
+
+    def menu_title(self) -> str:
+        return f"{self._panel.plugin.name}:{self.band.name}"
+
+    def menu_rows(self) -> tuple[tuple[str, str], ...]:
+        """NAV LONGPRESS on a band: a submenu over whichever of gain/freq/Q
+        this band actually has (some bands, e.g. HP/LP filters, lack gain)."""
+        rows: list[tuple[str, str]] = []
+        if self.band.gain_sym is not None:
+            rows.append(("Gain", self.band.gain_sym))
+        if self.band.freq_sym is not None:
+            rows.append(("Freq", self.band.freq_sym))
+        if self.band.q_sym is not None:
+            rows.append(("Q", self.band.q_sym))
+        return tuple(rows)
 
 
 # ── readout formatting ──────────────────────────────────────────────────────
@@ -949,15 +963,3 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
         new_enabled = not p.enabled
         self.set_param(band.enable_sym, 1.0 if new_enabled else 0.0)
         self._replace_band(band, enabled=new_enabled)
-
-    def _reset_band_to_snapshot(self, band: BandSpec) -> None:
-        snap = self.plugin.pedalboard_snapshot
-        for symbol in (band.enable_sym, band.freq_sym, band.q_sym):
-            if symbol is None:
-                continue
-            if symbol in snap and not self._is_symbol_locked(self.plugin.instance_id, symbol):
-                self.set_param(symbol, snap[symbol])
-        if band.gain_sym is not None and band.gain_sym in snap:
-            if not self._is_symbol_locked(self.plugin.instance_id, band.gain_sym):
-                self.set_param(band.gain_sym, snap[band.gain_sym])
-        self.apply_state(self.snapshot_state())

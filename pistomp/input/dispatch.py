@@ -42,6 +42,17 @@ class Selectable(Protocol):
     def symbol_for(self, role: ParamRole) -> str | None: ...
 
 
+@runtime_checkable
+class MultiSelectable(Protocol):
+    """A selection representing more than one live symbol at once (e.g. an EQ
+    band's gain/freq/Q) — CLICK opens a submenu over these instead of a single
+    dialog."""
+
+    def menu_rows(self) -> tuple[tuple[str, str], ...]: ...
+
+    def menu_title(self) -> str: ...
+
+
 class PanelOps(Protocol):
     """Not the concrete Panel type — pistomp/input must not import uilib back."""
 

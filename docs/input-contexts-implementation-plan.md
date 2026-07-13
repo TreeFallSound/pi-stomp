@@ -725,10 +725,108 @@ elsewhere — two independent occurrences of "same control, mode-dependent
 behavior inside one panel" would be the signal that the sub-panel refactor is
 worth doing generally, not just for NAM.
 
-## 10. Acceptance gate (charter requirements, unchanged)
+## 10. A4: NAV-only edit-in-place (closes v2 parity)
 
-1. v2 parity — every custom panel fully NAV-operable.
-2. v2 observable in CI — `v2_system` fixture (step 7 above).
+**Status: landed.** The one item the census left unmet: v2 hardware
+(`Pistompcore`) has a single NAV encoder and no Tweak1/2/3 at all, and every
+migrated panel's `SelectionEditEffect` only fires off a Tweak-encoder
+`EncoderEvent` — there was no path for NAV rotation to reach it, so a v2 user
+could not change a focused knob's value on any migrated panel. Charter §A4
+named this gap; this section is its resolution.
+
+**Design: reuse the generic `Parameterdialog`/`Menu` machinery recursively,
+rather than build a new edit-mode state machine.** The existing gesture
+vocabulary already answers the question: on the main pedalboard, CLICK
+toggles/dives (a tile's bypass; long-press opens its fullscreen panel) and the
+generic plugin-parameter-menu already opens a user-dismissable
+`Parameterdialog` (rotate-to-edit, click-to-close) on CLICK. So: NAV CLICK on
+any panel selection now does whatever CLICK already does for the equivalent
+generic-plugin selection — open `Parameterdialog`/`draw_selection_menu` for a
+single symbol, or a `Menu` submenu for a compound selection (e.g. a
+parametric-EQ band, which is really "a mini-plugin" with gain/freq/Q). This is
+additive: `declare_bindings()`/`SelectionEditEffect`/`edit_symbol` (§1-6) are
+untouched and remain the fast tactile v3 Tweak-encoder path; CLICK-dispatch is
+the new NAV-only path, used whenever no Tweak encoder is involved.
+
+Mechanism:
+- `uilib/panel.py`: `Panel.input_event`'s CLICK branch now calls a new
+  overridable `_open_editor_for_selection()` hook (base no-op).
+- `plugins/base.py` (`PluginPanel`) implements it: `isinstance(sel_ref,
+  MultiSelectable)` → `handler.open_parameter_submenu(...)` (a `Menu` over
+  the selection's `menu_rows()`); `isinstance(sel_ref, Selectable)` →
+  `handler.open_parameter_dialog(...)` for `symbol_for(ParamRole.GENERIC)`.
+- `pistomp/input/dispatch.py` gained `MultiSelectable` (`menu_rows() ->
+  tuple[tuple[str,str],...]`, `menu_title() -> str`) alongside the existing
+  `Selectable`.
+- `pistomp/handler.py` gained `open_parameter_dialog`/`open_parameter_submenu`/
+  `open_audio_parameter_dialog` (NAM's non-LV2 case) — the same seam pattern
+  as `add_lcd`, delegating to `Lcd320x240` in `Modhandler`.
+- `pistomp/lcd320x240.py` gained `draw_symbol_menu` (a `Menu` over a symbol
+  subset, reusing `draw_parameter_dialog` per row exactly like
+  `draw_parameter_menu` already does for the full plugin).
+
+**Real bug found and fixed along the way:** the generic `Parameterdialog`
+commits straight to `plugin.parameters[symbol].value` and sends over
+websocket — it has no notion of a specific panel's own widget-sync methods
+(`_replace_band`, `_sync_after_edit`, `_column.sync_symbol`, ...). Opening it
+from inside a panel (new) left that panel's own widgets stale after the
+dialog closed (caught by a red/green test: `panel._knob_bass.value` stayed at
+the pre-edit value after commit). Fixed by threading an `on_change` callback
+through `draw_parameter_dialog`/`draw_symbol_menu` → `Handler.
+open_parameter_dialog`/`open_parameter_submenu`, which `PluginPanel._open_editor_for_selection`
+wires to `self.apply_state(self.snapshot_state())` — the exact same resync
+call the mod-ui `ParamSetMessage` echo handler already uses
+(`modalapi/modhandler.py`'s `_handle_ws_message`). Fires on every rotation
+tick, not just on close, matching the "optimistic paint" pattern every other
+edit path already follows.
+
+**Gesture resolution.** Two pre-existing collisions surfaced during
+migration, both resolved by the same principle (CLICK now owns
+open/toggle/dive; LONGPRESS is freed up for secondary actions that don't
+collide with it):
+- `ArcSelectable`/`ArcKnobWidget`/`ParamSlotWidget` previously swallowed CLICK
+  as a no-op (or, for gx_cabinet/tap_reverb's arc knobs, used CLICK — not
+  LONGPRESS — for reset-to-default). Fixed: CLICK now falls through to
+  `_open_editor_for_selection`; reset-to-default moved to LONGPRESS
+  uniformly.
+- Parametric/graphic EQ bands already used *both* CLICK (toggle-enable /
+  reset-gain) and LONGPRESS (reset-to-snapshot) for real actions, leaving no
+  gesture free for "open the editor." Resolved by dropping band-level
+  snapshot-reset (redundant with the chrome-level Reset row, which already
+  restores everything) and moving LONGPRESS to open-editor: parametric EQ's
+  CLICK stays a genuine toggle (enable/disable the band), LONGPRESS opens the
+  gain/freq/Q submenu; graphic EQ's LONGPRESS resets gain-to-default (single
+  symbol, no submenu needed), same as gx_cabinet/tap_reverb's arc knobs.
+
+**v2 test suite** (`tests/v2/test_{gx_cabinet,tap_reverb,compressor,
+eq_parametric,eq_graphic,multiband_menu,nam}_panel.py`, 25 tests) drives every
+migrated panel family via NAV rotation/click alone (`tests/v3/nav_helpers.py`
++ a new `nav_handler` fixture in `tests/v2/conftest.py`), proving: every
+symbol reachable via NAV+CLICK, the compound submenu case, LONGPRESS-reset
+still works, and NAM's synthetic-Parameter dialog path (gated to `IDLE`,
+matching the existing Tweak-encoder gating) — closing charter Requirements 1
+and 2. One further finding surfaced by this suite while writing it (not a
+code bug): several pre-existing v3 test-fixture `Parameter` builders
+(gx_cabinet, tap_reverb, parametric/graphic EQ, noisegate) omitted LV2
+`units` metadata, so the generic dialog rendered bare numbers — fixed by
+adding `unit=` to each fixture's `_param()` helper wherever the panel's own
+formatter gave unambiguous evidence of the real unit; left alone where it
+didn't (compressor's thr/kn/mak — the panel's own display_fn strips units
+entirely, so there's no evidence in the codebase for what to put there).
+
+Deliberately out of scope (per explicit decision during design): the deeper
+"arc-ring grid IS the parameter menu, with some params pinned as big dials up
+top and the rest flowing into a list beneath, one continuous NAV cursor"
+layout unification for gx_cabinet/tap_reverb/compressor. The CLICK-dispatch
+mechanism above is sufficient for v2 parity without touching any panel's
+visual layout; the pinned-row unification remains a separate future
+initiative.
+
+## 11. Acceptance gate (charter requirements, unchanged)
+
+1. v2 parity — every custom panel fully NAV-operable. **Met — §11.**
+2. v2 observable in CI — `v2_system` fixture (step 7 above). **Met — §11's
+   v2 test suite is the acceptance-test list this requirement called for.**
 3. NAV invariant enforced by a test, not convention (already true post-A1;
    keep it true).
 4. Migration total — every R1 row declared or escape-hatched, no third

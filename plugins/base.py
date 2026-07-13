@@ -44,7 +44,7 @@ import common.token as Token
 from common.contexts import ControlClass, ControlRef, EventKind
 from common.param_roles import ParamRole, edit_value
 from modalapi.plugin import Plugin
-from pistomp.input.dispatch import fire, resolve_local
+from pistomp.input.dispatch import MultiSelectable, Selectable, fire, resolve_local
 from pistomp.input.event import ControllerEvent, EncoderEvent
 from pistomp.handler import Handler
 from uilib.misc import step_for_param
@@ -116,6 +116,34 @@ class PluginPanel(Panel, Generic[TState], ABC):
             decl = resolve_local(rows, ControlRef(cls=cls, id=control_id), EventKind.ROTATE)
             if decl is not None:
                 return fire(decl, self, event)
+        return False
+
+    def _open_editor_for_selection(self) -> bool:
+        """NAV CLICK on the current selection: open whatever editor the
+        generic plugin-parameter-menu would for the same symbol(s) — a
+        submenu for a compound selection (e.g. an EQ band), else a single
+        dialog. Reuses Handler.open_parameter_dialog/open_parameter_submenu,
+        the same mechanism a v3 Tweak encoder's SelectionEditEffect edits
+        directly and NAV-only (v2) hardware has no other way to reach."""
+        def resync() -> None:
+            self.apply_state(self.snapshot_state())
+
+        sel = self.sel_ref
+        if isinstance(sel, MultiSelectable):
+            rows = sel.menu_rows()
+            if not rows:
+                return False
+            self.handler.open_parameter_submenu(self.plugin, rows, sel.menu_title(), on_change=resync)
+            return True
+        if isinstance(sel, Selectable):
+            symbol = sel.symbol_for(ParamRole.GENERIC)
+            if symbol is None:
+                return False
+            p = self.plugin.parameters.get(symbol)
+            if p is None:
+                return False
+            self.handler.open_parameter_dialog(p, on_change=resync)
+            return True
         return False
 
     def edit_symbol(self, symbol: str, rotations: int) -> bool:

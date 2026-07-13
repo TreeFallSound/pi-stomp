@@ -89,6 +89,7 @@ def _param(
     default: float,
     instance_id: str = "reverb",
     enum_values: list | None = None,
+    unit: str | None = None,
 ) -> Parameter:
     info: dict = {
         "shortName": symbol,
@@ -98,6 +99,8 @@ def _param(
     if enum_values is not None:
         info["properties"] = ["enumeration"]
         info["scalePoints"] = enum_values
+    if unit is not None:
+        info["units"] = {"symbol": unit}
     return Parameter(info, value, None, instance_id)
 
 
@@ -110,9 +113,9 @@ def make_tap_reverb_plugin(instance_id: str = "reverb") -> Plugin:
             None,
             instance_id,
         ),
-        "decay": _param("decay", 2800.0, 0.0, 10000.0, 2800.0, instance_id),
-        "drylevel": _param("drylevel", -4.0, -70.0, 10.0, -4.0, instance_id),
-        "wetlevel": _param("wetlevel", -12.0, -70.0, 10.0, -12.0, instance_id),
+        "decay": _param("decay", 2800.0, 0.0, 10000.0, 2800.0, instance_id, unit="ms"),
+        "drylevel": _param("drylevel", -4.0, -70.0, 10.0, -4.0, instance_id, unit="dB"),
+        "wetlevel": _param("wetlevel", -12.0, -70.0, 10.0, -12.0, instance_id, unit="dB"),
         "mode": _param("mode", 0.0, 0.0, 42.0, 0.0, instance_id, enum_values=_MODE_SCALEPOINTS),
     }
     plugin = Plugin(instance_id, params, {}, "Reverb", uri=TAP_REVERB_URI)
@@ -293,12 +296,12 @@ def test_tap_reverb_tweak1_edits_mode_when_focused(v3_system: SystemFixture, nav
 
 
 # ---------------------------------------------------------------------------
-# Saga 7 — CLICK resets value to lv2:default
+# Saga 7 — LONGPRESS resets value to lv2:default
 # ---------------------------------------------------------------------------
 
 
 def test_tap_reverb_click_resets_to_default(v3_system: SystemFixture, nav_handler, snapshot):
-    """Edit Decay, click it → resets to lv2:default (2800 ms)."""
+    """Edit Decay, longpress it → resets to lv2:default (2800 ms)."""
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
@@ -309,8 +312,8 @@ def test_tap_reverb_click_resets_to_default(v3_system: SystemFixture, nav_handle
     handler.poll_lcd_updates()
     snapshot("decay_edited")
 
-    # Click → reset to default
-    short_press(handler)
+    # Longpress → reset to default
+    nav_click(handler, long=True)
     handler.poll_lcd_updates()
     snapshot("decay_reset")
 

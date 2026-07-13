@@ -35,8 +35,6 @@ class ArcSelectable(Widget):
         if event == InputEvent.LONG_CLICK:
             self._panel._reset_symbol(self.symbol)
             return True
-        if event == InputEvent.CLICK:
-            return True
         return False
 
     def scroll_into_view(self) -> bool:

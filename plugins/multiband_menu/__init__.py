@@ -210,8 +210,6 @@ class ParamSlotWidget(Widget):
         return f"{self._value:.1f}"
 
     def input_event(self, event) -> bool:
-        if event == InputEvent.CLICK:
-            return True
         if event == InputEvent.LONG_CLICK:
             snap = self._owner.plugin.pedalboard_snapshot
             if self.slot.symbol in snap:
@@ -232,7 +230,7 @@ class ParamSlotWidget(Widget):
     def symbol_for(self, role: ParamRole) -> str | None:
         return self.slot.symbol
 
-    def set_selected(self, selected: bool) -> None:  # type: ignore[override]
+    def set_selected(self, selected: bool) -> None:
         self.selected = selected
         self.refresh()
 

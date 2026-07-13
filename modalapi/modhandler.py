@@ -27,6 +27,7 @@ from pistomp.httpclient import Response
 import subprocess
 import sys
 import yaml
+from collections.abc import Callable
 from functools import cached_property
 from typing import cast, Any
 
@@ -44,6 +45,7 @@ from common.contexts import (
     EventKind,
 )
 from common.parameter import Parameter
+from modalapi.plugin import Plugin
 from blend.input_controller import InputController
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
@@ -372,6 +374,17 @@ class Modhandler(Handler):
     def lcd(self):
         assert self._lcd is not None, "LCD has not been initialized"
         return self._lcd
+
+    def open_parameter_dialog(self, parameter: Parameter, on_change: Callable[[], None] | None = None) -> None:
+        self.lcd.draw_parameter_dialog(parameter, on_change=on_change)
+
+    def open_parameter_submenu(
+        self, plugin: Plugin, rows: tuple[tuple[str, str], ...], title: str, on_change: Callable[[], None] | None = None
+    ) -> None:
+        self.lcd.draw_symbol_menu(plugin, rows, title, on_change=on_change)
+
+    def open_audio_parameter_dialog(self, parameter: Parameter, commit_callback: Callable[[str, float], None]) -> None:
+        self.lcd.draw_audio_parameter_dialog(parameter, commit_callback)
 
     def poll_controls(self):
         if self.hardware:

@@ -145,6 +145,15 @@ class Panel(ContainerWidget, InputSink):
         elif event == InputEvent.RIGHT:
             self.sel_next()
             return True
+        elif event == InputEvent.CLICK:
+            return self._open_editor_for_selection()
+        return False
+
+    def _open_editor_for_selection(self) -> bool:
+        """CLICK on a selected widget that didn't handle it itself: open a
+        value editor for whatever it represents. Base no-op — panels with
+        nothing to edit (menus, system screens) are unaffected; PluginPanel
+        overrides this."""
         return False
 
     def input_step(self, direction: int, count: int, multiplier: float = 1.0) -> bool:

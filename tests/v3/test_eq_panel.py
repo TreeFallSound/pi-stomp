@@ -38,9 +38,16 @@ class _FakeEnc(Controller):
 
 
 def _param(
-    symbol: str, value: float, minimum: float = 0.0, maximum: float = 1.0, instance_id: str = "fil4"
+    symbol: str,
+    value: float,
+    minimum: float = 0.0,
+    maximum: float = 1.0,
+    instance_id: str = "fil4",
+    unit: str | None = None,
 ) -> Parameter:
-    info = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
+    info: dict = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
+    if unit is not None:
+        info["units"] = {"symbol": unit}
     return Parameter(info, value, None, instance_id)
 
 
@@ -56,18 +63,18 @@ def make_fil4_plugin(instance_id: str = "fil4") -> Plugin:
     bypass_info = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
     params[":bypass"] = Parameter(bypass_info, False, None, instance_id)
     params[PLUGIN_ENABLE_SYM] = _param(PLUGIN_ENABLE_SYM, 1.0, instance_id=instance_id)
-    params["gain"] = _param("gain", 0.0, -18.0, 18.0, instance_id=instance_id)
+    params["gain"] = _param("gain", 0.0, -18.0, 18.0, instance_id=instance_id, unit="dB")
 
     # Per-band
     for b in BAND_SPECS:
         if b.enable_sym is not None:
             params[b.enable_sym] = _param(b.enable_sym, 0.0, instance_id=instance_id)
         f0 = (b.freq_min * b.freq_max) ** 0.5
-        params[b.freq_sym] = _param(b.freq_sym, f0, b.freq_min, b.freq_max, instance_id=instance_id)
+        params[b.freq_sym] = _param(b.freq_sym, f0, b.freq_min, b.freq_max, instance_id=instance_id, unit="Hz")
         if b.q_sym is not None:
             params[b.q_sym] = _param(b.q_sym, 1.0, b.q_min, b.q_max, instance_id=instance_id)
         if b.gain_sym is not None:
-            params[b.gain_sym] = _param(b.gain_sym, 0.0, -18.0, 18.0, instance_id=instance_id)
+            params[b.gain_sym] = _param(b.gain_sym, 0.0, -18.0, 18.0, instance_id=instance_id, unit="dB")
 
     plugin = Plugin(instance_id, params, {}, "Filter", uri=FIL4_MONO_URI)
     plugin.has_footswitch = False
