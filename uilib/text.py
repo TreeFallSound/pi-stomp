@@ -236,7 +236,7 @@ class TextWidget(Widget):
         self._text_cache_key: tuple | None = None
         self.badge_gap = badge_gap
         super(TextWidget, self).__init__(box, **kwargs)
-        # Badge glyph (docs/r4-badge-surfaces.md §5): anchored to the left of
+        # Badge glyph (see uilib/README.md's Badges section): anchored to the left of
         # the rendered text, wherever that lands — the text's own position
         # (left/centre/right aligned) never moves to make room for it. Uses
         # the base `Widget._badge`/`set_badge()`; only `_draw_badge` below is

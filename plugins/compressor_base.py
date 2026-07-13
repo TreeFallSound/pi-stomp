@@ -105,7 +105,7 @@ class CompressorPanel(FullscreenPluginPanel[CompressorState]):
     def declare_bindings(self) -> tuple[BindingDecl, ...]:
         panel_ctx = ContextRef(kind=ContextKind.PANEL, name="compressor")
         # enc3 is chassis-labeled Tweak3/Volume; rat stays bound there as a
-        # deliberate, explicit override (pistomp/input/README.md, VOLUME opt-in).
+        # deliberate, explicit override (see ContextLayer.add in common/contexts.py).
         volume_ctx = ContextRef(kind=ContextKind.PANEL, name="compressor", override_volume=True)
         return (
             BindingDecl(

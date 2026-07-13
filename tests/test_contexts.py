@@ -14,7 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 """The per-control-class precedence resolver and the VOLUME opt-in guard.
-See docs/r2-schema-precedence.md §4 and §8 Q4."""
+See common/contexts.py's module docstring and ContextLayer.add."""
 
 import pytest
 

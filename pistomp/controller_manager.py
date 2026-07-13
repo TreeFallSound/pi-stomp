@@ -55,11 +55,11 @@ class ControllerManager:
     def __init__(self, hardware: "Hardware", *, reorder_footswitch_plugins: bool = False):
         self._hw = hardware
         self._reorder_footswitch_plugins = reorder_footswitch_plugins
-        # Effective table (docs/input-contexts-implementation-plan.md §6): a
-        # PEDALBOARD-layer diagnostic view built alongside the legacy dict
-        # outputs below, not yet consumed by them. ORPHANED rows record TTL
-        # bindings with no matching physical controller, which the legacy
-        # path today drops silently.
+        # Effective table (common/contexts.py, pistomp/input/README.md): the
+        # PEDALBOARD layer of the resolved binding table, built alongside the
+        # legacy dict outputs below. ORPHANED rows record TTL bindings with
+        # no matching physical controller, which the legacy path drops
+        # silently.
         self.effective_table = ContextStack(layers=[])
 
     def bind(self, current: Current | None) -> None:

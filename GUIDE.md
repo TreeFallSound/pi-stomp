@@ -16,6 +16,10 @@ Architecture reference: `docs/architecture.md`. Subsystem detail:
 - **Dependencies form a DAG.** No cycles between modules.
 - **MOD-UI is the single writer** of bypass and parameter state. We emit, paint
   optimistically, and reconcile against its echo. Never treat local state as truth.
+- **NAV is unhijackable.** Rotate/click/longpress on the NAV control always operates on
+  the current selection. No panel or binding may consume a raw NAV event, and no
+  `declare_bindings()` row may name `cls=NAV` — it's the one axiom the precedence
+  resolver doesn't apply to. Enforced by the base `Panel`, not convention.
 
 ## Writing code here
 
@@ -37,6 +41,13 @@ observability cruft. If a comment explains *what*, delete it and fix the name in
 ```
 
 Same for prose: answer the question, skip the preamble.
+
+A panel's input handling is declared, not written. Override `declare_bindings()` to
+return a tuple of `BindingDecl`s (`common/contexts.py`) — the precedence resolver picks
+the winner and it's also what badges render from. Reach for `on_event` only when a
+panel is a genuine state machine, not a binding set (NAM's capture flow is the one
+example); a new panel written as an `on_event` `if` chain is a regression. See
+`pistomp/input/README.md` for the shape.
 
 ## Commands
 
@@ -80,6 +91,11 @@ uv-managed venv. Don't try to pip-install the system ones.
 
 - **Blocking subprocess calls (nmcli, systemctl) must not run on the UI thread.** They
   stall the 10ms loop. Use a worker thread and poll-drain the result.
+
+- **A widget badge only paints if its container calls `_draw_badge`.** `Widget.do_draw`
+  calls it automatically, but `ContainerWidget` subclasses with their own paint path
+  (virtual refresh, non-virtual refresh, dirty-rect rebuild) must call it explicitly in
+  each one.
 
 ## Tests
 

@@ -14,11 +14,11 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 """BadgeGlyph: a filled white circle with a single black character centered
-inside — the footswitch (A)-(D) / tweak-encoder (1)(2)(3) binding marker
-(docs/r4-badge-surfaces.md §5). One fixed appearance everywhere it's used, so
-the marker itself is what's consistent, not incidental panel coloring. Unlike
-the plain alpha-mask glyphs in circle.py, the character has to be baked into
-the pixels, so the render is cached per (char, radius) rather than tinted at
+inside — a small marker glyph any widget can carry (see uilib/README.md's
+Badges section). One fixed appearance everywhere it's used, so the marker
+itself is what's consistent, not incidental panel coloring. Unlike the plain
+alpha-mask glyphs in circle.py, the character has to be baked into the
+pixels, so the render is cached per (char, radius) rather than tinted at
 blit time."""
 
 from functools import lru_cache

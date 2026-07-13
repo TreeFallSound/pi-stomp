@@ -1082,8 +1082,9 @@ class Modhandler(Handler):
 
     @property
     def effective_table(self) -> ContextStack:
-        """The pedalboard-layer binding table (docs/input-contexts-implementation-plan.md
-        §6), for badge rendering (§7) — the single source of binding truth."""
+        """The pedalboard-layer binding table (see common/contexts.py and
+        pistomp/input/README.md) — the single source of binding truth badges
+        render from."""
         return self._controller_manager.effective_table
 
     #

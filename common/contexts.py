@@ -13,8 +13,20 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Input-context binding schema: BindingDecl, the Effect union, and the
-per-control-class precedence resolver. See docs/r2-schema-precedence.md."""
+"""What a control does is declared data, not per-panel `if` chains: a
+BindingDecl names a ControlRef + EventKind, a closed Effect union to fire,
+and the ContextRef (PANEL/BLEND/PEDALBOARD/SYSTEM) that owns it. NAV is the
+one axiom excluded from this entirely — see uilib/panel.py's Panel.handle.
+
+ContextStack.resolve walks a fixed per-ControlClass chain (_CHAINS below,
+highest precedence first) and returns the winning row for a (control,
+event_kind) pair, tagging every row it passed over ACTIVE/SHADOWED/ORPHANED
+(ShadowState) so a shadowed binding is visible rather than silently dead —
+this same resolved answer is what on-screen badges render from (never a
+widget's own guess). Consumers: pistomp/input/dispatch.py (per-panel
+resolve_local), pistomp/controller_manager.py (the PEDALBOARD layer),
+modalapi/modhandler.py (the BLEND layer). See pistomp/input/README.md for
+how the pieces fit together end to end."""
 
 from dataclasses import dataclass, field
 from enum import Enum, auto

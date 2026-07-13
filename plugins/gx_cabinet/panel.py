@@ -169,7 +169,7 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
     def declare_bindings(self) -> tuple[BindingDecl, ...]:
         panel_ctx = ContextRef(kind=ContextKind.PANEL, name="gx_cabinet")
         # enc3 is chassis-labeled Tweak3/Volume; CLevel stays bound there as a
-        # deliberate, explicit override (docs/r2-schema-precedence.md §4/§8 Q4).
+        # deliberate, explicit override (see ContextLayer.add in common/contexts.py).
         volume_ctx = ContextRef(kind=ContextKind.PANEL, name="gx_cabinet", override_volume=True)
         return (
             BindingDecl(

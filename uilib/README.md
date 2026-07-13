@@ -41,3 +41,43 @@ The second method `_invalidate_cache(box)` is called when a widget is attached o
 `RoundedPanel` introduces a per-corner alpha mask. For non-virtual panels the mask is multiplied into the cache once, in the `_finalize_cache()` hook called at the end of every rebuild, so the panel blits out as plain pixels from then on. Virtual panels can't pre-multiply, because the mask applies to different parts of the backing surface (via the viewport): instead, they apply the mask per-blit against a temporary copy of the viewport slice. 
 
 Subclasses define their shape by overriding `_build_shape_mask()`.
+
+## Badges
+
+A badge is a small fixed-size marker glyph — a filled disc with one character
+— that any widget can carry in addition to its normal content. `uilib` only
+owns how a badge *paints*; it has no opinion on what one means or when a
+caller should set one. (pi-Stomp's own use — marking which physical control
+edits a widget, sourced from the resolved input-binding table — lives in
+`pistomp/input/README.md`, not here.)
+
+`BadgeGlyph` (`uilib/glyphs/badge.py`) is a filled white disc with a black
+character baked into the pixels (cached per `(char, radius)`, since the
+character can't be tinted at blit time the way a plain alpha-mask glyph can).
+
+`Widget._draw_badge(ctx)` (`uilib/widget.py`) is the **one call site** in the
+whole framework — `do_draw` calls it exactly once, right after `_draw`/
+outline/selection. The default implementation blits `self._badge`
+(set via `set_badge(BadgeGlyph | None)`) at a fixed left-edge, vertically
+centered spot. A widget needing a different spot — `ArcDialWidget`
+(`uilib/glyphs/arc_dial.py`, centered on the ring's axis opposite the label),
+`TextWidget` (`uilib/text.py`, immediately left of its text), `ReadoutBar`
+(`plugins/layouts/readout_bar.py`, tracks whichever text is currently
+displayed) — overrides `_draw_badge` itself rather than adding a second
+paint call: a second call site either double-paints (if it doesn't collide
+with the base's automatic call) or silently paints nothing (if it shadows
+`self._badge` under a different name — the base's automatic call still fires
+against an inert field). A widget that genuinely needs more than one badge
+at once (`ReadoutWidget` in parametric EQ, one per readout column) keeps its
+own `dict[str, BadgeGlyph]` and overrides `_draw_badge` to paint all of them,
+leaving the inherited single-slot `_badge`/`set_badge()` untouched and inert
+on that class.
+
+`ContainerWidget` (`uilib/container.py`) — the base every `Panel`/`Dialog`
+inherits — has three separate paint paths of its own (virtual refresh,
+non-virtual refresh, the dirty-rect rebuild inside `do_draw`) instead of one
+`do_draw` like a plain `Widget`, so it calls `_draw_badge()` explicitly in
+all three, right after `_draw_selection()`. This is *why* container-based
+panels get badges "for free" today rather than by accident — a new
+container-level paint path that skips the call will silently drop badges
+with no error, so add the call whenever you add a fourth.

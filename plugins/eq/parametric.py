@@ -604,7 +604,7 @@ _READOUT_GAIN_RIGHT: int = _W - 6
 # one badge at a time. `ReadoutWidget` stores its own three glyphs, keyed by
 # column, and overrides `_draw_badge` to paint all of them, leaving the
 # inherited single-slot `Widget._badge`/`set_badge()` untouched and unused
-# on this class (docs/input-contexts-implementation-plan.md §9 step 4/8).
+# on this class (see the multi-badge pattern in uilib/README.md's Badges section).
 _COL_BADGES: dict[str, BadgeGlyph] = {
     "gain": BadgeGlyph("1"),
     "freq": BadgeGlyph("2"),

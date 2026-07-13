@@ -13,10 +13,13 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Panel-local binding resolution and effect firing (docs/input-contexts-implementation-plan.md §4).
+"""Panel-local binding resolution and effect firing — see "Where a panel
+plugs in" in pistomp/input/README.md.
 
-Scoped to one panel's own rows, no cross-context chain — that only matters
-once ControllerManager becomes a table builder (step 5)."""
+Scoped to one panel's own rows, no cross-context chain — a panel only ever
+competes with itself. Cross-context resolution (pedalboard rows, blend) goes
+through the same ContextStack.resolve directly (see ControllerManager.bind,
+Modhandler._fire_blend_row)."""
 
 from typing import Protocol, runtime_checkable
 

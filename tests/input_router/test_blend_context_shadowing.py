@@ -1,9 +1,10 @@
 """Modhandler._fire_blend_row / _rebuild_blend_layer — blend as a BLEND
-context row (docs/input-contexts-implementation-plan.md §6.3), replacing the
-old upstream active_blend_mode.intercept() short-circuit.
+context row (see "Pedalboard-level rows and blend as a context" in
+pistomp/input/README.md), replacing the old upstream
+active_blend_mode.intercept() short-circuit.
 
-Verifies the R3 §7d fix: when blend is attached to the same physical control
-as a pedalboard MIDI binding, the pedalboard row is visibly SHADOWED (not
+Verifies: when blend is attached to the same physical control as a
+pedalboard MIDI binding, the pedalboard row is visibly SHADOWED (not
 silently starved), and _fire_blend_row only fires for an actual BlendEffect
 winner — a pedalboard-only control falls through to legacy dispatch untouched.
 """

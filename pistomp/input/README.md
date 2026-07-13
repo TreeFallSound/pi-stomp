@@ -28,6 +28,108 @@ Push/pop semantics live on the LCD, next to the only thing that needs them: a pa
 
 Encoders are split to keep this clean: `Encoder` is the pure quadrature decoder, `EncoderController` is the `Controller` that owns it plus the quantizer and the absorbed push-button. The nav encoder's button is not a standalone switch — it lives inside its controller and dispatches a `SwitchEvent` like any other. Footswitch chords (longpress groups) are the one piece of genuinely cross-controller, timing-deferred state, so they live in `footswitch_chords.py` as a handler-owned helper rather than a sink: `observe()` records a press, `tick()` resolves the 400ms window once per poll and names the callbacks that fired.
 
+## What fires: declared bindings, resolved by precedence
+
+Handler logic used to decide "what does this control do" with per-panel `if`
+chains inside `on_event`. That worked until the same physical control could
+mean different things depending on what's open (a panel, blend mode, the bare
+pedalboard) — nothing could answer "what's actually bound right now" without
+re-running that code, which is also what made on-screen binding badges
+impossible to render honestly. So what a control does is now **declared
+data**, resolved by a fixed per-`ControlClass` precedence chain, and the same
+resolved answer drives both dispatch and badges.
+
+The schema (`BindingDecl`, the closed `Effect` union, `ControlRef`/
+`ContextRef`) and the precedence resolver (`ContextStack.resolve`) live in
+`common/contexts.py` — read its module docstring and the type definitions
+themselves, which carry the field-level rationale inline. This doc only
+covers how `pistomp/input`'s own pieces consume that schema.
+
+## Where a panel plugs in
+
+A `Panel` states its bindings once, as data:
+
+```python
+def declare_bindings(self) -> tuple[BindingDecl, ...]:
+    """Base returns (); override to declare this panel's rows."""
+    return ()
+```
+
+`PluginPanel.on_event` (`plugins/base.py`) is the base implementation every
+migrated panel gets for free: for a `TWEAK` or `VOLUME` control, it calls
+`pistomp/input/dispatch.py`'s `resolve_local(rows, control, event_kind)` —
+which walks just *this panel's own* declared rows (no cross-context chain;
+a panel only ever competes with itself) — and `fire(decl, self, event)` to
+execute the winner's effects. `fire` reaches into the panel through
+`PanelOps`, a small structural `Protocol` (`sel_ref`, `edit_symbol`) rather
+than the concrete `Panel` type — `pistomp/input` cannot import `uilib.Panel`
+back without creating a cycle (`uilib` already imports `pistomp.input.event`/
+`sink`).
+
+A panel only needs real imperative `on_event` when it's a genuine state
+machine, not a binding set — the NAM capture flow
+(`pistomp/nam/panel.py`) is the one example: its `IDLE → CAPTURING →
+DONE|FAILED|ABORTED → IDLE` transitions stay hand-written, but even there
+most of the panel's *bindings* are still declared, gated by `enabled_when`
+predicates that read the current state (e.g. an encoder nudges audio-card
+volume only in `IDLE`).
+
+`SelectionEditEffect` carries a `ParamRole` (`common/param_roles.py`:
+`GENERIC`, `GAIN_DB`, `FREQUENCY_HZ`, `Q_FACTOR`) used two ways: which symbol
+to resolve off the current selection (`sel_ref.symbol_for(role)` — a
+compressor arc always returns the same symbol regardless of role, an EQ band
+selection returns a different symbol per role), and which step math applies
+once resolved (`PluginPanel.edit_symbol`, overridden by a panel only to add a
+widget refresh or a band-lookup indirection).
+
+## Pedalboard-level rows and blend as a context
+
+Two things build layers into the same `ContextStack` outside of any open
+panel:
+
+* **`ControllerManager.bind`** (`pistomp/controller_manager.py`) builds the
+  `PEDALBOARD` layer into `self.effective_table` while it does its existing
+  work of mapping `controllers["{channel}:{CC}"]` to plugin parameters. A TTL
+  `param.binding` with no matching physical controller — previously silently
+  dropped — now still appends a row, tagged `ORPHANED`.
+* **Blend** is a `BLEND`-kind layer, not a shadowing mechanism bolted on top
+  of the table. `Modhandler` rebuilds `self._blend_layer` after every
+  activate/deactivate (`_rebuild_blend_layer`), keyed by the attached
+  controller's own `"{channel}:{CC}"` identity — the same identity space as
+  pedalboard rows — holding a `BlendEffect`. `_fire_blend_row` resolves
+  `ContextStack(layers=[*effective_table.layers, self._blend_layer])` and
+  fires only if the winner is a `BlendEffect`; a control blend doesn't claim
+  falls through to legacy dispatch unchanged. Because `VOLUME`/`TWEAK`/
+  `ANALOG`'s chains all consult `BLEND` above `PEDALBOARD`, this is also what
+  makes a blend claim correctly outrank — and visibly shadow, not silently
+  kill — a co-located MIDI-learned pedalboard parameter.
+
+## NAV edit-in-place
+
+Tweak encoders are a fast accelerator, never the only path: every panel must
+be fully operable from NAV alone (the only control v2 hardware has). CLICK on
+the current selection opens whatever editor the generic parameter menu would
+open for the same symbol(s):
+
+* `Panel.input_event`'s `CLICK` branch (`uilib/panel.py`) calls
+  `self._open_editor_for_selection()` — base no-op, since plain menus/system
+  screens have nothing to edit.
+* `PluginPanel._open_editor_for_selection` (`plugins/base.py`) implements it:
+  a `MultiSelectable` selection (e.g. an EQ band — gain/freq/Q are three live
+  symbols at once) opens a `Menu` submenu over `menu_rows()`; a plain
+  `Selectable` opens a single `Parameterdialog` for
+  `symbol_for(ParamRole.GENERIC)`. Both go through
+  `Handler.open_parameter_dialog`/`open_parameter_submenu`
+  (`pistomp/handler.py` → `Lcd320x240.draw_parameter_dialog`/
+  `draw_symbol_menu`).
+* Both take an `on_change` callback wired to `self.apply_state(self.
+  snapshot_state())` — the same resync call the mod-ui `ParamSetMessage` echo
+  handler uses. Needed because the generic dialog commits straight to
+  `plugin.parameters[symbol].value` with no notion of a specific panel's own
+  widget-sync methods; without the callback a panel's own widgets go stale
+  after editing through this path even though the underlying parameter
+  updated correctly.
+
 ## LCD push: the adaptive size gate
 
 The push to the LCD is **synchronous and blocking** (`lcd_ili9341.update` → `disp.image`), and its cost scales with the dirty-rect area: a selection highlight (~78×29px) is ~2ms — well inside the 10ms tick — while the EQ curve (up to 320×178px) is tens of ms at 24MHz, which on its own overruns the tick. Because the write blocks, *deferring* a too-large transfer to a later slot can't make it cheaper; it only moves when you pay it.

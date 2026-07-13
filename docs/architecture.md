@@ -81,6 +81,13 @@ LCD → blend mode → its own logic. That final stage is where an event becomes
 effect: emit a MIDI CC, send a WebSocket param, set audio-card volume, or drive UI
 navigation. There is no router class.
 
+*Which* effect a given control fires is declared data, resolved by precedence, not
+per-panel `if` chains: each control class (nav, volume, tweak encoder, pot/expression,
+footswitch) has a fixed chain of contexts consulted top-down (open panel → blend →
+pedalboard — nav is the one axiom, unbindable by any context), and the winning
+declaration is what fires. This is also the single source badges render from, so a
+badge is never shown for a binding that isn't actually live.
+
 **Full design: `pistomp/input/README.md`.**
 
 ## MIDI Routing
@@ -221,6 +228,13 @@ parameter between stops. During the 10ms polling loop, the active `BlendMode` re
 its input controller and sends only parameters whose values have actually changed —
 MIDI-bound parameters are automatically excluded to prevent conflicts with CC control.
 
+Blend is also a `BLEND`-kind layer in the input-dispatch `ContextStack` (see Input
+Dispatch above): `Modhandler` rebuilds a `_blend_layer` after every activate/deactivate,
+keyed by the attached controller's `"{channel}:{CC}"` identity, holding a `BlendEffect`
+row. Because `VOLUME`/`TWEAK`/`ANALOG`'s chains all consult `BLEND` above `PEDALBOARD`,
+a blend-claimed control now correctly wins over — and visibly shadows, rather than
+silently kills — a co-located MIDI-learned pedalboard parameter.
+
 The blend system is in `blend/`.
 
 ## Auxiliary Subsystems
@@ -315,7 +329,9 @@ reads the ADC and sends current position on pedalboard load.
   PIL/ImageDraw rendering into fixed zones. No handler reference.
 - **v2/v3**: `pistomp/lcd320x240.py` — color 320×240 display. Widget-based UI
   (`uilib/`, see its README for the paint system). Builder pattern constructs panels
-  from pedalboard data. Receives handler reference for UI action callbacks.
+  from pedalboard data. Receives handler reference for UI action callbacks. Widgets can
+  carry a small badge (①②③, footswitch letters) showing what control edits them, always
+  rendered from the effective binding table above — see `uilib/README.md`.
 
 ## Key Files
 
@@ -335,7 +351,12 @@ reads the ADC and sends current position on pedalboard load.
 
 **Input & Controls** (see `pistomp/input/README.md`)
 - `pistomp/input/` — Event dataclasses + `InputSink` protocol
+- `common/contexts.py` — Binding declaration schema (`ControlClass`, `Effect` union,
+  `BindingDecl`) + the precedence resolver (`ContextStack`)
+- `common/param_roles.py` — `ParamRole` vocabulary for selection-dependent edit step math
+- `pistomp/input/dispatch.py` — Panel-local binding resolution (`resolve_local`/`fire`)
 - `pistomp/controller.py`, `controller_manager.py` — Controller base + pedalboard binding
+  (also builds the pedalboard-level layer of the effective binding table)
 - `pistomp/footswitch.py`, `footswitch_chords.py` — Footswitch Controller + chord resolver
 - `pistomp/encoder.py`, `encoder_controller.py` — Quadrature decoder + Controller wrapper
 - `pistomp/analogmidicontrol.py` — ADC → MIDI CC with endpoint clamping
