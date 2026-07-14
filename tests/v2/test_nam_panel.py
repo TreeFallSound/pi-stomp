@@ -69,7 +69,6 @@ def test_nam_nav_only_edits_gain(v2_system: SystemFixture, nav_handler, snapshot
 def test_nam_nav_only_capturing_no_editor(v2_system: SystemFixture, nav_handler, snapshot):
     """CAPTURING state: knobs aren't even on-screen (capture view), so this
     just confirms the setup-view sel_widgets are gone from the stack."""
-    handler = v2_system.handler
     panel = _make_panel(v2_system, _FakeEngine(CaptureState.CAPTURING))
 
     assert panel._knob_gain not in panel.sel_list
