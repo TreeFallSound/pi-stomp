@@ -35,6 +35,7 @@ from modalapi.plugin_customization import PluginCustomization
 class MockObject:
     preset_callback_arg = None  # footswitch default; override via kwargs
     unit_symbol = None
+    parameters: dict  # plugin mocks only; set through kwargs
 
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
@@ -44,6 +45,11 @@ class MockObject:
     @property
     def subtitle(self):
         return None
+
+    @property
+    def visible_parameters(self):
+        hidden = self.customization.hidden_params
+        return {s: p for s, p in self.parameters.items() if s not in hidden}
 
     @property
     def tile_active_color(self):

@@ -10,7 +10,7 @@ Every plugin customization is a point in a small space:
 | Dimension | What it controls | Values |
 |---|---|---|
 | **Presentation** | Fullscreen vs compact card vs cosmetic-only | `FullscreenPluginPanel`, `PluginWindow`, or neither |
-| **Visualization** | How the plugin's state is drawn | Curve (parametric EQ), bars (graphic EQ), arc column + GR graph (compressors), arc grid (multiband window), custom (Notes, NAM) |
+| **Visualization** | How the plugin's state is drawn | Curve (parametric EQ), bars (graphic EQ), arc column + GR graph (compressors), pinned arc rings (`ParameterWindow`), custom (Notes, NAM) |
 | **Encoder routing** | Which tweak encoder does what | Per-panel-family convention, see below |
 | **Tile chrome** | How the tile looks in the main grid | `tile_active_color`, `tile_border`, `display_name_fn`, `subtitle_fn` |
 | **Extra data** | Per-instance state from `effect-N/` TTL | `extra_data_fn` → `PluginExtraData` subclass |
@@ -41,7 +41,7 @@ exactly — no normalization.
 `lcd320x240.plugin_event()` on long-press:
 
 1. `panel_cls` set → `handler.show_fullscreen_panel(plugin, panel_cls)`
-2. Else → `draw_parameter_menu(plugin)` (generic parameter list)
+2. Else → `ParameterWindow` (pinned arc rings + scrollable list)
 
 `panel_cls` covers both fullscreen and windowed presentations — `PluginPanel`
 subclasses share one constructor signature `(*, plugin, handler, on_dismiss)`,
@@ -61,6 +61,9 @@ class PluginCustomization:
     tile_active_color: tuple[int, int, int] | None = None
     tile_border: RectBorder | None = None
     extra_data: PluginExtraData | None = None
+    param_roles: dict[Symbol, ParamRole] = {}          # edit-math classification
+    pinned_params: tuple[PinnedParam, ...] | None = None  # arc rings; None = heuristic
+    hidden_params: frozenset[Symbol] = frozenset()     # ports no UI may paint
 ```
 
 ---
@@ -75,8 +78,12 @@ PluginPanel[TState]            plugins/base.py — geometry-agnostic core
 │   ├── CompressorPanel        plugins/compressor_base.py
 │   └── NotesPanel, TapReverbPanel, Fil4Panel, ... (one-off panels)
 └── PluginWindow                plugins/window.py — centered rounded card
-    └── MultibandWindow         plugins/multiband_menu/__init__.py — arc-ring grid
+    └── ParameterWindow         plugins/parameter_window.py — arc rings + list
 ```
+
+`ParameterWindow` is the default: any plugin with no `panel_cls` gets it on
+long-press. It is not subclassed — what it renders is *declared* via
+`pinned_params` (below).
 
 `PluginPanel` owns the plugin/handler refs, param-send coalescing queue, and
 Back/Bypass/Reset actions, but commits to no geometry. `FullscreenPluginPanel`
@@ -116,24 +123,53 @@ title band + same chrome row, `content_box` for subclass widgets. Registered
 via `handler.show_fullscreen_panel` like a fullscreen panel — it participates
 in the same fast-poll / board-change bookkeeping via `InputSink`.
 
-### `MultibandWindow` — arc-ring grid (replaces the old menu-widget pattern)
+### `ParameterWindow` — arc rings + scrollable list (the default)
 
-For plugins with up to ~10 flat parameters. Subclass just implements
-`build_slots()`; height grows with row count (1-4 slots → 1 row, 5-8 → 2 rows).
+Every plugin without a `panel_cls` gets this on long-press. Pinned params render
+as arc rings up top, the rest as a scrollable text list; height grows with row
+count (1-4 rings → 1 row, 5-8 → 2 rows). It handles layout, badges, Tweak1
+editing of the selected ring, and LONG_CLICK reset to snapshot.
+
+**There is no subclass.** Declare the rings on the registration:
 
 ```python
-class MyWindow(MultibandWindow):
-    def build_slots(self) -> Sequence[ParamSlot]:
-        return [
-            ParamSlot("drive", "Drive", (255, 180, 80)),
-            ParamSlot("tone", "Tone", (130, 220, 110)),
-            ParamSlot("level", "Level", (200, 200, 200)),
-        ]
+register(
+    "urn:my-plugin-uri",
+    customization=PluginCustomization(
+        display_name="My Plugin",
+        pinned_params=(
+            PinnedParam(Symbol("drive"), "Drive"),
+            PinnedParam(Symbol("freq"), "Freq", display_fn=fmt_hz),
+        ),
+    ),
+)
 ```
 
-`ParamSlot(symbol, label, color, display_fn=None)`. Handles layout, arc-ring
-rendering, Tweak1 editing of the selected ring, and LONG_CLICK reset to
-snapshot.
+`PinnedParam(symbol, label, display_fn=None)`. Colour is derived from the
+param's unit at render time, not declared. Declare no `pinned_params` and a
+heuristic pins the first few continuous params.
+
+### Hiding redundant ports
+
+`Plugin.visible_parameters` is what the UI paints; `plugin.parameters` remains
+the full state. Two filters compose:
+
+- **`common.parameter.is_hidden_port`** — automatic, from the port's own LV2
+  metadata: `notOnGUI`, or one of `HIDDEN_DESIGNATIONS` (`enabled`,
+  `freeWheeling`, the `time#` transport ports). This is the same rule mod-ui
+  applies to its own GUI, where the list is literally named `badports`. The
+  designated `enabled` port matters most: mod-host writes the *inverse of the
+  bypass value* into it, so it **is** `:bypass`, and painting it would give the
+  user a knob that desyncs bypass.
+- **`PluginCustomization.hidden_params`** — curated per-URI, in
+  `plugins/redundant_ports.py`, for the Calf/Invada plugins that roll their own
+  `bypass`/`on`/`power` port and declare no metadata to catch it by.
+
+`register()` and `hide_params()` both merge `hidden_params`, so a panel and a
+curated hide list for the same URI coexist regardless of import order.
+
+Hidden is a *display* exclusion. MIDI bindings, `pedalboard_snapshot`/Reset and
+`param_set` echo reconciliation all still see the parameter.
 
 ### `CompressorPanel` — shared compressor family (`plugins/compressor_base.py`)
 
@@ -156,7 +192,7 @@ Used by: `acomp`, `advanced_compressor`, `calf_monocompressor`,
 
 ### Encoder Convention by Family
 
-| Encoder | Parametric/Graphic EQ | Compressor | MultibandWindow | Notes |
+| Encoder | Parametric/Graphic EQ | Compressor | ParameterWindow | Notes |
 |---|---|---|---|---|
 | Tweak1 (id=1) | Gain (parametric) | Nav-selected arc | Selected ring | — |
 | Tweak2 (id=2) | Frequency | Threshold | — | — |
@@ -174,7 +210,7 @@ alpha) tinted at blit time via `BLEND_RGBA_MULT`; a few bake color into
 
 | Glyph | File | What it draws | Used by |
 |---|---|---|---|
-| `ArcRingGlyph` | `arc_ring.py` | 300° arc ring from 7-o'clock, split at value t | `MultibandWindow` slots, `CompressorPanel` arc column, NAM knob widget |
+| `ArcRingGlyph` | `arc_ring.py` | 300° arc ring from 7-o'clock, split at value t | `ParameterWindow` pinned rings, `CompressorPanel` arc column, NAM knob widget |
 | `CircleGlyph` | `circle.py` | Filled circle, AA edges | Parametric EQ band nodes, footswitch dots |
 | `RingGlyph` | `circle.py` | Centered-stroke ring (hollow circle) | Parametric EQ selection halo |
 | `KnobGlyph` | `knob.py` | Hollow ring + pointer line (potentiometer) | Analog control strip icons |
@@ -249,19 +285,18 @@ rendering, encoder routing, and state.
 | `http://invadarecords.com/plugins/lv2/compressor/{mono,stereo}` | `InvadaCompressorPanel` | Compressor |
 | `http://moddevices.com/plugins/mda/Dynamics` | `MdaDynamicsPanel` | Compressor |
 | `urn:zamaudio:ZamComp` | `ZamCompPanel` | Compressor |
-| `http://moddevices.com/plugins/mod-devel/System-Compressor` | `SystemCompressorWindow` | MultibandWindow |
-| `http://moddevices.com/plugins/caps/Noisegate` | `CapsNoisegateWindow` | MultibandWindow |
-| `http://moddevices.com/plugins/mda/MultiBand` | `MdaMultiBandWindow` | MultibandWindow |
-| `http://moddevices.com/plugins/mda/Bandisto` | `MdaBandistoWindow` | MultibandWindow |
-| `http://moddevices.com/plugins/caps/Eq10X2` | `CapsEq10X2Window` | MultibandWindow |
-| `http://distrho.sf.net/plugins/3BandEQ` | `ThreeBandEqWindow` | MultibandWindow |
-| `http://distrho.sf.net/plugins/3BandSplitter` | `ThreeBandSplitterWindow` | MultibandWindow |
+| `http://moddevices.com/plugins/mod-devel/System-Compressor` | — | Pinned params (3) |
+| `http://moddevices.com/plugins/caps/Noisegate` | — | Pinned params (4) |
+| `http://moddevices.com/plugins/mda/MultiBand` | — | Pinned params (8) |
+| `http://moddevices.com/plugins/mda/Bandisto` | — | Pinned params (8) |
+| `http://distrho.sf.net/plugins/3BandEQ` | — | Pinned params (6) |
+| `http://distrho.sf.net/plugins/3BandSplitter` | — | Pinned params (6) |
 | `urn:distrho:a-eq` | `DistrhoAEqPanel` | Parametric EQ |
 | `urn:zamaudio:ZamEQ2` | `ZamEQ2Panel` | Parametric EQ |
 | `http://moddevices.com/plugins/tap/eq` | `TapEqPanel` | Parametric EQ |
 | `http://moddevices.com/plugins/tap/eqbw` | `TapEqBwPanel` | Parametric EQ |
 | `http://gareus.org/oss/lv2/fil4#{mono,stereo}` | `Fil4Panel` | Full panel |
-| `http://moddevices.com/plugins/caps/Eq10` | `CapsEq10Panel` | Graphic EQ |
+| `http://moddevices.com/plugins/caps/{Eq10,Eq10X2}` | `CapsEq10Panel` | Graphic EQ (identical ports; one panel serves both) |
 | `http://guitarix.sourceforge.net/plugins/gx_graphiceq_#_graphiceq_` | `GxGraphicEqPanel` | Graphic EQ |
 | `http://guitarix.sourceforge.net/plugins/gx_barkgraphiceq_#_barkgraphiceq_` | `GxBarkGraphicEqPanel` | Graphic EQ |
 | `urn:zamaudio:ZamGEQ31` | `ZamGEQ31Panel` | Graphic EQ |
@@ -274,67 +309,67 @@ rendering, encoder routing, and state.
 
 | Combined | URI | Category | Suggested approach |
 |---|---:|---|---|
-| 16 | `http://moddevices.com/plugins/mod-devel/BigMuffPi` | Fuzz | MultibandWindow (3 knobs) |
+| 16 | `http://moddevices.com/plugins/mod-devel/BigMuffPi` | Fuzz | Pinned params (3 knobs) |
 | 14 | `http://guitarix.sourceforge.net/plugins/gx_hotbox_#_hotbox_` | Amp sim | Fullscreen (preamp+EQ) |
-| 13 | `http://moddevices.com/plugins/tap/tubewarmth` | Saturation | MultibandWindow (1 knob) |
+| 13 | `http://moddevices.com/plugins/tap/tubewarmth` | Saturation | Pinned params (1 knob) |
 | 12 | `https://github.com/ninodewit/SHIRO-Plugins/plugins/modulay` | Modulation | Fullscreen (multi-mode) |
-| 12 | `https://ca9.eu/lv2/bolliedelay` | Delay | MultibandWindow (3 knobs) |
+| 12 | `https://ca9.eu/lv2/bolliedelay` | Delay | Pinned params (3 knobs) |
 | 12 | `http://guitarix.sourceforge.net/plugins/gx_amp#GUITARIX` | Amp sim | Fullscreen (amp head) |
 | 11 | `http://moddevices.com/plugins/tap/reverb` | Reverb | done — `TapReverbPanel` |
 | 9 | `http://distrho.sf.net/plugins/MVerb` | Reverb | Fullscreen (decay/size/mix) |
-| 9 | `http://rakarrack.sourceforge.net/effects.html#chor` | Modulation | MultibandWindow |
+| 9 | `http://rakarrack.sourceforge.net/effects.html#chor` | Modulation | Pinned params |
 | 9 | `http://guitarix.sourceforge.net/plugins/gx_luna_#_luna_` | Preamp | Fullscreen |
-| 8 | `http://guitarix.sourceforge.net/plugins/gx_sd1sim_#_sd1sim_` | OD | MultibandWindow |
+| 8 | `http://guitarix.sourceforge.net/plugins/gx_sd1sim_#_sd1sim_` | OD | Pinned params |
 | 7 | `http://rakarrack.sourceforge.net/effects.html#eqp` | EQ | Parametric EQ |
-| 7 | `http://moddevices.com/plugins/mod-devel/mixer` | Utility | MultibandWindow |
-| 7 | `http://moddevices.com/plugins/tap/echo` | Delay | MultibandWindow |
-| 6 | `http://moddevices.com/plugins/tap/tremolo` | Modulation | MultibandWindow |
-| 6 | `http://moddevices.com/plugins/tap/chorusflanger` | Modulation | MultibandWindow |
-| 6 | `http://moddevices.com/plugins/caps/PlateX2` | Reverb | MultibandWindow |
+| 7 | `http://moddevices.com/plugins/mod-devel/mixer` | Utility | Pinned params |
+| 7 | `http://moddevices.com/plugins/tap/echo` | Delay | Pinned params |
+| 6 | `http://moddevices.com/plugins/tap/tremolo` | Modulation | Pinned params |
+| 6 | `http://moddevices.com/plugins/tap/chorusflanger` | Modulation | Pinned params |
+| 6 | `http://moddevices.com/plugins/caps/PlateX2` | Reverb | Pinned params |
 | 6 | `http://moddevices.com/plugins/caps/AmpVTS` | Amp sim | Fullscreen |
-| 6 | `http://guitarix.sourceforge.net/plugins/gxautowah#wah` | Filter | MultibandWindow |
-| 6 | `http://guitarix.sourceforge.net/plugins/gx_switchless_wah#wah` | Filter | MultibandWindow |
-| 6 | `https://github.com/brummer10/CollisionDrive` | OD | MultibandWindow |
-| 6 | `http://rakarrack.sourceforge.net/effects.html#StompBox_fuzz` | Fuzz | MultibandWindow |
-| 5 | `http://guitarix.sourceforge.net/plugins/gx_bottlerocket_#_bottlerocket_` | Boost | MultibandWindow |
-| 5 | `https://github.com/brummer10/Rumor` | Modulation | MultibandWindow |
-| 5 | `http://plugin.org.uk/swh-plugins/valve` | Saturation | MultibandWindow |
+| 6 | `http://guitarix.sourceforge.net/plugins/gxautowah#wah` | Filter | Pinned params |
+| 6 | `http://guitarix.sourceforge.net/plugins/gx_switchless_wah#wah` | Filter | Pinned params |
+| 6 | `https://github.com/brummer10/CollisionDrive` | OD | Pinned params |
+| 6 | `http://rakarrack.sourceforge.net/effects.html#StompBox_fuzz` | Fuzz | Pinned params |
+| 5 | `http://guitarix.sourceforge.net/plugins/gx_bottlerocket_#_bottlerocket_` | Boost | Pinned params |
+| 5 | `https://github.com/brummer10/Rumor` | Modulation | Pinned params |
+| 5 | `http://plugin.org.uk/swh-plugins/valve` | Saturation | Pinned params |
 | 4 | `urn:zamaudio:ZamComp` | Dynamics | done — `ZamCompPanel` |
-| 3 | `http://moddevices.com/plugins/mod-devel/LowPassFilter` | Filter | MultibandWindow |
-| 3 | `http://www.openavproductions.com/artyfx#roomy` | Reverb | MultibandWindow |
-| 3 | `http://moddevices.com/plugins/tap/reflector` | Reverb | MultibandWindow |
-| 3 | `http://moddevices.com/plugins/tap/doubler` | Modulation | MultibandWindow |
+| 3 | `http://moddevices.com/plugins/mod-devel/LowPassFilter` | Filter | Pinned params |
+| 3 | `http://www.openavproductions.com/artyfx#roomy` | Reverb | Pinned params |
+| 3 | `http://moddevices.com/plugins/tap/reflector` | Reverb | Pinned params |
+| 3 | `http://moddevices.com/plugins/tap/doubler` | Modulation | Pinned params |
 | 3 | `http://moddevices.com/plugins/sooperlooper` | Looper | Fullscreen (special) |
-| 3 | `http://moddevices.com/plugins/mod-devel/SuperWhammy` | Pitch | MultibandWindow |
-| 3 | `http://moddevices.com/plugins/mod-devel/DS1` | Distortion | MultibandWindow |
-| 3 | `http://moddevices.com/plugins/mod-devel/Drop` | Pitch | MultibandWindow |
-| 3 | `http://moddevices.com/plugins/mod-devel/2Voices` | Pitch | MultibandWindow |
+| 3 | `http://moddevices.com/plugins/mod-devel/SuperWhammy` | Pitch | Pinned params |
+| 3 | `http://moddevices.com/plugins/mod-devel/DS1` | Distortion | Pinned params |
+| 3 | `http://moddevices.com/plugins/mod-devel/Drop` | Pitch | Pinned params |
+| 3 | `http://moddevices.com/plugins/mod-devel/2Voices` | Pitch | Pinned params |
 | 2 | `urn:distrho:a-reverb` | Reverb | Fullscreen |
-| 2 | `http://moddevices.com/plugins/caps/Plate` | Reverb | MultibandWindow |
-| 2 | `http://moddevices.com/plugins/caps/PhaserII` | Modulation | MultibandWindow |
+| 2 | `http://moddevices.com/plugins/caps/Plate` | Reverb | Pinned params |
+| 2 | `http://moddevices.com/plugins/caps/PhaserII` | Modulation | Pinned params |
 | 2 | `http://moddevices.com/plugins/caps/Compress` | Dynamics | done — `CapsCompressPanel` |
-| 2 | `http://invadarecords.com/plugins/lv2/phaser/mono` | Modulation | MultibandWindow |
-| 2 | `http://www.openavproductions.com/artyfx#kuiza` | Distortion | MultibandWindow |
-| 2 | `http://moddevices.com/plugins/mod-devel/HighPassFilter` | Filter | MultibandWindow |
-| 2 | `http://moddevices.com/plugins/caps/ChorusI` | Modulation | MultibandWindow |
-| 2 | `http://VeJaPlugins.com/plugins/Release/cabsim` | Cab sim | MultibandWindow |
+| 2 | `http://invadarecords.com/plugins/lv2/phaser/mono` | Modulation | Pinned params |
+| 2 | `http://www.openavproductions.com/artyfx#kuiza` | Distortion | Pinned params |
+| 2 | `http://moddevices.com/plugins/mod-devel/HighPassFilter` | Filter | Pinned params |
+| 2 | `http://moddevices.com/plugins/caps/ChorusI` | Modulation | Pinned params |
+| 2 | `http://VeJaPlugins.com/plugins/Release/cabsim` | Cab sim | Pinned params |
 | 1 | `http://calf.sourceforge.net/plugins/MonoCompressor` | Dynamics | done — `CalfMonoCompressorPanel` |
 | 1 | `http://moddevices.com/plugins/mod-devel/System-Compressor` | Dynamics | done — `SystemCompressorWindow` |
 | 1 | `http://moddevices.com/plugins/mod-devel/Advanced-Compressor` | Dynamics | done — `AdvancedCompressorPanel` |
-| 1 | `http://moddevices.com/plugins/mda/Ambience` | Reverb | MultibandWindow |
-| 1 | `http://moddevices.com/plugins/mda/Stereo` | Utility | MultibandWindow |
-| 1 | `http://moddevices.com/plugins/mda/Degrade` | Distortion | MultibandWindow |
-| 1 | `http://guitarix.sourceforge.net/plugins/gx_DOP250_#_DOP250_` | Distortion | MultibandWindow |
-| 1 | `http://guitarix.sourceforge.net/plugins/gx_guvnor_#_guvnor_` | Distortion | MultibandWindow |
-| 1 | `http://guitarix.sourceforge.net/plugins/gx_voodoo_#_voodoo_` | Distortion | MultibandWindow |
-| 1 | `http://guitarix.sourceforge.net/plugins/gx_fuzzfacefm_#_fuzzfacefm_` | Fuzz | MultibandWindow |
-| 1 | `http://guitarix.sourceforge.net/plugins/gx_liquiddrive_#_liquiddrive_` | OD | MultibandWindow |
-| 1 | `http://guitarix.sourceforge.net/plugins/gx_MicroAmp_#_MicroAmp_` | Amp sim | MultibandWindow |
-| 1 | `http://guitarix.sourceforge.net/plugins/gx_oc_2_#_oc_2_` | Octave | MultibandWindow |
-| 1 | `http://guitarix.sourceforge.net/plugins/gxts9#ts9sim` | OD | MultibandWindow |
-| 1 | `http://remaincalm.org/plugins/{avocado,floaty}` | Reverb | MultibandWindow |
-| 1 | `http://remaincalm.org/plugins/{mud,paranoia}` | Distortion | MultibandWindow |
-| 1 | `http://devcurmudgeon.com/alo` | Reverb | MultibandWindow |
+| 1 | `http://moddevices.com/plugins/mda/Ambience` | Reverb | Pinned params |
+| 1 | `http://moddevices.com/plugins/mda/Stereo` | Utility | Pinned params |
+| 1 | `http://moddevices.com/plugins/mda/Degrade` | Distortion | Pinned params |
+| 1 | `http://guitarix.sourceforge.net/plugins/gx_DOP250_#_DOP250_` | Distortion | Pinned params |
+| 1 | `http://guitarix.sourceforge.net/plugins/gx_guvnor_#_guvnor_` | Distortion | Pinned params |
+| 1 | `http://guitarix.sourceforge.net/plugins/gx_voodoo_#_voodoo_` | Distortion | Pinned params |
+| 1 | `http://guitarix.sourceforge.net/plugins/gx_fuzzfacefm_#_fuzzfacefm_` | Fuzz | Pinned params |
+| 1 | `http://guitarix.sourceforge.net/plugins/gx_liquiddrive_#_liquiddrive_` | OD | Pinned params |
+| 1 | `http://guitarix.sourceforge.net/plugins/gx_MicroAmp_#_MicroAmp_` | Amp sim | Pinned params |
+| 1 | `http://guitarix.sourceforge.net/plugins/gx_oc_2_#_oc_2_` | Octave | Pinned params |
+| 1 | `http://guitarix.sourceforge.net/plugins/gxts9#ts9sim` | OD | Pinned params |
+| 1 | `http://remaincalm.org/plugins/{avocado,floaty}` | Reverb | Pinned params |
+| 1 | `http://remaincalm.org/plugins/{mud,paranoia}` | Distortion | Pinned params |
+| 1 | `http://devcurmudgeon.com/alo` | Reverb | Pinned params |
 | 1 | `http://gareus.org/oss/lv2/modmeter`, `.../string-machine`, `FluidPlug_Black_Pearl_4A`, `midi-display.lv2`, `carla/plugins/audiofile` | Utility/Instrument | — (low priority, ≤1 pedalboard each) |
 
 Re-derive this ranking with the LV2-inspection commands in `CLAUDE.md` if it

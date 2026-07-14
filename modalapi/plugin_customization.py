@@ -60,6 +60,11 @@ class PluginCustomization:
     # replace the heuristic (first N continuous params). None = use heuristic.
     pinned_params: tuple[PinnedParam, ...] | None = None
 
+    # Redundant ports the UI must never paint: author-rolled bypass/enable ports
+    # carrying no LV2 metadata to catch them by. `common.parameter.is_hidden_port`
+    # handles the ones that do.
+    hidden_params: frozenset[Symbol] = frozenset()
+
 
 class Customizer(Protocol):
     """Resolver signature used by `Pedalboard`. Always takes `uri`; the

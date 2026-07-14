@@ -110,6 +110,13 @@ class Plugin:
     def intercept_shortpress(self) -> bool:
         return self.customization.intercept_shortpress
 
+    @property
+    def visible_parameters(self) -> dict[Symbol, Parameter]:
+        """Parameters a UI may paint. The hidden ones stay in `parameters` —
+        they still take MIDI bindings, snapshot, and reconcile against mod-ui."""
+        hidden = self.customization.hidden_params
+        return {s: p for s, p in self.parameters.items() if not p.hidden and s not in hidden}
+
     def is_bypassed(self) -> bool:
         param = self.parameters.get(BYPASS_SYMBOL)
         if param is not None:

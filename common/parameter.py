@@ -57,10 +57,33 @@ class PortInfo(TypedDict):
     symbol: str
     name: NotRequired[str]
     shortName: NotRequired[str]
+    designation: NotRequired[str]
     ranges: NotRequired[Ranges]
     units: NotRequired[Units]
     properties: NotRequired[list[str]]
     scalePoints: NotRequired[list[ScalePoint]]
+
+
+# mod-ui calls these "badports" and excludes them from its own GUI (mod/host.py),
+# keeping their values in `valports`. We hide them the same way, for the same reason.
+# The `enabled` port especially: mod-host writes the *inverse* of the bypass value
+# into it (effects.c), so it isn't merely redundant with :bypass — it IS :bypass, and
+# exposing it hands the user a knob that silently desyncs bypass.
+HIDDEN_DESIGNATIONS = frozenset({
+    "http://lv2plug.in/ns/lv2core#enabled",
+    "http://lv2plug.in/ns/lv2core#freeWheeling",
+    "http://ardour.org/lv2/processing#enable",
+    "http://lv2plug.in/ns/ext/time#beatsPerBar",
+    "http://lv2plug.in/ns/ext/time#beatsPerMinute",
+    "http://lv2plug.in/ns/ext/time#speed",
+})
+
+
+def is_hidden_port(plugin_info: PortInfo) -> bool:
+    """A port the plugin exposes but no UI should paint."""
+    if "notOnGUI" in (plugin_info.get("properties") or []):
+        return True
+    return plugin_info.get("designation", "") in HIDDEN_DESIGNATIONS
 
 
 class Type(Enum):
@@ -79,6 +102,7 @@ class Parameter:
             raise ValueError(f"LV2 port has no symbol: {plugin_info!r}")
         self.symbol: Symbol = Symbol(symbol)
         self.name: str = plugin_info.get("shortName") or plugin_info.get("name") or symbol
+        self.hidden: bool = is_hidden_port(plugin_info)
 
         ranges = plugin_info.get("ranges") or Ranges()
         self.minimum: float = float(ranges.get("minimum", 0.0))

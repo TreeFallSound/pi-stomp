@@ -1,5 +1,5 @@
-"""NAV-only (v2, no Tweak encoders) coverage for the multiband menu family
-(exercised via caps_noisegate, the one subclass with a snapshot suite).
+"""NAV-only (v2, no Tweak encoders) coverage for ``ParameterWindow``'s pinned
+arc rings, exercised via caps_noisegate — the pinned plugin with a snapshot suite.
 
 Single, generic (no-role) SelectionEditEffect on enc1: CLICK opens the
 dialog for whichever slot is focused directly, no submenu.

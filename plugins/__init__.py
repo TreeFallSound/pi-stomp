@@ -28,7 +28,6 @@ import plugins.zameq2  # noqa: F401
 import plugins.tapeq  # noqa: F401
 import plugins.tapeqbw  # noqa: F401
 import plugins.capseq10  # noqa: F401
-import plugins.capseq10x2  # noqa: F401
 import plugins.graphiceq  # noqa: F401
 import plugins.barkgraphiceq  # noqa: F401
 import plugins.zamgeq31  # noqa: F401
@@ -47,8 +46,8 @@ import plugins.calf_monocompressor  # noqa: F401
 import plugins.caps_compress  # noqa: F401
 import plugins.mda_dynamics  # noqa: F401
 import plugins.system_compressor  # noqa: F401
-import plugins.multiband_menu  # noqa: F401  # MultibandWindow base
 import plugins.layouts  # noqa: F401  # Layout components
+import plugins.redundant_ports  # noqa: F401  # curated hidden_params, no panels
 
 __all__ = [
     "PluginCustomization",

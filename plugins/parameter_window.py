@@ -1,14 +1,12 @@
 """Combined parameter window: arc rings pinned up top, scrollable list below.
 
-``ParameterWindow`` is the generalisation of ``MultibandWindow`` — it replaces
-the old generic parameter menu (``draw_parameter_menu``) and the multiband arc
-grid with a single ``PluginWindow`` that shows pinned params as arc rings and
-the rest as a scrollable text list.
+The one window for any plugin without a bespoke panel. Pinned params render as
+arc rings, the rest as a scrollable text list. Pinning is declared, not coded —
+``PluginCustomization.pinned_params``; with none declared a heuristic pins the
+first few continuous params.
 
-Subclasses (the old ``MultibandWindow`` subclasses) override ``build_slots()``
-to supply their own pinned slots. The generic fallback reads
-``plugin.customization.pinned_params`` or uses a heuristic (first N continuous
-params in sorted order).
+Ports the plugin exposes but no UI should paint (``Plugin.visible_parameters``)
+never appear in either.
 """
 
 from __future__ import annotations
@@ -49,6 +47,8 @@ _BADGE_TWEAK1 = BadgeGlyph("1")
 _BADGE_GAP = 3  # matches TextWidget's badge_gap
 
 _ROW_H = 20
+
+_EMPTY_LABEL = "No editable parameters"
 
 
 def _slot_box_size() -> tuple[int, int]:
@@ -188,6 +188,23 @@ class _ListRow(Widget):
             ctx.paste(badge.render(), (bx, (ctx.height - badge.height) // 2))
 
 
+class _EmptyRow(Widget):
+    """Placeholder when every port is pinned, bypass, or hidden. Never added to
+    the container's sel-widget list — there is nothing here to select."""
+
+    def __init__(self, *, box: Box, font, parent: Widget) -> None:
+        super().__init__(box=box, parent=parent, visible=True)
+        self._font = font
+
+    def _draw_erase(self, ctx) -> None:
+        ctx.draw_rectangle(ctx.bounds, fill=self.bkgnd_color)
+
+    def _draw(self, ctx) -> None:
+        fg = shade_color((255, 255, 255), INACTIVE_SHADE)
+        tw, line_h = get_text_size(_EMPTY_LABEL, self._font)
+        ctx.draw_text(((ctx.width - tw) // 2, (ctx.height - line_h) // 2), _EMPTY_LABEL, font=self._font, fill=fg)
+
+
 class _ScrollContainer(ContainerWidget):
     """A container that scrolls pixel-precise (no page-snap)."""
 
@@ -250,7 +267,7 @@ class ParameterWindow(PluginWindow[None]):
     def _heuristic_slots(self) -> list[PinnedParam]:
         """First up-to-4 continuous (non-enum, non-toggle) params."""
         slots: list[PinnedParam] = []
-        for name, param in sorted(self.plugin.parameters.items()):
+        for name, param in sorted(self.plugin.visible_parameters.items()):
             if name == BYPASS_SYMBOL:
                 continue
             if param.type.value in (1, 5):  # ENUMERATION, TOGGLED
@@ -262,6 +279,10 @@ class ParameterWindow(PluginWindow[None]):
 
     # ── PluginWindow contract ───────────────────────────────────────────────
 
+    def _is_empty(self) -> bool:
+        """Every port pinned, bypass, or hidden — nothing left to list or select."""
+        return not self.slots and not self._list_params()
+
     def _window_size(self) -> tuple[int, int]:
         self.slots = self.build_slots()
         n = len(self.slots)
@@ -269,7 +290,7 @@ class ParameterWindow(PluginWindow[None]):
         rows = (n + cols - 1) // cols if n else 0
         _, row_h = _slot_box_size()
         ring_h = rows * row_h if rows else 0
-        list_h = len(self._list_params()) * _ROW_H
+        list_h = _ROW_H if self._is_empty() else len(self._list_params()) * _ROW_H
         btn_h = BTN_H + BTN_GAP * 2
         content_h = ring_h + list_h + btn_h
         return (self.WIN_W, min(_MAX_H, content_h))
@@ -293,10 +314,10 @@ class ParameterWindow(PluginWindow[None]):
         return self._badge_fn(param) if param is not None else None
 
     def _list_params(self) -> list[tuple[Symbol, Parameter]]:
-        """Params not pinned, in sorted order, excluding :bypass."""
+        """Params not pinned, in sorted order, excluding :bypass and hidden ports."""
         pinned_symbols = {s.symbol for s in self.slots}
         result: list[tuple[Symbol, Parameter]] = []
-        for name, param in sorted(self.plugin.parameters.items()):
+        for name, param in sorted(self.plugin.visible_parameters.items()):
             if name == BYPASS_SYMBOL:
                 continue
             if name in pinned_symbols:
@@ -318,8 +339,10 @@ class ParameterWindow(PluginWindow[None]):
         ring_wh, box_h = _slot_box_size()
         ring_area_h = rows * box_h if rows else 0
         list_params = self._list_params()
+        is_empty = self._is_empty()
+        list_area_h = _ROW_H if is_empty else len(list_params) * _ROW_H
         btn_area_h = BTN_H + BTN_GAP * 2
-        total_content_h = ring_area_h + len(list_params) * _ROW_H + btn_area_h
+        total_content_h = ring_area_h + list_area_h + btn_area_h
         needs_scroll = total_content_h > cb.height
 
         content_container = _ScrollContainer(
@@ -360,9 +383,12 @@ class ParameterWindow(PluginWindow[None]):
             self._list_rows.append(row)
             content_container.add_sel_widget(row)
 
+        if is_empty:
+            _EmptyRow(box=Box.xywh(0, ring_area_h, cb.width, _ROW_H), font=row_font, parent=content_container)
+
         # The button row is the last thing in the scrolling body, not fixed
         # chrome — same as a Menu's trailing back arrow.
-        btn_y = ring_area_h + len(list_params) * _ROW_H + BTN_GAP
+        btn_y = ring_area_h + list_area_h + BTN_GAP
         _, btn_text_h = get_text_size("Bypass", self._btn_font)
         btn_v_margin = max(0, (BTN_H - btn_text_h) // 2)
         self._btn_back, self._btn_bypass, self._btn_reset = build_bottom_row(
