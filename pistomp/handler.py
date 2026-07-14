@@ -269,10 +269,7 @@ class Handler(InputSink):
     def _bind_controller_to_param(self, plugin, param, controller) -> bool:
         # Wire a hardware controller to a plugin parameter. Returns True if the
         # controller is a footswitch (so callers can track footswitch plugins).
-        # TODO possibly use a setter instead of accessing var directly
-        # What if multiple params could map to the same controller?
-        controller.parameter = param  # pyright: ignore[reportAttributeAccessIssue]
-        controller.set_value(param.value)
+        controller.bind_to_parameter(param)
         if controller not in plugin.controllers:
             plugin.controllers.append(controller)
         if isinstance(controller, Footswitch):

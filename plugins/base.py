@@ -137,16 +137,17 @@ class PluginPanel(Panel, Generic[TState], ABC):
         submenu for a compound selection (e.g. an EQ band), else a single
         dialog. Reuses Handler.open_parameter_dialog/open_parameter_submenu,
         the same mechanism a v3 Tweak encoder's SelectionEditEffect edits
-        directly and NAV-only (v2) hardware has no other way to reach."""
-        def resync() -> None:
-            self.apply_state(self.snapshot_state())
+        directly and NAV-only (v2) hardware has no other way to reach.
 
+        No ``on_change`` callback: the dialog writes ``parameter.value``
+        directly, which fires this panel's parameter subscription →
+        ``_model_dirty`` → ``tick`` drains into ``apply_state``."""
         sel = self.sel_ref
         if isinstance(sel, MultiSelectable):
             rows = sel.menu_rows()
             if not rows:
                 return False
-            self.handler.open_parameter_submenu(self.plugin, rows, sel.menu_title(), on_change=resync)
+            self.handler.open_parameter_submenu(self.plugin, rows, sel.menu_title())
             return True
         if isinstance(sel, Selectable):
             symbol = sel.symbol_for(ParamRole.GENERIC)
@@ -155,7 +156,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
             p = self.plugin.parameters.get(symbol)
             if p is None:
                 return False
-            self.handler.open_parameter_dialog(p, on_change=resync)
+            self.handler.open_parameter_dialog(p)
             return True
         return False
 

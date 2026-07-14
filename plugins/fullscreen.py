@@ -42,7 +42,7 @@ class FullscreenPluginPanel(PluginPanel[TState]):
     ) -> None:
         self._init_plugin_state(plugin, handler, on_dismiss)
 
-        Panel.__init__(self, box=Box.xywh(0, 0, _W, _H), auto_destroy=True, no_dim=True)
+        Panel.__init__(self, box=Box.xywh(0, 0, _W, _H), auto_destroy=True, no_dim=True, opaque=True)
 
         cfg = Config()
         self._btn_font = cfg.get_font("default")

@@ -250,6 +250,7 @@ class ParameterWindow(PluginWindow[None]):
         self.content_box = Box.xywh(0, pad, w, h - pad)
         self.build_widgets()
         self._refresh_bypass_style()
+        self._start_observing()
 
     # ── subclass contract ──────────────────────────────────────────────────
 

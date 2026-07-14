@@ -162,9 +162,11 @@ class EncoderController(controller.Controller):
         self._steps = ParameterSteps(self.min_val, self.max_val, self.taper, resolution(self.parameter))
 
     def bind_to_parameter(self, parameter: Parameter) -> None:
+        self.unbind_from_parameter()
         self.parameter = parameter
         self._recalculate_steps()
         self.set_value(parameter.value)
+        self._unsub_param = parameter.subscribe(lambda _p: self.set_value(_p.value))
         logging.debug(
             f"EncoderController bound: id={self.id}, param={parameter.name}, "
             f"midi_CC={self.midi_CC}, num_steps={self.num_steps}, value={parameter.value}"
@@ -223,12 +225,6 @@ class EncoderController(controller.Controller):
 
     def refresh(self, rotations: int) -> None:
         """Handle a tick's worth of detents."""
-        # resync if parameter value was changed externally
-        if self.parameter is not None and self.step_values:
-            quantised = self.step_values[self.current_step]
-            if abs(self.parameter.value - quantised) > 1e-9:
-                self.set_value(self.parameter.value)
-
         multiplier = self._compute_multiplier(rotations)
         delta = int(round(rotations * multiplier))
         new_value = self._move_steps(delta)

@@ -298,8 +298,12 @@ class Lcd:
             wfs.tick()
 
         self.pstack.poll_updates()
-        if self.pstack.current is not None:
-            self.pstack.current.tick()
+        # Tick from the top of the stack down to the nearest opaque panel.
+        # TODO: make sure opaque=True == full screen + ensure performance hasn't regressed
+        for panel in reversed(self.pstack.stack):
+            panel.tick()
+            if panel.opaque:
+                break
         self._poll_capture_socket()
 
         # Update control progress bars (analog controls and encoders)

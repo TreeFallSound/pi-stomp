@@ -27,6 +27,10 @@ class _Ctl:
         self.type = type
         self.parameter = "bound"
         self.midi_CC = None
+        self._unsub_param = None
+
+    def unbind_from_parameter(self) -> None:
+        self.parameter = None
 
 
 def test_bind_preserves_volume_binding_clears_others():

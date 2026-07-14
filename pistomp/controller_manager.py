@@ -70,7 +70,7 @@ class ControllerManager:
         # Clear previous parameter bindings from all controllers except volume.
         for controller in self._hw.controllers.values():
             if controller.type != Token.VOLUME:
-                controller.parameter = None
+                controller.unbind_from_parameter()
 
         current.analog_controllers = {}
         pedalboard_layer = ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD))

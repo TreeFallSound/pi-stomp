@@ -42,6 +42,9 @@ class MockObject:
         if not hasattr(self, 'customization'):
             self.customization = PluginCustomization()
 
+    def subscribe(self, cb):
+        return lambda: None
+
     @property
     def subtitle(self):
         return None

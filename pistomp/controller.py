@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 import logging
@@ -71,6 +72,7 @@ class Controller:
         self.midi_max: int = 127
         self.midi_value: int = 0
         self._sink: InputSink | None = None
+        self._unsub_param: Callable[[], None] | None = None
 
     @property
     def sink(self) -> InputSink:
@@ -87,8 +89,15 @@ class Controller:
         logging.error(f"Controller subclass ({self.__class__.__name__}) hasn't overriden the set_value method")
 
     def bind_to_parameter(self, parameter: Parameter) -> None:
+        self.unbind_from_parameter()
         self.parameter = parameter
         self.set_value(parameter.value)
+
+    def unbind_from_parameter(self) -> None:
+        if self._unsub_param is not None:
+            self._unsub_param()
+            self._unsub_param = None
+        self.parameter = None
 
     def get_display_info(self) -> AnalogDisplayInfo:
         """Own-presentation only; routing-derived fields are added by the

@@ -133,9 +133,11 @@ class Plugin:
         return new_value
 
     def set_param_value(self, symbol: Symbol, value: float) -> None:
-        """Cache a param's value and mirror it onto any control bound to it, so
-        a footswitch's LED/keycap (or a knob/encoder's cached position) tracks
-        mod-ui's live value. set_value is polymorphic per control type."""
+        """Cache a param's value from mod-ui and mirror it onto any bound
+        footswitch. The mirror is unconditional (outside the idempotent setter)
+        because a MIDI-originated echo arrives at the same value we already
+        wrote optimistically — the setter skips it, but the footswitch keycap
+        still needs to update. See plan: the mod-ui MIDI echo asymmetry."""
         param = self.parameters.get(symbol)
         if param is None:
             return
