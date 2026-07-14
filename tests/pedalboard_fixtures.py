@@ -29,6 +29,10 @@ class MockPlugin:
     controllers: list = field(default_factory=list)
     uri: str | None = None
     extra_data: PluginExtraData | None = None
+    parameters: dict = field(default_factory=dict)
+
+    def subscribe(self, cb):
+        return lambda: None
 
     @property
     def display_name(self) -> str:

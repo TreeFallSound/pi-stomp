@@ -607,7 +607,6 @@ class Modhandler(Handler):
                 if known:
                     logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
                     known.set_bypass(msg.bypassed)
-                    self.lcd.refresh_plugin(known)
                 elif not self._is_pedalboard_loading:
                     # During a dump every plugin arrives as unknown; suppress
                     # REST + redraw and let the LILV reload handle them.
@@ -619,7 +618,6 @@ class Modhandler(Handler):
                     if plugin.instance_id == msg.instance:
                         logging.debug(f"WebSocket: Plugin {msg.instance} bypass -> {msg.bypassed}")
                         plugin.set_bypass(msg.bypassed)
-                        self.lcd.refresh_plugin(plugin)
                         break
 
         elif isinstance(msg, RemovePluginMessage):
@@ -1555,7 +1553,6 @@ class Modhandler(Handler):
         panel = self.lcd.pstack.find_panel_type(PluginPanel)
         if panel is None:
             return
-        self.lcd.refresh_plugin(panel.plugin)
         self.lcd.pstack.pop_panel(panel)
 
     # ── NAM capture ───────────────────────────────────────────────────────────

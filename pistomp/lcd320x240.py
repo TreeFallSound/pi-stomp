@@ -65,7 +65,6 @@ from pistomp.input.event import ControllerEvent
 from pistomp.input.sink import InputSink
 from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
 from blend.manager import BlendMode
-from plugins.base import PluginPanel
 
 if TYPE_CHECKING:
     from modalapi.modhandler import Modhandler
@@ -206,6 +205,7 @@ class Lcd:
         self.w_colon = None
         self.w_preset = None
         self.w_plugins = []
+        self._plugin_unsubs: list[Callable[[], None]] = []
         self.grid_panel: Optional[GridPanel] = None
         self.w_footswitches = []
         self.w_controls = []
@@ -608,8 +608,23 @@ class Lcd:
 
         # Repaint the grid's backing surface with the final tile colors before main_panel blits it
         self.grid_panel.refresh()
-
         self.main_panel.refresh()
+        self._subscribe_plugins()
+
+    def _subscribe_plugins(self) -> None:
+        self._unsubscribe_plugins()
+        for plugin in self.current.pedalboard.plugins:
+            bp = plugin.parameters.get(BYPASS_SYMBOL)
+            if bp is None:
+                continue
+            self._plugin_unsubs.append(
+                bp.subscribe(lambda _, pl=plugin: self._refresh_plugin(pl))
+            )
+
+    def _unsubscribe_plugins(self) -> None:
+        for u in self._plugin_unsubs:
+            u()
+        self._plugin_unsubs = []
 
     def plugin_event(self, event, widget, plugin):
         panel_cls = plugin.panel_cls
@@ -655,16 +670,7 @@ class Lcd:
                 widget.set_background(self.get_plugin_color(plugin))
             widget.set_foreground(self.background)
 
-    def refresh_plugins(self):
-        for w in self.w_plugins:
-            plugin = w.object
-            self.color_plugin(w, plugin)
-        panel = self.pstack.find_panel_type(PluginPanel)
-        if panel is not None:
-            panel.refresh()
-        self.main_panel.refresh()
-
-    def refresh_plugin(self, plugin):
+    def _refresh_plugin(self, plugin):
         for w in self.w_plugins:
             if w.object is plugin:
                 self.color_plugin(w, plugin)

@@ -35,11 +35,12 @@ from modalapi.plugin_customization import PluginCustomization
 class MockObject:
     preset_callback_arg = None  # footswitch default; override via kwargs
     unit_symbol = None
-    parameters: dict  # plugin mocks only; set through kwargs
 
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
-        if not hasattr(self, 'customization'):
+        if not hasattr(self, "parameters"):
+            self.parameters = {}
+        if not hasattr(self, "customization"):
             self.customization = PluginCustomization()
 
     def subscribe(self, cb):
@@ -437,12 +438,16 @@ def test_footswitch_badge_letter_from_effective_table(lcd):
 
     fs = Footswitch(id=2, led_pin=None, pixel=None, midi_CC=10, midi_channel=0, refresh_callback=MagicMock())
     instance.handler.hardware.controllers = {"0:10": fs}
-    instance.handler.effective_table = ContextStack(layers=[
-        ContextLayer(
-            ref=ContextRef(kind=ContextKind.PEDALBOARD),
-            rows={(ControlClass.FOOTSWITCH, EventKind.PRESS): [_footswitch_row(distortion, gain_param.symbol, "0:10")]},
-        )
-    ])
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.FOOTSWITCH, EventKind.PRESS): [_footswitch_row(distortion, gain_param.symbol, "0:10")]
+                },
+            )
+        ]
+    )
 
     assert instance.footswitch_badge_letter(distortion, gain_param) == "C"
 
@@ -457,9 +462,13 @@ def test_footswitch_badge_letter_none_when_shadowed(lcd):
     fs = Footswitch(id=0, led_pin=None, pixel=None, midi_CC=10, midi_channel=0, refresh_callback=MagicMock())
     instance.handler.hardware.controllers = {"0:10": fs}
     row = _footswitch_row(distortion, "gain", "0:10", shadow_state=ShadowState.SHADOWED)
-    instance.handler.effective_table = ContextStack(layers=[
-        ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD), rows={(ControlClass.FOOTSWITCH, EventKind.PRESS): [row]})
-    ])
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD), rows={(ControlClass.FOOTSWITCH, EventKind.PRESS): [row]}
+            )
+        ]
+    )
 
     assert instance.footswitch_badge_letter(distortion, gain_param) is None
 
@@ -485,12 +494,16 @@ def test_tweak_badge_number_from_effective_table(lcd):
 
     enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=2)
     instance.handler.hardware.controllers = {"encoder2": enc}
-    instance.handler.effective_table = ContextStack(layers=[
-        ContextLayer(
-            ref=ContextRef(kind=ContextKind.PEDALBOARD),
-            rows={(ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.symbol, "encoder2")]},
-        )
-    ])
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.symbol, "encoder2")]
+                },
+            )
+        ]
+    )
 
     assert instance.tweak_badge_number(distortion, gain_param) == 2
 
@@ -505,9 +518,13 @@ def test_tweak_badge_number_none_when_shadowed(lcd):
     enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=2)
     instance.handler.hardware.controllers = {"encoder2": enc}
     row = _analog_row(distortion, gain_param.symbol, "encoder2", shadow_state=ShadowState.SHADOWED)
-    instance.handler.effective_table = ContextStack(layers=[
-        ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD), rows={(ControlClass.ANALOG, EventKind.ROTATE): [row]})
-    ])
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD), rows={(ControlClass.ANALOG, EventKind.ROTATE): [row]}
+            )
+        ]
+    )
 
     assert instance.tweak_badge_number(distortion, gain_param) is None
 
@@ -521,12 +538,16 @@ def test_parameter_menu_shows_tweak_badge(lcd, snapshot):
 
     enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=3)
     instance.handler.hardware.controllers = {"encoder3": enc}
-    instance.handler.effective_table = ContextStack(layers=[
-        ContextLayer(
-            ref=ContextRef(kind=ContextKind.PEDALBOARD),
-            rows={(ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.symbol, "encoder3")]},
-        )
-    ])
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.symbol, "encoder3")]
+                },
+            )
+        ]
+    )
 
     # Long-press opens ParameterWindow
     instance.main_panel.sel_widget(instance.w_plugins[0])
@@ -544,12 +565,16 @@ def test_parameter_dialog_shows_tweak_badge_snapshot(lcd, snapshot):
 
     enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=2)
     instance.handler.hardware.controllers = {"encoder2": enc}
-    instance.handler.effective_table = ContextStack(layers=[
-        ContextLayer(
-            ref=ContextRef(kind=ContextKind.PEDALBOARD),
-            rows={(ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.symbol, "encoder2")]},
-        )
-    ])
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.symbol, "encoder2")]
+                },
+            )
+        ]
+    )
 
     instance.draw_parameter_dialog(gain_param)
     snapshot()
@@ -564,12 +589,16 @@ def test_parameter_menu_shows_footswitch_badge(lcd, snapshot):
 
     fs = Footswitch(id=0, led_pin=None, pixel=None, midi_CC=10, midi_channel=0, refresh_callback=MagicMock())
     instance.handler.hardware.controllers = {"0:10": fs}
-    instance.handler.effective_table = ContextStack(layers=[
-        ContextLayer(
-            ref=ContextRef(kind=ContextKind.PEDALBOARD),
-            rows={(ControlClass.FOOTSWITCH, EventKind.PRESS): [_footswitch_row(distortion, gain_param.symbol, "0:10")]},
-        )
-    ])
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.FOOTSWITCH, EventKind.PRESS): [_footswitch_row(distortion, gain_param.symbol, "0:10")]
+                },
+            )
+        ]
+    )
 
     # Long-press opens ParameterWindow
     instance.main_panel.sel_widget(instance.w_plugins[0])
