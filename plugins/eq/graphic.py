@@ -464,14 +464,6 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
         self._replace_band(band, gain_db=new_gain)
         return True
 
-    def tick(self) -> None:
-        bypassed = self.plugin.is_bypassed()
-        if bypassed != getattr(self, "_last_bypassed", None):
-            self._last_bypassed = bypassed
-            self._bar_widget.set_bypassed(bypassed)
-            self._update_readout()
-        super().tick()
-
     def _refresh_bypass_style(self) -> None:
         super()._refresh_bypass_style()
         self._bar_widget.set_bypassed(self.plugin.is_bypassed())

@@ -42,7 +42,7 @@ from typing import Generic, TypeVar
 
 from common.contexts import ControlClass, ControlRef, EventKind
 from common.param_roles import ParamRole, edit_value
-from common.parameter import BYPASS_SYMBOL, Symbol
+from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
 from modalapi.plugin import Plugin
 from pistomp.input.dispatch import MultiSelectable, Selectable, fire, resolve_local
 from pistomp.input.event import ControllerEvent, EncoderEvent
@@ -74,6 +74,8 @@ class PluginPanel(Panel, Generic[TState], ABC):
     _on_dismiss: Callable[[], None]
     _param_queue: dict[Symbol, float]
     _btn_bypass: Button
+    _model_dirty: bool
+    _unsub_model: Callable[[], None] | None
 
     def _init_plugin_state(
         self,
@@ -86,6 +88,17 @@ class PluginPanel(Panel, Generic[TState], ABC):
         self.handler = handler
         self._on_dismiss = on_dismiss
         self._param_queue = {}
+        self._model_dirty = False
+        self._unsub_model = None
+
+    def _start_observing(self) -> None:
+        """Subscribe to plugin param changes. Call at the end of a child
+        ``__init__``, after ``build_widgets`` and ``_refresh_bypass_style`` —
+        the observer only marks dirty; ``tick`` drains."""
+        self._unsub_model = self.plugin.subscribe(self._on_param_changed)
+
+    def _on_param_changed(self, _param: Parameter) -> None:
+        self._model_dirty = True
 
     # ── subclass contract ──────────────────────────────────────────────────
 
@@ -176,12 +189,17 @@ class PluginPanel(Panel, Generic[TState], ABC):
             p.value = value
 
     def tick(self) -> None:
-        """Drain the coalesced parameter queue.
+        """Drain the coalesced parameter queue, then reconcile from the model
+        if any parameter changed under us since the last tick.
 
         Subclasses that override ``tick()`` **must** call ``super().tick()`` so
-        queued sends are not lost.
+        queued sends are not lost and the model-dirty drain runs.
         """
         self._flush_param_queue()
+        if self._model_dirty:
+            self._model_dirty = False
+            self.apply_state(self.snapshot_state())
+            self._refresh_bypass_style()
 
     def _flush_param_queue(self) -> None:
         if not self._param_queue:
@@ -202,7 +220,6 @@ class PluginPanel(Panel, Generic[TState], ABC):
         if bridge is not None:
             bridge.send_parameter(self.plugin.instance_id, BYPASS_SYMBOL, 1.0 if new_bypass else 0.0)
         self._refresh_bypass_style()
-        self._btn_bypass.refresh()
 
     def _on_reset(self) -> None:
         """Restore all symbols from the parse-time snapshot, skipping locked ones and :bypass."""
@@ -224,6 +241,13 @@ class PluginPanel(Panel, Generic[TState], ABC):
     def _refresh_bypass_style(self) -> None:
         bypassed = self.plugin.is_bypassed()
         self._btn_bypass.set_background(BYPASS_ACTIVE_COLOR if bypassed else (0, 0, 0))
+        self._btn_bypass.refresh()
+
+    def destroy(self) -> None:
+        if self._unsub_model is not None:
+            self._unsub_model()
+            self._unsub_model = None
+        super().destroy()
 
     def wants_fast_tick(self) -> bool:
         return True

@@ -21,7 +21,7 @@ from common.contexts import (
     ParamEffect,
     ShadowState,
 )
-from common.parameter import Symbol
+from common.parameter import Parameter, PortInfo, Symbol
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
 from pistomp.lcd320x240 import Lcd
@@ -68,6 +68,24 @@ class MockObject:
         return False
 
 
+def _real_param(
+    name: str = "Gain",
+    symbol: str = "gain",
+    instance_id: str = "delay",
+    value: float = 0.5,
+    minimum: float = 0.0,
+    maximum: float = 1.0,
+) -> Parameter:
+    """A real Parameter with the same defaults as the old _mock_param helper,
+    so the dialog tests exercise the reactive property path."""
+    info: PortInfo = {
+        "shortName": name,
+        "symbol": symbol,
+        "ranges": {"minimum": minimum, "maximum": maximum},
+    }
+    return Parameter(info, value, None, instance_id)
+
+
 @pytest.fixture
 def mock_handler():
     handler = MagicMock()
@@ -104,42 +122,10 @@ def _enc_step(instance, d, multiplier=1.0):
 
 
 def setup_main_ui(instance):
-    mock_gain = MockObject(
-        name="Gain",
-        symbol="gain",
-        instance_id="distortion",
-        value=0.5,
-        minimum=0.0,
-        maximum=1.0,
-        type=MockObject(value=0),
-        get_taper=lambda: 1,
-        format=lambda v: f"{v:.2f}",
-        format_value=lambda v: f"{v:.2f}",
-    )
-    mock_time = MockObject(
-        name="Time",
-        symbol="time",
-        instance_id="delay",
-        value=0.3,
-        minimum=0.0,
-        maximum=1.0,
-        type=MockObject(value=0),
-        get_taper=lambda: 1,
-        format=lambda v: f"{v:.2f}",
-        format_value=lambda v: f"{v:.2f}",
-    )
-    mock_mix = MockObject(
-        name="Mix",
-        symbol="mix",
-        instance_id="reverb",
-        value=0.4,
-        minimum=0.0,
-        maximum=1.0,
-        type=MockObject(value=0),
-        get_taper=lambda: 1,
-        format=lambda v: f"{v:.2f}",
-        format_value=lambda v: f"{v:.2f}",
-    )
+    mock_gain = _real_param(name="Gain", symbol="gain", instance_id="distortion", value=0.5)
+    mock_time = _real_param(name="Time", symbol="time", instance_id="delay", value=0.3)
+    mock_mix = _real_param(name="Mix", symbol="mix", instance_id="reverb", value=0.4)
+    bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
     plugins = [
         MockObject(
             instance_id="distortion",
@@ -149,7 +135,7 @@ def setup_main_ui(instance):
             category="Distortion",
             has_footswitch=True,
             controllers=[],
-            parameters={":bypass": MockObject(name="bypass", symbol=":bypass"), "gain": mock_gain},
+            parameters={":bypass": Parameter(bypass_info, 0.0, None, "distortion"), "gain": mock_gain},
         ),
         MockObject(
             instance_id="delay",
@@ -159,7 +145,7 @@ def setup_main_ui(instance):
             category="Delay",
             has_footswitch=True,
             controllers=[],
-            parameters={":bypass": MockObject(name="bypass", symbol=":bypass"), "time": mock_time},
+            parameters={":bypass": Parameter(bypass_info, 0.0, None, "delay"), "time": mock_time},
         ),
         MockObject(
             instance_id="reverb",
@@ -173,7 +159,7 @@ def setup_main_ui(instance):
             category="Reverb",
             has_footswitch=True,
             controllers=[],
-            parameters={":bypass": MockObject(name="bypass", symbol=":bypass"), "mix": mock_mix},
+            parameters={":bypass": Parameter(bypass_info, 1.0, None, "reverb"), "mix": mock_mix},
         ),
         MockObject(
             instance_id="chorus",
@@ -187,7 +173,7 @@ def setup_main_ui(instance):
             category="Modulator",
             has_footswitch=False,
             controllers=[],
-            parameters={":bypass": MockObject(name="bypass", symbol=":bypass")},
+            parameters={":bypass": Parameter(bypass_info, 0.0, None, "chorus")},
         ),
     ]
     ids = [p.instance_id for p in plugins]  # pyright: ignore[reportAttributeAccessIssue]
@@ -271,17 +257,7 @@ def test_system_info_dialog_snapshot(lcd, snapshot):
 def test_parameter_dialog_snapshot(lcd, snapshot):
     instance, _ = lcd
     setup_main_ui(instance)
-    mock_param = MockObject(
-        name="Gain",
-        instance_id="delay",
-        value=0.5,
-        minimum=0.0,
-        maximum=1.0,
-        type=MockObject(value=0),
-        get_taper=lambda: 1,
-        format=lambda v: f"{v:.2f}",
-        format_value=lambda v: f"{v:.2f}",
-    )
+    mock_param = _real_param(name="Gain", instance_id="delay", value=0.5)
     instance.draw_parameter_dialog(mock_param)
     snapshot()
 
@@ -294,17 +270,7 @@ def test_parameter_dialog_batches_detents(lcd):
     """
     instance, _ = lcd
     setup_main_ui(instance)
-    mock_param = MockObject(
-        name="Gain",
-        instance_id="delay",
-        value=0.5,
-        minimum=0.0,
-        maximum=1.0,
-        type=MockObject(value=0),
-        get_taper=lambda: 1,
-        format=lambda v: f"{v:.2f}",
-        format_value=lambda v: f"{v:.2f}",
-    )
+    mock_param = _real_param(name="Gain", instance_id="delay", value=0.5)
     dialog = instance.draw_parameter_dialog(mock_param)
 
     renders = 0
@@ -327,17 +293,7 @@ def test_parameter_dialog_applies_encoder_multiplier(lcd):
     """The nav encoder's speed factor scales the step; menus ignore it."""
     instance, _ = lcd
     setup_main_ui(instance)
-    mock_param = MockObject(
-        name="Gain",
-        instance_id="delay",
-        value=0.0,
-        minimum=0.0,
-        maximum=1.0,
-        type=MockObject(value=0),
-        get_taper=lambda: 1,
-        format=lambda v: f"{v:.2f}",
-        format_value=lambda v: f"{v:.2f}",
-    )
+    mock_param = _real_param(name="Gain", instance_id="delay", value=0.0)
     dialog = instance.draw_parameter_dialog(mock_param)
 
     # 2 detents at 3x = 6 grid steps from the bottom.
@@ -377,20 +333,7 @@ def test_menu_batches_detents_into_one_selection_move(lcd):
 
 
 def _mock_param(**overrides):
-    defaults = dict(
-        name="Gain",
-        symbol="gain",
-        instance_id="delay",
-        value=0.5,
-        minimum=0.0,
-        maximum=1.0,
-        type=MockObject(value=0),
-        get_taper=lambda: 1,
-        format=lambda v: f"{v:.2f}",
-        format_value=lambda v: f"{v:.2f}",
-    )
-    defaults.update(overrides)
-    return MockObject(**defaults)
+    return _real_param(**overrides)
 
 
 def test_tweak_dialog_has_no_timeout_and_shows_close_button(lcd):

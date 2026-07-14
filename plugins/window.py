@@ -88,3 +88,4 @@ class PluginWindow(PluginPanel[TState], Dialog):
         self.add_sel_widget(self._btn_reset)
 
         self._refresh_bypass_style()
+        self._start_observing()

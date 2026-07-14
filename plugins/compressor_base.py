@@ -97,7 +97,6 @@ class CompressorPanel(FullscreenPluginPanel[CompressorState]):
             self._selectables.append(sel)
             self.add_sel_widget(sel)
 
-        self._last_bypassed = self.plugin.is_bypassed()
         self._refresh_bypass_style()
         self.sel_widget(self._selectables[0])
 
@@ -157,10 +156,6 @@ class CompressorPanel(FullscreenPluginPanel[CompressorState]):
         self._column.set_active_arc(idx)
 
     def tick(self) -> None:
-        bypassed = self.plugin.is_bypassed()
-        if bypassed != self._last_bypassed:
-            self._last_bypassed = bypassed
-            self._refresh_bypass_style()
         if self._meter is None:
             self._start_meter()
         if self._meter is not None:

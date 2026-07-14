@@ -165,8 +165,6 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
         self.apply_state(self._state)
         self.sel_widget(self._mode_selector)
 
-        self._last_bypassed = self.plugin.is_bypassed()
-
     def declare_bindings(self) -> tuple[BindingDecl, ...]:
         panel_ctx = ContextRef(kind=ContextKind.PANEL, name="gx_cabinet")
         # enc3 is chassis-labeled Tweak3/Volume; CLevel stays bound there as a
@@ -226,10 +224,6 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
         self._update_readout()
 
     def tick(self) -> None:
-        bypassed = self.plugin.is_bypassed()
-        if bypassed != self._last_bypassed:
-            self._last_bypassed = bypassed
-            self._refresh_bypass_style()
         super().tick()
 
     def _refresh_bypass_style(self) -> None:

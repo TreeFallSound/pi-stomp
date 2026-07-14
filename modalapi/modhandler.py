@@ -674,14 +674,13 @@ class Modhandler(Handler):
             # Mirror mod-ui's live value: refresh the cache (so a later edit opens
             # at the current value) and sync any bound control. The connect-dump
             # delivers the real mod-ui state here — :bypass aside, nothing else
-            # repaints a non-bypass footswitch.
+            # repaints a non-bypass footswitch. An open panel learns of the
+            # change through its parameter subscription; no message arm needs to
+            # know panels exist.
             if self._current is not None:
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
                         plugin.set_param_value(Symbol(msg.symbol), msg.value)
-                        panel = self._lcd.pstack.find_panel_type(PluginPanel) if self._lcd is not None else None
-                        if panel is not None and panel.plugin is plugin:
-                            panel.apply_state(panel.snapshot_state())
                         break
 
         elif isinstance(msg, MidiMapMessage):

@@ -21,7 +21,7 @@ import urllib.parse
 from typing import Optional
 
 
-from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
+from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, json_default
 import modalapi.plugin as Plugin
 from modalapi.connections import Connection, build_connection
 from modalapi.plugin_customization import Customizer, default_customizer
@@ -249,4 +249,4 @@ class Pedalboard:
         ]
 
     def to_json(self):
-        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
+        return json.dumps(self, default=json_default, sort_keys=True, indent=4)

@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from common.color import RectBorder
-from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
+from common.parameter import BYPASS_SYMBOL, Parameter, Symbol, json_default
 from modalapi.plugin_customization import PluginCustomization, PluginExtraData
 from pistomp.controller import Controller
 
@@ -146,5 +147,14 @@ class Plugin:
     def set_bypass(self, bypass: bool) -> None:
         self.set_param_value(BYPASS_SYMBOL, 1.0 if bypass else 0.0)
 
+    def subscribe(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
+        """Fan *cb* out over every parameter. Returns a single unsubscriber that
+        tears down all per-param subscriptions, so a panel subscribes once."""
+        unsubs = [p.subscribe(cb) for p in self.parameters.values()]
+        def _unsub() -> None:
+            for u in unsubs:
+                u()
+        return _unsub
+
     def to_json(self) -> str:
-        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
+        return json.dumps(self, default=json_default, sort_keys=True, indent=4)

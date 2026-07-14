@@ -13,6 +13,9 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from __future__ import annotations
+
+from collections.abc import Callable
 from enum import Enum
 from typing import NewType, NotRequired, TypedDict
 import json
@@ -111,7 +114,12 @@ class Parameter:
         # fallbacks only serve the params we synthesise (bypass, volume, VU).
         self.default: float = float(ranges.get("default", self.minimum))
 
-        self.value: float = float(value)
+        # Reactive value: a property setter that notifies observers. _observers
+        # must exist before the first assignment below, or the write fires into
+        # a missing list.
+        self._observers: list[Callable[[Parameter], None]] = []
+        self._value: float = 0.0
+        self.value = float(value)
         self.binding: str | None = binding
         self.instance_id: str | None = instance_id.lstrip("/") if instance_id else instance_id
         self.type = Type.DEFAULT
@@ -135,6 +143,29 @@ class Parameter:
             elif TTL_TOGGLED in properties:
                 self.type = Type.TOGGLED
 
+    @property
+    def value(self) -> float:
+        return self._value
+
+    @value.setter
+    def value(self, v: float) -> None:
+        if v == self._value:
+            return
+        self._value = v
+        for observe in self._observers:
+            observe(self)
+
+    def subscribe(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
+        """Register *cb* to fire on every changed-value write. Returns its own
+        unsubscriber. An unchanged write (v == current) does not notify."""
+        self._observers.append(cb)
+        def _unsub() -> None:
+            try:
+                self._observers.remove(cb)
+            except ValueError:
+                pass
+        return _unsub
+
     def get_enum_value_list(self) -> list[tuple[str, float]]:
         return [(v["label"], v["value"]) for v in self.enum_values]
 
@@ -155,4 +186,22 @@ class Parameter:
         return text
 
     def to_json(self):
-        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
+        return json.dumps(self, default=json_default, sort_keys=True, indent=4)
+
+
+def json_default(o):
+    """``json.dumps`` default that strips reactive bookkeeping (_observers,
+    _value) from Parameter and re-injects the public ``value``. Other objects
+    serialize via __dict__ when available; types without it fall back to repr."""
+    if isinstance(o, Parameter):
+        d = {k: v for k, v in o.__dict__.items() if not k.startswith("_")}
+        d["value"] = o._value
+        return d
+    if isinstance(o, frozenset):
+        return list(o)
+    if isinstance(o, Enum):
+        return o.name
+    try:
+        return o.__dict__
+    except AttributeError:
+        return repr(o)

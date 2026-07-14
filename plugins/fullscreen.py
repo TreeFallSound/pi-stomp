@@ -71,3 +71,4 @@ class FullscreenPluginPanel(PluginPanel[TState]):
                 self.add_sel_widget(btn)
 
         self._refresh_bypass_style()
+        self._start_observing()
