@@ -829,7 +829,7 @@ class Mod(Handler):
         # Stamp as known-good — only stamp when mod-host confirmed success
         if ok:
             try:
-                subprocess.run(["pistomp-stamp", "stamp", pedalboard.bundle], check=False)
+                subprocess.Popen(["pistomp-stamp", "stamp", pedalboard.bundle])
             except Exception:
                 logging.debug("pistomp-stamp failed", exc_info=True)
 
