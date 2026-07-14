@@ -23,6 +23,7 @@ from pygame import Surface
 from uilib.pygame_init import font as _make_font
 
 from pistomp.footswitch import Footswitch  # TODO would like to avoid this module knowing such details
+from common.parameter import BYPASS_SYMBOL
 
 class Lcd:
     __single = None
@@ -458,7 +459,7 @@ class Lcd:
                     assert fs_id is not None
                     assert c.parameter
                     fss[fs_id] = None
-                    if c.parameter.symbol != ":bypass":  # TODO token
+                    if c.parameter.symbol != BYPASS_SYMBOL:
                         label = c.parameter.name
                     else:
                         label = p.display_name[: self.plugin_label_length]

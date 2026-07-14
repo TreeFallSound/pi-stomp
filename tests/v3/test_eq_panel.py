@@ -22,7 +22,7 @@ from plugins.fil4.band_spec import BAND_SPECS, PLUGIN_ENABLE_SYM
 from plugins.fil4.panel import Fil4Panel
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click
-from common.parameter import PortInfo, Symbol
+from common.parameter import BYPASS_SYMBOL, PortInfo, Symbol
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@ def make_fil4_plugin(instance_id: str = "fil4") -> Plugin:
 
     # Plugin-wide
     bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
-    params[Symbol(":bypass")] = Parameter(bypass_info, False, None, instance_id)
+    params[BYPASS_SYMBOL] = Parameter(bypass_info, False, None, instance_id)
     params[PLUGIN_ENABLE_SYM] = _param(PLUGIN_ENABLE_SYM, 1.0, instance_id=instance_id)
     params[Symbol("gain")] = _param(Symbol("gain"), 0.0, -18.0, 18.0, instance_id=instance_id, unit="dB")
 

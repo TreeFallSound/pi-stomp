@@ -4,7 +4,7 @@ import pytest
 
 from blend.stop import BlendStop, build_segment_diff_map
 from modalapi.parameter import Type as ParameterType
-from common.parameter import Symbol
+from common.parameter import BYPASS_SYMBOL, Symbol
 
 
 # ---------------------------------------------------------------------------
@@ -28,11 +28,11 @@ def test_toggled_param_collapses_to_on_when_either_side_is_on():
 
 
 def test_bypass_symbol_collapses_to_on_regardless_of_type():
-    lower = BlendStop(0.0, 0, {"Fx": {Symbol(":bypass"): 1.0}})
-    upper = BlendStop(1.0, 1, {"Fx": {Symbol(":bypass"): 0.0}})
+    lower = BlendStop(0.0, 0, {"Fx": {BYPASS_SYMBOL: 1.0}})
+    upper = BlendStop(1.0, 1, {"Fx": {BYPASS_SYMBOL: 0.0}})
 
     result = build_segment_diff_map(lower, upper, _type_getter({}))
-    pd = result["Fx"][Symbol(":bypass")]
+    pd = result["Fx"][BYPASS_SYMBOL]
     assert pd.val_a == pytest.approx(1.0)
     assert pd.val_b == pytest.approx(1.0)
 

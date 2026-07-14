@@ -378,7 +378,7 @@ class ParameterWindow(PluginWindow[None]):
         for btn in (self._btn_back, self._btn_bypass, self._btn_reset):
             content_container.add_sel_widget(btn)
 
-        bypass_badge = self._badge_for(Symbol(":bypass"))
+        bypass_badge = self._badge_for(BYPASS_SYMBOL)
         if bypass_badge is not None:
             self._btn_bypass.set_badge(BadgeGlyph(bypass_badge))
 

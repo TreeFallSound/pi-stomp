@@ -27,6 +27,7 @@ from blend.types import (
     Symbol,
 )
 from modalapi.parameter import Type as ParameterType
+from common.parameter import BYPASS_SYMBOL
 
 
 @dataclass
@@ -43,7 +44,7 @@ class BlendStop:
 
 
 def _is_binary(symbol: Symbol, param_type: ParameterType) -> bool:
-    return param_type == ParameterType.TOGGLED or symbol == ":bypass"
+    return param_type == ParameterType.TOGGLED or symbol == BYPASS_SYMBOL
 
 
 def build_segment_diff_map(

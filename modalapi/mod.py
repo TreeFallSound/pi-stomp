@@ -28,7 +28,7 @@ import common.token as Token
 import common.util as util
 import pistomp.switchstate as switchstate
 import modalapi.pedalboard as Pedalboard
-from common.parameter import Parameter
+from common.parameter import BYPASS_SYMBOL, Parameter
 import modalapi.wifi as Wifi
 import modalapi.external_midi as ExternalMidi
 from pistomp.encoder_controller import EncoderController
@@ -982,7 +982,7 @@ class Mod(Handler):
             # Non-footswitch plugin: emit only; the inbound echo updates state and LCD.
             target_bypass = not inst.is_bypassed()
             if not self._is_pedalboard_loading:
-                self.ws_bridge.send_parameter(inst.instance_id, ":bypass", 1.0 if target_bypass else 0.0)
+                self.ws_bridge.send_parameter(inst.instance_id, BYPASS_SYMBOL, 1.0 if target_bypass else 0.0)
             self.lcd.draw_plugin_select(inst)  # selection highlight (navigation, not bypass)
 
     #
@@ -1404,7 +1404,7 @@ class Mod(Handler):
         self.menu_items = {0: {Token.NAME: "< Back to main screen", Token.ACTION: self.menu_back}}
         i = 1
         for p in self.deep.parameters:  # pyright: ignore[reportOptionalIterable]
-            if p.symbol == ":bypass":
+            if p.symbol == BYPASS_SYMBOL:
                 continue
             self.menu_items[i] = {Token.NAME: p.name,
                                        Token.ACTION: self.parameter_value_show,

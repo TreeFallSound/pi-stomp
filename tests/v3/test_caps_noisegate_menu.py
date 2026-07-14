@@ -189,7 +189,7 @@ def test_parameter_window_scrolls_when_content_overflows(v3_system: SystemFixtur
     # footer button — all three must surface their badge.
     bind_footswitch(handler, plugin, Symbol("param_00"), fs_id=0)
     bind_footswitch(handler, plugin, Symbol("param_05"), fs_id=1)
-    bind_footswitch(handler, plugin, Symbol(":bypass"), fs_id=2)
+    bind_footswitch(handler, plugin, BYPASS_SYMBOL, fs_id=2)
 
     lcd = handler.lcd
     lcd.main_panel.sel_widget(lcd.w_plugins[0])

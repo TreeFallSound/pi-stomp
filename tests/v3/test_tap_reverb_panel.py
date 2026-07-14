@@ -18,7 +18,7 @@ from plugins.tap_reverb import TAP_REVERB_URI
 from plugins.tap_reverb.panel import TapReverbPanel
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click
-from common.parameter import PortInfo, Symbol
+from common.parameter import BYPASS_SYMBOL, PortInfo, Symbol
 
 # ── mode labels (43 values from the plugin TTL) ─────────────────────────────
 
@@ -108,7 +108,7 @@ def _param(
 def make_tap_reverb_plugin(instance_id: str = "reverb") -> Plugin:
     """Build a Plugin instance mirroring TAP Reverberator's port layout."""
     params: dict[Symbol, Parameter] = {
-        Symbol(":bypass"): Parameter(
+        BYPASS_SYMBOL: Parameter(
             {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1, "default": 0}},
             False,
             None,

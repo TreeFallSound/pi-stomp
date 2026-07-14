@@ -17,7 +17,7 @@ from plugins.capseq10.band_spec import BAND_SPECS
 from plugins.capseq10.panel import CapsEq10Panel
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click
-from common.parameter import PortInfo, Symbol
+from common.parameter import BYPASS_SYMBOL, PortInfo, Symbol
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +53,7 @@ def make_capseq10_plugin(instance_id: str = "eq10") -> Plugin:
     params: dict[Symbol, Parameter] = {}
 
     bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
-    params[Symbol(":bypass")] = Parameter(bypass_info, False, None, instance_id)
+    params[BYPASS_SYMBOL] = Parameter(bypass_info, False, None, instance_id)
     params[Symbol("enable")] = _param("enable", 1.0, instance_id=instance_id)
 
     for b in BAND_SPECS:

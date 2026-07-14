@@ -6,7 +6,7 @@ import queue
 import pytest
 
 from modalapi.websocket_bridge import AsyncWebSocketBridge, WebSocketWorker
-from common.parameter import Symbol
+from common.parameter import BYPASS_SYMBOL, Symbol
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +205,7 @@ def test_send_bpm_float():
 
 def test_send_parameter_wire_format():
     bridge = _make_bridge()
-    bridge.send_parameter("fuzz", Symbol(":bypass"), 1.0)
+    bridge.send_parameter("fuzz", BYPASS_SYMBOL, 1.0)
     assert _drain(bridge) == ["param_set /graph/fuzz/:bypass 1.0"]
 
 

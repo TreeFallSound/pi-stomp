@@ -22,7 +22,7 @@ _pg_init()
 import pygame
 
 from uilib.panel import LcdBase
-from common.parameter import PortInfo, Symbol
+from common.parameter import BYPASS_SYMBOL, PortInfo
 
 PROJECT_ROOT = Path(__file__).parent.parent
 _TESTS_DIR = Path(__file__).parent
@@ -249,7 +249,7 @@ def make_plugin():
             parameters = {}
         bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
         bypass_param = Parameter(bypass_info, bypassed, None, instance_id)
-        parameters[Symbol(":bypass")] = bypass_param
+        parameters[BYPASS_SYMBOL] = bypass_param
         # Fixture acts as the composition root: resolve customization by URI,
         # mirroring how the handler injects it in production.
         p = Plugin(instance_id, parameters, {}, category, uri=uri, customization=lookup(uri))

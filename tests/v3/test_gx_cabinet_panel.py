@@ -18,7 +18,7 @@ from plugins.gx_cabinet import GX_CABINET_URI
 from plugins.gx_cabinet.panel import GxCabinetPanel
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click
-from common.parameter import PortInfo, Symbol
+from common.parameter import BYPASS_SYMBOL, PortInfo, Symbol
 
 # ── cab model labels (19 values from the plugin TTL) ────────────────────────
 
@@ -79,7 +79,7 @@ def _param(
 def make_gx_cabinet_plugin(instance_id: str = "cabinet") -> Plugin:
     """Build a Plugin instance mirroring GxCabinet's port layout."""
     params: dict[Symbol, Parameter] = {
-        Symbol(":bypass"): Parameter(
+        BYPASS_SYMBOL: Parameter(
             {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1, "default": 0}},
             False,
             None,

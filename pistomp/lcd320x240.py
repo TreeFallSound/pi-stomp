@@ -24,7 +24,7 @@ from common.fonts import font_path
 import common.token as Token
 import common.util as util
 from common.contexts import ControlClass, EventKind, ParamEffect, ShadowState
-from common.parameter import Parameter, PortInfo, Symbol, Type
+from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, Type
 from modalapi.plugin import Plugin
 from ui.ethernet_menu import EthernetMenu
 from ui.wifi_menu import WifiMenu
@@ -835,7 +835,7 @@ class Lcd:
         param = footswitch.parameter
         if param is None:
             return None
-        if param.symbol != ":bypass":  # TODO token
+        if param.symbol != BYPASS_SYMBOL:
             return param.name
         plugin = next((p for p in self.current.pedalboard.plugins
                        if p.instance_id == param.instance_id), None)

@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from typing import Optional, cast
 from unittest.mock import MagicMock
 
-from common.parameter import Parameter, Symbol
+from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
 from pistomp.footswitch import Footswitch
 from pistomp.input.event import SwitchEvent, SwitchEventKind
 from pistomp.input.sink import InputSink
@@ -113,13 +113,13 @@ class TestSetValue:
 
     def test_bypass_engaged_when_not_bypassed(self):
         with _make_footswitch() as (fs, _sink):
-            fs.parameter = self._param(Symbol(":bypass"), 0)
+            fs.parameter = self._param(BYPASS_SYMBOL, 0)
             fs.set_value(0)
             assert fs.toggled is True
 
     def test_bypass_off_when_bypassed(self):
         with _make_footswitch() as (fs, _sink):
-            fs.parameter = self._param(Symbol(":bypass"), 1)
+            fs.parameter = self._param(BYPASS_SYMBOL, 1)
             fs.set_value(1)
             assert fs.toggled is False
 
@@ -185,7 +185,7 @@ class TestClearPedalboardInfo:
         drives_display check (and any other consumer of fs.parameter) doesn't
         see a stale plugin binding from a previous pedalboard."""
         with _make_footswitch(midi_CC=None) as (fs, _sink):
-            fs.parameter = TestSetValue._param(Symbol(":bypass"), 0)
+            fs.parameter = TestSetValue._param(BYPASS_SYMBOL, 0)
 
             fs.clear_pedalboard_info()
 

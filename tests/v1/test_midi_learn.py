@@ -3,7 +3,7 @@ plugin parameter live on v1, so the mono LCD reflects it without a reload."""
 
 from pistomp.footswitch import Footswitch
 from tests.types import SystemFixtureLegacy
-from common.parameter import Symbol
+from common.parameter import BYPASS_SYMBOL
 
 
 def test_v1_midi_learn_binds_footswitch_live(v1_system: SystemFixtureLegacy, make_plugin, snapshot):
@@ -26,7 +26,7 @@ def test_v1_midi_learn_binds_footswitch_live(v1_system: SystemFixtureLegacy, mak
     ws_bridge.inject(f"midi_map /graph/noise :bypass {channel} {cc} 0.0 1.0")
     handler.poll_ws_messages()
 
-    assert fs0.parameter is plugin.parameters[Symbol(":bypass")]
+    assert fs0.parameter is plugin.parameters[BYPASS_SYMBOL]
     assert plugin.has_footswitch is True
     snapshot("bound")
 
