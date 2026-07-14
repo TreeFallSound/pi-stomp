@@ -665,7 +665,7 @@ class Modhandler(Handler):
 
                 # Stamp as known-good — only pi-stomp knows the full stack is healthy
                 try:
-                    subprocess.run(["pistomp-stamp", "stamp", mod_bundle], check=False)
+                    subprocess.Popen(["pistomp-stamp", "stamp", mod_bundle])
                 except Exception:
                     logging.debug("pistomp-stamp failed", exc_info=True)
             elif mod_bundle and self._current is not None and self.next_pedalboard_preset_index is not None:
