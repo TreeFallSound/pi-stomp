@@ -30,6 +30,7 @@ from typing import Optional
 
 import websockets
 import uvloop
+from common.parameter import Symbol
 
 # Service will restart after this
 MAX_RECONNECT_ATTEMPTS = 4
@@ -294,7 +295,7 @@ class AsyncWebSocketBridge:
         self._worker.notify()
         return True
 
-    def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
+    def send_parameter(self, instance_id: str, symbol: Symbol, value: float) -> bool:
         """Queue a parameter update. instance_id should be canonical (no leading slash).
         Returns False if backpressure is active."""
         if self._worker.backpressure_active:

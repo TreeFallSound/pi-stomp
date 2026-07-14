@@ -13,6 +13,7 @@ from blend.parameter_setter import ParameterSetter
 from blend.stop import BlendStop
 from pistomp.input.event import AnalogEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.encoder_controller import EncoderController
+from common.parameter import Symbol
 
 
 def _make_encoder(midi_CC=70, midi_channel=0, id_=1):
@@ -34,7 +35,7 @@ def _make_ic(enc):
     stop = BlendStop(
         position=0.0,
         snapshot_index=0,
-        snapshot_state={"FX": {"Level": 0.5}},
+        snapshot_state={"FX": {Symbol("Level"): 0.5}},
     )
     ic = InputController(
         easing_func=EASING_FUNCTIONS["linear"],

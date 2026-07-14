@@ -12,6 +12,7 @@ from plugins import lookup, register, PluginCustomization
 from plugins.fullscreen import FullscreenPluginPanel
 from pistomp.controller import Controller
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
+from common.parameter import BYPASS_SYMBOL, Symbol
 
 
 # ── minimal fake infrastructure ─────────────────────────────────────────────
@@ -45,7 +46,7 @@ class DemoState:
 
 class DemoPanel(FullscreenPluginPanel[DemoState]):
     def snapshot_state(self) -> DemoState:
-        p = self.plugin.parameters.get("gain")
+        p = self.plugin.parameters.get(Symbol("gain"))
         return DemoState(gain=float(p.value) if p else 0.0)
 
     def apply_state(self, state: DemoState) -> None:
@@ -56,7 +57,7 @@ class DemoPanel(FullscreenPluginPanel[DemoState]):
 
     def on_event(self, event: ControllerEvent) -> bool:
         if isinstance(event, EncoderEvent) and event.controller.id == 1:
-            self.set_param("gain", self.plugin.parameters["gain"].value + event.rotations * 0.1)
+            self.set_param(Symbol("gain"), self.plugin.parameters[Symbol("gain")].value + event.rotations * 0.1)
             return True
         return False
 
@@ -76,7 +77,7 @@ def fake_plugin():
     )
     p = Plugin(
         instance_id="/pedalboard/demo",
-        parameters={"gain": param, ":bypass": Parameter({"name": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, 0.0, None)},
+        parameters={Symbol("gain"): param, BYPASS_SYMBOL: Parameter({"name": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, 0.0, None)},
         info={},
         category="Utility",
         uri="http://example.com/demo",
@@ -84,7 +85,7 @@ def fake_plugin():
     )
     # pedalboard_snapshot set by parser in real life; simulate here
     # Note: Plugin.__init__ strips leading '/' from instance_id
-    p.pedalboard_snapshot = {"gain": 5.0}
+    p.pedalboard_snapshot = {Symbol("gain"): 5.0}
     return p
 
 
@@ -118,13 +119,13 @@ class TestPluginPanel:
 
     def test_set_param_queues_and_updates_local(self, fake_plugin, fake_handler):
         panel = DemoPanel(plugin=fake_plugin, handler=fake_handler, on_dismiss=lambda: None)
-        panel.set_param("gain", 7.0)
-        assert fake_plugin.parameters["gain"].value == 7.0
+        panel.set_param(Symbol("gain"), 7.0)
+        assert fake_plugin.parameters[Symbol("gain")].value == 7.0
         assert panel._param_queue == {"gain": 7.0}
 
     def test_tick_flushes_queue(self, fake_plugin, fake_handler):
         panel = DemoPanel(plugin=fake_plugin, handler=fake_handler, on_dismiss=lambda: None)
-        panel.set_param("gain", 7.0)
+        panel.set_param(Symbol("gain"), 7.0)
         panel.tick()
         assert panel._param_queue == {}
         assert fake_handler.ws_bridge.sent == [("pedalboard/demo", "gain", 7.0)]
@@ -133,7 +134,7 @@ class TestPluginPanel:
         panel = DemoPanel(plugin=fake_plugin, handler=fake_handler, on_dismiss=lambda: None)
         evt = EncoderEvent(controller=_FakeEnc(id=1), rotations=2)
         assert panel.handle(evt) is True
-        assert fake_plugin.parameters["gain"].value == pytest.approx(5.2)
+        assert fake_plugin.parameters[Symbol("gain")].value == pytest.approx(5.2)
 
     def test_handle_encoder_returns_false_for_unclaimed_id(self, fake_plugin, fake_handler):
         panel = DemoPanel(plugin=fake_plugin, handler=fake_handler, on_dismiss=lambda: None)
@@ -147,22 +148,22 @@ class TestPluginPanel:
 
     def test_reset_restores_snapshot_and_flushes(self, fake_plugin, fake_handler):
         panel = DemoPanel(plugin=fake_plugin, handler=fake_handler, on_dismiss=lambda: None)
-        panel.set_param("gain", 9.0)
+        panel.set_param(Symbol("gain"), 9.0)
         panel.tick()
         fake_handler.ws_bridge.sent.clear()
         panel._on_reset()
-        assert fake_plugin.parameters["gain"].value == 5.0
+        assert fake_plugin.parameters[Symbol("gain")].value == 5.0
         assert fake_handler.ws_bridge.sent == [("pedalboard/demo", "gain", 5.0)]
 
     def test_reset_skips_locked_symbols(self, fake_plugin, fake_handler):
         fake_handler.locked = {("pedalboard/demo", "gain")}
         panel = DemoPanel(plugin=fake_plugin, handler=fake_handler, on_dismiss=lambda: None)
-        panel.set_param("gain", 9.0)
+        panel.set_param(Symbol("gain"), 9.0)
         panel.tick()
         fake_handler.ws_bridge.sent.clear()
         panel._on_reset()
         # gain is locked, so it should stay at the tweaked value
-        assert fake_plugin.parameters["gain"].value == 9.0
+        assert fake_plugin.parameters[Symbol("gain")].value == 9.0
         assert fake_handler.ws_bridge.sent == []
 
     def test_bypass_toggles_and_sends_ws(self, fake_plugin, fake_handler):

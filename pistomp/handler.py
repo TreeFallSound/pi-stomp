@@ -26,6 +26,7 @@ from pistomp.footswitch import Footswitch
 from pistomp.footswitch_chords import FootswitchChords
 from pistomp.input.event import ControllerEvent, SwitchEventKind
 from pistomp.input.sink import InputSink
+from common.parameter import Symbol
 
 if TYPE_CHECKING:
     from common.parameter import Parameter
@@ -102,7 +103,7 @@ class Handler(InputSink):
         raise NotImplementedError()
 
     def open_parameter_submenu(
-        self, plugin: "Plugin", rows: tuple[tuple[str, str], ...], title: str, on_change: Callable[[], None] | None = None
+        self, plugin: "Plugin", rows: tuple[tuple[str, Symbol], ...], title: str, on_change: Callable[[], None] | None = None
     ) -> None:
         """NAV CLICK on a compound selection (e.g. an EQ band's gain/freq/Q):
         open a submenu over just these symbols, each row opening the same
@@ -234,7 +235,7 @@ class Handler(InputSink):
         # No-op for handlers without a tuner (v1/generic); Modhandler overrides.
         pass
 
-    def is_symbol_locked(self, instance_id: str, symbol: str) -> bool:
+    def is_symbol_locked(self, instance_id: str, symbol: Symbol) -> bool:
         return False
 
     def show_fullscreen_panel(self, plugin, panel_cls) -> None:

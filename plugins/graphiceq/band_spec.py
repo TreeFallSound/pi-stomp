@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from plugins.eq.band_spec import GraphicBandSpec
 from plugins.eq.graphic import _graphic_palette
+from common.parameter import Symbol
 
 # LV2 uppercases the symbols to G1..G11. The plugin's TTL declares the ports
 # in a non-sequential order (G10, G11, G1, ...), but that order is only the
@@ -25,6 +26,6 @@ _BANDS: list[tuple[str, float, str]] = [
 _colors = _graphic_palette(len(_BANDS))
 
 BAND_SPECS: tuple[GraphicBandSpec, ...] = tuple(
-    GraphicBandSpec(name=name, freq_hz=freq, gain_sym=sym, gain_min=-30.0, gain_max=20.0, color=color)
+    GraphicBandSpec(name=name, freq_hz=freq, gain_sym=Symbol(sym), gain_min=-30.0, gain_max=20.0, color=color)
     for (name, freq, sym), color in zip(_BANDS, _colors)
 )

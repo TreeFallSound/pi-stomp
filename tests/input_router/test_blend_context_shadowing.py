@@ -23,6 +23,7 @@ from common.contexts import (
     ParamEffect,
     ShadowState,
 )
+from common.parameter import Symbol
 from blend.input_controller import InputController
 from modalapi.modhandler import Modhandler
 from pistomp.encoder_controller import EncoderController
@@ -41,7 +42,7 @@ def _handler_with_pedalboard_row(control_id: str) -> tuple[Modhandler, ContextLa
         BindingDecl(
             control=ControlRef(cls=ControlClass.ANALOG, id=control_id),
             event_kind=EventKind.ROTATE,
-            effects=(ParamEffect(plugin=MagicMock(), symbol="gain"),),
+            effects=(ParamEffect(plugin=MagicMock(), symbol=Symbol("gain")),),
             context=pedalboard_layer.ref,
         )
     )

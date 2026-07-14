@@ -8,6 +8,7 @@ from uilib.box import Box
 from uilib.config import Config
 from uilib.misc import InputEvent, get_text_size
 from uilib.widget import Widget
+from common.parameter import Symbol
 
 _BAR_H = 3
 _BAR_Y_OFFSET = 6
@@ -20,14 +21,14 @@ _BAR_FILL = (255, 230, 80)
 
 
 class ModeSelectorWidget(Widget):
-    symbol: str = "mode"
+    symbol: Symbol = Symbol("mode")
 
     def __init__(
         self,
         box: Box,
         param: Parameter,
         handler,
-        set_param: Callable[[str, float], None],
+        set_param: Callable[[Symbol, float], None],
         on_change: Callable[[int], None] | None = None,
         **kwargs,
     ) -> None:
@@ -57,7 +58,7 @@ class ModeSelectorWidget(Widget):
     def max_index(self) -> int:
         return self._max
 
-    def symbol_for(self, role: ParamRole) -> str | None:
+    def symbol_for(self, role: ParamRole) -> Symbol | None:
         return self.symbol
 
     def set_value(self, value: int) -> None:

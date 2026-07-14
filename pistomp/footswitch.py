@@ -23,6 +23,7 @@ import pistomp.analogswitch as analogswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
 from pistomp.input.event import SwitchEvent, SwitchEventKind
+from common.parameter import BYPASS_SYMBOL
 
 
 class Footswitch(controller.Controller):
@@ -91,7 +92,7 @@ class Footswitch(controller.Controller):
     @override
     def set_value(self, value: float):
         param = self.parameter
-        if param is not None and param.symbol != Token.COLON_BYPASS:
+        if param is not None and param.symbol != BYPASS_SYMBOL:
             # Non-:bypass binding: "on" is the max end, so compare against midpoint.
             lo = param.minimum if param.minimum is not None else 0
             hi = param.maximum if param.maximum is not None else 1

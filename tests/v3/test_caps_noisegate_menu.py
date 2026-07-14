@@ -18,6 +18,7 @@ from plugins.customization import lookup
 from uilib.misc import InputEvent
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click
+from common.parameter import BYPASS_SYMBOL, PortInfo, Symbol
 
 
 CAPS_NOISEGATE_URI = "http://moddevices.com/plugins/caps/Noisegate"
@@ -35,21 +36,21 @@ class _FakeEnc(Controller):
 
 
 def _param(
-    symbol: str, value: float, minimum: float, maximum: float, instance_id: str = "Gate", unit: str | None = None
+    symbol: Symbol, value: float, minimum: float, maximum: float, instance_id: str = "Gate", unit: str | None = None
 ) -> Parameter:
-    info: dict = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
+    info: PortInfo = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
     if unit is not None:
         info["units"] = {"symbol": unit}
     return Parameter(info, value, None, instance_id)
 
 
 def make_noisegate_plugin(instance_id: str = "Gate") -> Plugin:
-    params: dict[str, Parameter] = {
-        ":bypass": Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, instance_id),
-        "open": _param("open", -45.0, -60.0, 0.0, instance_id, unit="dB"),
-        "attack": _param("attack", 0.0, 0.0, 5.0, instance_id, unit="ms"),
-        "close": _param("close", -67.5, -80.0, 0.0, instance_id, unit="dB"),
-        "mains": _param("mains", 50.0, 0.0, 100.0, instance_id, unit="Hz"),
+    params: dict[Symbol, Parameter] = {
+        BYPASS_SYMBOL: Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, instance_id),
+        Symbol("open"): _param(Symbol("open"), -45.0, -60.0, 0.0, instance_id, unit="dB"),
+        Symbol("attack"): _param(Symbol("attack"), 0.0, 0.0, 5.0, instance_id, unit="ms"),
+        Symbol("close"): _param(Symbol("close"), -67.5, -80.0, 0.0, instance_id, unit="dB"),
+        Symbol("mains"): _param(Symbol("mains"), 50.0, 0.0, 100.0, instance_id, unit="Hz"),
     }
     plugin = Plugin(instance_id, params, {}, "Dynamics", uri=CAPS_NOISEGATE_URI, customization=lookup(CAPS_NOISEGATE_URI))
     plugin.has_footswitch = True

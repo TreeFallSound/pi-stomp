@@ -17,6 +17,7 @@ from plugins.capseq10.band_spec import BAND_SPECS
 from plugins.capseq10.panel import CapsEq10Panel
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click
+from common.parameter import PortInfo, Symbol
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +39,7 @@ def _param(
     instance_id: str = "eq10",
     unit: str | None = None,
 ) -> Parameter:
-    info: dict = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
+    info: PortInfo = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
     if unit is not None:
         info["units"] = {"symbol": unit}
     return Parameter(info, value, None, instance_id)
@@ -49,11 +50,11 @@ def make_capseq10_plugin(instance_id: str = "eq10") -> Plugin:
 
     All bands start at 0 dB (enabled), gain range -48..+24 dB.
     """
-    params: dict[str, Parameter] = {}
+    params: dict[Symbol, Parameter] = {}
 
-    bypass_info = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
-    params[":bypass"] = Parameter(bypass_info, False, None, instance_id)
-    params["enable"] = _param("enable", 1.0, instance_id=instance_id)
+    bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
+    params[Symbol(":bypass")] = Parameter(bypass_info, False, None, instance_id)
+    params[Symbol("enable")] = _param("enable", 1.0, instance_id=instance_id)
 
     for b in BAND_SPECS:
         params[b.gain_sym] = _param(b.gain_sym, 0.0, b.gain_min, b.gain_max, instance_id=instance_id, unit="dB")

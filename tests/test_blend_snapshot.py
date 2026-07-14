@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from blend.snapshot import SnapshotManager
 from blend.types import BlendSnapshotConfig, SnapshotsJson
+from common.parameter import BYPASS_SYMBOL, Symbol
 
 
 _SNAPSHOTS: SnapshotsJson = {
@@ -17,7 +18,7 @@ _SNAPSHOTS: SnapshotsJson = {
             "data": {
                 "BigMuff": {
                     "bypassed": False,
-                    "ports": {"Tone": 0.2, "Level": 0.5},
+                    "ports": {Symbol("Tone"): 0.2, Symbol("Level"): 0.5},
                     "parameters": {},
                     "preset": "",
                 }
@@ -28,7 +29,7 @@ _SNAPSHOTS: SnapshotsJson = {
             "data": {
                 "BigMuff": {
                     "bypassed": True,
-                    "ports": {"Tone": 0.8, "Level": 0.9},
+                    "ports": {Symbol("Tone"): 0.8, Symbol("Level"): 0.9},
                     "parameters": {},
                     "preset": "",
                 }
@@ -54,13 +55,13 @@ def test_resolve_by_index_out_of_range_raises():
 
 def test_parse_snapshot_data_extracts_ports():
     state = SnapshotManager.parse_snapshot_data(_SNAPSHOTS, 0)
-    assert state["BigMuff"]["Tone"] == pytest.approx(0.2)
-    assert state["BigMuff"]["Level"] == pytest.approx(0.5)
+    assert state["BigMuff"][Symbol("Tone")] == pytest.approx(0.2)
+    assert state["BigMuff"][Symbol("Level")] == pytest.approx(0.5)
 
 
 def test_parse_snapshot_data_maps_bypassed_to_bypass_param():
     state = SnapshotManager.parse_snapshot_data(_SNAPSHOTS, 1)
-    assert state["BigMuff"][":bypass"] == pytest.approx(1.0)
+    assert state["BigMuff"][BYPASS_SYMBOL] == pytest.approx(1.0)
 
 
 def test_parse_snapshot_data_uses_canonical_instance_id():

@@ -9,6 +9,7 @@ selection lands on. The snapshot guards the visual ordering of the strip.
 import pytest
 
 from uilib.footswitch import FootswitchWidget
+from common.parameter import Symbol
 
 # Footswitch slot -> MIDI CC, from default_config_pistomptre.yml.
 SLOT_CC = {0: 60, 1: 61, 2: 62, 3: 63}
@@ -39,7 +40,7 @@ def test_footswitch_order_stable_across_reload(v3_system, nav_handler, make_plug
         # the "<channel>:<cc>" key that bind_current_pedalboard resolves to the
         # hardware footswitch controller.
         p = make_plugin(instance_id, category=category, has_footswitch=True)
-        p.parameters[":bypass"].binding = f"{ch}:{SLOT_CC[slot]}"
+        p.parameters[Symbol(":bypass")].binding = f"{ch}:{SLOT_CC[slot]}"
         return p
 
     # PB1: two switches bound, plugin order reversed vs slot order (slot 3 first).

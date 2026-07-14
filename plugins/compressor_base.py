@@ -13,6 +13,7 @@ from common.contexts import (
     ParamEffect,
     SelectionEditEffect,
 )
+from common.parameter import Symbol
 from pistomp.compmeter.client import GrMeterClient
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.layouts.arc_column import ArcColumnWidget, ArcSelectable
@@ -42,12 +43,12 @@ _GRAPH_Y0 = _GR_BAR_Y + _GR_BAR_H + 4
 
 
 class CompressorPanel(FullscreenPluginPanel[CompressorState]):
-    SPEC: CompressorSpec = CompressorSpec(thr_sym="thr", rat_sym="rat", mak_sym="mak", kn_sym="kn")
+    SPEC: CompressorSpec = CompressorSpec(thr_sym=Symbol("thr"), rat_sym=Symbol("rat"), mak_sym=Symbol("mak"), kn_sym=Symbol("kn"))
 
     def snapshot_state(self) -> CompressorState:
-        def _v(sym: str | None, default: float) -> float:
+        def _v(sym: Symbol | None, default: float) -> float:
             p = self.plugin.parameters.get(sym) if sym is not None else None
-            return float(p.value) if p is not None and p.value is not None else default
+            return float(p.value) if p is not None else default
 
         spec = self.SPEC
         return CompressorState(
@@ -128,7 +129,7 @@ class CompressorPanel(FullscreenPluginPanel[CompressorState]):
             ),
         )
 
-    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
         if not super().edit_symbol(symbol, rotations):
             return False
         self._column.sync_symbol(symbol)
@@ -136,7 +137,7 @@ class CompressorPanel(FullscreenPluginPanel[CompressorState]):
         self._graph.set_state(state.thr, state.rat, state.kn, state.mak)
         return True
 
-    def _reset_symbol(self, symbol: str) -> None:
+    def _reset_symbol(self, symbol: Symbol) -> None:
         snap = self.plugin.pedalboard_snapshot
         if symbol not in snap or self._is_symbol_locked(self.plugin.instance_id, symbol):
             return
@@ -145,7 +146,7 @@ class CompressorPanel(FullscreenPluginPanel[CompressorState]):
         state = self.snapshot_state()
         self._graph.set_state(state.thr, state.rat, state.kn, state.mak)
 
-    def set_param(self, symbol: str, value: float) -> None:
+    def set_param(self, symbol: Symbol, value: float) -> None:
         super().set_param(symbol, value)
         if symbol == self.SPEC.mak_sym and self._meter is not None:
             self._meter.set_makeup(value)

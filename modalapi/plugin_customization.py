@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from common.color import RectBorder
 from common.param_roles import ParamRole
+from common.parameter import Symbol
 
 if TYPE_CHECKING:
     from modalapi.plugin import Plugin
@@ -41,7 +42,7 @@ class PluginCustomization:
 
     # Per-symbol edit-math classification, supplementing the LV2 port's
     #  Symbols absent here are ParamRole.GENERIC.
-    param_roles: dict[str, ParamRole] = field(default_factory=dict, compare=False, hash=False)
+    param_roles: dict[Symbol, ParamRole] = field(default_factory=dict, compare=False, hash=False)
 
 
 class Customizer(Protocol):

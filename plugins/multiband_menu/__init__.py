@@ -30,6 +30,7 @@ from uilib.glyphs.arc_ring import ArcRingGlyph
 from uilib.glyphs.badge import BadgeGlyph
 from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size, shade_color, step_for_param
 from uilib.widget import Widget
+from common.parameter import Symbol
 
 # ── layout constants ──────────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ def _slot_box_size() -> tuple[int, int]:
 class ParamSlot:
     """One arc-ring slot in a multi-band window."""
 
-    symbol: str
+    symbol: Symbol
     label: str
     color: tuple[int, int, int]
     display_fn: Callable[[float], str] | None = None
@@ -140,7 +141,7 @@ class MultibandWindow(PluginWindow[None]):
             ),
         )
 
-    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
         widget = next((w for w in self._slot_widgets if w.slot.symbol == symbol), None)
         if widget is None:
             return super().edit_symbol(symbol, rotations)
@@ -229,7 +230,7 @@ class ParamSlotWidget(Widget):
             self.set_param(new_value)
         return True
 
-    def symbol_for(self, role: ParamRole) -> str | None:
+    def symbol_for(self, role: ParamRole) -> Symbol | None:
         return self.slot.symbol
 
     def set_selected(self, selected: bool) -> None:

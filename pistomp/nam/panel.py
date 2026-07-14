@@ -61,7 +61,7 @@ from common.contexts import (
     NoneEffect,
 )
 from common.param_roles import ParamRole
-from common.parameter import Parameter
+from common.parameter import Parameter, PortInfo, Symbol
 
 from uilib.panel import Panel
 from pistomp.input.dispatch import Selectable, fire, resolve_local
@@ -714,7 +714,7 @@ class NamCapturePanel(Panel):
             BindingDecl(
                 control=ControlRef(cls=ControlClass.TWEAK, id=2),
                 event_kind=EventKind.ROTATE,
-                effects=(AudioCardEffect(param_symbol="CAPTURE_VOLUME"),),
+                effects=(AudioCardEffect(param_symbol=Symbol("CAPTURE_VOLUME")),),
                 context=ctx,
                 enabled_when=idle,
             ),
@@ -728,7 +728,7 @@ class NamCapturePanel(Panel):
             BindingDecl(
                 control=ControlRef(cls=ControlClass.TWEAK, id=3),
                 event_kind=EventKind.ROTATE,
-                effects=(AudioCardEffect(param_symbol="MASTER"),),
+                effects=(AudioCardEffect(param_symbol=Symbol("MASTER")),),
                 context=ctx,
                 enabled_when=idle,
             ),
@@ -741,7 +741,7 @@ class NamCapturePanel(Panel):
             ),
         )
 
-    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
         """AudioCardEffect's target: CAPTURE_VOLUME/MASTER aren't LV2 params,
         but the edit shape (rotations -> commit) is identical."""
         if self._handler is None or symbol not in ("CAPTURE_VOLUME", "MASTER"):
@@ -765,7 +765,7 @@ class NamCapturePanel(Panel):
         value = self._gain_val if is_gain else self._vol_val
         minimum = -19.75 if is_gain else -25.75
         maximum = 12.0 if is_gain else self._max_out_db
-        info = {Token.NAME: name, Token.SYMBOL: symbol, Token.RANGES: {Token.MINIMUM: minimum, Token.MAXIMUM: maximum}}
+        info = PortInfo(name=name, symbol=symbol, ranges={"minimum": minimum, "maximum": maximum})
         param = Parameter(info, value, None)
         param.unit_symbol = "dB"
         self._handler.open_audio_parameter_dialog(param, self._commit_audio_dialog_value)

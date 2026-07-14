@@ -11,8 +11,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Iterable, Optional
 
-import common.token as Token
-import common.util as util
 
 
 HW_PORT_PREFIXES = ("capture_", "playback_", "serial_midi_", "midi_")
@@ -91,11 +89,11 @@ def resolve_port_idx(
     if plugin_info is None:
         return 0
     try:
-        ports = plugin_info[Token.PORTS]["audio"]["input" if is_input else "output"]
+        ports = plugin_info["ports"]["audio"]["input" if is_input else "output"]
     except (KeyError, TypeError):
         return 0
     for i, p in enumerate(ports):
-        if util.DICT_GET(p, Token.SYMBOL) == port_symbol:
+        if p.get("symbol") == port_symbol:
             return i
     return 0
 

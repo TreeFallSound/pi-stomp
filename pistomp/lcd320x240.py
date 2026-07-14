@@ -23,7 +23,7 @@ from common.fonts import font_path
 import common.token as Token
 import common.util as util
 from common.contexts import ControlClass, EventKind, ParamEffect, ShadowState
-from common.parameter import Parameter, Type
+from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, Type
 from modalapi.plugin import Plugin
 from ui.ethernet_menu import EthernetMenu
 from ui.wifi_menu import WifiMenu
@@ -63,7 +63,6 @@ from modalapi.layout import build_layout_compress
 from pistomp.input.event import ControllerEvent
 from pistomp.input.sink import InputSink
 from pistomp.analogmidicontrol import AnalogMidiControl, as_midi_value
-from pistomp.encoder_controller import EncoderController
 from blend.manager import BlendMode
 from plugins.base import PluginPanel
 
@@ -755,12 +754,12 @@ class Lcd:
     def draw_parameter_menu(self, plugin):
         items = []
         for (name, param) in sorted(plugin.parameters.items()):
-            if name != Token.COLON_BYPASS:
+            if name != BYPASS_SYMBOL:
                 letter = self._badge_letter(plugin, param)
                 items.append((BadgedLabel(name, letter), self.draw_parameter_dialog, param))
         # A5: :bypass is a row too, not just tile chrome — appended last so it
         # doesn't shift the selection index of the existing parameter rows.
-        bypass_param = plugin.parameters.get(Token.COLON_BYPASS)
+        bypass_param = plugin.parameters.get(BYPASS_SYMBOL)
         if bypass_param is not None:
             letter = self._badge_letter(plugin, bypass_param)
             state = "On" if plugin.is_bypassed() else "Off"
@@ -769,7 +768,7 @@ class Lcd:
         self.draw_selection_menu(items, "Parameters")
 
     def draw_symbol_menu(
-        self, plugin: Plugin, rows: tuple[tuple[str, str], ...], title: str = "", on_change: Callable[[], None] | None = None
+        self, plugin: Plugin, rows: tuple[tuple[str, Symbol], ...], title: str = "", on_change: Callable[[], None] | None = None
     ) -> None:
         """A compound NAV selection (e.g. an EQ band's gain/freq/Q): a submenu
         over just `rows` symbols, each opening the same per-parameter dialog
@@ -1021,11 +1020,7 @@ class Lcd:
         if value is None:
             value = 512  # 1024 / 2
         name = "VU Calibration"
-        info = {
-            Token.NAME: name,
-            Token.SYMBOL: symbol,
-            Token.RANGES: {Token.MINIMUM: 0, Token.MAXIMUM: 1023}
-        }
+        info = PortInfo(name=name, symbol=Symbol(symbol), ranges={"minimum": 0, "maximum": 1023})
         param = Parameter(info, value, None)
         d = Parameterdialog(self.pstack, param,
                             width=270, height=130, auto_destroy=False, title=name, timeout=PARAMETER_DIALOG_TIMEOUT,

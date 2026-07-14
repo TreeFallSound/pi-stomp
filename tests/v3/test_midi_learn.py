@@ -2,6 +2,7 @@
 plugin parameter live, so the LCD reflects it without a pedalboard reload."""
 
 from tests.types import SystemFixture
+from common.parameter import Symbol
 
 
 def _binding_for(hw, controller):
@@ -30,7 +31,7 @@ def test_v3_midi_learn_binds_footswitch_live(v3_system: SystemFixture, make_plug
     ws_bridge.inject(f"midi_map /graph/noise :bypass {channel} {cc} 0.0 1.0")
     handler.poll_ws_messages()
 
-    assert fs0.parameter is plugin.parameters[":bypass"]
+    assert fs0.parameter is plugin.parameters[Symbol(":bypass")]
     assert plugin.has_footswitch is True
     snapshot("bound")
 
