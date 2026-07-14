@@ -231,6 +231,30 @@ def test_external_bypass_message_clears_open_panel(v3_system: SystemFixture, mak
     snapshot("active_via_echo")
 
 
+def _grid_tile(v3_system: SystemFixture, plugin: Plugin):
+    lcd = v3_system.handler.lcd
+    for w in lcd.w_plugins:
+        if w.object is plugin:
+            return w
+    raise AssertionError(f"no grid tile for {plugin.instance_id!r}")
+
+
+def test_external_bypass_message_repaints_grid_tile(v3_system: SystemFixture, make_plugin):
+    """No panel open: an external bypass echo must still repaint the main-grid
+    tile (`_subscribe_plugins` -> `_refresh_plugin` -> `color_plugin`), not
+    just an open panel's Bypass button. Face-3 coverage without a panel."""
+    plugin = _install(v3_system, make_plugin, bypassed=False)
+    tile = _grid_tile(v3_system, plugin)
+    assert tile.outline == 0
+    assert tile.outline_color is None
+
+    v3_system.ws_bridge.inject("param_set /graph/fuzz :bypass 1.0")
+    v3_system.handler.poll_ws_messages()
+    assert plugin.is_bypassed()
+    assert tile.outline == 1
+    assert tile.outline_color is not None
+
+
 # ---------------------------------------------------------------------------
 # 4. External ParamSetMessage moves a pinned param (gain)
 # ---------------------------------------------------------------------------

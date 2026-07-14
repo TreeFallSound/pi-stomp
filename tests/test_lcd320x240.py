@@ -21,7 +21,7 @@ from common.contexts import (
     ParamEffect,
     ShadowState,
 )
-from common.parameter import Parameter, PortInfo, Symbol
+from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
 from pistomp.lcd320x240 import Lcd
@@ -29,51 +29,42 @@ from pistomp.taptempo import TapTempo
 import common.token as Token
 from uilib.misc import InputEvent
 from modalapi.connections import Connection, Endpoint, EndpointKind
-from modalapi.plugin_customization import PluginCustomization
+from modalapi.pedalboard import Pedalboard
+from modalapi.plugin import Plugin
+from pistomp.current import Current
 
 
-class MockObject:
-    preset_callback_arg = None  # footswitch default; override via kwargs
-    unit_symbol = None
+def _make_plugin(
+    instance_id: str,
+    uri: str | None = None,
+    category: str | None = None,
+    has_footswitch: bool = False,
+    bypassed: bool = False,
+    parameters: dict[Symbol, Parameter] | None = None,
+) -> Plugin:
+    bypass_info: PortInfo = {"shortName": "bypass", "symbol": BYPASS_SYMBOL, "ranges": {"minimum": 0, "maximum": 1}}
+    all_params: dict[Symbol, Parameter] = dict(parameters or {})
+    all_params[BYPASS_SYMBOL] = Parameter(bypass_info, 1.0 if bypassed else 0.0, None, instance_id)
+    plugin = Plugin(instance_id, all_params, {}, category, uri=uri)
+    plugin.has_footswitch = has_footswitch
+    return plugin
 
-    def __init__(self, **kwargs):
-        self.__dict__.update(kwargs)
-        if not hasattr(self, "parameters"):
-            self.parameters = {}
-        if not hasattr(self, "customization"):
-            self.customization = PluginCustomization()
 
-    def subscribe(self, cb):
-        unsubs = [p.subscribe(cb) for p in self.parameters.values()]
-        def _unsub():
-            for u in unsubs:
-                u()
-        return _unsub
+def _make_pedalboard(title: str, plugins: list[Plugin], connections: list[Connection]) -> Pedalboard:
+    pedalboard = Pedalboard(title, bundle="")
+    pedalboard.plugins = plugins
+    pedalboard.connections = connections
+    return pedalboard
 
-    @property
-    def subtitle(self):
-        return None
 
-    @property
-    def visible_parameters(self):
-        hidden = self.customization.hidden_params
-        return {s: p for s, p in self.parameters.items() if s not in hidden}
-
-    @property
-    def tile_active_color(self):
-        return None
-
-    @property
-    def tile_border(self):
-        return None
-
-    @property
-    def panel_cls(self):
-        return None
-
-    @property
-    def intercept_shortpress(self):
-        return False
+def _make_footswitch(id: int, toggled: bool = False, display_label: str = "", taptempo=None) -> Footswitch:
+    fs = Footswitch(
+        id=id, led_pin=None, pixel=None, midi_CC=1, midi_channel=0,
+        refresh_callback=lambda *a, **k: None, taptempo=taptempo,
+    )
+    fs.toggled = toggled
+    fs.display_label = display_label
+    return fs
 
 
 def _real_param(
@@ -133,58 +124,22 @@ def setup_main_ui(instance):
     mock_gain = _real_param(name="Gain", symbol="gain", instance_id="distortion", value=0.5)
     mock_time = _real_param(name="Time", symbol="time", instance_id="delay", value=0.3)
     mock_mix = _real_param(name="Mix", symbol="mix", instance_id="reverb", value=0.4)
-    bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
     plugins = [
-        MockObject(
-            instance_id="distortion",
-            uri="mock://distortion",
-            display_name="distortion",
-            is_bypassed=lambda: False,
-            category="Distortion",
-            has_footswitch=True,
-            controllers=[],
-            parameters={":bypass": Parameter(bypass_info, 0.0, None, "distortion"), "gain": mock_gain},
+        _make_plugin(
+            "distortion", uri="mock://distortion", category="Distortion", has_footswitch=True,
+            parameters={Symbol("gain"): mock_gain},
         ),
-        MockObject(
-            instance_id="delay",
-            uri="mock://delay",
-            display_name="delay",
-            is_bypassed=lambda: False,
-            category="Delay",
-            has_footswitch=True,
-            controllers=[],
-            parameters={":bypass": Parameter(bypass_info, 0.0, None, "delay"), "time": mock_time},
+        _make_plugin(
+            "delay", uri="mock://delay", category="Delay", has_footswitch=True,
+            parameters={Symbol("time"): mock_time},
         ),
-        MockObject(
-            instance_id="reverb",
-            uri="mock://reverb",
+        _make_plugin(
+            "reverb", uri="mock://reverb", category="Reverb", has_footswitch=True, bypassed=True,
+            parameters={Symbol("mix"): mock_mix},
         ),
-        MockObject(
-            instance_id="reverb",
-            uri="mock://reverb",
-            display_name="reverb",
-            is_bypassed=lambda: True,
-            category="Reverb",
-            has_footswitch=True,
-            controllers=[],
-            parameters={":bypass": Parameter(bypass_info, 1.0, None, "reverb"), "mix": mock_mix},
-        ),
-        MockObject(
-            instance_id="chorus",
-            uri="mock://chorus",
-        ),
-        MockObject(
-            instance_id="chorus",
-            uri="mock://chorus",
-            display_name="chorus",
-            is_bypassed=lambda: False,
-            category="Modulator",
-            has_footswitch=False,
-            controllers=[],
-            parameters={":bypass": Parameter(bypass_info, 0.0, None, "chorus")},
-        ),
+        _make_plugin("chorus", uri="mock://chorus", category="Modulator", has_footswitch=False),
     ]
-    ids = [p.instance_id for p in plugins]  # pyright: ignore[reportAttributeAccessIssue]
+    ids = [p.instance_id for p in plugins]
     connections = [
         Connection(
             src=Endpoint(kind=EndpointKind.PLUGIN, id=ids[i], port_symbol="", port_idx=0),
@@ -192,18 +147,16 @@ def setup_main_ui(instance):
         )
         for i in range(len(ids) - 1)
     ]
-    mock_pedalboard = MockObject(title="Rock Rig", plugins=plugins, connections=connections)
-    mock_current = MockObject(
+    mock_pedalboard = _make_pedalboard("Rock Rig", plugins, connections)
+    mock_current = Current(
         pedalboard=mock_pedalboard,
         presets={0: "Clean", 1: "Lead"},
         preset_index=0,
         analog_controllers={
-            "exp:pedal": {Token.ID: 0, Token.TYPE: Token.EXPRESSION, Token.COLOR: "Red", Token.NAME: "Wah"},
+            "exp:pedal": {Token.ID: 0, Token.TYPE: Token.EXPRESSION},
         },
     )
-    mock_footswitches = [
-        MockObject(id=i, toggled=False, get_display_label=lambda: "", parameter=None) for i in range(4)
-    ]
+    mock_footswitches = [_make_footswitch(i) for i in range(4)]
     instance.link_data(pedalboards=[mock_pedalboard], current=mock_current, footswitches=mock_footswitches)
     instance.draw_main_panel()
 
@@ -223,15 +176,15 @@ def test_main_panel_snapshot(lcd, snapshot):
 
 def test_analog_assignments_snapshot(lcd, snapshot):
     instance, _ = lcd
-    mock_pedalboard = MockObject(title="Analog Test", plugins=[], connections=[])
-    mock_current = MockObject(
+    mock_pedalboard = _make_pedalboard("Analog Test", [], [])
+    mock_current = Current(
         pedalboard=mock_pedalboard,
         presets={0: "Clean"},
         preset_index=0,
         analog_controllers={
-            "exp:pedal": {Token.ID: 0, Token.TYPE: Token.EXPRESSION, Token.COLOR: "Red", Token.NAME: "Wah"},
-            "gain:knob": {Token.ID: 1, Token.TYPE: Token.KNOB, Token.COLOR: "Green", Token.NAME: "Gain"},
-            "vol:knob": {Token.ID: 2, Token.TYPE: Token.VOLUME, Token.COLOR: "Blue", Token.NAME: "Volume"},
+            "exp:pedal": {Token.ID: 0, Token.TYPE: Token.EXPRESSION},
+            "gain:knob": {Token.ID: 1, Token.TYPE: Token.KNOB},
+            "vol:knob": {Token.ID: 2, Token.TYPE: Token.VOLUME},
         },
     )
     instance.link_data(pedalboards=[mock_pedalboard], current=mock_current, footswitches=[])
@@ -612,32 +565,32 @@ def test_parameter_menu_shows_footswitch_badge(lcd, snapshot):
 
 def test_update_footswitch_off_snapshot(lcd, snapshot):
     instance, _ = lcd
-    mock_fs = MockObject(id=0, toggled=True, get_display_label=lambda: "Dist", color="Red", parameter=None)
-    mock_current = MockObject(
-        pedalboard=MockObject(title="PB", plugins=[], connections=[]),
+    mock_fs = _make_footswitch(0, toggled=True, display_label="Dist")
+    mock_current = Current(
+        pedalboard=_make_pedalboard("PB", [], []),
         presets={0: "Clean"},
         preset_index=0,
         analog_controllers={},
     )
     instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
     instance.draw_main_panel()
-    mock_fs.toggled = False  # pyright: ignore[reportAttributeAccessIssue]
+    mock_fs.toggled = False
     instance.update_footswitch(mock_fs)
     snapshot()
 
 
 def test_update_footswitch_on_snapshot(lcd, snapshot):
     instance, _ = lcd
-    mock_fs = MockObject(id=1, toggled=False, get_display_label=lambda: "Drive", color="Orange", parameter=None)
-    mock_current = MockObject(
-        pedalboard=MockObject(title="PB", plugins=[], connections=[]),
+    mock_fs = _make_footswitch(1, toggled=False, display_label="Drive")
+    mock_current = Current(
+        pedalboard=_make_pedalboard("PB", [], []),
         presets={0: "Clean"},
         preset_index=0,
         analog_controllers={},
     )
     instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
     instance.draw_main_panel()
-    mock_fs.toggled = True  # pyright: ignore[reportAttributeAccessIssue]
+    mock_fs.toggled = True
     instance.update_footswitch(mock_fs)
     snapshot()
 
@@ -711,9 +664,9 @@ def test_tap_tempo_snapshot(lcd, snapshot):
     tt = TapTempo()
     tt.enable(True)
     tt.set_bpm(120.0)
-    mock_fs = MockObject(id=2, toggled=True, get_display_label=lambda: "120", parameter=None, taptempo=tt)
-    mock_current = MockObject(
-        pedalboard=MockObject(title="BPM Test", plugins=[], connections=[]),
+    mock_fs = _make_footswitch(2, toggled=True, taptempo=tt)
+    mock_current = Current(
+        pedalboard=_make_pedalboard("BPM Test", [], []),
         presets={0: "Clean"},
         preset_index=0,
         analog_controllers={},
@@ -729,16 +682,9 @@ def test_tap_tempo_disable_clears_label(lcd, snapshot):
     tt = TapTempo()
     tt.enable(True)
     tt.set_bpm(120.0)
-    # Mirrors Footswitch.get_display_label(): BPM when enabled, empty when not.
-    mock_fs = MockObject(
-        id=2,
-        toggled=True,
-        get_display_label=lambda: str(round(tt.get_bpm())) if tt.is_enabled() else "",
-        parameter=None,
-        taptempo=tt,
-    )
-    mock_current = MockObject(
-        pedalboard=MockObject(title="BPM Test", plugins=[], connections=[]),
+    mock_fs = _make_footswitch(2, toggled=True, taptempo=tt)
+    mock_current = Current(
+        pedalboard=_make_pedalboard("BPM Test", [], []),
         presets={0: "Clean"},
         preset_index=0,
         analog_controllers={},
@@ -749,21 +695,16 @@ def test_tap_tempo_disable_clears_label(lcd, snapshot):
     snapshot("tap_tempo_enabled")
 
     tt.enable(False)
-    mock_fs.toggled = False  # pyright: ignore[reportAttributeAccessIssue]
+    mock_fs.toggled = False
     instance.update_footswitch(mock_fs)
     snapshot("tap_tempo_disabled")
 
 
 def test_update_footswitch_clears_label_when_empty(lcd):
     instance, _ = lcd
-    labels = ["120"]
-
-    def get_label():
-        return labels[0]
-
-    mock_fs = MockObject(id=2, toggled=True, get_display_label=get_label, parameter=None)
-    mock_current = MockObject(
-        pedalboard=MockObject(title="BPM Test", plugins=[], connections=[]),
+    mock_fs = _make_footswitch(2, toggled=True, display_label="120")
+    mock_current = Current(
+        pedalboard=_make_pedalboard("BPM Test", [], []),
         presets={0: "Clean"},
         preset_index=0,
         analog_controllers={},
@@ -775,23 +716,21 @@ def test_update_footswitch_clears_label_when_empty(lcd):
     wfs = instance.w_footswitches[0]
     assert wfs.label == "120"
 
-    labels[0] = ""
-    mock_fs.toggled = False  # pyright: ignore[reportAttributeAccessIssue]
+    mock_fs.display_label = ""
+    mock_fs.toggled = False
     instance.update_footswitch(mock_fs)
 
     assert wfs.label == "", f"Expected empty label after tap tempo disabled, got: {wfs.label!r}"
 
 
 def _setup_pedalboard(instance, pb):
-    mock_current = MockObject(
+    mock_current = Current(
         pedalboard=pb,
         presets={0: "Clean"},
         preset_index=0,
         analog_controllers={},
     )
-    mock_footswitches = [
-        MockObject(id=i, toggled=False, get_display_label=lambda: "", parameter=None) for i in range(4)
-    ]
+    mock_footswitches = [_make_footswitch(i) for i in range(4)]
     instance.link_data(pedalboards=[pb], current=mock_current, footswitches=mock_footswitches)
     instance.draw_main_panel()
 

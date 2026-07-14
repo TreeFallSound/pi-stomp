@@ -100,7 +100,7 @@ def test_handle_event_rejects_switch_event_even_if_same_id():
 def test_blend_mode_intercept_delegates_to_input_controller():
     enc = _make_encoder(id_=1)
     ic, _ = _make_ic(enc)
-    bm = BlendMode(MagicMock(), {"name": "Test", "input_id": 1})  # type: ignore[arg-type]
+    bm = BlendMode(MagicMock(), {"name": "Test", "input_id": 1, "stops": {}})
     bm.input_controller = ic
 
     consumed = bm.intercept(EncoderEvent(controller=enc, rotations=1))
@@ -109,7 +109,7 @@ def test_blend_mode_intercept_delegates_to_input_controller():
 
 
 def test_blend_mode_intercept_no_controller_returns_false():
-    bm = BlendMode(MagicMock(), {"name": "Test", "input_id": 1})  # type: ignore[arg-type]
+    bm = BlendMode(MagicMock(), {"name": "Test", "input_id": 1, "stops": {}})
 
     assert bm.intercept(EncoderEvent(controller=_make_encoder(), rotations=1)) is False
 
@@ -123,7 +123,7 @@ def test_blend_mode_intercept_blocks_switch_events_from_its_own_controller():
     """SwitchEvents from the blend input controller must not trigger interpolation."""
     enc = _make_encoder(id_=1)
     ic, setter = _make_ic(enc)
-    bm = BlendMode(MagicMock(), {"name": "Test", "input_id": 1})  # type: ignore[arg-type]
+    bm = BlendMode(MagicMock(), {"name": "Test", "input_id": 1, "stops": {}})
     bm.input_controller = ic
 
     switch_event = SwitchEvent(controller=enc, kind=SwitchEventKind.PRESS)
