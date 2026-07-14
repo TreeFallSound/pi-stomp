@@ -24,7 +24,7 @@ def _stamp_calls(mock_run):
 def _assert_stamp_called(mock_run, times: int = 1):
     calls = _stamp_calls(mock_run)
     assert len(calls) == times, (
-        f"Expected {times} pistomp-stamp call(s), got {len(calls)}. All subprocess.run calls: {mock_run.call_args_list}"
+        f"Expected {times} pistomp-stamp call(s), got {len(calls)}. All subprocess.Popen calls: {mock_run.call_args_list}"
     )
 
 
@@ -44,7 +44,7 @@ class TestStampOnPedalboardChange:
 
     def test_stamp_called_on_pedalboard_change(self, v1_system: SystemFixtureLegacy):
         handler = v1_system.handler
-        with patch("modalapi.mod.subprocess.run") as mock_run:
+        with patch("modalapi.mod.subprocess.Popen") as mock_run:
             handler.pedalboard_change(handler.pedalboard_list[0])
         _assert_stamp_called(mock_run, times=1)
 
@@ -52,7 +52,7 @@ class TestStampOnPedalboardChange:
         handler = v1_system.handler
         handler.selected_pedalboard_index = 1
         handler.top_encoder_mode = type(handler.top_encoder_mode).PEDALBOARD_SELECTED
-        with patch("modalapi.mod.subprocess.run") as mock_run:
+        with patch("modalapi.mod.subprocess.Popen") as mock_run:
             handler.top_encoder_sw(switchstate.Value.RELEASED)
         _assert_stamp_called(mock_run, times=1)
 
@@ -61,7 +61,7 @@ class TestStampOnPedalboardChange:
         means 'I know this works' and a failed load is not known-good."""
         handler = v1_system.handler
         with (
-            patch("modalapi.mod.subprocess.run") as mock_run,
+            patch("modalapi.mod.subprocess.Popen") as mock_run,
             patch("modalapi.mod.req.get") as mock_get,
             patch("modalapi.mod.req.post") as mock_post,
         ):
@@ -79,7 +79,7 @@ class TestStampOnPedalboardChange:
 
     def test_stamp_exception_is_caught(self, v1_system: SystemFixtureLegacy):
         handler = v1_system.handler
-        with patch("modalapi.mod.subprocess.run", side_effect=FileNotFoundError("no binary")):
+        with patch("modalapi.mod.subprocess.Popen", side_effect=FileNotFoundError("no binary")):
             handler.pedalboard_change(handler.pedalboard_list[0])
 
 
@@ -90,13 +90,13 @@ class TestNoStampOnSetCurrentPedalboard:
     def test_no_stamp_on_direct_set(self, v1_system: SystemFixtureLegacy):
         handler = v1_system.handler
         pb = handler.pedalboards["/path/to/rig.pedalboard"]
-        with patch("modalapi.mod.subprocess.run") as mock_run:
+        with patch("modalapi.mod.subprocess.Popen") as mock_run:
             handler.set_current_pedalboard(pb)
         _assert_stamp_not_called(mock_run)
 
     def test_no_stamp_on_load_pedalboards(self, v1_system: SystemFixtureLegacy):
         handler = v1_system.handler
-        with patch("modalapi.mod.subprocess.run") as mock_run:
+        with patch("modalapi.mod.subprocess.Popen") as mock_run:
             handler.load_pedalboards()
         _assert_stamp_not_called(mock_run)
 
@@ -106,18 +106,18 @@ class TestStampNotCalledOnNonChangeOperations:
 
     def test_no_stamp_on_preset_change(self, v1_system: SystemFixtureLegacy):
         handler = v1_system.handler
-        with patch("modalapi.mod.subprocess.run") as mock_run:
+        with patch("modalapi.mod.subprocess.Popen") as mock_run:
             handler.preset_change()
         _assert_stamp_not_called(mock_run)
 
     def test_no_stamp_on_bypass_toggle(self, v1_system: SystemFixtureLegacy):
         handler = v1_system.handler
-        with patch("modalapi.mod.subprocess.run") as mock_run:
+        with patch("modalapi.mod.subprocess.Popen") as mock_run:
             handler.toggle_plugin_bypass()
         _assert_stamp_not_called(mock_run)
 
     def test_no_stamp_on_parameter_value_change(self, v1_system: SystemFixtureLegacy):
         handler = v1_system.handler
-        with patch("modalapi.mod.subprocess.run") as mock_run:
+        with patch("modalapi.mod.subprocess.Popen") as mock_run:
             handler.parameter_value_change(0, lambda: None)
         _assert_stamp_not_called(mock_run)
