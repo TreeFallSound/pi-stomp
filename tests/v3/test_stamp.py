@@ -20,7 +20,7 @@ def _assert_stamp_called(mock_run, times: int = 1):
     calls = _stamp_calls(mock_run)
     assert len(calls) == times, (
         f"Expected {times} pistomp-stamp call(s), got {len(calls)}. "
-        f"All subprocess.run calls: {mock_run.call_args_list}"
+        f"All subprocess.Popen calls: {mock_run.call_args_list}"
     )
 
 
@@ -58,7 +58,7 @@ class TestStampOnPedalboardChange:
         last_json.write_text(json.dumps({"pedalboard": "/path/to/new.pedalboard"}))
         os.utime(last_json, (9999, 9999))
 
-        with patch("modalapi.modhandler.subprocess.run") as mock_run:
+        with patch("modalapi.modhandler.subprocess.Popen") as mock_run:
             handler.poll_modui_changes()
 
         _assert_stamp_called(mock_run, times=1)
@@ -67,7 +67,7 @@ class TestStampOnPedalboardChange:
         """poll_modui_changes() must NOT stamp when last.json hasn't changed."""
         handler = v3_system.handler
 
-        with patch("modalapi.modhandler.subprocess.run") as mock_run:
+        with patch("modalapi.modhandler.subprocess.Popen") as mock_run:
             handler.poll_modui_changes()
 
         _assert_stamp_not_called(mock_run)
@@ -81,7 +81,7 @@ class TestStampOnPedalboardChange:
         last_json.write_text(json.dumps({"pedalboard": "/path/to/rig.pedalboard"}))
         os.utime(last_json, (9999, 9999))
 
-        with patch("modalapi.modhandler.subprocess.run") as mock_run:
+        with patch("modalapi.modhandler.subprocess.Popen") as mock_run:
             handler.poll_modui_changes()
 
         _assert_stamp_not_called(mock_run)
@@ -94,13 +94,13 @@ class TestNoStampOnSetCurrentPedalboard:
     def test_no_stamp_on_direct_set(self, v3_system: SystemFixture):
         handler = v3_system.handler
         pb = handler.pedalboards["/path/to/rig.pedalboard"]
-        with patch("modalapi.modhandler.subprocess.run") as mock_run:
+        with patch("modalapi.modhandler.subprocess.Popen") as mock_run:
             handler.set_current_pedalboard(pb)
         _assert_stamp_not_called(mock_run)
 
     def test_no_stamp_on_load_pedalboards(self, v3_system: SystemFixture):
         handler = v3_system.handler
-        with patch("modalapi.modhandler.subprocess.run") as mock_run:
+        with patch("modalapi.modhandler.subprocess.Popen") as mock_run:
             handler.load_pedalboards()
         _assert_stamp_not_called(mock_run)
 
@@ -110,12 +110,15 @@ class TestStampNotCalledOnNonChangeOperations:
 
     def test_no_stamp_on_preset_change(self, v3_system: SystemFixture):
         handler = v3_system.handler
-        with patch("modalapi.modhandler.subprocess.run") as mock_run:
+        with patch("modalapi.modhandler.subprocess.Popen") as mock_run:
             handler.preset_change(0)
         _assert_stamp_not_called(mock_run)
 
     def test_no_stamp_on_system_info_load(self, v3_system: SystemFixture):
         handler = v3_system.handler
-        with patch("modalapi.modhandler.subprocess.run") as mock_run:
+        with (
+            patch("modalapi.modhandler.subprocess.run") as mock_run,
+            patch("modalapi.modhandler.subprocess.Popen") as mock_popen,
+        ):
             handler.system_info_load()
-        _assert_stamp_not_called(mock_run)
+        _assert_stamp_not_called(mock_popen)
