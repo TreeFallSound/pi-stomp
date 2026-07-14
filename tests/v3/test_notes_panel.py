@@ -16,6 +16,7 @@ from plugins.notes.panel import NotesData, NotesPanel
 from tests.types import SystemFixture
 import common.token as Token
 from tests.v3.nav_helpers import nav_click
+from common.parameter import PortInfo, Symbol
 
 # ── sample text long enough to require scrolling ──────────────────────────────
 
@@ -56,9 +57,9 @@ class _NavEnc(Controller):
 
 
 def make_notes_plugin(instance_id: str = "notes_1") -> Plugin:
-    bypass_info = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
-    params: dict[str, Parameter] = {
-        ":bypass": Parameter(bypass_info, 0.0, None, instance_id),
+    bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
+    params: dict[Symbol, Parameter] = {
+        Symbol(":bypass"): Parameter(bypass_info, 0.0, None, instance_id),
     }
     plugin = Plugin(
         instance_id,
@@ -70,7 +71,7 @@ def make_notes_plugin(instance_id: str = "notes_1") -> Plugin:
         extra_data=NotesData(text=_NOTES_TEXT),
     )
     plugin.has_footswitch = False
-    plugin.pedalboard_snapshot = {":bypass": 0.0}
+    plugin.pedalboard_snapshot = {Symbol(":bypass"): 0.0}
     return plugin
 
 

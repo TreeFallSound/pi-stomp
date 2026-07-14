@@ -25,12 +25,12 @@ position it quantised before the nav encoder moved.
 import pytest
 from unittest.mock import MagicMock
 
-from common.parameter import Parameter
+from common.parameter import Parameter, PortInfo
 from pistomp.encoder_controller import EncoderController
 
 
 def _make_parameter(minimum: float, maximum: float, value: float) -> Parameter:
-    plugin_info = {
+    plugin_info: PortInfo = {
         "shortName": "test",
         "symbol": "test",
         "ranges": {"minimum": minimum, "maximum": maximum},

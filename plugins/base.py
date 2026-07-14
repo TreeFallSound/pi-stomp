@@ -40,9 +40,9 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Generic, TypeVar
 
-import common.token as Token
 from common.contexts import ControlClass, ControlRef, EventKind
 from common.param_roles import ParamRole, edit_value
+from common.parameter import BYPASS_SYMBOL, Symbol
 from modalapi.plugin import Plugin
 from pistomp.input.dispatch import MultiSelectable, Selectable, fire, resolve_local
 from pistomp.input.event import ControllerEvent, EncoderEvent
@@ -72,7 +72,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
     plugin: Plugin
     handler: Handler
     _on_dismiss: Callable[[], None]
-    _param_queue: dict[str, float]
+    _param_queue: dict[Symbol, float]
     _btn_bypass: Button
 
     def _init_plugin_state(
@@ -146,10 +146,10 @@ class PluginPanel(Panel, Generic[TState], ABC):
             return True
         return False
 
-    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
         """Step, clamp, and commit symbol's value; returns True iff changed."""
         p = self.plugin.parameters.get(symbol)
-        if p is None or p.value is None:
+        if p is None:
             return False
         role = self.plugin.customization.param_roles.get(symbol, ParamRole.GENERIC)
         if role is ParamRole.GENERIC:
@@ -163,7 +163,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
 
     # ── param-send coalescing ─────────────────────────────────────────────
 
-    def set_param(self, symbol: str, value: float) -> None:
+    def set_param(self, symbol: Symbol, value: float) -> None:
         """Queue a parameter change.
 
         Writes ``value`` into ``plugin.parameters[symbol]`` immediately so the UI
@@ -200,7 +200,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
         self.plugin.set_bypass(new_bypass)
         bridge = self.handler.ws_bridge
         if bridge is not None:
-            bridge.send_parameter(self.plugin.instance_id, ":bypass", 1.0 if new_bypass else 0.0)
+            bridge.send_parameter(self.plugin.instance_id, BYPASS_SYMBOL, 1.0 if new_bypass else 0.0)
         self._refresh_bypass_style()
         self._btn_bypass.refresh()
 
@@ -209,7 +209,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
         self._flush_param_queue()
         snap = self.plugin.pedalboard_snapshot
         for symbol, value in snap.items():
-            if symbol == Token.COLON_BYPASS:
+            if symbol == BYPASS_SYMBOL:
                 continue
             if self._is_symbol_locked(self.plugin.instance_id, symbol):
                 continue
@@ -218,7 +218,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
         self.apply_state(self.snapshot_state())
         self._refresh_bypass_style()
 
-    def _is_symbol_locked(self, instance_id: str, symbol: str) -> bool:
+    def _is_symbol_locked(self, instance_id: str, symbol: Symbol) -> bool:
         return self.handler.is_symbol_locked(instance_id, symbol)
 
     def _refresh_bypass_style(self) -> None:

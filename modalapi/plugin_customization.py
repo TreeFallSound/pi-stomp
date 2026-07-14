@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from common.color import RectBorder
 from common.param_roles import ParamRole
+from common.parameter import Symbol
 
 if TYPE_CHECKING:
     from modalapi.plugin import Plugin
@@ -35,7 +36,7 @@ class PinnedParam:
     Color is derived from the parameter's unit at render time, not stored here.
     """
 
-    symbol: str
+    symbol: Symbol
     label: str
     display_fn: Callable[[float], str] | None = None
 
@@ -53,7 +54,7 @@ class PluginCustomization:
 
     # Per-symbol edit-math classification, supplementing the LV2 port's
     #  Symbols absent here are ParamRole.GENERIC.
-    param_roles: dict[str, ParamRole] = field(default_factory=dict, compare=False, hash=False)
+    param_roles: dict[Symbol, ParamRole] = field(default_factory=dict, compare=False, hash=False)
 
     # Arc-ring slots pinned to the top of the parameter window. When set, these
     # replace the heuristic (first N continuous params). None = use heuristic.

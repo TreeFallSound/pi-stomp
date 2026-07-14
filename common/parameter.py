@@ -14,8 +14,8 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from enum import Enum
+from typing import NewType, NotRequired, TypedDict
 import json
-import common.token as Token
 import common.util as util
 
 # strings as they appear in TTL files
@@ -27,6 +27,42 @@ TTL_SCALEPOINTS = 'scalePoints'
 TTL_TAPTEMPO    = 'tapTempo'
 TTL_TOGGLED     = 'toggled'
 
+# Identifies a Parameter: the key of plugin.parameters, ParamEffect.symbol,
+# edit_symbol(). Usually an LV2 port symbol (":bypass", "gain"); also an ALSA
+# mixer control ("MASTER") or a synthesized id ("external_1_7"). Never a
+# shortName — that's free text, and the two coincide often enough to hide it.
+Symbol = NewType("Symbol", str)
+
+BYPASS_SYMBOL = Symbol(":bypass")
+
+
+class Ranges(TypedDict):
+    minimum: NotRequired[float]
+    maximum: NotRequired[float]
+    default: NotRequired[float]
+
+
+class Units(TypedDict):
+    symbol: NotRequired[str]
+    label: NotRequired[str]
+
+
+class ScalePoint(TypedDict):
+    label: str
+    value: float
+
+
+class PortInfo(TypedDict):
+    """One row of an LV2 plugin's control-input ports, as mod-ui reports it."""
+    symbol: str
+    name: NotRequired[str]
+    shortName: NotRequired[str]
+    ranges: NotRequired[Ranges]
+    units: NotRequired[Units]
+    properties: NotRequired[list[str]]
+    scalePoints: NotRequired[list[ScalePoint]]
+
+
 class Type(Enum):
     DEFAULT = 0      # No explicitly defined type (eg. linear float)
     ENUMERATION = 1
@@ -37,28 +73,34 @@ class Type(Enum):
 
 class Parameter:
 
-    def __init__(self, plugin_info, value: float, binding, instance_id=None):
-        self.name = util.DICT_GET(plugin_info, Token.SHORTNAME)  # possibly use name if shortName is None
-        if self.name is None:
-            self.name = util.DICT_GET(plugin_info, Token.NAME)
-        self.symbol = util.DICT_GET(plugin_info, Token.SYMBOL)
-        self.minimum: float = util.DICT_GET(util.DICT_GET(plugin_info, Token.RANGES), Token.MINIMUM)
-        self.maximum: float = util.DICT_GET(util.DICT_GET(plugin_info, Token.RANGES), Token.MAXIMUM)
-        self.default: float = util.DICT_GET(util.DICT_GET(plugin_info, Token.RANGES), Token.DEFAULT)
-        self.value: float = value
-        self.binding = binding
-        self.instance_id = instance_id.lstrip("/") if instance_id else instance_id
+    def __init__(self, plugin_info: PortInfo, value: float, binding: str | None, instance_id: str | None = None):
+        symbol = plugin_info.get("symbol")
+        if not symbol:
+            raise ValueError(f"LV2 port has no symbol: {plugin_info!r}")
+        self.symbol: Symbol = Symbol(symbol)
+        self.name: str = plugin_info.get("shortName") or plugin_info.get("name") or symbol
+
+        ranges = plugin_info.get("ranges") or Ranges()
+        self.minimum: float = float(ranges.get("minimum", 0.0))
+        self.maximum: float = float(ranges.get("maximum", 1.0))
+        # mod-ui normalises the TTL and always emits all three ranges; the
+        # fallbacks only serve the params we synthesise (bypass, volume, VU).
+        self.default: float = float(ranges.get("default", self.minimum))
+
+        self.value: float = float(value)
+        self.binding: str | None = binding
+        self.instance_id: str | None = instance_id.lstrip("/") if instance_id else instance_id
         self.type = Type.DEFAULT
-        self.enum_values = []
+        self.enum_values: list[ScalePoint] = []
 
-        units_info = util.DICT_GET(plugin_info, 'units')
-        self.unit_symbol = util.DICT_GET(units_info, 'symbol') if units_info else None
-        self.unit_label = util.DICT_GET(units_info, 'label') if units_info else None
+        units_info = plugin_info.get("units") or Units()
+        self.unit_symbol: str | None = units_info.get("symbol")
+        self.unit_label: str | None = units_info.get("label")
 
-        properties = util.DICT_GET(plugin_info, TTL_PROPERTIES)
-        if properties is not None and len(properties) > 0:
+        properties = plugin_info.get("properties") or []
+        if len(properties) > 0:
             if TTL_ENUMERATION in properties:
-                self.enum_values = util.DICT_GET(plugin_info, TTL_SCALEPOINTS)
+                self.enum_values = plugin_info.get("scalePoints") or []
                 self.type = Type.ENUMERATION
             elif TTL_INTEGER in properties:
                 self.type = Type.INTEGER
@@ -69,11 +111,8 @@ class Parameter:
             elif TTL_TOGGLED in properties:
                 self.type = Type.TOGGLED
 
-    def get_enum_value_list(self):
-        ret = []
-        for v in self.enum_values:
-            ret.append((util.DICT_GET(v,'label'), util.DICT_GET(v,'value')))
-        return ret
+    def get_enum_value_list(self) -> list[tuple[str, float]]:
+        return [(v["label"], v["value"]) for v in self.enum_values]
 
     def get_taper(self):
         return 2 if self.type == Type.LOGARITHMIC else 1

@@ -24,7 +24,7 @@ from common.contexts import (
     EventKind,
     SelectionEditEffect,
 )
-from common.parameter import Parameter
+from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
 from common.param_roles import ParamRole
 from modalapi.plugin_customization import PinnedParam
 from plugins.chrome import BTN_GAP, BTN_H, MIN_CHROME_WIDTH, build_bottom_row
@@ -122,7 +122,7 @@ class ParamSlotWidget(ArcDialWidget):
         self.set_param(self.value + rotations * step_for_param(param))
         return True
 
-    def symbol_for(self, role: ParamRole) -> str | None:
+    def symbol_for(self, role: ParamRole) -> Symbol | None:
         return self.slot.symbol
 
     def set_selected(self, selected: bool) -> None:
@@ -139,7 +139,7 @@ class _ListRow(Widget):
         self,
         *,
         box: Box,
-        symbol: str,
+        symbol: Symbol,
         label: str,
         badge_char: str | None,
         owner: ParameterWindow,
@@ -160,7 +160,7 @@ class _ListRow(Widget):
         self._bypassed = bypassed
         self.refresh()
 
-    def symbol_for(self, role: ParamRole) -> str | None:
+    def symbol_for(self, role: ParamRole) -> Symbol | None:
         return self.symbol
 
     def set_selected(self, selected: bool) -> None:
@@ -251,7 +251,7 @@ class ParameterWindow(PluginWindow[None]):
         """First up-to-4 continuous (non-enum, non-toggle) params."""
         slots: list[PinnedParam] = []
         for name, param in sorted(self.plugin.parameters.items()):
-            if name == ":bypass":
+            if name == BYPASS_SYMBOL:
                 continue
             if param.type.value in (1, 5):  # ENUMERATION, TOGGLED
                 continue
@@ -283,7 +283,7 @@ class ParameterWindow(PluginWindow[None]):
         for w in self._list_rows:
             w.refresh()
 
-    def _badge_for(self, symbol: str) -> str | None:
+    def _badge_for(self, symbol: Symbol) -> str | None:
         """The physical-control badge for *symbol*, or None. Rings, list rows
         and the Bypass button all badge from here — a pinned param must not
         lose its badge just because it renders as an arc ring."""
@@ -292,12 +292,12 @@ class ParameterWindow(PluginWindow[None]):
         param = self.plugin.parameters.get(symbol)
         return self._badge_fn(param) if param is not None else None
 
-    def _list_params(self) -> list[tuple[str, Parameter]]:
+    def _list_params(self) -> list[tuple[Symbol, Parameter]]:
         """Params not pinned, in sorted order, excluding :bypass."""
         pinned_symbols = {s.symbol for s in self.slots}
-        result: list[tuple[str, Parameter]] = []
+        result: list[tuple[Symbol, Parameter]] = []
         for name, param in sorted(self.plugin.parameters.items()):
-            if name == ":bypass":
+            if name == BYPASS_SYMBOL:
                 continue
             if name in pinned_symbols:
                 continue
@@ -378,7 +378,7 @@ class ParameterWindow(PluginWindow[None]):
         for btn in (self._btn_back, self._btn_bypass, self._btn_reset):
             content_container.add_sel_widget(btn)
 
-        bypass_badge = self._badge_for(":bypass")
+        bypass_badge = self._badge_for(Symbol(":bypass"))
         if bypass_badge is not None:
             self._btn_bypass.set_badge(BadgeGlyph(bypass_badge))
 
@@ -399,7 +399,7 @@ class ParameterWindow(PluginWindow[None]):
             ),
         )
 
-    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
         widget = next((w for w in self._slot_widgets if w.slot.symbol == symbol), None)
         if widget is not None:
             return widget.on_encoder_rotation(rotations)

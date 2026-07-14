@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from plugins.eq.band_spec import GraphicBandSpec
 from plugins.eq.graphic import _graphic_palette
+from common.parameter import Symbol
 
 # Bark-scale center frequencies (approximate, from Bark scale literature).
 # The TTL manifest declares only gain ports G1-G24 with no frequency metadata.
@@ -19,7 +20,7 @@ BAND_SPECS: tuple[GraphicBandSpec, ...] = tuple(
     GraphicBandSpec(
         name=f"G{i+1}",
         freq_hz=freq,
-        gain_sym=f"G{i+1}",
+        gain_sym=Symbol(f"G{i+1}"),
         gain_min=-30.0,
         gain_max=20.0,
         color=color,

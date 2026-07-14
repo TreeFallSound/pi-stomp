@@ -22,6 +22,7 @@ from plugins.acomp import ACOMP_URI
 from plugins.customization import lookup
 from uilib.misc import InputEvent
 from tests.types import SystemFixture
+from common.parameter import PortInfo, Symbol
 
 
 class _FakeEnc(Controller):
@@ -30,18 +31,18 @@ class _FakeEnc(Controller):
         self.id = id
 
 
-def _param(symbol: str, value: float, minimum: float, maximum: float, instance_id: str = "Comp") -> Parameter:
-    info = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
+def _param(symbol: Symbol, value: float, minimum: float, maximum: float, instance_id: str = "Comp") -> Parameter:
+    info: PortInfo = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
     return Parameter(info, value, None, instance_id)
 
 
 def make_acomp_plugin(instance_id: str = "Comp") -> Plugin:
-    params: dict[str, Parameter] = {
-        ":bypass": Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, instance_id),
-        "thr": _param("thr", -18.0, -60.0, 0.0, instance_id),
-        "rat": _param("rat", 4.0, 1.0, 20.0, instance_id),
-        "kn": _param("kn", 2.0, 0.0, 8.0, instance_id),
-        "mak": _param("mak", 6.0, 0.0, 30.0, instance_id),
+    params: dict[Symbol, Parameter] = {
+        Symbol(":bypass"): Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, instance_id),
+        Symbol("thr"): _param(Symbol("thr"), -18.0, -60.0, 0.0, instance_id),
+        Symbol("rat"): _param(Symbol("rat"), 4.0, 1.0, 20.0, instance_id),
+        Symbol("kn"): _param(Symbol("kn"), 2.0, 0.0, 8.0, instance_id),
+        Symbol("mak"): _param(Symbol("mak"), 6.0, 0.0, 30.0, instance_id),
     }
     plugin = Plugin(instance_id, params, {}, "Dynamics", uri=ACOMP_URI, customization=lookup(ACOMP_URI))
     plugin.has_footswitch = True

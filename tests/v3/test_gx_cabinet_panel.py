@@ -18,6 +18,7 @@ from plugins.gx_cabinet import GX_CABINET_URI
 from plugins.gx_cabinet.panel import GxCabinetPanel
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click
+from common.parameter import PortInfo, Symbol
 
 # ── cab model labels (19 values from the plugin TTL) ────────────────────────
 
@@ -62,7 +63,7 @@ def _param(
     enum_values: list | None = None,
     unit: str | None = None,
 ) -> Parameter:
-    info: dict = {
+    info: PortInfo = {
         "shortName": symbol,
         "symbol": symbol,
         "ranges": {"minimum": minimum, "maximum": maximum, "default": default},
@@ -77,17 +78,17 @@ def _param(
 
 def make_gx_cabinet_plugin(instance_id: str = "cabinet") -> Plugin:
     """Build a Plugin instance mirroring GxCabinet's port layout."""
-    params: dict[str, Parameter] = {
-        ":bypass": Parameter(
+    params: dict[Symbol, Parameter] = {
+        Symbol(":bypass"): Parameter(
             {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1, "default": 0}},
             False,
             None,
             instance_id,
         ),
-        "CLevel": _param("CLevel", 1.0, 0.5, 5.0, 1.0, instance_id, unit="×"),
-        "CBass": _param("CBass", 0.0, -10.0, 10.0, 0.0, instance_id, unit="dB"),
-        "CTreble": _param("CTreble", 0.0, -10.0, 10.0, 0.0, instance_id, unit="dB"),
-        "c_model": _param("c_model", 0.0, 0.0, 18.0, 0.0, instance_id, enum_values=_MODEL_SCALEPOINTS),
+        Symbol("CLevel"): _param(Symbol("CLevel"), 1.0, 0.5, 5.0, 1.0, instance_id, unit="×"),
+        Symbol("CBass"): _param(Symbol("CBass"), 0.0, -10.0, 10.0, 0.0, instance_id, unit="dB"),
+        Symbol("CTreble"): _param(Symbol("CTreble"), 0.0, -10.0, 10.0, 0.0, instance_id, unit="dB"),
+        Symbol("c_model"): _param(Symbol("c_model"), 0.0, 0.0, 18.0, 0.0, instance_id, enum_values=_MODEL_SCALEPOINTS),
     }
     plugin = Plugin(instance_id, params, {}, "GxCabinet", uri=GX_CABINET_URI)
     plugin.has_footswitch = False

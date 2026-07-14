@@ -24,7 +24,7 @@ from common.fonts import font_path
 import common.token as Token
 import common.util as util
 from common.contexts import ControlClass, EventKind, ParamEffect, ShadowState
-from common.parameter import Parameter, Type
+from common.parameter import Parameter, PortInfo, Symbol, Type
 from modalapi.plugin import Plugin
 from ui.ethernet_menu import EthernetMenu
 from ui.wifi_menu import WifiMenu
@@ -757,7 +757,7 @@ class Lcd:
         return str(n) if n is not None else None
 
     def draw_symbol_menu(
-        self, plugin: Plugin, rows: tuple[tuple[str, str], ...], title: str = "", on_change: Callable[[], None] | None = None
+        self, plugin: Plugin, rows: tuple[tuple[str, Symbol], ...], title: str = "", on_change: Callable[[], None] | None = None
     ) -> None:
         """A compound NAV selection (e.g. an EQ band's gain/freq/Q): a submenu
         over just `rows` symbols, each opening the same per-parameter dialog
@@ -1009,11 +1009,7 @@ class Lcd:
         if value is None:
             value = 512  # 1024 / 2
         name = "VU Calibration"
-        info = {
-            Token.NAME: name,
-            Token.SYMBOL: symbol,
-            Token.RANGES: {Token.MINIMUM: 0, Token.MAXIMUM: 1023}
-        }
+        info = PortInfo(name=name, symbol=Symbol(symbol), ranges={"minimum": 0, "maximum": 1023})
         param = Parameter(info, value, None)
         d = Parameterdialog(self.pstack, param,
                             width=270, height=130, auto_destroy=False, title=name, timeout=PARAMETER_DIALOG_TIMEOUT,

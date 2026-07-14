@@ -21,6 +21,7 @@ from common.contexts import (
     ParamEffect,
     ShadowState,
 )
+from common.parameter import Symbol
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
 from pistomp.lcd320x240 import Lcd
@@ -480,7 +481,7 @@ def test_footswitch_badge_letter_from_effective_table(lcd):
     instance, _ = lcd
     setup_main_ui(instance)
     distortion = instance.current.pedalboard.plugins[0]
-    gain_param = distortion.parameters["gain"]
+    gain_param = distortion.parameters[Symbol("gain")]
 
     fs = Footswitch(id=2, led_pin=None, pixel=None, midi_CC=10, midi_channel=0, refresh_callback=MagicMock())
     instance.handler.hardware.controllers = {"0:10": fs}
@@ -499,7 +500,7 @@ def test_footswitch_badge_letter_none_when_shadowed(lcd):
     instance, _ = lcd
     setup_main_ui(instance)
     distortion = instance.current.pedalboard.plugins[0]
-    gain_param = distortion.parameters["gain"]
+    gain_param = distortion.parameters[Symbol("gain")]
 
     fs = Footswitch(id=0, led_pin=None, pixel=None, midi_CC=10, midi_channel=0, refresh_callback=MagicMock())
     instance.handler.hardware.controllers = {"0:10": fs}
@@ -528,7 +529,7 @@ def test_tweak_badge_number_from_effective_table(lcd):
     instance, _ = lcd
     setup_main_ui(instance)
     distortion = instance.current.pedalboard.plugins[0]
-    gain_param = distortion.parameters["gain"]
+    gain_param = distortion.parameters[Symbol("gain")]
 
     enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=2)
     instance.handler.hardware.controllers = {"encoder2": enc}
@@ -547,7 +548,7 @@ def test_tweak_badge_number_none_when_shadowed(lcd):
     instance, _ = lcd
     setup_main_ui(instance)
     distortion = instance.current.pedalboard.plugins[0]
-    gain_param = distortion.parameters["gain"]
+    gain_param = distortion.parameters[Symbol("gain")]
 
     enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=2)
     instance.handler.hardware.controllers = {"encoder2": enc}
@@ -564,7 +565,7 @@ def test_parameter_menu_shows_tweak_badge(lcd, snapshot):
     instance, _ = lcd
     setup_main_ui(instance)
     distortion = instance.current.pedalboard.plugins[0]
-    gain_param = distortion.parameters["gain"]
+    gain_param = distortion.parameters[Symbol("gain")]
 
     enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=3)
     instance.handler.hardware.controllers = {"encoder3": enc}
@@ -587,7 +588,7 @@ def test_parameter_dialog_shows_tweak_badge_snapshot(lcd, snapshot):
     instance, _ = lcd
     setup_main_ui(instance)
     distortion = instance.current.pedalboard.plugins[0]
-    gain_param = distortion.parameters["gain"]
+    gain_param = distortion.parameters[Symbol("gain")]
 
     enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=2)
     instance.handler.hardware.controllers = {"encoder2": enc}
@@ -607,7 +608,7 @@ def test_parameter_menu_shows_footswitch_badge(lcd, snapshot):
     instance, _ = lcd
     setup_main_ui(instance)
     distortion = instance.current.pedalboard.plugins[0]
-    gain_param = distortion.parameters["gain"]
+    gain_param = distortion.parameters[Symbol("gain")]
 
     fs = Footswitch(id=0, led_pin=None, pixel=None, midi_CC=10, midi_channel=0, refresh_callback=MagicMock())
     instance.handler.hardware.controllers = {"0:10": fs}

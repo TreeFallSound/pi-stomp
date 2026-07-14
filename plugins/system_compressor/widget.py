@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from plugins.multiband_menu import MultibandWindow, ParamSlot
+from common.parameter import Symbol
 
 
 class SystemCompressorWindow(MultibandWindow):
     def build_slots(self):
         return [
-            ParamSlot("COMP_MODE", "Mode", display_fn=self._fmt_mode),
-            ParamSlot("RELEASE", "Release", display_fn=lambda v: f"{v:.0f}ms"),
-            ParamSlot("MASTER_VOL", "Volume", display_fn=lambda v: f"{v:+.0f}dB"),
+            ParamSlot(Symbol("COMP_MODE"), "Mode", display_fn=self._fmt_mode),
+            ParamSlot(Symbol("RELEASE"), "Release", display_fn=lambda v: f"{v:.0f}ms"),
+            ParamSlot(Symbol("MASTER_VOL"), "Volume", display_fn=lambda v: f"{v:+.0f}dB"),
         ]
 
     @staticmethod

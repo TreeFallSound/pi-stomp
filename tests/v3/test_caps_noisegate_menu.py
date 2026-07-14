@@ -32,6 +32,7 @@ from plugins.customization import lookup
 from uilib.misc import InputEvent
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click
+from common.parameter import BYPASS_SYMBOL, PortInfo, Symbol
 
 
 CAPS_NOISEGATE_URI = "http://moddevices.com/plugins/caps/Noisegate"
@@ -49,21 +50,21 @@ class _FakeEnc(Controller):
 
 
 def _param(
-    symbol: str, value: float, minimum: float, maximum: float, instance_id: str = "Gate", unit: str | None = None
+    symbol: Symbol, value: float, minimum: float, maximum: float, instance_id: str = "Gate", unit: str | None = None
 ) -> Parameter:
-    info: dict = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
+    info: PortInfo = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
     if unit is not None:
         info["units"] = {"symbol": unit}
     return Parameter(info, value, None, instance_id)
 
 
 def make_noisegate_plugin(instance_id: str = "Gate") -> Plugin:
-    params: dict[str, Parameter] = {
-        ":bypass": Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, instance_id),
-        "open": _param("open", -45.0, -60.0, 0.0, instance_id, unit="dB"),
-        "attack": _param("attack", 0.0, 0.0, 5.0, instance_id, unit="ms"),
-        "close": _param("close", -67.5, -80.0, 0.0, instance_id, unit="dB"),
-        "mains": _param("mains", 50.0, 0.0, 100.0, instance_id, unit="Hz"),
+    params: dict[Symbol, Parameter] = {
+        BYPASS_SYMBOL: Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, instance_id),
+        Symbol("open"): _param(Symbol("open"), -45.0, -60.0, 0.0, instance_id, unit="dB"),
+        Symbol("attack"): _param(Symbol("attack"), 0.0, 0.0, 5.0, instance_id, unit="ms"),
+        Symbol("close"): _param(Symbol("close"), -67.5, -80.0, 0.0, instance_id, unit="dB"),
+        Symbol("mains"): _param(Symbol("mains"), 50.0, 0.0, 100.0, instance_id, unit="Hz"),
     }
     plugin = Plugin(instance_id, params, {}, "Dynamics", uri=CAPS_NOISEGATE_URI, customization=lookup(CAPS_NOISEGATE_URI))
     plugin.has_footswitch = True
@@ -74,7 +75,7 @@ def make_noisegate_plugin(instance_id: str = "Gate") -> Plugin:
     return plugin
 
 
-def bind_footswitch(handler, plugin: Plugin, symbol: str, fs_id: int) -> None:
+def bind_footswitch(handler, plugin: Plugin, symbol: Symbol, fs_id: int) -> None:
     """Bind *symbol* to footswitch *fs_id* in the effective table, which is
     where the badge letters are resolved from."""
     control_id = f"0:{10 + fs_id}"
@@ -169,11 +170,11 @@ def test_parameter_window_scrolls_when_content_overflows(v3_system: SystemFixtur
     hw = v3_system.hw
 
     assert handler.current
-    params: dict[str, Parameter] = {
-        ":bypass": Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "many"),
+    params: dict[Symbol, Parameter] = {
+        BYPASS_SYMBOL: Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "many"),
     }
     for i in range(12):
-        sym = f"param_{i:02d}"
+        sym = Symbol(f"param_{i:02d}")
         params[sym] = _param(sym, 0.5, 0.0, 1.0, "many", unit="dB")
     plugin = Plugin("many", params, {}, "Dynamics")
     plugin.has_footswitch = True
@@ -186,9 +187,9 @@ def test_parameter_window_scrolls_when_content_overflows(v3_system: SystemFixtur
 
     # param_00 pins to a ring, param_05 lands in the list, :bypass drives the
     # footer button — all three must surface their badge.
-    bind_footswitch(handler, plugin, "param_00", fs_id=0)
-    bind_footswitch(handler, plugin, "param_05", fs_id=1)
-    bind_footswitch(handler, plugin, ":bypass", fs_id=2)
+    bind_footswitch(handler, plugin, Symbol("param_00"), fs_id=0)
+    bind_footswitch(handler, plugin, Symbol("param_05"), fs_id=1)
+    bind_footswitch(handler, plugin, Symbol(":bypass"), fs_id=2)
 
     lcd = handler.lcd
     lcd.main_panel.sel_widget(lcd.w_plugins[0])

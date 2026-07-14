@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from plugins.eq.band_spec import BandSpec
+from common.parameter import Symbol
 
 _FREQ_RANGES: list[tuple[float, float]] = [
     (40.0, 280.0),
@@ -31,9 +32,9 @@ BAND_SPECS: tuple[BandSpec, ...] = tuple(
         name=f"B{i+1}",
         kind="peak",
         enable_sym=None,
-        freq_sym=f"Band{i+1}FreqHz",
-        q_sym=f"Band{i+1}BandwidthOctaves",
-        gain_sym=f"Band{i+1}GainDb",
+        freq_sym=Symbol(f"Band{i+1}FreqHz"),
+        q_sym=Symbol(f"Band{i+1}BandwidthOctaves"),
+        gain_sym=Symbol(f"Band{i+1}GainDb"),
         shelf_side=None,
         freq_min=fmin,
         freq_max=fmax,

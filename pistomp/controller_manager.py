@@ -31,7 +31,7 @@ from common.contexts import (
     ParamEffect,
     ShadowState,
 )
-from common.parameter import Parameter, TTL_PROPERTIES, TTL_INTEGER
+from common.parameter import Parameter, PortInfo, Symbol, TTL_INTEGER
 from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.controller import AnalogDisplayInfo
@@ -171,12 +171,12 @@ class ControllerManager:
                         controller, port_name, controller.midi_channel, controller.midi_CC
                     )
                 else:
-                    ext_info = {
-                        Token.NAME: f"{port_name} CC{controller.midi_CC}",
-                        Token.SYMBOL: f"external_{controller.midi_CC}",
-                        Token.RANGES: {Token.MINIMUM: 0, Token.MAXIMUM: 127},
-                        TTL_PROPERTIES: [TTL_INTEGER],
-                    }
+                    ext_info = PortInfo(
+                        name=f"{port_name} CC{controller.midi_CC}",
+                        symbol=Symbol(f"external_{controller.midi_CC}"),
+                        ranges={"minimum": 0, "maximum": 127},
+                        properties=[TTL_INTEGER],
+                    )
                     controller.bind_to_parameter(
                         Parameter(ext_info, controller.midi_value, None, EXTERNAL_INSTANCE_ID)
                     )

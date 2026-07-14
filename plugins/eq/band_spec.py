@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal
+from common.parameter import Symbol
 
 
 BandKind = Literal["peak", "shelf", "hp", "lp"]
@@ -17,10 +18,10 @@ BandKind = Literal["peak", "shelf", "hp", "lp"]
 class BandSpec:
     name: str
     kind: BandKind
-    enable_sym: str | None
-    freq_sym: str
-    q_sym: str | None
-    gain_sym: str | None
+    enable_sym: Symbol | None
+    freq_sym: Symbol
+    q_sym: Symbol | None
+    gain_sym: Symbol | None
     shelf_side: Literal["low", "high"] | None
     freq_min: float
     freq_max: float
@@ -35,7 +36,7 @@ class BandSpec:
 class GraphicBandSpec:
     name: str
     freq_hz: float
-    gain_sym: str
+    gain_sym: Symbol
     color: tuple[int, int, int]
     gain_min: float = -18.0
     gain_max: float = 18.0
