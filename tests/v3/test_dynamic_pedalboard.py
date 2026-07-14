@@ -21,6 +21,7 @@ import pytest
 
 from modalapi.pedalboard import Pedalboard
 from tests.types import SystemFixture
+from common.parameter import Symbol
 
 
 # ---------------------------------------------------------------------------
@@ -119,16 +120,16 @@ def test_build_plugin_bypass_param_always_present():
     plugin = pb._build_plugin("ExtraChorus", _EXTRA_CHORUS_URI, 0.0, 0.0, _EXTRA_CHORUS_INFO)
     assert plugin is not None
     assert ":bypass" in plugin.parameters
-    assert plugin.parameters[":bypass"].value == 0.0
+    assert plugin.parameters[Symbol(":bypass")].value == 0.0
 
 
 def test_build_plugin_control_ports_use_range_defaults():
     pb = Pedalboard("Test", "/test/bundle")
     plugin = pb._build_plugin("ExtraChorus", _EXTRA_CHORUS_URI, 0.0, 0.0, _EXTRA_CHORUS_INFO)
     assert plugin is not None
-    assert plugin.parameters["rate"].value == pytest.approx(1.0)
-    assert plugin.parameters["depth"].value == pytest.approx(0.5)
-    assert plugin.parameters["mix"].value == pytest.approx(0.7)
+    assert plugin.parameters[Symbol("rate")].value == pytest.approx(1.0)
+    assert plugin.parameters[Symbol("depth")].value == pytest.approx(0.5)
+    assert plugin.parameters[Symbol("mix")].value == pytest.approx(0.7)
 
 
 def test_build_plugin_no_control_ports_succeeds():
@@ -307,9 +308,9 @@ def test_v3_dynamic_add_control_port_defaults_populated(parallel_beths_system: S
     handler.poll_ws_messages()
 
     added = next(p for p in handler.current.pedalboard.plugins if p.instance_id == "ExtraChorus")
-    assert added.parameters["rate"].value == pytest.approx(1.0)
-    assert added.parameters["depth"].value == pytest.approx(0.5)
-    assert added.parameters["mix"].value == pytest.approx(0.7)
+    assert added.parameters[Symbol("rate")].value == pytest.approx(1.0)
+    assert added.parameters[Symbol("depth")].value == pytest.approx(0.5)
+    assert added.parameters[Symbol("mix")].value == pytest.approx(0.7)
 
 
 def test_v3_dynamic_add_param_set_echo_updates_value(parallel_beths_system: SystemFixture):
@@ -323,7 +324,7 @@ def test_v3_dynamic_add_param_set_echo_updates_value(parallel_beths_system: Syst
     handler.poll_ws_messages()
 
     added = next(p for p in handler.current.pedalboard.plugins if p.instance_id == "ExtraChorus")
-    assert added.parameters["rate"].value == pytest.approx(3.5)
+    assert added.parameters[Symbol("rate")].value == pytest.approx(3.5)
 
 
 # ---------------------------------------------------------------------------
@@ -379,9 +380,9 @@ def test_v3_dynamic_remove_clears_footswitch_binding(parallel_beths_system: Syst
     fs = hw.footswitches[0]
     binding_key = next(k for k, v in hw.controllers.items() if v is fs)
     comp = next(p for p in handler.current.pedalboard.plugins if p.instance_id == "Comp")
-    comp.parameters[":bypass"].binding = binding_key
+    comp.parameters[Symbol(":bypass")].binding = binding_key
     handler.bind_current_pedalboard()
-    assert fs.parameter is comp.parameters[":bypass"]
+    assert fs.parameter is comp.parameters[Symbol(":bypass")]
 
     ws_bridge.inject("remove /graph/Comp")
     handler.poll_ws_messages()

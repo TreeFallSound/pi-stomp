@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import common.token as Token
 from common.contexts import ControlClass, EventKind, ShadowState
+from common.parameter import Symbol
 from modalapi.plugin import Plugin
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.controller_manager import ControllerManager
@@ -79,7 +80,7 @@ def test_orphaned_ttl_binding_recorded_in_effective_table():
     param.binding = "0:99"
     param.name = "gain"
     plugin = MagicMock()
-    plugin.parameters = {"gain": param}
+    plugin.parameters = {Symbol("gain"): param}
     plugin.controllers = []
 
     hw = MagicMock()

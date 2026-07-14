@@ -18,6 +18,7 @@
 import logging
 
 from blend.types import ParameterKey, WebSocketBridgeProtocol
+from common.parameter import Symbol
 
 
 class ParameterSetter:
@@ -34,7 +35,7 @@ class ParameterSetter:
         self.bridge = bridge
         self.last_sent_midi_values: dict[ParameterKey, float] = {}
 
-    def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
+    def send_parameter(self, instance_id: str, symbol: Symbol, value: float) -> bool:
         """
         Send single parameter via WebSocket with de-duplication (non-blocking).
 

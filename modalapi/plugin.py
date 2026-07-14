@@ -21,7 +21,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from common.color import RectBorder
-from common.parameter import Parameter
+from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
 from modalapi.plugin_customization import PluginCustomization, PluginExtraData
 from pistomp.controller import Controller
 
@@ -38,7 +38,7 @@ class Plugin:
     def __init__(
         self,
         instance_id: str,
-        parameters: dict[str, Parameter],
+        parameters: dict[Symbol, Parameter],
         info: dict | None,
         category: str | None = None,
         uri: str | None = None,
@@ -52,7 +52,7 @@ class Plugin:
         self.instance_number: int | None = instance_number
         self.info: dict | None = info
         self.name: str = (info or {}).get("name") or self.instance_id
-        self.parameters: dict[str, Parameter] = parameters
+        self.parameters: dict[Symbol, Parameter] = parameters
         self.canvas_x: float = 0.0
         self.canvas_y: float = 0.0
         self.bypass_indicator_xy: tuple[Point, Point] = ((0, 0), (0, 0))
@@ -61,7 +61,7 @@ class Plugin:
         self.has_footswitch: bool = False
         self.category: str | None = category
         self.uri: str | None = uri
-        self.pedalboard_snapshot: dict[str, float] = {}
+        self.pedalboard_snapshot: dict[Symbol, float] = {}
         c: PluginCustomization = customization or PluginCustomization()
         if extra_data is not None:
             c = replace(c, extra_data=extra_data)
@@ -111,20 +111,20 @@ class Plugin:
         return self.customization.intercept_shortpress
 
     def is_bypassed(self) -> bool:
-        param = self.parameters.get(":bypass")
+        param = self.parameters.get(BYPASS_SYMBOL)
         if param is not None:
             return bool(param.value)
         return True
 
     def toggle_bypass(self) -> float:
-        param = self.parameters.get(":bypass")
+        param = self.parameters.get(BYPASS_SYMBOL)
         if param is None:
             return 0.0
         new_value = 0.0 if param.value else 1.0
         param.value = new_value
         return new_value
 
-    def set_param_value(self, symbol: str, value: float) -> None:
+    def set_param_value(self, symbol: Symbol, value: float) -> None:
         """Cache a param's value and mirror it onto any control bound to it, so
         a footswitch's LED/keycap (or a knob/encoder's cached position) tracks
         mod-ui's live value. set_value is polymorphic per control type."""
@@ -137,7 +137,7 @@ class Plugin:
                 c.set_value(value)
 
     def set_bypass(self, bypass: bool) -> None:
-        self.set_param_value(":bypass", 1.0 if bypass else 0.0)
+        self.set_param_value(BYPASS_SYMBOL, 1.0 if bypass else 0.0)
 
     def to_json(self) -> str:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)

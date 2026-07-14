@@ -34,12 +34,13 @@ from common.contexts import (
     SelectionEditEffect,
 )
 from common.param_roles import ParamRole
+from common.parameter import Symbol
 from pistomp.input.event import EncoderEvent
 
 
 @runtime_checkable
 class Selectable(Protocol):
-    def symbol_for(self, role: ParamRole) -> str | None: ...
+    def symbol_for(self, role: ParamRole) -> Symbol | None: ...
 
 
 class PanelOps(Protocol):
@@ -48,7 +49,7 @@ class PanelOps(Protocol):
     @property
     def sel_ref(self) -> object: ...
 
-    def edit_symbol(self, symbol: str, rotations: int) -> bool: ...
+    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool: ...
 
 
 def resolve_local(rows: tuple[BindingDecl, ...], control: ControlRef, event_kind: EventKind) -> BindingDecl | None:

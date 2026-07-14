@@ -21,6 +21,7 @@ from enum import Enum, auto
 from typing import Callable, Union
 
 from common.param_roles import ParamRole
+from common.parameter import Symbol
 
 
 class ControlClass(Enum):
@@ -82,7 +83,7 @@ class Effect:
 @dataclass(frozen=True)
 class ParamEffect(Effect):
     plugin: object  # PluginRef, resolved at pedalboard load
-    symbol: Union[str, type[SelectionSymbol]]
+    symbol: Union[Symbol, type[SelectionSymbol]]
     commit: bool = True  # WebSocket send_parameter on fire
     mirror: bool = True  # reconcile from inbound param_set echo
 
@@ -95,7 +96,7 @@ class MidiCcEffect(Effect):
 
 @dataclass(frozen=True)
 class AudioCardEffect(Effect):
-    param_symbol: str  # "MASTER", "CAPTURE_VOLUME", ...
+    param_symbol: Symbol  # "MASTER", "CAPTURE_VOLUME", ...
     card: str = "default"
 
 

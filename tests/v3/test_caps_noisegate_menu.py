@@ -18,6 +18,7 @@ from plugins.customization import lookup
 from uilib.misc import InputEvent
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click
+from common.parameter import PortInfo, Symbol
 
 
 CAPS_NOISEGATE_URI = "http://moddevices.com/plugins/caps/Noisegate"
@@ -34,18 +35,18 @@ class _FakeEnc(Controller):
         self.id = id
 
 
-def _param(symbol: str, value: float, minimum: float, maximum: float, instance_id: str = "Gate") -> Parameter:
-    info = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
+def _param(symbol: Symbol, value: float, minimum: float, maximum: float, instance_id: str = "Gate") -> Parameter:
+    info: PortInfo = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
     return Parameter(info, value, None, instance_id)
 
 
 def make_noisegate_plugin(instance_id: str = "Gate") -> Plugin:
-    params: dict[str, Parameter] = {
-        ":bypass": Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, instance_id),
-        "open": _param("open", -45.0, -60.0, 0.0, instance_id),
-        "attack": _param("attack", 0.0, 0.0, 5.0, instance_id),
-        "close": _param("close", -67.5, -80.0, 0.0, instance_id),
-        "mains": _param("mains", 50.0, 0.0, 100.0, instance_id),
+    params: dict[Symbol, Parameter] = {
+        Symbol(":bypass"): Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, instance_id),
+        Symbol("open"): _param(Symbol("open"), -45.0, -60.0, 0.0, instance_id),
+        Symbol("attack"): _param(Symbol("attack"), 0.0, 0.0, 5.0, instance_id),
+        Symbol("close"): _param(Symbol("close"), -67.5, -80.0, 0.0, instance_id),
+        Symbol("mains"): _param(Symbol("mains"), 50.0, 0.0, 100.0, instance_id),
     }
     plugin = Plugin(instance_id, params, {}, "Dynamics", uri=CAPS_NOISEGATE_URI, customization=lookup(CAPS_NOISEGATE_URI))
     plugin.has_footswitch = True

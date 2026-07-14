@@ -60,6 +60,7 @@ from common.contexts import (
     EventKind,
     NoneEffect,
 )
+from common.parameter import Symbol
 
 from uilib.panel import Panel
 from pistomp.input.dispatch import fire, resolve_local
@@ -702,7 +703,7 @@ class NamCapturePanel(Panel):
             BindingDecl(
                 control=ControlRef(cls=ControlClass.TWEAK, id=2),
                 event_kind=EventKind.ROTATE,
-                effects=(AudioCardEffect(param_symbol="CAPTURE_VOLUME"),),
+                effects=(AudioCardEffect(param_symbol=Symbol("CAPTURE_VOLUME")),),
                 context=ctx,
                 enabled_when=idle,
             ),
@@ -716,7 +717,7 @@ class NamCapturePanel(Panel):
             BindingDecl(
                 control=ControlRef(cls=ControlClass.TWEAK, id=3),
                 event_kind=EventKind.ROTATE,
-                effects=(AudioCardEffect(param_symbol="MASTER"),),
+                effects=(AudioCardEffect(param_symbol=Symbol("MASTER")),),
                 context=ctx,
                 enabled_when=idle,
             ),
@@ -729,7 +730,7 @@ class NamCapturePanel(Panel):
             ),
         )
 
-    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
         """AudioCardEffect's target: CAPTURE_VOLUME/MASTER aren't LV2 params,
         but the edit shape (rotations -> commit) is identical."""
         if self._handler is None or symbol not in ("CAPTURE_VOLUME", "MASTER"):

@@ -18,13 +18,14 @@
 from dataclasses import dataclass
 from typing import Any, Callable, NamedTuple, NotRequired, Protocol, TypeAlias, TypedDict
 
+from common.parameter import Symbol
 from modalapi.parameter import Type as ParameterType
 
 
-# Domain identifiers. These are all `str` at runtime; the aliases exist so that
+# Domain identifiers. Symbol is a NewType (common.parameter) and is enforced;
+# the rest are `str` at runtime and exist so that
 # `dict[InstanceId, dict[Symbol, ParamData]]` reads as documentation.
 InstanceId: TypeAlias = str  # e.g. "BigMuffPi" (canonical, no leading slash)
-Symbol: TypeAlias = str  # e.g. "Tone", ":bypass"
 PositionKey: TypeAlias = str  # stringified float, e.g. "0.0", "0.5"
 SnapshotRef: TypeAlias = int | str  # snapshot index or name
 

@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from plugins.eq.band_spec import BandSpec
+from common.parameter import Symbol
 
 BAND_SPECS: tuple[BandSpec, ...] = (
-    BandSpec("L", "shelf", None, "fl", None, "boostl", "low",
+    BandSpec("L", "shelf", None, Symbol("fl"), None, Symbol("boostl"), "low",
              20.0, 14000.0, 0.1, 6.0, color=(255, 180, 80), gain_min=-50.0, gain_max=20.0),
-    BandSpec("1", "peak", None, "f1", "bw1", "boost1", None,
+    BandSpec("1", "peak", None, Symbol("f1"), Symbol("bw1"), Symbol("boost1"), None,
              20.0, 14000.0, 0.1, 6.0, color=(255, 230, 80), gain_min=-50.0, gain_max=20.0),
-    BandSpec("2", "peak", None, "f2", "bw2", "boost2", None,
+    BandSpec("2", "peak", None, Symbol("f2"), Symbol("bw2"), Symbol("boost2"), None,
              20.0, 14000.0, 0.1, 6.0, color=(130, 220, 110), gain_min=-50.0, gain_max=20.0),
-    BandSpec("H", "shelf", None, "fh", None, "boosth", "high",
+    BandSpec("H", "shelf", None, Symbol("fh"), None, Symbol("boosth"), "high",
              20.0, 14000.0, 0.1, 6.0, color=(210, 130, 230), gain_min=-50.0, gain_max=20.0),
 )

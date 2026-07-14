@@ -11,6 +11,7 @@ controller-manager extraction can't silently flatten the asymmetry:
 import common.token as Token
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.footswitch import Footswitch
+from common.parameter import Symbol
 
 
 def _key_of(hw, predicate):
@@ -27,15 +28,15 @@ def test_v1_bind_footswitch_and_analog(v1_system, make_plugin):
     hw.controllers[knob_key]
 
     fuzz = make_plugin("fuzz", category="Distortion")
-    fuzz.parameters[":bypass"].binding = fs_key
+    fuzz.parameters[Symbol(":bypass")].binding = fs_key
     tone = make_plugin("tone", category="Filter")
-    tone.parameters[":bypass"].binding = knob_key
+    tone.parameters[Symbol(":bypass")].binding = knob_key
 
     handler.current.pedalboard.plugins = [fuzz, tone]
     handler.bind_current_pedalboard()
 
     # Footswitch bound to its plugin's bypass param; plugin flagged.
-    assert fs.parameter is fuzz.parameters[":bypass"]
+    assert fs.parameter is fuzz.parameters[Symbol(":bypass")]
     assert fuzz.has_footswitch is True
 
     # Analog control surfaced in the LCD assignment dict with category + type.
@@ -57,7 +58,7 @@ def test_v1_bind_reorders_footswitch_plugins_to_end(v1_system, make_plugin):
     fs_key = _key_of(hw, lambda c: isinstance(c, Footswitch))
 
     fuzz = make_plugin("fuzz")          # footswitch-controlled
-    fuzz.parameters[":bypass"].binding = fs_key
+    fuzz.parameters[Symbol(":bypass")].binding = fs_key
     reverb = make_plugin("reverb")      # no controller binding
 
     # Footswitch plugin deliberately placed first.

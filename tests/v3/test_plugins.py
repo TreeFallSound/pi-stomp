@@ -11,7 +11,7 @@ import pytest
 import pistomp.switchstate as switchstate
 from pistomp.encoder_controller import EncoderController as Encoder
 from pistomp.footswitch import Footswitch
-from common.parameter import Parameter
+from common.parameter import Parameter, PortInfo, Symbol
 from modalapi.plugin import Plugin
 import common.token as Token
 from tests.types import SystemFixture
@@ -20,6 +20,7 @@ from plugins.customization import lookup
 from plugins.nam import NAM_URIS
 from uilib.text import TextWidget
 from tests.v3.nav_helpers import nav_click
+from common.parameter import BYPASS_SYMBOL
 
 
 # ---------------------------------------------------------------------------
@@ -36,13 +37,13 @@ def test_v3_bind_footswitch_to_plugin(v3_system: SystemFixture, make_plugin):
     binding_key = next(k for k, v in hw.controllers.items() if v is fs0)
 
     plugin = make_plugin("fuzz")
-    plugin.parameters[":bypass"].binding = binding_key
+    plugin.parameters[Symbol(":bypass")].binding = binding_key
 
     assert handler.current
     handler.current.pedalboard.plugins = [plugin]
     handler.bind_current_pedalboard()
 
-    assert fs0.parameter is plugin.parameters[":bypass"]
+    assert fs0.parameter is plugin.parameters[Symbol(":bypass")]
     assert plugin.has_footswitch is True
     assert plugin in [p for p in handler.current.pedalboard.plugins if p.has_footswitch]
 
@@ -61,7 +62,7 @@ def test_v3_bind_encoder_midi_to_plugin(v3_system: SystemFixture, make_plugin):
     binding_key = next(k for k, v in hw.controllers.items() if v is enc)
 
     plugin = make_plugin("wah")
-    plugin.parameters[":bypass"].binding = binding_key
+    plugin.parameters[Symbol(":bypass")].binding = binding_key
 
     assert handler.current
     handler.current.pedalboard.plugins = [plugin]
@@ -94,14 +95,14 @@ def test_v3_bind_does_not_reorder_footswitch_plugins(v3_system: SystemFixture, m
     fs_key = next(k for k, v in hw.controllers.items() if isinstance(v, Footswitch))
 
     fuzz = make_plugin("fuzz")  # footswitch-controlled, placed first
-    fuzz.parameters[":bypass"].binding = fs_key
+    fuzz.parameters[Symbol(":bypass")].binding = fs_key
     reverb = make_plugin("reverb")  # no controller binding
 
     assert handler.current
     handler.current.pedalboard.plugins = [fuzz, reverb]
     handler.bind_current_pedalboard()
 
-    assert hw.controllers[fs_key].parameter is fuzz.parameters[":bypass"]
+    assert hw.controllers[fs_key].parameter is fuzz.parameters[Symbol(":bypass")]
     assert fuzz.has_footswitch is True
     titles = [p.instance_id for p in handler.current.pedalboard.plugins]
     assert titles == ["fuzz", "reverb"], "v3 must not reorder footswitch plugins"
@@ -128,7 +129,7 @@ def test_v3_toggle_plugin_bypass_via_footswitch_sends_midi_cc(v3_system: SystemF
     assert fs.midi_CC is not None, "test requires a footswitch with a midi_CC binding"
 
     plugin = make_plugin("fuzz")
-    handler._bind_controller_to_param(plugin, plugin.parameters[":bypass"], fs)
+    handler._bind_controller_to_param(plugin, plugin.parameters[Symbol(":bypass")], fs)
     handler.current.pedalboard.plugins = [plugin]
 
     handler.toggle_plugin_bypass(None, plugin)
@@ -249,7 +250,7 @@ def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_p
     assert handler.current
 
     plugin = make_plugin("fuzz")
-    handler._bind_controller_to_param(plugin, plugin.parameters[":bypass"], hw.footswitches[0])
+    handler._bind_controller_to_param(plugin, plugin.parameters[Symbol(":bypass")], hw.footswitches[0])
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -295,7 +296,7 @@ def test_v3_bound_footswitch_emits_absolute_values_without_display(v3_system: Sy
     hw.midiout.send_message.reset_mock()
 
     plugin = make_plugin("fuzz")
-    fs.parameter = plugin.parameters[":bypass"]
+    fs.parameter = plugin.parameters[Symbol(":bypass")]
     assert not fs.drives_display
 
     for _ in range(3):
@@ -351,9 +352,9 @@ def test_v3_parameter_edit(v3_system: SystemFixture, nav_handler, make_parameter
     from modalapi.plugin import Plugin
     from modalapi.parameter import Parameter
 
-    bypass_info = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
+    bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
     bp = Parameter(bypass_info, False, None, "delay")
-    plugin = Plugin("delay", {"gain": gain_param, ":bypass": bp}, {}, "Delay")
+    plugin = Plugin("delay", {Symbol("gain"): gain_param, BYPASS_SYMBOL: bp}, {}, "Delay")
 
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
@@ -740,7 +741,7 @@ def test_v3_websocket_bypass_event_matches_canonical_id(v3_system):
         None,
         "fuzz",
     )
-    plugin.parameters[":bypass"] = bypass_param
+    plugin.parameters[BYPASS_SYMBOL] = bypass_param
     handler.current.pedalboard.plugins = [plugin]
 
     ws_bridge = v3_system.ws_bridge
@@ -775,8 +776,8 @@ def test_v3_footswitch_states_snapshot(v3_system: SystemFixture, make_plugin, sn
     fs3 = hw.footswitches[3]
     binding0 = next(k for k, v in hw.controllers.items() if v is fs0)
     binding1 = next(k for k, v in hw.controllers.items() if v is fs1)
-    on_plugin.parameters[":bypass"].binding = binding0
-    off_plugin.parameters[":bypass"].binding = binding1
+    on_plugin.parameters[Symbol(":bypass")].binding = binding0
+    off_plugin.parameters[Symbol(":bypass")].binding = binding1
 
     # fs2 unbound but already toggled on (e.g. tap-tempo enabled); fs3 unbound off.
     fs2.toggled = True
@@ -828,7 +829,7 @@ def test_v3_pedalboard_switch_multi_fs_same_plugin_show_bound_off_color(
 
     # --- "Beths": only fs0 bound to :bypass ---
     beths = make_plugin("beths", category="Distortion", bypassed=False)
-    beths.parameters[":bypass"].binding = binding0
+    beths.parameters[Symbol(":bypass")].binding = binding0
 
     handler.current.pedalboard.plugins = [beths]
     handler.bind_current_pedalboard()
@@ -890,7 +891,7 @@ def test_v3_websocket_bypass_event_with_multiword_id(v3_system):
         None,
         "Cabinet",
     )
-    plugin.parameters[":bypass"] = bypass_param
+    plugin.parameters[BYPASS_SYMBOL] = bypass_param
     handler.current.pedalboard.plugins = [plugin]
 
     ws_bridge = v3_system.ws_bridge

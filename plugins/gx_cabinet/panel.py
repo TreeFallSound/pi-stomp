@@ -12,6 +12,7 @@ from common.contexts import (
     ParamEffect,
     SelectionEditEffect,
 )
+from common.parameter import Symbol
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.layouts.arc_knob import ArcKnobWidget
 from plugins.layouts.mode_selector import ModeSelectorWidget
@@ -70,15 +71,15 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
     def snapshot_state(self) -> GxCabinetState:
         params = self.plugin.parameters
 
-        def _val(symbol: str, default: float) -> float:
+        def _val(symbol: Symbol, default: float) -> float:
             p = params.get(symbol)
-            return float(p.value) if p is not None and p.value is not None else default
+            return float(p.value) if p is not None else default
 
         return GxCabinetState(
-            level=_val("CLevel", 1.0),
-            bass=_val("CBass", 0.0),
-            treble=_val("CTreble", 0.0),
-            model=int(_val("c_model", 0.0)),
+            level=_val(Symbol("CLevel"), 1.0),
+            bass=_val(Symbol("CBass"), 0.0),
+            treble=_val(Symbol("CTreble"), 0.0),
+            model=int(_val(Symbol("c_model"), 0.0)),
         )
 
     def apply_state(self, state: GxCabinetState) -> None:
@@ -100,7 +101,7 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
             parent=self,
         )
 
-        model_param = self.plugin.parameters.get("c_model")
+        model_param = self.plugin.parameters.get(Symbol("c_model"))
         assert model_param is not None, "gx_cabinet plugin is missing its c_model parameter"
         self._mode_selector = ModeSelectorWidget(
             box=Box.xywh(4, MODE_Y0, _W - 8, MODE_H),
@@ -110,7 +111,7 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
             on_change=self._on_model_changed,
             parent=self,
         )
-        self._mode_selector.symbol = "c_model"
+        self._mode_selector.symbol = Symbol("c_model")
         self._mode_selector.set_value(self._state.model)
         self._mode_selector.set_badge(_BADGE_TWEAK2)
 
@@ -118,7 +119,7 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
         knob_w = RING_SPACING
         self._knob_level = ArcKnobWidget(
             box=Box.xywh(0 * col_w, KNOB_Y0, knob_w, KNOB_H),
-            symbol="CLevel",
+            symbol=Symbol("CLevel"),
             label="LEVEL",
             color=COLOR_LEVEL,
             minimum=0.5,
@@ -129,7 +130,7 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
         )
         self._knob_bass = ArcKnobWidget(
             box=Box.xywh(1 * col_w, KNOB_Y0, knob_w, KNOB_H),
-            symbol="CBass",
+            symbol=Symbol("CBass"),
             label="BASS",
             color=COLOR_BASS,
             minimum=-10.0,
@@ -140,7 +141,7 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
         )
         self._knob_treble = ArcKnobWidget(
             box=Box.xywh(2 * col_w, KNOB_Y0, knob_w, KNOB_H),
-            symbol="CTreble",
+            symbol=Symbol("CTreble"),
             label="TREBLE",
             color=COLOR_TREBLE,
             minimum=-10.0,
@@ -181,22 +182,22 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
             BindingDecl(
                 control=ControlRef(cls=ControlClass.TWEAK, id=2),
                 event_kind=EventKind.ROTATE,
-                effects=(ParamEffect(plugin=self.plugin, symbol="c_model"),),
+                effects=(ParamEffect(plugin=self.plugin, symbol=Symbol("c_model")),),
                 context=panel_ctx,
             ),
             BindingDecl(
                 control=ControlRef(cls=ControlClass.VOLUME, id=3),
                 event_kind=EventKind.ROTATE,
-                effects=(ParamEffect(plugin=self.plugin, symbol="CLevel"),),
+                effects=(ParamEffect(plugin=self.plugin, symbol=Symbol("CLevel")),),
                 context=volume_ctx,
             ),
         )
 
-    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
         step = _KNOB_STEPS.get(symbol)
         if step is not None:
             p = self.plugin.parameters.get(symbol)
-            if p is None or p.value is None:
+            if p is None:
                 return False
             new_val = max(p.minimum, min(p.maximum, float(p.value) + rotations * step))
             if new_val == p.value:
@@ -204,7 +205,7 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
             self.set_param(symbol, new_val)
         elif symbol == "c_model":
             p = self.plugin.parameters.get(symbol)
-            if p is None or p.value is None:
+            if p is None:
                 return False
             new_val = max(int(p.minimum), min(int(p.maximum), int(p.value) + int(rotations)))
             if new_val == p.value:
@@ -215,7 +216,7 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
         self._sync_after_edit(symbol)
         return True
 
-    def _sync_after_edit(self, symbol: str) -> None:
+    def _sync_after_edit(self, symbol: Symbol) -> None:
         knob = self._knobs_by_symbol.get(symbol)
         if knob is not None:
             knob.set_value(self._current(symbol))
@@ -239,9 +240,9 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
         self._knob_treble.set_bypassed(bypassed)
         self._update_readout()
 
-    def _current(self, symbol: str) -> float:
+    def _current(self, symbol: Symbol) -> float:
         p = self.plugin.parameters.get(symbol)
-        return float(p.value) if p is not None and p.value is not None else 0.0
+        return float(p.value) if p is not None else 0.0
 
     def _on_model_changed(self, new_model: int) -> None:
         """Wired as ModeSelectorWidget's on_change — fires from its own
@@ -249,11 +250,11 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
         self._state = self.snapshot_state()
         self._update_readout()
 
-    def _reset_to_default(self, symbol: str) -> None:
+    def _reset_to_default(self, symbol: Symbol) -> None:
         p = self.plugin.parameters.get(symbol)
-        if p is None or p.default is None:
+        if p is None:
             return
-        self.set_param(symbol, float(p.default))
+        self.set_param(symbol, p.default)
         self._sync_after_edit(symbol)
 
     def _update_readout(self) -> None:

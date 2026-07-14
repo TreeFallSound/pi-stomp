@@ -18,6 +18,7 @@ from plugins.tap_reverb import TAP_REVERB_URI
 from plugins.tap_reverb.panel import TapReverbPanel
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click
+from common.parameter import PortInfo, Symbol
 
 # ── mode labels (43 values from the plugin TTL) ─────────────────────────────
 
@@ -90,7 +91,7 @@ def _param(
     instance_id: str = "reverb",
     enum_values: list | None = None,
 ) -> Parameter:
-    info: dict = {
+    info: PortInfo = {
         "shortName": symbol,
         "symbol": symbol,
         "ranges": {"minimum": minimum, "maximum": maximum, "default": default},
@@ -103,17 +104,17 @@ def _param(
 
 def make_tap_reverb_plugin(instance_id: str = "reverb") -> Plugin:
     """Build a Plugin instance mirroring TAP Reverberator's port layout."""
-    params: dict[str, Parameter] = {
-        ":bypass": Parameter(
+    params: dict[Symbol, Parameter] = {
+        Symbol(":bypass"): Parameter(
             {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1, "default": 0}},
             False,
             None,
             instance_id,
         ),
-        "decay": _param("decay", 2800.0, 0.0, 10000.0, 2800.0, instance_id),
-        "drylevel": _param("drylevel", -4.0, -70.0, 10.0, -4.0, instance_id),
-        "wetlevel": _param("wetlevel", -12.0, -70.0, 10.0, -12.0, instance_id),
-        "mode": _param("mode", 0.0, 0.0, 42.0, 0.0, instance_id, enum_values=_MODE_SCALEPOINTS),
+        Symbol("decay"): _param("decay", 2800.0, 0.0, 10000.0, 2800.0, instance_id),
+        Symbol("drylevel"): _param("drylevel", -4.0, -70.0, 10.0, -4.0, instance_id),
+        Symbol("wetlevel"): _param("wetlevel", -12.0, -70.0, 10.0, -12.0, instance_id),
+        Symbol("mode"): _param("mode", 0.0, 0.0, 42.0, 0.0, instance_id, enum_values=_MODE_SCALEPOINTS),
     }
     plugin = Plugin(instance_id, params, {}, "Reverb", uri=TAP_REVERB_URI)
     plugin.has_footswitch = False

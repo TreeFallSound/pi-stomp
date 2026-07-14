@@ -12,6 +12,7 @@ from common.contexts import (
     ParamEffect,
     SelectionEditEffect,
 )
+from common.parameter import Symbol
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.layouts.arc_knob import ArcKnobWidget
 from plugins.layouts.mode_selector import ModeSelectorWidget
@@ -74,15 +75,15 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
     def snapshot_state(self) -> TapReverbState:
         params = self.plugin.parameters
 
-        def _val(symbol: str, default: float) -> float:
+        def _val(symbol: Symbol, default: float) -> float:
             p = params.get(symbol)
-            return float(p.value) if p is not None and p.value is not None else default
+            return float(p.value) if p is not None else default
 
         return TapReverbState(
-            decay=_val("decay", 2800.0),
-            drylevel=_val("drylevel", -4.0),
-            wetlevel=_val("wetlevel", -12.0),
-            mode=int(_val("mode", 0.0)),
+            decay=_val(Symbol("decay"), 2800.0),
+            drylevel=_val(Symbol("drylevel"), -4.0),
+            wetlevel=_val(Symbol("wetlevel"), -12.0),
+            mode=int(_val(Symbol("mode"), 0.0)),
         )
 
     def apply_state(self, state: TapReverbState) -> None:
@@ -104,7 +105,7 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
             parent=self,
         )
 
-        mode_param = self.plugin.parameters.get("mode")
+        mode_param = self.plugin.parameters.get(Symbol("mode"))
         assert mode_param is not None, "tap_reverb plugin is missing its mode parameter"
         self._mode_selector = ModeSelectorWidget(
             box=Box.xywh(4, MODE_Y0, _W - 8, MODE_H),
@@ -121,7 +122,7 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         knob_w = RING_SPACING
         self._knob_decay = ArcKnobWidget(
             box=Box.xywh(0 * col_w, KNOB_Y0, knob_w, KNOB_H),
-            symbol="decay",
+            symbol=Symbol("decay"),
             label="DECAY",
             color=COLOR_DECAY,
             minimum=0.0,
@@ -132,7 +133,7 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         )
         self._knob_dry = ArcKnobWidget(
             box=Box.xywh(1 * col_w, KNOB_Y0, knob_w, KNOB_H),
-            symbol="drylevel",
+            symbol=Symbol("drylevel"),
             label="DRY",
             color=COLOR_DRY,
             minimum=-70.0,
@@ -143,7 +144,7 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         )
         self._knob_wet = ArcKnobWidget(
             box=Box.xywh(2 * col_w, KNOB_Y0, knob_w, KNOB_H),
-            symbol="wetlevel",
+            symbol=Symbol("wetlevel"),
             label="WET",
             color=COLOR_WET,
             minimum=-70.0,
@@ -184,22 +185,22 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
             BindingDecl(
                 control=ControlRef(cls=ControlClass.TWEAK, id=2),
                 event_kind=EventKind.ROTATE,
-                effects=(ParamEffect(plugin=self.plugin, symbol="mode"),),
+                effects=(ParamEffect(plugin=self.plugin, symbol=Symbol("mode")),),
                 context=panel_ctx,
             ),
             BindingDecl(
                 control=ControlRef(cls=ControlClass.VOLUME, id=3),
                 event_kind=EventKind.ROTATE,
-                effects=(ParamEffect(plugin=self.plugin, symbol="decay"),),
+                effects=(ParamEffect(plugin=self.plugin, symbol=Symbol("decay")),),
                 context=volume_ctx,
             ),
         )
 
-    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
         step = _KNOB_STEPS.get(symbol)
         if step is not None:
             p = self.plugin.parameters.get(symbol)
-            if p is None or p.value is None:
+            if p is None:
                 return False
             new_val = max(p.minimum, min(p.maximum, float(p.value) + rotations * step))
             if new_val == p.value:
@@ -207,7 +208,7 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
             self.set_param(symbol, new_val)
         elif symbol == "mode":
             p = self.plugin.parameters.get(symbol)
-            if p is None or p.value is None:
+            if p is None:
                 return False
             new_val = max(int(p.minimum), min(int(p.maximum), int(p.value) + int(rotations)))
             if new_val == p.value:
@@ -218,7 +219,7 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         self._sync_after_edit(symbol)
         return True
 
-    def _sync_after_edit(self, symbol: str) -> None:
+    def _sync_after_edit(self, symbol: Symbol) -> None:
         knob = self._knobs_by_symbol.get(symbol)
         if knob is not None:
             knob.set_value(self._current(symbol))
@@ -242,9 +243,9 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         self._knob_wet.set_bypassed(bypassed)
         self._update_readout()
 
-    def _current(self, symbol: str) -> float:
+    def _current(self, symbol: Symbol) -> float:
         p = self.plugin.parameters.get(symbol)
-        return float(p.value) if p is not None and p.value is not None else 0.0
+        return float(p.value) if p is not None else 0.0
 
     def _on_mode_changed(self, new_mode: int) -> None:
         """Wired as ModeSelectorWidget's on_change — fires from its own
@@ -252,11 +253,11 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
         self._state = self.snapshot_state()
         self._update_readout()
 
-    def _reset_to_default(self, symbol: str) -> None:
+    def _reset_to_default(self, symbol: Symbol) -> None:
         p = self.plugin.parameters.get(symbol)
-        if p is None or p.default is None:
+        if p is None:
             return
-        self.set_param(symbol, float(p.default))
+        self.set_param(symbol, p.default)
         self._sync_after_edit(symbol)
 
     def _update_readout(self) -> None:

@@ -20,13 +20,25 @@ import sys
 import urllib.parse
 from typing import Optional
 
-import common.token as Token
 
-import common.util as util
-from common.parameter import Parameter
+from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 import modalapi.plugin as Plugin
 from modalapi.connections import Connection, build_connection
 from modalapi.plugin_customization import Customizer, default_customizer
+
+
+def _bypass_info() -> PortInfo:
+    # mod-ui reports bypass as a bool alongside the ports, not as a port row.
+    return PortInfo(shortName="bypass", symbol=BYPASS_SYMBOL, ranges={"minimum": 0.0, "maximum": 1.0})
+
+
+def _control_inputs(plugin_info: dict | None) -> list[PortInfo] | None:
+    """None means the LV2 metadata is absent, distinct from a plugin that
+    genuinely exposes no control inputs."""
+    try:
+        return (plugin_info or {})["ports"]["control"]["input"]
+    except (KeyError, TypeError):
+        return None
 
 
 class Pedalboard:
@@ -103,34 +115,26 @@ class Pedalboard:
                     plugin_dict[plugin_uri] = plugin_info
 
             category = None
-            cat = util.DICT_GET(plugin_info, Token.CATEGORY)
+            cat = (plugin_info or {}).get("category")
             if cat is not None and len(cat) > 0:
                 category = cat[0]
 
-            parameters = {}
-
-            # mod-ui reports bypass as a bool alongside the ports, not as a port row.
-            bypass_info = {
-                "shortName": "bypass",
-                "symbol": Token.COLON_BYPASS,
-                "ranges": {"minimum": 0, "maximum": 1},
-            }
-            parameters[Token.COLON_BYPASS] = Parameter(
-                bypass_info,
+            parameters: dict[Symbol, Parameter] = {}
+            parameters[BYPASS_SYMBOL] = Parameter(
+                _bypass_info(),
                 1.0 if pb_plugin.get("bypassed") else 0.0,
                 self._binding(pb_plugin.get("bypassCC")),
                 instance_id,
             )
 
-            try:
-                plugin_params = (plugin_info or {})[Token.PORTS][Token.CONTROL][Token.INPUT]
-            except KeyError:
+            plugin_params = _control_inputs(plugin_info)
+            if plugin_params is None:
                 logging.warning("plugin port info not found, could be missing LV2 for: %s", instance_id)
                 plugin_params = []
 
-            by_symbol = {util.DICT_GET(pp, Token.SYMBOL): pp for pp in plugin_params}
+            by_symbol = {pp["symbol"]: pp for pp in plugin_params}
             for port in pb_plugin.get("ports", []):
-                symbol = port["symbol"]
+                symbol = Symbol(port["symbol"])
                 pp = by_symbol.get(symbol)
                 if pp is None:
                     continue
@@ -174,7 +178,7 @@ class Pedalboard:
         # Capture snapshot of all parameter values for Reset
         for plugin in self.plugins:
             plugin.pedalboard_snapshot = {
-                sym: float(p.value) if p.value is not None else 0.0 for sym, p in plugin.parameters.items()
+                sym: float(p.value) for sym, p in plugin.parameters.items()
             }
 
         self.hydrated = True
@@ -190,31 +194,21 @@ class Pedalboard:
             return None
 
         category = None
-        cat = util.DICT_GET(info, Token.CATEGORY)
+        cat = info.get("category")
         if cat and len(cat) > 0:
             category = cat[0]
 
-        parameters: dict[str, Parameter] = {}
+        parameters: dict[Symbol, Parameter] = {}
+        parameters[BYPASS_SYMBOL] = Parameter(_bypass_info(), 0.0, None, instance_id)
 
-        bypass_info: dict = {
-            "shortName": "bypass",
-            "symbol": Token.COLON_BYPASS,
-            "ranges": {"minimum": 0, "maximum": 1},
-        }
-        parameters[Token.COLON_BYPASS] = Parameter(bypass_info, 0.0, None, instance_id)
-
-        try:
-            plugin_params = info[Token.PORTS][Token.CONTROL][Token.INPUT]
-        except KeyError:
-            plugin_params = []
-
-        for pp in plugin_params:
-            sym = util.DICT_GET(pp, Token.SYMBOL)
+        for pp in _control_inputs(info) or []:
+            sym = pp.get("symbol")
             if not sym:
                 continue
-            ranges = util.DICT_GET(pp, Token.RANGES) or {}
-            default_val = ranges.get("default")
-            parameters[sym] = Parameter(pp, float(default_val) if default_val is not None else 0.0, None, instance_id)
+            default_val = (pp.get("ranges") or {}).get("default")
+            parameters[Symbol(sym)] = Parameter(
+                pp, float(default_val) if default_val is not None else 0.0, None, instance_id
+            )
 
         # TODO: extra_data can't be populated here — mod-ui's `add` WS message
         # doesn't include the numeric `pedal:instanceNumber`, so we can't address

@@ -25,6 +25,7 @@ from pistomp.footswitch import Footswitch
 from pistomp.footswitch_chords import FootswitchChords
 from pistomp.input.event import ControllerEvent, SwitchEventKind
 from pistomp.input.sink import InputSink
+from common.parameter import Symbol
 
 if TYPE_CHECKING:
     from modalapi.websocket_bridge import AsyncWebSocketBridge
@@ -209,7 +210,7 @@ class Handler(InputSink):
         # No-op for handlers without a tuner (v1/generic); Modhandler overrides.
         pass
 
-    def is_symbol_locked(self, instance_id: str, symbol: str) -> bool:
+    def is_symbol_locked(self, instance_id: str, symbol: Symbol) -> bool:
         return False
 
     def show_fullscreen_panel(self, plugin, panel_cls) -> None:

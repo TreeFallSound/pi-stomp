@@ -11,6 +11,7 @@ import common.token as Token
 from pistomp.input.event import EncoderEvent
 from tests.conftest import FakeWebSocketBridge
 from tests.types import SystemFixture
+from common.parameter import Symbol
 
 
 def _blend_encoder(hw):
@@ -481,7 +482,7 @@ def test_midi_bound_param_excluded_from_blend_sweep(blend_system: SystemFixture)
     test_ws = cast(FakeWebSocketBridge, handler.ws_bridge)
 
     # Attach a MIDI binding to Tone on the current pedalboard's BigMuff
-    tone_param = handler.current.pedalboard.plugins[0].parameters["Tone"]
+    tone_param = handler.current.pedalboard.plugins[0].parameters[Symbol("Tone")]
     tone_param.binding = "0:74"  # channel 0, CC 74
 
     # Re-prepare to pick up the binding, then re-activate

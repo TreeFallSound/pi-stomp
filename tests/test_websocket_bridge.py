@@ -6,6 +6,7 @@ import queue
 import pytest
 
 from modalapi.websocket_bridge import AsyncWebSocketBridge, WebSocketWorker
+from common.parameter import Symbol
 
 
 # ---------------------------------------------------------------------------
@@ -66,15 +67,15 @@ class _FakeWs:
 
 def test_send_parameter_formats_message():
     bridge = _make_bridge()
-    bridge.send_parameter("CollisionDrive", "DRIVE", 0.5)
+    bridge.send_parameter("CollisionDrive", Symbol("DRIVE"), 0.5)
     assert bridge.command_queue.get_nowait() == "param_set /graph/CollisionDrive/DRIVE 0.5"
 
 
 def test_clear_queue_returns_count_and_empties():
     bridge = _make_bridge()
-    bridge.send_parameter("a", "x", 0.1)
-    bridge.send_parameter("b", "y", 0.2)
-    bridge.send_parameter("c", "z", 0.3)
+    bridge.send_parameter("a", Symbol("x"), 0.1)
+    bridge.send_parameter("b", Symbol("y"), 0.2)
+    bridge.send_parameter("c", Symbol("z"), 0.3)
     assert bridge.clear_queue() == 3
     assert bridge.command_queue.empty()
 
@@ -87,8 +88,8 @@ def test_clear_queue_on_empty_returns_zero():
 def test_get_queue_depth_reflects_sends():
     bridge = _make_bridge()
     assert bridge.get_queue_depth() == 0
-    bridge.send_parameter("a", "x", 0.0)
-    bridge.send_parameter("b", "y", 0.0)
+    bridge.send_parameter("a", Symbol("x"), 0.0)
+    bridge.send_parameter("b", Symbol("y"), 0.0)
     assert bridge.get_queue_depth() == 2
 
 
@@ -204,13 +205,13 @@ def test_send_bpm_float():
 
 def test_send_parameter_wire_format():
     bridge = _make_bridge()
-    bridge.send_parameter("fuzz", ":bypass", 1.0)
+    bridge.send_parameter("fuzz", Symbol(":bypass"), 1.0)
     assert _drain(bridge) == ["param_set /graph/fuzz/:bypass 1.0"]
 
 
 def test_send_parameter_float_value():
     bridge = _make_bridge()
-    bridge.send_parameter("delay", "gain", 0.75)
+    bridge.send_parameter("delay", Symbol("gain"), 0.75)
     assert _drain(bridge) == ["param_set /graph/delay/gain 0.75"]
 
 
@@ -218,16 +219,16 @@ def test_send_parameter_small_value_uses_repr_not_e_notation():
     # Floats like 0.001 should serialize as "0.001", not "1e-3". str(float) is OK here;
     # if MOD-UI ever rejects scientific notation, this test will catch a regression.
     bridge = _make_bridge()
-    bridge.send_parameter("delay", "gain", 0.001)
+    bridge.send_parameter("delay", Symbol("gain"), 0.001)
     sent = _drain(bridge)
     assert sent == ["param_set /graph/delay/gain 0.001"], sent
 
 
 def test_multiple_sends_preserve_order():
     bridge = _make_bridge()
-    bridge.send_parameter("a", "x", 1.0)
+    bridge.send_parameter("a", Symbol("x"), 1.0)
     bridge.send_bpm(60)
-    bridge.send_parameter("b", "y", 2.0)
+    bridge.send_parameter("b", Symbol("y"), 2.0)
     assert _drain(bridge) == [
         "param_set /graph/a/x 1.0",
         "transport-bpm 60",
@@ -310,5 +311,5 @@ def test_parked_send_loop_is_cancellable():
 def test_notify_before_worker_starts_is_a_noop():
     # No event loop yet; notify() must not raise. Queued messages are flushed on connect.
     bridge = _make_bridge()
-    bridge.send_parameter("a", "x", 1.0)
+    bridge.send_parameter("a", Symbol("x"), 1.0)
     assert bridge.get_queue_depth() == 1

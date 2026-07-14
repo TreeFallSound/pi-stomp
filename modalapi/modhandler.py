@@ -43,7 +43,7 @@ from common.contexts import (
     ControlRef,
     EventKind,
 )
-from common.parameter import Parameter
+from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from blend.input_controller import InputController
 import modalapi.pedalboard as Pedalboard
 import modalapi.wifi as Wifi
@@ -240,15 +240,18 @@ class Modhandler(Handler):
         card happens in `handle()`, not via a callback."""
         if self.hardware is None:
             return
+        master = self.audiocard.MASTER
+        if master is None:  # card exposes no master mixer control (e.g. hifiberry)
+            return
         for enc in self.hardware.encoders:
             if enc.type != Token.VOLUME or not isinstance(enc, EncoderController):
                 continue
-            value = self.audiocard.get_volume_parameter(self.audiocard.MASTER)
-            info = {
-                Token.NAME: "Output Volume",
-                Token.SYMBOL: self.audiocard.MASTER,
-                Token.RANGES: {Token.MINIMUM: -25.75, Token.MAXIMUM: 6.0},
-            }
+            value = self.audiocard.get_volume_parameter(master)
+            info = PortInfo(
+                name="Output Volume",
+                symbol=Symbol(master),
+                ranges={"minimum": -25.75, "maximum": 6.0},
+            )
             volume_param = Parameter(info, value, None)
             volume_param.unit_symbol = "dB"
             enc.bind_to_parameter(volume_param)
@@ -662,7 +665,7 @@ class Modhandler(Handler):
             if self._current is not None:
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
-                        plugin.set_param_value(msg.symbol, msg.value)
+                        plugin.set_param_value(Symbol(msg.symbol), msg.value)
                         panel = self._lcd.pstack.find_panel_type(PluginPanel) if self._lcd is not None else None
                         if panel is not None and panel.plugin is plugin:
                             panel.apply_state(panel.snapshot_state())
@@ -1058,7 +1061,7 @@ class Modhandler(Handler):
             # which send MIDI CC → mod-host internally → feedback → msg_callback.
             value = plugin.toggle_bypass()
             if not self._is_pedalboard_loading:
-                self.ws_bridge.send_parameter(plugin.instance_id, ":bypass", value)
+                self.ws_bridge.send_parameter(plugin.instance_id, BYPASS_SYMBOL, value)
             self.lcd.toggle_plugin(widget, plugin)
 
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
@@ -1361,7 +1364,7 @@ class Modhandler(Handler):
 
     def _create_audio_parameter(self, name, symbol, min_val, max_val):
         value = self.audiocard.get_volume_parameter(symbol)
-        info = {Token.NAME: name, Token.SYMBOL: symbol, Token.RANGES: {Token.MINIMUM: min_val, Token.MAXIMUM: max_val}}
+        info = PortInfo(name=name, symbol=Symbol(symbol), ranges={"minimum": min_val, "maximum": max_val})
         param = Parameter(info, value, None)
         param.unit_symbol = "dB"
         return param

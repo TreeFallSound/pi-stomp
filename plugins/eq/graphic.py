@@ -22,6 +22,7 @@ from common.contexts import (
     SelectionEditEffect,
 )
 from common.param_roles import ParamRole, edit_value
+from common.parameter import Symbol
 from pistomp.input.event import ControllerEvent, EncoderEvent
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import GraphicBandSpec
@@ -352,7 +353,7 @@ class GraphicBandSelectable(Widget):
     def _draw_selection(self, ctx) -> None:
         pass
 
-    def symbol_for(self, role: ParamRole) -> str | None:
+    def symbol_for(self, role: ParamRole) -> Symbol | None:
         return self.band.gain_sym if role is ParamRole.GAIN_DB else None
 
 
@@ -376,9 +377,9 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
     def snapshot_state(self) -> GraphicEqState:
         params = self.plugin.parameters
 
-        def _val(symbol: str, default: float) -> float:
+        def _val(symbol: Symbol, default: float) -> float:
             p = params.get(symbol)
-            return float(p.value) if p is not None and p.value is not None else default
+            return float(p.value) if p is not None else default
 
         bands: dict[str, GraphicBandParams] = {}
         for band in self.bands:
@@ -387,7 +388,7 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
                 gain_db=_val(band.gain_sym, 0.0),
             )
         return GraphicEqState(
-            plugin_enabled=bool(_val("enable", 1.0)),
+            plugin_enabled=bool(_val(Symbol("enable"), 1.0)),
             bands=bands,
         )
 
@@ -454,7 +455,7 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
             ),
         )
 
-    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
         band = self.selected_band
         if band is None or symbol != band.gain_sym:
             return super().edit_symbol(symbol, rotations)

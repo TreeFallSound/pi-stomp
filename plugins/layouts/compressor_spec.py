@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from common.parameter import Symbol
 
 
 @dataclass(frozen=True)
 class ArcSpec:
-    symbol: str
+    symbol: Symbol
     label: str
     color: tuple[int, int, int]
     display_fn: Callable[[float], str]
@@ -14,10 +15,10 @@ class ArcSpec:
 
 @dataclass(frozen=True)
 class CompressorSpec:
-    thr_sym: str
-    rat_sym: str
-    mak_sym: str
-    kn_sym: str | None = None
+    thr_sym: Symbol
+    rat_sym: Symbol
+    mak_sym: Symbol
+    kn_sym: Symbol | None = None
     in_audio_sym: str = "lv2_audio_in_1"
     out_audio_sym: str = "lv2_audio_out_1"
 

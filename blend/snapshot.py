@@ -27,6 +27,7 @@ from blend.types import (
     SnapshotStateDict,
     SnapshotsJson,
 )
+from common.parameter import BYPASS_SYMBOL
 
 
 class SnapshotManager:
@@ -77,7 +78,7 @@ class SnapshotManager:
         for instance_id, plugin_data in snapshot_data.items():
             params = dict(plugin_data.get("ports", {}))
             # :bypass = 1.0 means bypassed, 0.0 means active (see plugin.py:49)
-            params[":bypass"] = 1.0 if plugin_data.get("bypassed", False) else 0.0
+            params[BYPASS_SYMBOL] = 1.0 if plugin_data.get("bypassed", False) else 0.0
             state[instance_id] = params
 
         logging.debug(f"Parsed snapshot {snapshot_index}: {len(state)} plugins")

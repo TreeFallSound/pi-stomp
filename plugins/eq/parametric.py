@@ -22,6 +22,7 @@ from common.contexts import (
     SelectionEditEffect,
 )
 from common.param_roles import ParamRole, edit_value
+from common.parameter import Symbol
 from pistomp.input.event import ControllerEvent, EncoderEvent
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import BandSpec
@@ -719,7 +720,7 @@ class BandSelectable(Widget):
     def _draw_selection(self, ctx) -> None:
         pass
 
-    def symbol_for(self, role: ParamRole) -> str | None:
+    def symbol_for(self, role: ParamRole) -> Symbol | None:
         match role:
             case ParamRole.GAIN_DB:
                 return self.band.gain_sym
@@ -776,9 +777,9 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
     def snapshot_state(self) -> EqState:
         params = self.plugin.parameters
 
-        def _val(symbol: str, default: float) -> float:
+        def _val(symbol: Symbol, default: float) -> float:
             p = params.get(symbol)
-            return float(p.value) if p is not None and p.value is not None else default
+            return float(p.value) if p is not None else default
 
         bands: dict[str, BandParams] = {}
         for band in self.bands:
@@ -790,8 +791,8 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
                 gain_db=_val(band.gain_sym, 0.0) if band.gain_sym else 0.0,
             )
         return EqState(
-            plugin_enabled=bool(_val("enable", 1.0)),
-            global_gain_db=_val("gain", 0.0),
+            plugin_enabled=bool(_val(Symbol("enable"), 1.0)),
+            global_gain_db=_val(Symbol("gain"), 0.0),
             bands=bands,
         )
 
@@ -859,7 +860,7 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
             ),
         )
 
-    def edit_symbol(self, symbol: str, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
         band = self.selected_band
         if band is None:
             return False

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from plugins.eq.band_spec import BandSpec
+from common.parameter import Symbol
 
 # Freq ranges per band: 40-280, 100-500, 200-1000, 400-2800, 1000-5000,
 # 3000-9000, 6000-18000, 10000-20000 Hz.
@@ -33,9 +34,9 @@ BAND_SPECS: tuple[BandSpec, ...] = tuple(
         name=f"B{i+1}",
         kind="peak",
         enable_sym=None,
-        freq_sym=f"Band{i+1}FreqHz",
+        freq_sym=Symbol(f"Band{i+1}FreqHz"),
         q_sym=None,
-        gain_sym=f"Band{i+1}GainDb",
+        gain_sym=Symbol(f"Band{i+1}GainDb"),
         shelf_side=None,
         freq_min=fmin,
         freq_max=fmax,

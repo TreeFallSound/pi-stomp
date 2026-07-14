@@ -19,7 +19,7 @@ import sys
 
 import common.token as Token
 import common.util as Util
-from common.parameter import Parameter, TTL_PROPERTIES, TTL_INTEGER
+from common.parameter import Parameter, PortInfo, Symbol, TTL_INTEGER
 import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.encoder_controller as EncoderController
 import pistomp.footswitch as Footswitch
@@ -360,15 +360,12 @@ class Hardware(ABC):
 
     def create_external_parameter(self, controller, port_name, midi_channel, midi_cc):
         name = f"{port_name}:{midi_cc}"
-        info = {
-            Token.NAME: name,
-            Token.SYMBOL: f"external_{port_name}_{midi_cc}",
-            Token.RANGES: {
-                Token.MINIMUM: 0,
-                Token.MAXIMUM: 127
-            },
-            TTL_PROPERTIES: [TTL_INTEGER]
-        }
+        info = PortInfo(
+            name=name,
+            symbol=Symbol(f"external_{port_name}_{midi_cc}"),
+            ranges={"minimum": 0, "maximum": 127},
+            properties=[TTL_INTEGER],
+        )
         val = getattr(controller, 'midi_value', 0)
         return Parameter(info, val, f"{midi_channel}:{midi_cc}", EXTERNAL_INSTANCE_ID)
 

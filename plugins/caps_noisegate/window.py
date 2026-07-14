@@ -10,15 +10,16 @@ Control ports (from the plugin TTL):
 from __future__ import annotations
 
 from plugins.multiband_menu import MultibandWindow, ParamSlot
+from common.parameter import Symbol
 
 
 class CapsNoisegateWindow(MultibandWindow):
     def build_slots(self):
         return [
-            ParamSlot("open", "Open", (255, 180, 80), display_fn=self._fmt_db),
-            ParamSlot("close", "Close", (210, 130, 230), display_fn=self._fmt_db),
-            ParamSlot("attack", "Attack", (130, 220, 110), display_fn=self._fmt_ms),
-            ParamSlot("mains", "Mains", (110, 200, 230), display_fn=self._fmt_hz),
+            ParamSlot(Symbol("open"), "Open", (255, 180, 80), display_fn=self._fmt_db),
+            ParamSlot(Symbol("close"), "Close", (210, 130, 230), display_fn=self._fmt_db),
+            ParamSlot(Symbol("attack"), "Attack", (130, 220, 110), display_fn=self._fmt_ms),
+            ParamSlot(Symbol("mains"), "Mains", (110, 200, 230), display_fn=self._fmt_hz),
         ]
 
     @staticmethod

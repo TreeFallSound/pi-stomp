@@ -56,7 +56,7 @@ def test_toggled_parameter_gets_two_steps():
 
 def test_enumeration_parameter_gets_one_step_per_entry():
     p = _param(0, 2, 0, Type.ENUMERATION)
-    p.enum_values = [("a", 0), ("b", 1), ("c", 2)]
+    p.enum_values = [{"label": "a", "value": 0}, {"label": "b", "value": 1}, {"label": "c", "value": 2}]
     assert resolution(p) == 3
 
 

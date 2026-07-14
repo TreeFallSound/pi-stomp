@@ -22,6 +22,7 @@ from plugins.fil4.band_spec import BAND_SPECS, PLUGIN_ENABLE_SYM
 from plugins.fil4.panel import Fil4Panel
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click
+from common.parameter import PortInfo, Symbol
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +41,7 @@ class _FakeEnc(Controller):
 def _param(
     symbol: str, value: float, minimum: float = 0.0, maximum: float = 1.0, instance_id: str = "fil4"
 ) -> Parameter:
-    info = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
+    info: PortInfo = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
     return Parameter(info, value, None, instance_id)
 
 
@@ -50,13 +51,13 @@ def make_fil4_plugin(instance_id: str = "fil4") -> Plugin:
     Provides every symbol the EQ panel reads, with neutral defaults
     (all bands disabled, geometric-mean freq, Q=1.0, gain=0 dB).
     """
-    params: dict[str, Parameter] = {}
+    params: dict[Symbol, Parameter] = {}
 
     # Plugin-wide
-    bypass_info = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
-    params[":bypass"] = Parameter(bypass_info, False, None, instance_id)
+    bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
+    params[Symbol(":bypass")] = Parameter(bypass_info, False, None, instance_id)
     params[PLUGIN_ENABLE_SYM] = _param(PLUGIN_ENABLE_SYM, 1.0, instance_id=instance_id)
-    params["gain"] = _param("gain", 0.0, -18.0, 18.0, instance_id=instance_id)
+    params[Symbol("gain")] = _param("gain", 0.0, -18.0, 18.0, instance_id=instance_id)
 
     # Per-band
     for b in BAND_SPECS:

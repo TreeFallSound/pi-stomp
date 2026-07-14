@@ -8,6 +8,7 @@ from uilib.glyphs.arc_dial import paint_arc_dial
 from uilib.glyphs.arc_ring import ArcRingGlyph
 from uilib.misc import INACTIVE_SHADE, shade_color
 from uilib.widget import Widget
+from common.parameter import Symbol
 
 _ARC_RADIUS = 27
 _ARC_RING_HALF = 3.0
@@ -21,7 +22,7 @@ _RETICULE_DIM = (150, 118, 58)
 
 
 class ArcSelectable(Widget):
-    def __init__(self, panel, index: int, symbol: str) -> None:
+    def __init__(self, panel, index: int, symbol: Symbol) -> None:
         super().__init__(box=Box.xywh(0, 0, 1, 1), parent=panel, visible=True)
         self._panel = panel
         self.index = index
@@ -42,7 +43,7 @@ class ArcSelectable(Widget):
     def scroll_into_view(self) -> bool:
         return False
 
-    def symbol_for(self, role: ParamRole) -> str | None:
+    def symbol_for(self, role: ParamRole) -> Symbol | None:
         return self.symbol
 
     def _draw(self, ctx) -> None:
@@ -71,7 +72,7 @@ class ArcColumnWidget(Widget):
         self._values: list[float | None] = [None] * len(arcs)
         self.sync()
 
-    def _param(self, symbol: str) -> Parameter | None:
+    def _param(self, symbol: Symbol) -> Parameter | None:
         return self._owner.plugin.parameters.get(symbol)
 
     def sync(self) -> None:
@@ -80,7 +81,7 @@ class ArcColumnWidget(Widget):
             self._values[i] = p.value if p is not None else None
         self.refresh()
 
-    def sync_symbol(self, symbol: str) -> None:
+    def sync_symbol(self, symbol: Symbol) -> None:
         for i, spec in enumerate(self._arcs):
             if spec.symbol == symbol:
                 p = self._param(symbol)
