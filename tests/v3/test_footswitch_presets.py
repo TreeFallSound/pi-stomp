@@ -20,18 +20,17 @@ Covers four behaviors:
 import yaml
 from unittest.mock import MagicMock
 
-from common.parameter import Parameter
+from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo
 from tests.types import SystemFixture
 
 
 def _plugin_param() -> Parameter:
-    p = MagicMock(spec=Parameter)
-    p.symbol = ":bypass"
-    p.instance_id = "/Reverb"
-    p.value = 0
-    p.minimum = 0
-    p.maximum = 1
-    return p
+    info: PortInfo = {
+        "shortName": "bypass",
+        "symbol": BYPASS_SYMBOL,
+        "ranges": {"minimum": 0, "maximum": 1},
+    }
+    return Parameter(info, 0, None, "/Reverb")
 
 
 class TestPresetFootswitchLabel:

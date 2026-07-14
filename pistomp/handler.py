@@ -93,21 +93,19 @@ class Handler(InputSink):
     def add_lcd(self, lcd):
         raise NotImplementedError()
 
-    def open_parameter_dialog(self, parameter: "Parameter", on_change: Callable[[], None] | None = None) -> None:
+    def open_parameter_dialog(self, parameter: "Parameter") -> None:
         """NAV CLICK on a selection resolving to a single symbol: open the
         same user-dismissable editor the generic plugin-parameter-menu uses.
-        `on_change` fires after every commit (including each rotation tick,
-        not just on close) — the panel's own resync hook, since this dialog
-        writes straight to plugin.parameters and has no other way to tell a
-        panel open underneath it to repaint from the new value."""
+        The dialog writes `parameter.value`, so a panel open underneath it
+        repaints through its own subscription — no resync hook needed."""
         raise NotImplementedError()
 
     def open_parameter_submenu(
-        self, plugin: "Plugin", rows: tuple[tuple[str, Symbol], ...], title: str, on_change: Callable[[], None] | None = None
+        self, plugin: "Plugin", rows: tuple[tuple[str, Symbol], ...], title: str
     ) -> None:
         """NAV CLICK on a compound selection (e.g. an EQ band's gain/freq/Q):
         open a submenu over just these symbols, each row opening the same
-        per-parameter dialog as open_parameter_dialog (same on_change)."""
+        per-parameter dialog as open_parameter_dialog."""
         raise NotImplementedError()
 
     def open_audio_parameter_dialog(self, parameter: "Parameter", commit_callback: Callable[[str, float], None]) -> None:

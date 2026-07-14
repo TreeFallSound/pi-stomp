@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import common.token as Token
 from common.contexts import ControlClass, EventKind, ShadowState
-from common.parameter import Symbol
+from common.parameter import Parameter, PortInfo, Symbol
 from modalapi.plugin import Plugin
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.controller_manager import ControllerManager
@@ -80,12 +80,9 @@ def test_external_controller_bound_and_displayed():
 def test_orphaned_ttl_binding_recorded_in_effective_table():
     """A TTL param.binding with no matching physical controller is dropped
     silently by the legacy path but must surface as an ORPHANED table row."""
-    param = MagicMock()
-    param.binding = "0:99"
-    param.name = "gain"
-    plugin = MagicMock()
-    plugin.parameters = {Symbol("gain"): param}
-    plugin.controllers = []
+    info: PortInfo = {"shortName": "gain", "symbol": "gain", "ranges": {"minimum": 0, "maximum": 1}}
+    param = Parameter(info, 0.5, "0:99", "dist")
+    plugin = Plugin("dist", {Symbol("gain"): param}, {}, "Distortion")
 
     hw = MagicMock()
     hw.controllers = {}

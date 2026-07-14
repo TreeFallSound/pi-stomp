@@ -97,6 +97,8 @@ class ModeSelectorWidget(Widget):
     def _commit_value(self, value: float) -> None:
         new_mode = int(value)
         self._set_param(self.symbol, float(new_mode))
+        # Optimistic: the write above already marked the panel dirty, so tick's
+        # apply_state would repaint within 10ms. Both keep the commit instant.
         self.set_value(new_mode)
         if self._on_change is not None:
             self._on_change(new_mode)

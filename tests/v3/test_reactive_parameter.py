@@ -20,6 +20,7 @@ from modalapi.plugin import Plugin
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.window import PluginWindow
 from tests.types import SystemFixture
+from uilib.parameterdialog import Parameterdialog
 
 
 # ---------------------------------------------------------------------------
@@ -461,3 +462,55 @@ def test_rapid_footswitch_with_panel_open_coalesces(v3_system: SystemFixture, ma
     # (b) apply_count bounded by ticks, not 2N. We've ticked twice total;
     # the idempotent echoes at the final value should not have added dirty work.
     assert panel.apply_count <= 3  # initial drain + at most one echo-driven drain
+
+# ---------------------------------------------------------------------------
+# 11. An open Parameterdialog follows its parameter (tweak encoder, MOD-UI echo)
+# ---------------------------------------------------------------------------
+
+
+def _open_dialog(v3_system: SystemFixture, plugin: Plugin) -> Parameterdialog:
+    param = plugin.parameters[Symbol("gain")]
+    return cast(Parameterdialog, v3_system.handler.lcd.draw_parameter_dialog(param))
+
+
+def test_open_dialog_follows_external_param_set(v3_system: SystemFixture, make_plugin):
+    """An external write (MOD-UI web page, tweak encoder) to the parameter an open
+    dialog is showing must repaint the dialog. `last_param_value` is what the graph
+    last rendered, so it tracking the new value is the proof it redrew."""
+    plugin = _install(v3_system, make_plugin, bypassed=False)
+    dialog = _open_dialog(v3_system, plugin)
+    assert dialog.last_param_value == 0.5
+
+    v3_system.ws_bridge.inject("param_set /graph/fuzz gain 0.9")
+    v3_system.handler.poll_ws_messages()
+
+    assert plugin.parameters[Symbol("gain")].value == 0.9
+    assert dialog.last_param_value == 0.9
+
+
+def test_open_dialog_resyncs_steps_on_external_write(v3_system: SystemFixture, make_plugin):
+    """The dialog's quantized cursor must track an external write too, so the next
+    detent moves from where the value actually is -- not from a stale grid index.
+    steps snaps to the nearest grid index, so it lands within one step of 0.9."""
+    plugin = _install(v3_system, make_plugin, bypassed=False)
+    dialog = _open_dialog(v3_system, plugin)
+    one_step = (dialog.parameter.maximum - dialog.parameter.minimum) / 127
+
+    v3_system.ws_bridge.inject("param_set /graph/fuzz gain 0.9")
+    v3_system.handler.poll_ws_messages()
+
+    assert abs(dialog.steps.value - 0.9) <= one_step
+
+
+def test_dismissed_dialog_unsubscribes(v3_system: SystemFixture, make_plugin):
+    """A popped dialog must drop its subscription -- a later write to the parameter
+    must not repaint a detached widget (guards a listener leak)."""
+    plugin = _install(v3_system, make_plugin, bypassed=False)
+    dialog = _open_dialog(v3_system, plugin)
+    gain = plugin.parameters[Symbol("gain")]
+
+    dialog.pop()
+    v3_system.handler.poll_lcd_updates()
+
+    gain.value = 0.75
+    assert dialog.last_param_value == 0.5  # never redrew after dismissal

@@ -220,6 +220,8 @@ class PluginPanel(Panel, Generic[TState], ABC):
         bridge = self.handler.ws_bridge
         if bridge is not None:
             bridge.send_parameter(self.plugin.instance_id, BYPASS_SYMBOL, 1.0 if new_bypass else 0.0)
+        # Optimistic: the set_bypass above already marked us dirty, so tick would
+        # repaint within 10ms anyway. Painting here keeps the button instant.
         self._refresh_bypass_style()
 
     def _on_reset(self) -> None:

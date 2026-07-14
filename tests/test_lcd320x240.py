@@ -44,7 +44,11 @@ class MockObject:
             self.customization = PluginCustomization()
 
     def subscribe(self, cb):
-        return lambda: None
+        unsubs = [p.subscribe(cb) for p in self.parameters.values()]
+        def _unsub():
+            for u in unsubs:
+                u()
+        return _unsub
 
     @property
     def subtitle(self):

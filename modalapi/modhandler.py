@@ -378,13 +378,11 @@ class Modhandler(Handler):
         assert self._lcd is not None, "LCD has not been initialized"
         return self._lcd
 
-    def open_parameter_dialog(self, parameter: Parameter, on_change: Callable[[], None] | None = None) -> None:
-        self.lcd.draw_parameter_dialog(parameter, on_change=on_change)
+    def open_parameter_dialog(self, parameter: Parameter) -> None:
+        self.lcd.draw_parameter_dialog(parameter)
 
-    def open_parameter_submenu(
-        self, plugin: Plugin, rows: tuple[tuple[str, Symbol], ...], title: str, on_change: Callable[[], None] | None = None
-    ) -> None:
-        self.lcd.draw_symbol_menu(plugin, rows, title, on_change=on_change)
+    def open_parameter_submenu(self, plugin: Plugin, rows: tuple[tuple[str, Symbol], ...], title: str) -> None:
+        self.lcd.draw_symbol_menu(plugin, rows, title)
 
     def open_audio_parameter_dialog(self, parameter: Parameter, commit_callback: Callable[[str, float], None]) -> None:
         self.lcd.draw_audio_parameter_dialog(parameter, commit_callback)
@@ -1058,7 +1056,7 @@ class Modhandler(Handler):
     #
     # Plugin Stuff
     #
-    def toggle_plugin_bypass(self, widget, plugin):
+    def toggle_plugin_bypass(self, plugin):
         logging.debug("toggle_plugin_bypass")
         if plugin is not None:
             if plugin.has_footswitch:
@@ -1066,13 +1064,12 @@ class Modhandler(Handler):
                     if isinstance(c, Footswitch):
                         self._handle_footswitch(c, SwitchEventKind.PRESS, time.monotonic())
                         return
-            # Non-footswitch plugin: update locally then notify mod-ui.
-            # No echo arrives for WS-initiated bypass. Contrast with footswitches,
-            # which send MIDI CC → mod-host internally → feedback → msg_callback.
+            # Optimistic: no echo arrives for a WS-initiated bypass, so the local
+            # write is the only thing that repaints (via the bypass subscription).
+            # Contrast with footswitches, which send MIDI CC → mod-host → feedback.
             value = plugin.toggle_bypass()
             if not self._is_pedalboard_loading:
                 self.ws_bridge.send_parameter(plugin.instance_id, BYPASS_SYMBOL, value)
-            self.lcd.toggle_plugin(widget, plugin)
 
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
         self.lcd.update_footswitch(footswitch)

@@ -7,10 +7,10 @@ MIDI / preset logic lives in the handler (see tests/input_router/).
 """
 
 from contextlib import contextmanager
-from typing import Optional, cast
+from typing import Optional
 from unittest.mock import MagicMock
 
-from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
+from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from pistomp.footswitch import Footswitch
 from pistomp.input.event import SwitchEvent, SwitchEventKind
 from pistomp.input.sink import InputSink
@@ -109,7 +109,10 @@ class TestHardwareMethods:
 class TestSetValue:
     @staticmethod
     def _param(symbol: Symbol, value: float, minimum: Optional[float] = 0, maximum: Optional[float] = 1) -> Parameter:
-        return cast(Parameter, MagicMock(symbol=symbol, value=value, minimum=minimum, maximum=maximum))
+        info: PortInfo = {"shortName": str(symbol), "symbol": str(symbol)}
+        if minimum is not None and maximum is not None:
+            info["ranges"] = {"minimum": minimum, "maximum": maximum}
+        return Parameter(info, value, None, "plug")
 
     def test_bypass_engaged_when_not_bypassed(self):
         with _make_footswitch() as (fs, _sink):

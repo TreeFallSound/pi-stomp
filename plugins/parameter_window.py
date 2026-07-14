@@ -432,14 +432,6 @@ class ParameterWindow(PluginWindow[None]):
             return widget.on_encoder_rotation(rotations)
         return super().edit_symbol(symbol, rotations)
 
-    def _on_toggle_bypass(self) -> None:
-        super()._on_toggle_bypass()
-        bypassed = self.plugin.is_bypassed()
-        for w in self._slot_widgets:
-            w.set_bypassed(bypassed)
-        for w in self._list_rows:
-            w.set_bypassed(bypassed)
-
     def _refresh_bypass_style(self) -> None:
         super()._refresh_bypass_style()
         bypassed = self.plugin.is_bypassed()

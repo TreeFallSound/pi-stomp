@@ -239,8 +239,8 @@ class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
         return float(p.value) if p is not None else 0.0
 
     def _on_model_changed(self, new_model: int) -> None:
-        """Wired as ModeSelectorWidget's on_change — fires from its own
-        selection-dialog commit path, not the encoder/edit_symbol path."""
+        """Wired as ModeSelectorWidget's on_change. Optimistic: apply_state does
+        the same on the next tick — this only spares the readout that 10ms."""
         self._state = self.snapshot_state()
         self._update_readout()
 

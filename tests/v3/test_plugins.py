@@ -131,7 +131,7 @@ def test_v3_toggle_plugin_bypass_via_footswitch_sends_midi_cc(v3_system: SystemF
     handler._bind_controller_to_param(plugin, plugin.parameters[BYPASS_SYMBOL], fs)
     handler.current.pedalboard.plugins = [plugin]
 
-    handler.toggle_plugin_bypass(None, plugin)
+    handler.toggle_plugin_bypass(plugin)
 
     hw.midiout.send_message.assert_called_once()
     sent_cc = hw.midiout.send_message.call_args[0][0]
@@ -159,8 +159,7 @@ def test_v3_toggle_plugin_bypass_no_footswitch_sends_websocket(v3_system: System
     handler.lcd.draw_main_panel()
     snapshot("active")
 
-    widget = next(w for w in handler.lcd.w_plugins if w.object is plugin)
-    handler.toggle_plugin_bypass(widget, plugin)
+    handler.toggle_plugin_bypass(plugin)
 
     # State and LCD update immediately — no echo needed.
     assert ws_bridge.sent_values_for("fuzz", ":bypass") == [1.0]
@@ -202,7 +201,7 @@ def test_v3_nam_plugin_uses_tri_color_tile(v3_system: SystemFixture, make_plugin
     assert widget.bkgnd_color == nam_customization.tile_active_color, "active NAM body must be yellow"
     snapshot("active")
 
-    handler.toggle_plugin_bypass(widget, plugin)
+    handler.toggle_plugin_bypass(plugin)
     assert widget.bkgnd_color == handler.lcd.background, "bypassed NAM body must be black"
     assert widget.fgnd_color == handler.lcd.foreground, "bypassed text must be white"
     snapshot("bypassed")
@@ -254,7 +253,7 @@ def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_p
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
 
-    handler.toggle_plugin_bypass(None, plugin)
+    handler.toggle_plugin_bypass(plugin)
 
     assert not any("pi_stomp_set" in u for u in get_urls(mock_post))
     assert hw.footswitches[0].toggled is False  # bypass intent, echo not yet received
@@ -272,7 +271,7 @@ def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_p
     assert plugin.is_bypassed() is True
     assert hw.footswitches[0].toggled is False  # bypassed state
 
-    handler.toggle_plugin_bypass(None, plugin)
+    handler.toggle_plugin_bypass(plugin)
 
     sent_ccs = [c.args[0][2] for c in v3_system.hw.midiout.send_message.call_args_list]
     assert sent_ccs[-1] == 127  # bypass→active: toggled goes False→True, CC value = 127
@@ -491,8 +490,7 @@ def test_v3_bypass_echo_is_idempotent(v3_system: SystemFixture, make_plugin, sna
     handler.lcd.draw_main_panel()
     snapshot("active")
 
-    widget = next(w for w in handler.lcd.w_plugins if w.object is plugin)
-    handler.toggle_plugin_bypass(widget, plugin)
+    handler.toggle_plugin_bypass(plugin)
     # State and LCD update immediately (Path B: no echo arrives for WS-initiated bypass).
     assert plugin.is_bypassed()
     snapshot("bypassed")

@@ -128,12 +128,11 @@ def test_v3_outbound_ws_suppressed_during_pedalboard_change(v3_system: SystemFix
     handler.current.pedalboard.plugins = [old_plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, handler.hardware.footswitches)
     handler.lcd.draw_main_panel()
-    widget = next(w for w in handler.lcd.w_plugins if w.object is old_plugin)
     ws_bridge.sent.clear()
 
     # Simulate a user tapping the bypass on the old pedalboard while a change is in flight
     handler._is_pedalboard_loading = True
-    handler.toggle_plugin_bypass(widget, old_plugin)
+    handler.toggle_plugin_bypass(old_plugin)
 
     # The bypass should flip locally, but NO ws message should be sent
     assert old_plugin.is_bypassed()
@@ -141,7 +140,7 @@ def test_v3_outbound_ws_suppressed_during_pedalboard_change(v3_system: SystemFix
 
     # After clearing suppression, sends resume
     handler._is_pedalboard_loading = False
-    handler.toggle_plugin_bypass(widget, old_plugin)
+    handler.toggle_plugin_bypass(old_plugin)
     assert not old_plugin.is_bypassed()
     assert ws_bridge.sent_values_for("old_fuzz", ":bypass") == [0.0]
 

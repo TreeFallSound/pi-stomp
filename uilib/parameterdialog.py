@@ -23,6 +23,7 @@ from uilib.widget import Widget
 from common.parameter import Parameter
 from common.parameter_steps import ParameterSteps
 
+from collections.abc import Callable
 from functools import lru_cache
 
 import numpy as np
@@ -117,6 +118,19 @@ class Parameterdialog(Dialog):
         self._bars_unfilled: pygame.Surface | None = None
         self.last_param_value: float = self.parameter.value
         self._draw_contents()
+        self._unsub: Callable[[], None] | None = self.parameter.subscribe(self._on_param_changed)
+
+    def _on_param_changed(self, param: Parameter) -> None:
+        """Every redraw path runs through here: our own detents write
+        `parameter.value` and land back on this observer, same as a tweak encoder
+        or a MOD-UI echo does."""
+        self.steps.set_value(param.value)
+        self._draw_graph()
+
+    def _unsubscribe(self) -> None:
+        if self._unsub is not None:
+            self._unsub()
+            self._unsub = None
 
     def _calc_graph_points(self, x, min, max):
         # Calculate the y-values using a logarithmic function
@@ -257,15 +271,9 @@ class Parameterdialog(Dialog):
         """Update display with new value (controller already calculated it)."""
         self.reset_timeout()
         self.parameter.value = new_value
-        self.steps.set_value(new_value)  # resync: a tweak encoder moved it
-        self._draw_graph()  # updates the value text too
 
     def parameter_value_change(self, direction, count: int = 1, multiplier: float = 1.0):
         self.reset_timeout()
-
-        # Resync if the value was changed externally (tweak encoder, MOD-UI echo).
-        if abs(self.parameter.value - self.steps.value) > 1e-9:
-            self.steps.set_value(self.parameter.value)
 
         # Same arithmetic as EncoderController.refresh: the multiplier scales the
         # number of grid steps, not the value.
@@ -279,7 +287,6 @@ class Parameterdialog(Dialog):
         self.parameter.value = new_value
         if self.action is not None:
             self.action(self.object, new_value)
-        self._draw_graph()
 
     def input_event(self, event):
         if event == InputEvent.CLICK:
@@ -302,6 +309,13 @@ class Parameterdialog(Dialog):
         return True
 
     def pop(self):
+        # Also unsubscribed by destroy(), but the VU calibration dialog is
+        # auto_destroy=False and would otherwise stay subscribed after dismissal.
+        self._unsubscribe()
         if self.parent:
             self.stack.pop_panel(self)
         self.expiry_time = None
+
+    def destroy(self):
+        self._unsubscribe()
+        super().destroy()
