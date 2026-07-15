@@ -129,8 +129,8 @@ class CompressorPanel(FullscreenPluginPanel[CompressorState]):
             ),
         )
 
-    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
-        if not super().edit_symbol(symbol, rotations):
+    def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool:
+        if not super().edit_symbol(symbol, rotations, multiplier):
             return False
         self._column.sync_symbol(symbol)
         state = self.snapshot_state()

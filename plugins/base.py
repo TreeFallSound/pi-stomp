@@ -41,13 +41,13 @@ from collections.abc import Callable
 from typing import Generic, TypeVar
 
 from common.contexts import ControlClass, ControlRef, EventKind
-from common.param_roles import ParamRole, edit_value
+from common.param_roles import ParamRole
 from common.parameter import BYPASS_SYMBOL, Symbol
+from common.parameter_steps import ParameterSteps
 from modalapi.plugin import Plugin
 from pistomp.input.dispatch import MultiSelectable, Selectable, fire, resolve_local
 from pistomp.input.event import ControllerEvent, EncoderEvent
 from pistomp.handler import Handler
-from uilib.misc import step_for_param
 from uilib.panel import Panel
 from uilib.text import Button
 
@@ -125,6 +125,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
         dialog. Reuses Handler.open_parameter_dialog/open_parameter_submenu,
         the same mechanism a v3 Tweak encoder's SelectionEditEffect edits
         directly and NAV-only (v2) hardware has no other way to reach."""
+
         def resync() -> None:
             self.apply_state(self.snapshot_state())
 
@@ -146,16 +147,16 @@ class PluginPanel(Panel, Generic[TState], ABC):
             return True
         return False
 
-    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool:
         """Step, clamp, and commit symbol's value; returns True iff changed."""
         p = self.plugin.parameters.get(symbol)
         if p is None:
             return False
-        role = self.plugin.customization.param_roles.get(symbol, ParamRole.GENERIC)
-        if role is ParamRole.GENERIC:
-            new_val = max(p.minimum, min(p.maximum, float(p.value) + rotations * step_for_param(p)))
-        else:
-            new_val = edit_value(role, float(p.value), rotations, p.minimum, p.maximum)
+        steps = ParameterSteps.for_parameter(p)
+        delta = int(round(rotations * multiplier))
+        if delta == 0:
+            return False
+        new_val = steps.move(delta)
         if new_val == p.value:
             return False
         self.set_param(symbol, new_val)

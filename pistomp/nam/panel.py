@@ -741,12 +741,12 @@ class NamCapturePanel(Panel):
             ),
         )
 
-    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool:
         """AudioCardEffect's target: CAPTURE_VOLUME/MASTER aren't LV2 params,
         but the edit shape (rotations -> commit) is identical."""
         if self._handler is None or symbol not in ("CAPTURE_VOLUME", "MASTER"):
             return False
-        self._nudge_audio(symbol == "CAPTURE_VOLUME", rotations)
+        self._nudge_audio(symbol == "CAPTURE_VOLUME", int(round(rotations * multiplier)))
         return True
 
     def _open_editor_for_selection(self) -> bool:

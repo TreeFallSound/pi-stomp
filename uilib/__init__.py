@@ -49,7 +49,6 @@ __all__ = [
     "get_text_size",
     "load_surface",
     "shade_color",
-    "step_for_param",
     "tint_mask",
     "trace",
 ]
@@ -72,7 +71,6 @@ from uilib.misc import (
     get_text_bbox,
     get_text_size,
     shade_color,
-    step_for_param,
     trace,
 )
 from uilib.panel import LcdBase, Panel, PanelDecorator, PanelStack, RoundedPanel, ShroudedPanel

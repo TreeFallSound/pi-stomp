@@ -18,8 +18,6 @@ from __future__ import annotations
 from enum import Enum, Flag
 from functools import lru_cache
 
-from common.parameter import Parameter, Type
-
 
 # Input events.
 class InputEvent(Enum):
@@ -155,16 +153,6 @@ def color_for_param(param) -> tuple[int, int, int]:
 
 def shade_color(color: tuple[int, int, int], factor: float) -> tuple[int, int, int]:
     return (int(color[0] * factor), int(color[1] * factor), int(color[2] * factor))
-
-
-def step_for_param(param: Parameter) -> float:
-    t = param.type
-    if t in (Type.ENUMERATION, Type.INTEGER, Type.TOGGLED):
-        return 1.0
-    if t == Type.LOGARITHMIC:
-        ratio = 2.0 ** (1.0 / 12.0)
-        return max(0.01, (param.value or param.minimum) * (ratio - 1.0))
-    return max(0.01, (param.maximum - param.minimum) / 100.0)
 
 
 def fmt_hz(value: float) -> str:

@@ -23,6 +23,7 @@ from common.contexts import (
     SelectionEditEffect,
 )
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
+from common.parameter_steps import ParameterSteps
 from common.param_roles import ParamRole
 from modalapi.plugin_customization import PinnedParam
 from plugins.chrome import BTN_GAP, BTN_H, MIN_CHROME_WIDTH, build_bottom_row
@@ -34,7 +35,7 @@ from uilib.container import ContainerWidget
 from uilib.dialog import Dialog, DialogDecorator
 from uilib.glyphs.arc_dial import ArcDialWidget, dial_box_size
 from uilib.glyphs.badge import BadgeGlyph
-from uilib.misc import INACTIVE_SHADE, InputEvent, color_for_param, get_text_size, shade_color, step_for_param
+from uilib.misc import INACTIVE_SHADE, InputEvent, color_for_param, get_text_size, shade_color
 from uilib.widget import Widget
 
 # ── layout constants ──────────────────────────────────────────────────────────
@@ -115,11 +116,18 @@ class ParamSlotWidget(ArcDialWidget):
             return True
         return False
 
-    def on_encoder_rotation(self, rotations: int) -> bool:
+    def on_encoder_rotation(self, rotations: int, multiplier: float = 1.0) -> bool:
         param = self._param()
         if param is None:
             return False
-        self.set_param(self.value + rotations * step_for_param(param))
+        steps = ParameterSteps.for_parameter(param)
+        delta = int(round(rotations * multiplier))
+        if delta == 0:
+            return False
+        new_val = steps.move(delta)
+        if new_val == self.value:
+            return False
+        self.set_param(new_val)
         return True
 
     def symbol_for(self, role: ParamRole) -> Symbol | None:
@@ -425,11 +433,11 @@ class ParameterWindow(PluginWindow[None]):
             ),
         )
 
-    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool:
         widget = next((w for w in self._slot_widgets if w.slot.symbol == symbol), None)
         if widget is not None:
-            return widget.on_encoder_rotation(rotations)
-        return super().edit_symbol(symbol, rotations)
+            return widget.on_encoder_rotation(rotations, multiplier)
+        return super().edit_symbol(symbol, rotations, multiplier)
 
     def _on_toggle_bypass(self) -> None:
         super()._on_toggle_bypass()
