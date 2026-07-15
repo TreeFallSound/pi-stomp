@@ -354,24 +354,23 @@ class Modhandler(Handler):
         else:
             winner = None
 
-        # The winning effect decides the local response — commit to mod-host
-        # (ParamEffect) or only paint (MidiCcEffect); either way the parameter to
-        # show is the controller's own binding. The CC emit is NOT part of this
-        # choice — see below.
+        # CC is the transport for a plugin-bound (MIDI-learned) encoder; mod-ui
+        # applies its mapping on receipt. The effect type only decides what to
+        # display — ParamEffect and MidiCcEffect are both paint-only here. The
+        # local param.value write drives reactive observers; the CC tail below
+        # is the sole transport to mod-host.
+        if c.parameter is not None:
+            c.parameter.value = event.new_value
         if winner is not None:
             for effect in winner.effects:
                 if isinstance(effect, ParamEffect):
                     if c.parameter is not None:
                         self.lcd.display_parameter_value(c.parameter, event.new_value)
-                        self.parameter_value_commit(c.parameter, event.new_value)
                 elif isinstance(effect, MidiCcEffect):
                     if c.parameter is not None:
                         self.lcd.display_parameter_value(c.parameter, event.new_value)
         elif c.parameter is not None:
-            # Bound controller with no table row to resolve — no midi_CC to key
-            # on. Commit its parameter directly.
             self.lcd.display_parameter_value(c.parameter, event.new_value)
-            self.parameter_value_commit(c.parameter, event.new_value)
 
         # Unconditional, and must stay that way: an unbound encoder has no row,
         # and this emit is the only way mod-ui sees its CC to MIDI-learn it.
