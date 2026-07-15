@@ -42,11 +42,6 @@ COLOR_DECAY = (255, 180, 80)
 COLOR_DRY = (110, 200, 230)
 COLOR_WET = (210, 130, 230)
 
-_DECAY_STEP_MS = 100.0
-_DB_STEP = 0.8
-
-_KNOB_STEPS = {"decay": _DECAY_STEP_MS, "drylevel": _DB_STEP, "wetlevel": _DB_STEP}
-
 _BADGE_TWEAK1 = BadgeGlyph("1")  # enc1, selection-dependent (SelectionEditEffect) — shown in the readout only
 _BADGE_TWEAK2 = BadgeGlyph("2")  # enc2, fixed to mode — drawn on the mode selector itself (static, not selection-dependent)
 _BADGE_TWEAK3 = BadgeGlyph("3")  # enc3/Volume, fixed to decay — drawn on the knob itself (static, not selection-dependent)
@@ -194,25 +189,8 @@ class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
             ),
         )
 
-    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
-        step = _KNOB_STEPS.get(symbol)
-        if step is not None:
-            p = self.plugin.parameters.get(symbol)
-            if p is None:
-                return False
-            new_val = max(p.minimum, min(p.maximum, float(p.value) + rotations * step))
-            if new_val == p.value:
-                return False
-            self.set_param(symbol, new_val)
-        elif symbol == "mode":
-            p = self.plugin.parameters.get(symbol)
-            if p is None:
-                return False
-            new_val = max(int(p.minimum), min(int(p.maximum), int(p.value) + int(rotations)))
-            if new_val == p.value:
-                return False
-            self.set_param(symbol, float(new_val))
-        elif not super().edit_symbol(symbol, rotations):
+    def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool:
+        if not super().edit_symbol(symbol, rotations, multiplier):
             return False
         self._sync_after_edit(symbol)
         return True
