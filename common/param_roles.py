@@ -14,43 +14,21 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 """Parameter role classification: a per-symbol tag supplementing the LV2
-port's ground truth (name/range/type) with how a tweak encoder should edit
-it. Plugin customizations declare a port's role (`PluginCustomization.
-param_roles`); GENERIC falls back to the existing range/type-derived step
-(`uilib.misc.step_for_param`)."""
+port's ground truth (name/range/type) with which symbol a tweak encoder
+should resolve off the current selection. Plugin customizations declare a
+port's role (`PluginCustomization.param_roles`); GENERIC is the fallback.
 
-from dataclasses import dataclass
-from enum import Enum, auto
-from typing import Literal
+The role drives ``Selectable.symbol_for(role)`` — e.g. an EQ band selection
+returns a different symbol per role (gain/freq/Q), a compressor arc returns
+the same symbol regardless. Step math is unified through ``ParameterSteps``
+(``common/parameter_steps.py``); roles no longer carry their own step sizes.
+"""
+
+from enum import auto, Enum
 
 
 class ParamRole(Enum):
-    GENERIC = auto()        # caller falls back to its own range/type-derived step
-    GAIN_DB = auto()         # fixed dB step, additive
-    FREQUENCY_HZ = auto()    # musical (equal-tempered) step, multiplicative
-    Q_FACTOR = auto()        # fixed step, additive
-
-
-@dataclass(frozen=True)
-class RoleStep:
-    kind: Literal["additive", "multiplicative"]
-    amount: float   # additive: value delta per detent; multiplicative: ratio per detent
-
-
-_ROLE_STEPS: dict[ParamRole, RoleStep] = {
-    ParamRole.GAIN_DB: RoleStep("additive", 0.5),
-    ParamRole.FREQUENCY_HZ: RoleStep("multiplicative", 2.0 ** (1.0 / 12.0)),
-    ParamRole.Q_FACTOR: RoleStep("additive", 0.05),
-}
-
-
-def edit_value(role: ParamRole, current: float, rotations: int, minimum: float, maximum: float) -> float:
-    """Apply `rotations` detents of `role`'s step to `current`, clamped to
-    [minimum, maximum]. Not meaningful for GENERIC — callers handle that role
-    themselves (range/type-derived step, e.g. uilib.misc.step_for_param)."""
-    step = _ROLE_STEPS[role]
-    if step.kind == "additive":
-        new_val = current + rotations * step.amount
-    else:
-        new_val = current * (step.amount**rotations)
-    return max(minimum, min(maximum, new_val))
+    GENERIC = auto()        # fallback: resolve the selection's primary symbol
+    GAIN_DB = auto()         # gain symbol of a compound selection
+    FREQUENCY_HZ = auto()    # frequency symbol of a compound selection
+    Q_FACTOR = auto()        # Q symbol of a compound selection

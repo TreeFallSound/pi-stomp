@@ -21,8 +21,9 @@ from common.contexts import (
     NoneEffect,
     SelectionEditEffect,
 )
-from common.param_roles import ParamRole, edit_value
+from common.param_roles import ParamRole
 from common.parameter import Symbol
+from common.parameter_steps import ParameterSteps, resolution
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import GraphicBandSpec
 from plugins.eq.parametric import paint_band_node, _fmt_freq as _fmt_freq_long
@@ -441,12 +442,20 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
             ),
         )
 
-    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool:
         band = self.selected_band
         if band is None or symbol != band.gain_sym:
-            return super().edit_symbol(symbol, rotations)
+            return super().edit_symbol(symbol, rotations, multiplier)
         p = self._state.bands[band.name]
-        new_gain = edit_value(ParamRole.GAIN_DB, p.gain_db, rotations, band.gain_min, band.gain_max)
+        lv2 = self.plugin.parameters.get(symbol)
+        if lv2 is None:
+            return False
+        steps = ParameterSteps(band.gain_min, band.gain_max, lv2.get_taper(), resolution(lv2))
+        steps.set_value(p.gain_db)
+        delta = int(round(rotations * multiplier))
+        if delta == 0:
+            return False
+        new_gain = steps.move(delta)
         if new_gain == p.gain_db:
             return False
         self.set_param(band.gain_sym, new_gain)

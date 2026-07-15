@@ -63,7 +63,7 @@ class PanelOps(Protocol):
     @property
     def sel_ref(self) -> object: ...
 
-    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool: ...
+    def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool: ...
 
 
 def resolve_local(rows: tuple[BindingDecl, ...], control: ControlRef, event_kind: EventKind) -> BindingDecl | None:
@@ -82,11 +82,11 @@ def fire(decl: BindingDecl, ops: PanelOps, event: EncoderEvent) -> bool:
                 sel = ops.sel_ref
                 symbol = sel.symbol_for(role) if isinstance(sel, Selectable) else None
                 if symbol is not None:
-                    ops.edit_symbol(symbol, event.rotations)
+                    ops.edit_symbol(symbol, event.rotations, event.multiplier)
             case ParamEffect(symbol=param_symbol) | AudioCardEffect(param_symbol=param_symbol) if isinstance(
                 param_symbol, str
             ):
-                ops.edit_symbol(param_symbol, event.rotations)
+                ops.edit_symbol(param_symbol, event.rotations, event.multiplier)
             case NoneEffect():
                 pass
     return decl.consume

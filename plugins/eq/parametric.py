@@ -21,8 +21,9 @@ from common.contexts import (
     EventKind,
     SelectionEditEffect,
 )
-from common.param_roles import ParamRole, edit_value
+from common.param_roles import ParamRole
 from common.parameter import Symbol
+from common.parameter_steps import ParameterSteps, resolution
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import BandSpec
 from plugins.eq.curve import (
@@ -867,20 +868,28 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
             ),
         )
 
-    def edit_symbol(self, symbol: Symbol, rotations: int) -> bool:
+    def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool:
         band = self.selected_band
         if band is None:
             return False
         p = self._state.bands[band.name]
         if symbol == band.gain_sym:
-            role, current, lo, hi, field_name = ParamRole.GAIN_DB, p.gain_db, band.gain_min, band.gain_max, "gain_db"
+            current, lo, hi, field_name = p.gain_db, band.gain_min, band.gain_max, "gain_db"
         elif symbol == band.freq_sym:
-            role, current, lo, hi, field_name = ParamRole.FREQUENCY_HZ, p.freq, band.freq_min, band.freq_max, "freq"
+            current, lo, hi, field_name = p.freq, band.freq_min, band.freq_max, "freq"
         elif symbol == band.q_sym:
-            role, current, lo, hi, field_name = ParamRole.Q_FACTOR, p.q, band.q_min, band.q_max, "q"
+            current, lo, hi, field_name = p.q, band.q_min, band.q_max, "q"
         else:
-            return super().edit_symbol(symbol, rotations)
-        new_val = edit_value(role, current, rotations, lo, hi)
+            return super().edit_symbol(symbol, rotations, multiplier)
+        lv2 = self.plugin.parameters.get(symbol)
+        if lv2 is None:
+            return False
+        steps = ParameterSteps(lo, hi, lv2.get_taper(), resolution(lv2))
+        steps.set_value(current)
+        delta = int(round(rotations * multiplier))
+        if delta == 0:
+            return False
+        new_val = steps.move(delta)
         if new_val == current:
             return False
         self.set_param(symbol, new_val)
