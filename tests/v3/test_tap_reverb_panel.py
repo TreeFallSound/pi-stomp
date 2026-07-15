@@ -208,7 +208,7 @@ def test_tap_reverb_nav_cycles_values(v3_system: SystemFixture, nav_handler, sna
 
 
 def test_tap_reverb_tweak1_edits_focused(v3_system: SystemFixture, nav_handler, snapshot):
-    """Nav to Wet, Tweak1 increases wetlevel by 8 * 0.8 = 6.4 dB."""
+    """Nav to Wet, Tweak1 increases wetlevel on the shared ParameterSteps grid."""
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
@@ -217,7 +217,6 @@ def test_tap_reverb_tweak1_edits_focused(v3_system: SystemFixture, nav_handler, 
     handler.poll_lcd_updates()
     snapshot("wet_focused")
 
-    # Tweak1: +8 detents → +6.4 dB → -12 + 6.4 = -5.6 dB
     for _ in range(8):
         tweak(handler, 1, 1)
     handler.poll_lcd_updates()
@@ -225,7 +224,7 @@ def test_tap_reverb_tweak1_edits_focused(v3_system: SystemFixture, nav_handler, 
 
     sent = v3_system.ws_bridge.sent_values_for(plugin.instance_id, "wetlevel")
     assert len(sent) > 0
-    assert abs(sent[-1] - (-5.6)) < 0.01
+    assert abs(sent[-1] - (-7.008)) < 0.01
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +260,6 @@ def test_tap_reverb_tweak3_edits_decay(v3_system: SystemFixture, nav_handler, sn
     # Mode is already focused at open — no nav needed
     handler.poll_lcd_updates()
 
-    # Tweak3: +5 detents → +500 ms → 2800 + 500 = 3300 ms
     for _ in range(5):
         tweak(handler, 3, 1)
     handler.poll_lcd_updates()
@@ -269,7 +267,7 @@ def test_tap_reverb_tweak3_edits_decay(v3_system: SystemFixture, nav_handler, sn
 
     sent = v3_system.ws_bridge.sent_values_for(plugin.instance_id, "decay")
     assert len(sent) > 0
-    assert abs(sent[-1] - 3300.0) < 0.01
+    assert abs(sent[-1] - 3228.35) < 0.01
 
 
 # ---------------------------------------------------------------------------

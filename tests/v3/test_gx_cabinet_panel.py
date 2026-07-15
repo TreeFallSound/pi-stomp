@@ -178,7 +178,7 @@ def test_gx_cabinet_nav_cycles_values(v3_system: SystemFixture, nav_handler, sna
 
 
 def test_gx_cabinet_tweak1_edits_focused(v3_system: SystemFixture, nav_handler, snapshot):
-    """Nav to Treble, Tweak1 increases treble by 8 * 0.4 = 3.2."""
+    """Nav to Treble, Tweak1 increases treble on the shared ParameterSteps grid."""
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
@@ -194,7 +194,7 @@ def test_gx_cabinet_tweak1_edits_focused(v3_system: SystemFixture, nav_handler, 
 
     sent = v3_system.ws_bridge.sent_values_for(plugin.instance_id, "CTreble")
     assert len(sent) > 0
-    assert abs(sent[-1] - 3.2) < 0.01
+    assert abs(sent[-1] - 1.181) < 0.01
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +227,6 @@ def test_gx_cabinet_tweak3_edits_level(v3_system: SystemFixture, snapshot):
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
-    # Tweak3: +5 detents * 0.05 => 1.0 + 0.25 = 1.25
     for _ in range(5):
         tweak(handler, 3, 1)
     handler.poll_lcd_updates()
@@ -235,7 +234,7 @@ def test_gx_cabinet_tweak3_edits_level(v3_system: SystemFixture, snapshot):
 
     sent = v3_system.ws_bridge.sent_values_for(plugin.instance_id, "CLevel")
     assert len(sent) > 0
-    assert abs(sent[-1] - 1.25) < 0.01
+    assert abs(sent[-1] - 1.173) < 0.01
 
 
 # ---------------------------------------------------------------------------

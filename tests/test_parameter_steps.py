@@ -19,7 +19,7 @@ whichever control is turned."""
 
 import pytest
 
-from common.parameter import Parameter, Type
+from common.parameter import Parameter, Symbol, Type
 from common.parameter_steps import CONTINUOUS_STEPS, ParameterSteps, resolution
 from pistomp.encoder_controller import EncoderController
 
@@ -32,6 +32,27 @@ def _param(minimum: float, maximum: float, value: float, type: Type = Type.DEFAU
     )
     p.type = type
     return p
+
+
+class _StubPlugin:
+    def __init__(self, parameters: dict[Symbol, Parameter]) -> None:
+        self.parameters = parameters
+        self.customization = type("C", (), {"param_roles": {}})()
+        self.instance_id = "test"
+
+
+class _ConcretePluginPanel:
+    """Minimal concrete stand-in for PluginPanel.edit_symbol — no Panel base
+    needed; we only exercise the edit_symbol method."""
+
+    def __init__(self, plugin: _StubPlugin) -> None:
+        self.plugin = plugin
+        self._param_queue: dict[Symbol, float] = {}
+
+    from plugins.base import PluginPanel as _Base
+
+    edit_symbol = _Base.edit_symbol
+    set_param = _Base.set_param
 
 
 # ── resolution ───────────────────────────────────────────────────────────
@@ -160,3 +181,29 @@ def test_one_detent_moves_tweak_and_nav_identically():
     nav_value = nav_grid.move(int(round(1 * 2 * 3.0)))
 
     assert enc_value == pytest.approx(nav_value)
+
+
+def test_edit_symbol_applies_multiplier_on_same_grid():
+    """The arc-ring edit_symbol path must use the same ParameterSteps grid and
+    honour the encoder's speed multiplier — 2 detents at 3x = 6 grid steps,
+    identical to the NAV dialog and the encoder controller."""
+    param = _param(0.0, 1.0, 0.0, Type.LOGARITHMIC)
+    expected = ParameterSteps.for_parameter(param).move(6)
+
+    plugin = _StubPlugin({Symbol("test"): param})
+    panel = _ConcretePluginPanel(plugin=plugin)
+    changed = panel.edit_symbol(Symbol("test"), rotations=2, multiplier=3.0)
+
+    assert changed
+    assert param.value == pytest.approx(expected)
+
+
+def test_edit_symbol_zero_delta_is_noop():
+    """Zero rotations or a multiplier that rounds to zero must not commit."""
+    param = _param(0.0, 1.0, 0.5, Type.LOGARITHMIC)
+    plugin = _StubPlugin({Symbol("test"): param})
+
+    panel = _ConcretePluginPanel(plugin=plugin)
+
+    assert not panel.edit_symbol(Symbol("test"), rotations=0, multiplier=3.0)
+    assert param.value == pytest.approx(0.5)
