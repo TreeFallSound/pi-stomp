@@ -354,23 +354,23 @@ class Modhandler(Handler):
         else:
             winner = None
 
-        # The winning effect decides whether the turn commits to mod-host
-        # (ParamEffect) or only paints and emits its CC (MidiCcEffect); either
-        # way the parameter to show is the controller's own binding.
+        # CC is the transport for a plugin-bound (MIDI-learned) encoder; mod-ui
+        # applies its mapping on receipt. The effect type only decides what to
+        # display — ParamEffect and MidiCcEffect are both paint-only here. The
+        # local param.value write drives reactive observers; the CC tail below
+        # is the sole transport to mod-host.
+        if c.parameter is not None:
+            c.parameter.value = event.new_value
         if winner is not None:
             for effect in winner.effects:
                 if isinstance(effect, ParamEffect):
                     if c.parameter is not None:
                         self.lcd.display_parameter_value(c.parameter, event.new_value)
-                        self.parameter_value_commit(c.parameter, event.new_value)
                 elif isinstance(effect, MidiCcEffect):
                     if c.parameter is not None:
                         self.lcd.display_parameter_value(c.parameter, event.new_value)
         elif c.parameter is not None:
-            # Bound controller with no table row to resolve — no midi_CC to key
-            # on. Commit its parameter directly.
             self.lcd.display_parameter_value(c.parameter, event.new_value)
-            self.parameter_value_commit(c.parameter, event.new_value)
 
         self._emit_midi(c, event.new_midi_value)
         return True
