@@ -4,7 +4,7 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import common.token as Token
-from common.contexts import ControlClass, EventKind, ShadowState
+from common.contexts import ControlClass, EventKind, MidiCcEffect, ShadowState
 from common.parameter import Parameter, PortInfo, Symbol
 from modalapi.plugin import Plugin
 from pistomp.analogmidicontrol import AnalogMidiControl
@@ -68,13 +68,24 @@ def test_external_controller_bound_and_displayed():
     hw.create_external_parameter.return_value = "SYNTH_PARAM"
 
     current = _make_current()
-    ControllerManager(hw).bind(current)
+    manager = ControllerManager(hw)
+    manager.bind(current)
 
     assert ctrl.parameter == "SYNTH_PARAM"
     entry = current.analog_controllers["0:75"]
     assert entry.get("category") == "External"
     assert entry.get("port_name") == "c4"
     assert entry.get("midi_cc") == 75
+
+    rows = manager.effective_table.layers[0].rows.get((ControlClass.ANALOG, EventKind.ROTATE), [])
+    cc_rows = [r for r in rows if any(isinstance(e, MidiCcEffect) for e in r.effects)]
+    assert len(cc_rows) == 1
+    assert cc_rows[0].control.id == "0:75"
+
+    rows = manager.effective_table.layers[0].rows.get((ControlClass.ANALOG, EventKind.ROTATE), [])
+    cc_rows = [r for r in rows if any(isinstance(e, MidiCcEffect) for e in r.effects)]
+    assert len(cc_rows) == 1
+    assert cc_rows[0].control.id == "0:75"
 
 
 def test_orphaned_ttl_binding_recorded_in_effective_table():

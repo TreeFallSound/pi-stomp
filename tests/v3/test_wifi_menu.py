@@ -52,11 +52,11 @@ def _type_password(nav_lcd, lcd, password: str) -> None:
 
 
 def _click(lcd) -> None:
-    lcd.pstack.input_event(InputEvent.CLICK)
+    lcd.pstack.current.input_event(InputEvent.CLICK)
 
 
 def _long_click(lcd) -> None:
-    lcd.pstack.input_event(InputEvent.LONG_CLICK)
+    lcd.pstack.current.input_event(InputEvent.LONG_CLICK)
 
 
 # ---------------------------------------------------------------------------

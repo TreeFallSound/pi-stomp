@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from typing import Union
 import logging
 
+from common.parameter import Symbol
+
 
 @dataclass
 class LoadingStartMessage:
@@ -135,7 +137,7 @@ class ParamSetMessage:
     """A plugin control-port value changed (param_set, non-:bypass)."""
 
     instance: str  # canonical bare form, e.g. "HotBox"
-    symbol: str  # e.g. "gain"
+    symbol: Symbol  # e.g. Symbol("gain")
     value: float
 
 
@@ -144,7 +146,7 @@ class MidiMapMessage:
     """A MIDI binding was learned/assigned in mod-ui (midi_map ...)."""
 
     instance: str  # canonical bare form, e.g. "CollisionDrive"
-    symbol: str  # e.g. "gain" or ":bypass"
+    symbol: Symbol  # e.g. Symbol("gain") or BYPASS_SYMBOL
     channel: int
     controller: int
 
@@ -279,14 +281,14 @@ def parse_message(raw_message: str) -> WebSocketMessage:
             case ["param_set", path, rest]:
                 instance = path.removeprefix("/graph/")
                 symbol, value_str = rest.split(" ", 1)
-                return ParamSetMessage(instance=instance, symbol=symbol, value=float(value_str))
+                return ParamSetMessage(instance=instance, symbol=Symbol(symbol), value=float(value_str))
 
             # Format: midi_map /graph/{instance} {symbol} {channel} {controller} {min} {max}
             case ["midi_map", path, rest]:
                 symbol, ch, ctrl = rest.split(" ")[:3]
                 return MidiMapMessage(
                     instance=path.removeprefix("/graph/"),
-                    symbol=symbol,
+                    symbol=Symbol(symbol),
                     channel=int(ch),
                     controller=int(ctrl),
                 )

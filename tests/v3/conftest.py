@@ -369,10 +369,10 @@ def type_in_editor():
         if steps:
             selector.l_idx = 3  # a non-control char: long-click cycles the charset
             for _ in range(steps):
-                lcd.pstack.input_event(InputEvent.LONG_CLICK)
+                lcd.pstack.current.input_event(InputEvent.LONG_CLICK)
 
         selector.l_idx = charset.index(ch)
-        lcd.pstack.input_event(InputEvent.CLICK)
+        lcd.pstack.current.input_event(InputEvent.CLICK)
 
     def _type(lcd, text):
         for ch in text:

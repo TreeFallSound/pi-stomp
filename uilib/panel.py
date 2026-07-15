@@ -598,17 +598,6 @@ class PanelStack(ContainerWidget):
                 return p
         return None
 
-    def input_event(self, event):
-        assert isinstance(event, InputEvent)
-        if self.current is not None:
-            return self.current.input_event(event)
-        return False
-
-    def input_step(self, direction: int, count: int, multiplier: float = 1.0) -> bool:
-        if self.current is not None:
-            return self.current.input_step(direction, count, multiplier)
-        return False
-
 
 class PanelDecorator(Widget):
     def __init__(self, panel, **kwargs):

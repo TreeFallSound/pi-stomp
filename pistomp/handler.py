@@ -20,6 +20,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from pistomp.analogmidicontrol import AnalogMidiControl
+from pistomp.controller import Controller
 from pistomp.current import Current
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
@@ -245,7 +246,7 @@ class Handler(InputSink):
     #
     # MIDI binding (shared by v1/v3 handlers)
     #
-    def _apply_midi_binding(self, instance, symbol, binding):
+    def _apply_midi_binding(self, instance: str, symbol: Symbol, binding: str) -> None:
         # A MIDI mapping was learned in mod-ui. Update the matching parameter's
         # binding and wire its hardware controller so the LCD reflects it without
         # a pedalboard reload. Idempotent: replayed connect-dump maps are no-ops.
@@ -260,11 +261,13 @@ class Handler(InputSink):
         controller = self.hardware.controllers.get(binding)
         if controller is None:
             return
+        old_binding = param.binding
         param.binding = binding
         is_footswitch = self._bind_controller_to_param(plugin, param, controller)
+        self._add_learned_binding_row(plugin, param, controller, old_binding)
         self._redraw_after_binding(controller, is_footswitch)
 
-    def _bind_controller_to_param(self, plugin, param, controller) -> bool:
+    def _bind_controller_to_param(self, plugin: "Plugin", param: "Parameter", controller: Controller) -> bool:
         # Wire a hardware controller to a plugin parameter. Returns True if the
         # controller is a footswitch (so callers can track footswitch plugins).
         controller.bind_to_parameter(param)
@@ -286,3 +289,11 @@ class Handler(InputSink):
         # Refresh the LCD after a learned binding. Subclasses redraw at their
         # own granularity.
         raise NotImplementedError()
+
+    def _add_learned_binding_row(
+        self, plugin: "Plugin", param: "Parameter", controller: Controller, old_binding: str | None
+    ) -> None:
+        # Add a table row for a live-learned binding so dispatch and badges
+        # reflect it without a pedalboard reload. MOD subclasses override;
+        # non-MOD hosts never receive midi_map.
+        pass

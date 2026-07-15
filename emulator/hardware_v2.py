@@ -42,5 +42,5 @@ class EmulatorHardwareV2(EmulatorHardwareBase):
         self.nav_encoder = nav
         # tweak_encoders and volume_encoder stay None/[] — v2 has no extras
 
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):  # pyright: ignore[reportIncompatibleMethodOverride]
+    def add_encoder(self, id, type, longpress_callback, midi_channel, midi_cc):  # pyright: ignore[reportIncompatibleMethodOverride]
         pass  # v2 has no config-driven encoders

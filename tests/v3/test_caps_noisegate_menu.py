@@ -192,6 +192,7 @@ def test_parameter_window_scrolls_when_content_overflows(v3_system: SystemFixtur
     bind_footswitch(handler, plugin, BYPASS_SYMBOL, fs_id=2)
 
     lcd = handler.lcd
+    assert lcd.pstack.current is not None
     lcd.main_panel.sel_widget(lcd.w_plugins[0])
     lcd.main_panel.input_event(InputEvent.LONG_CLICK)
     handler.poll_lcd_updates()
@@ -199,12 +200,12 @@ def test_parameter_window_scrolls_when_content_overflows(v3_system: SystemFixtur
 
     # Nav down past the 4 rings into the list, then keep going to the last row
     for _ in range(4 + 7):  # 4 rings + 7 nav steps to reach last of 8 list rows
-        lcd.pstack.input_step(1, 1, 1.0)
+        lcd.pstack.current.input_step(1, 1, 1.0)
         handler.poll_lcd_updates()
     snapshot("scrolled_to_last")
 
     # One more step lands on Back: the button row scrolls into view as the last
     # body element, it is not fixed chrome.
-    lcd.pstack.input_step(1, 1, 1.0)
+    lcd.pstack.current.input_step(1, 1, 1.0)
     handler.poll_lcd_updates()
     snapshot("scrolled_to_footer")

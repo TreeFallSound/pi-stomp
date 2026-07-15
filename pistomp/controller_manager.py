@@ -28,6 +28,7 @@ from common.contexts import (
     ControlClass,
     ControlRef,
     EventKind,
+    MidiCcEffect,
     ParamEffect,
     ShadowState,
 )
@@ -81,7 +82,7 @@ class ControllerManager:
             if self._reorder_footswitch_plugins:
                 self._move_footswitch_plugins_to_end(current, footswitch_plugins)
 
-        self._bind_external_controllers(current)
+        self._bind_external_controllers(current, pedalboard_layer)
         self.effective_table = ContextStack(layers=[pedalboard_layer])
 
     def _bind_plugin_parameters(self, current, pedalboard_layer: ContextLayer) -> list:
@@ -154,17 +155,15 @@ class ControllerManager:
         plugins = current.pedalboard.plugins
         current.pedalboard.plugins = [p for p in plugins if p.has_footswitch is False] + footswitch_plugins
 
-    def _bind_external_controllers(self, current) -> None:
+    def _bind_external_controllers(self, current, pedalboard_layer: ContextLayer) -> None:
         """Externally-routed controllers: bind a synthetic parameter and show
         them under an "External" category."""
         for controller in self._hw.controllers.values():
             if not self._hw.is_external(controller) or controller.midi_CC is None:
                 continue
             port_name = self._hw.external_port_name(controller)
+            key = f"{controller.midi_channel}:{controller.midi_CC}"
 
-            # AnalogMidiControl commits via parameter_value_commit (guarded by
-            # EXTERNAL_INSTANCE_ID); the encoder skips the commit path in _handle_encoder
-            # via hardware.is_external().
             if controller.parameter is None:
                 if isinstance(controller, AnalogMidiControl):
                     controller.parameter = self._hw.create_external_parameter(
@@ -178,13 +177,21 @@ class ControllerManager:
                         properties=[TTL_INTEGER],
                     )
                     controller.bind_to_parameter(
-                        Parameter(ext_info, controller.midi_value, None, EXTERNAL_INSTANCE_ID)
+                        Parameter(ext_info, controller.midi_value, key, EXTERNAL_INSTANCE_ID)
                     )
+
+            pedalboard_layer.add(
+                BindingDecl(
+                    control=ControlRef(cls=ControlClass.ANALOG, id=key),
+                    event_kind=EventKind.ROTATE,
+                    effects=(MidiCcEffect(cc_ref=key),),
+                    context=pedalboard_layer.ref,
+                )
+            )
 
             if isinstance(controller, Footswitch):
                 continue  # footswitches don't appear in the analog/encoder display
 
-            key = f"{controller.midi_channel}:{controller.midi_CC}"
             entry: AnalogDisplayInfo = {
                 **controller.get_display_info(),
                 "port_name": port_name,

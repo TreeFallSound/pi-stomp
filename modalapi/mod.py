@@ -29,6 +29,7 @@ import common.util as util
 import pistomp.switchstate as switchstate
 import modalapi.pedalboard as Pedalboard
 from common.parameter import BYPASS_SYMBOL, Parameter
+from pistomp.controller import Controller
 import modalapi.wifi as Wifi
 import modalapi.external_midi as ExternalMidi
 from pistomp.encoder_controller import EncoderController
@@ -790,7 +791,7 @@ class Mod(Handler):
         # any real time settings
         self._controller_manager.bind(self.current)
 
-    def _redraw_after_binding(self, controller, is_footswitch):
+    def _redraw_after_binding(self, controller: Controller, is_footswitch: bool) -> None:
         # draw_plugins/draw_bound_plugins place by has_footswitch, so no reorder
         # is needed here — the redraw alone moves the plugin to the footswitch row.
         self.update_lcd()

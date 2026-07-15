@@ -19,6 +19,7 @@ from modalapi.ws_protocol import (
     UnknownMessage,
     parse_message,
 )
+from common.parameter import Symbol
 
 
 # ---------------------------------------------------------------------------
@@ -202,12 +203,12 @@ def test_plugin_bypass_nested_instance():
 
 def test_midi_map_bypass():
     msg = parse_message("midi_map /graph/CollisionDrive :bypass 0 60 0.0 1.0")
-    assert msg == MidiMapMessage(instance="CollisionDrive", symbol=":bypass", channel=0, controller=60)
+    assert msg == MidiMapMessage(instance="CollisionDrive", symbol=Symbol(":bypass"), channel=0, controller=60)
 
 
 def test_midi_map_control_port():
     msg = parse_message("midi_map /graph/HotBox gain 13 70 0.0 1.0")
-    assert msg == MidiMapMessage(instance="HotBox", symbol="gain", channel=13, controller=70)
+    assert msg == MidiMapMessage(instance="HotBox", symbol=Symbol("gain"), channel=13, controller=70)
 
 
 def test_midi_map_malformed_is_unknown():
@@ -243,7 +244,7 @@ def test_plugin_bypass_nonzero_is_true():
 def test_param_set_generic_control_port():
     # Inbound (space) form for a non-bypass control port.
     msg = parse_message("param_set /graph/Delay gain 0.75")
-    assert msg == ParamSetMessage(instance="Delay", symbol="gain", value=0.75)
+    assert msg == ParamSetMessage(instance="Delay", symbol=Symbol("gain"), value=0.75)
 
 
 def test_param_set_bypass_precedes_generic_arm():

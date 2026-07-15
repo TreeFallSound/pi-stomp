@@ -1,8 +1,9 @@
 """MIDI learn in mod-ui (midi_map WS broadcast) binds a hardware control to a
 plugin parameter live, so the LCD reflects it without a pedalboard reload."""
 
+from common.contexts import ControlClass, EventKind, ParamEffect
+from common.parameter import BYPASS_SYMBOL, Symbol
 from tests.types import SystemFixture
-from common.parameter import BYPASS_SYMBOL
 
 
 def _binding_for(hw, controller):
@@ -110,3 +111,33 @@ def test_v3_midi_learn_unknown_instance_is_ignored(v3_system: SystemFixture, mak
 
     assert fs0.parameter is None
     assert plugin.has_footswitch is False
+
+
+def test_v3_midi_learn_adds_table_row_for_encoder(v3_system: SystemFixture, make_plugin, make_parameter):
+    """A midi_map for an encoder's CC adds a ParamEffect ROTATE row to the
+    pedalboard layer so _handle_encoder dispatch and badges reflect the
+    live-learned binding without a pedalboard reload."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+
+    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+
+    gain = make_parameter("Gain", "noise", value=0.5)
+    plugin = make_plugin("noise", bypassed=False, has_footswitch=False,
+                         parameters={"gain": gain})
+    handler.current.pedalboard.plugins = [plugin]
+
+    ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.0 1.0")
+    handler.poll_ws_messages()
+
+    rows = handler.effective_table.layers[0].rows.get((ControlClass.ANALOG, EventKind.ROTATE), [])
+    matched = [r for r in rows if r.control.id == _binding_for(hw, enc1)]
+    assert len(matched) == 1
+    effect = matched[0].effects[0]
+    assert isinstance(effect, ParamEffect)
+    assert effect.plugin is plugin
+    assert effect.symbol == Symbol("gain")

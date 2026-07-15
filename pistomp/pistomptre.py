@@ -89,7 +89,7 @@ class Pistomptre(hardware.Hardware):
                                      spi_speed_hz=50_000_000,
                                      reset=not has_system_splash()))
 
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
+    def add_encoder(self, id, type, longpress_callback, midi_channel, midi_cc):
         enc_pins = Util.DICT_GET(ENC, id)
         if enc_pins is None:
             raise ValueError("Cannot create encoder object for id:", id)

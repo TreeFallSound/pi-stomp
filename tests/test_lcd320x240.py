@@ -18,6 +18,7 @@ from common.contexts import (
     ControlClass,
     ControlRef,
     EventKind,
+    MidiCcEffect,
     ParamEffect,
     ShadowState,
 )
@@ -118,7 +119,7 @@ def _enc_step(instance, d, multiplier=1.0):
     """Step the top panel's nav selector, as the retired lcd.enc_step did."""
     if d == 0:
         return
-    instance.pstack.input_step(1 if d > 0 else -1, abs(d), multiplier)
+    instance.pstack.current.input_step(1 if d > 0 else -1, abs(d), multiplier)
 
 
 def setup_main_ui(instance):
@@ -539,10 +540,9 @@ def test_parameter_dialog_shows_tweak_badge_snapshot(lcd, snapshot):
 
 
 def test_parameter_dialog_shows_tweak_badge_for_external_param(lcd):
-    """External MIDI-CC controllers get no plugin and no BindingDecl (see
-    controller_manager._bind_external_controllers) so tweak_badge_number's
-    effective_table walk can never see them. The badge must come from a
-    direct controller<->parameter lookup instead."""
+    """External MIDI-CC controllers get a MidiCcEffect row in the pedalboard
+    layer (controller_manager._bind_external_controllers). The badge comes
+    from that row via the effective table, not a direct controller lookup."""
     instance, _ = lcd
     setup_main_ui(instance)
 
@@ -556,7 +556,23 @@ def test_parameter_dialog_shows_tweak_badge_for_external_param(lcd):
     enc = EncoderController(d_pin=None, clk_pin=None, type=Token.KNOB, id=2, midi_channel=0, midi_CC=71)
     enc.bind_to_parameter(ext_param)
     instance.handler.hardware.controllers = {"0:71": enc}
-    instance.handler.hardware.controller_for_parameter.return_value = enc
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.ANALOG, EventKind.ROTATE): [
+                        BindingDecl(
+                            control=ControlRef(cls=ControlClass.ANALOG, id="0:71"),
+                            event_kind=EventKind.ROTATE,
+                            effects=(MidiCcEffect(cc_ref="0:71"),),
+                            context=ContextRef(kind=ContextKind.PEDALBOARD),
+                        )
+                    ]
+                },
+            )
+        ]
+    )
 
     d = instance.draw_parameter_dialog(ext_param)
     assert d._badge is not None

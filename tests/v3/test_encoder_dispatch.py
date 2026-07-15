@@ -19,7 +19,17 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import common.token as Token
-from modalapi.external_midi import EXTERNAL_INSTANCE_ID
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextLayer,
+    ContextRef,
+    ContextStack,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    MidiCcEffect,
+)
 from pistomp.encoder_controller import EncoderController
 from pistomp.input.event import EncoderEvent
 from rtmidi.midiconstants import CONTROL_CHANGE
@@ -149,7 +159,25 @@ def test_parameter_dialog_nav_change_emits_cc_for_external_param(v3_system: Syst
     enc1 = _enc(hw, 1)
     ext_param = hw.create_external_parameter(enc1, "virtual", enc1.midi_channel, enc1.midi_CC)
     enc1.bind_to_parameter(ext_param)
-    hw.controllers["0:70"] = enc1
+    binding = f"{enc1.midi_channel}:{enc1.midi_CC}"
+    hw.controllers[binding] = enc1
+    handler._controller_manager.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.ANALOG, EventKind.ROTATE): [
+                        BindingDecl(
+                            control=ControlRef(cls=ControlClass.ANALOG, id=binding),
+                            event_kind=EventKind.ROTATE,
+                            effects=(MidiCcEffect(cc_ref=binding),),
+                            context=ContextRef(kind=ContextKind.PEDALBOARD),
+                        )
+                    ]
+                },
+            )
+        ]
+    )
 
     d = handler.lcd.draw_parameter_dialog(ext_param)
     hw.midiout.send_message.reset_mock()

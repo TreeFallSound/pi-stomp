@@ -43,6 +43,8 @@ from common.contexts import (
     ControlClass,
     ControlRef,
     EventKind,
+    MidiCcEffect,
+    ParamEffect,
 )
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from modalapi.plugin import Plugin
@@ -56,7 +58,6 @@ import modalapi.wifi as Wifi
 from plugins.base import PluginPanel
 from plugins.customization import lookup as plugin_lookup
 import modalapi.external_midi as ExternalMidi
-from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
 from pistomp.lcd320x240 import Lcd
@@ -83,6 +84,7 @@ from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundl
 from modalapi.version_check import DpkgDriftCheck
 
 from pistomp.controller_manager import ControllerManager
+from pistomp.controller import Controller
 from pistomp.current import Current
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
@@ -99,6 +101,14 @@ from pistomp.tuner.client import TunerClient
 from pistomp.tuner.engine import TunerBackend, TunerEngine
 from rtmidi.midiconstants import CONTROL_CHANGE
 from pathlib import Path
+
+
+def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
+    # Drop any PEDALBOARD-layer row whose control.id matches a learned binding
+    # that's being replaced. Scans all event_kind buckets since a re-learn could
+    # cross controller classes (footswitch ↔ encoder).
+    for (cls, event_kind), rows in list(layer.rows.items()):
+        layer.rows[(cls, event_kind)] = [d for d in rows if d.control.id != binding_id]
 
 
 class Modhandler(Handler):
@@ -332,10 +342,31 @@ class Modhandler(Handler):
                 d.update_value(event.new_value)
             return True
 
-        if c.parameter is not None:
+        if c.midi_CC is not None:
+            key = f"{c.midi_channel}:{c.midi_CC}"
+            winner = self.effective_table.resolve(
+                ControlRef(cls=ControlClass.ANALOG, id=key), EventKind.ROTATE
+            )
+        else:
+            winner = None
+
+        # The winning effect decides whether the turn commits to mod-host
+        # (ParamEffect) or only paints and emits its CC (MidiCcEffect); either
+        # way the parameter to show is the controller's own binding.
+        if winner is not None:
+            for effect in winner.effects:
+                if isinstance(effect, ParamEffect):
+                    if c.parameter is not None:
+                        self.lcd.display_parameter_value(c.parameter, event.new_value)
+                        self.parameter_value_commit(c.parameter, event.new_value)
+                elif isinstance(effect, MidiCcEffect):
+                    if c.parameter is not None:
+                        self.lcd.display_parameter_value(c.parameter, event.new_value)
+        elif c.parameter is not None:
+            # Bound controller with no table row to resolve — no midi_CC to key
+            # on. Commit its parameter directly.
             self.lcd.display_parameter_value(c.parameter, event.new_value)
-            if not self.hardware.is_external(c):
-                self.parameter_value_commit(c.parameter, event.new_value)
+            self.parameter_value_commit(c.parameter, event.new_value)
 
         self._emit_midi(c, event.new_midi_value)
         return True
@@ -676,7 +707,7 @@ class Modhandler(Handler):
             if self._current is not None:
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
-                        plugin.set_param_value(Symbol(msg.symbol), msg.value)
+                        plugin.set_param_value(msg.symbol, msg.value)
                         break
 
         elif isinstance(msg, MidiMapMessage):
@@ -944,12 +975,31 @@ class Modhandler(Handler):
         # any real time settings
         self._controller_manager.bind(self.current)
 
-    def _redraw_after_binding(self, controller, is_footswitch):
+    def _redraw_after_binding(self, controller: Controller, is_footswitch: bool) -> None:
         if is_footswitch:
             # Footswitch: redraw just that one switch, not the whole board.
             self.lcd.update_footswitch(controller)
         else:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)
+
+    def _add_learned_binding_row(
+        self, plugin: Plugin, param: Parameter, controller: Controller, old_binding: str | None
+    ) -> None:
+        layer = self._controller_manager.effective_table.layers[0]
+        if old_binding is not None:
+            _remove_binding_row(layer, old_binding)
+        if isinstance(controller, Footswitch):
+            cls, event_kind = ControlClass.FOOTSWITCH, EventKind.PRESS
+        else:
+            cls, event_kind = ControlClass.ANALOG, EventKind.ROTATE
+        layer.add(
+            BindingDecl(
+                control=ControlRef(cls=cls, id=param.binding),
+                event_kind=event_kind,
+                effects=(ParamEffect(plugin=plugin, symbol=param.symbol),),
+                context=layer.ref,
+            )
+        )
 
     def pedalboard_change(self, pedalboard: Pedalboard.Pedalboard) -> None:
         logging.info("Pedalboard change")
@@ -1095,14 +1145,18 @@ class Modhandler(Handler):
             self.audio_parameter_commit(param.symbol, value)
             return
 
-        # External MIDI parameters have no mod-host counterpart to update, but the
-        # dialog's NAV path still owns sending the CC that _handle_encoder would
-        # have sent for a physical turn.
-        if param.instance_id == EXTERNAL_INSTANCE_ID:
-            controller = self.hardware.controller_for_parameter(param)
-            if controller is not None:
-                self._emit_midi(controller, int(value))
-            return
+        # External MIDI parameters have no mod-host counterpart. The dialog's NAV
+        # path owns sending the CC that _handle_encoder would have sent for a turn;
+        # the binding table identifies which controller carries it.
+        if param.binding is not None:
+            winner = self.effective_table.resolve(
+                ControlRef(cls=ControlClass.ANALOG, id=param.binding), EventKind.ROTATE
+            )
+            if winner is not None and any(isinstance(e, MidiCcEffect) for e in winner.effects):
+                controller = self.hardware.controllers.get(param.binding)
+                if controller is not None:
+                    self._emit_midi(controller, int(value))
+                return
 
         if not self._is_pedalboard_loading:
             self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)

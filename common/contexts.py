@@ -173,11 +173,8 @@ class ContextLayer:
     rows: dict[tuple[ControlClass, EventKind], list[BindingDecl]] = field(default_factory=dict)
 
     def add(self, decl: BindingDecl) -> None:
-        """Register a row. VOLUME is protected by default (§4.2, §8 Q4): a
-        PANEL-context row for cls=VOLUME is rejected unless the row's own
-        declared context opted in via override_volume=True. Checked against
-        decl.context (not self.ref) — each row states its own authorial
-        context, which is what makes aggregating already-authored rows into
+        """Register a row. Each row states its own context,
+        which is what makes aggregating already-authored rows into
         an ad hoc layer (see dispatch.resolve_local) safe."""
         if (
             decl.control.cls is ControlClass.VOLUME
