@@ -22,7 +22,7 @@ There is no `consumed` field; that's the return of `handle`. There is no `RELEAS
 
 ## The handler is the sink
 
-For every controller the sink is the handler — `Modhandler` — wired once by `Hardware.register_sink(self)`. Its `handle` is a fixed cascade: ask the **LCD** first (so an open panel can intercept inputs for the encoder it cares about), then the active **blend mode**, then run the handler's own logic by event type — display the parameter dialog, commit to mod-host unless the control is externally routed, emit MIDI.
+For every controller the sink is the handler — `Modhandler` — wired once by `Hardware.register_sink(self)`. Its `handle` is a fixed cascade: ask the **LCD** first (so an open panel can intercept inputs for the encoder it cares about), then the active **blend mode**, then run the handler's own logic by event type — write the local parameter value (so reactive observers repaint), display the parameter dialog, and emit MIDI.
 
 Push/pop semantics live on the LCD, next to the only thing that needs them: a panel pushes itself when it opens and pops when it closes, and the LCD's `handle` walks that stack top-down. Blend mode likewise intercepts at the handler instead of hijacking a controller callback — `intercept(event)` reads the source controller's normalized position and sends its diff map.
 
