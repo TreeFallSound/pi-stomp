@@ -85,6 +85,17 @@ class Footswitch(controller.Controller):
         self.midi_channel = midi_channel
 
     @property
+    def dispatch_key(self) -> str:
+        """The identity a footswitch binding row is keyed by, and the same key
+        the dispatcher resolves against. "channel:CC" when the footswitch has a
+        midi_CC (the identity ParamEffect PRESS rows use); "fs:<slot>" as a
+        synthetic fallback for preset footswitches whose midi_CC was cleared by
+        config."""
+        if self.midi_CC is not None:
+            return f"{self.midi_channel}:{self.midi_CC}"
+        return f"fs:{self.id}"
+
+    @property
     def drives_display(self) -> bool:
         """True when unbound: no inbound echo will arrive, so the press updates
         indicators itself. When bound to a plugin :bypass, the WS broadcast does."""

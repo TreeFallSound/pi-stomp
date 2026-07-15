@@ -48,17 +48,6 @@ if TYPE_CHECKING:
     from pistomp.hardware import Hardware
 
 
-def _fs_key(fs: Footswitch) -> str:
-    """The identity a footswitch PRESS row is keyed by. "channel:CC" when the
-    footswitch has a midi_CC (the same identity ParamEffect PRESS rows use);
-    "fs:<slot>" as a synthetic fallback for preset footswitches whose midi_CC
-    was cleared by config. The dispatcher builds the same key from fs.midi_CC
-    or fs.id."""
-    if fs.midi_CC is not None:
-        return f"{fs.midi_channel}:{fs.midi_CC}"
-    return f"fs:{fs.id}"
-
-
 class ControllerManager:
     """
     Manages controller/parameter bindings on the current pedalboard,
@@ -270,7 +259,7 @@ class ControllerManager:
             if self._hw.is_external(fs):
                 continue  # owned by _bind_external_controllers
 
-            key = _fs_key(fs)
+            key = fs.dispatch_key
 
             # Relay longpress: one relay today; the relays tuple is future schema.
             # Added before the PRESS-row skip so a plugin-bound relay footswitch
