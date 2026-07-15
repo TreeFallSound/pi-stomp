@@ -7,3 +7,4 @@ __pycache__
 tools/renders/
 setup/nam/*.wav
 .claude/worktrees
+.vscode/settings.json
