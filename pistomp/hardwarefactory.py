@@ -16,7 +16,6 @@
 import common.token as Token
 import common.util as Util
 
-import pistomp.pistomp as Pistomp
 import pistomp.pistompcore as Pistompcore
 import pistomp.pistomptre as Pistomptre
 
@@ -34,9 +33,9 @@ class Hardwarefactory:
         if not hw:
             return None
         version = Util.DICT_GET(hw, Token.VERSION)
-        if version is None or (version < 2.0):
-            return Pistomp.Pistomp(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
-        elif (version >= 2.0) and (version < 3.0):
+        if version is None:
+            return None
+        if (version >= 2.0) and (version < 3.0):
             return Pistompcore.Pistompcore(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)
-        elif (version >= 3.0) and (version < 4.0):
+        if (version >= 3.0) and (version < 4.0):
             return Pistomptre.Pistomptre(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)

@@ -1,10 +1,10 @@
 """Footswitch short-press and longpress dispatch through the binding table
 (Stages 5-6).
 
-The imperative if-chain in Handler._handle_footswitch is replaced on Modhandler
-by a table resolve + _fire_row. Each footswitch action type — preset, taptempo,
-midi_CC toggle, relay longpress, plugin-:bypass — is a binding row; the table
-picks the winner and the fire arm owns the hardware side effects.
+Modhandler._handle_footswitch is a table resolve + _fire_row. Each footswitch
+action type — preset, taptempo, midi_CC toggle, relay longpress, plugin-:bypass
+— is a binding row; the table picks the winner and the fire arm owns the
+hardware side effects.
 """
 
 
@@ -58,7 +58,7 @@ def test_preset_footswitch_builds_preset_effect_row(v3_system: SystemFixture):
     """A preset footswitch produces a PresetEffect PRESS row."""
     handler = v3_system.handler
     fs = v3_system.hw.footswitches[0]
-    fs.add_preset(callback=handler.preset_incr_and_change, direction="UP")
+    fs.add_preset(direction="UP")
     handler.bind_current_pedalboard()
 
     key = _fs_key(fs)
@@ -188,14 +188,12 @@ def test_preset_footswitch_press_changes_preset(v3_system: SystemFixture):
     calls the right preset method."""
     handler = v3_system.handler
     fs = v3_system.hw.footswitches[0]
-    fs.add_preset(callback=handler.preset_incr_and_change, direction="UP")
+    fs.add_preset(direction="UP")
     handler.bind_current_pedalboard()
 
     calls: list[str] = []
     original = handler.preset_incr_and_change
     handler.preset_incr_and_change = lambda *a: calls.append("incr")
-       # Update the callback fs points to (add_preset captured the original bound method)
-    fs.preset_callback = handler.preset_incr_and_change
 
     event = SwitchEvent(controller=fs, kind=SwitchEventKind.PRESS, timestamp=1000.0)
     assert handler.handle(event) is True

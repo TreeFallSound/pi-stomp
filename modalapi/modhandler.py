@@ -354,9 +354,10 @@ class Modhandler(Handler):
         else:
             winner = None
 
-        # The winning effect decides whether the turn commits to mod-host
-        # (ParamEffect) or only paints and emits its CC (MidiCcEffect); either
-        # way the parameter to show is the controller's own binding.
+        # The winning effect decides the local response — commit to mod-host
+        # (ParamEffect) or only paint (MidiCcEffect); either way the parameter to
+        # show is the controller's own binding. The CC emit is NOT part of this
+        # choice — see below.
         if winner is not None:
             for effect in winner.effects:
                 if isinstance(effect, ParamEffect):
@@ -372,6 +373,9 @@ class Modhandler(Handler):
             self.lcd.display_parameter_value(c.parameter, event.new_value)
             self.parameter_value_commit(c.parameter, event.new_value)
 
+        # Unconditional, and must stay that way: an unbound encoder has no row,
+        # and this emit is the only way mod-ui sees its CC to MIDI-learn it.
+        # Emission is hardware-level, below the table (see input/README.md).
         self._emit_midi(c, event.new_midi_value)
         return True
 

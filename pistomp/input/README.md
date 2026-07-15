@@ -22,7 +22,7 @@ There is no `consumed` field; that's the return of `handle`. There is no `RELEAS
 
 ## The handler is the sink
 
-For every controller on every version the sink is the handler — `Modhandler` (v2/v3) or `Mod` (v1) — wired once by `Hardware.register_sink(self)`. Its `handle` is a fixed cascade: ask the **LCD** first (so an open panel can intercept inputs for the encoder it cares about), then the active **blend mode**, then run the handler's own logic by event type — display the parameter dialog, commit to mod-host unless the control is externally routed, emit MIDI.
+For every controller the sink is the handler — `Modhandler` — wired once by `Hardware.register_sink(self)`. Its `handle` is a fixed cascade: ask the **LCD** first (so an open panel can intercept inputs for the encoder it cares about), then the active **blend mode**, then run the handler's own logic by event type — display the parameter dialog, commit to mod-host unless the control is externally routed, emit MIDI.
 
 Push/pop semantics live on the LCD, next to the only thing that needs them: a panel pushes itself when it opens and pops when it closes, and the LCD's `handle` walks that stack top-down. Blend mode likewise intercepts at the handler instead of hijacking a controller callback — `intercept(event)` reads the source controller's normalized position and sends its diff map.
 
@@ -44,6 +44,27 @@ The schema (`BindingDecl`, the closed `Effect` union, `ControlRef`/
 `common/contexts.py` — read its module docstring and the type definitions
 themselves, which carry the field-level rationale inline. This doc only
 covers how `pistomp/input`'s own pieces consume that schema.
+
+## Emission is below the table (the MIDI-learn axiom)
+
+The table governs the **local semantic response** to a control — commit a plugin
+parameter, toggle bypass, change snapshot, fire a callback. It does **not** gate
+the raw MIDI CC. A control with a `midi_CC` emits its CC on every actuation
+whether or not any row resolves, and the emit is layered on top of the
+resolved effect, never gated by it (`Modhandler._handle_encoder` emits after the
+resolve; the footswitch `MidiCcEffect` arm emits inside the fire path).
+
+This is deliberate and load-bearing: **an unbound control has no row, and its
+unconditional emit is the only way mod-ui can see it to MIDI-learn it.** Wiggle a
+fresh tweak encoder, mod-ui sees CC70 on the wire, you map it. If emission were
+row-gated, a control could never reach the state where it earns a row — the
+chicken with no egg. So the correct reading of "everything goes through the
+table" is *every local action* goes through the table; raw CC is hardware
+behavior beneath it. Do not "fix" the unconditional emit into the resolved
+branch — that breaks learn.
+
+The bound case still emits too, and must: the CC has to reach the external port
+(or mod-host's virtual port) regardless of what the row does locally.
 
 ## Where a panel plugs in
 

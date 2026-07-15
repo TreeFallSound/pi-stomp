@@ -5,18 +5,7 @@ interpreter teardown after cleanup() had run."""
 
 from unittest.mock import MagicMock
 
-from modalapi.mod import Mod
 from modalapi.modhandler import Modhandler
-
-
-class TestModCleanup:
-    def test_cleanup_closes_external_midi(self):
-        h = object.__new__(Mod)
-        h.lcd = None
-        h.external_midi = MagicMock()
-        h.ws_bridge = MagicMock()
-        h.cleanup()
-        h.external_midi.close.assert_called_once()
 
 
 class TestModhandlerCleanup:

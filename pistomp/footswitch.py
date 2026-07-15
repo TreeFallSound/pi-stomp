@@ -37,7 +37,6 @@ class Footswitch(controller.Controller):
         self.led = None
         self.refresh_callback = refresh_callback
         self.relay_list = []
-        self.preset_callback = None
         self.preset_callback_arg = None
         self.preset_direction: str | None = None
         self.lcd_color = None
@@ -182,8 +181,7 @@ class Footswitch(controller.Controller):
     def clear_relays(self):
         self.relay_list.clear()
 
-    def add_preset(self, callback, direction=None, callback_arg=None):
-        self.preset_callback = callback
+    def add_preset(self, direction=None, callback_arg=None):
         self.preset_direction = direction
         self.preset_callback_arg = callback_arg
 
@@ -192,7 +190,6 @@ class Footswitch(controller.Controller):
         self.disabled = False
         self.display_label = None
         self.set_category(None)
-        self.preset_callback = None
         self.preset_direction = None
         self.preset_callback_arg = None
         self.parameter = None

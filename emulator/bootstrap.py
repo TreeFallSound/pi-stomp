@@ -23,11 +23,10 @@ import pistomp.config as config
 import pistomp.settings as Settings_module
 from pistomp.tuner.source import ToneSweepSource
 
-EmulatorVersion = Literal["emulator_v1", "emulator_v2", "emulator_v3"]
+EmulatorVersion = Literal["emulator_v2", "emulator_v3"]
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 _CONFIG_TEMPLATES = {
-    "emulator_v1": os.path.join(_REPO_ROOT, "setup", "config_templates", "default_config_pistomp.yml"),
     "emulator_v2": os.path.join(_REPO_ROOT, "setup", "config_templates", "default_config_pistompcore.yml"),
     "emulator_v3": os.path.join(_REPO_ROOT, "setup", "config_templates", "default_config_pistomptre.yml"),
 }
@@ -39,9 +38,6 @@ def bootstrap_emulator(version: EmulatorVersion, cwd: str):
     from emulator.window import EmulatorWindow
 
     match version:
-        case "emulator_v1":
-            from emulator.hardware_v1 import EmulatorHardwareV1 as EmuHW
-            from emulator.mod import EmulatorMod as EmuHandler
         case "emulator_v2":
             from emulator.hardware_v2 import EmulatorHardwareV2 as EmuHW
             from emulator.modhandler import EmulatorModhandler as EmuHandler
@@ -59,10 +55,9 @@ def bootstrap_emulator(version: EmulatorVersion, cwd: str):
 
     cfg = config.load_cfg_from_file(_CONFIG_TEMPLATES[version])
 
-    if version != "emulator_v1":
-        emu_cfg_dir = os.path.join(os.path.expanduser("~"), ".pistomp_emulator", "config")
-        os.makedirs(emu_cfg_dir, exist_ok=True)
-        Settings_module.DATA_DIR = emu_cfg_dir
+    emu_cfg_dir = os.path.join(os.path.expanduser("~"), ".pistomp_emulator", "config")
+    os.makedirs(emu_cfg_dir, exist_ok=True)
+    Settings_module.DATA_DIR = emu_cfg_dir
 
     handler = EmuHandler(cwd)
     hw = EmuHW(cfg, handler, midiout, refresh_callback=handler.update_lcd_fs)

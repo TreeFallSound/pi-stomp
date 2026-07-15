@@ -16,7 +16,6 @@
 import common.token as Token
 import common.util as Util
 
-import modalapi.mod as Mod
 import modalapi.modhandler as Modhandler
 
 class Handlerfactory:
@@ -34,13 +33,6 @@ class Handlerfactory:
         if not hw:
             return None
         version = Util.DICT_GET(hw, Token.VERSION)
-        if version is None or (version < 2.0):
-            handler = Mod.Mod(audiocard, cwd)
-        elif (version >= 2.0) and (version < 3.0):
-            handler = Modhandler.Modhandler(audiocard, cwd)
-        elif (version >= 3.0) and (version < 4.0):
-            handler = Modhandler.Modhandler(audiocard, cwd)
-        else:
+        if version is None or version < 2.0 or version >= 4.0:
             return None
-
-        return handler
+        return Modhandler.Modhandler(audiocard, cwd)

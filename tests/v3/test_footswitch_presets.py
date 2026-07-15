@@ -3,12 +3,11 @@
 Covers four behaviors:
   1. The label shows the snapshot name, not the raw index.
   2. `Hardware.__init_footswitches` clears any midi_CC (default-config or
-     override) when `preset:` is configured, since a preset footswitch's own
-     press dispatch always short-circuits on preset_callback before ever
-     reaching midi_CC emission (see Handler._handle_footswitch) -- an
-     inherited-but-unused CC otherwise sits in `hw.controllers` where
-     ControllerManager.bind() can match it against an unrelated plugin's
-     MIDI-learned binding and steal fs.parameter.
+     override) when `preset:` is configured, since a preset footswitch
+     dispatches a PresetEffect row, not a CC toggle -- an inherited-but-unused
+     CC otherwise sits in `hw.controllers` where ControllerManager.bind() can
+     match it against an unrelated plugin's MIDI-learned binding and steal
+     fs.parameter.
   3. The label survives even if `fs.parameter` still ends up set by some
      other path -- defense in depth on top of (2), so
      `draw_footswitches`/`update_footswitch` never let a plugin/param name
@@ -37,7 +36,7 @@ class TestPresetFootswitchLabel:
     def test_shows_snapshot_name_not_index(self, v3_system: SystemFixture):
         handler = v3_system.handler
         fs = v3_system.hw.footswitches[0]
-        fs.add_preset(callback=handler.preset_set_and_change, callback_arg=1)
+        fs.add_preset(callback_arg=1)
 
         # v3_system's snapshot/list mock returns {"0": "Clean", "1": "Lead"}
         # (footswitch_label lowercases, same as it does for plugin names)
@@ -46,7 +45,7 @@ class TestPresetFootswitchLabel:
     def test_falls_back_to_index_when_name_unknown(self, v3_system: SystemFixture):
         handler = v3_system.handler
         fs = v3_system.hw.footswitches[0]
-        fs.add_preset(callback=handler.preset_set_and_change, callback_arg=7)
+        fs.add_preset(callback_arg=7)
 
         assert handler.lcd.footswitch_label(fs) == "7"
 
@@ -86,7 +85,7 @@ class TestPresetFootswitchLabelSurvivesParameterBinding:
         hw = v3_system.hw
         lcd = handler.lcd
         fs = hw.footswitches[0]
-        fs.add_preset(callback=handler.preset_set_and_change, callback_arg=0)
+        fs.add_preset(callback_arg=0)
         fs.parameter = _plugin_param()  # defense-in-depth: simulates fs.parameter
         # getting set through some other path despite (2) above
 
@@ -100,7 +99,7 @@ class TestPresetFootswitchLabelSurvivesParameterBinding:
         hw = v3_system.hw
         lcd = handler.lcd
         fs = hw.footswitches[0]
-        fs.add_preset(callback=handler.preset_set_and_change, callback_arg=0)
+        fs.add_preset(callback_arg=0)
 
         lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
         lcd.draw_main_panel()
@@ -113,17 +112,17 @@ class TestPresetFootswitchLabelSurvivesParameterBinding:
 
 class TestPresetFootswitchIndicator:
     def test_active_snapshot_footswitch_drives_physical_led(self, v3_system: SystemFixture):
-        """A press never touches fs.toggled for preset footswitches (handler.py
-        returns early on the preset_callback branch), so the LCD redraw path
-        is the only place that can also light the physical LED/pixel."""
+        """A press never touches fs.toggled for preset footswitches (the
+        PresetEffect arm changes the snapshot, not fs.toggled), so the LCD
+        redraw path is the only place that can also light the physical LED/pixel."""
         handler = v3_system.handler
         hw = v3_system.hw
         lcd = handler.lcd
         fs0, fs1 = hw.footswitches[0], hw.footswitches[1]
         fs0.pixel = MagicMock()
         fs1.pixel = MagicMock()
-        fs0.add_preset(callback=handler.preset_set_and_change, callback_arg=0)
-        fs1.add_preset(callback=handler.preset_set_and_change, callback_arg=1)
+        fs0.add_preset(callback_arg=0)
+        fs1.add_preset(callback_arg=1)
         handler.current.preset_index = 1
 
         lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
@@ -139,8 +138,8 @@ class TestPresetFootswitchIndicator:
         hw = v3_system.hw
         lcd = handler.lcd
         fs0, fs1 = hw.footswitches[0], hw.footswitches[1]
-        fs0.add_preset(callback=handler.preset_set_and_change, callback_arg=0)
-        fs1.add_preset(callback=handler.preset_set_and_change, callback_arg=1)
+        fs0.add_preset(callback_arg=0)
+        fs1.add_preset(callback_arg=1)
         handler.current.preset_index = 1
 
         lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
@@ -156,8 +155,8 @@ class TestPresetFootswitchIndicator:
         hw = v3_system.hw
         lcd = handler.lcd
         fs0, fs1 = hw.footswitches[0], hw.footswitches[1]
-        fs0.add_preset(callback=handler.preset_set_and_change, callback_arg=0)
-        fs1.add_preset(callback=handler.preset_set_and_change, callback_arg=1)
+        fs0.add_preset(callback_arg=0)
+        fs1.add_preset(callback_arg=1)
 
         lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
         lcd.draw_main_panel()

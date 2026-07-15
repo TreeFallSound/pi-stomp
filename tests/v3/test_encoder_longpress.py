@@ -106,9 +106,6 @@ def test_encoder_longpress_explicit_row_fires(v3_system: SystemFixture):
     fired: list[bool] = []
     handler.callbacks["toggle_bypass"] = lambda: fired.append(True)
 
-    class _FakeEnc(EncoderController):
-        pass
-
     enc = MagicMock(spec=EncoderController)
     enc.midi_channel = 0
     enc.midi_CC = 99

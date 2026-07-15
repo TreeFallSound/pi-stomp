@@ -165,7 +165,7 @@ class TestClearPedalboardInfo:
 
             assert fs.toggled is False
             assert fs.display_label is None
-            assert fs.preset_callback is None
+            assert fs.preset_direction is None
 
     def test_clears_preset_callback_arg(self):
         """Regression: clear_pedalboard_info must also reset preset_callback_arg.
@@ -175,7 +175,7 @@ class TestClearPedalboardInfo:
         returns the (now-None) display_label — i.e. the old preset binding bleeds
         onto the new pedalboard."""
         with _make_footswitch(midi_CC=None) as (fs, _sink):
-            fs.add_preset(callback=MagicMock(), callback_arg=5)
+            fs.add_preset(callback_arg=5)
             fs.set_display_label("Lead")
 
             fs.clear_pedalboard_info()

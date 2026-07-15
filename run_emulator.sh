@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
 # Launch the pi-stomp emulator.
 
-# Optional first argument: v1 / v2 / v3 (default: v3)
+# Optional first argument: v2 / v3 (default: v3)
 _version="${1:-v3}"
 case "$_version" in
-    v1|v2|v3) shift ;;
+    v2|v3) shift ;;
     *) _version="v3" ;;
 esac
 

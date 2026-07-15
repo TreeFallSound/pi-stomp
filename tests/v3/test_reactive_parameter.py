@@ -366,10 +366,11 @@ def test_connect_dump_coalesces_apply_state(v3_system: SystemFixture, make_plugi
 # landing on: LED-only optimistic on local press, keycap display driven by
 # the echo. Reactivity creates a new split:
 #
-#   - handler.py:186 writes param.value DIRECTLY (not via set_param_value),
-#     so on a local press the controller mirror does NOT fire → fs.set_value
-#     is not called → keycap waits for echo (invariant preserved). The panel
-#     observer DOES fire → panel repaints optimistically (face 1).
+#   - _fire_row's ParamEffect arm writes param.value DIRECTLY (not via
+#     set_param_value), so on a local press the controller mirror does NOT fire
+#     → fs.set_value is not called → keycap waits for echo (invariant
+#     preserved). The panel observer DOES fire → panel repaints optimistically
+#     (face 1).
 #   - On the echo (set_param_value), the mirror fires → keycap updates; the
 #     idempotent setter guard skips the observer → no redundant panel repaint.
 # ---------------------------------------------------------------------------
@@ -396,7 +397,7 @@ def test_local_footswitch_press_fires_panel_observer_not_keycap(v3_system: Syste
     assert panel.apply_count == 0
     fs.refresh_callback.reset_mock()
 
-    # Local press — handler.py:186 writes param.value directly.
+    # Local press — _fire_row's ParamEffect arm writes param.value directly.
     fs._on_switch(switchstate.Value.RELEASED)
     assert plugin.is_bypassed() is True
     assert panel._model_dirty is True  # observer fired
@@ -457,8 +458,8 @@ def test_rapid_footswitch_with_panel_open_coalesces(v3_system: SystemFixture, ma
     # Stomp N times with no echoes and no ticks in between.
     for _ in range(N):
         fs._on_switch(switchstate.Value.RELEASED)
-    # Each press writes param.value directly (handler.py:186); the observer
-    # fires each time but _model_dirty is already True — coalesced.
+    # Each press writes param.value directly (_fire_row ParamEffect arm); the
+    # observer fires each time but _model_dirty is already True — coalesced.
     assert panel._model_dirty is True
     fs.refresh_callback.assert_not_called()  # no echo yet → no keycap refresh
 

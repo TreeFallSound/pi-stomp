@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 
 if TYPE_CHECKING:
     from PIL import Image
-    from modalapi.mod import Mod  # noqa: F401  (forward ref in SystemFixtureLegacy)
     from modalapi.modhandler import Modhandler  # noqa: F401  (forward ref in SystemFixture)
     from pistomp.handler import Handler
     from pistomp.hardware import Hardware
@@ -34,7 +33,3 @@ class SystemFixtureBase(Generic[HandlerT]):
 
 class SystemFixture(SystemFixtureBase["Modhandler"]):
     """v2/v3 stack (Modhandler)."""
-
-
-class SystemFixtureLegacy(SystemFixtureBase["Mod"]):
-    """v1 stack (Mod)."""

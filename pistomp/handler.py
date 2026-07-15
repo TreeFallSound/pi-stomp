@@ -25,7 +25,7 @@ from pistomp.current import Current
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
 from pistomp.footswitch_chords import FootswitchChords
-from pistomp.input.event import ControllerEvent, SwitchEventKind
+from pistomp.input.event import ControllerEvent
 from pistomp.input.sink import InputSink
 from common.parameter import Symbol
 
@@ -148,44 +148,6 @@ class Handler(InputSink):
     def handle(self, event: ControllerEvent) -> bool:
         raise NotImplementedError()
 
-    # ── Footswitch dispatch (shared by v1/v3) ────────────────────────────
-
-    def _handle_footswitch(self, fs: "Footswitch", kind: SwitchEventKind, timestamp: float) -> bool:
-        """Resolve a footswitch SwitchEvent. Mirrors the old Footswitch.pressed()
-        behavior exactly, but as the sole arbiter on the handler side."""
-        if kind == SwitchEventKind.LONGPRESS:
-            if fs.relay_list:
-                # Relay footswitch: longpress toggles the relay immediately and
-                # never enters chord resolution.
-                new_toggled = not fs.toggled
-                fs.toggled = new_toggled
-                fs.toggle_relays(new_toggled)
-                fs.set_led(new_toggled)
-                self.update_lcd_fs(bypass_change=True)
-            else:
-                # TODO: consider case where relay and longpress are specified
-                self.chord_helper.observe(fs, timestamp)
-            return True
-
-        # Short press
-        if fs.taptempo and fs.taptempo.is_enabled():
-            fs.taptempo.stamp(timestamp)
-            return True
-        if fs.preset_callback is not None:
-            if fs.preset_callback_arg is not None:
-                fs.preset_callback(fs.preset_callback_arg)
-            else:
-                fs.preset_callback()
-            return True
-        if fs.midi_CC is not None:
-            fs.toggled = not fs.toggled
-            fs.set_led(fs.toggled)
-            self._emit_midi(fs, 127 if fs.toggled else 0)
-        if fs.parameter is not None:
-            fs.parameter.value = not fs.toggled  # FIXME: assumes mapped parameter is :bypass
-        self.update_lcd_fs(footswitch=fs)
-        return True
-
     def _tick_chords(self) -> None:
         """Resolve pending footswitch chords/singletons. Call once per poll cycle."""
         for name in self.chord_helper.tick():
@@ -224,14 +186,14 @@ class Handler(InputSink):
         raise NotImplementedError()
 
     def poll_ethernet(self):
-        # v1/v2 handlers don't run the Ethernet/JackBridge integration.
+        # No-op fallback; Modhandler runs the Ethernet/JackBridge integration.
         pass
 
     def set_tuner_source_factory(self, factory: "TunerSourceFactory") -> None:
         pass
 
     def set_tuner_source_spec(self, spec: str) -> None:
-        # No-op for handlers without a tuner (v1/generic); Modhandler overrides.
+        # No-op fallback for handlers without a tuner; Modhandler overrides.
         pass
 
     def is_symbol_locked(self, instance_id: str, symbol: Symbol) -> bool:
@@ -243,9 +205,6 @@ class Handler(InputSink):
     def hide_fullscreen_panel(self) -> None:
         pass
 
-    #
-    # MIDI binding (shared by v1/v3 handlers)
-    #
     def _apply_midi_binding(self, instance: str, symbol: Symbol, binding: str) -> None:
         # A MIDI mapping was learned in mod-ui. Update the matching parameter's
         # binding and wire its hardware controller so the LCD reflects it without

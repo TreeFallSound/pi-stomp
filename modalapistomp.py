@@ -40,11 +40,10 @@ from modalapi.pedalboard_monitor import write_last_json
 from pistomp.audiocard import Audiocard
 import pistomp.audiocardfactory as Audiocardfactory
 import pistomp.config as config
-import pistomp.generichost as Generichost
 import pistomp.handlerfactory as Handlerfactory
 import pistomp.hardwarefactory as Hardwarefactory
 
-EMULATOR_HOSTS = ("emulator_v1", "emulator_v2", "emulator_v3")
+EMULATOR_HOSTS = ("emulator_v2", "emulator_v3")
 
 
 def main():
@@ -65,7 +64,7 @@ def main():
         nargs="+",
         help="Plugin host to use. Example --host mod'",
         default=["mod"],
-        choices=["mod", "mod1", "generic", "emulator_v1", "emulator_v2", "emulator_v3"],
+        choices=["mod", "emulator_v2", "emulator_v3"],
     )
     parser.add_argument(
         "--tuner-source",
@@ -172,15 +171,6 @@ def main():
 
         # Load system info.  This can take a few seconds
         handler.system_info_load()
-
-    elif args.host[0] == "generic":
-        # No specific plugin host specified, so use a generic handler
-        # Encoders and LCD not mapped without specific purpose
-        # Just initialize the control hardware (footswitches, analog controls, etc.) for use as MIDI controls
-        handler = Generichost.Generichost(homedir=cwd)
-        factory = Hardwarefactory.Hardwarefactory()
-        hw = factory.create(cfg, handler, midiout)
-        handler.add_hardware(hw)
 
     elif is_emulator:
         from emulator.bootstrap import bootstrap_emulator

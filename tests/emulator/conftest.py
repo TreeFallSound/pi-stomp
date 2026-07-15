@@ -1,8 +1,8 @@
 """Bootstrap fixtures for emulator tests.
 
 Mirrors tests/integration/conftest.py's patch set but routed at the emulator
-entrypoints (modalapi.mod.AsyncWebSocketBridge, modalapi.modhandler.AsyncWebSocketBridge,
-modalapi.wifi.WifiManager).  Drives pygame headlessly via SDL_VIDEODRIVER=dummy."""
+entrypoints (modalapi.modhandler.AsyncWebSocketBridge, modalapi.wifi.WifiManager).
+Drives pygame headlessly via SDL_VIDEODRIVER=dummy."""
 
 import json
 from contextlib import ExitStack
@@ -60,17 +60,11 @@ def _mod_post(*_, **__):
 
 
 def _reset_singletons():
-    # Modhandler / Mod stash their single instance under a name-mangled attr.
+    # Modhandler stashes its single instance under a name-mangled attr.
     try:
         from modalapi.modhandler import Modhandler
 
         setattr(Modhandler, "_Modhandler__single", None)
-    except Exception:
-        pass
-    try:
-        from modalapi.mod import Mod
-
-        setattr(Mod, "_Mod__single", None)
     except Exception:
         pass
 
@@ -86,9 +80,7 @@ def emulator_env(tmp_path, monkeypatch):
         mock_get = stack.enter_context(patch("pistomp.httpclient.get", side_effect=_mod_get))
         mock_post = stack.enter_context(patch("pistomp.httpclient.post", side_effect=_mod_post))
         stack.enter_context(patch("modalapi.pedalboard.Pedalboard.hydrate"))
-        stack.enter_context(patch("modalapi.mod.AsyncWebSocketBridge"))
         stack.enter_context(patch("modalapi.modhandler.AsyncWebSocketBridge"))
-        stack.enter_context(patch("emulator.mod.AsyncWebSocketBridge"))
         stack.enter_context(patch("emulator.modhandler.AsyncWebSocketBridge"))
         # MIDI device may not exist on CI; force the bootstrap's except branch.
         stack.enter_context(patch("emulator.bootstrap.open_midioutput", side_effect=RuntimeError("no midi")))

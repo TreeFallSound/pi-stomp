@@ -13,7 +13,7 @@ from emulator.bootstrap import bootstrap_emulator
 PROJECT_ROOT = str(Path(__file__).parent.parent.parent)
 
 
-@pytest.mark.parametrize("version", ["emulator_v1", "emulator_v2", "emulator_v3"])
+@pytest.mark.parametrize("version", ["emulator_v2", "emulator_v3"])
 def test_bootstrap_wires_handler_hardware_and_window(emulator_env, version):
     handler, midiout = bootstrap_emulator(version, PROJECT_ROOT)
 

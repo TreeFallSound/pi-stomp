@@ -17,7 +17,7 @@ from pistomp.handler import Handler
 from pistomp.hardware import Hardware
 from pistomp.encoder_controller import EncoderController
 from pistomp.analogmidicontrol import AnalogMidiControl
-from pistomp.input.event import AnalogEvent, EncoderEvent, SwitchEvent
+from pistomp.input.event import AnalogEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 import pistomp.switchstate as switchstate
 
 
@@ -47,17 +47,12 @@ class _FakeHardware(Hardware):
 
 
 class _LoopbackHandler(Handler):
-    """Minimal InputSink that routes events → _emit_midi → ExternalMidiManager.
-
-    Uses the real _handle_footswitch from pistomp.handler.Handler so the
-    footswitch path exercises production code.
-    """
+    """Minimal InputSink that routes events → _emit_midi → ExternalMidiManager."""
 
     def __init__(self, hw: _FakeHardware, mgr: ExternalMidiManager):
         super().__init__()
         self.hardware = hw
         self.external_midi = mgr
-        # chord_helper is set by Handler.__init__; we leave it as-is.
 
     def _emit_midi(self, controller, midi_value: int) -> None:
         if controller.midi_CC is None:
@@ -77,7 +72,12 @@ class _LoopbackHandler(Handler):
 
     def handle(self, event) -> bool:
         if isinstance(event, SwitchEvent) and isinstance(event.controller, Footswitch):
-            return self._handle_footswitch(event.controller, event.kind, event.timestamp)
+            fs = event.controller
+            if event.kind == SwitchEventKind.PRESS and fs.midi_CC is not None:
+                fs.toggled = not fs.toggled
+                fs.set_led(fs.toggled)
+                self._emit_midi(fs, 127 if fs.toggled else 0)
+            return True
         if isinstance(event, EncoderEvent):
             self._emit_midi(event.controller, event.new_midi_value)
             return True
