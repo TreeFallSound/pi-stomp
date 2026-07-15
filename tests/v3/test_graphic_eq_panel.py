@@ -251,12 +251,14 @@ def test_long_press_resets_band(v3_system: SystemFixture, nav_handler, snapshot)
 
 
 # ---------------------------------------------------------------------------
-# Saga 7 — Tweak2/3 are consumed but no-op on graphic EQ
+# Saga 7 — Tweak2 is consumed no-op; Tweak3 has no band role, so it always
+# reaches the volume encoder
 # ---------------------------------------------------------------------------
 
 
-def test_tweak23_consumed_noop(v3_system: SystemFixture, nav_handler):
-    """Tweak2 and Tweak3 are consumed by the panel (no handler fall-through)."""
+def test_tweak2_noop_tweak3_volume(v3_system: SystemFixture, nav_handler):
+    """Graphic EQ claims only gain (Tweak1) and absorbs Tweak2; Tweak3 has no
+    band role, so it falls through to volume whether or not a band is selected."""
     handler = v3_system.handler
     open_eq(v3_system)
 
@@ -264,11 +266,12 @@ def test_tweak23_consumed_noop(v3_system: SystemFixture, nav_handler):
         event = EncoderEvent(controller=_FakeEnc(enc_id), rotations=1, new_value=0.0, new_midi_value=0)
         return handler.lcd.handle(event)
 
+    # Band selected: gain edited, Tweak2 absorbed, Tweak3 falls through.
     assert _lcd_consumes(1) is True
     assert _lcd_consumes(2) is True
-    assert _lcd_consumes(3) is True
+    assert _lcd_consumes(3) is False
 
-    # On chrome: Tweak3 falls through, Tweak1/2 consumed
+    # Chrome focused: Tweak1 now absorbs (no band), Tweak2/3 unchanged.
     nav(nav_handler, 10)
     assert _lcd_consumes(3) is False
     assert _lcd_consumes(1) is True

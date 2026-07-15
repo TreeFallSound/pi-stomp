@@ -23,7 +23,6 @@ from common.contexts import (
 )
 from common.param_roles import ParamRole, edit_value
 from common.parameter import Symbol
-from pistomp.input.event import ControllerEvent, EncoderEvent
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import GraphicBandSpec
 from plugins.eq.parametric import paint_band_node, _fmt_freq as _fmt_freq_long
@@ -423,13 +422,9 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
         self.apply_state(self.snapshot_state())
         self.sel_widget(self._band_sels[self.bands[0].name])
 
-    def on_event(self, event: ControllerEvent) -> bool:
-        # No band selected (chrome focused): Tweak3 falls through to volume; gain/2 absorbed.
-        if isinstance(event, EncoderEvent) and event.controller.id in (1, 2, 3) and self.selected_band is None:
-            return event.controller.id != 3
-        return super().on_event(event)
-
     def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        # Only gain (Tweak1) is per-band; Tweak2 absorbs. Tweak3 has no band role,
+        # so it's left unclaimed and always reaches the volume encoder.
         ctx = ContextRef(kind=ContextKind.PANEL, name="graphic_eq")
         return (
             BindingDecl(
@@ -440,12 +435,6 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
             ),
             BindingDecl(
                 control=ControlRef(cls=ControlClass.TWEAK, id=2),
-                event_kind=EventKind.ROTATE,
-                effects=(NoneEffect(),),
-                context=ctx,
-            ),
-            BindingDecl(
-                control=ControlRef(cls=ControlClass.TWEAK, id=3),
                 event_kind=EventKind.ROTATE,
                 effects=(NoneEffect(),),
                 context=ctx,

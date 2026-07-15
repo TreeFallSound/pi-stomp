@@ -471,8 +471,14 @@ class Hardware(ABC):
                 if Token.BYPASS in f:
                     # TODO no more right or left
                     if f[Token.BYPASS] == Token.LEFT_RIGHT or f[Token.BYPASS] == Token.LEFT:
-                        fs.add_relay(self.relay)
-                        fs.set_display_label("byps")
+                        if self.relay is not None:
+                            fs.add_relay(self.relay)
+                            fs.set_display_label("byps")
+                        else:
+                            logging.warning(
+                                "Footswitch %d bypass config ignored — no relay hardware (v3)",
+                                idx,
+                            )
 
                 # Midi
                 if Token.MIDI_CC in f:
@@ -490,13 +496,14 @@ class Hardware(ABC):
                     self.__clear_footswitch_midi_cc(fs)
                     preset_value = f[Token.PRESET]
                     if preset_value == Token.UP:
-                        fs.add_preset(callback=self.handler.preset_incr_and_change)
+                        fs.add_preset(callback=self.handler.preset_incr_and_change, direction="UP")
                         fs.set_display_label("Pre+")
                     elif preset_value == Token.DOWN:
-                        fs.add_preset(callback=self.handler.preset_decr_and_change)
+                        fs.add_preset(callback=self.handler.preset_decr_and_change, direction="DOWN")
                         fs.set_display_label("Pre-")
                     elif isinstance(preset_value, int):
-                        fs.add_preset(callback=self.handler.preset_set_and_change, callback_arg=preset_value)
+                        fs.add_preset(callback=self.handler.preset_set_and_change,
+                                      direction=str(preset_value), callback_arg=preset_value)
                         fs.set_display_label(str(preset_value))
 
                 # Suppress (per-pedalboard disable without removing the object)

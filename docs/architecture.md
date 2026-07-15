@@ -85,8 +85,11 @@ navigation. There is no router class.
 per-panel `if` chains: each control class (nav, volume, tweak encoder, pot/expression,
 footswitch) has a fixed chain of contexts consulted top-down (open panel → blend →
 pedalboard — nav is the one axiom, unbindable by any context), and the winning
-declaration is what fires. This is also the single source badges render from, so a
-badge is never shown for a binding that isn't actually live.
+declaration is what fires. This covers encoder rotation, encoder longpress,
+and footswitch short-press; the one exception is footswitch chord longpress
+(a 400ms windowed state machine that can't express "maybe fire later" as a
+declaration, so it stays as code). This is also the single source badges render
+from, so a badge is never shown for a binding that isn't actually live.
 
 **Full design: `pistomp/input/README.md`.**
 
@@ -179,10 +182,12 @@ MOD-UI stays authoritative for bypass/parameter state, but pi-Stomp updates its 
 indicators optimistically so the UI stays responsive; the inbound echo carries the
 absolute current value and reconciles if it ever differs.
 
-- **Footswitch**: `pressed()` flips local `toggled`, updates its LED immediately, and
-  sends an absolute MIDI CC. mod-host applies it and echoes `param_set` to all clients
-  (including us), where `plugin.set_param_value()` reconciles cached state and redraws
-  the LCD. Optimism matters because mod-host gates its feedback stream on the
+- **Footswitch**: the binding table resolves the press to a `ParamEffect` (plugin
+  :bypass), `PresetEffect`, `TapTempoEffect`, or `MidiCcEffect(toggle=True)` row;
+  `_fire_row` flips local `toggled`, updates the LED, and sends an absolute MIDI CC.
+  mod-host applies it and echoes `param_set` to all clients (including us), where
+  `plugin.set_param_value()` reconciles cached state and redraws the LCD. Optimism
+  matters because mod-host gates its feedback stream on the
   `data_finish`/`output_data_ready` handshake — a backgrounded mod-ui browser tab can
   delay that echo by seconds, which would otherwise lag the switch.
 - **Tap tempo**: Sends `transport-bpm` via WebSocket bridge.
@@ -284,8 +289,9 @@ MOD-UI writes /home/pistomp/data/last.json
 
 ```
 poll_controls()
-  → Footswitch emits SwitchEvent → handler._handle_footswitch()
-    → flip toggled, set LED                         # optimistic update
+  → Footswitch emits SwitchEvent → Modhandler._handle_footswitch()
+    → effective_table.resolve(FOOTSWITCH, key, PRESS) → ParamEffect row
+    → _fire_row(): flip toggled, set LED                  # optimistic update
     → emit absolute MIDI CC (127 if toggled else 0)
 
 mod-ui applies bypass, broadcasts via WebSocket
@@ -298,10 +304,13 @@ mod-ui applies bypass, broadcasts via WebSocket
 
 ### Footswitches (`pistomp/footswitch.py`)
 
-A footswitch is a Controller that emits a switch event; the handler decides what the
-press means — relay bypass, preset change, tap tempo, or the optimistic MIDI-CC
-toggle. Config overlay per pedalboard can change MIDI CC, relay binding, preset,
-color, and longpress groups.
+A footswitch is a Controller that emits a switch event; the binding table decides
+what the press means — plugin :bypass (`ParamEffect`), preset change (`PresetEffect`),
+tap tempo (`TapTempoEffect`), or MIDI-CC toggle (`MidiCcEffect`). `Modhandler.
+_handle_footswitch` resolves the table and fires via `_fire_row`; a longpress with no
+table row falls through to the chord resolver. Config overlay per pedalboard can change
+MIDI CC, relay binding, preset, color, and longpress groups. (v1's `Mod` uses the base
+`Handler._handle_footswitch` imperative chain — v1 rots in place.)
 
 **Longpress groups** let two footswitches held together fire a shared action
 (`next_snapshot`, `toggle_tuner_enable`, …) within a 400ms window. The resolver is
@@ -312,7 +321,9 @@ color, and longpress groups.
 `Encoder` is the raw quadrature decoder; `EncoderController` is the Controller
 wrapping it (quantizer, parameter, absorbed push-button). The handler routes nav and
 volume by type; every other rotation resolves through the effective binding table —
-plugin parameter or external MIDI CC, per the winning effect.
+plugin parameter or external MIDI CC, per the winning effect. Encoder longpress
+resolves a `CallbackEffect` row (built from the encoder's configured longpress name)
+via the same table, fired by `Modhandler._fire_row`.
 
 ### Analog Controls (`pistomp/analogmidicontrol.py`)
 
@@ -357,7 +368,8 @@ reads the ADC and sends current position on pedalboard load.
 - `common/param_roles.py` — `ParamRole` vocabulary for selection-dependent edit step math
 - `pistomp/input/dispatch.py` — Panel-local binding resolution (`resolve_local`/`fire`)
 - `pistomp/controller.py`, `controller_manager.py` — Controller base + pedalboard binding
-  (also builds the pedalboard-level layer of the effective binding table)
+  (also builds the pedalboard-level layer of the effective binding table: plugin
+  params, external CCs, encoder longpress, and footswitch short-press/relay actions)
 - `pistomp/footswitch.py`, `footswitch_chords.py` — Footswitch Controller + chord resolver
 - `pistomp/encoder.py`, `encoder_controller.py` — Quadrature decoder + Controller wrapper
 - `pistomp/analogmidicontrol.py` — ADC → MIDI CC with endpoint clamping

@@ -23,7 +23,6 @@ from common.contexts import (
 )
 from common.param_roles import ParamRole, edit_value
 from common.parameter import Symbol
-from pistomp.input.event import ControllerEvent, EncoderEvent
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import BandSpec
 from plugins.eq.curve import (
@@ -843,12 +842,6 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
         self.apply_state(self.snapshot_state())
         self.sel_widget(self._band_sels[self.bands[0].name])
 
-    def on_event(self, event: ControllerEvent) -> bool:
-        # No band selected (chrome focused): Q/Tweak3 falls through to volume; gain/freq absorbed.
-        if isinstance(event, EncoderEvent) and event.controller.id in (1, 2, 3) and self.selected_band is None:
-            return event.controller.id != 3
-        return super().on_event(event)
-
     def declare_bindings(self) -> tuple[BindingDecl, ...]:
         ctx = ContextRef(kind=ContextKind.PANEL, name="parametric_eq")
         return (
@@ -869,6 +862,8 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
                 event_kind=EventKind.ROTATE,
                 effects=(SelectionEditEffect(role=ParamRole.Q_FACTOR),),
                 context=ctx,
+                # Chrome focused: Q yields to volume instead of absorbing.
+                enabled_when=lambda: self.selected_band is not None,
             ),
         )
 

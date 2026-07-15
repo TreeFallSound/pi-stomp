@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 import common.token as Token
 from common.contexts import (
     BindingDecl,
+    CallbackEffect,
     ContextKind,
     ContextLayer,
     ContextRef,
@@ -30,17 +31,32 @@ from common.contexts import (
     EventKind,
     MidiCcEffect,
     ParamEffect,
+    PresetEffect,
+    RelayEffect,
     ShadowState,
+    TapTempoEffect,
 )
 from common.parameter import Parameter, PortInfo, Symbol, TTL_INTEGER
 from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.controller import AnalogDisplayInfo
 from pistomp.current import Current
+from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
 
 if TYPE_CHECKING:
     from pistomp.hardware import Hardware
+
+
+def _fs_key(fs: Footswitch) -> str:
+    """The identity a footswitch PRESS row is keyed by. "channel:CC" when the
+    footswitch has a midi_CC (the same identity ParamEffect PRESS rows use);
+    "fs:<slot>" as a synthetic fallback for preset footswitches whose midi_CC
+    was cleared by config. The dispatcher builds the same key from fs.midi_CC
+    or fs.id."""
+    if fs.midi_CC is not None:
+        return f"{fs.midi_channel}:{fs.midi_CC}"
+    return f"fs:{fs.id}"
 
 
 class ControllerManager:
@@ -83,6 +99,8 @@ class ControllerManager:
                 self._move_footswitch_plugins_to_end(current, footswitch_plugins)
 
         self._bind_external_controllers(current, pedalboard_layer)
+        self._bind_encoder_longpress(pedalboard_layer)
+        self._bind_footswitch_actions(pedalboard_layer)
         self.effective_table = ContextStack(layers=[pedalboard_layer])
 
     def _bind_plugin_parameters(self, current, pedalboard_layer: ContextLayer) -> list:
@@ -190,6 +208,17 @@ class ControllerManager:
             )
 
             if isinstance(controller, Footswitch):
+                # External footswitch: a CC toggle on PRESS, alongside the ROTATE
+                # row above. Lives here (not in _bind_footswitch_actions) so the
+                # external-routing boundary owns both rows for the same control.
+                pedalboard_layer.add(
+                    BindingDecl(
+                        control=ControlRef(cls=ControlClass.FOOTSWITCH, id=key),
+                        event_kind=EventKind.PRESS,
+                        effects=(MidiCcEffect(cc_ref=key, toggle=True),),
+                        context=pedalboard_layer.ref,
+                    )
+                )
                 continue  # footswitches don't appear in the analog/encoder display
 
             entry: AnalogDisplayInfo = {
@@ -199,3 +228,105 @@ class ControllerManager:
                 "category": "External",
             }
             current.analog_controllers[key] = entry
+
+    def _bind_encoder_longpress(self, pedalboard_layer: ContextLayer) -> None:
+        """Encoders with a configured longpress callback get a LONGPRESS row keyed
+        by their "channel:CC" identity — the same key the ROTATE rows use, so the
+        resolver finds the callback by control + event_kind. VOLUME encoders and
+        encoders without a midi_CC have no table presence and are skipped."""
+        for enc in self._hw.encoders:
+            if not isinstance(enc, EncoderController):
+                continue
+            if enc.midi_CC is None or enc.longpress is None:
+                continue
+            key = f"{enc.midi_channel}:{enc.midi_CC}"
+            pedalboard_layer.add(
+                BindingDecl(
+                    control=ControlRef(cls=ControlClass.ANALOG, id=key),
+                    event_kind=EventKind.LONGPRESS,
+                    effects=(CallbackEffect(name=enc.longpress),),
+                    context=pedalboard_layer.ref,
+                )
+            )
+
+    def _bind_footswitch_actions(self, pedalboard_layer: ContextLayer) -> None:
+        """Footswitch short-press actions (other than plugin-:bypass, which
+        _bind_plugin_parameters already rows) become table rows so dispatch and
+        badges share one authority. Config is mutually exclusive — a footswitch
+        has at most one of preset / taptempo / midi_CC-toggle — so each gets
+        exactly one PRESS row. External footswitches are rowed in
+        _bind_external_controllers and skipped here.
+
+        A footswitch with midi_CC is keyed by "channel:CC" (the same identity
+        the ParamEffect PRESS rows use). A preset footswitch whose midi_CC was
+        cleared by config is keyed by "fs:<slot>" — the dispatcher builds the
+        same fallback from fs.id.
+
+        Relay longpress is independent of the short-press action: a relay
+        footswitch has both a PRESS row (CC toggle or plugin :bypass) and a
+        LONGPRESS row (RelayEffect). It's added for any footswitch with a
+        relay_list, regardless of its PRESS binding."""
+        for fs in self._hw.footswitches:
+            if self._hw.is_external(fs):
+                continue  # owned by _bind_external_controllers
+
+            key = _fs_key(fs)
+
+            # Relay longpress: one relay today; the relays tuple is future schema.
+            # Added before the PRESS-row skip so a plugin-bound relay footswitch
+            # still gets its LONGPRESS row.
+            if fs.relay_list:
+                pedalboard_layer.add(
+                    BindingDecl(
+                        control=ControlRef(cls=ControlClass.FOOTSWITCH, id=key),
+                        event_kind=EventKind.LONGPRESS,
+                        effects=(RelayEffect(relays=("LEFT",)),),
+                        context=pedalboard_layer.ref,
+                    )
+                )
+
+            if fs.parameter is not None:
+                continue  # plugin :bypass — _bind_plugin_parameters rowed it
+
+            if fs.taptempo is not None:
+                # Taptempo footswitch has two modes: stamp when enabled, CC toggle
+                # when disabled. Two rows, gated by enabled_when so the resolver
+                # picks the active one. The CC-toggle row carries the same midi_CC.
+                tap = fs.taptempo
+                pedalboard_layer.add(
+                    BindingDecl(
+                        control=ControlRef(cls=ControlClass.FOOTSWITCH, id=key),
+                        event_kind=EventKind.PRESS,
+                        effects=(TapTempoEffect(),),
+                        context=pedalboard_layer.ref,
+                        enabled_when=tap.is_enabled,
+                    )
+                )
+                if fs.midi_CC is not None:
+                    pedalboard_layer.add(
+                        BindingDecl(
+                            control=ControlRef(cls=ControlClass.FOOTSWITCH, id=key),
+                            event_kind=EventKind.PRESS,
+                            effects=(MidiCcEffect(cc_ref=key, toggle=True),),
+                            context=pedalboard_layer.ref,
+                            enabled_when=lambda: not tap.is_enabled(),
+                        )
+                    )
+            elif fs.preset_direction is not None:
+                pedalboard_layer.add(
+                    BindingDecl(
+                        control=ControlRef(cls=ControlClass.FOOTSWITCH, id=key),
+                        event_kind=EventKind.PRESS,
+                        effects=(PresetEffect(direction=fs.preset_direction),),
+                        context=pedalboard_layer.ref,
+                    )
+                )
+            elif fs.midi_CC is not None:
+                pedalboard_layer.add(
+                    BindingDecl(
+                        control=ControlRef(cls=ControlClass.FOOTSWITCH, id=key),
+                        event_kind=EventKind.PRESS,
+                        effects=(MidiCcEffect(cc_ref=key, toggle=True),),
+                        context=pedalboard_layer.ref,
+                    )
+                )

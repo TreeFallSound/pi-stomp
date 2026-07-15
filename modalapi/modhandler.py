@@ -36,6 +36,7 @@ import common.util as util
 from common.contexts import (
     BindingDecl,
     BlendEffect,
+    CallbackEffect,
     ContextKind,
     ContextLayer,
     ContextRef,
@@ -45,6 +46,9 @@ from common.contexts import (
     EventKind,
     MidiCcEffect,
     ParamEffect,
+    PresetEffect,
+    RelayEffect,
+    TapTempoEffect,
 )
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from modalapi.plugin import Plugin
@@ -109,6 +113,16 @@ def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
     # cross controller classes (footswitch ↔ encoder).
     for (cls, event_kind), rows in list(layer.rows.items()):
         layer.rows[(cls, event_kind)] = [d for d in rows if d.control.id != binding_id]
+
+
+def _fs_resolve_key(fs: Footswitch) -> str:
+    """The identity a footswitch dispatch resolves by. Mirrors
+    ControllerManager._fs_key: "channel:CC" when the footswitch has a midi_CC,
+    "fs:<slot>" as a synthetic fallback for preset footswitches whose midi_CC
+    was cleared by config."""
+    if fs.midi_CC is not None:
+        return f"{fs.midi_channel}:{fs.midi_CC}"
+    return f"fs:{fs.id}"
 
 
 class Modhandler(Handler):
@@ -380,15 +394,105 @@ class Modhandler(Handler):
         if isinstance(controller, EncoderController):
             # Encoder click/long-click was already offered to the selected widget
             # via lcd.handle() upstream. A longpress the panel didn't consume runs
-            # the encoder's configured callback (e.g. tweak next/previous_snapshot).
-            if event.kind == SwitchEventKind.LONGPRESS and controller.longpress:
-                cb = self.get_callback(controller.longpress)
-                if cb:
-                    cb()
+            # the encoder's configured callback (e.g. tweak next/previous_snapshot),
+            # resolved against the effective table — the longpress row built by
+            # ControllerManager._bind_encoder_longpress.
+            if event.kind == SwitchEventKind.LONGPRESS and controller.midi_CC is not None:
+                key = f"{controller.midi_channel}:{controller.midi_CC}"
+                winner = self.effective_table.resolve(
+                    ControlRef(cls=ControlClass.ANALOG, id=key), EventKind.LONGPRESS
+                )
+                if winner is not None:
+                    self._fire_row(winner, event)
             return True
         if isinstance(controller, Footswitch):
             return self._handle_footswitch(controller, event.kind, event.timestamp)
         return False
+
+    def _handle_footswitch(self, fs: Footswitch, kind: SwitchEventKind, timestamp: float) -> bool:
+        """Table-resolved footswitch dispatch. The short-press action and the
+        relay longpress are both binding rows; a longpress with no row is the
+        chord-helper exception (see pistomp/input/README.md). Replaces the base
+        Handler._handle_footswitch imperative if-chain."""
+        if kind == SwitchEventKind.LONGPRESS:
+            key = _fs_resolve_key(fs)
+            winner = self.effective_table.resolve(
+                ControlRef(cls=ControlClass.FOOTSWITCH, id=key), EventKind.LONGPRESS
+            )
+            if winner is not None:
+                self._fire_row(winner, SwitchEvent(controller=fs, kind=kind, timestamp=timestamp))
+                return True
+            # No LONGPRESS row — chord longpress (the exception, stays as code)
+            self.chord_helper.observe(fs, timestamp)
+            return True
+
+        # Short press
+        key = _fs_resolve_key(fs)
+        winner = self.effective_table.resolve(
+            ControlRef(cls=ControlClass.FOOTSWITCH, id=key), EventKind.PRESS
+        )
+        if winner is not None:
+            self._fire_row(winner, SwitchEvent(controller=fs, kind=kind, timestamp=timestamp))
+            return True
+        # No row — unbound footswitch, nothing to do
+        return True
+
+    def _fire_row(self, decl: BindingDecl, event: ControllerEvent) -> bool:
+        """Handler-level effect firing. The panel-local path is dispatch.fire
+        (EncoderEvent only, PanelOps); this is the handler-level analogue that
+        owns SwitchEvent-threaded effects and the relay/taptempo/preset/CC
+        side effects that reach Hardware state not exposed to pistomp/input."""
+        fs = event.controller if isinstance(event.controller, Footswitch) else None
+        for effect in decl.effects:
+            match effect:
+                case CallbackEffect(name=name):
+                    cb = self.get_callback(name)
+                    if cb:
+                        cb()
+                case PresetEffect(direction=direction):
+                    if direction == "UP":
+                        self.preset_incr_and_change()
+                    elif direction == "DOWN":
+                        self.preset_decr_and_change()
+                    else:
+                        self.preset_set_and_change(int(direction))
+                case TapTempoEffect():
+                    if fs is not None and fs.taptempo is not None and fs.taptempo.is_enabled():
+                        fs.taptempo.stamp(event.timestamp if isinstance(event, SwitchEvent) else 0.0)
+                case MidiCcEffect(cc_ref=cc_ref, toggle=toggle):
+                    if not isinstance(cc_ref, str):
+                        break
+                    controller = self.hardware.controllers.get(cc_ref)
+                    if isinstance(controller, Footswitch):
+                        if toggle:
+                            controller.toggled = not controller.toggled
+                            controller.set_led(controller.toggled)
+                            self._emit_midi(controller, 127 if controller.toggled else 0)
+                        if controller.parameter is not None:
+                            controller.parameter.value = not controller.toggled
+                        self.update_lcd_fs(footswitch=controller)
+                case ParamEffect():
+                    # Footswitch PRESS with a bound plugin param (bypass toggle).
+                    # The FIXME at handler.py:184 ("assumes :bypass") is preserved
+                    # here: the parameter is the plugin's :bypass, toggled against
+                    # fs.toggled. The MIDI CC carries the change to mod-host.
+                    if fs is not None:
+                        new_toggled = not fs.toggled
+                        fs.toggled = new_toggled
+                        fs.set_led(new_toggled)
+                        if fs.midi_CC is not None:
+                            self._emit_midi(fs, 127 if new_toggled else 0)
+                        if fs.parameter is not None:
+                            fs.parameter.value = not new_toggled
+                        self.update_lcd_fs(footswitch=fs)
+                case RelayEffect():
+                    if fs is not None:
+                        new_toggled = not fs.toggled
+                        fs.toggled = new_toggled
+                        fs.toggle_relays(new_toggled)
+                        fs.set_led(new_toggled)
+                        self.update_lcd_fs(bypass_change=True)
+        return decl.consume
 
     def _emit_midi(self, controller, midi_value: int) -> None:
         """Send a CC. Tries the external port if routed; falls back to virtual."""

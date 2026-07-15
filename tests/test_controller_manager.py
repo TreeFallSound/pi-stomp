@@ -109,3 +109,36 @@ def test_orphaned_ttl_binding_recorded_in_effective_table():
     orphaned = [r for r in rows if r.control.id == "0:99"]
     assert len(orphaned) == 1
     assert orphaned[0].shadow_state == ShadowState.ORPHANED
+
+
+def test_encoder_longpress_builds_callback_effect_row():
+    """An encoder with a configured longpress produces a CallbackEffect
+    LONGPRESS row in the PEDALBOARD layer."""
+    from common.contexts import CallbackEffect
+    from pistomp.encoder_controller import EncoderController
+
+    enc = MagicMock(spec=EncoderController)
+    enc.midi_channel = 0
+    enc.midi_CC = 70
+    enc.longpress = "next_snapshot"
+
+    vol = MagicMock(spec=EncoderController)
+    vol.midi_channel = 0
+    vol.midi_CC = None  # volume encoder has no midi_CC
+    vol.longpress = None
+
+    hw = MagicMock()
+    hw.controllers = {}
+    hw.encoders = [enc, vol]
+    hw.is_external.return_value = False
+
+    current = _make_current()
+    manager = ControllerManager(hw)
+    manager.bind(current)
+
+    rows = manager.effective_table.layers[0].rows.get((ControlClass.ANALOG, EventKind.LONGPRESS), [])
+    assert len(rows) == 1
+    assert rows[0].control.id == "0:70"
+    effects = [e for e in rows[0].effects if isinstance(e, CallbackEffect)]
+    assert len(effects) == 1
+    assert effects[0].name == "next_snapshot"
