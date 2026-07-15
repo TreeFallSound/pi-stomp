@@ -330,10 +330,11 @@ class Modhandler(Handler):
                 d.update_value(event.new_value)
             return True
 
+        # CC is the transport for a plugin-bound (MIDI-learned) encoder; mod-ui
+        # applies its mapping on receipt. The WS commit was a redundant double-set.
         if c.parameter is not None:
+            c.parameter.value = event.new_value
             self.lcd.display_parameter_value(c.parameter, event.new_value)
-            if not self.hardware.is_external(c):
-                self.parameter_value_commit(c.parameter, event.new_value)
 
         self._emit_midi(c, event.new_midi_value)
         return True
