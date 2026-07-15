@@ -44,7 +44,9 @@ Same for prose: answer the question, skip the preamble.
 
 A panel's input handling is declared, not written. Override `declare_bindings()` to
 return a tuple of `BindingDecl`s (`common/contexts.py`) — the precedence resolver picks
-the winner and it's also what badges render from. Reach for `on_event` only when a
+the winner and it's also what badges render from. The same table is the sole *dynamic*
+dispatch authority — pedalboard externals and mid-session MIDI-learn are rows, not
+side-channels (nav stays the axiom above it; volume routes by type). Reach for `on_event` only when a
 panel is a genuine state machine, not a binding set (NAM's capture flow is the one
 example); a new panel written as an `on_event` `if` chain is a regression. See
 `pistomp/input/README.md` for the shape.

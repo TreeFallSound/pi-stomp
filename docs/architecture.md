@@ -310,8 +310,9 @@ color, and longpress groups.
 ### Encoders (`pistomp/encoder.py`, `pistomp/encoder_controller.py`)
 
 `Encoder` is the raw quadrature decoder; `EncoderController` is the Controller
-wrapping it (quantizer, parameter, absorbed push-button). The handler routes each
-encoder by its type: navigation, audio-card volume, or a plugin parameter.
+wrapping it (quantizer, parameter, absorbed push-button). The handler routes nav and
+volume by type; every other rotation resolves through the effective binding table —
+plugin parameter or external MIDI CC, per the winning effect.
 
 ### Analog Controls (`pistomp/analogmidicontrol.py`)
 
