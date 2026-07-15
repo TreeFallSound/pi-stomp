@@ -346,30 +346,18 @@ class Modhandler(Handler):
                 d.update_value(event.new_value)
             return True
 
-        if c.midi_CC is not None:
-            key = f"{c.midi_channel}:{c.midi_CC}"
-            winner = self.effective_table.resolve(
-                ControlRef(cls=ControlClass.ANALOG, id=key), EventKind.ROTATE
-            )
-        else:
-            winner = None
-
+        # Resolve the binding row for badge shadow_state (side effect), even
+        # though the effect type no longer branches the encoder-turn response.
         # CC is the transport for a plugin-bound (MIDI-learned) encoder; mod-ui
-        # applies its mapping on receipt. The effect type only decides what to
-        # display — ParamEffect and MidiCcEffect are both paint-only here. The
-        # local param.value write drives reactive observers; the CC tail below
-        # is the sole transport to mod-host.
+        # applies its mapping on receipt. The local param.value write drives
+        # reactive observers; the CC tail below is the sole transport to mod-host.
+        if c.midi_CC is not None:
+            self.effective_table.resolve(
+                ControlRef(cls=ControlClass.ANALOG, id=f"{c.midi_channel}:{c.midi_CC}"),
+                EventKind.ROTATE,
+            )
         if c.parameter is not None:
             c.parameter.value = event.new_value
-        if winner is not None:
-            for effect in winner.effects:
-                if isinstance(effect, ParamEffect):
-                    if c.parameter is not None:
-                        self.lcd.display_parameter_value(c.parameter, event.new_value)
-                elif isinstance(effect, MidiCcEffect):
-                    if c.parameter is not None:
-                        self.lcd.display_parameter_value(c.parameter, event.new_value)
-        elif c.parameter is not None:
             self.lcd.display_parameter_value(c.parameter, event.new_value)
 
         self._emit_midi(c, event.new_midi_value)

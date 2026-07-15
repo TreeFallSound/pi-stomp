@@ -320,10 +320,14 @@ MIDI CC, relay binding, preset, color, and longpress groups. (v1's `Mod` uses th
 
 `Encoder` is the raw quadrature decoder; `EncoderController` is the Controller
 wrapping it (quantizer, parameter, absorbed push-button). The handler routes nav and
-volume by type; every other rotation resolves through the effective binding table —
-plugin parameter or external MIDI CC, per the winning effect. Encoder longpress
-resolves a `CallbackEffect` row (built from the encoder's configured longpress name)
-via the same table, fired by `Modhandler._fire_row`.
+volume by type; every other rotation emits a MIDI CC via `_emit_midi()` — the sole
+transport to mod-host, which applies its MIDI-learn mapping on receipt. The binding
+table is still resolved (for badge shadow-state), but the effect type no longer
+branches the response: `ParamEffect` and `MidiCcEffect` are both paint-only for
+encoder turns. Local `parameter.value` is written so reactive observers repaint;
+`display_parameter_value` keeps the dialog alive. Encoder longpress resolves a
+`CallbackEffect` row (built from the encoder's configured longpress name) via the
+same table, fired by `Modhandler._fire_row`.
 
 ### Analog Controls (`pistomp/analogmidicontrol.py`)
 
