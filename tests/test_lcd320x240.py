@@ -22,6 +22,7 @@ from common.contexts import (
     ShadowState,
 )
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
+from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
 from pistomp.lcd320x240 import Lcd
@@ -535,6 +536,30 @@ def test_parameter_dialog_shows_tweak_badge_snapshot(lcd, snapshot):
 
     instance.draw_parameter_dialog(gain_param)
     snapshot()
+
+
+def test_parameter_dialog_shows_tweak_badge_for_external_param(lcd):
+    """External MIDI-CC controllers get no plugin and no BindingDecl (see
+    controller_manager._bind_external_controllers) so tweak_badge_number's
+    effective_table walk can never see them. The badge must come from a
+    direct controller<->parameter lookup instead."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+
+    ext_info: PortInfo = {
+        "shortName": "external_71",
+        "symbol": Symbol("external_71"),
+        "ranges": {"minimum": 0, "maximum": 127},
+    }
+    ext_param = Parameter(ext_info, 0, "0:71", EXTERNAL_INSTANCE_ID)
+
+    enc = EncoderController(d_pin=None, clk_pin=None, type=Token.KNOB, id=2, midi_channel=0, midi_CC=71)
+    enc.bind_to_parameter(ext_param)
+    instance.handler.hardware.controllers = {"0:71": enc}
+    instance.handler.hardware.controller_for_parameter.return_value = enc
+
+    d = instance.draw_parameter_dialog(ext_param)
+    assert d._badge is not None
 
 
 def test_parameter_menu_shows_footswitch_badge(lcd, snapshot):

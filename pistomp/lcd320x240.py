@@ -25,6 +25,7 @@ import common.token as Token
 import common.util as util
 from common.contexts import ControlClass, EventKind, ParamEffect, ShadowState
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, Type
+from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 from modalapi.plugin import Plugin
 from ui.ethernet_menu import EthernetMenu
 from ui.wifi_menu import WifiMenu
@@ -752,6 +753,23 @@ class Lcd:
                             return controller.id
         return None
 
+    def external_tweak_badge_number(self, param: Parameter) -> int | None:
+        """1/2/3 for a synthetic external-MIDI parameter (see
+        Hardware.create_external_parameter). These have no plugin and no
+        BindingDecl (controller_manager._bind_external_controllers opts them
+        out of the effective_table), so tweak_badge_number's table walk can't
+        see them — go straight from the parameter to its controller."""
+        if self.handler is None:
+            return None
+        controller = self.handler.hardware.controller_for_parameter(param)
+        if (
+            isinstance(controller, EncoderController)
+            and controller.type not in (Token.NAV, Token.VOLUME)
+            and controller.id is not None
+        ):
+            return controller.id
+        return None
+
     def _badge_letter(self, plugin, param: Parameter) -> str | None:
         """(A)-(D) or 1/2/3: whichever physical control this parameter is
         bound to — footswitch and tweak encoder are mutually exclusive since
@@ -802,7 +820,12 @@ class Lcd:
                 next((p for p in self.current.pedalboard.plugins if p.instance_id == parameter.instance_id), None)
                 if self.current is not None else None
             )
-            n = self.tweak_badge_number(plugin, parameter) if plugin is not None else None
+            if plugin is not None:
+                n = self.tweak_badge_number(plugin, parameter)
+            elif parameter.instance_id == EXTERNAL_INSTANCE_ID:
+                n = self.external_tweak_badge_number(parameter)
+            else:
+                n = None
             d.set_badge(_TWEAK_BADGES.get(n) if n is not None else None)
             self.pstack.push_panel(d)
 

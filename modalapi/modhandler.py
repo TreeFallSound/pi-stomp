@@ -1095,9 +1095,13 @@ class Modhandler(Handler):
             self.audio_parameter_commit(param.symbol, value)
             return
 
-        # External MIDI parameters are local-only (visual feedback), no remote update needed
+        # External MIDI parameters have no mod-host counterpart to update, but the
+        # dialog's NAV path still owns sending the CC that _handle_encoder would
+        # have sent for a physical turn.
         if param.instance_id == EXTERNAL_INSTANCE_ID:
-            logging.debug("Skipping remote update for external parameter: %s" % param.symbol)
+            controller = self.hardware.controller_for_parameter(param)
+            if controller is not None:
+                self._emit_midi(controller, int(value))
             return
 
         if not self._is_pedalboard_loading:

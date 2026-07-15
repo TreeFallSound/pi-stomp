@@ -118,6 +118,12 @@ class Hardware(ABC):
         info = self.external_routing.get(controller)
         return info.port_name if info is not None else None
 
+    def controller_for_parameter(self, parameter: Parameter) -> Controller | None:
+        """Reverse lookup for synthetic external parameters (see
+        create_external_parameter), which have no plugin and no BindingDecl —
+        the controller<->parameter link is the only route back."""
+        return next((c for c in self.controllers.values() if c.parameter is parameter), None)
+
     def poll_indicators(self):
         for i in self.indicators:
             i.refresh()

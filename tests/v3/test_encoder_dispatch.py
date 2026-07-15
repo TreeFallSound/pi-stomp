@@ -19,10 +19,12 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import common.token as Token
+from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 from pistomp.encoder_controller import EncoderController
 from pistomp.input.event import EncoderEvent
 from rtmidi.midiconstants import CONTROL_CHANGE
 from tests.types import SystemFixture
+from uilib.misc import InputEvent
 
 
 def _enc(hw, enc_id: int) -> EncoderController:
@@ -126,3 +128,35 @@ def test_lcd_handle_falls_through_without_fullscreen_panel(v3_system: SystemFixt
     for enc_id in (1, 2, 3):
         event = EncoderEvent(controller=_enc(hw, enc_id), rotations=1, new_value=0.0, new_midi_value=0)
         assert handler.lcd.handle(event) is False, f"enc {enc_id} should fall through on main panel"
+
+
+# ---------------------------------------------------------------------------
+# Gap 3 — the ParameterDialog's NAV-driven value change must still emit CC
+# ---------------------------------------------------------------------------
+
+
+def test_parameter_dialog_nav_change_emits_cc_for_external_param(v3_system: SystemFixture):
+    """Turning the physical tweak encoder emits a CC via Modhandler._handle_encoder
+    (see test_main_panel_tweak1_emits_cc70). But opening that same external-CC
+    parameter's dialog and changing its value with NAV goes through
+    Parameterdialog.parameter_value_change -> Lcd.parameter_commit ->
+    Modhandler.parameter_value_commit, which historically short-circuited on
+    EXTERNAL_INSTANCE_ID as "local-only" and never sent the CC."""
+    _prime_main_panel(v3_system)
+    handler = v3_system.handler
+    hw = v3_system.hw
+
+    enc1 = _enc(hw, 1)
+    ext_param = hw.create_external_parameter(enc1, "virtual", enc1.midi_channel, enc1.midi_CC)
+    enc1.bind_to_parameter(ext_param)
+    hw.controllers["0:70"] = enc1
+
+    d = handler.lcd.draw_parameter_dialog(ext_param)
+    hw.midiout.send_message.reset_mock()
+
+    d.input_event(InputEvent.RIGHT)
+
+    hw.midiout.send_message.assert_called_once()
+    sent_cc = hw.midiout.send_message.call_args[0][0]
+    assert sent_cc[0] == (enc1.midi_channel | CONTROL_CHANGE)
+    assert sent_cc[1] == enc1.midi_CC
