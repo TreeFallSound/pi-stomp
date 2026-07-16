@@ -425,18 +425,31 @@ class ParameterWindow(PluginWindow[None]):
             return pinned
         return self._heuristic_slots()
 
+    @staticmethod
+    def _is_dial_enum(param: Parameter) -> bool:
+        """An ordered enum whose scale-point labels are short enough for an arc
+        ring.  Categorical names like "Mega Wookie 800" (25 cabinet models) are
+        not — they belong in the list rows where ``_fit_text`` can trim them."""
+        if not param.is_ordered_enum():
+            return False
+        labels = [v["label"] for v in param.enum_values]
+        return all(len(l) <= 8 for l in labels)
+
     def _heuristic_slots(self) -> list[PinnedParam]:
         """First up-to-4 params that read as a dial: continuous, a toggle
-        (On/Off), or an ordered integer enum (Filter Order, Compressor Mode)."""
+        (On/Off), or a short-label ordered integer enum (Filter Order 1/2/3).
+
+        Iterates in LV2 port-index order (dict insertion order) — the plugin
+        author's intended priority — rather than alphabetically by symbol."""
         slots: list[PinnedParam] = []
-        for name, param in sorted(self.plugin.visible_parameters.items()):
+        for name, param in self.plugin.visible_parameters.items():
             if name == BYPASS_SYMBOL:
                 continue
-            if param.type == Type.ENUMERATION and not param.is_ordered_enum():
+            if param.type == Type.ENUMERATION and not self._is_dial_enum(param):
                 continue
             if len(slots) >= _MAX_PINNED:
                 break
-            slots.append(PinnedParam(symbol=name, label=name, display_fn=_discrete_formatter(param)))
+            slots.append(PinnedParam(symbol=name, label=param.name, display_fn=_discrete_formatter(param)))
         return slots
 
     # ── PluginWindow contract ───────────────────────────────────────────────
@@ -480,10 +493,11 @@ class ParameterWindow(PluginWindow[None]):
         return self._badge_fn(param) if param is not None else None
 
     def _list_params(self) -> list[tuple[Symbol, Parameter]]:
-        """Params not pinned, in sorted order, excluding :bypass and hidden ports."""
+        """Params not pinned, in LV2 port-index order, excluding :bypass and
+        hidden ports."""
         pinned_symbols = {s.symbol for s in self.slots}
         result: list[tuple[Symbol, Parameter]] = []
-        for name, param in sorted(self.plugin.visible_parameters.items()):
+        for name, param in self.plugin.visible_parameters.items():
             if name == BYPASS_SYMBOL:
                 continue
             if name in pinned_symbols:
@@ -537,12 +551,12 @@ class ParameterWindow(PluginWindow[None]):
             self._slot_widgets.append(w)
             content_container.add_sel_widget(w)
 
-        for idx, (name, _param) in enumerate(list_params):
+        for idx, (name, param) in enumerate(list_params):
             y = ring_area_h + idx * _ROW_H
             row = _ListRow(
                 box=Box.xywh(0, y, cb.width, _ROW_H),
                 symbol=name,
-                label=name,
+                label=param.name,
                 badge_char=self._badge_for(name),
                 owner=self,
                 font=row_font,

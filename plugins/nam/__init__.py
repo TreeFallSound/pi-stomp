@@ -14,7 +14,8 @@ from dataclasses import dataclass
 
 from common.color import RectBorder
 from modalapi.plugin import Plugin
-from modalapi.plugin_customization import PluginExtraData, extra_data_as
+from common.parameter import Symbol
+from modalapi.plugin_customization import PluginExtraData, PinnedParam, extra_data_as
 from plugins.customization import PluginCustomization, register
 
 NAM_URIS = (
@@ -78,6 +79,11 @@ register(
         ),
         display_name_fn=_nam_display_name,
         subtitle_fn=_nam_subtitle,
+        pinned_params=(
+            PinnedParam(Symbol("input_level"), "Input"),
+            PinnedParam(Symbol("output_level"), "Output"),
+            PinnedParam(Symbol("quality_scale"), "Quality"),
+        ),
     ),
     extra_data_fn=_parse_nam,
 )

@@ -133,10 +133,11 @@ class Pedalboard:
                 plugin_params = []
 
             by_symbol = {pp["symbol"]: pp for pp in plugin_params}
-            for port in pb_plugin.get("ports", []):
-                symbol = Symbol(port["symbol"])
-                pp = by_symbol.get(symbol)
-                if pp is None:
+            port_values = {port["symbol"]: port for port in pb_plugin.get("ports", [])}
+            for pp in plugin_params:
+                symbol = Symbol(pp["symbol"])
+                port = port_values.get(pp["symbol"])
+                if port is None:
                     continue
                 parameters[symbol] = Parameter(
                     pp,

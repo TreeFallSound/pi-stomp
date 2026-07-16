@@ -299,18 +299,16 @@ def test_discrete_types_pin_as_rings(v3_system: SystemFixture, nav_handler, snap
     handler.poll_lcd_updates()
     snapshot("initial")
 
-    # Rings sort as boost, gain, mode. Step onto the mode ring and rotate it to
-    # "Warm", then back to the boost ring and flip it On.
-    for _ in range(2):
-        lcd.pstack.current.input_step(1, 1, 1.0)
+    # Rings in LV2 port order: gain, mode, boost. Step onto the mode ring and
+    # rotate it to "Warm", then back to the boost ring and flip it On.
+    lcd.pstack.current.input_step(1, 1, 1.0)
     handler.poll_lcd_updates()
     tweak(handler, 1, 1)
     handler.poll_lcd_updates()
     assert plugin.parameters[Symbol("mode")].value == 1.0
     snapshot("mode_warm")
 
-    for _ in range(2):
-        lcd.pstack.current.input_step(-1, 1, 1.0)
+    lcd.pstack.current.input_step(1, 1, 1.0)
     handler.poll_lcd_updates()
     tweak(handler, 1, 1)
     handler.poll_lcd_updates()
