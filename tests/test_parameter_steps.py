@@ -39,6 +39,12 @@ class _StubPlugin:
         self.parameters = parameters
         self.customization = type("C", (), {"param_roles": {}})()
         self.instance_id = "test"
+        self.controllers: list[object] = []
+
+    def set_param_value(self, symbol: Symbol, value: float) -> None:
+        p = self.parameters.get(symbol)
+        if p is not None:
+            p.value = value
 
 
 class _ConcretePluginPanel:

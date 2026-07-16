@@ -182,12 +182,12 @@ class PluginPanel(Panel, Generic[TState], ABC):
 
         Writes ``value`` into ``plugin.parameters[symbol]`` immediately so the UI
         stays consistent; the websocket send is deferred to the next ``tick()``
-        so rapid encoder spins collapse into one send per symbol.
+        so rapid encoder spins collapse into one send per symbol. Goes through
+        set_param_value so a bound footswitch reconciles now, the same mirror the
+        mod-host echo runs — a tweak edit must match the NAV commit path.
         """
         self._param_queue[symbol] = value
-        p = self.plugin.parameters.get(symbol)
-        if p is not None:
-            p.value = value
+        self.plugin.set_param_value(symbol, value)
 
     def tick(self) -> None:
         """Drain the coalesced parameter queue, then reconcile from the model

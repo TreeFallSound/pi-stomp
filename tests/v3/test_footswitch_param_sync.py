@@ -10,9 +10,23 @@ Two coupled invariants:
      the same mirror the mod-host echo runs — it must not wait for a round-trip.
 """
 
+from typing import cast
+
 from common.parameter import BYPASS_SYMBOL
 from pistomp.input.event import SwitchEvent, SwitchEventKind
+from plugins.window import PluginWindow
 from tests.types import SystemFixture
+
+
+class _BarePanel(PluginWindow[None]):
+    def snapshot_state(self) -> None:
+        return None
+
+    def apply_state(self, state: None) -> None:
+        pass
+
+    def build_widgets(self) -> None:
+        pass
 
 
 def _bind_solo_footswitch(v3_system: SystemFixture, make_plugin, make_parameter):
@@ -93,3 +107,33 @@ def test_menu_commit_refreshes_footswitch(v3_system: SystemFixture, make_plugin,
     handler.parameter_value_commit(solo, solo.maximum)
 
     assert seen and seen[-1] is True
+
+
+# ── The tweak path: PluginPanel.set_param (ParameterWindow) must mirror too ────
+
+
+def test_tweak_setparam_on_toggles_footswitch(v3_system: SystemFixture, make_plugin, make_parameter):
+    """A tweak edit commits through PluginPanel.set_param, not
+    parameter_value_commit — it must reconcile the footswitch identically."""
+    handler, fs0, solo = _bind_solo_footswitch(v3_system, make_plugin, make_parameter)
+    plugin = handler.current.pedalboard.plugins[0]
+    handler.show_fullscreen_panel(plugin, _BarePanel)
+    panel = cast(_BarePanel, handler.lcd.pstack.current)
+    assert fs0.toggled is False
+
+    panel.set_param(solo.symbol, solo.maximum)
+
+    assert fs0.toggled is True
+
+
+def test_tweak_setparam_off_toggles_footswitch(v3_system: SystemFixture, make_plugin, make_parameter):
+    handler, fs0, solo = _bind_solo_footswitch(v3_system, make_plugin, make_parameter)
+    plugin = handler.current.pedalboard.plugins[0]
+    handler.show_fullscreen_panel(plugin, _BarePanel)
+    panel = cast(_BarePanel, handler.lcd.pstack.current)
+    panel.set_param(solo.symbol, solo.maximum)
+    assert fs0.toggled is True
+
+    panel.set_param(solo.symbol, solo.minimum)
+
+    assert fs0.toggled is False
