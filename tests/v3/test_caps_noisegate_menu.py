@@ -251,9 +251,24 @@ def test_list_row_tweak1_edits_value(v3_system: SystemFixture, nav_handler, snap
     snapshot("row_edited")
 
 
-def test_list_rows_discrete_types(v3_system: SystemFixture, nav_handler, snapshot):
-    """Enum and toggle list rows show a picked label (mode / On-Off), no bar;
-    continuous rows keep the bar. Tweak1 cycles the selected enum's label."""
+def _enum_param(symbol: str, minimum: float, maximum: float, points: list[tuple[str, float]], value: float = 0.0) -> Parameter:
+    return Parameter(
+        {
+            "shortName": symbol,
+            "symbol": symbol,
+            "ranges": {"minimum": minimum, "maximum": maximum},
+            "properties": ["enumeration", "integer"],
+            "scalePoints": [{"label": lbl, "value": val} for lbl, val in points],
+        },
+        value,
+        None,
+        "mix",
+    )
+
+
+def test_discrete_types_pin_as_rings(v3_system: SystemFixture, nav_handler, snapshot):
+    """Discrete params pin as rings showing their picked label: a contiguous
+    enum (mode) and a toggle (boost, green On/Off ring). Rotating cycles them."""
     handler = v3_system.handler
     hw = v3_system.hw
 
@@ -261,22 +276,7 @@ def test_list_rows_discrete_types(v3_system: SystemFixture, nav_handler, snapsho
     params: dict[Symbol, Parameter] = {
         BYPASS_SYMBOL: Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "mix"),
         Symbol("gain"): _param(Symbol("gain"), 0.5, 0.0, 1.0, "mix", unit="dB"),
-        Symbol("mode"): Parameter(
-            {
-                "shortName": "mode",
-                "symbol": "mode",
-                "ranges": {"minimum": 0, "maximum": 2},
-                "properties": ["enumeration"],
-                "scalePoints": [
-                    {"label": "Bypass", "value": 0.0},
-                    {"label": "Warm", "value": 1.0},
-                    {"label": "Bright", "value": 2.0},
-                ],
-            },
-            0.0,
-            None,
-            "mix",
-        ),
+        Symbol("mode"): _enum_param("mode", 0, 2, [("Bypass", 0.0), ("Warm", 1.0), ("Bright", 2.0)]),
         Symbol("boost"): Parameter(
             {"shortName": "boost", "symbol": "boost", "ranges": {"minimum": 0, "maximum": 1}, "properties": ["toggled"]},
             0.0,
@@ -299,13 +299,58 @@ def test_list_rows_discrete_types(v3_system: SystemFixture, nav_handler, snapsho
     handler.poll_lcd_updates()
     snapshot("initial")
 
-    # gain pins to a ring; list rows sort as boost, mode. Step past the ring and
-    # boost onto the mode enum, then cycle it.
+    # Rings sort as boost, gain, mode. Step onto the mode ring and rotate it to
+    # "Warm", then back to the boost ring and flip it On.
     for _ in range(2):
         lcd.pstack.current.input_step(1, 1, 1.0)
     handler.poll_lcd_updates()
     tweak(handler, 1, 1)
     handler.poll_lcd_updates()
-
     assert plugin.parameters[Symbol("mode")].value == 1.0
     snapshot("mode_warm")
+
+    for _ in range(2):
+        lcd.pstack.current.input_step(-1, 1, 1.0)
+    handler.poll_lcd_updates()
+    tweak(handler, 1, 1)
+    handler.poll_lcd_updates()
+    assert plugin.parameters[Symbol("boost")].value == 1.0
+    snapshot("boost_on")
+
+
+def test_discrete_list_rows_on_overflow(v3_system: SystemFixture, nav_handler, snapshot):
+    """Discrete params only pin if they fit the 4-ring budget; overflow falls to
+    list rows that still show the picked label (enum scale-point, toggle On/Off),
+    no bar."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+
+    assert handler.current
+    params: dict[Symbol, Parameter] = {
+        BYPASS_SYMBOL: Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "mix"),
+        Symbol("a1"): _param(Symbol("a1"), 0.5, 0.0, 1.0, "mix", unit="dB"),
+        Symbol("a2"): _param(Symbol("a2"), 0.5, 0.0, 1.0, "mix", unit="dB"),
+        Symbol("a3"): _param(Symbol("a3"), 0.5, 0.0, 1.0, "mix", unit="dB"),
+        Symbol("a4"): _param(Symbol("a4"), 0.5, 0.0, 1.0, "mix", unit="dB"),
+        Symbol("mode"): _enum_param("mode", 0, 2, [("Bypass", 0.0), ("Warm", 1.0), ("Bright", 2.0)]),
+        Symbol("tog"): Parameter(
+            {"shortName": "tog", "symbol": "tog", "ranges": {"minimum": 0, "maximum": 1}, "properties": ["toggled"]},
+            1.0,
+            None,
+            "mix",
+        ),
+    }
+    plugin = Plugin("mix", params, {}, "Utility")
+    plugin.pedalboard_snapshot = {sym: float(p.value or 0.0) for sym, p in params.items()}
+
+    handler.current.pedalboard.plugins = [plugin]
+    handler.current.pedalboard.connections = []
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    lcd = handler.lcd
+    assert lcd.pstack.current is not None
+    lcd.main_panel.sel_widget(lcd.w_plugins[0])
+    lcd.main_panel.input_event(InputEvent.LONG_CLICK)
+    handler.poll_lcd_updates()
+    snapshot("initial")
