@@ -48,6 +48,7 @@ from modalapi.plugin import Plugin
 from pistomp.input.dispatch import MultiSelectable, Selectable, fire, resolve_local
 from pistomp.input.event import ControllerEvent, EncoderEvent
 from pistomp.handler import Handler
+from uilib.glyphs.badge import BadgeGlyph
 from uilib.panel import Panel
 from uilib.text import Button
 
@@ -74,6 +75,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
     _on_dismiss: Callable[[], None]
     _param_queue: dict[Symbol, float]
     _btn_bypass: Button
+    _badge_fn: Callable[[Parameter], str | None] | None
     _model_dirty: bool
     _unsub_model: Callable[[], None] | None
 
@@ -88,8 +90,20 @@ class PluginPanel(Panel, Generic[TState], ABC):
         self.handler = handler
         self._on_dismiss = on_dismiss
         self._param_queue = {}
+        self._badge_fn = None
         self._model_dirty = False
         self._unsub_model = None
+
+    def _badge_for(self, symbol: Symbol) -> str | None:
+        if self._badge_fn is None:
+            return None
+        param = self.plugin.parameters.get(symbol)
+        return self._badge_fn(param) if param is not None else None
+
+    def _badge_bypass(self) -> None:
+        badge_char = self._badge_for(BYPASS_SYMBOL)
+        if badge_char is not None:
+            self._btn_bypass.set_badge(BadgeGlyph(badge_char))
 
     def _start_observing(self) -> None:
         """Subscribe to plugin param changes. Call at the end of a child

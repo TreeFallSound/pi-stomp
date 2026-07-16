@@ -383,8 +383,8 @@ class ParameterWindow(PluginWindow[None]):
         on_dismiss,
         badge_fn: Callable[[Parameter], str | None] | None = None,
     ) -> None:
-        self._badge_fn = badge_fn
         self._init_plugin_state(plugin, handler, on_dismiss)
+        self._badge_fn = badge_fn
 
         w, h = self._window_size()
         w = max(w, MIN_CHROME_WIDTH)
@@ -409,6 +409,7 @@ class ParameterWindow(PluginWindow[None]):
         pad = 2
         self.content_box = Box.xywh(0, pad, w, h - pad)
         self.build_widgets()
+        self._badge_bypass()
         self._refresh_bypass_style()
         self._start_observing()
 
@@ -482,15 +483,6 @@ class ParameterWindow(PluginWindow[None]):
             w.sync()
         for w in self._list_rows:
             w.refresh()
-
-    def _badge_for(self, symbol: Symbol) -> str | None:
-        """The physical-control badge for *symbol*, or None. Rings, list rows
-        and the Bypass button all badge from here — a pinned param must not
-        lose its badge just because it renders as an arc ring."""
-        if self._badge_fn is None:
-            return None
-        param = self.plugin.parameters.get(symbol)
-        return self._badge_fn(param) if param is not None else None
 
     def _list_params(self) -> list[tuple[Symbol, Parameter]]:
         """Params not pinned, in LV2 port-index order, excluding :bypass and
@@ -586,10 +578,6 @@ class ParameterWindow(PluginWindow[None]):
         )
         for btn in (self._btn_back, self._btn_bypass, self._btn_reset):
             content_container.add_sel_widget(btn)
-
-        bypass_badge = self._badge_for(BYPASS_SYMBOL)
-        if bypass_badge is not None:
-            self._btn_bypass.set_badge(BadgeGlyph(bypass_badge))
 
         content_container.refresh()
         self.add_sel_widget(content_container)

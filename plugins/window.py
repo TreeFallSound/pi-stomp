@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from common.parameter import Parameter
 from modalapi.plugin import Plugin
 from pistomp.handler import Handler
 from plugins.base import PluginPanel, TState
@@ -48,8 +49,10 @@ class PluginWindow(PluginPanel[TState], Dialog):
         plugin: Plugin,
         handler: Handler,
         on_dismiss: Callable[[], None],
+        badge_fn: Callable[[Parameter], str | None] | None = None,
     ) -> None:
         self._init_plugin_state(plugin, handler, on_dismiss)
+        self._badge_fn = badge_fn
 
         w, h = self._window_size()
         w = max(w, MIN_CHROME_WIDTH)
@@ -87,5 +90,6 @@ class PluginWindow(PluginPanel[TState], Dialog):
         self.add_sel_widget(self._btn_bypass)
         self.add_sel_widget(self._btn_reset)
 
+        self._badge_bypass()
         self._refresh_bypass_style()
         self._start_observing()

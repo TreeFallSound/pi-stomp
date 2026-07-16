@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from common.parameter import Parameter
 from modalapi.plugin import Plugin
 from pistomp.handler import Handler
 from plugins.base import PluginPanel, TState
@@ -39,8 +40,10 @@ class FullscreenPluginPanel(PluginPanel[TState]):
         plugin: Plugin,
         handler: Handler,
         on_dismiss: Callable[[], None],
+        badge_fn: Callable[[Parameter], str | None] | None = None,
     ) -> None:
         self._init_plugin_state(plugin, handler, on_dismiss)
+        self._badge_fn = badge_fn
 
         Panel.__init__(self, box=Box.xywh(0, 0, _W, _H), auto_destroy=True, no_dim=True, opaque=True)
 
@@ -70,5 +73,6 @@ class FullscreenPluginPanel(PluginPanel[TState]):
             if btn.visible:
                 self.add_sel_widget(btn)
 
+        self._badge_bypass()
         self._refresh_bypass_style()
         self._start_observing()

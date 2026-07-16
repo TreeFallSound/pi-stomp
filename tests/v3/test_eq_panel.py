@@ -23,6 +23,9 @@ from plugins.fil4.panel import Fil4Panel
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click
 from common.parameter import BYPASS_SYMBOL, PortInfo, Symbol
+from common.contexts import BindingDecl, ContextKind, ContextLayer, ContextRef, ControlClass, ControlRef, EventKind, ParamEffect, ShadowState
+from pistomp.footswitch import Footswitch
+from unittest.mock import MagicMock
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +270,37 @@ def test_eq_hp_no_gain_axis(v3_system: SystemFixture, snapshot):
 def test_eq_bypass_button_saga(v3_system: SystemFixture, nav_handler, snapshot):
     """Nav to Bypass chrome, short-press to bypass, again to re-enable."""
     handler = v3_system.handler
-    plugin = open_eq(v3_system)
+    hw = v3_system.hw
+
+    # Bind a footswitch to bypass before opening the panel so the badge
+    # renders on the bypass button from construction time.
+    plugin = make_fil4_plugin()
+    handler.current.pedalboard.plugins = [plugin]
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    control_id = "0:10"
+    fs = Footswitch(id=0, led_pin=None, pixel=None, midi_CC=10, midi_channel=0, refresh_callback=MagicMock())
+    handler.hardware.controllers[control_id] = fs
+    row = BindingDecl(
+        control=ControlRef(cls=ControlClass.FOOTSWITCH, id=control_id),
+        event_kind=EventKind.PRESS,
+        effects=(ParamEffect(plugin=plugin, symbol=BYPASS_SYMBOL),),
+        context=ContextRef(kind=ContextKind.PEDALBOARD),
+        shadow_state=ShadowState.ACTIVE,
+    )
+    key = (ControlClass.FOOTSWITCH, EventKind.PRESS)
+    for layer in handler.effective_table.layers:
+        if layer.ref.kind is ContextKind.PEDALBOARD:
+            layer.rows.setdefault(key, []).append(row)
+            break
+    else:
+        handler.effective_table.layers.append(
+            ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD), rows={key: [row]})
+        )
+
+    handler.show_fullscreen_panel(plugin, Fil4Panel)
+    handler.poll_lcd_updates()
 
     # Enable + boost a band so the curve is visible for the bypass-dim check
     nav(nav_handler, 2)  # HP, LS, B1

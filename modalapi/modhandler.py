@@ -28,6 +28,7 @@ import subprocess
 import sys
 import yaml
 from collections.abc import Callable
+import functools
 from functools import cached_property
 from typing import cast, Any
 
@@ -1693,10 +1694,12 @@ class Modhandler(Handler):
         """Open a full-screen panel for *plugin* using the registered class."""
         if self.lcd.pstack.find_panel_type(PluginPanel) is not None:
             return  # already open
+        badge_fn = functools.partial(self.lcd._badge_letter, plugin)
         panel = panel_cls(
             plugin=plugin,
             handler=self,
             on_dismiss=self.hide_fullscreen_panel,
+            badge_fn=badge_fn,
         )
         self.lcd.pstack.push_panel(panel)
 
