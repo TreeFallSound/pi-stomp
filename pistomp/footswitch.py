@@ -113,6 +113,16 @@ class Footswitch(controller.Controller):
         self.set_led(self.toggled)
         self.refresh_callback(footswitch=self)
 
+    def value_for(self, toggled: bool) -> float:
+        """Parameter value for a toggle state — the inverse of set_value's read.
+        Non-:bypass: "on" is the max end. :bypass: "on" is not-bypassed, i.e. 0."""
+        param = self.parameter
+        if param is not None and param.symbol != BYPASS_SYMBOL:
+            lo = param.minimum if param.minimum is not None else 0
+            hi = param.maximum if param.maximum is not None else 1
+            return hi if toggled else lo
+        return 0 if toggled else 1
+
     def current_toggle_state(self) -> bool:
         return self.toggled
 

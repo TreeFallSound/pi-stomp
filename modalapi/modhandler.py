@@ -450,13 +450,14 @@ class Modhandler(Handler):
                             controller.set_led(controller.toggled)
                             self._emit_midi(controller, 127 if controller.toggled else 0)
                         if controller.parameter is not None:
-                            controller.parameter.value = not controller.toggled
+                            controller.parameter.value = controller.value_for(controller.toggled)
                         self.update_lcd_fs(footswitch=controller)
                 case ParamEffect():
-                    # Footswitch PRESS with a bound plugin param (bypass toggle).
-                    # The FIXME at handler.py:184 ("assumes :bypass") is preserved
-                    # here: the parameter is the plugin's :bypass, toggled against
-                    # fs.toggled. The MIDI CC carries the change to mod-host.
+                    # Footswitch PRESS with a bound plugin param. "on" polarity
+                    # differs by param: :bypass "on" is not-bypassed (0), a plain
+                    # toggle "on" is the max end — value_for encodes both, the
+                    # inverse of Footswitch.set_value. The MIDI CC carries the
+                    # change to mod-host.
                     if fs is not None:
                         new_toggled = not fs.toggled
                         fs.toggled = new_toggled
@@ -464,7 +465,7 @@ class Modhandler(Handler):
                         if fs.midi_CC is not None:
                             self._emit_midi(fs, 127 if new_toggled else 0)
                         if fs.parameter is not None:
-                            fs.parameter.value = not new_toggled
+                            fs.parameter.value = fs.value_for(new_toggled)
                         self.update_lcd_fs(footswitch=fs)
                 case RelayEffect():
                     if fs is not None:
@@ -1223,7 +1224,18 @@ class Modhandler(Handler):
     # Parameter Stuff
     #
     def parameter_value_commit(self, param, value):
-        param.value = value
+        # Route plugin params through the plugin's mirror so a bound footswitch
+        # reconciles now, not only on the mod-host echo — the same set_value the
+        # ParamSetMessage arm runs. Audio/external params have no plugin mirror.
+        plugin = (
+            next((p for p in self.current.pedalboard.plugins if p.instance_id == param.instance_id), None)
+            if param.instance_id is not None and self._current is not None
+            else None
+        )
+        if plugin is not None:
+            plugin.set_param_value(param.symbol, value)
+        else:
+            param.value = value
 
         # Audio parameter (volume, EQ, etc.) - handled locally, no remote update needed
         if param.instance_id is None:
