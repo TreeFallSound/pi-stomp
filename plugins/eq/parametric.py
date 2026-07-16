@@ -744,7 +744,10 @@ class BandSelectable(Widget):
 
 def _fmt_freq(hz: float) -> str:
     if hz >= 1000.0:
-        return f"{hz / 1000.0:.2f} kHz"
+        k = hz / 1000.0
+        if k >= 10.0:
+            return f"{k:.1f} kHz"
+        return f"{k:.2f} kHz"
     return f"{hz:.0f} Hz"
 
 
