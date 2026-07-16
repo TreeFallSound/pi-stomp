@@ -30,6 +30,7 @@ from plugins.eq.parametric import paint_band_node, _fmt_freq as _fmt_freq_long
 from uilib.box import Box
 from uilib.config import Config
 from uilib.glyphs.badge import BadgeGlyph
+from uilib.glyphs.bar import FILL_ACTIVE, FILL_INACTIVE, READOUT_COLOR, TRACK_COLOR, paint_bar
 from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size
 from uilib.widget import Widget
 
@@ -53,10 +54,6 @@ WIDGET_H = FREQ_LABEL_Y + FREQ_LABEL_H  # 186 — includes freq labels
 # ── colours ──────────────────────────────────────────────────────────────────
 
 BG_BLACK = (0, 0, 0)
-TRACK_COLOR = (40, 40, 40)
-FILL_INACTIVE = (160, 160, 160)
-FILL_ACTIVE = (240, 240, 240)
-READOUT_COLOR = (200, 200, 200)
 FREQ_LABEL_COLOR = (110, 110, 110)
 
 # enc1 is always SelectionEditEffect here — badge lives in the readout, not
@@ -173,6 +170,10 @@ class BarWidget(Widget):
         pass
 
     def _draw(self, ctx) -> None:
+        # TODO: a Tweak1 detent redraws every visible band's full-height
+        # track+fill even though only the selected column's fill length moved.
+        # Dirty just the edited column (and the old/new node halo rows) and skip
+        # untouched bars — this repaints on every 10ms tick while spinning.
         ctx.draw_rectangle(ctx.dirty_bounds, fill=BG_BLACK)
 
         if self._state is None:
@@ -192,27 +193,34 @@ class BarWidget(Widget):
 
         for col, band in enumerate(visible):
             cx = col * COL_W + COL_W // 2
-            bar_x = cx - BAR_W // 2
-
-            # Track — full height
-            ctx.draw_rectangle(Box(bar_x, BAR_Y0, bar_x + BAR_W, BAR_Y1), fill=TRACK_COLOR)
 
             p = self._state.bands.get(band.name)
-            if p is None:
-                continue
-
-            gain = p.gain_db if p.enabled else band.gain_min
-            gain_y = _gain_to_y(gain, band)
 
             is_sel = band.name == self._selected_band
-
             fill_color: tuple[int, int, int] = FILL_ACTIVE if is_sel else FILL_INACTIVE
             if shade < 1.0:
                 fill_color = tuple(int(c * shade) for c in fill_color)  # type: ignore[assignment]
 
-            # Fill — bottom to gain position
-            if gain_y < BAR_Y1:
-                ctx.draw_rectangle(Box(bar_x, gain_y, bar_x + BAR_W, BAR_Y1), fill=fill_color)
+            span = band.gain_max - band.gain_min
+            if p is None:
+                frac = 0.0
+            else:
+                gain = p.gain_db if p.enabled else band.gain_min
+                frac = 0.0 if span <= 0 else (gain - band.gain_min) / span
+
+            bar_x = cx - BAR_W // 2
+            _, gain_y = paint_bar(
+                ctx,
+                box=Box(bar_x, BAR_Y0, bar_x + BAR_W, BAR_Y1),
+                orientation="vertical",
+                frac=frac,
+                track_color=TRACK_COLOR,
+                fill_color=fill_color,
+                thickness=BAR_W,
+            )
+
+            if p is None:
+                continue
 
             # Node — same circle style as parametric EQ
             node_color: tuple[int, int, int] = band.color

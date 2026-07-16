@@ -82,9 +82,9 @@ _REAMP_WAV = Path(__file__).resolve().parents[2] / "setup" / "nam" / "T3K-sweep-
 _TITLE_H = 26
 _NAME_Y = 30
 _NAME_H = 28
-_KNOB_Y = 82
-_KNOB_H = 124  # a few px taller than the ring/label strictly need, so the
-# enc2/enc3 badge (left of the label) has clearance above the box's top edge
+_KNOB_Y = 70
+_KNOB_H = 124  # the enc2/enc3 badge sits in the ring's bottom cutout, so the box
+# only needs to clear the ring + top label
 _KNOB_W = 148
 
 # enc2/enc3 are only ever live while the setup view is showing (both rows'
@@ -201,30 +201,6 @@ class KnobWidget(ArcDialWidget):
 
     def symbol_for(self, role: ParamRole) -> str | None:
         return self.symbol
-
-    def _draw_badge(self, ctx: PaintContext) -> None:
-        """Left of the label, out of flow — the base class's below-ring spot
-        (`ArcDialWidget._draw_badge`) gets clipped by this knob's shorter
-        box. The label text itself never moves to make room. `_KNOB_H` carries
-        a few px of slack above the label's ink-top so a badge centred on the
-        label's line doesn't clip the box's top edge."""
-        if self._badge is None:
-            return
-        text = self._label.upper()
-        x0, y0, x1, y1 = get_text_bbox(text, self._label_font)
-        lw, lh = x1 - x0, y1 - y0
-        cx = ctx.width // 2
-        cy = self._cy()
-        half = self._ring.half_size
-        gap = 2  # matches arc_dial._LABEL_GAP, the spacing the label itself uses
-        if self._label_pos == "top":
-            oy = (cy - half - gap) - (y0 + lh)
-        else:
-            oy = (cy + half + gap) - y0
-        ox = cx - (x0 + lw / 2)
-        by = int(round(oy + y0 + lh / 2 - self._badge.height / 2)) + 1
-        bx = int(round(ox)) - gap - self._badge.width - 2
-        ctx.paste(self._badge.render(), (bx, by))
 
 
 class ProgressBarWidget(Widget):

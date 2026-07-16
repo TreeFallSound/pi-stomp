@@ -209,3 +209,103 @@ def test_parameter_window_scrolls_when_content_overflows(v3_system: SystemFixtur
     lcd.pstack.current.input_step(1, 1, 1.0)
     handler.poll_lcd_updates()
     snapshot("scrolled_to_footer")
+
+
+def test_list_row_tweak1_edits_value(v3_system: SystemFixture, nav_handler, snapshot):
+    """Selecting a list row and rotating Tweak1 edits the param: the readout,
+    bar fill, and focused-row highlight all track the new value live."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+
+    assert handler.current
+    params: dict[Symbol, Parameter] = {
+        BYPASS_SYMBOL: Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "many"),
+    }
+    for i in range(6):
+        sym = Symbol(f"param_{i:02d}")
+        params[sym] = _param(sym, 0.5, 0.0, 1.0, "many", unit="dB")
+    plugin = Plugin("many", params, {}, "Dynamics")
+    plugin.pedalboard_snapshot = {sym: 0.5 for sym in params}
+
+    handler.current.pedalboard.plugins = [plugin]
+    handler.current.pedalboard.connections = []
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    lcd = handler.lcd
+    assert lcd.pstack.current is not None
+    lcd.main_panel.sel_widget(lcd.w_plugins[0])
+    lcd.main_panel.input_event(InputEvent.LONG_CLICK)
+    handler.poll_lcd_updates()
+
+    # 4 rings pinned; step past them onto the first list row (param_04).
+    for _ in range(4):
+        lcd.pstack.current.input_step(1, 1, 1.0)
+    handler.poll_lcd_updates()
+
+    for _ in range(20):
+        tweak(handler, 1, 1)
+    handler.poll_lcd_updates()
+
+    assert plugin.parameters[Symbol("param_04")].value > 0.5
+    snapshot("row_edited")
+
+
+def test_list_rows_discrete_types(v3_system: SystemFixture, nav_handler, snapshot):
+    """Enum and toggle list rows show a picked label (mode / On-Off), no bar;
+    continuous rows keep the bar. Tweak1 cycles the selected enum's label."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+
+    assert handler.current
+    params: dict[Symbol, Parameter] = {
+        BYPASS_SYMBOL: Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "mix"),
+        Symbol("gain"): _param(Symbol("gain"), 0.5, 0.0, 1.0, "mix", unit="dB"),
+        Symbol("mode"): Parameter(
+            {
+                "shortName": "mode",
+                "symbol": "mode",
+                "ranges": {"minimum": 0, "maximum": 2},
+                "properties": ["enumeration"],
+                "scalePoints": [
+                    {"label": "Bypass", "value": 0.0},
+                    {"label": "Warm", "value": 1.0},
+                    {"label": "Bright", "value": 2.0},
+                ],
+            },
+            0.0,
+            None,
+            "mix",
+        ),
+        Symbol("boost"): Parameter(
+            {"shortName": "boost", "symbol": "boost", "ranges": {"minimum": 0, "maximum": 1}, "properties": ["toggled"]},
+            0.0,
+            None,
+            "mix",
+        ),
+    }
+    plugin = Plugin("mix", params, {}, "Utility")
+    plugin.pedalboard_snapshot = {sym: float(p.value or 0.0) for sym, p in params.items()}
+
+    handler.current.pedalboard.plugins = [plugin]
+    handler.current.pedalboard.connections = []
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    lcd = handler.lcd
+    assert lcd.pstack.current is not None
+    lcd.main_panel.sel_widget(lcd.w_plugins[0])
+    lcd.main_panel.input_event(InputEvent.LONG_CLICK)
+    handler.poll_lcd_updates()
+    snapshot("initial")
+
+    # gain pins to a ring; list rows sort as boost, mode. Step past the ring and
+    # boost onto the mode enum, then cycle it.
+    for _ in range(2):
+        lcd.pstack.current.input_step(1, 1, 1.0)
+    handler.poll_lcd_updates()
+    tweak(handler, 1, 1)
+    handler.poll_lcd_updates()
+
+    assert plugin.parameters[Symbol("mode")].value == 1.0
+    snapshot("mode_warm")

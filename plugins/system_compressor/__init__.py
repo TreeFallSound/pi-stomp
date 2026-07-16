@@ -16,16 +16,16 @@ SYSTEM_COMPRESSOR_URI = "http://moddevices.com/plugins/mod-devel/System-Compress
 _MODES = {1: "Light", 2: "Mild", 3: "Heavy"}
 
 
-def _fmt_mode(value: float) -> str:
-    return _MODES.get(int(value), f"{value:.0f}")
+def _fmt_mode(value: float) -> tuple[str, str]:
+    return _MODES.get(int(value), f"{value:.0f}"), ""
 
 
-def _fmt_ms(value: float) -> str:
-    return f"{value:.0f}ms"
+def _fmt_ms(value: float) -> tuple[str, str]:
+    return f"{value:.0f}", "ms"
 
 
-def _fmt_db(value: float) -> str:
-    return f"{value:+.0f}dB"
+def _fmt_db(value: float) -> tuple[str, str]:
+    return f"{value:+.0f}", "dB"
 
 
 register(

@@ -155,10 +155,10 @@ def shade_color(color: tuple[int, int, int], factor: float) -> tuple[int, int, i
     return (int(color[0] * factor), int(color[1] * factor), int(color[2] * factor))
 
 
-def fmt_hz(value: float) -> str:
+def fmt_hz(value: float) -> tuple[str, str]:
     if value >= 1000.0:
-        return f"{value / 1000.0:.1f}k"
-    return f"{value:.0f}"
+        return f"{value / 1000.0:.1f}", "kHz"
+    return f"{value:.0f}", "Hz"
 
 
 def fmt_db(value: float) -> str:

@@ -22,11 +22,12 @@ from common.contexts import (
     EventKind,
     SelectionEditEffect,
 )
-from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
+from common.parameter import BYPASS_SYMBOL, Parameter, Symbol, Type
 from common.parameter_steps import ParameterSteps
 from common.param_roles import ParamRole
 from modalapi.plugin_customization import PinnedParam
 from plugins.chrome import BTN_GAP, BTN_H, MIN_CHROME_WIDTH, build_bottom_row
+from plugins.eq.parametric import paint_band_node
 from plugins.scheme import scheme_for_category
 from plugins.window import PluginWindow
 from uilib.box import Box
@@ -35,6 +36,7 @@ from uilib.container import ContainerWidget
 from uilib.dialog import Dialog, DialogDecorator
 from uilib.glyphs.arc_dial import ArcDialWidget, dial_box_size
 from uilib.glyphs.badge import BadgeGlyph
+from uilib.glyphs.bar import READOUT_COLOR, TRACK_COLOR, paint_bar
 from uilib.misc import INACTIVE_SHADE, InputEvent, color_for_param, get_text_size, shade_color
 from uilib.widget import Widget
 
@@ -43,13 +45,30 @@ from uilib.widget import Widget
 _ARC_RADIUS = 28
 _MAX_H = 189
 _MAX_PINNED = 4
+# Below this the Back/Bypass/Reset labels start to clip; a window with fewer than
+# _MAX_PINNED rings narrows to its ring row but never past this floor.
+_MIN_WINDOW_W = 240
 
 _BADGE_TWEAK1 = BadgeGlyph("1")
-_BADGE_GAP = 3  # matches TextWidget's badge_gap
 
-_ROW_H = 20
+_ROW_H = 24
+_NAME_MARGIN = 4
+_NAME_BADGE_GAP = 2  # between the left-column badge and the name text
+_RIGHT_MARGIN = 4
+_BAR_LEN = 72
+_BAR_THICK = 3  # matches graphic EQ BAR_W / node diameter
+_VALUE_GAP = 5  # between bar and value readout
+_VALUE_W = 42  # fixed value-column width so the bar's right edge doesn't jump
 
 _EMPTY_LABEL = "No editable parameters"
+
+
+def _fit_text(text: str, font, max_w: int) -> str:
+    """Trim from the end until *text* fits in *max_w* px — enum labels can be
+    wider than the fixed value column; a clip keeps the bar edge put."""
+    while text and get_text_size(text, font)[0] > max_w:
+        text = text[:-1]
+    return text
 
 
 def _slot_box_size() -> tuple[int, int]:
@@ -81,7 +100,7 @@ class ParamSlotWidget(ArcDialWidget):
             formatter=self._format,
             parent=parent,
             radius=_ARC_RADIUS,
-            two_line=False,
+            two_line=True,
             label_pos="top",
         )
         if badge_char is not None:
@@ -96,7 +115,7 @@ class ParamSlotWidget(ArcDialWidget):
         if param is None:
             return ("--", "")
         if self.slot.display_fn is not None:
-            return (self.slot.display_fn(value), "")
+            return self.slot.display_fn(value)
         return (param.format_value(value), param.unit_symbol or "")
 
     def sync(self) -> None:
@@ -141,7 +160,9 @@ class ParamSlotWidget(ArcDialWidget):
 
 
 class _ListRow(Widget):
-    """A single parameter row in the scrollable list: badge + name."""
+    """A live parameter row: left-aligned name, then a right-aligned block of
+    badge + horizontal EQ-style bar + value readout. Tweak1-reactive on the
+    selected row; the brighter fill + node halo is its selection cue."""
 
     def __init__(
         self,
@@ -152,6 +173,7 @@ class _ListRow(Widget):
         badge_char: str | None,
         owner: ParameterWindow,
         font,
+        value_font,
         parent: Widget,
     ) -> None:
         super().__init__(box=box, parent=parent, visible=True)
@@ -160,7 +182,40 @@ class _ListRow(Widget):
         self._badge_char = badge_char
         self._owner = owner
         self._font = font
+        self._value_font = value_font
         self._bypassed: bool = False
+
+    def _param(self) -> Parameter | None:
+        return self._owner.plugin.parameters.get(self.symbol)
+
+    @staticmethod
+    def _is_discrete(param: Parameter) -> bool:
+        """Enums and toggles read as a picked label, not a level — no bar."""
+        return param.type in (Type.ENUMERATION, Type.TOGGLED)
+
+    @staticmethod
+    def _discrete_label(param: Parameter, value: float) -> str:
+        """The chosen enum scale-point label, or On/Off for a toggle."""
+        if param.type == Type.ENUMERATION:
+            pairs = param.get_enum_value_list()
+            if pairs:
+                idx = min(range(len(pairs)), key=lambda i: abs(pairs[i][1] - value))
+                return pairs[idx][0]
+            return "%d" % round(value)
+        on = value >= (param.minimum + param.maximum) / 2
+        return "On" if on else "Off"
+
+    @staticmethod
+    def _continuous_readout(param: Parameter, value: float) -> tuple[str, float]:
+        """(text, 0..1 fill fraction) for a level-style param: compact numeric
+        (≤1 decimal, no space before the unit) filling over min..max."""
+        if param.type == Type.INTEGER:
+            num = "%d" % round(value)
+        else:
+            num = f"{value:.1f}".rstrip("0").rstrip(".")
+        span = param.maximum - param.minimum
+        frac = 0.0 if span <= 0 else (value - param.minimum) / span
+        return f"{num}{param.unit_symbol or ''}", frac
 
     def set_bypassed(self, bypassed: bool) -> None:
         if bypassed == self._bypassed:
@@ -177,23 +232,96 @@ class _ListRow(Widget):
         if selected:
             self.scroll_into_view()
 
+    def on_encoder_rotation(self, rotations: int, multiplier: float = 1.0) -> bool:
+        param = self._param()
+        if param is None:
+            return False
+        steps = ParameterSteps.for_parameter(param)
+        delta = int(round(rotations * multiplier))
+        if delta == 0:
+            return False
+        new_val = steps.move(delta)
+        if new_val == param.value:
+            return False
+        self._owner.set_param(self.symbol, new_val)
+        self.refresh()
+        return True
+
     def _draw_erase(self, ctx) -> None:
         ctx.draw_rectangle(ctx.bounds, fill=self.bkgnd_color)
+
+    # A bar row's cue is its brighter fill + node halo, so the framework outline
+    # ring is suppressed there; a label row (enum/toggle) has neither, so it
+    # keeps the ring.
+    def _draw_selection(self, ctx) -> None:
+        param = self._param()
+        if param is not None and self._is_discrete(param):
+            super()._draw_selection(ctx)
 
     def _draw(self, ctx) -> None:
         shade = INACTIVE_SHADE if self._bypassed else 1.0
         fg = shade_color((255, 255, 255), shade)
         _, line_h = get_text_size("", self._font)
         vy = (ctx.height - line_h) // 2
-        tw, _ = get_text_size(self._label, self._font)
-        text_x = (ctx.width - tw) // 2
-        ctx.draw_text((text_x, vy), self._label, font=self._font, fill=fg)
-        # Badge is out of flow: pinned left of the rendered text, which stays
-        # centred whether the row is badged or not.
+
+        param = self._param()
+
+        # Right block: bar+value for level params, a picked label for enum/toggle.
+        if param is not None and param.value is not None:
+            if self._is_discrete(param):
+                self._draw_label(ctx, param, float(param.value), shade)
+            else:
+                self._draw_bar(ctx, param, float(param.value), shade)
+
+        # Left column: the name, then its badge (nudged 1px low) just to its right.
+        ctx.draw_text((_NAME_MARGIN, vy), self._label, font=self._font, fill=fg)
         if self._badge_char is not None:
             badge = BadgeGlyph(self._badge_char)
-            bx = max(0, text_x - _BADGE_GAP - badge.width)
+            tw, _ = get_text_size(self._label, self._font)
+            bx = _NAME_MARGIN + tw + _NAME_BADGE_GAP
             ctx.paste(badge.render(), (bx, (ctx.height - badge.height) // 2))
+
+    def _draw_label(self, ctx, param: Parameter, value: float, shade: float) -> None:
+        """Enum/toggle: right-aligned picked label, no bar."""
+        label = _fit_text(self._discrete_label(param, value), self._value_font, _BAR_LEN + _VALUE_GAP + _VALUE_W)
+        _, val_h = get_text_size("", self._value_font)
+        val_vy = (ctx.height - val_h) // 2
+        lw, _ = get_text_size(label, self._value_font)
+        lx = ctx.width - _RIGHT_MARGIN - lw
+        ctx.draw_text((lx, val_vy), label, font=self._value_font, fill=shade_color(READOUT_COLOR, shade))
+
+    def _draw_bar(self, ctx, param: Parameter, value: float, shade: float) -> None:
+        """Level-style param: fixed-width readout + horizontal bar. The value
+        column is fixed so the bar edge stays put; the fill takes the same colour
+        the param would get as a pinned arc ring."""
+        value_str, frac = self._continuous_readout(param, value)
+        value_str = _fit_text(value_str, self._value_font, _VALUE_W)
+        _, val_h = get_text_size("", self._value_font)
+        val_vy = (ctx.height - val_h) // 2
+        vw, _ = get_text_size(value_str, self._value_font)
+        ctx.draw_text(
+            (ctx.width - _RIGHT_MARGIN - vw, val_vy),
+            value_str,
+            font=self._value_font,
+            fill=shade_color(READOUT_COLOR, shade),
+        )
+        bar_x0 = ctx.width - _RIGHT_MARGIN - _VALUE_W - _VALUE_GAP - _BAR_LEN
+
+        ring_color = color_for_param(param)
+        fill_color = ring_color if self.selected else shade_color(ring_color, 0.55)
+        if shade < 1.0:
+            fill_color = shade_color(fill_color, shade)
+        node_x, node_y = paint_bar(
+            ctx,
+            box=Box(bar_x0, 0, bar_x0 + _BAR_LEN, ctx.height),
+            orientation="horizontal",
+            frac=frac,
+            track_color=TRACK_COLOR,
+            fill_color=fill_color,
+            thickness=_BAR_THICK,
+        )
+        node_color = shade_color(ring_color, shade) if shade < 1.0 else ring_color
+        paint_band_node(ctx, node_x, node_y, node_color, self.selected)
 
 
 class _EmptyRow(Widget):
@@ -251,7 +379,13 @@ class ParameterWindow(PluginWindow[None]):
         scheme = scheme_for_category(plugin.category)
 
         Dialog.__init__(
-            self, width=w, height=h, title=plugin.display_name, title_font=self._title_font, auto_destroy=True, scheme=scheme
+            self,
+            width=w,
+            height=h,
+            title=plugin.display_name,
+            title_font=self._title_font,
+            auto_destroy=True,
+            scheme=scheme,
         )
 
         pad = 2
@@ -297,12 +431,16 @@ class ParameterWindow(PluginWindow[None]):
         n = len(self.slots)
         cols = 4 if n > 4 else n
         rows = (n + cols - 1) // cols if n else 0
-        _, row_h = _slot_box_size()
+        ring_wh, row_h = _slot_box_size()
         ring_h = rows * row_h if rows else 0
         list_h = _ROW_H if self._is_empty() else len(self._list_params()) * _ROW_H
         btn_h = BTN_H + BTN_GAP * 2
         content_h = ring_h + list_h + btn_h
-        return (self.WIN_W, min(_MAX_H, content_h))
+        if n >= _MAX_PINNED:
+            w = self.WIN_W
+        else:
+            w = max(_MIN_WINDOW_W, min(self.WIN_W, cols * ring_wh))
+        return (w, min(_MAX_H, content_h))
 
     def snapshot_state(self) -> None:
         return None
@@ -335,7 +473,9 @@ class ParameterWindow(PluginWindow[None]):
         return result
 
     def build_widgets(self) -> None:
-        row_font = Config().get_font("default")
+        cfg = Config()
+        row_font = cfg.get_font("default")
+        value_font = cfg.get_font("small")
 
         self._slot_widgets: list[ParamSlotWidget] = []
         self._list_rows: list[_ListRow] = []
@@ -387,6 +527,7 @@ class ParameterWindow(PluginWindow[None]):
                 badge_char=self._badge_for(name),
                 owner=self,
                 font=row_font,
+                value_font=value_font,
                 parent=content_container,
             )
             self._list_rows.append(row)
@@ -438,6 +579,9 @@ class ParameterWindow(PluginWindow[None]):
         widget = next((w for w in self._slot_widgets if w.slot.symbol == symbol), None)
         if widget is not None:
             return widget.on_encoder_rotation(rotations, multiplier)
+        row = next((r for r in self._list_rows if r.symbol == symbol), None)
+        if row is not None:
+            return row.on_encoder_rotation(rotations, multiplier)
         return super().edit_symbol(symbol, rotations, multiplier)
 
     def _refresh_bypass_style(self) -> None:

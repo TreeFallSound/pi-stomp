@@ -62,7 +62,7 @@ _VARIANT_FONTS: dict[DialVariant, tuple[FontName, FontName]] = {
     DialVariant.LARGE: ("arc_label_lg", "default"),
 }
 
-_LABEL_GAP = 2   # px between label ink and the ring bounding box
+_LABEL_GAP = 1   # px between label ink and the ring bounding box
 _LINE_GAP = 3    # px between the value line and the unit line
 _RING_NUDGE_Y = 3  # push the ring down from the centred position
 
@@ -95,6 +95,19 @@ def _draw_ink_centered_x(ctx: PaintContext, cx: int, ink_cy: int, text: str, fon
     ctx.draw_text((int(round(ox)), int(round(oy))), text, fill=fill, font=font)
 
 
+def _draw_baseline_centered_x(ctx: PaintContext, cx: int, baseline_y: int, text: str, font, fill: Color) -> None:
+    """Centre ``text`` horizontally on ``cx`` and sit its **baseline** on
+    ``baseline_y``. Unlike ink-centring, a glyph with no ascender ("x") lands on
+    its baseline just like the bottom of "dB" — the two stacked lines keep a
+    consistent gap regardless of which letters the unit happens to have."""
+    if not text:
+        return
+    x0, _, ink_w, _ = _ink_metrics(text, font)
+    ox = cx - (x0 + ink_w / 2)
+    oy = baseline_y - font.get_sized_ascender()
+    ctx.draw_text((int(round(ox)), int(round(oy))), text, fill=fill, font=font)
+
+
 def paint_arc_dial(
     ctx: PaintContext,
     *,
@@ -116,6 +129,7 @@ def paint_arc_dial(
     unit_fg: Color,
     label_pos: LabelPos = "top",
     two_line: bool = True,
+    line_gap: int = _LINE_GAP,
     ring_dy: int = 0,
 ) -> None:
     """Render one dial centred on (cx, cy) into ``ctx``.
@@ -123,7 +137,8 @@ def paint_arc_dial(
     The ring is pasted from ``glyph`` (which decides gap orientation via its own
     ``flip_v``). ``label`` is uppercased and placed outside the ring per
     ``label_pos``. The inner block is one line (``value``) unless ``two_line``
-    and ``unit`` is non-empty, in which case ``unit`` is stacked beneath.
+    and ``unit`` is non-empty, in which case ``unit`` is stacked beneath with
+    ``line_gap`` px between baselines' cap boxes.
 
     ``ring_dy`` offsets the ring graphic and the inner value/unit together; the
     label stays on ``cy`` so a small optical nudge doesn't drag it along.
@@ -132,15 +147,18 @@ def paint_arc_dial(
     ring = glyph.render(t, filled_color, empty_color, tip_color)
     ctx.paste(ring, (cx - half, cy - half + ring_dy))
 
-    # Inner value / unit block, ink-centred on the (nudged) ring centre.
+    # Inner value / unit block, centred on the (nudged) ring centre. The two
+    # lines are placed by baseline over a canonical cap height, so a unit with no
+    # ascender ("x") doesn't ride up under the value the way "dB" wouldn't.
     inner_cy = cy + ring_dy
     if two_line and unit:
         _, _, _, vh = _ink_metrics(value, value_font)
-        _, _, _, uh = _ink_metrics(unit, unit_font)
-        block_h = vh + _LINE_GAP + uh
+        cap_h = _ink_metrics("0", unit_font)[3]
+        block_h = vh + line_gap + cap_h
         top = inner_cy - block_h / 2
-        _draw_ink_centered_x(ctx, cx, int(round(top + vh / 2)), value, value_font, value_fg)
-        _draw_ink_centered_x(ctx, cx, int(round(top + vh + _LINE_GAP + uh / 2)), unit, unit_font, unit_fg)
+        value_base = top + vh
+        _draw_baseline_centered_x(ctx, cx, int(round(value_base)), value, value_font, value_fg)
+        _draw_baseline_centered_x(ctx, cx, int(round(value_base + line_gap + cap_h)), unit, unit_font, unit_fg)
     else:
         text = value if not unit else f"{value} {unit}"
         _draw_ink_centered(ctx, cx, inner_cy, text, value_font, value_fg)
@@ -222,6 +240,8 @@ class ArcDialWidget(Widget):
         self._label_font = cfg.get_font(label_name)
         self._value_font = cfg.get_font(value_name)
         self._unit_font = self._value_font  # unit shares the value font
+        # The smaller (MEDIUM/"small") face wants a tighter inter-line gap.
+        self._line_gap = _LINE_GAP + (1 if variant == DialVariant.MEDIUM else 2)
 
     # ── input-context badge (R4) ────────────────────────────────────────────
 
@@ -348,5 +368,6 @@ class ArcDialWidget(Widget):
             unit_fg=shade_color(self._unit_fg, shade),
             label_pos=self._label_pos,
             two_line=self._two_line,
+            line_gap=self._line_gap,
             ring_dy=_RING_NUDGE_Y,
         )

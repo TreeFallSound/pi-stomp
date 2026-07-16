@@ -16,16 +16,16 @@ from plugins.customization import PluginCustomization, register
 CAPS_NOISEGATE_URI = "http://moddevices.com/plugins/caps/Noisegate"
 
 
-def _fmt_db(value: float) -> str:
-    return f"{value:+.0f}dB"
+def _fmt_db(value: float) -> tuple[str, str]:
+    return f"{value:+.0f}", "dB"
 
 
-def _fmt_ms(value: float) -> str:
-    return f"{value:.0f}ms"
+def _fmt_ms(value: float) -> tuple[str, str]:
+    return f"{value:.0f}", "ms"
 
 
-def _fmt_mains(value: float) -> str:
-    return "auto" if value == 0.0 else f"{value:.0f}Hz"
+def _fmt_mains(value: float) -> tuple[str, str]:
+    return ("auto", "") if value == 0.0 else (f"{value:.0f}", "Hz")
 
 
 register(

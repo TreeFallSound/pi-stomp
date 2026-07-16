@@ -38,7 +38,9 @@ class PinnedParam:
 
     symbol: Symbol
     label: str
-    display_fn: Callable[[float], str] | None = None
+    # value -> (value_text, unit_text); unit "" ⇒ single centred line, non-empty
+    # ⇒ unit stacked on a second line (same contract as arc_dial.DialFormatter).
+    display_fn: Callable[[float], tuple[str, str]] | None = None
 
 
 @dataclass(frozen=True)
