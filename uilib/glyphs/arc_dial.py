@@ -74,27 +74,6 @@ def _ink_metrics(text: str, font) -> tuple[int, int, int, int]:
     return x0, y0, x1 - x0, y1 - y0
 
 
-def _draw_ink_centered(ctx: PaintContext, cx: int, cy: int, text: str, font, fill: Color) -> None:
-    """Draw ``text`` so its **ink** midpoint lands on (cx, cy)."""
-    if not text:
-        return
-    x0, y0, ink_w, ink_h = _ink_metrics(text, font)
-    ox = cx - (x0 + ink_w / 2)
-    oy = cy - (y0 + ink_h / 2)
-    ctx.draw_text((int(round(ox)), int(round(oy))), text, fill=fill, font=font)
-
-
-def _draw_ink_centered_x(ctx: PaintContext, cx: int, ink_cy: int, text: str, font, fill: Color) -> None:
-    """Centre ``text`` horizontally on ``cx`` with its ink vertical centre at
-    ``ink_cy`` (used to stack the value/unit lines)."""
-    if not text:
-        return
-    x0, y0, ink_w, ink_h = _ink_metrics(text, font)
-    ox = cx - (x0 + ink_w / 2)
-    oy = ink_cy - (y0 + ink_h / 2)
-    ctx.draw_text((int(round(ox)), int(round(oy))), text, fill=fill, font=font)
-
-
 def _draw_baseline_centered_x(ctx: PaintContext, cx: int, baseline_y: int, text: str, font, fill: Color) -> None:
     """Centre ``text`` horizontally on ``cx`` and sit its **baseline** on
     ``baseline_y``. Unlike ink-centring, a glyph with no ascender ("x") lands on
@@ -147,21 +126,25 @@ def paint_arc_dial(
     ring = glyph.render(t, filled_color, empty_color, tip_color)
     ctx.paste(ring, (cx - half, cy - half + ring_dy))
 
-    # Inner value / unit block, centred on the (nudged) ring centre. The two
-    # lines are placed by baseline over a canonical cap height, so a unit with no
-    # ascender ("x") doesn't ride up under the value the way "dB" wouldn't.
+    # Inner value / unit block. The value line is cap-centred on the ring's
+    # optical centre — the same anchor whether or not a unit follows, so one- and
+    # two-line dials read consistently — and the unit stacks beneath it. Lines
+    # are placed by baseline over a canonical cap height, so unitless words with
+    # different ascenders/descenders ("Light", "Med", "Heavy") share a baseline,
+    # and a unit with no ascender ("x") sits like the bottom of "dB".
     inner_cy = cy + ring_dy
+    # Centre by cap-height boxes (the digit "0"), not each string's own ink, so a
+    # row of dials shares one baseline regardless of ascenders/descenders, and the
+    # geometry scales with the font: a single value cap-box centres on the ring;
+    # a value+unit pair centres as one block.
+    cap_h = _ink_metrics("0", value_font)[3]
     if two_line and unit:
-        _, _, _, vh = _ink_metrics(value, value_font)
-        cap_h = _ink_metrics("0", unit_font)[3]
-        block_h = vh + line_gap + cap_h
-        top = inner_cy - block_h / 2
-        value_base = top + vh
-        _draw_baseline_centered_x(ctx, cx, int(round(value_base)), value, value_font, value_fg)
-        _draw_baseline_centered_x(ctx, cx, int(round(value_base + line_gap + cap_h)), unit, unit_font, unit_fg)
+        value_base = int(round(inner_cy - line_gap / 2))
+        _draw_baseline_centered_x(ctx, cx, value_base, value, value_font, value_fg)
+        _draw_baseline_centered_x(ctx, cx, value_base + line_gap + cap_h, unit, unit_font, unit_fg)
     else:
         text = value if not unit else f"{value} {unit}"
-        _draw_ink_centered(ctx, cx, inner_cy, text, value_font, value_fg)
+        _draw_baseline_centered_x(ctx, cx, int(round(inner_cy + cap_h / 2)), text, value_font, value_fg)
 
     # Label outside the ring.
     text = label.upper()

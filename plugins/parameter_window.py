@@ -250,14 +250,6 @@ class _ListRow(Widget):
     def _draw_erase(self, ctx) -> None:
         ctx.draw_rectangle(ctx.bounds, fill=self.bkgnd_color)
 
-    # A bar row's cue is its brighter fill + node halo, so the framework outline
-    # ring is suppressed there; a label row (enum/toggle) has neither, so it
-    # keeps the ring.
-    def _draw_selection(self, ctx) -> None:
-        param = self._param()
-        if param is not None and self._is_discrete(param):
-            super()._draw_selection(ctx)
-
     def _draw(self, ctx) -> None:
         shade = INACTIVE_SHADE if self._bypassed else 1.0
         fg = shade_color((255, 255, 255), shade)
@@ -291,20 +283,11 @@ class _ListRow(Widget):
         ctx.draw_text((lx, val_vy), label, font=self._value_font, fill=shade_color(READOUT_COLOR, shade))
 
     def _draw_bar(self, ctx, param: Parameter, value: float, shade: float) -> None:
-        """Level-style param: fixed-width readout + horizontal bar. The value
-        column is fixed so the bar edge stays put; the fill takes the same colour
-        the param would get as a pinned arc ring."""
+        """Level-style param: horizontal bar + right-aligned readout. The value's
+        right edge is pinned so it stays put and, when too wide for its column,
+        spills left over the bar (drawn last, on top); the fill takes the same
+        colour the param would get as a pinned arc ring."""
         value_str, frac = self._continuous_readout(param, value)
-        value_str = _fit_text(value_str, self._value_font, _VALUE_W)
-        _, val_h = get_text_size("", self._value_font)
-        val_vy = (ctx.height - val_h) // 2
-        vw, _ = get_text_size(value_str, self._value_font)
-        ctx.draw_text(
-            (ctx.width - _RIGHT_MARGIN - vw, val_vy),
-            value_str,
-            font=self._value_font,
-            fill=shade_color(READOUT_COLOR, shade),
-        )
         bar_x0 = ctx.width - _RIGHT_MARGIN - _VALUE_W - _VALUE_GAP - _BAR_LEN
 
         ring_color = color_for_param(param)
@@ -322,6 +305,16 @@ class _ListRow(Widget):
         )
         node_color = shade_color(ring_color, shade) if shade < 1.0 else ring_color
         paint_band_node(ctx, node_x, node_y, node_color, self.selected)
+
+        _, val_h = get_text_size("", self._value_font)
+        val_vy = (ctx.height - val_h) // 2
+        vw, _ = get_text_size(value_str, self._value_font)
+        ctx.draw_text(
+            (ctx.width - _RIGHT_MARGIN - vw, val_vy),
+            value_str,
+            font=self._value_font,
+            fill=shade_color(READOUT_COLOR, shade),
+        )
 
 
 class _EmptyRow(Widget):
