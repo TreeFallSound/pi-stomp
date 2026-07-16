@@ -123,8 +123,6 @@ def tweak(handler, idx: int, rotations: int) -> bool:
     event = EncoderEvent(
         controller=_FakeEnc(idx),
         rotations=rotations,
-        new_value=0.0,
-        new_midi_value=0,
     )
     return handler.handle(event)
 

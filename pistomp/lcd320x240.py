@@ -55,7 +55,6 @@ from uilib import (
 )
 from uilib.glyphs.badge import BadgeGlyph
 from uilib.gridpanel import GridPanel, TILE_W, CHANNEL
-from uilib.menu import BadgedLabel
 from uilib.pygame_init import font as _make_font
 from uilib.lcd_ili9341 import LcdIli9341
 from uilib.text import PluginTile
@@ -337,12 +336,17 @@ class Lcd:
                 if isinstance(icon.object, AnalogMidiControl):
                     midi_value = as_midi_value(icon.object.last_read)
                 elif isinstance(icon.object, EncoderController):
-                    midi_value = icon.object.midi_value
+                    enc = icon.object
+                    midi_value = (
+                        enc.bar_midi_value()
+                        if enc.parameter is not None
+                        else self.handler.encoder_fallback(enc)
+                    )
                 elif isinstance(icon.object, BlendMode):
                     ic = icon.object.input_controller
                     input_ctrl = ic.controlled_input if ic is not None else None
                     if ic is not None and input_ctrl is not None:
-                        position = input_ctrl.get_normalized_value()
+                        position = ic.normalized_position()
                         midi_value = int(position * 127)
 
                         stops = ic.stops
@@ -1315,7 +1319,7 @@ class Lcd:
                 ic = icon_object.input_controller
                 input_ctrl = ic.controlled_input if ic is not None else None
                 if ic is not None and input_ctrl is not None:
-                    position = input_ctrl.get_normalized_value()
+                    position = ic.normalized_position()
                     blend_initial_progress = position
                     stops = ic.stops
                     closest_stop = min(stops, key=lambda s: abs(s.position - position))

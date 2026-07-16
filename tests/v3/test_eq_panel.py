@@ -119,7 +119,7 @@ def tweak(handler, idx: int, rotations: int) -> bool:
     The LCD gets first crack; if the EQ panel is topmost it consumes the
     event via PluginPanel.on_encoder_rotation.
     """
-    event = EncoderEvent(controller=_FakeEnc(idx), rotations=rotations, new_value=0.0, new_midi_value=0)
+    event = EncoderEvent(controller=_FakeEnc(idx), rotations=rotations)
     return handler.handle(event)
 
 
@@ -411,7 +411,7 @@ def test_eq_volume_passthrough_on_chrome(v3_system: SystemFixture, nav_handler):
 
     # Helper: ask the LCD whether it would consume a tweak encoder event.
     def _lcd_consumes(enc_id: int) -> bool:
-        event = EncoderEvent(controller=_FakeEnc(enc_id), rotations=1, new_value=0.0, new_midi_value=0)
+        event = EncoderEvent(controller=_FakeEnc(enc_id), rotations=1)
         return handler.lcd.handle(event)
 
     # Tweak3 on a band → consumed by the panel (controls Q)

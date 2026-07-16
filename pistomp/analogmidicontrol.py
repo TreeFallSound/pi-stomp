@@ -28,7 +28,7 @@ def as_midi_value(adc_value: int):
     return util.renormalize(adc_value, 0, 1023, 0, 127)
 
 
-class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
+class AnalogMidiControl(analogcontrol.AnalogControl, controller.StatefulController):
     def __init__(self, spi, adc_channel, tolerance, midi_CC, midi_channel, type, id=None, cfg=None, autosync=False):
         super(AnalogMidiControl, self).__init__(spi, adc_channel, tolerance)
         controller.Controller.__init__(self, midi_channel, midi_CC)

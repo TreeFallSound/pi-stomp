@@ -11,10 +11,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 import yaml
-import pygame
-from uilib.panel import LcdBase
 
-from typing import cast
 from tests.conftest import FakeWebSocketBridge
 from tests.types import CapturedLcd, SystemFixture
 import common.token as Token

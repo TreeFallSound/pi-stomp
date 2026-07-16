@@ -39,12 +39,8 @@ class ControllerEvent:
 class EncoderEvent(ControllerEvent):
     # Raw detents this tick; positive = clockwise.
     rotations: int = 0
-    # Speed amplification used to compute new_value (diagnostic).
+    # Speed amplification from detent timing; scales the delta.
     multiplier: float = 1.0
-    # Already-quantized parameter value (encoder advanced its own state).
-    new_value: float = 0.0
-    # Already-renormalized MIDI value [0-127].
-    new_midi_value: int = 0
 
 
 @dataclass

@@ -21,6 +21,14 @@ def _blend_encoder(hw):
     return next(e for e in hw.encoders if isinstance(e, EncoderController) and getattr(e, "id", None) == 1)
 
 
+def _sweep(ic, enc, position: float) -> None:
+    """Drive blend's sweep to a normalized position (0-1) and fire a zero-delta
+    event so the diff map is sent. An encoder reports deltas; the integrated
+    sweep position lives on blend's InputController, per mode."""
+    ic.position = position
+    ic.handle_event(EncoderEvent(controller=enc, rotations=0))
+
+
 # ---------------------------------------------------------------------------
 # Preparation
 # ---------------------------------------------------------------------------
@@ -69,8 +77,8 @@ def test_blend_activate_sends_initial_params(blend_system: SystemFixture):
     blend_mode = handler.active_blend_mode
 
     # Deactivate, reset tracking, and re-activate from position 0
-    enc = _blend_encoder(hw)
-    enc.current_step = 0
+    _blend_encoder(hw)
+    blend_mode.input_controller.position = 0.0
     blend_mode.deactivate()
     test_ws.sent.clear()
     blend_mode.activate()
@@ -94,11 +102,7 @@ def test_blend_full_sweep_reaches_lead_stop(blend_system: SystemFixture):
     test_ws = cast(FakeWebSocketBridge, handler.ws_bridge)
 
     enc = _blend_encoder(hw)
-    enc.current_step = 127
-
-    handler.active_blend_mode.input_controller.handle_event(
-        EncoderEvent(controller=enc, rotations=0, new_value=enc.midi_value, new_midi_value=enc.midi_value)
-    )
+    _sweep(handler.active_blend_mode.input_controller, enc, 127 / 127)
 
     tone_values = test_ws.sent_values_for("BigMuff", "Tone")
     level_values = test_ws.sent_values_for("BigMuff", "Level")
@@ -114,16 +118,14 @@ def test_blend_dedup_suppresses_redundant_messages(blend_system: SystemFixture):
     test_ws = cast(FakeWebSocketBridge, handler.ws_bridge)
 
     enc = _blend_encoder(hw)
-    enc.current_step = 64
 
     ic = handler.active_blend_mode.input_controller
-    event = EncoderEvent(controller=enc, rotations=0, new_value=enc.midi_value, new_midi_value=enc.midi_value)
-    ic.handle_event(event)
+    _sweep(ic, enc, 64 / 127)
     sent_after_first = len(test_ws.sent)
     assert sent_after_first > 0
 
     # Second call at the same position — nothing new should be queued
-    ic.handle_event(event)
+    ic.handle_event(EncoderEvent(controller=enc, rotations=0))
     assert len(test_ws.sent) == sent_after_first
 
 
@@ -254,11 +256,9 @@ def test_blend_halfway_produces_interpolated_values(blend_system: SystemFixture)
     hw = blend_system.hw
     test_ws = cast(FakeWebSocketBridge, handler.ws_bridge)
     enc = _blend_encoder(hw)
-    enc.current_step = 64
 
     assert handler.active_blend_mode
-    event = EncoderEvent(controller=enc, rotations=0, new_value=enc.midi_value, new_midi_value=enc.midi_value)
-    handler.active_blend_mode.input_controller.handle_event(event)
+    _sweep(handler.active_blend_mode.input_controller, enc, 64 / 127)
 
     tone_values = test_ws.sent_values_for("BigMuff", "Tone")
     level_values = test_ws.sent_values_for("BigMuff", "Level")
@@ -278,12 +278,15 @@ def test_blend_resumes_at_encoder_position_on_activate(blend_system: SystemFixtu
     handler = blend_system.handler
     hw = blend_system.hw
     test_ws = cast(FakeWebSocketBridge, handler.ws_bridge)
-    enc = _blend_encoder(hw)
+    _blend_encoder(hw)
 
     assert handler.active_blend_mode
-    handler.active_blend_mode.deactivate()
+    blend_mode = handler.active_blend_mode
+    blend_mode.deactivate()
     handler.active_blend_mode = None
-    enc.current_step = 64
+    # The mode's InputController persists (prepared once); re-activating the same
+    # mode resumes at its own retained sweep position.
+    blend_mode.input_controller.position = 64 / 127
 
     test_ws.sent.clear()
 
@@ -317,9 +320,7 @@ def test_edited_stop_values_take_effect_in_next_sweep(blend_system: SystemFixtur
     test_ws.sent.clear()
 
     enc = _blend_encoder(hw)
-    enc.current_step = 127
-    event = EncoderEvent(controller=enc, rotations=0, new_value=enc.midi_value, new_midi_value=enc.midi_value)
-    handler.active_blend_mode.input_controller.handle_event(event)
+    _sweep(handler.active_blend_mode.input_controller, enc, 127 / 127)
 
     tone_values = test_ws.sent_values_for("BigMuff", "Tone")
     assert tone_values and abs(tone_values[-1] - 0.95) < 1e-6
@@ -331,12 +332,13 @@ def test_switching_between_blend_modes_applies_correct_initial_values(
     """
     User has two blend modes on one pedalboard: "Blend A" (Clean↔Lead) and
     "Blend B" (Clean↔Crunch).  They dial into Lead territory on Blend A, then
-    switch to Blend B.  Blend B should immediately sync to the encoder's current
-    position — not snap back to Clean — and the LCD should update.
+    switch to Blend B.  Encoder blend does not carry its sweep across modes
+    (each mode owns its own InputController.position — see the TODO there), so
+    Blend B starts at its first stop (Clean) and the user sweeps up from there.
 
-    Encoder at 100%:
-      Blend A → Lead:  Tone=0.8, Level=0.9
-      Blend B → Crunch: Tone=0.5, Level=0.7
+    Blend B at its stops:
+      0%   → Clean:  Tone=0.2, Level=0.5
+      100% → Crunch: Tone=0.5, Level=0.7
     """
     handler = v3_system.handler
     hw = v3_system.hw
@@ -416,23 +418,34 @@ def test_switching_between_blend_modes_applies_correct_initial_values(
     assert handler.active_blend_mode is not None
     assert handler.active_blend_mode.config.get("name") == "Blend A"
 
-    # Dial into Lead territory: encoder at 100%
+    # Dial Blend A into Lead territory: encoder at 100%
     enc = _blend_encoder(hw)
-    enc.current_step = 127
-    event = EncoderEvent(controller=enc, rotations=0, new_value=enc.midi_value, new_midi_value=enc.midi_value)
-    handler.active_blend_mode.input_controller.handle_event(event)
+    _sweep(handler.active_blend_mode.input_controller, enc, 127 / 127)
 
     test_ws = cast(FakeWebSocketBridge, handler.ws_bridge)
     test_ws.sent.clear()
 
-    # User switches to Blend B — encoder still at 100% (Crunch stop)
+    # Switch to Blend B. Encoder blend doesn't carry sweep across modes, so B
+    # starts at its own position (0 → Clean), not where Blend A was left.
     test_ws.inject("pedal_snapshot 4 Blend B")
     handler.poll_modui_changes()
 
     assert handler.active_blend_mode is not None
     assert handler.active_blend_mode.config.get("name") == "Blend B"
 
-    # At 100%, Blend B sends Crunch values, not Lead values
+    # Fresh mode at position 0 → Clean stop values.
+    tone_values = test_ws.sent_values_for("BigMuff", "Tone")
+    level_values = test_ws.sent_values_for("BigMuff", "Level")
+    assert tone_values and abs(tone_values[-1] - 0.2) < 1e-6
+    assert level_values and abs(level_values[-1] - 0.5) < 1e-6
+
+    handler.poll_lcd_updates()
+    snapshot("blend_b_start")
+
+    # Sweep Blend B to 100% → Crunch stop.
+    test_ws.sent.clear()
+    _sweep(handler.active_blend_mode.input_controller, enc, 127 / 127)
+
     tone_values = test_ws.sent_values_for("BigMuff", "Tone")
     level_values = test_ws.sent_values_for("BigMuff", "Level")
     assert tone_values and abs(tone_values[-1] - 0.5) < 1e-6
@@ -442,10 +455,8 @@ def test_switching_between_blend_modes_applies_correct_initial_values(
     snapshot("blend_b_full")
 
     # Roll the encoder back to ~50% — Blend B should interpolate between Clean and Crunch
-    enc.current_step = 64
     test_ws.sent.clear()
-    event = EncoderEvent(controller=enc, rotations=0, new_value=enc.midi_value, new_midi_value=enc.midi_value)
-    handler.active_blend_mode.input_controller.handle_event(event)
+    _sweep(handler.active_blend_mode.input_controller, enc, 64 / 127)
 
     tone_values = test_ws.sent_values_for("BigMuff", "Tone")
     level_values = test_ws.sent_values_for("BigMuff", "Level")
@@ -458,9 +469,8 @@ def test_switching_between_blend_modes_applies_correct_initial_values(
     snapshot("blend_b_half")
 
     # Roll encoder to 0% — Blend B should show Clean stop with empty progress bar
-    enc.current_step = 0
     test_ws.sent.clear()
-    handler.active_blend_mode.input_controller.handle_value_change(0, enc)
+    _sweep(handler.active_blend_mode.input_controller, enc, 0.0)
 
     handler.poll_lcd_updates()
     snapshot("blend_b_zero")
@@ -495,9 +505,7 @@ def test_midi_bound_param_excluded_from_blend_sweep(blend_system: SystemFixture)
     test_ws.sent.clear()
 
     enc = _blend_encoder(hw)
-    enc.current_step = 127
-    event = EncoderEvent(controller=enc, rotations=0, new_value=enc.midi_value, new_midi_value=enc.midi_value)
-    blend_mode.input_controller.handle_event(event)
+    _sweep(blend_mode.input_controller, enc, 127 / 127)
 
     # Tone is MIDI-bound → excluded from diff map → must not appear in sent messages
     assert test_ws.sent_values_for("BigMuff", "Tone") == []

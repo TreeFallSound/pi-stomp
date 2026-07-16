@@ -75,12 +75,6 @@ class ParameterSteps:
     def value(self) -> float:
         return self.values[self.index]
 
-    @property
-    def normalized(self) -> float:
-        if self.num_steps <= 1:
-            return 0.0
-        return self.index / (self.num_steps - 1)
-
     def set_value(self, value: float) -> None:
         """Snap the cursor to the nearest step. Used to resync after an
         external change (MOD-UI echo, another control)."""

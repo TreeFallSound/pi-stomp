@@ -132,7 +132,6 @@ class Pedalboard:
                 logging.warning("plugin port info not found, could be missing LV2 for: %s", instance_id)
                 plugin_params = []
 
-            by_symbol = {pp["symbol"]: pp for pp in plugin_params}
             port_values = {port["symbol"]: port for port in pb_plugin.get("ports", [])}
             for pp in plugin_params:
                 symbol = Symbol(pp["symbol"])

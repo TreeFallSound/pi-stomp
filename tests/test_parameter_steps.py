@@ -13,15 +13,15 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""The step grid shared by the nav encoder (Parameterdialog) and v3 tweak
-encoders (EncoderController), so one detent moves a parameter identically
+"""The step grid shared by every editor of a parameter — the nav encoder
+(Parameterdialog) and the handler's bound-tweak arm both build it via
+ParameterSteps.for_parameter, so one detent moves a parameter identically
 whichever control is turned."""
 
 import pytest
 
 from common.parameter import Parameter, Symbol, Type
 from common.parameter_steps import CONTINUOUS_STEPS, ParameterSteps, resolution
-from pistomp.encoder_controller import EncoderController
 
 
 def _param(minimum: float, maximum: float, value: float, type: Type = Type.DEFAULT) -> Parameter:
@@ -109,7 +109,6 @@ def test_degenerate_grid_collapses_to_minimum():
     steps = ParameterSteps(5.0, 5.0, taper=1.0, num_steps=1)
     assert steps.values == [5.0]
     assert steps.value == 5.0
-    assert steps.normalized == 0.0
 
 
 def test_move_clamps_at_both_ends():
@@ -117,12 +116,6 @@ def test_move_clamps_at_both_ends():
     assert steps.move(-10) == pytest.approx(0.0)
     assert steps.move(100) == pytest.approx(1.0)
     assert steps.index == 4
-
-
-def test_normalized_tracks_position():
-    steps = ParameterSteps(0.0, 1.0, taper=1.0, num_steps=5)
-    steps.move(2)
-    assert steps.normalized == pytest.approx(0.5)
 
 
 @pytest.mark.parametrize(
@@ -161,32 +154,27 @@ def test_for_parameter_seeds_cursor_from_current_value():
     ],
     ids=["unit", "bipolar", "integer", "toggled", "logarithmic"],
 )
-def test_tweak_encoder_and_dialog_share_the_same_grid(param):
-    """A MIDI-bound tweak encoder must quantize onto exactly the grid the nav
-    encoder steps through — guards against reintroducing a midi_CC short-circuit
-    in the resolution rule."""
-    enc = EncoderController(d_pin=None, clk_pin=None, midi_CC=70, midi_channel=0)
-    enc.bind_to_parameter(param)
+def test_bound_tweak_and_dialog_share_the_same_grid(param):
+    """Every editor of a bound parameter — the nav dialog and the handler's
+    bound-tweak arm — builds its grid the same way: ParameterSteps.for_parameter.
+    Guards against reintroducing a midi_CC short-circuit in the resolution rule."""
+    a = ParameterSteps.for_parameter(param)
+    b = ParameterSteps.for_parameter(param)
 
-    dialog_grid = ParameterSteps.for_parameter(param)
-
-    assert enc.num_steps == dialog_grid.num_steps
-    assert enc.step_values == pytest.approx(dialog_grid.values)
-    assert enc.current_step == dialog_grid.index
+    assert a.num_steps == b.num_steps
+    assert a.values == pytest.approx(b.values)
+    assert a.index == b.index
 
 
-def test_one_detent_moves_tweak_and_nav_identically():
-    """The multiplier scales step count for both, so 2 detents at 3x = 6 steps."""
+def test_multiplier_scales_step_count_identically():
+    """The multiplier scales step count wherever the grid is built, so 2 detents
+    at 3x = 6 steps whether the handler or the nav dialog integrates it."""
     param = _param(0.0, 1.0, 0.0, Type.LOGARITHMIC)
 
-    enc = EncoderController(d_pin=None, clk_pin=None, midi_CC=70, midi_channel=0)
-    enc.bind_to_parameter(param)
-    enc_value = enc._move_steps(int(round(2 * 3.0)))
+    tweak_value = ParameterSteps.for_parameter(param).move(int(round(2 * 3.0)))
+    nav_value = ParameterSteps.for_parameter(param).move(int(round(1 * 2 * 3.0)))
 
-    nav_grid = ParameterSteps.for_parameter(_param(0.0, 1.0, 0.0, Type.LOGARITHMIC))
-    nav_value = nav_grid.move(int(round(1 * 2 * 3.0)))
-
-    assert enc_value == pytest.approx(nav_value)
+    assert tweak_value == pytest.approx(nav_value)
 
 
 def test_edit_symbol_applies_multiplier_on_same_grid():

@@ -121,7 +121,7 @@ def open_menu(v3_system: SystemFixture) -> Plugin:
 
 
 def tweak(handler, idx: int, rotations: int) -> bool:
-    event = EncoderEvent(controller=_FakeEnc(idx), rotations=rotations, new_value=0.0, new_midi_value=0)
+    event = EncoderEvent(controller=_FakeEnc(idx), rotations=rotations)
     return handler.handle(event)
 
 
@@ -352,3 +352,77 @@ def test_discrete_list_rows_on_overflow(v3_system: SystemFixture, nav_handler, s
     lcd.main_panel.input_event(InputEvent.LONG_CLICK)
     handler.poll_lcd_updates()
     snapshot("initial")
+
+def test_tweak_bound_to_pedalboard_param_not_corrupted_by_open_menu(v3_system: SystemFixture):
+    """The original bug, end to end: a plugin parameter menu (ParameterWindow) is
+    open and badged to tweak1, and tweak1 is *also* bound to a separate
+    pedalboard param B. Turning tweak1 edits the menu's selected slot and must
+    NOT write B — nor move B's w_controls bar (the visible phantom-bar symptom).
+
+    Drives the real enc1.refresh(1): refresh() is where the old shadow-accumulator
+    eagerly wrote enc1.parameter before dispatch. A hand-built event can't catch it."""
+    hw = v3_system.hw
+
+    plugin = open_menu(v3_system)
+
+    # tweak1 (the real hardware encoder id=1) bound to a separate pedalboard param B.
+    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1 and e.midi_CC is not None)
+    bound_param = hw.create_external_parameter(enc1, "virtual", enc1.midi_channel, enc1.midi_CC)
+    enc1.bind_to_parameter(bound_param)
+
+    slot = plugin.parameters[Symbol("open")]  # the initially-selected menu slot
+    bound_before = bound_param.value
+    slot_before = slot.value
+    bar_before = enc1.bar_midi_value()
+
+    enc1.refresh(1)
+
+    # The menu's selected slot moved (the menu consumed the tweak) ...
+    assert slot.value != slot_before
+    # ... but the pedalboard-bound param B and its bar are untouched.
+    assert bound_param.value == bound_before
+    assert enc1.bar_midi_value() == bar_before
+
+
+def test_unbound_tweak_not_corrupted_by_open_menu(v3_system: SystemFixture):
+    """The user's exact repro: tweak1 is bound to NOTHING. Its unbound "None"
+    value sits at 0. Open a plugin parameter menu (badged to tweak1), select a
+    slot, and turn tweak1 right to raise it. Closing the menu, tweak1's own
+    "None" value must still be 0 — the menu borrowed the turn; the fallback CC
+    must not creep up. refresh() must not advance the fallback before dispatch."""
+    hw = v3_system.hw
+
+    plugin = open_menu(v3_system)
+
+    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1 and e.midi_CC is not None)
+    assert enc1.parameter is None  # unbound
+    fallback_before = v3_system.handler.encoder_fallback(enc1)
+
+    slot = plugin.parameters[Symbol("open")]
+    slot_before = slot.value
+
+    for _ in range(8):
+        enc1.refresh(1)
+
+    # The menu's selected slot moved (the menu consumed the tweaks) ...
+    assert slot.value != slot_before
+    # ... but the unbound tweak's own "None" fallback CC never crept.
+    assert v3_system.handler.encoder_fallback(enc1) == fallback_before
+
+
+def test_unbound_fallback_owned_by_handler(v3_system: SystemFixture):
+    """The unbound MIDI-learn fallback CC belongs to the handler (the emitter),
+    not the encoder — an encoder is a pure delta source. With no panel to borrow
+    the turn, refresh() falls through to the handler's unbound arm, which advances
+    the fallback it owns and emits from it."""
+    hw = v3_system.hw
+    handler = v3_system.handler
+
+    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1 and e.midi_CC is not None)
+    assert enc1.parameter is None
+    start = handler.encoder_fallback(enc1)
+
+    for _ in range(3):
+        enc1.refresh(1)
+
+    assert handler.encoder_fallback(enc1) > start

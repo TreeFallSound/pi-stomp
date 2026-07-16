@@ -53,6 +53,7 @@ class _LoopbackHandler(Handler):
         super().__init__()
         self.hardware = hw
         self.external_midi = mgr
+        self.encoder_fallback = 64
 
     def _emit_midi(self, controller, midi_value: int) -> None:
         if controller.midi_CC is None:
@@ -79,7 +80,14 @@ class _LoopbackHandler(Handler):
                 self._emit_midi(fs, 127 if fs.toggled else 0)
             return True
         if isinstance(event, EncoderEvent):
-            self._emit_midi(event.controller, event.new_midi_value)
+            enc = event.controller
+            assert isinstance(enc, EncoderController)
+            if enc.parameter is not None:
+                value = enc.bar_midi_value()
+            else:
+                self.encoder_fallback = max(0, min(127, self.encoder_fallback + event.rotations))
+                value = self.encoder_fallback
+            self._emit_midi(enc, value)
             return True
         if isinstance(event, AnalogEvent):
             self._emit_midi(event.controller, event.midi_value)
@@ -234,7 +242,7 @@ class TestControlRoutesToRealPort:
         enc.sink = handler
 
         enc.refresh(1)
-        expected_value = enc.midi_value
+        expected_value = handler.encoder_fallback
 
         assert _wait_for(lambda: received == [[0xB0 | CONTROL_CHANGE, 7, expected_value]])
         mgr.close()

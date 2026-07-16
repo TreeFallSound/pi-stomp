@@ -12,6 +12,7 @@ import pistomp.switchstate as switchstate
 from pistomp.encoder_controller import EncoderController as Encoder
 from pistomp.footswitch import Footswitch
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
+from common.parameter_steps import ParameterSteps
 from modalapi.plugin import Plugin
 import common.token as Token
 from tests.types import SystemFixture
@@ -393,12 +394,12 @@ def test_v3_tweak_encoder_refresh(v3_system: SystemFixture, make_parameter, snap
     enc.bind_to_parameter(param)
 
     # The first rotation is always at 1x (no prior detent timing), so 8 detents
-    # deterministically advance exactly 8 steps on the encoder's quantized grid.
-    start_step = enc.current_step
+    # deterministically advance exactly 8 steps on the shared quantized grid.
+    # The encoder reports the delta; the handler integrates it onto the param.
+    expected = ParameterSteps.for_parameter(param).move(8)
     enc.refresh(8)
 
-    assert enc.current_step == start_step + 8
-    assert param.value == pytest.approx(enc.step_values[start_step + 8])
+    assert param.value == pytest.approx(expected)
     snapshot()
 
 

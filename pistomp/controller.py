@@ -18,7 +18,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-import logging
 from typing import TYPE_CHECKING, TypedDict
 from common.parameter import Parameter
 
@@ -85,13 +84,9 @@ class Controller:
     def sink(self, value: InputSink | None) -> None:
         self._sink = value
 
-    def set_value(self, value: float) -> None:
-        logging.error(f"Controller subclass ({self.__class__.__name__}) hasn't overriden the set_value method")
-
     def bind_to_parameter(self, parameter: Parameter) -> None:
         self.unbind_from_parameter()
         self.parameter = parameter
-        self.set_value(parameter.value)
 
     def unbind_from_parameter(self) -> None:
         if self._unsub_param is not None:
@@ -103,3 +98,18 @@ class Controller:
         """Own-presentation only; routing-derived fields are added by the
         registry owner (ControllerManager._bind_external_controllers)."""
         return {}
+
+
+class StatefulController(Controller):
+    """A controller that holds its own copy of the bound parameter's value as
+    presentation state — a footswitch's LED/toggle, a pot's last MIDI reading —
+    and so must be told when the value changes externally (Plugin.set_param_value
+    on a mod-ui echo). Encoders are deliberately stateless: they own no copy of
+    the value, report only deltas, and so echoes skip them."""
+
+    def set_value(self, value: float) -> None:
+        raise NotImplementedError
+
+    def bind_to_parameter(self, parameter: Parameter) -> None:
+        super().bind_to_parameter(parameter)
+        self.set_value(parameter.value)

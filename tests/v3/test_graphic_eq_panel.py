@@ -91,7 +91,7 @@ def nav(nav_handler, steps: int) -> None:
 
 
 def tweak(handler, idx: int, rotations: int) -> bool:
-    event = EncoderEvent(controller=_FakeEnc(idx), rotations=rotations, new_value=0.0, new_midi_value=0)
+    event = EncoderEvent(controller=_FakeEnc(idx), rotations=rotations)
     return handler.handle(event)
 
 
@@ -263,7 +263,7 @@ def test_tweak2_noop_tweak3_volume(v3_system: SystemFixture, nav_handler):
     open_eq(v3_system)
 
     def _lcd_consumes(enc_id: int) -> bool:
-        event = EncoderEvent(controller=_FakeEnc(enc_id), rotations=1, new_value=0.0, new_midi_value=0)
+        event = EncoderEvent(controller=_FakeEnc(enc_id), rotations=1)
         return handler.lcd.handle(event)
 
     # Band selected: gain edited, Tweak2 absorbed, Tweak3 falls through.

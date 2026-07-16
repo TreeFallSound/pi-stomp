@@ -52,6 +52,7 @@ from common.contexts import (
     TapTempoEffect,
 )
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
+from common.parameter_steps import ParameterSteps
 from modalapi.plugin import Plugin
 from blend.input_controller import InputController
 import modalapi.pedalboard as Pedalboard
@@ -91,7 +92,11 @@ from modalapi.version_check import DpkgDriftCheck
 from pistomp.controller_manager import ControllerManager
 from pistomp.controller import Controller
 from pistomp.current import Current
-from pistomp.encoder_controller import EncoderController
+from pistomp.encoder_controller import (
+    ENCODER_FALLBACK_DEFAULT,
+    EncoderController,
+    encoder_key as _encoder_key,
+)
 from pistomp.footswitch import Footswitch
 from pistomp.footswitch_chords import FootswitchChords
 from pistomp.input.event import (
@@ -141,6 +146,11 @@ class Modhandler(Handler):
         self.pedalboards = {}
         self.pedalboard_list = []  # TODO LAME to have two lists
         self.plugin_dict = {}
+
+        # Unbound encoders own no value; the handler (the emitter) keeps their
+        # MIDI-learn fallback CC, keyed by "channel:CC" so it persists across
+        # pedalboard loads and any encoder mapped to the same CC.
+        self._encoder_fallback: dict[str, int] = {}
 
         self.wifi_status = {}
         self.eq_status = {}
@@ -336,15 +346,20 @@ class Modhandler(Handler):
 
     def _handle_encoder(self, event: EncoderEvent) -> bool:
         c = event.controller
+        assert isinstance(c, EncoderController)
         # NAV rotation is consumed by the panel stack in lcd.handle() upstream, so
         # anything reaching here is a tweak/volume encoder the panel didn't take.
         # Volume encoder bypasses the mod-host commit path — there is no
         # backing plugin parameter, just the audio card.
+        delta = int(round(event.rotations * event.multiplier))
+
         if c.type == Token.VOLUME and c.parameter is not None:
-            self.audiocard.set_volume_parameter(self.audiocard.MASTER, event.new_value)
+            new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
+            c.parameter.value = new_value
+            self.audiocard.set_volume_parameter(self.audiocard.MASTER, new_value)
             d = self.lcd.draw_audio_parameter_dialog(c.parameter, self.audio_parameter_commit)
             if d is not None:
-                d.update_value(event.new_value)
+                d.update_value(new_value)
             return True
 
         # Resolve the binding row for badge shadow_state (side effect), even
@@ -358,14 +373,28 @@ class Modhandler(Handler):
                 EventKind.ROTATE,
             )
         if c.parameter is not None:
-            c.parameter.value = event.new_value
-            self.lcd.display_parameter_value(c.parameter, event.new_value)
+            new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
+            c.parameter.value = new_value
+            self.lcd.display_parameter_value(c.parameter, new_value)
+            emit_value = c.bar_midi_value()
+        else:
+            emit_value = self._advance_encoder_fallback(c, delta)
 
         # Unconditional, and must stay that way: an unbound encoder has no row,
         # and this emit is the only way mod-ui sees its CC to MIDI-learn it.
         # Emission is hardware-level, below the table (see input/README.md).
-        self._emit_midi(c, event.new_midi_value)
+        self._emit_midi(c, emit_value)
         return True
+
+    def encoder_fallback(self, controller: EncoderController) -> int:
+        """The unbound MIDI-learn fallback CC for an encoder, seeded at midpoint
+        so a fresh tweak reads 50%. Owned here, not on the encoder."""
+        return self._encoder_fallback.get(_encoder_key(controller), ENCODER_FALLBACK_DEFAULT)
+
+    def _advance_encoder_fallback(self, controller: EncoderController, delta: int) -> int:
+        value = max(0, min(127, self.encoder_fallback(controller) + delta))
+        self._encoder_fallback[_encoder_key(controller)] = value
+        return value
 
     def _handle_analog(self, event: AnalogEvent) -> bool:
         self._emit_midi(event.controller, event.midi_value)

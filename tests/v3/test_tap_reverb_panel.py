@@ -152,8 +152,6 @@ def tweak(handler, idx: int, rotations: int) -> bool:
     event = EncoderEvent(
         controller=_FakeEnc(idx),
         rotations=rotations,
-        new_value=0.0,
-        new_midi_value=0,
     )
     return handler.handle(event)
 
@@ -436,8 +434,6 @@ def test_tap_reverb_tweak3_edits_decay_on_chrome(v3_system: SystemFixture, nav_h
         event = EncoderEvent(
             controller=_FakeEnc(enc_id),
             rotations=1,
-            new_value=0.0,
-            new_midi_value=0,
         )
         return handler.lcd.handle(event)
 

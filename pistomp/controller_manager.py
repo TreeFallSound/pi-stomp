@@ -41,7 +41,7 @@ from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.controller import AnalogDisplayInfo
 from pistomp.current import Current
-from pistomp.encoder_controller import EncoderController
+from pistomp.encoder_controller import ENCODER_FALLBACK_DEFAULT, EncoderController
 from pistomp.footswitch import Footswitch
 
 if TYPE_CHECKING:
@@ -184,7 +184,7 @@ class ControllerManager:
                         properties=[TTL_INTEGER],
                     )
                     controller.bind_to_parameter(
-                        Parameter(ext_info, controller.midi_value, key, EXTERNAL_INSTANCE_ID)
+                        Parameter(ext_info, ENCODER_FALLBACK_DEFAULT, key, EXTERNAL_INSTANCE_ID)
                     )
 
             pedalboard_layer.add(

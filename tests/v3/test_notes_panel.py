@@ -95,8 +95,6 @@ def scroll(handler, rotations: int) -> None:
     event = EncoderEvent(
         controller=_NavEnc(),
         rotations=rotations,
-        new_value=0.0,
-        new_midi_value=0,
     )
     handler.handle(event)
     handler.poll_lcd_updates()

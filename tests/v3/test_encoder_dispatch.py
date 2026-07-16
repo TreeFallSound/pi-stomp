@@ -80,26 +80,24 @@ def test_v3_encoder_id_type_mapping(v3_system: SystemFixture):
 
 def test_main_panel_tweak1_emits_cc70(v3_system: SystemFixture):
     _prime_main_panel(v3_system)
-    handler = v3_system.handler
     hw = v3_system.hw
 
     enc1 = _enc(hw, 1)
-    event = EncoderEvent(controller=enc1, rotations=1, new_value=0.0, new_midi_value=64)
-    assert handler.handle(event) is True
+    # Unbound tweak seeds its fallback CC at 64; one detent advances it to 65.
+    enc1.refresh(1)
 
-    hw.midiout.send_message.assert_called_with([enc1.midi_channel | CONTROL_CHANGE, 70, 64])
+    hw.midiout.send_message.assert_called_with([enc1.midi_channel | CONTROL_CHANGE, 70, 65])
 
 
 def test_main_panel_tweak2_emits_cc71(v3_system: SystemFixture):
     _prime_main_panel(v3_system)
-    handler = v3_system.handler
     hw = v3_system.hw
 
     enc2 = _enc(hw, 2)
-    event = EncoderEvent(controller=enc2, rotations=-1, new_value=0.0, new_midi_value=13)
-    assert handler.handle(event) is True
+    # Seed 64; one CCW detent advances the fallback CC to 63.
+    enc2.refresh(-1)
 
-    hw.midiout.send_message.assert_called_with([enc2.midi_channel | CONTROL_CHANGE, 71, 13])
+    hw.midiout.send_message.assert_called_with([enc2.midi_channel | CONTROL_CHANGE, 71, 63])
 
 
 # ---------------------------------------------------------------------------
@@ -117,10 +115,13 @@ def test_main_panel_volume_encoder_sets_audiocard_master(v3_system: SystemFixtur
     enc3 = _enc(hw, 3)
     assert enc3.parameter is not None
 
-    event = EncoderEvent(controller=enc3, rotations=1, new_value=-5.0, new_midi_value=0)
-    assert handler.handle(event) is True
+    from common.parameter_steps import ParameterSteps
 
-    cast(MagicMock, handler.audiocard.set_volume_parameter).assert_called_with(handler.audiocard.MASTER, -5.0)
+    expected = ParameterSteps.for_parameter(enc3.parameter).move(1)
+    enc3.refresh(1)
+
+    cast(MagicMock, handler.audiocard.set_volume_parameter).assert_called_with(handler.audiocard.MASTER, expected)
+    assert enc3.parameter.value == expected
     # Volume goes to the audio card, never to MIDI.
     hw.midiout.send_message.assert_not_called()
 
@@ -136,7 +137,7 @@ def test_lcd_handle_falls_through_without_fullscreen_panel(v3_system: SystemFixt
     hw = v3_system.hw
 
     for enc_id in (1, 2, 3):
-        event = EncoderEvent(controller=_enc(hw, enc_id), rotations=1, new_value=0.0, new_midi_value=0)
+        event = EncoderEvent(controller=_enc(hw, enc_id), rotations=1)
         assert handler.lcd.handle(event) is False, f"enc {enc_id} should fall through on main panel"
 
 
@@ -243,7 +244,7 @@ def test_tweak_bound_to_different_param_does_not_corrupt_it(v3_system: SystemFix
 
     # Param A: a different plugin param, opened as a dialog badged to tweak1.
     from tests.conftest import PortInfo
-    from common.parameter import Parameter, Symbol
+    from common.parameter import Parameter
 
     info: PortInfo = {"shortName": "tone", "symbol": "tone", "ranges": {"minimum": 0.0, "maximum": 1.0}}
     dialog_param = Parameter(info, 0.5, None, "other_plugin")
@@ -256,8 +257,10 @@ def test_tweak_bound_to_different_param_does_not_corrupt_it(v3_system: SystemFix
     dialog_before = dialog_param.value
     hw.midiout.send_message.reset_mock()
 
-    event = EncoderEvent(controller=enc1, rotations=1, new_value=0.6, new_midi_value=80)
-    assert handler.handle(event) is True
+    # Drive the REAL path: refresh() is where the old shadow-accumulator leak
+    # lived (it wrote c.parameter.value before dispatch). A hand-built event
+    # can't catch that; enc1.refresh(1) can.
+    enc1.refresh(1)
 
     # The dialog's parameter changed (the dialog consumed the tweak).
     assert dialog_param.value != dialog_before
@@ -283,13 +286,12 @@ def test_unbound_tweak_with_dialog_open_still_emits_cc(v3_system: SystemFixture)
     dialog_param = Parameter(info, 0.5, None, "some_plugin")
     handler.lcd.w_parameter_dialogs[dialog_param.name] = None
     # Dialog badged to tweak1, not tweak2 — tweak2 has no row on the dialog.
-    d = _open_dialog_for_param(v3_system, dialog_param, tweak_id=1)
+    _open_dialog_for_param(v3_system, dialog_param, tweak_id=1)
 
     dialog_before = dialog_param.value
     hw.midiout.send_message.reset_mock()
 
-    event = EncoderEvent(controller=enc2, rotations=1, new_value=0.0, new_midi_value=64)
-    assert handler.handle(event) is True
+    enc2.refresh(1)
 
     # Dialog unchanged — tweak2 has no row on it.
     assert dialog_param.value == dialog_before
@@ -329,13 +331,12 @@ def test_tweak_bound_to_same_param_as_dialog_edits_once(v3_system: SystemFixture
         ]
     )
 
-    d = handler.lcd.draw_parameter_dialog(ext_param)
+    handler.lcd.draw_parameter_dialog(ext_param)
     # draw_parameter_dialog already badges it to tweak1 via tweak_badge_number.
     hw.midiout.send_message.reset_mock()
     before = ext_param.value
 
-    event = EncoderEvent(controller=enc1, rotations=1, new_value=0.6, new_midi_value=80)
-    assert handler.handle(event) is True
+    enc1.refresh(1)
 
     # The parameter changed exactly once (no double-apply from _handle_encoder).
     assert ext_param.value != before

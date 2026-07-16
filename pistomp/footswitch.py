@@ -26,7 +26,7 @@ from pistomp.input.event import SwitchEvent, SwitchEventKind
 from common.parameter import BYPASS_SYMBOL
 
 
-class Footswitch(controller.Controller):
+class Footswitch(controller.StatefulController):
 
     def __init__(self, id: int | None, led_pin, pixel, midi_CC, midi_channel, refresh_callback,
                  gpio_input=None, adc_input=None, spi=None, taptempo=None):

@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 from common.color import RectBorder
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol, json_default
 from modalapi.plugin_customization import PluginCustomization, PluginExtraData
-from pistomp.controller import Controller
+from pistomp.controller import Controller, StatefulController
 
 if TYPE_CHECKING:
     from plugins.base import PluginPanel
@@ -143,7 +143,9 @@ class Plugin:
             return
         param.value = value
         for c in self.controllers:
-            if c.parameter is param:
+            # Only stateful controllers hold a presentation copy to sync (a
+            # footswitch keycap, a pot's reading). Encoders own no copy.
+            if c.parameter is param and isinstance(c, StatefulController):
                 c.set_value(value)
 
     def set_bypass(self, bypass: bool) -> None:
