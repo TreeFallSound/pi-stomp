@@ -18,6 +18,8 @@ from __future__ import annotations
 from enum import Enum, Flag
 from functools import lru_cache
 
+from common.parameter import Type
+
 
 # Input events.
 class InputEvent(Enum):
@@ -144,8 +146,15 @@ _UNIT_COLORS: dict[str, tuple[int, int, int]] = {
 }
 
 
+# Same green as the ms/s unit rings.
+_TOGGLE_COLOR = _UNIT_COLORS["ms"]
+
+
 def color_for_param(param) -> tuple[int, int, int]:
-    """Return an arc-ring colour derived from *param*'s unit symbol."""
+    """Return an arc-ring colour. Toggles read as on/off, so they get a fixed
+    green regardless of unit; everything else keys off the unit symbol."""
+    if param is not None and param.type == Type.TOGGLED:
+        return _TOGGLE_COLOR
     if param is not None and param.unit_symbol is not None:
         return _UNIT_COLORS.get(param.unit_symbol, (200, 200, 200))
     return (200, 200, 200)

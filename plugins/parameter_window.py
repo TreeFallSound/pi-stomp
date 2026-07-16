@@ -75,6 +75,28 @@ def _slot_box_size() -> tuple[int, int]:
     return dial_box_size(_ARC_RADIUS, Config().get_font("arc_label"))
 
 
+def _discrete_formatter(param: Parameter) -> Callable[[float], tuple[str, str]] | None:
+    """A discrete param's ring shows its picked label, not the raw port value:
+    an ordered enum's scale-point label (Order 0/1/2 → "1"/"2"/"3") or a
+    toggle's On/Off. Continuous params keep the default."""
+    if param.type == Type.TOGGLED:
+        midpoint = (param.minimum + param.maximum) / 2
+
+        def fmt_toggle(value: float) -> tuple[str, str]:
+            return ("On" if value >= midpoint else "Off", "")
+
+        return fmt_toggle
+    if not param.is_ordered_enum():
+        return None
+    pairs = param.get_enum_value_list()
+
+    def fmt(value: float) -> tuple[str, str]:
+        idx = min(range(len(pairs)), key=lambda i: abs(pairs[i][1] - value))
+        return (pairs[idx][0], "")
+
+    return fmt
+
+
 class ParamSlotWidget(ArcDialWidget):
     """One pinned parameter as an arc dial. The base owns the rendering; this
     adds the plugin binding — edits route through the owner window."""
@@ -280,7 +302,10 @@ class _ListRow(Widget):
         val_vy = (ctx.height - val_h) // 2
         lw, _ = get_text_size(label, self._value_font)
         lx = ctx.width - _RIGHT_MARGIN - lw
-        ctx.draw_text((lx, val_vy), label, font=self._value_font, fill=shade_color(READOUT_COLOR, shade))
+        # An engaged toggle lifts its label out of the muted readout grey.
+        on = param.type == Type.TOGGLED and value >= (param.minimum + param.maximum) / 2
+        color = (255, 255, 255) if on else READOUT_COLOR
+        ctx.draw_text((lx, val_vy), label, font=self._value_font, fill=shade_color(color, shade))
 
     def _draw_bar(self, ctx, param: Parameter, value: float, shade: float) -> None:
         """Level-style param: horizontal bar + right-aligned readout. The value's
@@ -400,17 +425,31 @@ class ParameterWindow(PluginWindow[None]):
             return pinned
         return self._heuristic_slots()
 
+    @staticmethod
+    def _is_dial_enum(param: Parameter) -> bool:
+        """An ordered enum whose scale-point labels are short enough for an arc
+        ring.  Categorical names like "Mega Wookie 800" (25 cabinet models) are
+        not — they belong in the list rows where ``_fit_text`` can trim them."""
+        if not param.is_ordered_enum():
+            return False
+        labels = [v["label"] for v in param.enum_values]
+        return all(len(l) <= 8 for l in labels)
+
     def _heuristic_slots(self) -> list[PinnedParam]:
-        """First up-to-4 continuous (non-enum, non-toggle) params."""
+        """First up-to-4 params that read as a dial: continuous, a toggle
+        (On/Off), or a short-label ordered integer enum (Filter Order 1/2/3).
+
+        Iterates in LV2 port-index order (dict insertion order) — the plugin
+        author's intended priority — rather than alphabetically by symbol."""
         slots: list[PinnedParam] = []
-        for name, param in sorted(self.plugin.visible_parameters.items()):
+        for name, param in self.plugin.visible_parameters.items():
             if name == BYPASS_SYMBOL:
                 continue
-            if param.type.value in (1, 5):  # ENUMERATION, TOGGLED
+            if param.type == Type.ENUMERATION and not self._is_dial_enum(param):
                 continue
             if len(slots) >= _MAX_PINNED:
                 break
-            slots.append(PinnedParam(symbol=name, label=name))
+            slots.append(PinnedParam(symbol=name, label=param.name, display_fn=_discrete_formatter(param)))
         return slots
 
     # ── PluginWindow contract ───────────────────────────────────────────────
@@ -454,10 +493,11 @@ class ParameterWindow(PluginWindow[None]):
         return self._badge_fn(param) if param is not None else None
 
     def _list_params(self) -> list[tuple[Symbol, Parameter]]:
-        """Params not pinned, in sorted order, excluding :bypass and hidden ports."""
+        """Params not pinned, in LV2 port-index order, excluding :bypass and
+        hidden ports."""
         pinned_symbols = {s.symbol for s in self.slots}
         result: list[tuple[Symbol, Parameter]] = []
-        for name, param in sorted(self.plugin.visible_parameters.items()):
+        for name, param in self.plugin.visible_parameters.items():
             if name == BYPASS_SYMBOL:
                 continue
             if name in pinned_symbols:
@@ -511,12 +551,12 @@ class ParameterWindow(PluginWindow[None]):
             self._slot_widgets.append(w)
             content_container.add_sel_widget(w)
 
-        for idx, (name, _param) in enumerate(list_params):
+        for idx, (name, param) in enumerate(list_params):
             y = ring_area_h + idx * _ROW_H
             row = _ListRow(
                 box=Box.xywh(0, y, cb.width, _ROW_H),
                 symbol=name,
-                label=name,
+                label=param.name,
                 badge_char=self._badge_for(name),
                 owner=self,
                 font=row_font,

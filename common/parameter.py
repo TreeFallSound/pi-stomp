@@ -169,6 +169,16 @@ class Parameter:
     def get_enum_value_list(self) -> list[tuple[str, float]]:
         return [(v["label"], v["value"]) for v in self.enum_values]
 
+    def is_ordered_enum(self) -> bool:
+        """An enumeration that reads as a magnitude rather than a categorical
+        pick: its scale points are a contiguous ascending integer ramp (Filter
+        Order 1/2/3, Compressor Mode Light/Mild/Heavy). Only these map cleanly
+        onto an arc ring — and ParameterSteps' even spacing across [min,max]
+        assumes exactly this shape."""
+        if self.type != Type.ENUMERATION or len(self.enum_values) < 2:
+            return False
+        return all(v["value"] == self.minimum + i for i, v in enumerate(self.enum_values))
+
     def get_taper(self):
         return 2 if self.type == Type.LOGARITHMIC else 1
 
