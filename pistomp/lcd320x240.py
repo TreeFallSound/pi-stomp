@@ -824,17 +824,35 @@ class Lcd:
         return str(n) if n is not None else None
 
     def draw_symbol_menu(self, plugin: Plugin, rows: tuple[tuple[str, Symbol], ...], title: str = "") -> None:
-        """A compound NAV selection (e.g. an EQ band's gain/freq/Q): a submenu
-        over just `rows` symbols, each opening the same per-parameter dialog
-        draw_parameter_menu's rows do."""
-        items = []
-        for label, symbol in rows:
-            param = plugin.parameters.get(symbol)
-            if param is None:
-                continue
-            letter = self._badge_letter(plugin, param)
-            items.append((BadgedLabel(label, letter), self.draw_parameter_dialog, param))
-        self.draw_selection_menu(items, title)
+        """A compound NAV selection (e.g. an EQ band's gain/freq/Q): a
+        ParameterWindow over just `rows` symbols, so the same table-driven
+        tweak routing and arc-ring rendering the main parameter window uses
+        applies here. Replaces the plain Menu submenu — a tweak turn drives
+        the selected slot (no leak to the pedalboard-bound parameter)."""
+        from modalapi.plugin_customization import PinnedParam
+        from plugins.parameter_window import ParameterWindow
+
+        slots = tuple(PinnedParam(symbol=sym, label=lbl) for lbl, sym in rows)
+        badge_fn = functools.partial(self._badge_letter, plugin)
+
+        class _BandParamWindow(ParameterWindow):
+            def build_slots(self):
+                return slots
+
+            def _list_params(self):
+                return []
+
+        panel = _BandParamWindow(
+            plugin=plugin,
+            handler=self.handler,
+            on_dismiss=lambda: self.pstack.pop_panel(panel),
+            badge_fn=badge_fn,
+        )
+        if title:
+            deco = panel.decorator
+            assert deco is not None
+            deco.title.set_text(title)
+        self.pstack.push_panel(panel)
 
     def draw_parameter_dialog(self, parameter, timeout=None):
         # If we already have an active dialog for the parameter, use it
@@ -880,7 +898,7 @@ class Lcd:
                 n = self._external_tweak_badge_number(parameter)
             else:
                 n = None
-            d.set_badge(_TWEAK_BADGES.get(n) if n is not None else None)
+            d.set_tweak_badge(n, _TWEAK_BADGES.get(n) if n is not None else None)
             self.pstack.push_panel(d)
 
         self.w_parameter_dialogs[parameter.name] = d

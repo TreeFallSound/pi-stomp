@@ -16,12 +16,24 @@
 from uilib.box import Box
 from uilib.config import Config
 from uilib.dialog import Dialog
+from uilib.glyphs.badge import BadgeGlyph
 from uilib.image import ImageWidget
 from uilib.misc import InputEvent, WidgetAlign, get_text_size
 from uilib.text import TextWidget
 from uilib.widget import Widget
-from common.parameter import Parameter
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextRef,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    ParamEffect,
+)
+from common.parameter import Parameter, Symbol
 from common.parameter_steps import ParameterSteps
+from pistomp.input.dispatch import resolve_local, fire
+from pistomp.input.event import ControllerEvent, EncoderEvent
 
 from collections.abc import Callable
 from functools import lru_cache
@@ -81,6 +93,14 @@ class Parameterdialog(Dialog):
             stack  # TODO very LAME to require the stack to be passed, ideally panel would be able to pop itself
         )
         self.parameter: Parameter = parameter
+
+        # The tweak encoder (1/2/3) TTL/config-bound to this dialog's parameter
+        # (set by Lcd320x240.draw_parameter_dialog from tweak_badge_number).
+        # When set, the dialog declares a PANEL row for it so a turn drives the
+        # dialog's parameter through the binding table instead of falling
+        # through to Modhandler._handle_encoder (which would write the tweak's
+        # pedalboard-bound parameter underneath — see input/README.md).
+        self._tweak_id: int | None = None
 
         # The nav encoder steps this dialog through the same quantized grid a v3
         # tweak encoder uses, so a detent moves the value identically whichever
@@ -259,6 +279,12 @@ class Parameterdialog(Dialog):
             return
         ctx.paste(self._badge.render(), (4, 4))
 
+    def set_tweak_badge(self, tweak_id: int | None, badge: BadgeGlyph | None) -> None:
+        """Record the badged tweak encoder id and paint its glyph. `tweak_id`
+        is the 1/2/3 the binding table keys on; the glyph is purely visual."""
+        self._tweak_id = tweak_id
+        self.set_badge(badge)
+
     def reset_timeout(self):
         if self.timeout is not None:
             self.expiry_time = time.time() + self.timeout
@@ -306,6 +332,44 @@ class Parameterdialog(Dialog):
         # cost one render + LCD push per detent. `multiplier` is the encoder's
         # speed factor, which the nav path otherwise discards.
         self.parameter_value_change(1 if direction > 0 else -1, count, multiplier)
+        return True
+
+    # ── table-driven tweak routing ────────────────────────────────────────
+    # A tweak turn while this dialog is the top of the stack must edit the
+    # dialog's parameter, not the tweak's pedalboard-bound parameter beneath
+    # (the leak via Modhandler._handle_encoder — see input/README.md). We
+    # declare a PANEL row for the badged tweak so the binding table resolves
+    # it here, same shape as PluginPanel/ParameterWindow.
+
+    def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        if self._tweak_id is None:
+            return ()
+        return (
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=self._tweak_id),
+                event_kind=EventKind.ROTATE,
+                effects=(ParamEffect(plugin=None, symbol=self.parameter.symbol, commit=False),),
+                context=ContextRef(kind=ContextKind.PANEL, name="parameter_dialog"),
+            ),
+        )
+
+    def on_event(self, event: ControllerEvent) -> bool:
+        if not isinstance(event, EncoderEvent):
+            return False
+        rows = self.declare_bindings()
+        control_id = event.controller.id
+        for cls in (ControlClass.TWEAK, ControlClass.VOLUME):
+            decl = resolve_local(rows, ControlRef(cls=cls, id=control_id), EventKind.ROTATE)
+            if decl is not None:
+                return fire(decl, self, event)
+        return False
+
+    def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool:
+        # The dialog edits a single parameter; the ParamEffect carries its
+        # symbol. Forward to the same step+commit path NAV uses.
+        if symbol != self.parameter.symbol:
+            return False
+        self.parameter_value_change(1 if rotations > 0 else -1, abs(rotations), multiplier)
         return True
 
     def pop(self):

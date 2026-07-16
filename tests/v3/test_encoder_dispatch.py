@@ -188,3 +188,161 @@ def test_parameter_dialog_nav_change_emits_cc_for_external_param(v3_system: Syst
     sent_cc = hw.midiout.send_message.call_args[0][0]
     assert sent_cc[0] == (enc1.midi_channel | CONTROL_CHANGE)
     assert sent_cc[1] == enc1.midi_CC
+
+
+# ---------------------------------------------------------------------------
+# Bug #2 — a tweak turn while a Parameterdialog is open must not leak to the
+# pedalboard-bound parameter underneath. The dialog declares a PANEL row for
+# its badged tweak so the binding table resolves it there (same shape as
+# PluginPanel/ParameterWindow) instead of falling through to
+# Modhandler._handle_encoder's unconditional c.parameter.value write + CC.
+# ---------------------------------------------------------------------------
+
+
+def _open_dialog_for_param(v3_system, param, *, tweak_id: int | None = None):
+    """Push a Parameterdialog for *param* and (optionally) badge it with a
+    tweak id, mirroring what draw_parameter_dialog does for an external CC."""
+    handler = v3_system.handler
+    d = handler.lcd.draw_parameter_dialog(param)
+    if tweak_id is not None:
+        from uilib.glyphs.badge import BadgeGlyph
+        d.set_tweak_badge(tweak_id, BadgeGlyph(str(tweak_id)))
+    return d
+
+
+def test_tweak_bound_to_different_param_does_not_corrupt_it(v3_system: SystemFixture):
+    """Tweak1 is bound to param B. A dialog is open for param A. Turning
+    tweak1 edits A (the dialog) and must NOT write B or emit B's CC."""
+    _prime_main_panel(v3_system)
+    handler = v3_system.handler
+    hw = v3_system.hw
+
+    enc1 = _enc(hw, 1)
+    # Param B: the pedalboard-bound param tweak1 normally drives.
+    bound_param = hw.create_external_parameter(enc1, "virtual", enc1.midi_channel, enc1.midi_CC)
+    enc1.bind_to_parameter(bound_param)
+    binding = f"{enc1.midi_channel}:{enc1.midi_CC}"
+    hw.controllers[binding] = enc1
+    handler._controller_manager.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.ANALOG, EventKind.ROTATE): [
+                        BindingDecl(
+                            control=ControlRef(cls=ControlClass.ANALOG, id=binding),
+                            event_kind=EventKind.ROTATE,
+                            effects=(MidiCcEffect(cc_ref=binding),),
+                            context=ContextRef(kind=ContextKind.PEDALBOARD),
+                        )
+                    ]
+                },
+            )
+        ]
+    )
+
+    # Param A: a different plugin param, opened as a dialog badged to tweak1.
+    from tests.conftest import PortInfo
+    from common.parameter import Parameter, Symbol
+
+    info: PortInfo = {"shortName": "tone", "symbol": "tone", "ranges": {"minimum": 0.0, "maximum": 1.0}}
+    dialog_param = Parameter(info, 0.5, None, "other_plugin")
+    handler.lcd.w_parameter_dialogs[dialog_param.name] = None  # avoid dedup
+    d = _open_dialog_for_param(v3_system, dialog_param, tweak_id=1)
+    from uilib.parameterdialog import Parameterdialog as _PD
+    assert isinstance(d, _PD) and d._tweak_id == 1
+
+    bound_before = bound_param.value
+    dialog_before = dialog_param.value
+    hw.midiout.send_message.reset_mock()
+
+    event = EncoderEvent(controller=enc1, rotations=1, new_value=0.6, new_midi_value=80)
+    assert handler.handle(event) is True
+
+    # The dialog's parameter changed (the dialog consumed the tweak).
+    assert dialog_param.value != dialog_before
+    # The bound parameter underneath was NOT corrupted.
+    assert bound_param.value == bound_before
+    # No CC emitted — the dialog consumed the event before _handle_encoder.
+    hw.midiout.send_message.assert_not_called()
+
+
+def test_unbound_tweak_with_dialog_open_still_emits_cc(v3_system: SystemFixture):
+    """An unbound tweak turn while a dialog is open (dialog badged to a
+    different tweak, or the turning tweak has no row) still emits its CC —
+    the MIDI-learn axiom (input/README.md). The dialog does not update."""
+    _prime_main_panel(v3_system)
+    handler = v3_system.handler
+    hw = v3_system.hw
+
+    enc2 = _enc(hw, 2)  # tweak2, unbound
+    from tests.conftest import PortInfo
+    from common.parameter import Parameter
+
+    info: PortInfo = {"shortName": "tone", "symbol": "tone", "ranges": {"minimum": 0.0, "maximum": 1.0}}
+    dialog_param = Parameter(info, 0.5, None, "some_plugin")
+    handler.lcd.w_parameter_dialogs[dialog_param.name] = None
+    # Dialog badged to tweak1, not tweak2 — tweak2 has no row on the dialog.
+    d = _open_dialog_for_param(v3_system, dialog_param, tweak_id=1)
+
+    dialog_before = dialog_param.value
+    hw.midiout.send_message.reset_mock()
+
+    event = EncoderEvent(controller=enc2, rotations=1, new_value=0.0, new_midi_value=64)
+    assert handler.handle(event) is True
+
+    # Dialog unchanged — tweak2 has no row on it.
+    assert dialog_param.value == dialog_before
+    # CC still emitted (MIDI-learn axiom — unbound tweak must reach mod-ui).
+    hw.midiout.send_message.assert_called_once()
+    sent_cc = hw.midiout.send_message.call_args[0][0]
+    assert sent_cc[1] == 71  # enc2's CC
+
+
+def test_tweak_bound_to_same_param_as_dialog_edits_once(v3_system: SystemFixture):
+    """Tweak1 bound to the same param the dialog shows. The dialog consumes
+    the tweak (single update), and no double-apply via _handle_encoder."""
+    _prime_main_panel(v3_system)
+    handler = v3_system.handler
+    hw = v3_system.hw
+
+    enc1 = _enc(hw, 1)
+    ext_param = hw.create_external_parameter(enc1, "virtual", enc1.midi_channel, enc1.midi_CC)
+    enc1.bind_to_parameter(ext_param)
+    binding = f"{enc1.midi_channel}:{enc1.midi_CC}"
+    hw.controllers[binding] = enc1
+    handler._controller_manager.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.ANALOG, EventKind.ROTATE): [
+                        BindingDecl(
+                            control=ControlRef(cls=ControlClass.ANALOG, id=binding),
+                            event_kind=EventKind.ROTATE,
+                            effects=(MidiCcEffect(cc_ref=binding),),
+                            context=ContextRef(kind=ContextKind.PEDALBOARD),
+                        )
+                    ]
+                },
+            )
+        ]
+    )
+
+    d = handler.lcd.draw_parameter_dialog(ext_param)
+    # draw_parameter_dialog already badges it to tweak1 via tweak_badge_number.
+    hw.midiout.send_message.reset_mock()
+    before = ext_param.value
+
+    event = EncoderEvent(controller=enc1, rotations=1, new_value=0.6, new_midi_value=80)
+    assert handler.handle(event) is True
+
+    # The parameter changed exactly once (no double-apply from _handle_encoder).
+    assert ext_param.value != before
+    # The CC is emitted exactly once — via the dialog's parameter_value_commit
+    # path (which owns the CC for external params), NOT via _handle_encoder.
+    # One call, not two: the dialog consumed the event before the leak.
+    assert hw.midiout.send_message.call_count == 1
+    sent_cc = hw.midiout.send_message.call_args[0][0]
+    assert sent_cc[0] == (enc1.midi_channel | CONTROL_CHANGE)
+    assert sent_cc[1] == enc1.midi_CC

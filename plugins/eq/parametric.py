@@ -757,7 +757,9 @@ def band_readout_fields(band: BandSpec, p: BandParams) -> tuple[str, str, str, s
     """
     name = band.name
     freq = _fmt_freq(p.freq)
-    q = f"Q {p.q:.2f}"
+    # Q column empty for plugins with no q_sym (plain TAP EQ has a fixed BW
+    # the user cannot control) — the (3) badge keys off non-empty text.
+    q = f"Q {p.q:.2f}" if band.q_sym is not None else ""
     if band.gain_sym is None:
         gain = ""
     elif not p.enabled:

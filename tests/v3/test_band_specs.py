@@ -299,6 +299,18 @@ class TestTapeqBandSpecs:
         for b in BAND_SPECS:
             assert b.q_sym is None
 
+    def test_readout_q_is_empty(self):
+        # Plain TAP EQ has no Q control — the readout must drop the Q column
+        # so the (3) badge doesn't render over a knob that does nothing.
+        from plugins.eq.curve import BandParams
+        from plugins.eq.parametric import band_readout_fields
+        from plugins.tapeq.band_spec import BAND_SPECS
+
+        band = BAND_SPECS[0]
+        p = BandParams(enabled=True, freq=100.0, q=1.0, gain_db=0.0)
+        _, _, q, _ = band_readout_fields(band, p)
+        assert q == ""
+
     def test_no_per_band_enable(self):
         from plugins.tapeq.band_spec import BAND_SPECS
 

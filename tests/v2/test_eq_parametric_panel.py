@@ -1,13 +1,15 @@
 """NAV-only (v2, no Tweak encoders) coverage for the fil4 parametric EQ panel.
 
 The compound MultiSelectable case: a band's gain/freq/Q aren't a single
-symbol, so NAV LONGPRESS opens a submenu (Gain/Freq/Q/back) instead of one
-dialog directly — CLICK on the band itself stays a plain toggle (enable).
+symbol, so NAV LONGPRESS opens a ParameterWindow over gain/freq/Q (arc rings)
+instead of one dialog directly — CLICK on the band itself stays a plain
+toggle (enable). Each ring's dialog edits the right symbol; back returns to
+the panel.
 """
 
 from __future__ import annotations
 
-from uilib.menu import Menu
+from plugins.parameter_window import ParameterWindow
 from uilib.parameterdialog import Parameterdialog
 
 from plugins.fil4.panel import Fil4Panel
@@ -27,8 +29,8 @@ def current(v2_system: SystemFixture):
 
 
 def test_eq_parametric_nav_only_band_submenu(v2_system: SystemFixture, nav_handler, snapshot):
-    """Nav to B1, enable it, longpress opens the Gain/Freq/Q submenu; each
-    row's dialog edits the right symbol; back arrow returns to the panel."""
+    """Nav to B1, enable it, longpress opens the gain/freq/Q ParameterWindow;
+    each ring's dialog edits the right symbol; back returns to the panel."""
     handler = v2_system.handler
     plugin = open_eq(v2_system)
 
@@ -41,20 +43,20 @@ def test_eq_parametric_nav_only_band_submenu(v2_system: SystemFixture, nav_handl
     assert isinstance(current(v2_system), Fil4Panel)
     snapshot("b1_enabled")
 
-    nav_click(handler, long=True)  # LONGPRESS: open the Gain/Freq/Q submenu
+    nav_click(handler, long=True)  # LONGPRESS: open the gain/freq/Q window
     handler.poll_lcd_updates()
-    assert isinstance(current(v2_system), Menu)
+    assert isinstance(current(v2_system), ParameterWindow)
     snapshot("b1_submenu_open")
 
-    # Gain row is focused first
+    # Gain ring is selected first; CLICK opens its dialog.
     nav_click(handler)
     handler.poll_lcd_updates()
     assert isinstance(current(v2_system), Parameterdialog)
     nav_handler(12)
     handler.poll_lcd_updates()
-    nav_click(handler)  # close dialog, back to submenu
+    nav_click(handler)  # close dialog, back to the window
     handler.poll_lcd_updates()
-    assert isinstance(current(v2_system), Menu)
+    assert isinstance(current(v2_system), ParameterWindow)
 
     nav(nav_handler, 1)  # Gain -> Freq
     nav_click(handler)
@@ -74,8 +76,8 @@ def test_eq_parametric_nav_only_band_submenu(v2_system: SystemFixture, nav_handl
     nav_click(handler)
     handler.poll_lcd_updates()
     snapshot("b1_submenu_all_edited")
-
-    nav(nav_handler, 1)  # Q -> back arrow
+    # Q is at index 2; Back follows at index 3.
+    nav(nav_handler, 1)  # Q -> Back
     nav_click(handler)
     handler.poll_lcd_updates()
     assert isinstance(current(v2_system), Fil4Panel)
