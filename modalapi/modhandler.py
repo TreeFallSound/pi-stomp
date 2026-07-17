@@ -1347,6 +1347,12 @@ class Modhandler(Handler):
             self.bypass_right = self.audiocard.get_bypass_right()
             self.lcd.update_bypass(self.bypass_left, self.bypass_right)
 
+    def maybe_show_welcome(self):
+        if self.settings.get_setting(Token.WELCOME_SEEN):
+            return
+        from ui.welcome import WelcomePanel
+        self.lcd.pstack.push_panel(WelcomePanel(self))
+
     def get_software_version(self) -> str:
         """Software version with optional '*' suffix when on-disk files have
         drifted from the installed .deb. Blocks on the background `dpkg --verify`
@@ -1453,13 +1459,13 @@ class Modhandler(Handler):
         finally:
             self.lcd.draw_info_message("", refresh=True)
 
-    def user_restore_data(self, arg):
+    def user_restore_data(self, arg, on_success=None):
         # Only offer drives that actually hold a backup — no point asking the
         # user to choose when just one (or none) does.
         restorable = [d for d in self.check_usb() if os.path.exists(os.path.join(d, self.backup_file))]
-        self._choose_usb_drive(restorable, self._do_restore_data)
+        self._choose_usb_drive(restorable, lambda d: self._do_restore_data(d, on_success=on_success))
 
-    def _do_restore_data(self, backup_dir: str):
+    def _do_restore_data(self, backup_dir: str, on_success=None):
         self.lcd.draw_info_message("Restoring, please wait...", refresh=True)
         logging.info("Restoring data backup...")
         cmd = os.path.join(self.homedir, "util", "data-restore.sh")
@@ -1468,6 +1474,8 @@ class Modhandler(Handler):
                 ["sudo", "-u", self.username, cmd, os.path.join(backup_dir, self.backup_file), self.data_dir]
             )
             logging.info("Restore complete")
+            if on_success is not None:
+                on_success()
             self.lcd.draw_message_dialog(
                 "Restore complete. Press OK to restart.", "Info", on_dismiss=lambda: self.system_menu_restart_sound(None)
             )

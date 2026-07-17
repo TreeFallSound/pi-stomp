@@ -83,6 +83,7 @@ def bootstrap_emulator(version: EmulatorVersion, cwd: str):
         handler.set_current_pedalboard(pb)
 
     handler.system_info_load()
+    handler.software_version = "Emulator"
 
     handler.set_tuner_source_factory(lambda port, *, name: ToneSweepSource())
 

@@ -179,6 +179,8 @@ def main():
 
     assert handler is not None
 
+    handler.maybe_show_welcome()
+
     if not is_emulator and args.tuner_source:
         handler.set_tuner_source_spec(args.tuner_source)
 

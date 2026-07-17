@@ -18,7 +18,6 @@ rsync -az --delete \
     --exclude='.git' --exclude='.gitignore' --exclude='tests' \
     --exclude='setup' --exclude='*.md' --exclude='*.yml' --exclude='*.yaml' \
     --exclude='*.json' --exclude='*.toml' --exclude='*.lock' \
-    --exclude='*.png' --exclude='*.jpg' --exclude='*.svg' \
     --filter='protect .git-meta' \
     ./ \
     "${TARGET}:${REMOTE_DIR}/"
