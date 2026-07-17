@@ -18,6 +18,8 @@
 One source of truth for "how long does it take to push N pixels at this SPI
 clock", used by the LCD drivers' transfer_ms (the inline-push gate), the
 emulator's transfer-time simulation, and lcd320x240's poll_divisor.
+
+Callers must pass the *actual* clock, not the requested one — see actual_spi_hz.
 """
 
 import math
