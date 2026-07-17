@@ -52,7 +52,7 @@ from common.contexts import (
     TapTempoEffect,
 )
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
-from common.parameter_steps import ParameterSteps
+from common.parameter_steps import ParameterSteps, effective_multiplier
 from modalapi.plugin import Plugin
 from blend.input_controller import InputController
 import modalapi.pedalboard as Pedalboard
@@ -351,7 +351,7 @@ class Modhandler(Handler):
         # anything reaching here is a tweak/volume encoder the panel didn't take.
         # Volume encoder bypasses the mod-host commit path — there is no
         # backing plugin parameter, just the audio card.
-        delta = int(round(event.rotations * event.multiplier))
+        delta = int(round(event.rotations * effective_multiplier(event.multiplier, c.parameter)))
 
         if c.type == Token.VOLUME and c.parameter is not None:
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)

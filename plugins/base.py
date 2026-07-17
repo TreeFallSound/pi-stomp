@@ -43,7 +43,7 @@ from typing import Generic, TypeVar
 from common.contexts import ControlClass, ControlRef, EventKind
 from common.param_roles import ParamRole
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
-from common.parameter_steps import ParameterSteps
+from common.parameter_steps import ParameterSteps, effective_multiplier
 from modalapi.plugin import Plugin
 import common.token as Token
 from pistomp.input.dispatch import MultiSelectable, Selectable, fire, resolve_local
@@ -189,7 +189,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
         if p is None:
             return False
         steps = ParameterSteps.for_parameter(p)
-        delta = int(round(rotations * multiplier))
+        delta = int(round(rotations * effective_multiplier(multiplier, p)))
         if delta == 0:
             return False
         new_val = steps.move(delta)

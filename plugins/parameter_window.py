@@ -23,7 +23,7 @@ from common.contexts import (
     SelectionEditEffect,
 )
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol, Type
-from common.parameter_steps import ParameterSteps
+from common.parameter_steps import ParameterSteps, effective_multiplier
 from common.param_roles import ParamRole
 from modalapi.plugin_customization import PinnedParam
 from plugins.chrome import BTN_GAP, BTN_H, MIN_CHROME_WIDTH, build_bottom_row
@@ -162,7 +162,7 @@ class ParamSlotWidget(ArcDialWidget):
         if param is None:
             return False
         steps = ParameterSteps.for_parameter(param)
-        delta = int(round(rotations * multiplier))
+        delta = int(round(rotations * effective_multiplier(multiplier, param)))
         if delta == 0:
             return False
         new_val = steps.move(delta)
@@ -259,7 +259,7 @@ class _ListRow(Widget):
         if param is None:
             return False
         steps = ParameterSteps.for_parameter(param)
-        delta = int(round(rotations * multiplier))
+        delta = int(round(rotations * effective_multiplier(multiplier, param)))
         if delta == 0:
             return False
         new_val = steps.move(delta)

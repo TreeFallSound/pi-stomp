@@ -27,6 +27,11 @@ from pistomp.input.event import AnalogEvent, ControllerEvent, EncoderEvent
 # Detents for a full sweep of an encoder-driven blend; matches the 128-value
 # CC grid a bound encoder would otherwise use.
 _ENCODER_FULL_SWEEP_DETENTS = 127.0
+# Blend's own feel ceiling — independent of the uncapped encoder multiplier
+# and of the per-parameter cap in ParameterSteps. Blend has no Parameter /
+# ParameterSteps grid (it integrates into its own 0-1 sweep position), so this
+# is a local feel decision, not a parameter-resolution one.
+_BLEND_MAX_MULTIPLIER = 4.0
 
 
 class InputController:
@@ -99,7 +104,7 @@ class InputController:
             return False
         match event:
             case EncoderEvent():
-                self._advance_sweep(event.rotations * event.multiplier)
+                self._advance_sweep(event.rotations * min(event.multiplier, _BLEND_MAX_MULTIPLIER))
             case AnalogEvent():
                 pass  # pot carries its own absolute position; read live below
             case _:

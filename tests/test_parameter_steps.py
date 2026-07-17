@@ -21,16 +21,31 @@ whichever control is turned."""
 import pytest
 
 from common.parameter import Parameter, Symbol, Type
-from common.parameter_steps import CONTINUOUS_STEPS, ParameterSteps, resolution
+from common.parameter_steps import (
+    CONTINUOUS_STEPS,
+    FULL_SWEEP_DETENTS,
+    REFERENCE_FAST_MULTIPLIER,
+    ParameterSteps,
+    effective_multiplier,
+    resolution,
+)
 
 
-def _param(minimum: float, maximum: float, value: float, type: Type = Type.DEFAULT) -> Parameter:
+def _param(
+    minimum: float,
+    maximum: float,
+    value: float,
+    type: Type = Type.DEFAULT,
+    *,
+    is_logarithmic: bool = False,
+) -> Parameter:
     p = Parameter(
         {"shortName": "test", "symbol": "test", "ranges": {"minimum": minimum, "maximum": maximum}},
         value,
         binding=None,
     )
     p.type = type
+    p.is_logarithmic = is_logarithmic
     return p
 
 
@@ -201,3 +216,86 @@ def test_edit_symbol_zero_delta_is_noop():
 
     assert not panel.edit_symbol(Symbol("test"), rotations=0, multiplier=3.0)
     assert param.value == pytest.approx(0.5)
+
+
+# ── effective_multiplier ─────────────────────────────────────────────────
+
+
+def test_effective_multiplier_small_grid_passes_through():
+    """A 13-step integer grid (Degrade Quant): resolution < FULL_SWEEP_DETENTS,
+    so the cap is below 1× — return the raw multiplier unchanged. Precision
+    floor: every notch stays reachable, never slowed below 1×/detent."""
+    p = _param(4, 16, 10, Type.INTEGER)
+    assert effective_multiplier(3.0, p) == 3.0
+    assert effective_multiplier(100.0, p) == 100.0
+
+
+def test_effective_multiplier_continuous_grid_at_anchor_is_unchanged():
+    """A 128-step grid: cap = 4× = REFERENCE_FAST_MULTIPLIER, so the linear
+    ramp's endpoints coincide — a full-speed spin feels exactly as before."""
+    p = _param(0.0, 1.0, 0.5, Type.LOGARITHMIC, is_logarithmic=True)
+    assert effective_multiplier(1.0, p) == 1.0
+    assert effective_multiplier(2.0, p) == pytest.approx(2.0)
+    assert effective_multiplier(4.0, p) == pytest.approx(4.0)
+    assert effective_multiplier(100.0, p) == pytest.approx(4.0)
+
+
+def test_effective_multiplier_huge_integer_grid_scales_to_full_sweep():
+    """Degrade Rate: integer + log, 4800..48000 → 43201 steps. A full-speed
+    spin (m ≥ 4) hits the cap: ~1350 steps/detent, sweeping in ~32 detents.
+    A slow spin (m=1) yields 1 step/detent (every notch reachable); the ramp
+    between is linear in step count, not multiplier."""
+    p = _param(4800, 48000, 4800, Type.INTEGER, is_logarithmic=True)
+    cap = 43201 / FULL_SWEEP_DETENTS
+    assert effective_multiplier(1.0, p) == 1.0
+    # At the anchor, the cap binds.
+    assert effective_multiplier(REFERENCE_FAST_MULTIPLIER, p) == pytest.approx(cap)
+    assert effective_multiplier(1000.0, p) == pytest.approx(cap)
+    # Midway (m=2.5) is a linear ramp from 1 to cap over [1, 4].
+    mid = 1.0 + (2.5 - 1.0) * (cap - 1.0) / (REFERENCE_FAST_MULTIPLIER - 1.0)
+    assert effective_multiplier(2.5, p) == pytest.approx(mid)
+
+
+def test_effective_multiplier_unbound_encoder_is_continuous():
+    """An unbound encoder (parameter is None) is a 128-step CC: capped at 4×,
+    matching the historic fallback-CC feel."""
+    assert effective_multiplier(1.0, None) == 1.0
+    assert effective_multiplier(4.0, None) == pytest.approx(4.0)
+    assert effective_multiplier(100.0, None) == pytest.approx(4.0)
+
+
+def test_effective_multiplier_toggled_passes_through():
+    """A 2-step toggle has no notion of 'sweep'; the cap is 0.06, well below
+    1, so the multiplier passes through — every detent flips the value."""
+    p = _param(0, 1, 0, Type.TOGGLED)
+    assert effective_multiplier(100.0, p) == 100.0
+
+
+# ── logarithmic taper is independent of Type ────────────────────────────
+
+
+def test_integer_logarithmic_keeps_integer_type_but_log_taper():
+    """An integer+logarithmic port (Degrade Rate/Post Filter) classifies as
+    INTEGER (one notch per value) but renders with a logarithmic taper —
+    the step grid stays notched, the graph is log-shaped."""
+    p = _param(4800, 48000, 4800, Type.INTEGER, is_logarithmic=True)
+    assert p.type is Type.INTEGER
+    assert p.is_logarithmic is True
+    assert p.get_taper() == 2
+    # Step grid is one-per-integer (notched), not the 128-step continuous grid.
+    assert resolution(p) == 43201
+
+
+def test_logarithmic_port_is_log_type_and_taper():
+    """A pure logarithmic float port keeps the historic shape: Type.LOGARITHMIC
+    and taper 2."""
+    p = _param(20.0, 20000.0, 440.0, Type.LOGARITHMIC, is_logarithmic=True)
+    assert p.type is Type.LOGARITHMIC
+    assert p.is_logarithmic is True
+    assert p.get_taper() == 2
+
+
+def test_plain_integer_is_linear_taper():
+    p = _param(0, 10, 5, Type.INTEGER)
+    assert p.is_logarithmic is False
+    assert p.get_taper() == 1

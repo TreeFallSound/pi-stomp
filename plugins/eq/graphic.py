@@ -23,7 +23,7 @@ from common.contexts import (
 )
 from common.param_roles import ParamRole
 from common.parameter import Symbol
-from common.parameter_steps import ParameterSteps, resolution
+from common.parameter_steps import ParameterSteps, effective_multiplier, resolution
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import GraphicBandSpec
 from plugins.eq.parametric import _fmt_freq as _fmt_freq_long
@@ -461,7 +461,7 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
             return False
         steps = ParameterSteps(band.gain_min, band.gain_max, lv2.get_taper(), resolution(lv2))
         steps.set_value(p.gain_db)
-        delta = int(round(rotations * multiplier))
+        delta = int(round(rotations * effective_multiplier(multiplier, lv2)))
         if delta == 0:
             return False
         new_gain = steps.move(delta)

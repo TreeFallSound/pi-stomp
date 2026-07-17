@@ -124,6 +124,11 @@ class Parameter:
         self.instance_id: str | None = instance_id.lstrip("/") if instance_id else instance_id
         self.type = Type.DEFAULT
         self.enum_values: list[ScalePoint] = []
+        # Logarithmic taper is independent of the discrete type: an integer
+        # port can also be logarithmic (Degrade's Rate, Post Filter). The type
+        # still drives step resolution (one notch per integer), but the graph
+        # curve and the step taper follow the log flag.
+        self.is_logarithmic: bool = False
 
         units_info = plugin_info.get("units") or Units()
         self.unit_symbol: str | None = units_info.get("symbol")
@@ -131,6 +136,8 @@ class Parameter:
 
         properties = plugin_info.get("properties") or []
         if len(properties) > 0:
+            if TTL_LOGARITHMIC in properties:
+                self.is_logarithmic = True
             if TTL_ENUMERATION in properties:
                 self.enum_values = plugin_info.get("scalePoints") or []
                 self.type = Type.ENUMERATION
@@ -180,7 +187,7 @@ class Parameter:
         return all(v["value"] == self.minimum + i for i, v in enumerate(self.enum_values))
 
     def get_taper(self):
-        return 2 if self.type == Type.LOGARITHMIC else 1
+        return 2 if self.is_logarithmic else 1
 
     def format_value(self, value) -> str:
         """The numeric text alone. Callers that lay value and unit out

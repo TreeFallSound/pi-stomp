@@ -23,7 +23,7 @@ from common.contexts import (
 )
 from common.param_roles import ParamRole
 from common.parameter import Symbol
-from common.parameter_steps import ParameterSteps, resolution
+from common.parameter_steps import ParameterSteps, effective_multiplier, resolution
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import BandSpec
 from plugins.eq.curve import (
@@ -886,7 +886,7 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
             return False
         steps = ParameterSteps(lo, hi, lv2.get_taper(), resolution(lv2))
         steps.set_value(current)
-        delta = int(round(rotations * multiplier))
+        delta = int(round(rotations * effective_multiplier(multiplier, lv2)))
         if delta == 0:
             return False
         new_val = steps.move(delta)

@@ -61,7 +61,11 @@ class EncoderController(controller.Controller):
 
     # Speed amplification: at this per-detent interval, multiplier = 1×.
     REFERENCE_DT_MS = 80.0
-    MAX_MULTIPLIER = 4.0
+    # Raw multiplier ceiling. High because the effective cap lives in
+    # ParameterSteps.effective_multiplier (per-parameter, resolution-aware);
+    # this only bounds the degenerate dt<=0 case and very fast spins on big
+    # grids. Each consumer (blend, fallback CC, params) applies its own cap.
+    MAX_MULTIPLIER = 1000.0
     MIN_MULTIPLIER = 1.0
 
     def __init__(

@@ -29,6 +29,18 @@ from common.parameter import Parameter, Type
 # sweep of a CC-bound encoder emits every distinct MIDI value.
 CONTINUOUS_STEPS = 128
 
+# A full-speed spin should cross a parameter's whole grid in roughly this many
+# detents, regardless of the grid's resolution. The encoder's raw multiplier
+# (time-based, 1× at REFERENCE_DT_MS) is mapped onto the per-parameter step
+# range so a 43k-step integer log knob sweeps as fast as a 128-step continuous
+# one. Slow spins (multiplier ≤ 1) always yield one step per detent, so every
+# notch of a stepped range stays reachable.
+FULL_SWEEP_DETENTS = 32
+# The raw multiplier at which a spin counts as "full speed" — the historic
+# MAX_MULTIPLIER. At or above this, the per-parameter cap binds; below it,
+# the multiplier is interpolated linearly between 1 step/detent and the cap.
+REFERENCE_FAST_MULTIPLIER = 4.0
+
 
 def resolution(parameter: Parameter | None) -> int:
     """Detents needed to cross the parameter's range.
@@ -49,6 +61,29 @@ def resolution(parameter: Parameter | None) -> int:
             return 2
         case _:
             return CONTINUOUS_STEPS
+
+
+def effective_multiplier(multiplier: float, parameter: Parameter | None) -> float:
+    """The multiplier actually applied to a parameter edit.
+
+    Maps the encoder's raw speed multiplier onto the parameter's step range
+    so a full-speed spin covers the same fraction of any grid in roughly the
+    same number of detents. At ``multiplier == 1`` (slow) every detent moves
+    one step — every notch of a stepped range is reachable. At
+    ``multiplier >= REFERENCE_FAST_MULTIPLIER`` (full speed) each detent moves
+    ``resolution / FULL_SWEEP_DETENTS`` steps, so the whole range sweeps in
+    ~32 detents regardless of grid size.
+    """
+    res = resolution(parameter)
+    cap = res / FULL_SWEEP_DETENTS
+    if cap <= 1.0:
+        return multiplier  # small grid: precision floor, no scaling
+    if multiplier <= 1.0:
+        return multiplier  # slow: 1 step/detent, every notch reachable
+    if multiplier >= REFERENCE_FAST_MULTIPLIER:
+        return cap
+    # Linear ramp: m=1 → 1 step/detent, m=4 → cap steps/detent.
+    return 1.0 + (multiplier - 1.0) * (cap - 1.0) / (REFERENCE_FAST_MULTIPLIER - 1.0)
 
 
 class ParameterSteps:

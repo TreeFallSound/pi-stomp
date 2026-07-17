@@ -31,7 +31,7 @@ from common.contexts import (
     ParamEffect,
 )
 from common.parameter import Parameter, Symbol
-from common.parameter_steps import ParameterSteps
+from common.parameter_steps import ParameterSteps, effective_multiplier
 from pistomp.input.dispatch import resolve_local, fire
 from pistomp.input.event import ControllerEvent, EncoderEvent
 
@@ -302,8 +302,9 @@ class Parameterdialog(Dialog):
         self.reset_timeout()
 
         # Same arithmetic as EncoderController.refresh: the multiplier scales the
-        # number of grid steps, not the value.
-        delta = int(round(direction * count * multiplier))
+        # number of grid steps, not the value. effective_multiplier caps it per
+        # parameter so a full-speed spin covers the same fraction of any grid.
+        delta = int(round(direction * count * effective_multiplier(multiplier, self.parameter)))
         if delta == 0:
             return
         new_value = self.steps.move(delta)
