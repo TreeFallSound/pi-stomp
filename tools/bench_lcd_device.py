@@ -12,6 +12,12 @@ import os
 import sys
 import time
 import statistics
+from pathlib import Path
+
+# Running as tools/bench_lcd_device.py puts tools/ on sys.path[0], not the repo
+# root -- so `import uilib` finds the copy installed in the venv's site-packages
+# and silently benches the *packaged* driver instead of the working tree.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
@@ -35,7 +41,9 @@ lcd = LcdIli9341(
     True,
 )
 
-surf = pygame.Surface((320, 240))
+# Opaque XRGB, matching PanelStack's root. update()'s 565 convert-blit is ~7x
+# slower off an SRCALPHA source, so the fit is only valid on an opaque one.
+surf = pygame.Surface((320, 240), depth=32, masks=(0xFF0000, 0xFF00, 0xFF, 0))
 for y in range(240):
     pygame.draw.line(surf, (y, 255 - y, (y * 3) % 256), (0, y), (319, y))
 

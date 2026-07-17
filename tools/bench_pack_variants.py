@@ -1,13 +1,23 @@
 #!/usr/bin/env python3
 """Benchmark RGB565 pack variants for the LCD update path.
 
-Compares the current pygame.image.tobytes() approach against pygame.surfarray
-alternatives (pixels3d / array3d) at clip sizes the tuner strobe actually
-generates: one stripe edge (~5px), one stripe span (~53px), the unioned strobe
-region (~270px), and the full strobe widget (320px).
+Compares the production SDL staging-surface blit (LcdIli9341.update) against the
+numpy packs it replaced, at clip sizes the tuner strobe actually generates: one
+stripe edge (~5px), one stripe span (~53px), the unioned strobe region (~270px),
+and the full strobe widget (320px).
 
-Source surface is RGBA (the PanelStack surface format when use_dimming=True).
-Both reading and output buffer allocation strategies are tested.
+Each size is run against both source formats, because that is the whole question
+for the SDL path:
+
+  opaque RGB source (PanelStack's root) — a straight convert blit. ~2.5x faster
+  than the best numpy pack.
+
+  RGBA source — blitting this into a 565 surface hits SDL's per-pixel
+  *alpha-blending* blitter, not a format convert, and is ~7x slower than the
+  opaque blit. This is why the root must stay opaque; see CLAUDE.md "Traps".
+
+SDL output is native little-endian; the ILI9341 wants high byte first, so the
+byteswap is part of the measured cost, not an optimisation to factor out.
 
 Run:
     uv run python tools/bench_pack_variants.py
@@ -98,6 +108,35 @@ def pack_pixels3d_colmajor(sub: pygame.Surface, out_col: np.ndarray) -> bytes:
     return pix.tobytes()  # wrong byte order for LCD — for timing only
 
 
+_staging: dict[tuple[int, int], pygame.Surface] = {}
+
+
+def _stage_565(w: int, h: int) -> pygame.Surface:
+    """Preallocated RGB565 staging surface, as the driver would hold."""
+    s = _staging.get((w, h))
+    if s is None:
+        # masks spelled out — never a bare Surface. See CLAUDE.md "Traps".
+        s = pygame.Surface((w, h), depth=16, masks=(0xF800, 0x07E0, 0x001F, 0))
+        _staging[(w, h)] = s
+    return s
+
+
+def pack_sdl_blit(sub: pygame.Surface, out: np.ndarray) -> bytes:
+    """Production path: blit into a 565 staging surface, byteswap its pixels.
+
+    Slicing the sub-rect out of the staging array sidesteps SDL's 4-byte row
+    padding, which an odd width would otherwise hit. Surface pixels are native
+    little-endian; the panel wants high byte first.
+    """
+    sw, sh = sub.get_size()
+    s565 = _stage_565(sw, sh)
+    s565.blit(sub, (0, 0))
+    staged = pygame.surfarray.pixels2d(s565).T
+    out_bytes = staged[:sh, :sw].byteswap().tobytes()
+    del staged  # unlock the surface
+    return out_bytes
+
+
 def pack_pixels2d(sub: pygame.Surface, out: np.ndarray) -> bytes:
     """pixels2d: lock the surface as a (width, height) array of mapped pixels.
 
@@ -125,30 +164,27 @@ def pack_pixels2d(sub: pygame.Surface, out: np.ndarray) -> bytes:
 
 
 def _check_all_match() -> None:
-    rng = np.random.default_rng(7)
-    # Use a size that's not a power-of-2 to catch stride bugs
+    # Odd width, non-power-of-2 height: catches stride bugs and the SDL row pad.
     w, h = 13, 47
-    rgba = rng.integers(0, 256, (h, w, 4), dtype=np.uint8)
-    # Build an RGBA surface from random data
-    surf = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.surfarray.blit_array(surf, rgba[:, :, :3].transpose(1, 0, 2).copy())
 
-    out = np.empty((h, w, 2), dtype=np.uint8)
+    for label, surf in (("RGBA", make_rgba_surface(w, h)), ("opaque", make_opaque_surface(w, h))):
+        out = np.empty((h, w, 2), dtype=np.uint8)
+        ref = pack_tobytes(surf, out.copy())
 
-    ref = pack_tobytes(surf, out.copy())
-
-    variants = [
-        ("pixels3d_transpose", pack_pixels3d_transpose(surf, out.copy())),
-        ("pixels3d_contig",    pack_pixels3d_contig(surf, out.copy())),
-        ("array3d",            pack_array3d(surf, out.copy())),
-        ("pixels2d",           pack_pixels2d(surf, out.copy())),
-    ]
-    for name, result in variants:
-        assert result == ref, (
-            f"{name} mismatch at ({w}x{h}):\n"
-            f"  ref[0:8]={list(ref[:8])}\n  got[0:8]={list(result[:8])}"
-        )
-    print("Correctness check passed: all variants produce identical bytes.\n")
+        variants = [
+            ("pixels3d_transpose", pack_pixels3d_transpose(surf, out.copy())),
+            ("pixels3d_contig",    pack_pixels3d_contig(surf, out.copy())),
+            ("array3d",            pack_array3d(surf, out.copy())),
+            ("pixels2d",           pack_pixels2d(surf, out.copy())),
+            ("sdl_blit",           pack_sdl_blit(surf, out.copy())),
+        ]
+        for name, result in variants:
+            assert result == ref, (
+                f"{name} mismatch on {label} source at ({w}x{h}):\n"
+                f"  ref[0:8]={list(ref[:8])}\n  got[0:8]={list(result[:8])}"
+            )
+    print("Correctness check passed: all variants produce identical bytes "
+          "(both source formats, odd width).\n")
 
 
 # ---------------------------------------------------------------------------
@@ -208,14 +244,24 @@ def _print(r: Result, baseline_us: float | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def make_rgba_surface(w: int, h: int) -> pygame.Surface:
-    """RGBA surface with random pixel data (matches PanelStack format)."""
+def _fill_random(surf: pygame.Surface, w: int, h: int) -> pygame.Surface:
     rng = np.random.default_rng(42)
-    surf = pygame.Surface((w, h), pygame.SRCALPHA)
-    data = rng.integers(0, 256, (h, w, 4), dtype=np.uint8)
-    # blit_array expects (w, h, 3) for RGB
-    pygame.surfarray.blit_array(surf, data[:, :, :3].transpose(1, 0, 2).copy())
+    data = rng.integers(0, 256, (h, w, 3), dtype=np.uint8)
+    pygame.surfarray.blit_array(surf, data.transpose(1, 0, 2).copy())
     return surf
+
+
+def make_rgba_surface(w: int, h: int) -> pygame.Surface:
+    """Today's PanelStack root format (use_dimming=True)."""
+    return _fill_random(pygame.Surface((w, h), pygame.SRCALPHA), w, h)
+
+
+def make_opaque_surface(w: int, h: int) -> pygame.Surface:
+    """Opaque RGB root: what the SDL blit path would need. Same 8-bit blend
+    precision as RGBA — a dest alpha channel buys nothing for alpha blending."""
+    return _fill_random(
+        pygame.Surface((w, h), depth=32, masks=(0xFF0000, 0xFF00, 0xFF, 0)), w, h
+    )
 
 
 def run(sizes: list[tuple[int, int]], iters: int) -> None:
@@ -225,19 +271,23 @@ def run(sizes: list[tuple[int, int]], iters: int) -> None:
     out_col = np.empty((MAX_W, MAX_H, 2), dtype=np.uint8)  # col-major (w,h,2)
 
     for w, h in sizes:
-        surf = make_rgba_surface(w, h)
-        px   = w * h
-        print(f"\n{'='*72}")
+        px = w * h
+        print(f"\n{'='*78}")
         print(f"  {w}x{h}  ({px:,} px, {px*2:,} B RGB565)")
-        print(f"{'='*72}")
+        print(f"{'='*78}")
+
+        rgba   = make_rgba_surface(w, h)
+        opaque = make_opaque_surface(w, h)
 
         results = [
-            bench("tobytes (baseline)",          lambda s=surf: pack_tobytes(s, out),                iters),
-            bench("pixels3d + transpose",         lambda s=surf: pack_pixels3d_transpose(s, out),     iters),
-            bench("pixels3d + ascontiguousarray", lambda s=surf: pack_pixels3d_contig(s, out),        iters),
-            bench("array3d + transpose",          lambda s=surf: pack_array3d(s, out),                iters),
-            bench("pixels2d + transpose",         lambda s=surf: pack_pixels2d(s, out),               iters),
-            bench("pixels3d no-transpose [WRONG]",lambda s=surf: pack_pixels3d_colmajor(s, out_col), iters),
+            bench("pixels3d + transpose (was PROD)", lambda s=rgba: pack_pixels3d_transpose(s, out),   iters),
+            bench("tobytes",                      lambda s=rgba: pack_tobytes(s, out),               iters),
+            bench("pixels3d + ascontiguousarray", lambda s=rgba: pack_pixels3d_contig(s, out),       iters),
+            bench("array3d + transpose",          lambda s=rgba: pack_array3d(s, out),               iters),
+            bench("pixels2d + transpose",         lambda s=rgba: pack_pixels2d(s, out),              iters),
+            bench("sdl blit [RGBA src, as doc]",  lambda s=rgba: pack_sdl_blit(s, out),              iters),
+            bench("sdl blit [opaque src] (PROD)", lambda s=opaque: pack_sdl_blit(s, out),             iters),
+            bench("pixels3d no-transpose [WRONG]",lambda s=rgba: pack_pixels3d_colmajor(s, out_col), iters),
         ]
 
         baseline = results[0].median_us
@@ -245,7 +295,7 @@ def run(sizes: list[tuple[int, int]], iters: int) -> None:
             _print(r, baseline_us=None if r is results[0] else baseline)
 
         print()
-        print(f"  Speedup summary vs tobytes baseline ({baseline:.1f} µs median):")
+        print(f"  Speedup summary vs the old numpy pack ({baseline:.1f} µs median):")
         for r in results[1:]:
             delta = baseline - r.median_us
             sign  = "faster" if delta > 0 else "SLOWER"

@@ -14,9 +14,9 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import pygame
-import numpy as np
 
 from uilib.panel import LcdBase, Box
+from uilib.spi_timing import actual_spi_hz
 from uilib.spi_timing import transfer_ms as spi_transfer_ms
 from uilib import profiling
 import logging
@@ -24,6 +24,11 @@ import threading
 import os
 
 INIT_STAMP = "/run/lcd.init"
+
+
+def has_system_splash() -> bool:
+    """True if lcd-splash already initialised the panel this boot."""
+    return os.path.exists(INIT_STAMP)
 
 
 try:
@@ -38,13 +43,19 @@ class LcdIli9341(LcdBase):
     def __init__(self, spi, cs_pin, dc_pin, reset_pin, baudrate, flip=True):
         import adafruit_rgb_display.ili9341 as ili9341
 
-        is_v2 = flip
-        needs_init = is_v2 or not self.has_system_splash
-        rst = reset_pin if needs_init else None
+        # reset_pin=None adopts the panel as lcd-splash left it.
+        needs_reset = reset_pin is not None
 
-        self.disp = ili9341.ILI9341(spi, cs=cs_pin, dc=dc_pin, rst=rst, baudrate=baudrate)
+        self.disp = ili9341.ILI9341(spi, cs=cs_pin, dc=dc_pin, rst=reset_pin, baudrate=baudrate)
         self.disp._block = self._block_fast
-        self.baudrate = baudrate
+
+        # transfer_ms gates inline pushes, so it must model the achieved clock.
+        self.requested_baudrate = baudrate
+        self.baudrate = actual_spi_hz(baudrate)
+        if self.baudrate != baudrate:
+            logging.info(
+                "SPI %.2f MHz requested, %.2f MHz actual", baudrate / 1e6, self.baudrate / 1e6
+            )
 
         self.lock = threading.Lock()
 
@@ -52,7 +63,7 @@ class LcdIli9341(LcdBase):
         # it's pretty clear we need to fork adafruit_rgb_display...
         # idea: maybe we can query the display's current state and only run init() if it's uninitialized?
 
-        if is_v2 or not self.has_system_splash:
+        if needs_reset:
             self.clear()  # full-panel black while still in Adafruit's portrait MADCTL
             self._set_stamp()
 
@@ -67,7 +78,10 @@ class LcdIli9341(LcdBase):
         # Landscape dimensions presented to the UI (matches the panel post-MADCTL).
         self.width = self.disp.height  # 320
         self.height = self.disp.width  # 240
-        self._pixels = np.empty((self.height, self.width, 2), dtype=np.uint8)
+        # 565 staging surface: SDL converts RGB888->RGB565 in one C blit, far
+        # cheaper than packing it in numpy. Masks spelled out -- a bare Surface
+        # inherits the display format. See CLAUDE.md "Traps".
+        self._565 = pygame.Surface((self.width, self.height), depth=16, masks=(0xF800, 0x07E0, 0x001F, 0))
 
     def _block_fast(self, x0, y0, x1, y1, data=None):
         """Bypass adafruit_rgb_display's write method to perform a block write
@@ -131,7 +145,7 @@ class LcdIli9341(LcdBase):
 
     @property
     def has_system_splash(self) -> bool:
-        return os.path.exists(INIT_STAMP)
+        return has_system_splash()
 
     def _set_stamp(self):
         try:
@@ -158,9 +172,13 @@ class LcdIli9341(LcdBase):
     def update(self, image: pygame.Surface, box=None):
         """Push (a sub-rect of) the composed pygame surface to the LCD.
 
-        Converts surface → RGB888 bytes → packed RGB565, writing via Display._block
-        to bypass PIL. The panel runs landscape-native (MADCTL set in __init__) so
-        no rotation is needed."""
+        Quantises to RGB565 via an SDL convert-blit, writing via Display._block to
+        bypass PIL. The panel runs landscape-native (MADCTL set in __init__) so no
+        rotation is needed.
+
+        `image` must be opaque: blitting an SRCALPHA source takes SDL's per-pixel
+        alpha-blending blitter instead of a straight convert, and is ~7x slower
+        than the numpy pack this replaced. PanelStack's root is opaque XRGB."""
         if self.lock.locked():
             logging.debug("LCD update was locked by another thread")
         self.lock.acquire()
@@ -181,14 +199,14 @@ class LcdIli9341(LcdBase):
             # Landscape-native: surface coords map straight to the panel address
             # window, so the RGB565 sub-rect ships row-major with no rotation.
             sw, sh = sub.get_size()
-            with profiling.measure("lcd.update:pack"):
-                arr = pygame.surfarray.pixels3d(sub).transpose(1, 0, 2)
+            self._565.blit(sub, (0, 0))
 
-                pix = self._pixels[:sh, :sw]
-                g = arr[:, :, 1]
-                pix[:, :, 0] = (arr[:, :, 0] & 0xF8) | (g >> 5)
-                pix[:, :, 1] = ((g & 0x1C) << 3) | (arr[:, :, 2] >> 3)
-                pixels_bytes = pix.tobytes()
+            # Staging is full-width, so slicing the sub-rect out of it sidesteps
+            # SDL's 4-byte row padding, which an odd-width rect would otherwise hit.
+            # Surface pixels are native little-endian; the panel wants high byte first.
+            staged = pygame.surfarray.pixels2d(self._565).T
+            pixels_bytes = staged[:sh, :sw].byteswap().tobytes()
+            del staged  # unlock the surface
 
             with profiling.measure("lcd.update:_block(SPI)"):
                 self.disp._block(x1, y1, x1 + sw - 1, y1 + sh - 1, pixels_bytes)
