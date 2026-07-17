@@ -55,6 +55,7 @@ class WebSocketWorker:
         self.ws = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._stop_event: asyncio.Event = asyncio.Event()
+        self._wakeup: asyncio.Event = asyncio.Event()
 
         # Metrics
         self.messages_sent = 0
@@ -80,9 +81,20 @@ class WebSocketWorker:
         if self._loop is None:
             return
         self._loop.call_soon_threadsafe(self._stop_event.set)
+        self._loop.call_soon_threadsafe(self._wakeup.set)
         ws = self.ws
         if ws is not None:
             asyncio.run_coroutine_threadsafe(ws.close(), self._loop)
+
+    def notify(self):
+        """Thread-safe: wake the send loop after a message is enqueued."""
+        loop = self._loop
+        if loop is None:
+            return  # worker not started; connect-time flush covers these
+        try:
+            loop.call_soon_threadsafe(self._wakeup.set)
+        except RuntimeError:
+            pass  # loop closed during shutdown
 
     async def _interruptible_sleep(self, delay: float) -> bool:
         """Sleep for delay seconds; returns True if stop was signaled before the delay elapsed."""
@@ -124,7 +136,19 @@ class WebSocketWorker:
                     if flushed:
                         logging.info(f"Flushed {flushed} stale messages from queue after reconnect")
 
-                    await asyncio.gather(self._process_queue(ws), self._receive_messages(ws))
+                    # FIRST_COMPLETED, not gather: the send loop parks on _wakeup and
+                    # cannot notice a closed socket on its own. Whichever loop exits
+                    # first cancels the other so we fall through to reconnect.
+                    tasks = {
+                        asyncio.create_task(self._process_queue(ws)),
+                        asyncio.create_task(self._receive_messages(ws)),
+                    }
+                    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    for task in done:
+                        task.result()  # re-raise so the reconnect handler sees it
 
             except (websockets.exceptions.WebSocketException, OSError, ConnectionRefusedError) as e:
                 logging.error(f"WebSocket connection error: {e}")
@@ -156,7 +180,11 @@ class WebSocketWorker:
                 try:
                     msg = self.command_queue.get_nowait()
                 except queue.Empty:
-                    await asyncio.sleep(0.001)  # 1ms yield
+                    # Clear before re-checking: a producer that enqueues between the
+                    # failed get and the clear would otherwise have its wakeup erased.
+                    self._wakeup.clear()
+                    if self.command_queue.empty():
+                        await self._wakeup.wait()
                     continue
 
                 await ws.send(msg)
@@ -263,6 +291,7 @@ class AsyncWebSocketBridge:
         if self._worker.backpressure_active:
             return False
         self.command_queue.put_nowait(f"transport-bpm {bpm}")
+        self._worker.notify()
         return True
 
     def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
@@ -271,6 +300,7 @@ class AsyncWebSocketBridge:
         if self._worker.backpressure_active:
             return False
         self.command_queue.put_nowait(f"param_set /graph/{instance_id}/{symbol} {value}")
+        self._worker.notify()
         return True
 
     def get_received_messages(self) -> list:
