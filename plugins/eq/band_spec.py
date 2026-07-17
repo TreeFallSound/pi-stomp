@@ -12,6 +12,7 @@ from common.parameter import Symbol
 
 
 BandKind = Literal["peak", "shelf", "hp", "lp"]
+FilterTopology = Literal["rbj", "regalia_mitra"]
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,9 @@ class BandSpec:
     color: tuple[int, int, int]
     gain_min: float = -18.0
     gain_max: float = 18.0
+    filter_topology: FilterTopology = "rbj"
+    q_is_bw_oct: bool = False
+    "Q values are actually bandwidth (octaves) for this band, so display differently."
 
 
 @dataclass(frozen=True)
