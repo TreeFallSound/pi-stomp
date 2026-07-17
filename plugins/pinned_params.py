@@ -22,6 +22,10 @@ GX_AMP_URI = "http://guitarix.sourceforge.net/plugins/gx_amp#GUITARIX"
 GX_AMP_ST_URI = "http://guitarix.sourceforge.net/plugins/gx_amp_stereo#GUITARIX_ST"
 KUIZA_URI = "http://www.openavproductions.com/artyfx#kuiza"
 VALVE_URI = "http://plugin.org.uk/swh-plugins/valve"
+RKR_MUSICAL_DELAY_URI = "http://rakarrack.sourceforge.net/effects.html#delm"
+STRING_MACHINE_URI = "http://jpcima.sdf1.org/lv2/string-machine"
+MDA_EPIANO_URI = "http://moddevices.com/plugins/mda/EPiano"
+MDA_DEGRADE_URI = "http://moddevices.com/plugins/mda/Degrade"
 
 register(
     SYSTEM_COMPRESSOR_URI,
@@ -163,6 +167,58 @@ register(
             PinnedParam(Symbol("Lo_Mid"), "LoMid"),
             PinnedParam(Symbol("Hi_Mid"), "HiMid"),
             PinnedParam(Symbol("High"), "High"),
+        ),
+    ),
+)
+
+register(
+    RKR_MUSICAL_DELAY_URI,
+    customization=PluginCustomization(
+        display_name="Musical Delay",
+        pinned_params=(
+            PinnedParam(Symbol("TEMPO"), "Tempo"),
+            PinnedParam(Symbol("WETDRY"), "Mix"),
+            PinnedParam(Symbol("DEL1"), "Time1"),
+            PinnedParam(Symbol("DEL2"), "Time2"),
+        ),
+    ),
+)
+
+register(
+    STRING_MACHINE_URI,
+    customization=PluginCustomization(
+        display_name="String Machine",
+        pinned_params=(
+            PinnedParam(Symbol("osc_detune"), "Detune"),
+            PinnedParam(Symbol("env_attack"), "Attack"),
+            PinnedParam(Symbol("env_release"), "Release"),
+            PinnedParam(Symbol("master_gain"), "Level"),
+        ),
+    ),
+)
+
+register(
+    MDA_EPIANO_URI,
+    customization=PluginCustomization(
+        display_name="ePiano",
+        pinned_params=(
+            PinnedParam(Symbol("env_decay"), "Decay"),
+            PinnedParam(Symbol("env_release"), "Release"),
+            PinnedParam(Symbol("hardness"), "Hardness"),
+            PinnedParam(Symbol("modulation"), "Mod"),
+        ),
+    ),
+)
+
+register(
+    MDA_DEGRADE_URI,
+    customization=PluginCustomization(
+        display_name="Degrade",
+        pinned_params=(
+            PinnedParam(Symbol("quant"), "Quant"),
+            PinnedParam(Symbol("rate"), "Rate"),
+            PinnedParam(Symbol("headroom"), "Headroom"),
+            PinnedParam(Symbol("post_filt"), "Post"),
         ),
     ),
 )
