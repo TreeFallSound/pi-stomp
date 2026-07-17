@@ -3,6 +3,8 @@
 import asyncio
 import queue
 
+import pytest
+
 from modalapi.websocket_bridge import AsyncWebSocketBridge, WebSocketWorker
 
 
@@ -307,3 +309,82 @@ def test_multiple_sends_preserve_order():
         "transport-bpm 60",
         "param_set /graph/b/y 2.0",
     ]
+
+
+# ---------------------------------------------------------------------------
+# _process_queue: parks on _wakeup rather than polling
+# ---------------------------------------------------------------------------
+
+
+class _SendWs:
+    """WebSocket stand-in that records sends. No transport => buffer size reads as 0."""
+
+    def __init__(self):
+        self.sent: list[str] = []
+
+    async def send(self, msg: str) -> None:
+        self.sent.append(msg)
+
+
+async def _started_worker() -> tuple[WebSocketWorker, _SendWs, asyncio.Task]:
+    worker = _make_worker()
+    worker.running = True
+    worker._loop = asyncio.get_running_loop()
+    ws = _SendWs()
+    task = asyncio.create_task(worker._process_queue(ws))
+    await asyncio.sleep(0.02)  # let it reach the park
+    return worker, ws, task
+
+
+def test_idle_send_loop_parks_instead_of_polling():
+    async def go():
+        worker, ws, task = await _started_worker()
+        assert not task.done()
+        assert ws.sent == []
+        # Parked: the event was consumed, so the loop is suspended, not spinning.
+        assert not worker._wakeup.is_set()
+
+        worker.running = False
+        worker.signal_stop()
+        await asyncio.wait_for(task, timeout=1.0)
+
+    asyncio.run(go())
+
+
+def test_notify_wakes_parked_send_loop():
+    async def go():
+        worker, ws, task = await _started_worker()
+
+        worker.command_queue.put_nowait("param_set /graph/a/x 1.0")
+        worker.notify()
+        await asyncio.sleep(0.02)
+        assert ws.sent == ["param_set /graph/a/x 1.0"]
+
+        worker.running = False
+        worker.signal_stop()
+        await asyncio.wait_for(task, timeout=1.0)
+
+    asyncio.run(go())
+
+
+def test_parked_send_loop_is_cancellable():
+    """_async_worker cancels the sender when the receive loop sees the socket close.
+
+    Without this, a disconnect while idle would hang the bridge forever: the sender
+    never touches the socket, so it cannot notice the close on its own.
+    """
+
+    async def go():
+        _worker, _ws, task = await _started_worker()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(go())
+
+
+def test_notify_before_worker_starts_is_a_noop():
+    # No event loop yet; notify() must not raise. Queued messages are flushed on connect.
+    bridge = _make_bridge()
+    bridge.send_parameter("a", "x", 1.0)
+    assert bridge.get_queue_depth() == 1

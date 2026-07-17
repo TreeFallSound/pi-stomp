@@ -70,6 +70,7 @@ from modalapi.ws_protocol import (
     WebSocketMessage,
 )
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
+from modalapi.version_check import DpkgDriftCheck
 
 from pistomp.controller_manager import ControllerManager
 from pistomp.current import Current
@@ -117,6 +118,9 @@ class Modhandler(Handler):
         self.software_version = None
         self.build_version = "User build"
         self.build_file = "/home/pistomp/.osbuild"
+
+        # background task(s)
+        self._drift_check = DpkgDriftCheck()
 
         self.pedalboards = {}
         self.pedalboard_list = []  # TODO LAME to have two lists
@@ -1212,21 +1216,8 @@ class Modhandler(Handler):
                 output = subprocess.check_output(["dpkg-query", "--showformat=${Version}", "--show", "pi-stomp"])
                 self.software_version = output.decode().strip()
                 logging.info("pi-Stomp Software Version (pkg): %s" % self.software_version)
-                # dpkg equivalent of `git describe --dirty=*`: append an
-                # asterisk when on-disk package contents have drifted from
-                # the .deb's recorded md5sums (e.g. after ./deploy.sh or
-                # manual edits). Skipped silently on non-dpkg systems.
-                try:
-                    verify = subprocess.run(
-                        ["dpkg", "--verify", "pi-stomp"],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )
-                    if verify.stdout.strip() or verify.stderr.strip():
-                        self.software_version += "*"
-                except (FileNotFoundError, OSError):
-                    pass
+                # dpkg equivalent of `git describe --dirty=*`
+                self._drift_check.start()
             except subprocess.CalledProcessError:
                 logging.error("Cannot obtain software version info")
 
@@ -1253,6 +1244,16 @@ class Modhandler(Handler):
             self.bypass_left = self.audiocard.get_bypass_left()
             self.bypass_right = self.audiocard.get_bypass_right()
             self.lcd.update_bypass(self.bypass_left, self.bypass_right)
+
+    def get_software_version(self) -> str:
+        """Software version with optional '*' suffix when on-disk files have
+        drifted from the installed .deb. Blocks on the background `dpkg --verify`
+        if it hasn't finished — fine, because opening the System Info menu is
+        never the user's first move, and a few seconds there is invisible
+        compared to the same wait on every boot."""
+        self._drift_check.join()
+        base = self.software_version or ""
+        return base + ("*" if self._drift_check.drifted else "")
 
     @cached_property
     def recovery_available(self) -> bool:
