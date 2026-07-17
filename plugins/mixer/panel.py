@@ -31,7 +31,7 @@ from uilib.glyphs.badge import BadgeGlyph
 from uilib.glyphs.bar import FILL_ACTIVE, READOUT_COLOR, TRACK_COLOR, paint_bar
 from uilib.glyphs.node import paint_band_node
 from uilib.glyphs.toggle import ToggleGlyph
-from uilib.misc import InputEvent, get_text_size
+from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size, shade_color
 from uilib.widget import Widget
 
 # ── layout ────────────────────────────────────────────────────────────────────
@@ -192,11 +192,19 @@ class ColumnVolumeBar(Widget):
         self._color = color
         self._font = font
         self._value: float = 0.75
+        self._shade: float = 1.0
 
     def set_value(self, value: float) -> None:
         if value == self._value:
             return
         self._value = value
+        self.refresh()
+
+    def set_dimmed(self, dimmed: bool) -> None:
+        shade = INACTIVE_SHADE if dimmed else 1.0
+        if shade == self._shade:
+            return
+        self._shade = shade
         self.refresh()
 
     def symbol_for(self, role: ParamRole) -> Symbol | None:
@@ -218,14 +226,14 @@ class ColumnVolumeBar(Widget):
             orientation="vertical",
             frac=max(0.0, min(1.0, self._value)),
             track_color=TRACK_COLOR,
-            fill_color=FILL_ACTIVE,
+            fill_color=shade_color(FILL_ACTIVE, self._shade),
             thickness=BAR_W,
         )
-        paint_band_node(ctx, cx, node_y, self._color, self.selected)
+        paint_band_node(ctx, cx, node_y, shade_color(self._color, self._shade), self.selected)
 
         db_str = _coeff_to_db(self._value)
         tw, _ = get_text_size(db_str, self._font)
-        ctx.draw_text((cx - tw // 2, VOL_DB_Y), db_str, fill=READOUT_COLOR, font=self._font)
+        ctx.draw_text((cx - tw // 2, VOL_DB_Y), db_str, fill=shade_color(READOUT_COLOR, self._shade), font=self._font)
 
 
 class SmallToggle(Widget):
@@ -254,11 +262,19 @@ class SmallToggle(Widget):
         self._label = label
         self._accent = accent
         self._value: bool = False
+        self._shade: float = 1.0
 
     def set_value(self, value: bool) -> None:
         if value == self._value:
             return
         self._value = value
+        self.refresh()
+
+    def set_dimmed(self, dimmed: bool) -> None:
+        shade = INACTIVE_SHADE if dimmed else 1.0
+        if shade == self._shade:
+            return
+        self._shade = shade
         self.refresh()
 
     def symbol_for(self, role: ParamRole) -> Symbol | None:
@@ -282,12 +298,13 @@ class SmallToggle(Widget):
         if self._value:
             glyph = ToggleGlyph(
                 self._label, width=ctx.width, height=ctx.height, radius=TOGGLE_RADIUS,
-                fill=self._accent, text_color=TOGGLE_ON_TEXT,
+                fill=shade_color(self._accent, self._shade), text_color=shade_color(TOGGLE_ON_TEXT, self._shade),
             )
         else:
             glyph = ToggleGlyph(
                 self._label, width=ctx.width, height=ctx.height, radius=TOGGLE_RADIUS,
-                fill=BG_BLACK, text_color=TOGGLE_OFF_TEXT, outline=TOGGLE_OFF_OUTLINE,
+                fill=BG_BLACK, text_color=shade_color(TOGGLE_OFF_TEXT, self._shade),
+                outline=shade_color(TOGGLE_OFF_OUTLINE, self._shade),
             )
         ctx.paste(glyph.render(), (0, 0))
 
@@ -313,11 +330,19 @@ class ColumnPanBar(Widget):
         self.pan_sym = pan_sym
         self._font = font
         self._value: float = 0.0
+        self._shade: float = 1.0
 
     def set_value(self, value: float) -> None:
         if value == self._value:
             return
         self._value = value
+        self.refresh()
+
+    def set_dimmed(self, dimmed: bool) -> None:
+        shade = INACTIVE_SHADE if dimmed else 1.0
+        if shade == self._shade:
+            return
+        self._shade = shade
         self.refresh()
 
     def symbol_for(self, role: ParamRole) -> Symbol | None:
@@ -342,11 +367,11 @@ class ColumnPanBar(Widget):
             fill_color=TRACK_COLOR,
             thickness=BAR_W,
         )
-        paint_band_node(ctx, cx, node_y, PAN_NODE_COLOR, self.selected)
+        paint_band_node(ctx, cx, node_y, shade_color(PAN_NODE_COLOR, self._shade), self.selected)
 
         label = _pan_label(self._value)
         tw, _ = get_text_size(label, self._font)
-        ctx.draw_text((cx - tw // 2, PAN_LABEL_Y), label, fill=READOUT_COLOR, font=self._font)
+        ctx.draw_text((cx - tw // 2, PAN_LABEL_Y), label, fill=shade_color(READOUT_COLOR, self._shade), font=self._font)
 
 
 class MasterAltArcKnob(ArcKnobWidget):
@@ -454,6 +479,7 @@ class MixerPanel(FullscreenPluginPanel[MixerState]):
             self._master_arc.set_value(state.master_vol)
         if self._alt_arc is not None:
             self._alt_arc.set_value(state.alt_vol)
+        self._apply_dimming(state)
         self._update_readout()
 
     def build_widgets(self) -> None:
@@ -572,6 +598,30 @@ class MixerPanel(FullscreenPluginPanel[MixerState]):
         p = self.plugin.parameters.get(symbol)
         if p is not None:
             self.set_param(symbol, p.default)
+
+    # ── dimming ───────────────────────────────────────────────────────────────
+
+    def _refresh_bypass_style(self) -> None:
+        super()._refresh_bypass_style()
+        self._apply_dimming(self.snapshot_state())
+
+    def _apply_dimming(self, state: MixerState) -> None:
+        """Dim a fader/pan pair when the plugin is bypassed or the channel is
+        silent — muted, or soloed-out while another channel solos. Toggles and
+        arcs dim only on bypass, so an active mute/solo stays legible."""
+        bypassed = self.plugin.is_bypassed()
+        any_solo = any(ch.solo for ch in state.channels)
+        for i, ch in enumerate(state.channels):
+            silent = ch.mute or (any_solo and not ch.solo)
+            self._vol_bars[i].set_dimmed(bypassed or silent)
+            self._pan_bars[i].set_dimmed(bypassed or silent)
+            self._s_toggles[i].set_dimmed(bypassed)
+            self._m_toggles[i].set_dimmed(bypassed)
+            self._a_toggles[i].set_dimmed(bypassed)
+        if self._master_arc is not None:
+            self._master_arc.set_bypassed(bypassed)
+        if self._alt_arc is not None:
+            self._alt_arc.set_bypassed(bypassed)
 
     # ── selection + readout ───────────────────────────────────────────────────
 
