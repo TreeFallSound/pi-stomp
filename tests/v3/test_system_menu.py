@@ -46,9 +46,11 @@ def test_system_info_load(v3_system: SystemFixture):
     handler = v3_system.handler
     _setup(handler)
 
-    with _patch_expanded(handler, False), \
-         patch("subprocess.check_output", return_value=b"v1.0.0-abc\n"), \
-         patch("subprocess.run", return_value=_fake_completed("", "")):
+    with (
+        _patch_expanded(handler, False),
+        patch("subprocess.check_output", return_value=b"v1.0.0-abc\n"),
+        patch("subprocess.run", return_value=_fake_completed("", "")),
+    ):
         handler.system_info_load()
 
     assert handler.software_version == "v1.0.0-abc"
@@ -62,12 +64,16 @@ def test_system_info_load_dpkg_clean(v3_system: SystemFixture):
     handler = v3_system.handler
     _setup(handler)
 
-    with _patch_expanded(handler, False), \
-         patch("subprocess.check_output", return_value=b"1.2.3\n"), \
-         patch("subprocess.run", return_value=_fake_completed("", "")) as mock_run:
+    with (
+        _patch_expanded(handler, False),
+        patch("subprocess.check_output", return_value=b"1.2.3\n"),
+        patch("subprocess.run", return_value=_fake_completed("", "")) as mock_run,
+    ):
         handler.system_info_load()
 
+    handler._drift_check.join()
     assert handler.software_version == "1.2.3"
+    assert handler.get_software_version() == "1.2.3"
     verify_calls = [c for c in mock_run.call_args_list if c.args and c.args[0][:3] == ["dpkg", "--verify", "pi-stomp"]]
     assert len(verify_calls) == 1
 
@@ -79,12 +85,16 @@ def test_system_info_load_dpkg_drifted(v3_system: SystemFixture):
 
     verify_out = "??5?????? /opt/pistomp/pi-stomp/modalapi/modhandler.py\n"
 
-    with _patch_expanded(handler, False), \
-         patch("subprocess.check_output", return_value=b"1.2.3\n"), \
-         patch("subprocess.run", return_value=_fake_completed(verify_out, "")):
+    with (
+        _patch_expanded(handler, False),
+        patch("subprocess.check_output", return_value=b"1.2.3\n"),
+        patch("subprocess.run", return_value=_fake_completed(verify_out, "")),
+    ):
         handler.system_info_load()
 
-    assert handler.software_version == "1.2.3*"
+    handler._drift_check.join()
+    assert handler.software_version == "1.2.3"
+    assert handler.get_software_version() == "1.2.3*"
 
 
 def test_system_info_load_git_clean(v3_system: SystemFixture):
@@ -92,8 +102,7 @@ def test_system_info_load_git_clean(v3_system: SystemFixture):
     handler = v3_system.handler
     _setup(handler)
 
-    with _patch_expanded(handler, True), \
-         patch("subprocess.check_output", return_value=b"v3.0.4-224-gd392af1\n"):
+    with _patch_expanded(handler, True), patch("subprocess.check_output", return_value=b"v3.0.4-224-gd392af1\n"):
         handler.system_info_load()
 
     assert handler.software_version == "v3.0.4-224-gd392af1\n"
@@ -104,8 +113,7 @@ def test_system_info_load_git_dirty(v3_system: SystemFixture):
     handler = v3_system.handler
     _setup(handler)
 
-    with _patch_expanded(handler, True), \
-         patch("subprocess.check_output", return_value=b"v3.0.4-224-gd392af1*\n"):
+    with _patch_expanded(handler, True), patch("subprocess.check_output", return_value=b"v3.0.4-224-gd392af1*\n"):
         handler.system_info_load()
 
     assert handler.software_version == "v3.0.4-224-gd392af1*\n"
