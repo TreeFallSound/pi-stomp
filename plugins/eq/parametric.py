@@ -25,7 +25,7 @@ from plugins.eq.curve import (
 )
 from uilib.box import Box
 from uilib.config import Config
-from uilib.footswitch import tint_mask
+from uilib.glyphs.tint import tint_mask
 from uilib.glyphs.circle import CircleGlyph, RingGlyph
 from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size
 from uilib.widget import Widget

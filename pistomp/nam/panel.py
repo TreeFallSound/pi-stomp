@@ -51,8 +51,6 @@ from uilib.widget import Widget
 import common.token as Token
 import pistomp.switchstate as switchstate
 
-from uilib import profiling
-
 from uilib.panel import Panel
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.nam import routing
@@ -249,32 +247,31 @@ class ProgressBarWidget(Widget):
         return stops[-1][1]
 
     def _draw(self, ctx: PaintContext) -> None:
-        with profiling.measure("nam.bar._draw"):
-            n = self._N_SEGS
-            filled = int(self._progress * n)
-            sw = self._seg_w
-            bx = self._MARGIN
-            by = self._BAR_Y
-            ctx.fill((0, 0, 0))
+        n = self._N_SEGS
+        filled = int(self._progress * n)
+        sw = self._seg_w
+        bx = self._MARGIN
+        by = self._BAR_Y
+        ctx.fill((0, 0, 0))
 
-            for i in range(n):
-                t = i / (n - 1) if n > 1 else 0.0
-                r, g, b = self._color_at(t)
-                if i < filled:
-                    color: tuple[int, int, int] = (r, g, b)
-                else:
-                    color = (int(r * _BAR_DIM), int(g * _BAR_DIM), int(b * _BAR_DIM))
-                ctx.draw_rectangle(Box.xywh(bx + i * (sw + self._SEG_GAP), by, sw, self._BAR_H), fill=color)
+        for i in range(n):
+            t = i / (n - 1) if n > 1 else 0.0
+            r, g, b = self._color_at(t)
+            if i < filled:
+                color: tuple[int, int, int] = (r, g, b)
+            else:
+                color = (int(r * _BAR_DIM), int(g * _BAR_DIM), int(b * _BAR_DIM))
+            ctx.draw_rectangle(Box.xywh(bx + i * (sw + self._SEG_GAP), by, sw, self._BAR_H), fill=color)
 
-            label_y = by + self._BAR_H + self._LABEL_GAP
-            right_x = ctx.width - self._MARGIN
+        label_y = by + self._BAR_H + self._LABEL_GAP
+        right_x = ctx.width - self._MARGIN
 
-            elapsed_str = _fmt_time(self._elapsed)
-            ctx.draw_text((bx, label_y), elapsed_str, fill=(130, 118, 80), font=self._font)
+        elapsed_str = _fmt_time(self._elapsed)
+        ctx.draw_text((bx, label_y), elapsed_str, fill=(130, 118, 80), font=self._font)
 
-            remaining_str = f"−{_fmt_time(self._remaining)}"
-            rw, _ = get_text_size(remaining_str, self._font)
-            ctx.draw_text((right_x - rw, label_y), remaining_str, fill=(205, 180, 110), font=self._font)
+        remaining_str = f"−{_fmt_time(self._remaining)}"
+        rw, _ = get_text_size(remaining_str, self._font)
+        ctx.draw_text((right_x - rw, label_y), remaining_str, fill=(205, 180, 110), font=self._font)
 
 
 class LevelMeter(Widget):
@@ -597,7 +594,6 @@ class NamCapturePanel(Panel):
 
         # Read initial values from hardware to seed the internal trackers
         self._init_knob_values()
-        profiling.maybe_start()
 
         # Connect In2 → Out1 so the user can hear the amp while the panel is open.
         routing.connect_monitor()
@@ -675,10 +671,8 @@ class NamCapturePanel(Panel):
         self._last_tick = now
 
         state = self._engine.state
-        profiling.set_context_tag(state.name.lower())
 
-        with profiling.measure("nam.tick"):
-            self._tick_body(now, dt, state)
+        self._tick_body(now, dt, state)
 
     def _tick_body(self, now: float, dt: float, state: CaptureState) -> None:
         if state != self._last_state:

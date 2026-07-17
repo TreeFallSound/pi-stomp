@@ -5,6 +5,7 @@ import pygame
 
 from uilib.box import Box
 from uilib.glyphs.circle import RingGlyph
+from uilib.glyphs.tint import tint_mask
 from uilib.misc import INACTIVE_SHADE, get_text_size, shade_color
 from uilib.widget import Widget
 
@@ -188,8 +189,4 @@ class ReticuleGraphWidget(Widget):
         for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
             ctx.draw_line([(x + dx * 3, y + dy * 3), (x + dx * 8, y + dy * 8)], fill=col, width=1)
         ring = RingGlyph(6, ring_half=0.9).render()
-        tinted = ring.copy()
-        cs = pygame.Surface(ring.get_size(), pygame.SRCALPHA)
-        cs.fill(col)
-        tinted.blit(cs, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-        ctx.paste(tinted, (x - 7, y - 7))
+        ctx.paste(tint_mask(ring, col), (x - 7, y - 7))

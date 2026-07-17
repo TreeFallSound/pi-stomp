@@ -58,7 +58,8 @@ from uilib.box import Box
 from uilib.config import Config
 from uilib.container import ContainerWidget
 from uilib.dialog import ConfirmDialog, Dialog, DialogDecorator, MessageDialog
-from uilib.footswitch import FootswitchWidget, TapTempoProtocol, tint_mask
+from uilib.footswitch import FootswitchWidget, TapTempoProtocol
+from uilib.glyphs.tint import tint_mask
 from uilib.icon import Icon
 from uilib.image import ImageWidget, load_surface
 from uilib.menu import Menu
