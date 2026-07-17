@@ -760,9 +760,17 @@ def band_readout_fields(band: BandSpec, p: BandParams) -> tuple[str, str, str, s
     """
     name = band.name
     freq = _fmt_freq(p.freq)
+    if band.q_is_bw_oct and p.q > 0:
+        _n = 2.0**p.q
+        disp_q = _n**0.5 / (_n - 1.0)
+    elif band.kind == "shelf":
+        disp_q = 0.2129 + p.q / 2.25
+    else:
+        disp_q = p.q
+
     # Q column empty for plugins with no q_sym (plain TAP EQ has a fixed BW
     # the user cannot control) — the (3) badge keys off non-empty text.
-    q = f"Q {p.q:.2f}" if band.q_sym is not None else ""
+    q = f"Q {disp_q:.2f}" if band.q_sym is not None else ""
     if band.gain_sym is None:
         gain = ""
     elif not p.enabled:
@@ -883,7 +891,10 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
         elif symbol == band.freq_sym:
             current, lo, hi, field_name = p.freq, band.freq_min, band.freq_max, "freq"
         elif symbol == band.q_sym:
-            current, lo, hi, field_name = p.q, band.q_min, band.q_max, "q"
+            role, current, lo, hi, field_name = ParamRole.Q_FACTOR, p.q, band.q_min, band.q_max, "q"
+            # Bandwidth-in-octaves bands invert the knob: clockwise widens, narrowing Q.
+            if band.q_is_bw_oct:
+                rotations = -rotations
         else:
             return super().edit_symbol(symbol, rotations, multiplier)
         lv2 = self.plugin.parameters.get(symbol)
