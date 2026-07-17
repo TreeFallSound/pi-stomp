@@ -27,7 +27,7 @@ from common.parameter_steps import ParameterSteps, resolution
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import GraphicBandSpec
 from plugins.eq.parametric import _fmt_freq as _fmt_freq_long
-from uilib.glyphs.node import paint_band_node
+from uilib.glyphs.circle_handle import paint_circle_handle
 from uilib.box import Box
 from uilib.config import Config
 from uilib.glyphs.badge import BadgeGlyph
@@ -227,7 +227,7 @@ class BarWidget(Widget):
             node_color: tuple[int, int, int] = band.color
             if shade < 1.0:
                 node_color = tuple(int(c * shade) for c in node_color)  # type: ignore[assignment]
-            paint_band_node(ctx, cx, gain_y, node_color, is_sel)
+            paint_circle_handle(ctx, cx, gain_y, node_color, is_sel)
 
             # Frequency label — below bars, above chrome
             if self._font is not None:

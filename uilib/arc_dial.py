@@ -13,9 +13,12 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Arc-ring rotary "dial": the one primitive + widget every rotary uses.
+"""Arc-ring rotary "dial": the one widget every rotary uses.
 
 A dial is a split arc-ring (:class:`ArcRingGlyph`) with:
+  - a **value handle** — the shared circle-handle bubble at the value position
+    on the ring (see :func:`uilib.glyphs.circle_handle.paint_circle_handle`),
+    sized from the ring's track thickness, with a yellow halo when selected,
   - an UPPERCASE BOLD **label** outside the ring (in the top gap when the glyph
     is flipped, or below it for dense layouts),
   - a **value** line inside the ring, optionally with the **unit** stacked on a
@@ -37,6 +40,7 @@ from typing import Callable, Literal
 from uilib.box import Box
 from uilib.config import Color, Config, FontName
 from uilib.glyphs.arc_ring import ArcRingGlyph, ColorRGB
+from uilib.glyphs.circle_handle import paint_circle_handle
 from uilib.misc import INACTIVE_SHADE, get_text_bbox, shade_color
 from uilib.paint import PaintContext
 from uilib.widget import Widget
@@ -87,6 +91,12 @@ def _draw_baseline_centered_x(ctx: PaintContext, cx: int, baseline_y: int, text:
     ctx.draw_text((int(round(ox)), int(round(oy))), text, fill=fill, font=font)
 
 
+def _bubble_radius(glyph: ArcRingGlyph) -> int:
+    """Filled-disc radius of the value handle, 1px bigger than the ring track.
+    The track is ``2*ring_half`` thick, so the bubble's diameter is ``2*ring_half + 2``."""
+    return int(round(glyph.ring_half)) + 1
+
+
 def paint_arc_dial(
     ctx: PaintContext,
     *,
@@ -96,7 +106,7 @@ def paint_arc_dial(
     t: float,
     filled_color: ColorRGB,
     empty_color: ColorRGB,
-    tip_color: ColorRGB,
+    selected: bool,
     label: str,
     value: str,
     unit: str,
@@ -114,17 +124,25 @@ def paint_arc_dial(
     """Render one dial centred on (cx, cy) into ``ctx``.
 
     The ring is pasted from ``glyph`` (which decides gap orientation via its own
-    ``flip_v``). ``label`` is uppercased and placed outside the ring per
-    ``label_pos``. The inner block is one line (``value``) unless ``two_line``
-    and ``unit`` is non-empty, in which case ``unit`` is stacked beneath with
-    ``line_gap`` px between baselines' cap boxes.
+    ``flip_v``). The value handle (circle-handle bubble at the value position)
+    is composed on top, sized from the ring's track thickness; its yellow halo
+    appears iff ``selected``. ``label`` is uppercased and placed outside the ring
+    per ``label_pos``. The inner block is one line (``value``) unless
+    ``two_line`` and ``unit`` is non-empty, in which case ``unit`` is stacked
+    beneath with ``line_gap`` px between baselines' cap boxes.
 
     ``ring_dy`` offsets the ring graphic and the inner value/unit together; the
     label stays on ``cy`` so a small optical nudge doesn't drag it along.
     """
     half = glyph.half_size
-    ring = glyph.render(t, filled_color, empty_color, tip_color)
+    ring = glyph.render(t, filled_color, empty_color)
     ctx.paste(ring, (cx - half, cy - half + ring_dy))
+
+    # Value handle: the same circle-handle bubble every other value marker uses,
+    # sized from the ring track and placed at the value position on the ring.
+    bx, by = _handle_pos(ctx, glyph, cx, cy, t, ring_dy)
+    r = _bubble_radius(glyph)
+    paint_circle_handle(ctx, bx, by, filled_color, selected, radius=r, halo_radius=r + 2)
 
     # Inner value / unit block. The value line is cap-centred on the ring's
     # optical centre — the same anchor whether or not a unit follows, so one- and
@@ -157,6 +175,18 @@ def paint_arc_dial(
     ctx.draw_text((int(round(ox)), int(round(oy))), text, fill=label_fg, font=label_font)
 
 
+def _handle_pos(
+    ctx: PaintContext, glyph: ArcRingGlyph, cx: int, cy: int, t: float, ring_dy: int
+) -> tuple[int, int]:
+    """(x, y) of the value handle centre in ctx coords for the ring pasted at
+    (cx, cy) with offset ring_dy."""
+    half = glyph.half_size
+    tx, ty = glyph.tip_center(t)
+    x = cx - half + int(round(tx))
+    y = cy - half + int(round(ty)) + ring_dy
+    return x, y
+
+
 def dial_box_size(radius: int, label_font, sel_width: int = 2) -> tuple[int, int]:
     """Smallest box a top-labelled dial fits in: the content block (label + gap
     + ring, plus the ring's optical nudge) with `sel_width` of padding at every
@@ -174,7 +204,7 @@ class ArcDialWidget(Widget):
     ink-centred value with an optional unit line.
 
     Subclass to add input behaviour (click-to-reset, encoder edits); this base
-    owns only rendering + value state and a tip-based incremental dirty rect.
+    owns only rendering + value state and a handle-based incremental dirty rect.
     """
 
     def __init__(
@@ -189,9 +219,7 @@ class ArcDialWidget(Widget):
         parent: Widget,
         radius: int,
         ring_half: float = 4.5,
-        tip_radius: float = 3.5,
         empty_color: ColorRGB = (56, 56, 56),
-        tip_color: ColorRGB = (255, 255, 255),
         value_fg: ColorRGB = (255, 255, 255),
         unit_fg: ColorRGB = (170, 170, 180),
         label_fg: ColorRGB = (150, 150, 160),
@@ -208,7 +236,6 @@ class ArcDialWidget(Widget):
         self._color = color
         self._formatter = formatter
         self._empty_color = empty_color
-        self._tip_color = tip_color
         self._value_fg = value_fg
         self._unit_fg = unit_fg
         self._label_fg = label_fg
@@ -216,7 +243,7 @@ class ArcDialWidget(Widget):
         self._label_pos: LabelPos = label_pos
         self._value: float = minimum
         self._bypassed: bool = False
-        self._ring = ArcRingGlyph(radius, ring_half=ring_half, tip_radius=tip_radius, flip_v=False)
+        self._ring = ArcRingGlyph(radius, ring_half=ring_half, flip_v=False)
 
         cfg = Config()
         label_name, value_name = _VARIANT_FONTS[variant]
@@ -299,7 +326,8 @@ class ArcDialWidget(Widget):
             return 0.0
         return max(0.0, min(1.0, (self._value - self._minimum) / span))
 
-    def _tip_rect_abs(self, t: float) -> Box:
+    def _handle_rect_abs(self, t: float) -> Box:
+        """Dirty rect covering the value handle (bubble + eraser + halo) at ``t``."""
         assert self.box is not None
         cx = self.box.x0 + self.box.width // 2
         cy = self.box.y0 + self._cy()
@@ -307,11 +335,12 @@ class ArcDialWidget(Widget):
         tx, ty = self._ring.tip_center(t)
         x = cx - half + tx
         y = cy - half + ty + _RING_NUDGE_Y
-        pad = int(math.ceil(self._ring.tip_radius)) + 1
+        # eraser is bubble_r + 2, halo (when selected) is bubble_r + 2; +1 AA.
+        pad = _bubble_radius(self._ring) + 3
         return Box.xywh(int(x) - pad, int(y) - pad, 2 * pad + 1, 2 * pad + 1)
 
     def _dirty_rect(self, old_t: float, new_t: float) -> Box:
-        """Tight dirty rect: for small moves only the two tip positions + the
+        """Tight dirty rect: for small moves only the two handle positions + the
         inner text strip; large jumps repaint the whole widget."""
         assert self.box is not None
         if abs(new_t - old_t) >= 0.10:
@@ -320,7 +349,7 @@ class ArcDialWidget(Widget):
         cy = self.box.y0 + self._cy()
         half = self._ring.half_size
         inner = Box.xywh(cx - half, cy - half // 2, 2 * half, half)
-        res = self._tip_rect_abs(old_t).union(self._tip_rect_abs(new_t)).union(inner)
+        res = self._handle_rect_abs(old_t).union(self._handle_rect_abs(new_t)).union(inner)
         assert res is not None
         return res
 
@@ -339,7 +368,7 @@ class ArcDialWidget(Widget):
             t=self._t(),
             filled_color=shade_color(self._color, shade),
             empty_color=shade_color(self._empty_color, shade),
-            tip_color=shade_color(self._tip_color, shade),
+            selected=self.selected,
             label=self._label,
             value=value,
             unit=unit,
@@ -354,3 +383,8 @@ class ArcDialWidget(Widget):
             line_gap=self._line_gap,
             ring_dy=_RING_NUDGE_Y,
         )
+
+    def _draw_selection(self, ctx: PaintContext) -> None:
+        # The value handle (bubble + yellow halo when selected) is the selection
+        # mark; the inherited box reticule is suppressed.
+        pass

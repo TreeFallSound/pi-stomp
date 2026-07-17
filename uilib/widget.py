@@ -23,6 +23,8 @@ from uilib.misc import InputEvent, WidgetAlign, trace
 from uilib.paint import ColorLike, PaintContext
 from uilib.radius import Radius
 
+from common.color import SELECT_COLOR
+
 if TYPE_CHECKING:
     from uilib.container import ContainerWidget
     from uilib.glyphs.badge import BadgeGlyph
@@ -87,7 +89,7 @@ class Widget:
     INH_ATTRS = {
         "bkgnd_color": (0, 0, 0),
         "fgnd_color": (255, 255, 255),
-        "sel_color": (255, 255, 0),
+        "sel_color": SELECT_COLOR,
         "sel_width": 2,
         "sel_radius": None,
     }
@@ -117,7 +119,7 @@ class Widget:
     # surfaces) need the alpha channel.
     bkgnd_color: ColorLike = (0, 0, 0)
     fgnd_color: ColorLike = (255, 255, 255)
-    sel_color: ColorLike = (255, 255, 0)
+    sel_color: ColorLike = SELECT_COLOR
     sel_width: int = 2
     sel_radius: int | None = None
 

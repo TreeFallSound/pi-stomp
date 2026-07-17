@@ -27,14 +27,14 @@ from common.parameter_steps import ParameterSteps
 from common.param_roles import ParamRole
 from modalapi.plugin_customization import PinnedParam
 from plugins.chrome import BTN_GAP, BTN_H, MIN_CHROME_WIDTH, build_bottom_row
-from uilib.glyphs.node import paint_band_node
+from uilib.glyphs.circle_handle import paint_circle_handle
 from plugins.scheme import scheme_for_category
 from plugins.window import PluginWindow
 from uilib.box import Box
 from uilib.config import Config
 from uilib.container import ContainerWidget
 from uilib.dialog import Dialog, DialogDecorator
-from uilib.glyphs.arc_dial import ArcDialWidget, dial_box_size
+from uilib.arc_dial import ArcDialWidget, dial_box_size
 from uilib.glyphs.badge import BadgeGlyph
 from uilib.glyphs.bar import READOUT_COLOR, TRACK_COLOR, paint_bar
 from uilib.misc import INACTIVE_SHADE, InputEvent, color_for_param, get_text_size, shade_color
@@ -329,7 +329,7 @@ class _ListRow(Widget):
             thickness=_BAR_THICK,
         )
         node_color = shade_color(ring_color, shade) if shade < 1.0 else ring_color
-        paint_band_node(ctx, node_x, node_y, node_color, self.selected)
+        paint_circle_handle(ctx, node_x, node_y, node_color, self.selected)
 
         _, val_h = get_text_size("", self._value_font)
         val_vy = (ctx.height - val_h) // 2

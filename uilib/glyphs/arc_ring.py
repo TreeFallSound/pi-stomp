@@ -53,12 +53,12 @@ class ArcRingGlyph:
     """
 
     def __init__(
-        self, radius: int, ring_half: float = 4.5, tip_radius: float = 3.5, flip_v: bool = False
+        self, radius: int, ring_half: float = 4.5, flip_v: bool = False
     ) -> None:
         self._r = int(radius)
-        self._tip_radius = float(tip_radius)
+        self._ring_half = float(ring_half)
         self._flip_v = bool(flip_v)
-        margin = math.ceil(max(ring_half, tip_radius)) + 1
+        margin = math.ceil(ring_half) + 1
         self._half = self._r + margin
         size = 2 * self._half + 1
         self._size = size
@@ -74,16 +74,13 @@ class ArcRingGlyph:
         angle = np.degrees(np.arctan2(dx, -dy)) % 360.0
         shifted = (angle - _START_DEG) % 360.0
 
-        # Keep only the annulus the ring stroke or tip dot can reach — a third of
-        # the grid — so render() works on a ~2k vector, not size². Pixels outside
+        # Keep only the annulus the ring stroke can reach — a third of the
+        # grid — so render() works on a ~2k vector, not size². Pixels outside
         # it are transparent under the full-grid formula anyway.
-        reach = max(ring_half, tip_radius) + 1.0
+        reach = ring_half + 1.0
         rows, cols = np.nonzero(np.abs(d - self._r) <= reach)
         self._ring_cov: np.ndarray = ring_cov[rows, cols]
         self._shifted: np.ndarray = shifted[rows, cols]
-        # Tip distance is derived in unflipped space, so keep unflipped coords.
-        self._px: np.ndarray = cols.astype(float)
-        self._py: np.ndarray = rows.astype(float)
 
         # Row-major destination index, with flip_v folded in so the reflection is
         # free at render time. Packing bytes for image.frombuffer beats scattering
@@ -98,15 +95,15 @@ class ArcRingGlyph:
         return self._half
 
     @property
+    def ring_half(self) -> float:
+        return self._ring_half
+
+    @property
     def size(self) -> int:
         return self._size
 
-    @property
-    def tip_radius(self) -> float:
-        return self._tip_radius
-
     def tip_center(self, t: float) -> tuple[float, float]:
-        """(x, y) of the tip dot centre within the surface for value ``t``.
+        """(x, y) of the value position on the ring for parameter ``t``.
 
         Honors ``flip_v`` so consumers computing incremental dirty rects don't
         have to re-derive the arc geometry.
@@ -127,9 +124,9 @@ class ArcRingGlyph:
         t: float,
         filled_color: ColorRGB,
         empty_color: ColorRGB,
-        tip_color: ColorRGB,
     ) -> pygame.Surface:
-        """Arc in two colours + tip dot, on an SRCALPHA surface.
+        """Arc in two colours, on an SRCALPHA surface. The value marker (bubble)
+        is composed by the caller at the tip position — see ``tip_center``.
 
         The surface is shared — blit it, never mutate it.
         """
@@ -152,21 +149,13 @@ class ArcRingGlyph:
             * np.clip((_SWEEP_DEG - shifted) / aa + 0.5, 0.0, 1.0)
         )
 
-        # Tip dot at the value position; unflipped, per _lin.
-        tip_rad = math.radians(_START_DEG + sweep)
-        tip_cx = self._half + self._r * math.sin(tip_rad)
-        tip_cy = self._half - self._r * math.cos(tip_rad)
-        tip_d = np.sqrt((self._px - tip_cx) ** 2 + (self._py - tip_cy) ** 2)
-        tip_cov = np.clip(self._tip_radius + 0.5 - tip_d, 0.0, 1.0)
-
         fr, fg_c, fb = filled_color
         er, eg, eb = empty_color
-        tr, tg, tb = tip_color
 
-        R = np.clip(filled_cov * fr + empty_cov * er + tip_cov * tr, 0, 255).astype(np.uint8)
-        G = np.clip(filled_cov * fg_c + empty_cov * eg + tip_cov * tg, 0, 255).astype(np.uint8)
-        B = np.clip(filled_cov * fb + empty_cov * eb + tip_cov * tb, 0, 255).astype(np.uint8)
-        A = np.clip((filled_cov + empty_cov + tip_cov) * 255, 0, 255).astype(np.uint8)
+        R = np.clip(filled_cov * fr + empty_cov * er, 0, 255).astype(np.uint8)
+        G = np.clip(filled_cov * fg_c + empty_cov * eg, 0, 255).astype(np.uint8)
+        B = np.clip(filled_cov * fb + empty_cov * eb, 0, 255).astype(np.uint8)
+        A = np.clip((filled_cov + empty_cov) * 255, 0, 255).astype(np.uint8)
 
         lin = self._lin
         rgba = self._rgba

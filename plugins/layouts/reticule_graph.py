@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pygame
 
+from common.color import SELECT_COLOR
 from uilib.box import Box
 from uilib.glyphs.circle import RingGlyph
 from uilib.glyphs.tint import tint_mask
@@ -19,8 +20,8 @@ _GRID = (46, 64, 54)
 _FRAME = (52, 78, 64)
 _UNITY = (74, 104, 84)
 _CURVE = (120, 240, 150)
-_RETICULE = (255, 200, 90)
-_RETICULE_DIM = (150, 118, 58)
+_RETICULE = SELECT_COLOR
+_RETICULE_DIM = (150, 150, 0)
 _LABEL = (150, 168, 156)
 _CURVE_THICKNESS = 1.4
 
@@ -188,5 +189,5 @@ class ReticuleGraphWidget(Widget):
             ctx.draw_line([(x, min(unity_y, y)), (x, max(unity_y, y))], fill=shade_color(_UNITY, shade), width=1)
         for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
             ctx.draw_line([(x + dx * 3, y + dy * 3), (x + dx * 8, y + dy * 8)], fill=col, width=1)
-        ring = RingGlyph(6, ring_half=0.9).render()
+        ring = RingGlyph(6, ring_half=0.75).render()
         ctx.paste(tint_mask(ring, col), (x - 7, y - 7))

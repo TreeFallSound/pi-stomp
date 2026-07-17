@@ -60,7 +60,7 @@ whole framework — `do_draw` calls it exactly once, right after `_draw`/
 outline/selection. The default implementation blits `self._badge`
 (set via `set_badge(BadgeGlyph | None)`) at a fixed left-edge, vertically
 centered spot. A widget needing a different spot — `ArcDialWidget`
-(`uilib/glyphs/arc_dial.py`, centered on the ring's axis opposite the label),
+(`uilib/arc_dial.py`, centered on the ring's axis opposite the label),
 `TextWidget` (`uilib/text.py`, immediately left of its text), `ReadoutBar`
 (`plugins/layouts/readout_bar.py`, tracks whichever text is currently
 displayed) — overrides `_draw_badge` itself rather than adding a second

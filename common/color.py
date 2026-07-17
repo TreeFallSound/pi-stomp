@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
 ColorRGB = tuple[int, int, int]
 
+SELECT_COLOR: ColorRGB = (255, 255, 0)
+
 
 @dataclass(frozen=True)
 class RectBorder:

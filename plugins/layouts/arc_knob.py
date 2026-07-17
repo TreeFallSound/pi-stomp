@@ -3,7 +3,7 @@ from __future__ import annotations
 from common.param_roles import ParamRole
 from common.parameter import Symbol
 from uilib.box import Box
-from uilib.glyphs.arc_dial import ArcDialWidget, DialFormatter
+from uilib.arc_dial import ArcDialWidget, DialFormatter
 from uilib.misc import InputEvent
 from uilib.widget import Widget
 

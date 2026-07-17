@@ -38,7 +38,7 @@ from plugins.eq.curve import (
 from uilib.box import Box
 from uilib.config import Config
 from uilib.glyphs.badge import BadgeGlyph
-from uilib.glyphs.node import HALO_R, paint_band_node
+from uilib.glyphs.circle_handle import HALO_R, paint_circle_handle
 from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size
 from uilib.widget import Widget
 
@@ -571,7 +571,7 @@ class GraphWidget(Widget):
             ctx.draw_text((tx, ty), text, fill=_AXIS_LABEL_COLOR, font=font)
 
     def _paint_node(self, ctx, cx: int, cy: int, color: tuple[int, int, int], selected: bool) -> None:
-        paint_band_node(ctx, cx, cy, color, selected)
+        paint_circle_handle(ctx, cx, cy, color, selected)
 
 
 # ── ReadoutWidget ────────────────────────────────────────────────────────────

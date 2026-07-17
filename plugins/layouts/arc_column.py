@@ -3,8 +3,8 @@ from __future__ import annotations
 from common.param_roles import ParamRole
 from common.parameter import Parameter
 from plugins.layouts.compressor_spec import ArcSpec, arc_centers_for
+from uilib.arc_dial import paint_arc_dial
 from uilib.box import Box
-from uilib.glyphs.arc_dial import paint_arc_dial
 from uilib.glyphs.arc_ring import ArcRingGlyph
 from uilib.misc import INACTIVE_SHADE, shade_color
 from uilib.widget import Widget
@@ -12,13 +12,10 @@ from common.parameter import Symbol
 
 _ARC_RADIUS = 27
 _ARC_RING_HALF = 3.0
-_ARC_TIP = 3.0
 
 _BG = (0, 0, 0)
 _TEXT = (200, 224, 206)
 _LABEL = (150, 168, 156)
-_RETICULE = (255, 200, 90)
-_RETICULE_DIM = (150, 118, 58)
 
 
 class ArcSelectable(Widget):
@@ -64,7 +61,7 @@ class ArcColumnWidget(Widget):
         self._centers = arc_centers_for(len(arcs))
         self._value_font = value_font
         self._label_font = label_font
-        self._ring = ArcRingGlyph(_ARC_RADIUS, ring_half=_ARC_RING_HALF, tip_radius=_ARC_TIP, flip_v=False)
+        self._ring = ArcRingGlyph(_ARC_RADIUS, ring_half=_ARC_RING_HALF, flip_v=False)
         self._selected: int | None = None
         self._bypassed = False
         self._values: list[float | None] = [None] * len(arcs)
@@ -139,7 +136,7 @@ class ArcColumnWidget(Widget):
                 t=self._value_t(i),
                 filled_color=shade_color(spec.color, shade),
                 empty_color=shade_color((56, 56, 56), shade),
-                tip_color=shade_color((255, 255, 255), shade),
+                selected=(i == self._selected),
                 label=spec.label,
                 value=self._format(i),
                 unit="",
@@ -152,15 +149,3 @@ class ArcColumnWidget(Widget):
                 label_pos="bottom",
                 two_line=False,
             )
-            if i == self._selected:
-                self._draw_reticule(ctx, cx, cy, _RETICULE if not self._bypassed else _RETICULE_DIM)
-
-    def _draw_reticule(self, ctx, cx: int, cy: int, color: tuple[int, int, int]) -> None:
-        e = _ARC_RADIUS + 5
-        a = 6
-        for sx in (-1, 1):
-            for sy in (-1, 1):
-                x = cx + sx * e
-                y = cy + sy * e
-                ctx.draw_line([(x, y), (x - sx * a, y)], fill=color, width=1)
-                ctx.draw_line([(x, y), (x, y - sy * a)], fill=color, width=1)

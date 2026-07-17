@@ -40,7 +40,7 @@ from typing import Callable
 
 from uilib.box import Box
 from uilib.config import Config
-from uilib.glyphs import ArcDialWidget, DialVariant
+from uilib.arc_dial import ArcDialWidget, DialVariant
 from uilib.glyphs.badge import BadgeGlyph
 from uilib.label import Label
 from uilib.misc import TextHAlign, get_text_bbox, get_text_size
@@ -142,7 +142,6 @@ _METER_CLIP_FG = (220, 60, 50)
 # Knobs
 _KNOB_ARC_FG = (195, 135, 40)  # amber — filled arc
 _KNOB_ARC_BG = (38, 30, 14)  # dim warm dark — empty arc track
-_KNOB_TIP = (255, 210, 80)  # bright amber — tip dot
 _KNOB_LABEL_FG = (115, 115, 125)
 _KNOB_VALUE_FG = (175, 175, 195)
 
@@ -189,10 +188,8 @@ class KnobWidget(ArcDialWidget):
             formatter=lambda v: (f"{v:.1f}", "dB"),
             parent=parent,
             radius=self._ARC_RADIUS,
-            tip_radius=7.0,
             variant=DialVariant.LARGE,
             empty_color=_KNOB_ARC_BG,
-            tip_color=_KNOB_TIP,
             value_fg=_KNOB_VALUE_FG,
             unit_fg=_KNOB_LABEL_FG,
             label_fg=_KNOB_LABEL_FG,

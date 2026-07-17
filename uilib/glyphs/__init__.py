@@ -21,7 +21,6 @@ DEFAULT_COLOR: tuple[int, int, int] = (255, 255, 255)
 
 # Re-export glyphs for convenience
 from common.color import RectBorder
-from uilib.glyphs.arc_dial import ArcDialWidget, DialFormatter, DialVariant, paint_arc_dial
 from uilib.glyphs.arc_ring import ArcRingGlyph
 from uilib.glyphs.badge import BadgeGlyph
 from uilib.glyphs.circle import CircleGlyph, RingGlyph
@@ -38,12 +37,9 @@ from uilib.glyphs.spinner import SpinnerGlyph
 __all__ = [
     "DEFAULT_COLOR",
     "FONTS_DIR",
-    "ArcDialWidget",
-    "RectBorder",
     "ArcRingGlyph",
+    "RectBorder",
     "BadgeGlyph",
-    "DialFormatter",
-    "DialVariant",
     "CircleGlyph",
     "EthernetCableGlyph",
     "ExpressionPedalGlyph",
@@ -55,7 +51,6 @@ __all__ = [
     "RoundedRectGlyph",
     "SignalBarsGlyph",
     "SpinnerGlyph",
-    "paint_arc_dial",
     "render_rounded_fill",
     "render_rounded_mask",
     "render_rounded_outline",

@@ -29,7 +29,7 @@ from uilib.box import Box
 from uilib.config import Config
 from uilib.glyphs.badge import BadgeGlyph
 from uilib.glyphs.bar import FILL_ACTIVE, READOUT_COLOR, TRACK_COLOR, paint_bar
-from uilib.glyphs.node import paint_band_node
+from uilib.glyphs.circle_handle import paint_circle_handle
 from uilib.glyphs.toggle import ToggleGlyph
 from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size, shade_color
 from uilib.widget import Widget
@@ -218,6 +218,9 @@ class ColumnVolumeBar(Widget):
             return True
         return False
 
+    def _draw_selection(self, ctx) -> None:
+        pass
+
     def _draw(self, ctx) -> None:
         cx = ctx.width // 2
         cx, node_y = paint_bar(
@@ -229,7 +232,7 @@ class ColumnVolumeBar(Widget):
             fill_color=shade_color(FILL_ACTIVE, self._shade),
             thickness=BAR_W,
         )
-        paint_band_node(ctx, cx, node_y, shade_color(self._color, self._shade), self.selected)
+        paint_circle_handle(ctx, cx, node_y, shade_color(self._color, self._shade), self.selected)
 
         db_str = _coeff_to_db(self._value)
         tw, _ = get_text_size(db_str, self._font)
@@ -356,6 +359,9 @@ class ColumnPanBar(Widget):
             return True
         return False
 
+    def _draw_selection(self, ctx) -> None:
+        pass
+
     def _draw(self, ctx) -> None:
         cx = ctx.width // 2
         _, node_y = paint_bar(
@@ -367,7 +373,7 @@ class ColumnPanBar(Widget):
             fill_color=TRACK_COLOR,
             thickness=BAR_W,
         )
-        paint_band_node(ctx, cx, node_y, shade_color(PAN_NODE_COLOR, self._shade), self.selected)
+        paint_circle_handle(ctx, cx, node_y, shade_color(PAN_NODE_COLOR, self._shade), self.selected)
 
         label = _pan_label(self._value)
         tw, _ = get_text_size(label, self._font)
