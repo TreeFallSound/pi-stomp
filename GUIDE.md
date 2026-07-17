@@ -68,6 +68,15 @@ Things that cost hours if you don't know them. None are derivable from reading t
   for alpha, or `depth=32, masks=(0xFF0000, 0xFF00, 0xFF, 0)` for opaque RGB
   (bit-identical to the device; `depth=24` differs in AA rounding).
 
+- **`PanelStack`'s root surface must stay opaque.** `LcdIli9341.update` quantises it to
+  RGB565 with an SDL convert-blit; give that blit an `SRCALPHA` source and SDL silently
+  switches to its per-pixel *alpha-blending* blitter — ~7x slower, and it lands on every
+  LCD push. The root is a blend *destination*, so it needs 32-bit for blend precision
+  but gains nothing from a dest alpha channel (a dimmer over black yields the same
+  `(128,128,128)` either way). Panel surfaces (`ShroudedPanel`, `RoundedPanel`) are blit
+  *sources* and do still need `RGBA`. Benchmark the pack path with
+  `tools/bench_pack_variants.py`.
+
 - **Snapshot loads broadcast only deltas** against mod-ui's own cache; pedalboard loads
   and connect dumps rebroadcast unconditionally. Reselecting a *board* is a full
   resync. Reselecting a *snapshot* is not.
