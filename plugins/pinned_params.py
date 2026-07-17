@@ -20,6 +20,7 @@ TAP_CHORUSFLANGER_URI = "http://moddevices.com/plugins/tap/chorusflanger"
 GX_AMP_URI = "http://guitarix.sourceforge.net/plugins/gx_amp#GUITARIX"
 GX_AMP_ST_URI = "http://guitarix.sourceforge.net/plugins/gx_amp_stereo#GUITARIX_ST"
 KUIZA_URI = "http://www.openavproductions.com/artyfx#kuiza"
+VALVE_URI = "http://plugin.org.uk/swh-plugins/valve"
 
 register(
     SYSTEM_COMPRESSOR_URI,
@@ -136,6 +137,17 @@ register(
             PinnedParam(Symbol("Drive"), "Drive"),
             PinnedParam(Symbol("MasterGain"), "Master"),
             PinnedParam(Symbol("Presence"), "Presence"),
+        ),
+    ),
+)
+
+register(
+    VALVE_URI,
+    customization=PluginCustomization(
+        display_name="Valve",
+        pinned_params=(
+            PinnedParam(Symbol("q_p"), "Drive"),
+            PinnedParam(Symbol("dist_p"), "Character"),
         ),
     ),
 )
