@@ -23,6 +23,7 @@ import pistomp.hardware as hardware
 import pistomp.ledstrip as Ledstrip
 
 import pistomp.lcd320x240 as Lcd
+from uilib.lcd_ili9341 import has_system_splash
 
 # This subclass defines hardware specific to pi-Stomp Tre
 # 4 Encoders (one for Navigation, 3 for tweaking)
@@ -83,7 +84,10 @@ class Pistomptre(hardware.Hardware):
         #self.reinit(None)  # TODO do we still need this?  Maybe after pb load?  mappings?
 
     def init_lcd(self):
-        self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler, flip=False, spi_speed_mhz=50))
+        # RP1's 200 MHz source can't reach 66.67 MHz (odd divisor); 50 is the ceiling.
+        self.handler.add_lcd(Lcd.Lcd(self.handler.homedir, self.handler, flip=False,
+                                     spi_speed_hz=50_000_000,
+                                     reset=not has_system_splash()))
 
     def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
         enc_pins = Util.DICT_GET(ENC, id)
