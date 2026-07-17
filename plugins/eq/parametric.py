@@ -759,7 +759,14 @@ def band_readout_fields(band: BandSpec, p: BandParams) -> tuple[str, str, str, s
     """Format readout fields for a parametric band. Returns (name, freq, q, gain)."""
     name = band.name
     freq = _fmt_freq(p.freq)
-    q = f"Q {p.q:.2f}"
+    if band.q_is_bw_oct and p.q > 0:
+        _n = 2.0 ** p.q
+        disp_q = _n ** 0.5 / (_n - 1.0)
+    elif band.kind == "shelf":
+        disp_q = 0.2129 + p.q / 2.25
+    else:
+        disp_q = p.q
+    q = f"Q {disp_q:.2f}"
     if not p.enabled:
         gain = "disabled"
     elif band.gain_sym is None:
@@ -885,6 +892,9 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
             role, current, lo, hi, field_name = ParamRole.FREQUENCY_HZ, p.freq, band.freq_min, band.freq_max, "freq"
         elif symbol == band.q_sym:
             role, current, lo, hi, field_name = ParamRole.Q_FACTOR, p.q, band.q_min, band.q_max, "q"
+            # Bandwidth-in-octaves bands invert the knob: clockwise widens, narrowing Q.
+            if band.q_is_bw_oct:
+                rotations = -rotations
         else:
             return super().edit_symbol(symbol, rotations)
         new_val = edit_value(role, current, rotations, lo, hi)
