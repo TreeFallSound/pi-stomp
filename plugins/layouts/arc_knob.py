@@ -27,6 +27,7 @@ class ArcKnobWidget(ArcDialWidget):
         formatter: DialFormatter,
         panel,
         parent: Widget | None = None,
+        radius: int = _RING_RADIUS,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -37,7 +38,7 @@ class ArcKnobWidget(ArcDialWidget):
             color=color,
             formatter=formatter,
             parent=parent if parent is not None else panel,
-            radius=_RING_RADIUS,
+            radius=radius,
             label_fg=_LABEL_FG,
             **kwargs,
         )

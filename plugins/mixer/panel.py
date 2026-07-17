@@ -1,7 +1,7 @@
 """Full-screen mixer panel: fader columns + Master/Alt arc rings.
 
 Four 56px channel zones — each a volume fader, S/M/A toggles and a pan bar —
-share the left 224px; the Master/Alt arc rings fill the right 96px. A flat
+share the left of the screen; the Master/Alt arc rings fill the right. A flat
 selection model (22 controls + 3 chrome buttons) cycles under NAV; TWEAK1 edits
 the selection, TWEAK2 edits pan when a fader is selected.
 """
@@ -25,7 +25,6 @@ from common.param_roles import ParamRole
 from common.parameter import Symbol
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.layouts.arc_knob import ArcKnobWidget
-from plugins.layouts.readout_bar import ReadoutBar
 from uilib.box import Box
 from uilib.config import Config
 from uilib.glyphs.badge import BadgeGlyph
@@ -42,34 +41,48 @@ _H = 240
 
 READOUT_H = 22
 
-CH_ZONE_W = 56           # 4 zones = 224px; the right 96px holds the arc rings
+MIXER_X0 = 8             # the whole channel block is inset from the left edge
+CH_ZONE_W = 56           # 4 zones; the right ~88px holds the arc rings
 VOL_COL_W = 28
 
-CH_LABEL_Y = 24          # channel header row, just under the readout bar
+CH_LABEL_Y = 25          # channel header row, just under the readout bar
 BAR_W = 3                # track+fill width — identical to the graphic-EQ bar
-BAR_Y0 = 40              # fader/pan track top, in panel coords
-BAR_Y1 = 186            # track bottom; nodes and fill live between the two
-LABEL_ROOM = 16         # space under a track for its bottom readout
 
-VOL_TRACK_H = BAR_Y1 - BAR_Y0
-VOL_DB_Y = VOL_TRACK_H + 2       # dB readout, in the fader widget's local coords
-VOL_COL_H = VOL_TRACK_H + LABEL_ROOM
+# Nodes are drawn centred on the value end of a track; NODE_GUTTER keeps the top
+# and bottom halo from clipping against the widget box (the graphic EQ reserves
+# the same clearance via its own BAR_Y0=6).
+NODE_GUTTER = 7
+BAR_TOP = 48             # panel y of a track's top (max value); clears the CH header
+BAR_BOTTOM = 182         # panel y of a track's bottom (min value)
+LABEL_H = 13             # bottom readout height budget
+
+# Volume fader — local (widget-box-relative) coords.
+VOL_BOX_Y0 = BAR_TOP - NODE_GUTTER
+VOL_TRACK_Y0 = NODE_GUTTER
+VOL_TRACK_Y1 = NODE_GUTTER + (BAR_BOTTOM - BAR_TOP)
+VOL_DB_Y = VOL_TRACK_Y1 + NODE_GUTTER + 2
+VOL_COL_H = VOL_DB_Y + LABEL_H
 
 TOGGLE_SIZE = 18         # S/M/A toggles are square
 TOGGLE_RADIUS = 4        # chip corner radius; the selection reticule matches it
 TOGGLE_X = 32            # relative to the zone
-TOGGLE_Y0 = 44
+TOGGLE_Y0 = 50           # tracks BAR_TOP so toggle and fader tops align
 TOGGLE_PITCH = 21
 
 CTRL_CX = TOGGLE_X + TOGGLE_SIZE // 2   # pan shares the S/M/A column, centred under it
-PAN_Y0 = TOGGLE_Y0 + 3 * TOGGLE_PITCH + 4   # just below the A toggle
-PAN_TRACK_H = BAR_Y1 - PAN_Y0
-PAN_LABEL_Y = PAN_TRACK_H + 2    # pan readout, in the pan widget's local coords
-PAN_COL_W = 26           # wide enough for the pan label
-PAN_COL_H = PAN_TRACK_H + LABEL_ROOM
 
-ARC_X = 224
-ARC_W = 96
+# Pan bar — sits below the A toggle, same local layout scheme as the fader.
+PAN_BAR_TOP = TOGGLE_Y0 + 3 * TOGGLE_PITCH + 10
+PAN_BOX_Y0 = PAN_BAR_TOP - NODE_GUTTER
+PAN_TRACK_Y0 = NODE_GUTTER
+PAN_TRACK_Y1 = NODE_GUTTER + (BAR_BOTTOM - PAN_BAR_TOP)
+PAN_LABEL_Y = PAN_TRACK_Y1 + NODE_GUTTER + 2
+PAN_COL_W = 26           # wide enough for the pan label
+PAN_COL_H = PAN_LABEL_Y + LABEL_H
+
+ARC_X = MIXER_X0 + 4 * CH_ZONE_W
+ARC_W = _W - ARC_X
+ARC_RADIUS = 29          # 90% of the shared ArcKnobWidget ring
 MASTER_ARC_Y = 24
 ALT_ARC_Y = 114
 ARC_H = 86
@@ -79,14 +92,15 @@ ARC_H = 86
 BG_BLACK = (0, 0, 0)
 SEPARATOR_COLOR = (50, 50, 50)
 PAN_NODE_COLOR = (255, 255, 255)
+CH_LABEL_FG = (180, 180, 180)   # matches the arc rings' MASTER/ALT label
 
 CHANNEL_COLORS: tuple[tuple[int, int, int], ...] = (
     (0, 180, 200),    # Ch1 — cyan
     (0, 200, 80),     # Ch2 — green
     (200, 180, 0),    # Ch3 — yellow
     (180, 0, 200),    # Ch4 — magenta
-    (160, 160, 160),  # Master — grey
-    (120, 120, 120),  # Alt — darker grey
+    (255, 191, 63),   # Master — gold
+    (120, 150, 255),  # Alt — periwinkle
 )
 
 S_ACCENT = (200, 180, 40)
@@ -98,6 +112,7 @@ TOGGLE_OFF_TEXT = (80, 80, 80)
 TOGGLE_ON_TEXT = (255, 255, 255)
 
 _BADGE_TWEAK1 = BadgeGlyph("1")  # enc1 edits the selection — shown in the readout only
+_BADGE_TWEAK2 = BadgeGlyph("2")  # enc2 edits pan when a fader is selected
 
 # ── formatters ─────────────────────────────────────────────────────────────────
 
@@ -199,7 +214,7 @@ class ColumnVolumeBar(Widget):
         cx = ctx.width // 2
         cx, node_y = paint_bar(
             ctx,
-            box=Box(cx, 0, cx, VOL_TRACK_H),
+            box=Box(cx, VOL_TRACK_Y0, cx, VOL_TRACK_Y1),
             orientation="vertical",
             frac=max(0.0, min(1.0, self._value)),
             track_color=TRACK_COLOR,
@@ -320,7 +335,7 @@ class ColumnPanBar(Widget):
         cx = ctx.width // 2
         _, node_y = paint_bar(
             ctx,
-            box=Box(cx, 0, cx, PAN_TRACK_H),
+            box=Box(cx, PAN_TRACK_Y0, cx, PAN_TRACK_Y1),
             orientation="vertical",
             frac=(max(-1.0, min(1.0, self._value)) + 1.0) / 2.0,
             track_color=TRACK_COLOR,
@@ -343,6 +358,55 @@ class MasterAltArcKnob(ArcKnobWidget):
         return self.symbol
 
 
+# A readout fragment: literal text, or a badge glyph rendered inline.
+Segment = str | BadgeGlyph
+_SEG_GAP = 4
+
+
+class MixerReadout(Widget):
+    """Selection readout with inline encoder badges. Renders a left-aligned run
+    and a right-aligned run, each a sequence of text and badge glyphs — so a
+    selected fader shows '(1) Gain …' at the left and '(2) Pan …' at the right
+    in one bar."""
+
+    def __init__(self, *, box: Box, font, **kwargs) -> None:
+        kwargs.setdefault("bkgnd_color", BG_BLACK)
+        super().__init__(box=box, **kwargs)
+        self._font = font
+        self._left: tuple[Segment, ...] = ()
+        self._right: tuple[Segment, ...] = ()
+
+    def set_content(self, left: tuple[Segment, ...], right: tuple[Segment, ...] = ()) -> None:
+        if left == self._left and right == self._right:
+            return
+        self._left, self._right = left, right
+        self.refresh()
+
+    def _run_width(self, run: tuple[Segment, ...]) -> int:
+        w = 0
+        for i, seg in enumerate(run):
+            w += _SEG_GAP if i else 0
+            w += get_text_size(seg, self._font)[0] if isinstance(seg, str) else seg.width
+        return w
+
+    def _draw_run(self, ctx, run: tuple[Segment, ...], x: int) -> None:
+        for i, seg in enumerate(run):
+            x += _SEG_GAP if i else 0
+            if isinstance(seg, str):
+                tw, th = get_text_size(seg, self._font)
+                ctx.draw_text((x, (ctx.height - th) // 2), seg, fill=READOUT_COLOR, font=self._font)
+                x += tw
+            else:
+                ctx.paste(seg.render(), (x, (ctx.height - seg.height) // 2))
+                x += seg.width
+
+    def _draw(self, ctx) -> None:
+        if self._left:
+            self._draw_run(ctx, self._left, 6)
+        if self._right:
+            self._draw_run(ctx, self._right, ctx.width - 6 - self._run_width(self._right))
+
+
 # ── MixerPanel ─────────────────────────────────────────────────────────────────
 
 
@@ -357,7 +421,7 @@ class MixerPanel(FullscreenPluginPanel[MixerState]):
         self._pan_bars: list[ColumnPanBar] = []
         self._master_arc: Optional[MasterAltArcKnob] = None
         self._alt_arc: Optional[MasterAltArcKnob] = None
-        self._readout: Optional[ReadoutBar] = None
+        self._readout: Optional[MixerReadout] = None
         super().__init__(**kwargs)
 
     # ── PluginPanel contract ─────────────────────────────────────────────────
@@ -395,8 +459,9 @@ class MixerPanel(FullscreenPluginPanel[MixerState]):
     def build_widgets(self) -> None:
         cfg = Config()
         self._tiny_font = cfg.get_font("tiny")
+        self._ch_font = cfg.get_font("arc_label")  # match the arc rings' MASTER/ALT label
 
-        self._readout = ReadoutBar(
+        self._readout = MixerReadout(
             box=Box.xywh(0, 0, _W, READOUT_H),
             font=cfg.get_font("default"),
             parent=self,
@@ -404,10 +469,10 @@ class MixerPanel(FullscreenPluginPanel[MixerState]):
 
         for i in range(4):
             n = i + 1
-            zone_x = i * CH_ZONE_W
+            zone_x = MIXER_X0 + i * CH_ZONE_W
 
             self._vol_bars.append(ColumnVolumeBar(
-                box=Box.xywh(zone_x, BAR_Y0, VOL_COL_W, VOL_COL_H),
+                box=Box.xywh(zone_x, VOL_BOX_Y0, VOL_COL_W, VOL_COL_H),
                 panel=self,
                 channel=n,
                 volume_sym=Symbol(f"Volume{n}"),
@@ -435,7 +500,7 @@ class MixerPanel(FullscreenPluginPanel[MixerState]):
                 (self._s_toggles, self._m_toggles, self._a_toggles)[j].append(toggle)
 
             self._pan_bars.append(ColumnPanBar(
-                box=Box.xywh(zone_x + CTRL_CX - PAN_COL_W // 2, PAN_Y0, PAN_COL_W, PAN_COL_H),
+                box=Box.xywh(zone_x + CTRL_CX - PAN_COL_W // 2, PAN_BOX_Y0, PAN_COL_W, PAN_COL_H),
                 panel=self,
                 channel=n,
                 pan_sym=Symbol(f"Panning{n}"),
@@ -451,6 +516,7 @@ class MixerPanel(FullscreenPluginPanel[MixerState]):
             minimum=0.0,
             maximum=1.0,
             formatter=_fmt_volume,
+            radius=ARC_RADIUS,
             panel=self,
             parent=self,
         )
@@ -462,6 +528,7 @@ class MixerPanel(FullscreenPluginPanel[MixerState]):
             minimum=0.0,
             maximum=1.0,
             formatter=_fmt_volume,
+            radius=ARC_RADIUS,
             panel=self,
             parent=self,
         )
@@ -519,45 +586,35 @@ class MixerPanel(FullscreenPluginPanel[MixerState]):
             return
 
         if isinstance(sel, ColumnVolumeBar):
-            r.set_text(f"Ch {sel.channel}   {_coeff_to_db(self._current(sel.volume_sym))} dB")
-            r.set_subtitle(f"Pan {_pan_str(self._current(sel.pan_sym))}")
-            r.set_badge(_BADGE_TWEAK1)
+            gain = f"Gain {_coeff_to_db(self._current(sel.volume_sym))} dB"
+            pan = f"Pan {_pan_str(self._current(sel.pan_sym))}"
+            r.set_content(
+                (f"Channel {sel.channel}", _BADGE_TWEAK1, gain),
+                (_BADGE_TWEAK2, pan),
+            )
         elif isinstance(sel, SmallToggle):
-            r.set_text(f"{sel.role_label} Ch {sel.channel}")
-            r.set_subtitle("on" if self._current(sel.symbol) > 0.5 else "off")
-            r.set_badge(None)
+            state = "on" if self._current(sel.symbol) > 0.5 else "off"
+            r.set_content((f"{sel.role_label} Channel {sel.channel}",), (state,))
         elif isinstance(sel, ColumnPanBar):
-            r.set_text(f"Pan Ch {sel.channel}   {_pan_str(self._current(sel.pan_sym))}")
-            r.set_subtitle("")
-            r.set_badge(_BADGE_TWEAK1)
+            r.set_content((f"Channel {sel.channel}", _BADGE_TWEAK1, f"Pan {_pan_str(self._current(sel.pan_sym))}"))
         elif isinstance(sel, MasterAltArcKnob):
-            r.set_text(f"{sel._label}   {_coeff_to_db(self._current(sel.symbol))} dB")
-            r.set_subtitle("")
-            r.set_badge(_BADGE_TWEAK1)
+            r.set_content((sel._label, _BADGE_TWEAK1, f"{_coeff_to_db(self._current(sel.symbol))} dB"))
         elif sel is self._btn_bypass:
-            r.set_text("Plugin bypassed" if self.plugin.is_bypassed() else "Bypass plugin")
-            r.set_subtitle("")
-            r.set_badge(None)
+            r.set_content(("Plugin bypassed" if self.plugin.is_bypassed() else "Bypass plugin",))
         elif sel is self._btn_back:
-            r.set_text("Close mixer")
-            r.set_subtitle("")
-            r.set_badge(None)
+            r.set_content(("Close mixer",))
         elif sel is self._btn_reset:
-            r.set_text("Reset to pedalboard")
-            r.set_subtitle("")
-            r.set_badge(None)
+            r.set_content(("Reset to pedalboard",))
         else:
-            r.set_text("")
-            r.set_subtitle("")
-            r.set_badge(None)
+            r.set_content(())
 
     # ── chrome ────────────────────────────────────────────────────────────────
 
     def _draw(self, ctx) -> None:
-        for x in (56, 112, 168, 224):
-            ctx.draw_rectangle(Box(x, CH_LABEL_Y, x + 1, BAR_Y1), fill=SEPARATOR_COLOR)
+        divider_x = MIXER_X0 + 4 * CH_ZONE_W
+        ctx.draw_rectangle(Box(divider_x, CH_LABEL_Y, divider_x + 1, BAR_BOTTOM), fill=SEPARATOR_COLOR)
         for i in range(4):
-            cx = i * CH_ZONE_W + CH_ZONE_W // 2
+            cx = MIXER_X0 + i * CH_ZONE_W + CH_ZONE_W // 2
             label = f"CH{i + 1}"
-            tw, _ = get_text_size(label, self._tiny_font)
-            ctx.draw_text((cx - tw // 2, CH_LABEL_Y), label, fill=READOUT_COLOR, font=self._tiny_font)
+            tw, _ = get_text_size(label, self._ch_font)
+            ctx.draw_text((cx - tw // 2, CH_LABEL_Y), label, fill=CH_LABEL_FG, font=self._ch_font)

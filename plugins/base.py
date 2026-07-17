@@ -45,8 +45,9 @@ from common.param_roles import ParamRole
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
 from common.parameter_steps import ParameterSteps
 from modalapi.plugin import Plugin
+import common.token as Token
 from pistomp.input.dispatch import MultiSelectable, Selectable, fire, resolve_local
-from pistomp.input.event import ControllerEvent, EncoderEvent
+from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.handler import Handler
 from uilib.glyphs.badge import BadgeGlyph
 from uilib.panel import Panel
@@ -135,6 +136,14 @@ class PluginPanel(Panel, Generic[TState], ABC):
     def on_event(self, event: ControllerEvent) -> bool:
         """Resolve declare_bindings() against the event and fire the winner.
         Panels with a state-machine on_event (e.g. NAM) should override this."""
+        # A tweak/volume long-press would otherwise fall through to the handler's
+        # global encoder-longpress callback (e.g. previous/next_snapshot), which
+        # reloads every parameter under the open panel. While a plugin editor is
+        # open the encoders belong to the panel, so swallow it.
+        if (isinstance(event, SwitchEvent)
+                and event.kind is SwitchEventKind.LONGPRESS
+                and event.controller.type in (Token.KNOB, Token.VOLUME)):
+            return True
         if not isinstance(event, EncoderEvent):
             return False
         rows = self.declare_bindings()
