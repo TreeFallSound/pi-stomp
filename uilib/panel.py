@@ -16,10 +16,10 @@
 from typing import Optional, Tuple
 from typing_extensions import override
 from abc import ABC
+from contextlib import contextmanager
 
 import pygame
 
-from uilib import profiling
 from uilib.box import Box
 from uilib.container import ContainerWidget
 from uilib.glyphs import render_rounded_mask, render_rounded_outline
@@ -111,10 +111,23 @@ class Panel(ContainerWidget, InputSink):
         self.sel_list.append(widget)  # TODO if a widget is not selectable, adding to sel_list seems wrong
 
     def _select_widget_ref(self, w):
-        if self.sel_ref is not None and self.sel_ref is not w:
-            self.sel_ref.set_selected(False)
-        self.sel_ref = w
-        w.set_selected(True)
+        # Batch the deselect + select so both dirty rects coalesce into a
+        # single LCD push, avoiding a two-frame artifact where the deselected
+        # widget pops inline before the selected widget's update arrives.
+        # During construction (before the panel is pushed onto a PanelStack)
+        # there is no LCD to push to, so skip batching.
+        stack = self.parent
+        if isinstance(stack, PanelStack):
+            with stack.batch():
+                if self.sel_ref is not None and self.sel_ref is not w:
+                    self.sel_ref.set_selected(False)
+                self.sel_ref = w
+                w.set_selected(True)
+        else:
+            if self.sel_ref is not None and self.sel_ref is not w:
+                self.sel_ref.set_selected(False)
+            self.sel_ref = w
+            w.set_selected(True)
 
     def _notify_detach(self, widget):
         if widget in self.sel_list:
@@ -376,6 +389,24 @@ class PanelStack(ContainerWidget):
         self.lcd_needs_update = False
         self._pending_lcd_clip: Optional[Box] = None  # None = full screen or nothing pending
         self.capture_callback = None
+        self._batching = False
+
+    @contextmanager
+    def batch(self):
+        """Suppress inline LCD pushes so multiple dirty rects coalesce into one flush.
+
+        During a batch, ``propagate_dirty`` always coalesces into
+        ``_pending_lcd_clip`` instead of pushing small clips inline.
+        On exit, any coalesced dirty region is flushed in a single
+        ``lcd.update()`` call.
+        """
+        self._batching = True
+        try:
+            yield
+        finally:
+            self._batching = False
+            if self.lcd_needs_update:
+                self._flush_lcd()
 
     def poll_updates(self):
         if self.lcd_needs_update:
@@ -423,40 +454,47 @@ class PanelStack(ContainerWidget):
         if top is not None and top.opaque and top.box is not None and top.box.contains(clip):
             # Fast path: opaque fullscreen top panel covers the dirty clip —
             # skip erasing the stack surface and skip all lower panels.
-            with profiling.measure("panelstack.recompose"):
-                inter = clip.intersection(top.box)
-                if not inter.is_empty():
-                    ctx = PaintContext(self.surface, inter)
-                    top.do_draw(ctx, top.box)
+            inter = clip.intersection(top.box)
+            if not inter.is_empty():
+                ctx = PaintContext(self.surface, inter)
+                top.do_draw(ctx, top.box)
         else:
-            with profiling.measure("panelstack.recompose"):
-                erase_ctx = PaintContext(self.surface, clip, frame=clip)
-                self._draw_erase(erase_ctx)
+            erase_ctx = PaintContext(self.surface, clip, frame=clip)
+            self._draw_erase(erase_ctx)
 
-                for p in self.stack:
-                    if self.dimmer is not None and not p.no_dim:
-                        self.surface.blit(self.dimmer, clip.topleft, area=_pg_rect(clip))
-                    d = p.decorator
-                    if d is not None:
-                        inter = clip.intersection(d.box)
-                        if not inter.is_empty():
-                            ctx = PaintContext(self.surface, inter)
-                            d.do_draw(ctx, d.box)
-                    inter = clip.intersection(p.box)
+            for p in self.stack:
+                if self.dimmer is not None and not p.no_dim:
+                    self.surface.blit(self.dimmer, clip.topleft, area=_pg_rect(clip))
+                d = p.decorator
+                if d is not None:
+                    inter = clip.intersection(d.box)
                     if not inter.is_empty():
                         ctx = PaintContext(self.surface, inter)
-                        p.do_draw(ctx, p.box)
+                        d.do_draw(ctx, d.box)
+                inter = clip.intersection(p.box)
+                if not inter.is_empty():
+                    ctx = PaintContext(self.surface, inter)
+                    p.do_draw(ctx, p.box)
 
         if self.capture_callback:
             self.capture_callback(self.surface)
 
-        if self.lcd.transfer_ms(clip) <= self.INLINE_BUDGET_MS:
+        if not self._batching and self.lcd.transfer_ms(clip) <= self.INLINE_BUDGET_MS:
             self.lcd.update(self.surface, clip)
             return
 
-        # Coalesce into the pending push; None means a full-screen redraw is
-        # already pending (from push/pop).
-        if self._pending_lcd_clip is not None:
+        # Coalesce into the pending push. ``_pending_lcd_clip`` is None only
+        # when a full-screen redraw is already pending (from push/pop); in
+        # that case, leave it None (full screen ⊇ any clip). Otherwise, union
+        # the clip into the pending region — if nothing was pending yet, this
+        # establishes the clip as the pending region.
+        if self._pending_lcd_clip is None:
+            # A structural change (push/pop) set None = full screen pending.
+            # If lcd_needs_update is False, nothing is actually pending and we
+            # should start a new coalesced region with this clip.
+            if not self.lcd_needs_update:
+                self._pending_lcd_clip = clip
+        else:
             self._pending_lcd_clip = self._pending_lcd_clip.union(clip)
         self.lcd_needs_update = True
 

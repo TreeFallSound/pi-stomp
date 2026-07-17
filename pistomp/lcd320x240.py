@@ -47,7 +47,6 @@ from uilib import (
     ShroudedPanel,
     TextWidget,
 )
-from uilib import profiling
 from uilib.gridpanel import GridPanel, TILE_W, CHANNEL
 from uilib.pygame_init import font as _make_font
 from uilib.lcd_ili9341 import LcdIli9341
@@ -303,8 +302,7 @@ class Lcd:
         return top.handle(event) if isinstance(top, InputSink) else False
 
     def poll_updates(self):
-        with profiling.measure("poll_updates"):
-            self._poll_updates()
+        self._poll_updates()
 
     def _poll_updates(self):
         for d in self.w_parameter_dialogs.values():

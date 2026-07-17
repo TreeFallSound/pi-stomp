@@ -125,6 +125,7 @@ def _sdf_rounded_rect(width: int, height: int, radius: Radius) -> np.ndarray:
     return np.minimum(np.minimum(tl_s, tr_s), np.minimum(bl_s, br_s))
 
 
+@lru_cache(maxsize=256)
 def _render_filled_rounded_rect(
     width: int,
     height: int,
@@ -132,14 +133,19 @@ def _render_filled_rounded_rect(
     r_tr: int,
     r_br: int,
     r_bl: int,
-    fill: ColorLike | None,
+    fill: ColorRGB | None,
     border_width: int,
-    border_top: ColorLike | None,
-    border_right: ColorLike | None,
-    border_bottom: ColorLike | None,
-    border_left: ColorLike | None,
+    border_top: ColorRGB | None,
+    border_right: ColorRGB | None,
+    border_bottom: ColorRGB | None,
+    border_left: ColorRGB | None,
 ) -> pygame.Surface:
     """Render fill + border as a single SRCALPHA surface with analytic AA.
+
+    Results are cached by the full parameter set (``@lru_cache(256)``).
+    All parameters are hashable — ``RectBorder`` and ``Radius`` are frozen
+    dataclasses, and colors are normalized to ``ColorRGB`` tuples by
+    ``RoundedRectGlyph.render()`` before entering the cache.
 
     SDF conventions:
       - ``sdf > 0``         : outside the rounded rect
@@ -320,9 +326,10 @@ def _render_filled_rounded_rect(
 class RoundedRectGlyph:
     """Filled rounded rectangle with optional per-side border.
 
-    Results are cached by the full parameter set so multiple glyph
-    instances with the same shape share the same underlying surface.
-    Fill and border are rendered into a single surface, not composited.
+    Results are cached by the full parameter set via ``@lru_cache`` on
+    ``_render_filled_rounded_rect`` so multiple glyph instances with the
+    same shape and colors share the same underlying surface.  Fill and
+    border are rendered into a single surface, not composited.
     """
 
     def __init__(
@@ -350,7 +357,12 @@ class RoundedRectGlyph:
         return self._h
 
     def render(self) -> pygame.Surface:
-        """Render fill + border as a single opaque SRCALPHA surface."""
+        """Render fill + border as a single opaque SRCALPHA surface.
+
+        Colors are normalized to ``ColorRGB`` tuples before entering the
+        cached ``_render_filled_rounded_rect`` so the cache key is stable
+        across equivalent color specifications (e.g. 'white' vs (255,255,255)).
+        """
         return _render_filled_rounded_rect(
             self._w,
             self._h,
@@ -358,12 +370,12 @@ class RoundedRectGlyph:
             self._r.top_right,
             self._r.bottom_right,
             self._r.bottom_left,
-            self._fill,
+            _to_rgb(self._fill),
             self._border_width,
-            self._border.top,
-            self._border.right,
-            self._border.bottom,
-            self._border.left,
+            _to_rgb(self._border.top),
+            _to_rgb(self._border.right),
+            _to_rgb(self._border.bottom),
+            _to_rgb(self._border.left),
         )
 
 

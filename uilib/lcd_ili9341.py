@@ -18,7 +18,6 @@ import pygame
 from uilib.panel import LcdBase, Box
 from uilib.spi_timing import actual_spi_hz
 from uilib.spi_timing import transfer_ms as spi_transfer_ms
-from uilib import profiling
 import logging
 import threading
 import os
@@ -53,9 +52,7 @@ class LcdIli9341(LcdBase):
         self.requested_baudrate = baudrate
         self.baudrate = actual_spi_hz(baudrate)
         if self.baudrate != baudrate:
-            logging.info(
-                "SPI %.2f MHz requested, %.2f MHz actual", baudrate / 1e6, self.baudrate / 1e6
-            )
+            logging.info("SPI %.2f MHz requested, %.2f MHz actual", baudrate / 1e6, self.baudrate / 1e6)
 
         self.lock = threading.Lock()
 
@@ -208,7 +205,6 @@ class LcdIli9341(LcdBase):
             pixels_bytes = staged[:sh, :sw].byteswap().tobytes()
             del staged  # unlock the surface
 
-            with profiling.measure("lcd.update:_block(SPI)"):
-                self.disp._block(x1, y1, x1 + sw - 1, y1 + sh - 1, pixels_bytes)
+            self.disp._block(x1, y1, x1 + sw - 1, y1 + sh - 1, pixels_bytes)
         finally:
             self.lock.release()

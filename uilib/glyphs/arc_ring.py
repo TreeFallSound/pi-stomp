@@ -25,22 +25,25 @@ upper-right — the intuitive min-left/max-right direction, leaving the top gap
 free for a label.
 
 The glyph renders to an SRCALPHA surface. Blit at (cx - half_size, cy -
-half_size) to centre on (cx, cy). The radial/angular grids are built once
-in __init__; only the per-t compositing runs in render().
+half_size) to centre on (cx, cy). Geometry is precomputed in __init__ over the
+ink band only; render() is cached.
 """
 
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 
 import numpy as np
 import pygame
+
+from common.color import ColorRGB
 
 _START_DEG = 210.0  # arc start — 7-o'clock
 _SWEEP_DEG = 300.0  # total arc travel
 _AA_DEG = 1.5       # angular AA falloff (≈1 px at r=35)
 
-ColorRGB = tuple[int, int, int]
+__all__ = ["ArcRingGlyph", "ColorRGB"]
 
 
 class ArcRingGlyph:
@@ -61,20 +64,34 @@ class ArcRingGlyph:
         self._size = size
 
         xs = np.arange(size, dtype=float)
-        ys = np.arange(size, dtype=float)
-        X, Y = np.meshgrid(xs, ys)
-        self._X = X
-        self._Y = Y
+        X, Y = np.meshgrid(xs, xs)
         dx = X - self._half
         dy = Y - self._half
         d = np.sqrt(dx ** 2 + dy ** 2)
 
-        self._ring_cov: np.ndarray = np.clip(
-            ring_half + 0.5 - np.abs(d - self._r), 0.0, 1.0
-        )
+        ring_cov = np.clip(ring_half + 0.5 - np.abs(d - self._r), 0.0, 1.0)
         # Clockwise-from-top angle [0, 360), shifted so _START_DEG maps to 0
         angle = np.degrees(np.arctan2(dx, -dy)) % 360.0
-        self._shifted: np.ndarray = (angle - _START_DEG) % 360.0
+        shifted = (angle - _START_DEG) % 360.0
+
+        # Keep only the annulus the ring stroke or tip dot can reach — a third of
+        # the grid — so render() works on a ~2k vector, not size². Pixels outside
+        # it are transparent under the full-grid formula anyway.
+        reach = max(ring_half, tip_radius) + 1.0
+        rows, cols = np.nonzero(np.abs(d - self._r) <= reach)
+        self._ring_cov: np.ndarray = ring_cov[rows, cols]
+        self._shifted: np.ndarray = shifted[rows, cols]
+        # Tip distance is derived in unflipped space, so keep unflipped coords.
+        self._px: np.ndarray = cols.astype(float)
+        self._py: np.ndarray = rows.astype(float)
+
+        # Row-major destination index, with flip_v folded in so the reflection is
+        # free at render time. Packing bytes for image.frombuffer beats scattering
+        # into a locked surfarray view by ~3x.
+        iy = (size - 1 - rows) if self._flip_v else rows
+        self._lin: np.ndarray = iy.astype(np.intp) * size + cols.astype(np.intp)
+        # Never cleared: the index set is fixed and every render rewrites all of it.
+        self._rgba: np.ndarray = np.zeros((size * size, 4), dtype=np.uint8)
 
     @property
     def half_size(self) -> int:
@@ -101,6 +118,10 @@ class ArcRingGlyph:
         y = self._half + cos if self._flip_v else self._half - cos
         return (x, y)
 
+    # Keyed on the glyph too, so it pins self — fine, glyphs outlive their panel.
+    # A dial repaints far more often than its value changes (any sibling cell going
+    # dirty repaints the whole column), so most calls re-ask for the same t.
+    @lru_cache(maxsize=64)
     def render(
         self,
         t: float,
@@ -108,7 +129,10 @@ class ArcRingGlyph:
         empty_color: ColorRGB,
         tip_color: ColorRGB,
     ) -> pygame.Surface:
-        """Return an SRCALPHA surface with the arc drawn in two colours + tip dot."""
+        """Arc in two colours + tip dot, on an SRCALPHA surface.
+
+        The surface is shared — blit it, never mutate it.
+        """
         t = max(0.0, min(1.0, t))
         sweep = t * _SWEEP_DEG
         aa = _AA_DEG
@@ -128,19 +152,12 @@ class ArcRingGlyph:
             * np.clip((_SWEEP_DEG - shifted) / aa + 0.5, 0.0, 1.0)
         )
 
-        # Tip dot at the current value position on the ring
-        tip_deg = _START_DEG + sweep
-        tip_rad = math.radians(tip_deg)
+        # Tip dot at the value position; unflipped, per _lin.
+        tip_rad = math.radians(_START_DEG + sweep)
         tip_cx = self._half + self._r * math.sin(tip_rad)
         tip_cy = self._half - self._r * math.cos(tip_rad)
-        tip_d = np.sqrt((self._X - tip_cx) ** 2 + (self._Y - tip_cy) ** 2)
+        tip_d = np.sqrt((self._px - tip_cx) ** 2 + (self._py - tip_cy) ** 2)
         tip_cov = np.clip(self._tip_radius + 0.5 - tip_d, 0.0, 1.0)
-
-        if self._flip_v:
-            # True vertical reflection of the final image: gap moves to the top.
-            filled_cov = np.flipud(filled_cov)
-            empty_cov = np.flipud(empty_cov)
-            tip_cov = np.flipud(tip_cov)
 
         fr, fg_c, fb = filled_color
         er, eg, eb = empty_color
@@ -151,13 +168,10 @@ class ArcRingGlyph:
         B = np.clip(filled_cov * fb + empty_cov * eb + tip_cov * tb, 0, 255).astype(np.uint8)
         A = np.clip((filled_cov + empty_cov + tip_cov) * 255, 0, 255).astype(np.uint8)
 
-        surf = pygame.Surface((self._size, self._size), pygame.SRCALPHA)
-        pix = pygame.surfarray.pixels3d(surf)
-        pix[:, :, 0] = R.T
-        pix[:, :, 1] = G.T
-        pix[:, :, 2] = B.T
-        del pix
-        pa = pygame.surfarray.pixels_alpha(surf)
-        pa[:] = A.T
-        del pa
-        return surf
+        lin = self._lin
+        rgba = self._rgba
+        rgba[lin, 0] = R
+        rgba[lin, 1] = G
+        rgba[lin, 2] = B
+        rgba[lin, 3] = A
+        return pygame.image.frombuffer(rgba.tobytes(), (self._size, self._size), "RGBA")

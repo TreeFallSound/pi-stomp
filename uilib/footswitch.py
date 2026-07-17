@@ -23,6 +23,7 @@ import pygame
 from uilib.box import Box
 from uilib.config import Color, Config
 from uilib.glyphs import CircleGlyph, RingGlyph
+from uilib.glyphs.tint import tint_mask
 from uilib.misc import get_text_size
 from uilib.paint import PaintContext
 from uilib.widget import Widget
@@ -55,15 +56,6 @@ SMALL_FONT_THRESHOLD = 60
 
 # Title white — same (255,255,255) used for pedalboard/snapshot titles.
 TITLE_WHITE: Color = (255, 255, 255)
-
-
-def tint_mask(mask: pygame.Surface, color: Color) -> pygame.Surface:
-    """Tint a white alpha-mask glyph into `color` (BLEND_RGBA_MULT on a copy)."""
-    tinted = mask.copy()
-    color_surf = pygame.Surface(mask.get_size(), pygame.SRCALPHA)
-    color_surf.fill(color)
-    tinted.blit(color_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-    return tinted
 
 
 class FootswitchWidget(Widget):
