@@ -28,6 +28,7 @@ def long_menu(fake_lcd):
     handler.get_num_footswitches.return_value = 4
     handler.hardware.version = 3
     handler.software_version = "1.0.0"
+    handler.get_software_version.return_value = "1.0.0"
     handler.build_version = "20231027"
     handler.SystemState = "Running"
     handler.temperature = "45C"
