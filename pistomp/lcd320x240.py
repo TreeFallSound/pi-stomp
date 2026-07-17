@@ -605,10 +605,11 @@ class Lcd:
         d = MessageDialog(self.pstack, text, title=title, on_dismiss=on_dismiss)
         self.pstack.push_panel(d)
 
-    #
-    # Plugins
-    #
     def draw_plugins(self):
+        with self.pstack.batch():
+            self._draw_plugins()
+
+    def _draw_plugins(self):
         # Tear down the previous render. The GridPanel destroys its tile
         # children; the outer panel's sel traversal stops yielding them
         # because GridPanel.sel_children() reads its (now-empty) tile_order.
