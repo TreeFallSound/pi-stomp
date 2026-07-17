@@ -38,8 +38,7 @@ from plugins.eq.curve import (
 from uilib.box import Box
 from uilib.config import Config
 from uilib.glyphs.badge import BadgeGlyph
-from uilib.glyphs.tint import tint_mask
-from uilib.glyphs.circle import CircleGlyph, RingGlyph
+from uilib.glyphs.node import HALO_R, paint_band_node
 from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size
 from uilib.widget import Widget
 
@@ -69,22 +68,7 @@ GRID_DIM = (45, 45, 45)
 GRID_0DB = (140, 140, 140)
 CURVE_COLOR = (220, 220, 220)
 CURVE_THICKNESS = 1.3
-HALO_COLOR = (255, 255, 255)
 READOUT_COLOR = (200, 200, 200)
-
-NODE_R = 4
-HALO_R = 6
-
-
-def paint_band_node(ctx, cx: int, cy: int, color: tuple[int, int, int], selected: bool) -> None:
-    """Paint the parametric-EQ node circle (black eraser, coloured fill, optional halo)."""
-    eraser = CircleGlyph(NODE_R + 2)
-    ctx.paste(tint_mask(eraser.render(), BG_BLACK), (cx - eraser.radius, cy - eraser.radius))
-    node = CircleGlyph(NODE_R)
-    ctx.paste(tint_mask(node.render(), color), (cx - node.radius, cy - node.radius))
-    if selected:
-        halo = RingGlyph(HALO_R)
-        ctx.paste(tint_mask(halo.render(), HALO_COLOR), (cx - halo.half_size, cy - halo.half_size))
 
 
 SMEAR_ALPHA = 0.65

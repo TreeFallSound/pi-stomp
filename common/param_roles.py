@@ -32,3 +32,4 @@ class ParamRole(Enum):
     GAIN_DB = auto()         # gain symbol of a compound selection
     FREQUENCY_HZ = auto()    # frequency symbol of a compound selection
     Q_FACTOR = auto()        # Q symbol of a compound selection
+    PAN = auto()             # pan symbol of a mixer channel selection

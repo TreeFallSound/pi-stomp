@@ -47,6 +47,7 @@ import plugins.caps_compress  # noqa: F401
 import plugins.mda_dynamics  # noqa: F401
 import plugins.eqp  # noqa: F401
 import plugins.pinned_params  # noqa: F401  # explicit pinned-param customizations
+import plugins.mixer  # noqa: F401
 import plugins.layouts  # noqa: F401  # Layout components
 import plugins.redundant_ports  # noqa: F401  # curated hidden_params, no panels
 

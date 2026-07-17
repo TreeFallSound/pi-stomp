@@ -6,6 +6,7 @@ from __future__ import annotations
 from common.parameter import Symbol
 from modalapi.plugin_customization import PinnedParam
 from plugins.customization import PluginCustomization, register
+from plugins.mixer.panel import MixerPanel
 
 SYSTEM_COMPRESSOR_URI = "http://moddevices.com/plugins/mod-devel/System-Compressor"
 COLLISION_DRIVE_URI = "https://github.com/brummer10/CollisionDrive"
@@ -104,6 +105,7 @@ register(
     MOD_MIXER_STEREO_URI,
     customization=PluginCustomization(
         display_name="Mixer",
+        panel_cls=MixerPanel,
         pinned_params=(
             PinnedParam(Symbol("Volume1"), "Ch 1"),
             PinnedParam(Symbol("Volume2"), "Ch 2"),

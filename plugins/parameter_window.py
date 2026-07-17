@@ -27,7 +27,7 @@ from common.parameter_steps import ParameterSteps
 from common.param_roles import ParamRole
 from modalapi.plugin_customization import PinnedParam
 from plugins.chrome import BTN_GAP, BTN_H, MIN_CHROME_WIDTH, build_bottom_row
-from plugins.eq.parametric import paint_band_node
+from uilib.glyphs.node import paint_band_node
 from plugins.scheme import scheme_for_category
 from plugins.window import PluginWindow
 from uilib.box import Box

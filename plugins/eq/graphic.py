@@ -26,7 +26,8 @@ from common.parameter import Symbol
 from common.parameter_steps import ParameterSteps, resolution
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import GraphicBandSpec
-from plugins.eq.parametric import paint_band_node, _fmt_freq as _fmt_freq_long
+from plugins.eq.parametric import _fmt_freq as _fmt_freq_long
+from uilib.glyphs.node import paint_band_node
 from uilib.box import Box
 from uilib.config import Config
 from uilib.glyphs.badge import BadgeGlyph
