@@ -37,6 +37,7 @@ import math
 from enum import Enum
 from typing import Callable, Literal
 
+from common.color import SELECT_COLOR
 from uilib.box import Box
 from uilib.config import Color, Config, FontName
 from uilib.glyphs.arc_ring import ArcRingGlyph, ColorRGB
@@ -140,9 +141,10 @@ def paint_arc_dial(
 
     # Value handle: the same circle-handle bubble every other value marker uses,
     # sized from the ring track and placed at the value position on the ring.
+    # White, not the arc colour, so it reads against any filled hue.
     bx, by = _handle_pos(ctx, glyph, cx, cy, t, ring_dy)
     r = _bubble_radius(glyph)
-    paint_circle_handle(ctx, bx, by, filled_color, selected, radius=r, halo_radius=r + 2)
+    paint_circle_handle(ctx, bx, by, (255, 255, 255), selected, radius=r, halo_radius=r + 2)
 
     # Inner value / unit block. The value line is cap-centred on the ring's
     # optical centre — the same anchor whether or not a unit follows, so one- and
@@ -164,7 +166,7 @@ def paint_arc_dial(
         text = value if not unit else f"{value} {unit}"
         _draw_baseline_centered_x(ctx, cx, int(round(inner_cy + cap_h / 2)), text, value_font, value_fg)
 
-    # Label outside the ring.
+    # Label outside the ring — yellow when selected, matching the handle halo.
     text = label.upper()
     lx0, ly0, lw, lh = _ink_metrics(text, label_font)
     if label_pos == "top":
@@ -172,7 +174,8 @@ def paint_arc_dial(
     else:
         oy = (cy + half + _LABEL_GAP) - ly0          # ink top sits below the ring
     ox = cx - (lx0 + lw / 2)
-    ctx.draw_text((int(round(ox)), int(round(oy))), text, fill=label_fg, font=label_font)
+    fill = SELECT_COLOR if selected else label_fg
+    ctx.draw_text((int(round(ox)), int(round(oy))), text, fill=fill, font=label_font)
 
 
 def _handle_pos(
