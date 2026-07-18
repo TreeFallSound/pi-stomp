@@ -21,6 +21,7 @@ from common.contexts import (
     EventKind,
     SelectionEditEffect,
 )
+from common.color import SELECT_COLOR
 from common.param_roles import ParamRole
 from common.parameter import Symbol
 from plugins.fullscreen import FullscreenPluginPanel
@@ -631,8 +632,21 @@ class MixerPanel(FullscreenPluginPanel[MixerState]):
 
     # ── selection + readout ───────────────────────────────────────────────────
 
+    def _selected_channel(self) -> int | None:
+        """1-based channel whose fader/toggles/pan owns the selection, else None
+        (Master/Alt arcs and chrome buttons belong to no channel)."""
+        match self.sel_ref:
+            case ColumnVolumeBar() | SmallToggle() | ColumnPanBar() as w:
+                return w.channel
+            case _:
+                return None
+
     def _select_widget_ref(self, w):
+        prev = self._selected_channel()
         super()._select_widget_ref(w)
+        if self._selected_channel() != prev:
+            _, lh = get_text_size("CH1", self._ch_font)
+            self.refresh(Box(MIXER_X0, CH_LABEL_Y, ARC_X, CH_LABEL_Y + lh))
         self._update_readout()
 
     def _update_readout(self) -> None:
@@ -669,8 +683,10 @@ class MixerPanel(FullscreenPluginPanel[MixerState]):
     def _draw(self, ctx) -> None:
         divider_x = MIXER_X0 + 4 * CH_ZONE_W
         ctx.draw_rectangle(Box(divider_x, CH_LABEL_Y, divider_x + 1, BAR_BOTTOM), fill=SEPARATOR_COLOR)
+        sel_ch = self._selected_channel()
         for i in range(4):
             cx = MIXER_X0 + i * CH_ZONE_W + CH_ZONE_W // 2
             label = f"CH{i + 1}"
             tw, _ = get_text_size(label, self._ch_font)
-            ctx.draw_text((cx - tw // 2, CH_LABEL_Y), label, fill=CH_LABEL_FG, font=self._ch_font)
+            fill = SELECT_COLOR if i + 1 == sel_ch else CH_LABEL_FG
+            ctx.draw_text((cx - tw // 2, CH_LABEL_Y), label, fill=fill, font=self._ch_font)
