@@ -66,9 +66,14 @@ def trace(obj, *args):
         print(str(type(obj)), n, args)
 
 
-# Utility function (from stack overflow). TODO: Move to a TextUtils
-# Cached: walking font.get_metrics() glyph-by-glyph costs ~20us, and callers hit
-# this several times per widget draw (per *character* when truncating a label).
+@lru_cache(maxsize=1024)
+def get_line_height(font, size=0):
+    """Fixed line height (ascender + descender) for `font`, independent of text."""
+    asc = int(font.get_sized_ascender(size))
+    desc = abs(int(font.get_sized_descender(size)))
+    return asc + desc
+
+
 @lru_cache(maxsize=1024)
 def get_text_size(text_string, font, size=0):
     """Return (width, height) of `text_string` rendered with `font`.
@@ -87,9 +92,7 @@ def get_text_size(text_string, font, size=0):
     `size` overrides the font's default point size for this measurement only
     (e.g. for supersampled rendering) — 0 means "use the font's own size".
     """
-    asc = int(font.get_sized_ascender(size))
-    desc = abs(int(font.get_sized_descender(size)))
-    line_height = asc + desc
+    line_height = get_line_height(font, size)
     if not text_string:
         return (0, line_height)
 
