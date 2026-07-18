@@ -164,7 +164,7 @@ class Modhandler(Handler):
         # pedalboard loads and any encoder mapped to the same CC.
         self._encoder_fallback: dict[str, int] = {}
 
-        self.wifi_status = {}
+        self.wifi_status: Wifi.WifiStatus = {}
         self.eq_status = {}
         self.SystemState = "unknown"
         self.throttled = "unknown"
@@ -1415,6 +1415,18 @@ class Modhandler(Handler):
 
         if not self._is_pedalboard_loading:
             self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
+
+    @property
+    def wifi_ip(self) -> str | None:
+        ip = self.wifi_status.get("ip4_address", "")
+        return ip.split("/")[0] if ip else None
+
+    @property
+    def ethernet_ip(self) -> str | None:
+        ip = self.ethernet_manager.read_ipv4()
+        if ip:
+            return ip.split("/")[0]
+        return None
 
     #
     # System Menu

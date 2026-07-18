@@ -1057,14 +1057,21 @@ class Lcd:
         self.pstack.push_panel(d)
 
     def draw_system_info_dialog(self, arg):
-        msg = "Software:{}\nBuild:{}\nSystemState:{}\nTemperature:{}\nThrottled:{}".format(
-            self.handler.get_software_version(),
-            self.handler.build_version,
-            self.handler.SystemState,
-            self.handler.temperature,
-            self.handler.throttled,
-        )
-        d = MessageDialog(self.pstack, msg, title="System Info", width=300, height=140)
+        lines = [
+            f"Software:{self.handler.get_software_version()}",
+            f"Build:{self.handler.build_version}",
+            f"SystemState:{self.handler.SystemState}",
+            f"Temperature:{self.handler.temperature}",
+            f"Throttled:{self.handler.throttled}",
+        ]
+        wifi_ip = self.handler.wifi_ip
+        if wifi_ip:
+            lines.append(f"WiFi:{wifi_ip}")
+        eth_ip = self.handler.ethernet_ip
+        if eth_ip:
+            lines.append(f"Ethernet:{eth_ip}")
+        msg = "\n".join(lines)
+        d = MessageDialog(self.pstack, msg, title="System Info", width=300, height=170)
         self.pstack.push_panel(d)
 
     def draw_bank_menu(self, event):

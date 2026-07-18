@@ -100,6 +100,9 @@ def mock_handler():
     handler.SystemState = "Running"
     handler.temperature = "45C"
     handler.throttled = "None"
+    handler.wifi_status = {}
+    handler.wifi_ip = None
+    handler.ethernet_ip = None
     # MagicMock would auto-truthify `ethernet_manager.carrier_up` and surface
     # the Wired Connection row in every wifi-menu snapshot. Pin it off here;
     # tests that exercise the ethernet flow can override per-test.
@@ -212,6 +215,46 @@ def test_system_menu_snapshot(lcd, snapshot):
 def test_system_info_dialog_snapshot(lcd, snapshot):
     """The System Info MessageDialog must show all 5 lines without clipping."""
     instance, _ = lcd
+    setup_main_ui(instance)
+    instance.draw_system_info_dialog(None)
+    snapshot()
+
+
+def test_system_info_dialog_no_network(lcd, snapshot):
+    """No IP lines shown when neither WiFi nor Ethernet is connected."""
+    instance, _ = lcd
+    instance.handler.wifi_ip = None
+    instance.handler.ethernet_ip = None
+    setup_main_ui(instance)
+    instance.draw_system_info_dialog(None)
+    snapshot()
+
+
+def test_system_info_dialog_wifi_ip(lcd, snapshot):
+    """WiFi IP shown when connected."""
+    instance, _ = lcd
+    instance.handler.wifi_ip = "192.168.2.152"
+    instance.handler.ethernet_ip = None
+    setup_main_ui(instance)
+    instance.draw_system_info_dialog(None)
+    snapshot()
+
+
+def test_system_info_dialog_ethernet_ip(lcd, snapshot):
+    """Ethernet IP shown when connected."""
+    instance, _ = lcd
+    instance.handler.wifi_ip = None
+    instance.handler.ethernet_ip = "192.168.2.100"
+    setup_main_ui(instance)
+    instance.draw_system_info_dialog(None)
+    snapshot()
+
+
+def test_system_info_dialog_both_ips(lcd, snapshot):
+    """Both IPs shown when both connected."""
+    instance, _ = lcd
+    instance.handler.wifi_ip = "192.168.2.152"
+    instance.handler.ethernet_ip = "192.168.2.100"
     setup_main_ui(instance)
     instance.draw_system_info_dialog(None)
     snapshot()
