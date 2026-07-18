@@ -43,6 +43,14 @@ _START_DEG = 210.0  # arc start — 7-o'clock
 _SWEEP_DEG = 300.0  # total arc travel
 _AA_DEG = 1.5       # angular AA falloff (≈1 px at r=35)
 
+# Selection sandwich: an inset border tracing the filled sector's outer contour
+# (outer edge + caps), so a selected dial reads in the same visual language as
+# every other value marker. From the fill inward it stacks black then yellow at
+# the value handle's own weights — the arc's edge becomes a distance field:
+# original colour, black rim, yellow rim.
+_SEL_BLACK = 2.0    # black band width, matching the handle's eraser annulus
+_SEL_YELLOW = 1.5   # yellow band width, matching the handle's halo stroke
+
 __all__ = ["ArcRingGlyph", "ColorRGB"]
 
 
@@ -81,6 +89,11 @@ class ArcRingGlyph:
         rows, cols = np.nonzero(np.abs(d - self._r) <= reach)
         self._ring_cov: np.ndarray = ring_cov[rows, cols]
         self._shifted: np.ndarray = shifted[rows, cols]
+        # Signed radial offset from the track centreline, and the pixel radius —
+        # both needed by the selection sandwich to measure inset depth from the
+        # outer edge and to convert an angular gap to arc length at the cap.
+        self._dr: np.ndarray = (d - self._r)[rows, cols]
+        self._d: np.ndarray = d[rows, cols]
 
         # Row-major destination index, with flip_v folded in so the reflection is
         # free at render time. Packing bytes for image.frombuffer beats scattering
@@ -89,6 +102,7 @@ class ArcRingGlyph:
         self._lin: np.ndarray = iy.astype(np.intp) * size + cols.astype(np.intp)
         # Never cleared: the index set is fixed and every render rewrites all of it.
         self._rgba: np.ndarray = np.zeros((size * size, 4), dtype=np.uint8)
+        self._sel_rgba: np.ndarray = np.zeros((size * size, 4), dtype=np.uint8)
 
     @property
     def half_size(self) -> int:
@@ -159,6 +173,58 @@ class ArcRingGlyph:
 
         lin = self._lin
         rgba = self._rgba
+        rgba[lin, 0] = R
+        rgba[lin, 1] = G
+        rgba[lin, 2] = B
+        rgba[lin, 3] = A
+        return pygame.image.frombuffer(rgba.tobytes(), (self._size, self._size), "RGBA")
+
+    @lru_cache(maxsize=64)
+    def render_halo(self, t: float, color: ColorRGB) -> pygame.Surface:
+        """Selection sandwich: an overlay for the *filled* sector [0, t] whose
+        outer contour (outer edge + start/end caps) insets into a distance field
+        — original colour, then a black rim, then a ``color`` rim at the edge. The
+        tip cap runs under the value handle, which caps it, so the caller pastes
+        this between the ring and the handle. Blit like render().
+
+        The surface is shared — blit it, never mutate it.
+        """
+        t = max(0.0, min(1.0, t))
+        sweep = t * _SWEEP_DEG
+        aa = _AA_DEG
+        shifted = self._shifted
+
+        # Filled-sector silhouette (same AA'd coverage as render()'s filled arc):
+        # the overlay never spills past it.
+        fill_cov = (
+            self._ring_cov
+            * np.clip(shifted / aa + 0.5, 0.0, 1.0)
+            * np.clip((sweep - shifted) / aa + 0.5, 0.0, 1.0)
+        )
+
+        # Inset depth from the outer contour: radial to the outer edge, angular
+        # (as arc length) to the nearest cap, whichever is closer. The inner edge
+        # is deliberately excluded, so the original colour survives along it.
+        radial = np.clip(self._ring_half - self._dr, 0.0, None)
+        cap_gap = np.minimum(shifted, sweep - shifted)
+        angular = np.radians(np.clip(cap_gap, 0.0, None)) * self._d
+        depth = np.minimum(radial, angular)
+
+        y_edge = _SEL_YELLOW
+        b_edge = _SEL_YELLOW + _SEL_BLACK
+        w_yellow = np.clip(y_edge - depth + 0.5, 0.0, 1.0)
+        w_black = np.clip(depth - y_edge + 0.5, 0.0, 1.0) * np.clip(b_edge - depth + 0.5, 0.0, 1.0)
+        band = np.clip(w_yellow + w_black, 0.0, 1.0)
+        frac_y = w_yellow / (w_yellow + w_black + 1e-6)
+
+        cr, cg, cb = color
+        R = (cr * frac_y).astype(np.uint8)
+        G = (cg * frac_y).astype(np.uint8)
+        B = (cb * frac_y).astype(np.uint8)
+        A = np.clip(fill_cov * band * 255.0, 0, 255).astype(np.uint8)
+
+        lin = self._lin
+        rgba = self._sel_rgba
         rgba[lin, 0] = R
         rgba[lin, 1] = G
         rgba[lin, 2] = B
