@@ -383,6 +383,10 @@ class PanelStack(ContainerWidget):
         #     and the offset remains 0,0 (don't try to scroll)
         if box is None:
             box = Box((0, 0), lcd.dimensions())
+        # The root stays opaque even when dimming. It is a blend *destination*:
+        # 32-bit keeps full 8-bit blend precision, but a dest alpha channel buys
+        # nothing, and an SRCALPHA root would force the LCD's 565 convert-blit
+        # down SDL's alpha-blending path (~7x slower).
         if image_format is None:
             image_format = lcd.default_format()
 
