@@ -45,6 +45,7 @@ from uilib import (
     RoundedPanel,
     TextWidget,
     WidgetAlign,
+    get_line_height,
 )
 from uilib.glyphs import PillGlyph, SignalBarsGlyph, EthernetCableGlyph
 from uilib.menu import Menu, MenuItem, label_key
@@ -153,7 +154,7 @@ def is_open_network(security: Optional[str]) -> bool:
 def _glyph_height() -> int:
     """Row height matching the default font's line height."""
     font = Config().get_font("default")
-    return int(font.get_sized_ascender()) + abs(int(font.get_sized_descender()))
+    return get_line_height(font)
 
 
 class WifiMenu:
