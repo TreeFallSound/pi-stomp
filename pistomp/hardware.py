@@ -496,7 +496,10 @@ class Hardware(ABC):
                         key = format("%d:%d" % (self.midi_channel, fs.midi_CC))
                         self.controllers[key] = fs   # TODO problem if this creates a new element?
 
-                # Preset Control
+                # Preset Control. midi_CC is cleared: dispatch_key falls back to
+                # "fs:<id>" so the PRESS/LONGPRESS rows still resolve, and
+                # dropping it out of hw.controllers keeps an unrelated plugin's
+                # MIDI-learned :bypass from binding onto this footswitch.
                 if Token.PRESET in f:
                     self.__clear_footswitch_midi_cc(fs)
                     preset_value = f[Token.PRESET]

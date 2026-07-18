@@ -128,6 +128,18 @@ class PresetEffect(Effect):
 
 
 @dataclass(frozen=True)
+class PedalboardEffect(Effect):
+    direction: str  # "UP" | "DOWN" — next/prev pedalboard within the current bank
+
+
+@dataclass(frozen=True)
+class RawMidiCcEffect(Effect):
+    # No owning controller; mod-ui's echo reconciles a MIDI-learned plugin.
+    channel: int  # 0-15
+    cc: int
+
+
+@dataclass(frozen=True)
 class TapTempoEffect(Effect):
     pass
 

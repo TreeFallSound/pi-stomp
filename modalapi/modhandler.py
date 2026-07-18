@@ -28,6 +28,7 @@ from pistomp.httpclient import Response
 import subprocess
 import sys
 import yaml
+from collections import namedtuple
 from collections.abc import Callable
 import functools
 from functools import cached_property
@@ -48,7 +49,9 @@ from common.contexts import (
     EventKind,
     MidiCcEffect,
     ParamEffect,
+    PedalboardEffect,
     PresetEffect,
+    RawMidiCcEffect,
     RelayEffect,
     TapTempoEffect,
 )
@@ -120,6 +123,12 @@ def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
     # cross controller classes (footswitch ↔ encoder).
     for (cls, event_kind), rows in list(layer.rows.items()):
         layer.rows[(cls, event_kind)] = [d for d in rows if d.control.id != binding_id]
+
+
+class LongpressCcKey(namedtuple("LongpressCcKey", ["channel", "cc"])):
+    """(channel, cc) identity for a raw-CC longpress row. Echo from mod-ui
+    reconciles the learned plugin; this key tracks "what to send next" between
+    presses. Drift self-corrects on every longpress (see PLAN.md §1)."""
 
 
 class Modhandler(Handler):
@@ -222,6 +231,8 @@ class Modhandler(Handler):
             "toggle_bypass": self.system_toggle_bypass,
             "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable,
             "toggle_tuner_enable": self.toggle_tuner_enable,
+            "next_pedalboard": self.next_pedalboard,
+            "previous_pedalboard": self.previous_pedalboard,
         }
 
         # External MIDI device synchronization
@@ -234,6 +245,12 @@ class Modhandler(Handler):
 
         # Footswitch longpress/chord resolver (rebuilt on pedalboard change)
         self.chord_helper = FootswitchChords()
+
+        # Toggle direction for raw-CC longpress rows (Feature 1). Each (channel,
+        # cc) tracks "next value to send"; first press is always 127 (on). The
+        # WS echo from mod-ui keeps the plugin tile/badge correct; the footswitch
+        # LED stays in its PRESS role by design. See PLAN.md §1.
+        self._longpress_cc_state: dict[LongpressCcKey, bool] = {}
 
     def cleanup(self):
         if self._tuner_muted:
@@ -512,7 +529,21 @@ class Modhandler(Handler):
                         fs.toggle_relays(new_toggled)
                         fs.set_led(new_toggled)
                         self.update_lcd_fs(bypass_change=True)
+                case RawMidiCcEffect(channel=ch, cc=cc):
+                    key = LongpressCcKey(channel=ch, cc=cc)
+                    on = self._longpress_cc_state[key] = not self._longpress_cc_state.get(key, False)
+                    self._emit_raw_cc(ch, cc, 127 if on else 0)
+                case PedalboardEffect(direction=direction):
+                    if direction == "DOWN":
+                        self.previous_pedalboard()
+                    else:
+                        self.next_pedalboard()
         return decl.consume
+
+    def _emit_raw_cc(self, channel: int, cc: int, value: int) -> None:
+        """Send a CC with no owning controller (Feature 1 longpress). Bypasses
+        _emit_midi's controller.midi_CC guard; routes to virtual out only."""
+        self.hardware.midiout.send_message([channel | CONTROL_CHANGE, cc, int(value)])
 
     def _emit_midi(self, controller, midi_value: int) -> None:
         """Send a CC. Tries the external port if routed; falls back to virtual."""
@@ -1148,6 +1179,46 @@ class Modhandler(Handler):
         resp2 = self._rest_post(uri, data=data)
         if resp2 is None or resp2.status_code != 200:
             logging.error("Bad Rest request: %s %s" % (uri, data))
+
+    def pedalboards_in_bank(self) -> list[Pedalboard.Pedalboard] | None:
+        """Ordered Pedalboards for the current bank, or None if no bank is set
+        (caller falls back to pedalboard_list). Same O(N²) title→bundle lookup
+        the pedalboard menu does."""
+        bank_pbs = self.banks.get(self.current_bank) if self.current_bank else None
+        if bank_pbs is None:
+            return None
+        result = []
+        for title in bank_pbs:
+            for p in self.pedalboard_list:
+                if p.title == title:
+                    result.append(p)
+                    break
+        return result
+
+    def _next_pedalboard_index(self, incr: bool) -> int | None:
+        pbs = self.pedalboards_in_bank()
+        if pbs is None:
+            pbs = self.pedalboard_list
+        if not pbs:
+            return None
+        current = self.current.pedalboard
+        try:
+            idx = next(i for i, p in enumerate(pbs) if p.bundle == current.bundle)
+        except StopIteration:
+            return 0 if incr else len(pbs) - 1
+        return (idx + 1) % len(pbs) if incr else (idx - 1) % len(pbs)
+
+    def _pedalboard_nav(self, incr: bool) -> None:
+        pbs = self.pedalboards_in_bank() or self.pedalboard_list
+        idx = self._next_pedalboard_index(incr)
+        if idx is not None:
+            self.pedalboard_change(pbs[idx])
+
+    def next_pedalboard(self) -> None:
+        self._pedalboard_nav(True)
+
+    def previous_pedalboard(self) -> None:
+        self._pedalboard_nav(False)
 
     #
     # Preset Stuff

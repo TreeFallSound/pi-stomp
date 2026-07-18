@@ -99,3 +99,42 @@ def test_midi_channel_not_required_without_midi_port(section, entry):
         }
     }
     validate(instance=cfg, schema=schema)
+
+
+# ---------------------------------------------------------------------------
+# Mapping-form longpress (PLAN.md)
+# ---------------------------------------------------------------------------
+
+
+def _fs_cfg(longpress):
+    return {
+        "hardware": {
+            "version": 3.0,
+            "midi": {"channel": 14},
+            "footswitches": [{"id": 0, "midi_CC": 60, "longpress": longpress}],
+        }
+    }
+
+
+@pytest.mark.parametrize("longpress", [
+    {"midi_CC": 64},
+    {"preset": "UP"},
+    {"preset": 2},
+    {"pedalboard": "DOWN"},
+    "next_snapshot",
+    ["next_snapshot", "toggle_bypass"],
+    "toggle_tuner_enable",
+])
+def test_longpress_mapping_form_valid(longpress):
+    validate(instance=_fs_cfg(longpress), schema=schema)
+
+
+@pytest.mark.parametrize("longpress", [
+    {"midi_CC": "foo"},
+    {"midi_CC": 64, "preset": "UP"},   # mutually exclusive
+    {"pedalboard": "SIDEWAYS"},
+    {"bogus": 1},
+])
+def test_longpress_mapping_form_invalid(longpress):
+    with pytest.raises(exceptions.ValidationError):
+        validate(instance=_fs_cfg(longpress), schema=schema)

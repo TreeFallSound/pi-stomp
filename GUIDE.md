@@ -92,10 +92,12 @@ uv-managed venv. Don't try to pip-install the system ones.
   and connect dumps rebroadcast unconditionally. Reselecting a *board* is a full
   resync. Reselecting a *snapshot* is not.
 
-- **A UI bypass gets no echo.** mod-ui skips the origin socket, and mod-host emits no
-  `param_set` for bypasses it received from mod-ui. Footswitch bypasses *do* echo
-  (they arrive as MIDI). So the UI path must update local state itself — this
-  asymmetry is deliberate, not a bug to "fix."
+- **A UI bypass of a footswitch-less plugin gets no echo.** mod-ui skips the origin
+  socket, and mod-host emits no `param_set` for bypasses it received from mod-ui. So
+  that path must update local state itself (`toggle_plugin_bypass`'s optimistic write).
+  A footswitch-bound plugin is the opposite: `toggle_plugin_bypass` routes through the
+  footswitch press path, which sends MIDI CC → mod-host → feedback echo, and that echo
+  reconciles it. The asymmetry is deliberate, not a bug to "fix."
 
 - **Never extract `lv2plugins.tar.gz` whole.** It's huge. Pull single files with
   `tar --to-stdout`. Prefer inspecting the live device anyway.

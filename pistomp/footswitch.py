@@ -43,6 +43,10 @@ class Footswitch(controller.StatefulController):
         self.category = None
         self.pixel = pixel
         self.longpress_groups = []
+        # Mapping-form longpress dict ({midi_CC|preset|pedalboard: ...}). When
+        # set, _bind_footswitch_actions rows a LONGPRESS decl for it; exclusive
+        # with the chord form.
+        self.longpress_action: dict | None = None
         self.disabled = False
         self.taptempo = taptempo
 
@@ -159,10 +163,18 @@ class Footswitch(controller.StatefulController):
     def set_longpress_groups(self, groups):
         if groups is None:
             self.longpress_groups = []
+            self.longpress_action = None
         elif isinstance(groups, str):
             self.longpress_groups = groups.split()
+            self.longpress_action = None
         elif isinstance(groups, list):
             self.longpress_groups = groups
+            self.longpress_action = None
+        elif isinstance(groups, dict):
+            # Mapping form: one of {midi_CC: int}, {preset: UP|DOWN|<int>},
+            # {pedalboard: UP|DOWN}. Exclusive with the chord form.
+            self.longpress_groups = []
+            self.longpress_action = groups
 
     def poll(self):
         if self.disabled:
@@ -203,4 +215,6 @@ class Footswitch(controller.StatefulController):
         self.preset_direction = None
         self.preset_callback_arg = None
         self.parameter = None
+        self.longpress_groups = []
+        self.longpress_action = None
         self.clear_relays()
