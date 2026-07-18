@@ -11,7 +11,6 @@ from rtmidi.midiconstants import CONTROL_CHANGE
 from common.contexts import (
     ControlClass,
     EventKind,
-    PedalboardEffect,
     PresetEffect,
     RawMidiCcEffect,
 )

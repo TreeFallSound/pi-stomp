@@ -29,7 +29,7 @@ from common.parameter import Parameter
 from modalapi.plugin import Plugin
 from pistomp.handler import Handler
 from plugins.base import PluginPanel, TState
-from plugins.chrome import BTN_GAP, BTN_H, build_bottom_row
+from plugins.chrome import BTN_GAP, BTN_H
 from plugins.scheme import scheme_for_category
 from uilib.box import Box
 from uilib.config import Config

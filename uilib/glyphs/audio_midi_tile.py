@@ -45,7 +45,6 @@ from typing import Literal
 import numpy as np
 import pygame
 
-from uilib.glyphs.tint import tint_mask
 
 State = Literal["nominal", "muted", "rolling"]
 

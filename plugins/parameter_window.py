@@ -437,7 +437,7 @@ class ParameterWindow(PluginWindow[None]):
         if not param.is_ordered_enum():
             return False
         labels = [v["label"] for v in param.enum_values]
-        return all(len(l) <= 8 for l in labels)
+        return all(len(label) <= 8 for label in labels)
 
     def _heuristic_slots(self) -> list[PinnedParam]:
         """First up-to-4 params that read as a dial: continuous, a toggle

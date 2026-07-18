@@ -17,7 +17,6 @@ import pygame
 
 import pytest
 
-from common.parameter import Symbol
 from emulator.stubs import StubJackMute
 from modalapi.sync import SyncMode
 from pistomp.controller import Controller
@@ -381,7 +380,6 @@ class TestAudioMidiTileState:
         assert handler.transport_rolling is False
 
     def test_tile_swaps_to_rolling_glyph_on_transport_roll(self, audio_midi_system: SystemFixture):
-        from uilib.glyphs.audio_midi_tile import audio_midi_tile_glyph
 
         handler = audio_midi_system.handler
         handler.lcd.draw_main_panel()

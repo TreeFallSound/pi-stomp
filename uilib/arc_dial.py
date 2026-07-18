@@ -33,7 +33,6 @@ that wraps it for the common one-ring-per-widget case.
 
 from __future__ import annotations
 
-import math
 from enum import Enum
 from typing import Callable, Literal
 

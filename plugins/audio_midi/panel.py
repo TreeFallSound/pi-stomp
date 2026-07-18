@@ -62,7 +62,7 @@ from uilib.glyphs.badge import BadgeGlyph
 from uilib.glyphs.bar import FILL_ACTIVE, FILL_INACTIVE, TRACK_COLOR, paint_bar
 from uilib.glyphs.circle_handle import paint_circle_handle
 from uilib.glyphs.pill import PillGlyph
-from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size, shade_color
+from uilib.misc import InputEvent, get_text_size, shade_color
 from uilib.rich_text import IconSeg, RichTextWidget, Segment, Spacer, TextSeg
 from uilib.text import Button
 from uilib.widget import Widget
