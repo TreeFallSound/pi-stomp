@@ -25,8 +25,6 @@ from .types import SavedConnection, ScannedNetwork, WifiStatus
 
 
 class WifiManager:
-    # Hard-wired wifi interface to avoid scrubbing sysfs.
-    # Hotspot state is read from / mutates via NetworkManager directly.
     def __init__(self, ifname: str = "wlan0", on_status_change: Optional[Callable[[WifiStatus], None]] = None) -> None:
         self.iface_name: str = ifname
         self.lock: threading.Lock = threading.Lock()
@@ -35,6 +33,8 @@ class WifiManager:
         self.changed: bool = False
         self.on_status_change: Optional[Callable[[WifiStatus], None]] = on_status_change
         self.stop: threading.Event = threading.Event()
+        self._wake: threading.Event = threading.Event()
+        self._force_publish: bool = False
         self.wireless_supported: bool = False
         self.wireless_file: str = os.path.join(os.sep, "sys", "class", "net", self.iface_name, "wireless")
         self.operstate_file: str = os.path.join(os.sep, "sys", "class", "net", self.iface_name, "operstate")
@@ -46,8 +46,25 @@ class WifiManager:
         logging.info("Wifi monitor cleanup")
         self.shutdown()
 
+    def set_status(self, status: WifiStatus) -> None:
+        """Optimistically overwrite cached status and publish it now. The next
+        poll reconciles against truth."""
+        with self.lock:
+            self.last_status = status
+            self.changed = False
+        if self.on_status_change is not None:
+            self.on_status_change(status)
+        self.request_refresh()
+
+    def request_refresh(self) -> None:
+        """Poll status now and publish even if unchanged."""
+        with self.lock:
+            self._force_publish = True
+        self._wake.set()
+
     def shutdown(self) -> None:
         self.stop.set()
+        self._wake.set()
         try:
             self.queue.shutdown()
         except Exception:
@@ -69,7 +86,6 @@ class WifiManager:
             return False
 
     def _get_wpa_status(self, status: WifiStatus) -> None:
-        # `device show` rejects per-setting fields; fetch SSID/mode via `connection show` below.
         stdout, err = nmcli(
             ["device", "show", self.iface_name],
             terse_fields=["GENERAL.STATE", "GENERAL.CONNECTION", "IP4.ADDRESS"],
@@ -96,12 +112,15 @@ class WifiManager:
 
     def _polling_thread(self) -> None:
         while True:
+            # Claimed up front: a refresh requested mid-poll refers to state we
+            # haven't read yet, so it survives into the next pass.
+            with self.lock:
+                forced = self._force_publish
+                self._force_publish = False
+
             new_status: WifiStatus = {}
             supported = new_status["wifi_supported"] = self._is_wifi_supported()
             connected = new_status["wifi_connected"] = self._is_wifi_connected()
-            # Default false; _get_wpa_status flips it when the active wlan0
-            # connection has mode=ap. operstate is "up" in both client and AP
-            # modes, so `connected` covers both cases.
             new_status["hotspot_active"] = False
             if supported and connected:
                 self._get_wpa_status(new_status)
@@ -110,17 +129,22 @@ class WifiManager:
 
             with self.lock:
                 self._cached_saved = saved
-                if new_status != self.last_status:
+                if forced or new_status != self.last_status:
                     logging.debug("Wifi status changed:" + str(new_status))
                     self.last_status = new_status
                     self.changed = True
 
-            if self.stop.wait(5.0):
+            if self._wait_next_poll(5.0):
                 break
 
+    def _wait_next_poll(self, timeout: float) -> bool:
+        """Sleep out the poll interval, cut short by request_refresh()."""
+        self._wake.wait(timeout)
+        self._wake.clear()
+        return self.stop.is_set()
+
     def poll(self) -> None:
-        """Main-thread tick. Drains write-op callbacks and fires
-        on_status_change when the polling thread has new status."""
+        """Main-thread tick: drain callbacks and publish status changes."""
         self.queue.poll()
         update: Optional[WifiStatus] = None
         with self.lock:

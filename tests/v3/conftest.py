@@ -327,6 +327,10 @@ def wifi_state(v3_system):
         wm.queue.submit_scan.side_effect = _run_inline
         wm.queue.pending_op_count.return_value = 0
 
+        # The real WifiManager.set_status publishes through on_status_change,
+        # which is the handler's own hook. Mirror that wiring.
+        wm.set_status.side_effect = v3_system.handler._on_wifi_status_change
+
         status = {
             "wifi_supported": supported,
             "wifi_connected": active is not None,

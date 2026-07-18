@@ -19,7 +19,7 @@ from uilib.box import Box
 from uilib.config import Config
 from uilib.dialog import Dialog
 from uilib.misc import InputEvent, TextHAlign, get_text_size, trace
-from uilib.rich_text import RichTextWidget, Segment
+from uilib.rich_text import RichTextWidget, Segment, TextSeg
 from uilib.text import TextWidget
 
 # A menu row label. Either a plain string (rendered as a `TextWidget`) or a
@@ -49,6 +49,14 @@ MenuItem = (
 
 def _item_label(i: MenuItem) -> Label:
     return i[0]
+
+
+def label_key(label: Label) -> str:
+    """Stable identity for a label. Rich labels reduce to their text; their
+    segment lists are rebuilt per render and never compare equal."""
+    if isinstance(label, str):
+        return label
+    return "".join(s.text for s in label if isinstance(s, TextSeg))
 
 
 def _item_selected(i: MenuItem) -> bool:
@@ -100,7 +108,7 @@ class Menu(Dialog):
             # Stash the source item on the widget for `_item_action` to recover.
             setattr(w, 'data', i)
             self.add_sel_widget(w)
-            if t == self.default_item:
+            if self.default_item is not None and label_key(_item_label(i)) == self.default_item:
                 self.sel_widget(w)
             h = h + self.item_h
 

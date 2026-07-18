@@ -84,7 +84,7 @@ class ModeSelectorWidget(Widget):
         for label, value in self._param.get_enum_value_list():
             selected = value == current_value
             if selected:
-                default_item = f"\u2714 {label}"
+                default_item = label
             items.append((label, self._commit_value, value, selected))
         title = f"{self._param.instance_id}:{self._param.name}"
         lcd.draw_selection_menu(items, title, auto_dismiss=True, default_item=default_item)

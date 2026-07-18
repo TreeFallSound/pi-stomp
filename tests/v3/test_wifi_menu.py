@@ -5,11 +5,13 @@ to accept baselines on first run.
 """
 
 import time
+from typing import cast
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from tests.v3.conftest import make_saved, make_scanned
-from ui.wifi_menu import Row, WifiMenu, _PassphraseEditor
+from ui.wifi_menu import RESCAN_INTERVAL_S, Row, WifiMenu, _PassphraseEditor
 from uilib.dialog import Dialog, MessageDialog
 from uilib.misc import InputEvent
 from uilib.text import LetterSelector, TextEditor, TextWidget
@@ -22,13 +24,17 @@ from pistomp.lcd320x240 import Lcd
 
 
 def _open(v3_system) -> tuple[WifiMenu, Lcd]:
-    """Create a fresh WifiMenu, open it, and return (menu, lcd).
+    """Open the LCD's WifiMenu and return (menu, lcd).
+
+    Must be *the LCD's own* instance, not a fresh one: the handler's status
+    callback re-renders `lcd.wifi_menu`, so a private instance would never see
+    the repaints that a status change drives.
 
     The wifi_state fixture installs an inline CommandQueue shim, so
     submit/submit_scan callbacks fire synchronously.
     """
     lcd = v3_system.handler._lcd
-    wm = WifiMenu(lcd)
+    wm = lcd.wifi_menu
     wm.open()
     return wm, lcd
 
@@ -94,6 +100,42 @@ def test_nearby_loading_then_populated(v3_system, wifi_state, snapshot):
     for cmd, on_done in pending:
         on_done(cmd.run(wm_mock))
     snapshot("nearby_populated")
+
+
+def test_scan_is_paced_at_rescan_interval(v3_system, wifi_state):
+    """tick() paces scans at RESCAN_INTERVAL_S; the CommandQueue dedupes if
+    one is already in flight."""
+    wifi_state(scanned=[make_scanned("Home", signal=80)], saved=[])
+    wm, _lcd = _open(v3_system)
+
+    def _scan_cmds() -> list[str]:
+        submit_scan = cast(MagicMock, wm._wifi_manager.queue.submit_scan)
+        return [type(c.args[0]).__name__ for c in submit_scan.call_args_list]
+
+    assert _scan_cmds() == ["ScanCmd"]  # open() kicks one immediately
+
+    with patch("ui.wifi_menu.time.monotonic", return_value=wm._last_scan + 2.0):
+        wm.tick()
+    assert _scan_cmds() == ["ScanCmd"]  # too soon — no new scan
+
+    with patch("ui.wifi_menu.time.monotonic", return_value=wm._last_scan + RESCAN_INTERVAL_S):
+        wm.tick()
+    assert _scan_cmds() == ["ScanCmd", "ScanCmd"]  # interval elapsed — new scan
+
+
+def test_nearby_empty_when_every_network_is_saved(v3_system, wifi_state, nav_lcd, snapshot):
+    """The only in-range SSID is the saved+connected one, so nearby has nothing
+    to list — it must say so, not sit on 'Scanning...' forever."""
+    wifi_state(
+        scanned=[make_scanned("Home", signal=80, in_use=True)],
+        saved=[make_saved("Home")],
+        active="Home",
+    )
+    _wm, lcd = _open(v3_system)
+
+    nav_lcd(1)  # Home → Nearby networks...
+    _click(lcd)
+    snapshot("nearby_none_found")
 
 
 # ---------------------------------------------------------------------------
@@ -572,14 +614,20 @@ def test_notify_status_change_leaves_error_dialog_open(v3_system, wifi_state, na
 
 
 def test_tick_rescans_while_root_open(v3_system, wifi_state):
-    """tick() submits a scan when the wifi root menu is the top panel."""
+    """tick() submits a scan when the wifi root menu is the top panel and the
+    rescan interval has elapsed."""
     wm_mock = v3_system.handler.wifi_manager
     wifi_state(scanned=[], saved=[make_saved("Home")], hotspot=False)
     wm, _lcd = _open(v3_system)
     scan_calls_after_open = wm_mock.scan_networks.call_count
 
+    # Immediately after open() — too soon, should skip.
     wm.tick()
+    assert wm_mock.scan_networks.call_count == scan_calls_after_open
 
+    # After the interval elapses — should scan.
+    with patch("ui.wifi_menu.time.monotonic", return_value=wm._last_scan + RESCAN_INTERVAL_S):
+        wm.tick()
     assert wm_mock.scan_networks.call_count > scan_calls_after_open, "tick must trigger a fresh scan"
 
 
@@ -626,9 +674,15 @@ def test_disconnect_active(v3_system, wifi_state, snapshot):
     wm_mock = v3_system.handler.wifi_manager
     wm_mock.disconnect.return_value = None
 
-    _wm, lcd = _open(v3_system)
+    wm, lcd = _open(v3_system)
     _click(lcd)  # tap active Home → [Disconnect, Replace password, Forget, ↩]
     _click(lcd)  # tap Disconnect
+
+    wm_mock.disconnect.assert_called_once_with("Home")
+    # The ✔ must be gone before the status poll catches up — not still painted
+    # from the pre-disconnect status.
+    rows, _ = wm._current_rows()
+    assert [r["active"] for r in rows] == [False]
     snapshot("root_after_disconnect")
 
 
