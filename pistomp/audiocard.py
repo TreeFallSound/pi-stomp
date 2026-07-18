@@ -68,11 +68,10 @@ class Audiocard:
                     logging.error("Failed trying to restore audio card settings from: %s" % fname)
 
     def store(self):
-        # This will fail when the top level program is not run as root
-        # Unfortunate that setting changes will not be persisted between boots, but not worth getting the mess of
-        # dealing with file permissions or sync issues when settings are changed via another program (eg. aslamixer)
+        # /var/lib/alsa/asound.state is root:root; this process runs as the
+        # unprivileged pistomp user, so alsactl needs sudo to lock and write it.
         try:
-            subprocess.run(['/usr/sbin/alsactl', '-f', self.config_file, 'store'], stderr=subprocess.DEVNULL)
+            subprocess.run(['sudo', '/usr/sbin/alsactl', '-f', self.config_file, 'store'], stderr=subprocess.DEVNULL)
             logging.info("audio card settings saved to: %s" % self.config_file)
         except Exception:
             logging.error("Failed trying to store audio card settings to: %s" % self.config_file)
