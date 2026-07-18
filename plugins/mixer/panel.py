@@ -42,20 +42,20 @@ _H = 240
 
 READOUT_H = 22
 
-MIXER_X0 = 8             # the whole channel block is inset from the left edge
-CH_ZONE_W = 56           # 4 zones; the right ~88px holds the arc rings
+MIXER_X0 = 8  # the whole channel block is inset from the left edge
+CH_ZONE_W = 56  # 4 zones; the right ~88px holds the arc rings
 VOL_COL_W = 28
 
-CH_LABEL_Y = 25          # channel header row, just under the readout bar
-BAR_W = 3                # track+fill width — identical to the graphic-EQ bar
+CH_LABEL_Y = 25  # channel header row, just under the readout bar
+BAR_W = 3  # track+fill width — identical to the graphic-EQ bar
 
 # Nodes are drawn centred on the value end of a track; NODE_GUTTER keeps the top
 # and bottom halo from clipping against the widget box (the graphic EQ reserves
 # the same clearance via its own BAR_Y0=6).
 NODE_GUTTER = 7
-BAR_TOP = 48             # panel y of a track's top (max value); clears the CH header
-BAR_BOTTOM = 182         # panel y of a track's bottom (min value)
-LABEL_H = 13             # bottom readout height budget
+BAR_TOP = 48  # panel y of a track's top (max value); clears the CH header
+BAR_BOTTOM = 182  # panel y of a track's bottom (min value)
+LABEL_H = 13  # bottom readout height budget
 
 # Volume fader — local (widget-box-relative) coords.
 VOL_BOX_Y0 = BAR_TOP - NODE_GUTTER
@@ -64,13 +64,13 @@ VOL_TRACK_Y1 = NODE_GUTTER + (BAR_BOTTOM - BAR_TOP)
 VOL_DB_Y = VOL_TRACK_Y1 + NODE_GUTTER + 2
 VOL_COL_H = VOL_DB_Y + LABEL_H
 
-TOGGLE_SIZE = 18         # S/M/A toggles are square
-TOGGLE_RADIUS = 4        # chip corner radius; the selection reticule matches it
-TOGGLE_X = 32            # relative to the zone
-TOGGLE_Y0 = 50           # tracks BAR_TOP so toggle and fader tops align
+TOGGLE_SIZE = 18  # S/M/A toggles are square
+TOGGLE_RADIUS = 4  # chip corner radius; the selection reticule matches it
+TOGGLE_X = 32  # relative to the zone
+TOGGLE_Y0 = 50  # tracks BAR_TOP so toggle and fader tops align
 TOGGLE_PITCH = 21
 
-CTRL_CX = TOGGLE_X + TOGGLE_SIZE // 2   # pan shares the S/M/A column, centred under it
+CTRL_CX = TOGGLE_X + TOGGLE_SIZE // 2  # pan shares the S/M/A column, centred under it
 
 # Pan bar — sits below the A toggle, same local layout scheme as the fader.
 PAN_BAR_TOP = TOGGLE_Y0 + 3 * TOGGLE_PITCH + 10
@@ -78,12 +78,12 @@ PAN_BOX_Y0 = PAN_BAR_TOP - NODE_GUTTER
 PAN_TRACK_Y0 = NODE_GUTTER
 PAN_TRACK_Y1 = NODE_GUTTER + (BAR_BOTTOM - PAN_BAR_TOP)
 PAN_LABEL_Y = PAN_TRACK_Y1 + NODE_GUTTER + 2
-PAN_COL_W = 26           # wide enough for the pan label
+PAN_COL_W = 26  # wide enough for the pan label
 PAN_COL_H = PAN_LABEL_Y + LABEL_H
 
 ARC_X = MIXER_X0 + 4 * CH_ZONE_W
 ARC_W = _W - ARC_X
-ARC_RADIUS = 29          # 90% of the shared ArcKnobWidget ring
+ARC_RADIUS = 29  # 90% of the shared ArcKnobWidget ring
 MASTER_ARC_Y = 24
 ALT_ARC_Y = 114
 ARC_H = 86
@@ -93,14 +93,14 @@ ARC_H = 86
 BG_BLACK = (0, 0, 0)
 SEPARATOR_COLOR = (50, 50, 50)
 PAN_NODE_COLOR = (255, 255, 255)
-CH_LABEL_FG = (180, 180, 180)   # matches the arc rings' MASTER/ALT label
+CH_LABEL_FG = (180, 180, 180)  # matches the arc rings' MASTER/ALT label
 
 CHANNEL_COLORS: tuple[tuple[int, int, int], ...] = (
-    (0, 180, 200),    # Ch1 — cyan
-    (0, 200, 80),     # Ch2 — green
-    (200, 180, 0),    # Ch3 — yellow
-    (180, 0, 200),    # Ch4 — magenta
-    (255, 191, 63),   # Master — gold
+    (0, 180, 200),  # Ch1 — cyan
+    (0, 200, 80),  # Ch2 — green
+    (200, 180, 0),  # Ch3 — yellow
+    (180, 0, 200),  # Ch4 — magenta
+    (255, 191, 63),  # Master — gold
     (120, 150, 255),  # Alt — periwinkle
 )
 
@@ -301,13 +301,21 @@ class SmallToggle(Widget):
     def _draw(self, ctx) -> None:
         if self._value:
             glyph = ToggleGlyph(
-                self._label, width=ctx.width, height=ctx.height, radius=TOGGLE_RADIUS,
-                fill=shade_color(self._accent, self._shade), text_color=shade_color(TOGGLE_ON_TEXT, self._shade),
+                self._label,
+                width=ctx.width,
+                height=ctx.height,
+                radius=TOGGLE_RADIUS,
+                fill=shade_color(self._accent, self._shade),
+                text_color=shade_color(TOGGLE_ON_TEXT, self._shade),
             )
         else:
             glyph = ToggleGlyph(
-                self._label, width=ctx.width, height=ctx.height, radius=TOGGLE_RADIUS,
-                fill=BG_BLACK, text_color=shade_color(TOGGLE_OFF_TEXT, self._shade),
+                self._label,
+                width=ctx.width,
+                height=ctx.height,
+                radius=TOGGLE_RADIUS,
+                fill=BG_BLACK,
+                text_color=shade_color(TOGGLE_OFF_TEXT, self._shade),
                 outline=shade_color(TOGGLE_OFF_OUTLINE, self._shade),
             )
         ctx.paste(glyph.render(), (0, 0))
@@ -504,22 +512,26 @@ class MixerPanel(FullscreenPluginPanel[MixerState]):
             n = i + 1
             zone_x = MIXER_X0 + i * CH_ZONE_W
 
-            self._vol_bars.append(ColumnVolumeBar(
-                box=Box.xywh(zone_x, VOL_BOX_Y0, VOL_COL_W, VOL_COL_H),
-                panel=self,
-                channel=n,
-                volume_sym=Symbol(f"Volume{n}"),
-                pan_sym=Symbol(f"Panning{n}"),
-                color=CHANNEL_COLORS[i],
-                font=self._tiny_font,
-                parent=self,
-            ))
+            self._vol_bars.append(
+                ColumnVolumeBar(
+                    box=Box.xywh(zone_x, VOL_BOX_Y0, VOL_COL_W, VOL_COL_H),
+                    panel=self,
+                    channel=n,
+                    volume_sym=Symbol(f"Volume{n}"),
+                    pan_sym=Symbol(f"Panning{n}"),
+                    color=CHANNEL_COLORS[i],
+                    font=self._tiny_font,
+                    parent=self,
+                )
+            )
 
-            for j, (sym, label, role_label, accent) in enumerate((
-                (Symbol(f"Solo{n}"), "S", "Solo", S_ACCENT),
-                (Symbol(f"Mute{n}"), "M", "Mute", M_ACCENT),
-                (Symbol(f"Alt{n}"), "A", "Alt", A_ACCENT),
-            )):
+            for j, (sym, label, role_label, accent) in enumerate(
+                (
+                    (Symbol(f"Solo{n}"), "S", "Solo", S_ACCENT),
+                    (Symbol(f"Mute{n}"), "M", "Mute", M_ACCENT),
+                    (Symbol(f"Alt{n}"), "A", "Alt", A_ACCENT),
+                )
+            ):
                 toggle = SmallToggle(
                     box=Box.xywh(zone_x + TOGGLE_X, TOGGLE_Y0 + j * TOGGLE_PITCH, TOGGLE_SIZE, TOGGLE_SIZE),
                     panel=self,
@@ -532,14 +544,16 @@ class MixerPanel(FullscreenPluginPanel[MixerState]):
                 )
                 (self._s_toggles, self._m_toggles, self._a_toggles)[j].append(toggle)
 
-            self._pan_bars.append(ColumnPanBar(
-                box=Box.xywh(zone_x + CTRL_CX - PAN_COL_W // 2, PAN_BOX_Y0, PAN_COL_W, PAN_COL_H),
-                panel=self,
-                channel=n,
-                pan_sym=Symbol(f"Panning{n}"),
-                font=self._tiny_font,
-                parent=self,
-            ))
+            self._pan_bars.append(
+                ColumnPanBar(
+                    box=Box.xywh(zone_x + CTRL_CX - PAN_COL_W // 2, PAN_BOX_Y0, PAN_COL_W, PAN_COL_H),
+                    panel=self,
+                    channel=n,
+                    pan_sym=Symbol(f"Panning{n}"),
+                    font=self._tiny_font,
+                    parent=self,
+                )
+            )
 
         self._master_arc = MasterAltArcKnob(
             box=Box.xywh(ARC_X, MASTER_ARC_Y, ARC_W, ARC_H),
@@ -619,7 +633,7 @@ class MixerPanel(FullscreenPluginPanel[MixerState]):
         bypassed = self.plugin.is_bypassed()
         any_solo = any(ch.solo for ch in state.channels)
         for i, ch in enumerate(state.channels):
-            silent = ch.mute or (any_solo and not ch.solo)
+            silent = (ch.mute and not ch.solo) or (any_solo and not ch.solo)
             self._vol_bars[i].set_dimmed(bypassed or silent)
             self._pan_bars[i].set_dimmed(bypassed or silent)
             self._s_toggles[i].set_dimmed(bypassed)
