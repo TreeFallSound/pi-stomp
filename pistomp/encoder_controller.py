@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import bisect
 import logging
 import time
 from typing import List, Optional
@@ -25,7 +24,8 @@ import pistomp.controller as controller
 import pistomp.analogswitch as analogswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
-from common.parameter import Parameter, Type
+from common.parameter import Parameter
+from common.parameter_steps import ParameterSteps, resolution
 from pistomp.encoder import Encoder
 from pistomp.input.event import EncoderEvent, SwitchEvent, SwitchEventKind
 
@@ -80,13 +80,10 @@ class EncoderController(controller.Controller):
         self.id = id
 
         # Param-mode quantizer state (inert until bound or used)
-        self.step_values: List[float] = []
-        self.current_step: int = 0
-        self.num_steps: int = 128
+        self._recalculate_steps()
         self._last_detent_time: Optional[float] = None
         self._last_direction: int = 0
         if midi_channel is not None and midi_CC is not None or type is not None:
-            self._recalculate_steps()
             self.set_value(64)
 
         # Absorbed button (GPIO or ADC)
@@ -145,29 +142,24 @@ class EncoderController(controller.Controller):
     def max_val(self) -> float:
         return self.parameter.maximum if self.parameter is not None else self.midi_max
 
-    def _calculate_parameter_resolution(self) -> int:
-        if self.midi_CC is not None or self.parameter is None:
-            return 128
-        if self.parameter.type == Type.INTEGER:
-            return int(self.parameter.maximum - self.parameter.minimum) + 1
-        if self.parameter.type == Type.ENUMERATION:
-            return len(self.parameter.get_enum_value_list())
-        if self.parameter.type == Type.TOGGLED:
-            return 2
-        return 256
+    @property
+    def step_values(self) -> List[float]:
+        return self._steps.values
+
+    @property
+    def num_steps(self) -> int:
+        return self._steps.num_steps
+
+    @property
+    def current_step(self) -> int:
+        return self._steps.index
+
+    @current_step.setter
+    def current_step(self, index: int) -> None:
+        self._steps.index = _clamp(index, 0, len(self._steps.values) - 1)
 
     def _recalculate_steps(self) -> None:
-        self.step_values = []
-        self.num_steps = self._calculate_parameter_resolution()
-        if self.num_steps <= 1:
-            self.step_values = [self.min_val]
-            return
-        _taper = self.taper
-        rng = self.max_val - self.min_val
-        for i in range(self.num_steps):
-            pos = i / (self.num_steps - 1)
-            tapered_pos = pos**_taper
-            self.step_values.append(self.min_val + (rng * tapered_pos))
+        self._steps = ParameterSteps(self.min_val, self.max_val, self.taper, resolution(self.parameter))
 
     def bind_to_parameter(self, parameter: Parameter) -> None:
         self.parameter = parameter
@@ -179,21 +171,11 @@ class EncoderController(controller.Controller):
         )
 
     def set_value(self, value: float) -> None:
-        idx = bisect.bisect_left(self.step_values, value)
-        if idx == 0:
-            self.current_step = 0
-        elif idx == len(self.step_values):
-            self.current_step = len(self.step_values) - 1
-        else:
-            if abs(self.step_values[idx - 1] - value) <= abs(self.step_values[idx] - value):
-                self.current_step = idx - 1
-            else:
-                self.current_step = idx
-        self.midi_value = self._value_to_midi(self.step_values[self.current_step])
+        self._steps.set_value(value)
+        self.midi_value = self._value_to_midi(self._steps.value)
 
     def _move_steps(self, delta_steps: int) -> float:
-        self.current_step = _clamp(self.current_step + delta_steps, 0, len(self.step_values) - 1)
-        return self.step_values[self.current_step]
+        return self._steps.move(delta_steps)
 
     def _compute_multiplier(self, rotations: int) -> float:
         now = time.monotonic()

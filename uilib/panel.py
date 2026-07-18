@@ -145,6 +145,23 @@ class Panel(ContainerWidget, InputSink):
             return True
         return False
 
+    def input_step(self, direction: int, count: int, multiplier: float = 1.0) -> bool:
+        """Handle a tick's worth of encoder detents.
+
+        Selection moves `count` places in one go, so the batch costs a single
+        deselect/select repaint rather than one per detent. A tick is 10ms, so
+        this still reads as scanning rather than jumping. `multiplier` is the
+        encoder's speed factor; discrete selection ignores it. Panels driving a
+        continuous value (see Parameterdialog) override this.
+        """
+        event = InputEvent.RIGHT if direction > 0 else InputEvent.LEFT
+        if self.sel_ref is not None and self.sel_ref.input_event(event):
+            for _ in range(count - 1):
+                self.sel_ref.input_event(event)
+            return True
+        self._step_sel(direction * count)
+        return True
+
     def _step_sel(self, delta):
         flat = self._flat_sel()
         if not flat:
@@ -556,6 +573,11 @@ class PanelStack(ContainerWidget):
         assert isinstance(event, InputEvent)
         if self.current is not None:
             return self.current.input_event(event)
+        return False
+
+    def input_step(self, direction: int, count: int, multiplier: float = 1.0) -> bool:
+        if self.current is not None:
+            return self.current.input_step(direction, count, multiplier)
         return False
 
 

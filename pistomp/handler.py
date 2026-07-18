@@ -120,7 +120,7 @@ class Handler(InputSink):
     def bottom_encoder_sw(self, value):
         raise NotImplementedError()
 
-    def universal_encoder_select(self, direction):
+    def universal_encoder_select(self, direction, multiplier: float = 1.0):
         raise NotImplementedError()
 
     def universal_encoder_sw(self, value):

@@ -16,30 +16,75 @@
 from uilib.box import Box
 from uilib.config import Config
 from uilib.dialog import Dialog
+from uilib.image import ImageWidget
 from uilib.misc import InputEvent, WidgetAlign, get_text_size
 from uilib.text import TextWidget
 from uilib.widget import Widget
-import common.util as util
-from common.parameter import Parameter, Type
+from common.parameter import Parameter
+from common.parameter_steps import ParameterSteps
+
+from functools import lru_cache
 
 import numpy as np
+import pygame
 import time
 
-class Parameterdialog(Dialog):
-    def __init__(self, stack, parameter,
-                 width, height, title, title_font=None, timeout=None, **kwargs):
-        self._init_attrs(Widget.INH_ATTRS, kwargs)
-        super(Parameterdialog,self).__init__(width, height, title, title_font, **kwargs)
-        self.stack = stack  # TODO very LAME to require the stack to be passed, ideally panel would be able to pop itself
-        self.parameter: Parameter = parameter
-        
-        # adjustment amount per click
-        if self.parameter.type in (Type.INTEGER, Type.ENUMERATION, Type.TOGGLED):
-            self.parameter_tweak_amount = 1
-        else:
-            self.parameter_tweak_amount = 8
 
-        self.tweak = util.renormalize_float(self.parameter_tweak_amount, 0, 127, self.parameter.minimum, self.parameter.maximum)
+# Bar geometry/colors are fixed constants so the
+# rendered bar surface depends only on taper and color
+@lru_cache(maxsize=None)
+def _render_bar_surface(
+    taper: float,
+    num_points: int,
+    bar_width: int,
+    graph_x_offset: int,
+    graph_y0: int,
+    graph_width: int,
+    graph_height: int,
+    color: tuple,
+) -> pygame.Surface:
+    x = np.linspace(1, num_points, num_points)
+    graph_points = num_points * ((x / len(x)) ** taper)
+
+    surf = pygame.Surface((graph_width, graph_height), pygame.SRCALPHA)
+    for idx in range(num_points):
+        g = int(graph_points[idx])
+        if g <= 0:
+            continue
+        x0 = graph_x_offset + idx * bar_width
+        pygame.draw.rect(surf, color, pygame.Rect(x0, graph_y0 - g, bar_width, g), 1)
+    return surf
+
+
+class _GraphWidget(ImageWidget):
+    """Bar graph surface. Skips the background erase: the bars are the same
+    geometry in both colors, so a repaint overwrites them exactly, and the
+    transparent gaps must leave the value text (which sits inside this
+    widget's box) untouched."""
+
+    def _draw_erase(self, ctx):
+        pass
+
+
+class Parameterdialog(Dialog):
+    # TODO detailed dimensions, colors, etc. should not be defined in uilib
+    GRAPH_Y0 = 80
+    GRAPH_X_OFFSET = 10
+    BAR_FILLED = (255, 255, 0)  # 'yellow'
+    BAR_UNFILLED = (100, 100, 240)
+
+    def __init__(self, stack, parameter, width, height, title, title_font=None, timeout=None, **kwargs):
+        self._init_attrs(Widget.INH_ATTRS, kwargs)
+        super(Parameterdialog, self).__init__(width, height, title, title_font, **kwargs)
+        self.stack = (
+            stack  # TODO very LAME to require the stack to be passed, ideally panel would be able to pop itself
+        )
+        self.parameter: Parameter = parameter
+
+        # The nav encoder steps this dialog through the same quantized grid a v3
+        # tweak encoder uses, so a detent moves the value identically whichever
+        # control you turn (v2 nav, v3 nav, v3 tweak).
+        self.steps = ParameterSteps.for_parameter(self.parameter)
 
         self.timeout = timeout
         self.expiry_time = None
@@ -52,13 +97,25 @@ class Parameterdialog(Dialog):
         self.num_points = 60
         self.bar_width = 4
         self.actual_abscissa = np.linspace(0, self.num_actual, self.num_actual)
-        self.graph_abscissa = np.linspace(1, self.num_points, self.num_points)
-        self.actual_points = self._calc_graph_points(self.actual_abscissa, self.parameter.minimum, self.parameter.maximum)
-        self.graph_points  = self._calc_graph_points(self.graph_abscissa, 0, self.num_points)  # TODO
+        self.actual_points = self._calc_graph_points(
+            self.actual_abscissa, self.parameter.minimum, self.parameter.maximum
+        )
+
+        # Value at which each bar becomes filled. Nondecreasing, so the filled
+        # bars are always the prefix [0, k) and a value change dirties only the
+        # columns between the old and new k.
+        self.bar_thresholds = self.actual_points[(np.arange(self.num_points) * self.num_actual) // self.num_points]
+
+        self.graph_width = self.GRAPH_X_OFFSET + self.bar_width * self.num_points
+        # +1 row of headroom so a max-height bar's bottom edge isn't clipped.
+        self.graph_height = self.GRAPH_Y0 + 1
 
         self.w_value = None
-        self.w_bars = []  # Reusable bar widgets
-        self.last_param_value: float = self.parameter.value  # Track previous value for incremental bar updates
+        self.w_graph: _GraphWidget | None = None
+        self._graph_surface: pygame.Surface | None = None
+        self._bars_filled: pygame.Surface | None = None
+        self._bars_unfilled: pygame.Surface | None = None
+        self.last_param_value: float = self.parameter.value
         self._draw_contents()
 
     def _calc_graph_points(self, x, min, max):
@@ -69,8 +126,16 @@ class Parameterdialog(Dialog):
     def _draw_contents(self):
         if self.timeout is None:
             # Only draw close button if not using timeout autoclose
-            b = TextWidget(box=Box.xywh(108, 100, 0, 0), text='Close', parent=self, outline=1, sel_width=3,
-                           outline_radius=5, align=WidgetAlign.NONE, name='ok_btn')
+            b = TextWidget(
+                box=Box.xywh(108, 100, 0, 0),
+                text="Close",
+                parent=self,
+                outline=1,
+                sel_width=3,
+                outline_radius=5,
+                align=WidgetAlign.NONE,
+                name="ok_btn",
+            )
             b.set_selected(True)
         self._draw_graph()
 
@@ -81,80 +146,95 @@ class Parameterdialog(Dialog):
         max_text = self.parameter.format(self.parameter.maximum)
 
         # Calculate centered position
-        font = Config().get_font('default')
+        font = Config().get_font("default")
         text_width, text_height = get_text_size(val_text, font)
         x_centered = (self.box.width - text_width) // 2
 
         if self.w_value is None:
-            self.w_value = TextWidget(box=Box.xywh(x_centered, 23, text_width, text_height), text=val_text, parent=self,
-                       align=WidgetAlign.NONE, name='value')
-            self.w_value.set_foreground('yellow')
-            TextWidget(box=Box.xywh(0, y0, 0, 0), text=min_text, parent=self, outline=0,
-                       align=WidgetAlign.NONE, name='value')
-            TextWidget(box=Box.xywh(220, y0, 0, 0), text=max_text, parent=self, outline=0,
-                       align=WidgetAlign.NONE, name='value')
-        else:
-            # Update text (refreshes old box area)
-            self.w_value.set_text(val_text)
-            # Update box position and width (realign=True) without triggering full parent refresh
-            self.w_value.set_box(Box.xywh(x_centered, 23, text_width, text_height), realign=True, refresh=False)
-            # Refresh new box area
-            self.w_value.refresh()
+            self.w_value = TextWidget(
+                box=Box.xywh(x_centered, 23, text_width, text_height),
+                text=val_text,
+                parent=self,
+                align=WidgetAlign.NONE,
+                name="value",
+            )
+            self.w_value.set_foreground("yellow")
+            TextWidget(
+                box=Box.xywh(0, y0, 0, 0), text=min_text, parent=self, outline=0, align=WidgetAlign.NONE, name="value"
+            )
+            TextWidget(
+                box=Box.xywh(220, y0, 0, 0), text=max_text, parent=self, outline=0, align=WidgetAlign.NONE, name="value"
+            )
+        elif val_text != self.w_value.text:
+            # set_text() would refresh at the *old* box, painting the new string
+            # in the old (uncentered) position and pushing it before we move the
+            # box — a visible stale label and a wasted SPI push. Update in place
+            # and recompose the union of both boxes once, as Subtitle does.
+            assert self.w_value.box is not None  # visible ⇒ box set
+            old = self.w_value.box.copy()
+            new = Box.xywh(x_centered, 23, text_width, text_height)
+            self.w_value.text = val_text
+            self.w_value.text_size_valid = False
+            self.w_value.set_box(new, realign=True, refresh=False)
+            self.redraw_region(old.union(new))
+
+    def _filled_count(self, value: float) -> int:
+        """Number of leading bars filled at `value`."""
+        return int(np.searchsorted(self.bar_thresholds, value, side="right"))
+
+    def _blit_bars(self, lo: int, hi: int, filled: bool) -> Box:
+        """Repaint bars [lo, hi) from the matching pre-rendered surface.
+
+        Returns the dirty rect in the graph widget's parent coords.
+        """
+        assert self._graph_surface is not None and self.w_graph is not None
+        assert self._bars_filled is not None and self._bars_unfilled is not None
+        rect = pygame.Rect(self.GRAPH_X_OFFSET + lo * self.bar_width, 0, (hi - lo) * self.bar_width, self.graph_height)
+        src = self._bars_filled if filled else self._bars_unfilled
+        self._graph_surface.fill((0, 0, 0, 0), rect)
+        self._graph_surface.blit(src, rect.topleft, area=rect)
+        return Box.xywh(*rect).offset(self.w_graph.box)
 
     def _draw_graph(self):
-        # TODO detailed dimensions, colors, etc. should not be defined in uilib
-        y0 = 80
-        x_offset = 10
-
         self._update_text_widget()
 
-        # Create bar widgets on first call, reuse them afterward
-        if not self.w_bars:
-            x = 0
-            for i in self.graph_abscissa:
-                i = int(i) - 1  # abscissa start at 1, arrays start at 0
-                g = int(self.graph_points[i])  # PIL requires integer coordinates
-                line_box = Box.xywh(x + x_offset, y0 - g, self.bar_width, g)
-                w = Widget(box=line_box, parent=self, outline=1, sel_width=0, outline_radius=0,
-                           align=WidgetAlign.NONE)
-                self.w_bars.append(w)
-                x = x + self.bar_width
+        # Bars are pre-rendered once per dialog in both colors.
+        # Only the strip between the old and new value needs repainting.
+        value = self.parameter.value
 
-            # First render: set all bar colors and do full refresh
-            for idx, i in enumerate(self.graph_abscissa):
-                i = int(i) - 1
-                a = int(i * self.num_actual / self.num_points)
-                p = float(self.actual_points[a])
-                if p <= self.parameter.value:
-                    self.w_bars[idx].set_foreground('yellow')
-                else:
-                    self.w_bars[idx].set_foreground((100, 100, 240))
-            self.refresh()  # Full dialog refresh on first render
-            self.last_param_value = self.parameter.value
+        if self.w_graph is None:
+            self._graph_surface = pygame.Surface((self.graph_width, self.graph_height), pygame.SRCALPHA)
+            args = (
+                self.taper,
+                self.num_points,
+                self.bar_width,
+                self.GRAPH_X_OFFSET,
+                self.GRAPH_Y0,
+                self.graph_width,
+                self.graph_height,
+            )
+            self._bars_filled = _render_bar_surface(*args, self.BAR_FILLED)
+            self._bars_unfilled = _render_bar_surface(*args, self.BAR_UNFILLED)
+            self.w_graph = _GraphWidget(
+                image=self._graph_surface,
+                box=Box.xywh(0, 0, self.graph_width, self.graph_height),
+                parent=self,
+                outline=0,
+                sel_width=0,
+            )
+            k = self._filled_count(value)
+            self._blit_bars(0, k, filled=True)
+            self._blit_bars(k, self.num_points, filled=False)
+            self.w_graph.refresh()
         else:
-            # Incremental update: only refresh bars that changed state
-            items = list(enumerate(self.graph_abscissa))
-            if self.parameter.value < self.last_param_value:
-                items = reversed(items)
+            k0 = self._filled_count(self.last_param_value)
+            k = self._filled_count(value)
+            if k != k0:
+                lo, hi = (k0, k) if k > k0 else (k, k0)
+                dirty = self._blit_bars(lo, hi, filled=k > k0)
+                self.w_graph.refresh(dirty)
 
-            for idx, i in items:
-                i = int(i) - 1
-                a = int(i * self.num_actual / self.num_points)
-                p = float(self.actual_points[a])
-
-                # Determine if this bar should be filled
-                old_filled = p <= self.last_param_value
-                new_filled = p <= self.parameter.value
-
-                # Only update and refresh if state changed
-                if old_filled != new_filled:
-                    if new_filled:
-                        self.w_bars[idx].set_foreground('yellow')
-                    else:
-                        self.w_bars[idx].set_foreground((100, 100, 240))
-                    self.w_bars[idx].refresh()
-
-            self.last_param_value = self.parameter.value
+        self.last_param_value = value
 
     def reset_timeout(self):
         if self.timeout is not None:
@@ -168,25 +248,22 @@ class Parameterdialog(Dialog):
         """Update display with new value (controller already calculated it)."""
         self.reset_timeout()
         self.parameter.value = new_value
-        self._update_text_widget()
-        self._draw_graph()
+        self.steps.set_value(new_value)  # resync: a tweak encoder moved it
+        self._draw_graph()  # updates the value text too
 
-    def parameter_value_change(self, direction):
+    def parameter_value_change(self, direction, count: int = 1, multiplier: float = 1.0):
         self.reset_timeout()
 
-        # Calculate new value
-        new_value = self.parameter.value + (direction * self.tweak)
+        # Resync if the value was changed externally (tweak encoder, MOD-UI echo).
+        if abs(self.parameter.value - self.steps.value) > 1e-9:
+            self.steps.set_value(self.parameter.value)
 
-        # Clamp
-        if new_value > self.parameter.maximum:
-            new_value = self.parameter.maximum
-        if new_value < self.parameter.minimum:
-            new_value = self.parameter.minimum
-
-        # Integer rounding
-        if self.parameter.type in (Type.INTEGER, Type.ENUMERATION, Type.TOGGLED):
-            new_value = round(new_value)
-
+        # Same arithmetic as EncoderController.refresh: the multiplier scales the
+        # number of grid steps, not the value.
+        delta = int(round(direction * count * multiplier))
+        if delta == 0:
+            return
+        new_value = self.steps.move(delta)
         if new_value == self.parameter.value:
             return
 
@@ -204,6 +281,15 @@ class Parameterdialog(Dialog):
             self.parameter_value_change(1)
         else:
             return False
+        return True
+
+    def input_step(self, direction: int, count: int, multiplier: float = 1.0) -> bool:
+        # A value slider has no intermediate states worth rendering: apply the
+        # whole batch at once. On v2 the nav encoder is the only encoder, so
+        # this is the sole path into the dialog and a fast spin would otherwise
+        # cost one render + LCD push per detent. `multiplier` is the encoder's
+        # speed factor, which the nav path otherwise discards.
+        self.parameter_value_change(1 if direction > 0 else -1, count, multiplier)
         return True
 
     def pop(self):
