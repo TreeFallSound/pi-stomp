@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Analyse pedalboard grid layouts against the real layout pipeline.
 
-Loads one or more .pedalboard bundles via the same lilv + MOD-Desktop path
-the device uses, runs modalapi.layout.build_layout_compress, and reports
-metrics + an ASCII render of the grid.
+Loads one or more .pedalboard bundles via the same MOD-Desktop path the device
+uses, runs modalapi.layout.build_layout_compress, and reports metrics + an
+ASCII render of the grid.
 
-Run via ./analyze_layout.sh (sets up lilv on PYTHONPATH/DYLD_LIBRARY_PATH).
-Requires MOD Desktop running at http://127.0.0.1:18181 to resolve plugin
-audio-port ordering.
+Run via ./analyze_layout.sh. Requires MOD Desktop running at
+http://127.0.0.1:18181: it parses the bundles and resolves plugin audio-port
+ordering.
 
 Usage:
     ./analyze_layout.sh <bundle.pedalboard> [more.pedalboard ...]
@@ -266,7 +266,7 @@ def render_png(layout: Layout, plugins_by_id: dict, path: Path) -> None:
 def load_layout(bundle: Path, max_rows: int = 4) -> tuple[Pedalboard, Layout]:
     title = bundle.stem
     pb = Pedalboard(title, str(bundle), root_uri=MOD_ROOT_URI)
-    pb.load_bundle(str(bundle), {})
+    pb.hydrate({})
     ids = [p.instance_id.lstrip("/") for p in pb.plugins]
     layout = build_layout_compress(ids, pb.connections, height_cap=max_rows)
     return pb, layout
