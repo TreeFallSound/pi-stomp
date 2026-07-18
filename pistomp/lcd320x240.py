@@ -1027,7 +1027,7 @@ class Lcd:
             ("Pedalboard Management >", self.draw_pedalboard_mgmt_menu, None),
         ]
         if self.handler.recovery_available:
-            items.insert(5, ("Recovery Mode...", self.handler.system_menu_recovery_mode, None))
+            items.insert(5, ("Updates and Recovery >", self.handler.system_menu_recovery_mode, None))
         self.draw_selection_menu(items, "System Menu")
 
     def _toggle_tuner_from_menu(self, arg):
