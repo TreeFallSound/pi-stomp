@@ -42,6 +42,7 @@ class _TrackedWindowState:
 
 class _TrackedFullscreenPanel(FullscreenPluginPanel[_TrackedState]):
     apply_count: int = 0
+    plugin: Plugin  # narrowing: test panel always backed by a Plugin
 
     def snapshot_state(self) -> _TrackedState:
         p = self.plugin
@@ -60,6 +61,7 @@ class _TrackedFullscreenPanel(FullscreenPluginPanel[_TrackedState]):
 
 class _TrackedWindowPanel(PluginWindow[_TrackedWindowState]):
     apply_count: int = 0
+    plugin: Plugin  # narrowing: test panel always backed by a Plugin
 
     def snapshot_state(self) -> _TrackedWindowState:
         p = self.plugin

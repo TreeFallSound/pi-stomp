@@ -38,10 +38,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 from common.contexts import ControlClass, ControlRef, EventKind
 from common.param_roles import ParamRole
+from common.param_source import BypassSource, ParamSource
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
 from common.parameter_steps import ParameterSteps, effective_multiplier
 from modalapi.plugin import Plugin
@@ -53,6 +54,9 @@ from uilib.glyphs.badge import BadgeGlyph
 from uilib.panel import Panel
 from uilib.text import Button
 
+if TYPE_CHECKING:
+    pass
+
 TState = TypeVar("TState")
 
 # Bypass button background when the plugin is bypassed. Shared by both children
@@ -61,28 +65,46 @@ BYPASS_ACTIVE_COLOR = (140, 50, 0)
 
 
 class PluginPanel(Panel, Generic[TState], ABC):
-    """Panel-kind-agnostic core for a plugin-editing UI.
+    """Panel-kind-agnostic core for a parameter-editing UI.
+
+    The behaviour core: param-send coalescing queue, the reactive
+    subscribe→dirty→``apply_state`` reconcile, tweak dispatch via
+    ``declare_bindings()``, ``edit_symbol``'s ``ParameterSteps`` math, and
+    the NAV-only editor open path. It depends on a ``ParamSource``
+    (``common.param_source``) — a reactive bag of parameters — not on
+    ``Plugin`` specifically. ``Plugin`` satisfies ``ParamSource``
+    structurally; the Audio & MIDI menu supplies a synthetic bundle of the
+    audiocard + global-EQ params (see ``docs/audio-midi-menu.md`` §4.1).
+
+    Bypass/reset are gated on the source also implementing
+    ``BypassSource``; a bypass-free source (audiocard, global EQ) simply
+    composes this core with a footer that omits Bypass/Reset.
 
     Inherits ``Panel`` (so subclasses get the widget/selection API) but never
     calls ``Panel.__init__`` itself — the concrete child picks the actual panel
     flavour (a plain ``Panel`` via ``FullscreenPluginPanel`` or ``RoundedPanel``
-    via ``PluginWindow``) and initialises it. Children must, during
-    construction, create a bypass button named ``self._btn_bypass`` (its
-    background reflects bypass state).
+    via ``PluginWindow``) and initialises it. Plugin-panel subclasses that need
+    ``Plugin``-specific members (``customization``, ``instance_number``,
+    ``visible_parameters``) narrow ``self.plugin`` with a class-level
+    ``plugin: Plugin`` annotation.
     """
 
-    plugin: Plugin
+    # `plugin` is the reactive param source (see common.param_source). It is
+    # not declared at class level so plugin-specific subclasses may narrow it
+    # to `Plugin` via a class-level `plugin: Plugin` annotation without an
+    # incompatible-override warning; the base types it as `ParamSource` only
+    # on the `_init_plugin_state` parameter and the instance attribute.
     handler: Handler
     _on_dismiss: Callable[[], None]
     _param_queue: dict[Symbol, float]
-    _btn_bypass: Button
+    _btn_bypass: Button | None
     _badge_fn: Callable[[Parameter], str | None] | None
     _model_dirty: bool
     _unsub_model: Callable[[], None] | None
 
     def _init_plugin_state(
         self,
-        plugin: Plugin,
+        plugin: ParamSource,
         handler: Handler,
         on_dismiss: Callable[[], None],
     ) -> None:
@@ -102,6 +124,8 @@ class PluginPanel(Panel, Generic[TState], ABC):
         return self._badge_fn(param) if param is not None else None
 
     def _badge_bypass(self) -> None:
+        if self._btn_bypass is None:
+            return
         badge_char = self._badge_for(BYPASS_SYMBOL)
         if badge_char is not None:
             self._btn_bypass.set_badge(BadgeGlyph(badge_char))
@@ -164,14 +188,17 @@ class PluginPanel(Panel, Generic[TState], ABC):
 
         No ``on_change`` callback: the dialog writes ``parameter.value``
         directly, which fires this panel's parameter subscription →
-        ``_model_dirty`` → ``tick`` drains into ``apply_state``."""
+        ``_model_dirty`` → ``tick`` drains into ``apply_state``.
+
+        Sources without a submenu path (audiocard params) override
+        ``open_selection_editor``; the base path assumes a ``Plugin``.
+        """
         sel = self.sel_ref
         if isinstance(sel, MultiSelectable):
             rows = sel.menu_rows()
             if not rows:
                 return False
-            self.handler.open_parameter_submenu(self.plugin, rows, sel.menu_title())
-            return True
+            return self.open_selection_submenu(rows, sel.menu_title())
         if isinstance(sel, Selectable):
             symbol = sel.symbol_for(ParamRole.GENERIC)
             if symbol is None:
@@ -179,9 +206,25 @@ class PluginPanel(Panel, Generic[TState], ABC):
             p = self.plugin.parameters.get(symbol)
             if p is None:
                 return False
-            self.handler.open_parameter_dialog(p)
+            return self.open_selection_dialog(p)
+        return False
+
+    def open_selection_submenu(self, rows: tuple[tuple[str, Symbol], ...], title: str) -> bool:
+        """Open a multi-symbol submenu for a compound selection. Plugin panels
+        delegate to ``Handler.open_parameter_submenu``; sources without a
+        ``Plugin`` (audiocard) override with their own submenu path."""
+        plugin = self.plugin
+        if isinstance(plugin, Plugin):
+            self.handler.open_parameter_submenu(plugin, rows, title)
             return True
         return False
+
+    def open_selection_dialog(self, parameter: Parameter) -> bool:
+        """Open a single-symbol editor for the current selection. Plugin panels
+        use the generic parameter dialog; sources without a ``Plugin``
+        (audiocard) override to route through their own commit callback."""
+        self.handler.open_parameter_dialog(parameter)
+        return True
 
     def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool:
         """Step, clamp, and commit symbol's value; returns True iff changed."""
@@ -229,32 +272,45 @@ class PluginPanel(Panel, Generic[TState], ABC):
         if not self._param_queue:
             return
         instance_id = self.plugin.instance_id
-        bridge = self.handler.ws_bridge
         for symbol, value in self._param_queue.items():
-            if bridge is not None:
-                bridge.send_parameter(instance_id, symbol, value)
+            self._send_param(instance_id, symbol, value)
         self._param_queue.clear()
+
+    def _send_param(self, instance_id: str, symbol: Symbol, value: float) -> None:
+        """Commit one queued param to the backend. Plugin panels send over the
+        WebSocket; a synthetic source (audiocard) overrides to no-op — its
+        ``set_param_value`` already wrote the hardware and there is no
+        mod-host instance to mirror."""
+        bridge = self.handler.ws_bridge
+        if bridge is not None:
+            bridge.send_parameter(instance_id, symbol, value)
 
     # ── chrome actions ─────────────────────────────────────────────────────
 
     def _on_toggle_bypass(self) -> None:
-        new_bypass = not self.plugin.is_bypassed()
-        self.plugin.set_bypass(new_bypass)
+        source = self.plugin
+        if not isinstance(source, BypassSource) or self._btn_bypass is None:
+            return
+        new_bypass = not source.is_bypassed()
+        source.set_bypass(new_bypass)
         bridge = self.handler.ws_bridge
         if bridge is not None:
-            bridge.send_parameter(self.plugin.instance_id, BYPASS_SYMBOL, 1.0 if new_bypass else 0.0)
+            bridge.send_parameter(source.instance_id, BYPASS_SYMBOL, 1.0 if new_bypass else 0.0)
         # Optimistic: the set_bypass above already marked us dirty, so tick would
         # repaint within 10ms anyway. Painting here keeps the button instant.
         self._refresh_bypass_style()
 
     def _on_reset(self) -> None:
         """Restore all symbols from the parse-time snapshot, skipping locked ones and :bypass."""
+        source = self.plugin
+        if not isinstance(source, BypassSource):
+            return
         self._flush_param_queue()
-        snap = self.plugin.pedalboard_snapshot
+        snap = source.pedalboard_snapshot
         for symbol, value in snap.items():
             if symbol == BYPASS_SYMBOL:
                 continue
-            if self._is_symbol_locked(self.plugin.instance_id, symbol):
+            if self._is_symbol_locked(source.instance_id, symbol):
                 continue
             self.set_param(symbol, value)
         self._flush_param_queue()
@@ -265,7 +321,10 @@ class PluginPanel(Panel, Generic[TState], ABC):
         return self.handler.is_symbol_locked(instance_id, symbol)
 
     def _refresh_bypass_style(self) -> None:
-        bypassed = self.plugin.is_bypassed()
+        if self._btn_bypass is None:
+            return
+        source = self.plugin
+        bypassed = source.is_bypassed() if isinstance(source, BypassSource) else False
         self._btn_bypass.set_background(BYPASS_ACTIVE_COLOR if bypassed else (0, 0, 0))
         self._btn_bypass.refresh()
 

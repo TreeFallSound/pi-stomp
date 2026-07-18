@@ -41,6 +41,7 @@ from uilib.glyphs.badge import BadgeGlyph
 from uilib.glyphs.circle_handle import HALO_R, paint_circle_handle
 from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size
 from uilib.widget import Widget
+from modalapi.plugin import Plugin
 
 # Type alias for the per-band geometry we cache for diff-paint
 # (image_x, image_y, color_rgb, enabled).
@@ -773,6 +774,8 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
     Subclasses must implement ``build_band_specs()`` returning the list of
     ``BandSpec`` for this plugin.
     """
+
+    plugin: Plugin  # narrowing: parametric EQ panels are always Plugin panels
 
     _show_axis_labels: bool = True
 

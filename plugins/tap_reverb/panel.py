@@ -13,6 +13,7 @@ from common.contexts import (
     SelectionEditEffect,
 )
 from common.parameter import Symbol
+from modalapi.plugin import Plugin
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.layouts.arc_knob import ArcKnobWidget
 from plugins.layouts.mode_selector import ModeSelectorWidget
@@ -66,6 +67,7 @@ def _fmt_db(db: float) -> tuple[str, str]:
 
 
 class TapReverbPanel(FullscreenPluginPanel[TapReverbState]):
+    plugin: Plugin  # narrowing: TapReverbPanel is always a Plugin panel
 
     def snapshot_state(self) -> TapReverbState:
         params = self.plugin.parameters

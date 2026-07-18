@@ -24,6 +24,7 @@ from common.contexts import (
 from common.color import SELECT_COLOR
 from common.param_roles import ParamRole
 from common.parameter import Symbol
+from modalapi.plugin import Plugin
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.layouts.arc_knob import ArcKnobWidget
 from uilib.box import Box
@@ -452,6 +453,8 @@ class MixerReadout(Widget):
 
 class MixerPanel(FullscreenPluginPanel[MixerState]):
     """Full-screen mixer with 4 channel columns + Master/Alt arc rings."""
+
+    plugin: Plugin  # narrowing: MixerPanel is always a Plugin panel
 
     def __init__(self, **kwargs) -> None:
         self._vol_bars: list[ColumnVolumeBar] = []

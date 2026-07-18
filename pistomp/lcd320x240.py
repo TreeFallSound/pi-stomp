@@ -428,12 +428,14 @@ class Lcd:
         self.main_panel.add_sel_widget(self.w_wifi)
         if self.w_eq is not None:
             return
+        from uilib.glyphs.audio_midi_tile import audio_midi_tile_glyph
+
         self.w_eq = ImageWidget(
             box=Box.xywh(240, 0, 20, 20),
-            image=os.path.join(self.imagedir, "eq_blue.png"),
+            image=audio_midi_tile_glyph("nominal"),
             parent=self.main_panel,
             action=self.draw_audio_menu,
-            subtitle="Audio",
+            subtitle="Audio & MIDI",
         )
         self.main_panel.add_sel_widget(self.w_eq)
         self.w_power = ImageWidget(
@@ -1080,18 +1082,18 @@ class Lcd:
         self.draw_selection_menu(items, "Bank Select", auto_dismiss=True)
 
     def draw_audio_menu(self, event, widget):
-        items = [
-            ("Output Volume", self.handler.system_menu_headphone_volume, None),
-            ("Input Gain", self.handler.system_menu_input_gain, None),
-            ("VU Calibration", self.handler.system_menu_vu_calibration, None),
-            ("Global EQ", self.handler.system_toggle_eq, None),
-            ("Low Band Gain", self.handler.system_menu_eq1_gain, None),
-            ("Low-Mid Band Gain", self.handler.system_menu_eq2_gain, None),
-            ("Mid Band Gain", self.handler.system_menu_eq3_gain, None),
-            ("High-Mid Band Gain", self.handler.system_menu_eq4_gain, None),
-            ("High Band Gain", self.handler.system_menu_eq5_gain, None),
-        ]
-        self.draw_selection_menu(items, "Audio Menu")
+        from plugins.audio_midi.panel import AudioMidiPanel
+
+        panel = AudioMidiPanel(
+            handler=self.handler,
+            on_dismiss=lambda: self._dismiss_panel(AudioMidiPanel),
+        )
+        self.pstack.push_panel(panel)
+
+    def _dismiss_panel(self, panel_cls: type) -> None:
+        panel = self.pstack.find_panel_type(panel_cls)
+        if panel is not None:
+            self.pstack.pop_panel(panel)
 
     def draw_audio_parameter_dialog(self, parameter, commit_callback):
         d = util.DICT_GET(self.w_parameter_dialogs, parameter.name)
@@ -1198,6 +1200,36 @@ class Lcd:
 
     def update_eq(self, eq_status):
         pass
+
+    def update_audio_midi_tile(self) -> None:
+        # State-reflecting toolbar tile for the Audio & MIDI menu (mute /
+        # transport-rolling). Mirrors update_wifi/​update_bypass: swap the
+        # w_eq ImageWidget's surface for a procedural glyph from
+        # uilib.glyphs.audio_midi_tile. No-op before draw_tools() runs (the
+        # tile is created lazily on the first main-panel build).
+        if self.w_eq is None:
+            return
+        from uilib.glyphs.audio_midi_tile import audio_midi_tile_glyph
+
+        jm = self.handler.jack_mute
+        muted = jm is not None and jm.is_muted()
+        if muted:
+            state = "muted"
+        elif self.handler.transport_rolling:
+            state = "rolling"
+        else:
+            state = "nominal"
+        self.w_eq.replace_img(audio_midi_tile_glyph(state))
+
+    def update_sync_mode(self, mode) -> None:
+        # Repaint hook for the Audio & MIDI panel's Clock Source row. The
+        # open AudioMidiPanel subscribes to the handler's sync_mode; no-op
+        # when that panel isn't on the stack.
+        from plugins.audio_midi.panel import AudioMidiPanel
+
+        panel = self.pstack.find_panel_type(AudioMidiPanel)
+        if panel is not None and isinstance(panel, AudioMidiPanel):
+            panel.on_sync_mode_changed(mode)
 
     def update_bypass(self, bypass_left, bypass_right):
         if self.w_power is None:

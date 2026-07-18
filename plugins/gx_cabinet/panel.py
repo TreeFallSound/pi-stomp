@@ -13,6 +13,7 @@ from common.contexts import (
     SelectionEditEffect,
 )
 from common.parameter import Symbol
+from modalapi.plugin import Plugin
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.layouts.arc_knob import ArcKnobWidget
 from plugins.layouts.mode_selector import ModeSelectorWidget
@@ -62,6 +63,7 @@ def _fmt_tone(v: float) -> tuple[str, str]:
 
 
 class GxCabinetPanel(FullscreenPluginPanel[GxCabinetState]):
+    plugin: Plugin  # narrowing: GxCabinetPanel is always a Plugin panel
 
     def snapshot_state(self) -> GxCabinetState:
         params = self.plugin.parameters

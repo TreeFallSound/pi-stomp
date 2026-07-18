@@ -34,6 +34,8 @@ class FullscreenPluginPanel(PluginPanel[TState]):
         ``handler.hide_fullscreen_panel``.
     """
 
+    plugin: Plugin  # narrowing: FullscreenPluginPanel is always a Plugin panel
+
     def __init__(
         self,
         *,

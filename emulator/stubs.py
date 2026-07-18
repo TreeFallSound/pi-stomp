@@ -27,6 +27,7 @@ import time
 from typing import Callable, Optional
 
 from modalapi.ethernet import EthernetManager
+from modalapi.jack_mute import JackMute
 from modalapi.wifi import SavedConnection, ScannedNetwork, WifiStatus
 from modalapi.wifi.commands import CommandQueue
 from modalapi.wifi.manager import WifiManager
@@ -292,9 +293,14 @@ class StubEthernetManager(EthernetManager):
             self._changed = True
 
 
-class StubJackMute:
+class StubJackMute(JackMute):
     """In-memory mute state; no JACK calls. Lets the menu's Mute/Unmute MOD
-    button visibly toggle in the emulator."""
+    button visibly toggle in the emulator.
+
+    Subclasses ``JackMute`` so test fixtures can assign it to
+    ``handler.jack_mute`` (typed ``JackMute``) — matches the StubRelay
+    pattern (subclass + override everything, no super().__init__).
+    """
 
     def __init__(self) -> None:
         self._muted = False

@@ -109,6 +109,8 @@ class NotesPanel(FullscreenPluginPanel[None]):
     events fall through to the normal handler cascade.
     """
 
+    plugin: Plugin  # narrowing: NotesPanel is always a Plugin panel
+
     # ── PluginPanel contract ───────────────────────────────────────────────
 
     def snapshot_state(self) -> None:
@@ -147,8 +149,10 @@ class NotesPanel(FullscreenPluginPanel[None]):
         )
 
         # Bypass and Reset don't apply to a read-only notes viewer.
-        # Hide them before base adds chrome to sel_list.
-        self._btn_bypass.visible = False
+        # Hide them before base adds chrome to sel_list. FullscreenPluginPanel
+        # always creates the buttons before calling build_widgets.
+        if self._btn_bypass is not None:
+            self._btn_bypass.visible = False
         self._btn_reset.visible = False
         # Expand Back to span the full chrome row.
         self._btn_back.box = Box.xywh(_BTN_GAP, _H - _BTN_H - _BTN_GAP, _W - 2 * _BTN_GAP, _BTN_H)

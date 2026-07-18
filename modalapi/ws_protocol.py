@@ -20,10 +20,16 @@ Defines message types received from mod-ui WebSocket server.
 """
 
 from dataclasses import dataclass
-from typing import Union
+from typing import Literal, Union, cast
 import logging
 
 from common.parameter import Symbol
+
+# mod-ui's transport broadcast carries a syncMode token drawn from this
+# closed set (TRANSPORT_SOURCE_* in mod/profile.py). Kept as a Literal on
+# the message so it stays a faithful wire echo; the device-side canonical
+# form is modalapi.sync.SyncMode (parse via SyncMode.parse).
+SyncModeWire = Literal["Internal", "link", "midi_clock_slave"]
 
 
 @dataclass
@@ -92,10 +98,16 @@ class PluginBypassMessage:
 
 @dataclass
 class TransportMessage:
-    """Transport state changed (transport {rolling} {beatsPerBar} {bpm} {syncMode})."""
+    """Transport state changed (transport {rolling} {beatsPerBar} {bpm} {syncMode}).
+
+    syncMode is mod-ui's label for the clock source. We keep the raw wire
+    token (see ``SyncModeWire``) so the message stays a faithful echo; the
+    consumer normalizes via ``modalapi.sync.SyncMode.parse`` (see
+    ableton-link.md §6.1)."""
 
     rolling: bool
     bpm: float
+    sync_mode: SyncModeWire = "Internal"
 
 
 @dataclass
@@ -303,8 +315,12 @@ def parse_message(raw_message: str) -> WebSocketMessage:
 
             # Format: transport {rolling} {beatsPerBar} {bpm} {syncMode}
             case ["transport", rolling, rest]:
-                bpm = float(rest.split()[1])
-                return TransportMessage(rolling=rolling != "0", bpm=bpm)
+                parts = rest.split()
+                bpm = float(parts[1])
+                # mod-ui broadcasts the syncMode token on every transport message
+                # (and on new WebSocket connect); older installs may omit it.
+                sync_mode = parts[2] if len(parts) > 2 else "Internal"
+                return TransportMessage(rolling=rolling != "0", bpm=bpm, sync_mode=cast(SyncModeWire, sync_mode))
 
     except (ValueError, IndexError) as e:
         logging.warning(f"Failed to parse WebSocket message '{raw_message}': {e}")

@@ -34,6 +34,7 @@ from uilib.glyphs.badge import BadgeGlyph
 from uilib.glyphs.bar import FILL_ACTIVE, FILL_INACTIVE, READOUT_COLOR, TRACK_COLOR, paint_bar
 from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size
 from uilib.widget import Widget
+from modalapi.plugin import Plugin
 
 # ── layout constants ────────────────────────────────────────────────────────
 
@@ -372,6 +373,8 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
     Subclasses provide ``build_band_specs()`` returning the list of
     ``GraphicBandSpec`` for this plugin.
     """
+
+    plugin: Plugin  # narrowing: graphic EQ panels are always Plugin panels
 
     # ── subclass contract ──────────────────────────────────────────────────
 

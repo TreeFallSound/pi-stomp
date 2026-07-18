@@ -25,6 +25,7 @@ from common.contexts import (
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol, Type
 from common.parameter_steps import ParameterSteps, effective_multiplier
 from common.param_roles import ParamRole
+from modalapi.plugin import Plugin
 from modalapi.plugin_customization import PinnedParam
 from plugins.chrome import BTN_GAP, BTN_H, MIN_CHROME_WIDTH, build_bottom_row
 from uilib.glyphs.circle_handle import paint_circle_handle
@@ -374,6 +375,8 @@ class ParameterWindow(PluginWindow[None]):
     text list below. The Back/Bypass/Reset chrome is inherited from
     ``PluginWindow``.
     """
+
+    plugin: Plugin  # narrowing: ParameterWindow is always a Plugin panel
 
     def __init__(
         self,

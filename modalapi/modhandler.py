@@ -15,6 +15,7 @@
 
 from pistomp.handler import Handler
 from pistomp.audiocard import Audiocard
+from modalapi.sync import SyncMode, SyncModeSetter
 
 import bisect
 import json
@@ -184,6 +185,13 @@ class Modhandler(Handler):
 
         self.last_json_monitor = FileChangeMonitor(os.path.join(self.data_dir, "last.json"))
         self.banks_monitor = FileChangeMonitor(self.banks_file)
+
+        # Clock source (Ableton Link / MIDI slave / Internal). mod-ui is the
+        # single writer; this field is only updated from the transport echo
+        # (and the optimistic mirror in set_sync_mode). See ableton-link.md.
+        self.sync_mode: SyncMode = SyncMode.INTERNAL
+        self.transport_rolling: bool = False  # last transport echo's "rolling" flag
+        self._sync_setter = SyncModeSetter(self.root_uri, self._rest_post)
 
         self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
         self.ethernet_manager = EthernetManager()
@@ -807,11 +815,21 @@ class Modhandler(Handler):
                 self.lcd.draw_main_panel()
 
         elif isinstance(msg, TransportMessage):
+            new_sync = SyncMode.parse(msg.sync_mode)
+            sync_changed = new_sync != self.sync_mode
+            rolling_changed = msg.rolling != self.transport_rolling
+            self.sync_mode = new_sync
+            self.transport_rolling = msg.rolling
             if self.hardware and self.hardware.taptempo:
                 self.hardware.taptempo.set_bpm(msg.bpm)
                 if self.hardware.taptempo.is_enabled():
                     fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
                     self.update_lcd_fs(footswitch=fs)
+            if self._lcd is not None:
+                if sync_changed:
+                    self.lcd.update_sync_mode(new_sync)
+                if rolling_changed:
+                    self.lcd.update_audio_midi_tile()
 
         elif isinstance(msg, ParamSetMessage):
             # Mirror mod-ui's live value: refresh the cache (so a later edit opens
@@ -1632,6 +1650,17 @@ class Modhandler(Handler):
     def set_mod_tap_tempo(self, bpm):
         if bpm is not None:
             self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
+
+    def set_sync_mode(self, mode: SyncMode) -> None:
+        """Optimistically switch the clock source; mod-ui's transport echo
+        reconciles. POSTed off the UI thread so the 10ms loop never blocks
+        on HTTP (CLAUDE.md trap)."""
+        # Optimistic mirror so the UI updates immediately; if mod-ui rejects
+        # the switch the next transport echo reverts this.
+        self.sync_mode = mode
+        if self._lcd is not None:
+            self.lcd.update_sync_mode(mode)
+        self._sync_setter.submit(mode)
 
     def get_bpm(self):
         url = self.root_uri + "get_bpm"

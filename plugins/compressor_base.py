@@ -14,6 +14,7 @@ from common.contexts import (
     SelectionEditEffect,
 )
 from common.parameter import Symbol
+from modalapi.plugin import Plugin
 from pistomp.compmeter.client import GrMeterClient
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.layouts.arc_column import ArcColumnWidget, ArcSelectable
@@ -44,6 +45,7 @@ _GRAPH_Y0 = _GR_BAR_Y + _GR_BAR_H + 4
 
 class CompressorPanel(FullscreenPluginPanel[CompressorState]):
     SPEC: CompressorSpec = CompressorSpec(thr_sym=Symbol("thr"), rat_sym=Symbol("rat"), mak_sym=Symbol("mak"), kn_sym=Symbol("kn"))
+    plugin: Plugin  # narrowing: CompressorPanel is always a Plugin panel
 
     def snapshot_state(self) -> CompressorState:
         def _v(sym: Symbol | None, default: float) -> float:

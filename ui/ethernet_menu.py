@@ -297,6 +297,10 @@ class EthernetMenu:
             new_label = "Unmute MOD"
         if self._mute_btn is not None:
             self._mute_btn.set_text(new_label)
+        # Refresh the Audio & MIDI toolbar tile so the muted state surfaces
+        # even when the user muted via the Ethernet menu rather than the
+        # Audio & MIDI menu.
+        self.lcd.update_audio_midi_tile()
 
     def _on_back(self, _event: object = None, _widget: object = None) -> None:
         if self._panel is not None:
