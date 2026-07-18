@@ -1,6 +1,7 @@
 """Unit tests for ws_protocol.parse_message."""
 
 from modalapi.ws_protocol import (
+    PatchSetMessage,
     AddHwPortMessage,
     AddPluginMessage,
     ConnectMessage,
@@ -377,3 +378,41 @@ def test_malformed_pedal_snapshot_non_int():
 def test_empty_string():
     msg = parse_message("")
     assert isinstance(msg, UnknownMessage)
+
+
+# ---------------------------------------------------------------------------
+# patch_set — writable plugin properties (frames captured off a live device)
+# ---------------------------------------------------------------------------
+
+
+def test_patch_set_string_value():
+    msg = parse_message("patch_set /graph/notes 1 http://open-music-kontrollers.ch/lv2/notes#text s Abc123")
+    assert msg == PatchSetMessage(
+        instance="notes",
+        param_uri="http://open-music-kontrollers.ch/lv2/notes#text",
+        value_type="s",
+        value="Abc123",
+    )
+
+
+def test_patch_set_path_value_keeps_spaces():
+    msg = parse_message(
+        "patch_set /graph/neural_amp_modeler_lv2_1 1 "
+        "http://github.com/mikeoliphant/neural-amp-modeler-lv2#model p "
+        "/home/pistomp/data/user-files/NAM Models/Clean (G1 L0 B1 T1).nam"
+    )
+    assert msg == PatchSetMessage(
+        instance="neural_amp_modeler_lv2_1",
+        param_uri="http://github.com/mikeoliphant/neural-amp-modeler-lv2#model",
+        value_type="p",
+        value="/home/pistomp/data/user-files/NAM Models/Clean (G1 L0 B1 T1).nam",
+    )
+
+
+def test_patch_set_empty_value():
+    msg = parse_message("patch_set /graph/nam 1 http://uri#model p ")
+    assert msg == PatchSetMessage(instance="nam", param_uri="http://uri#model", value_type="p", value="")
+
+
+def test_patch_set_truncated_is_unknown():
+    assert isinstance(parse_message("patch_set /graph/nam 1 http://uri#model"), UnknownMessage)

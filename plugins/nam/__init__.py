@@ -39,9 +39,19 @@ class NamData(PluginExtraData):
     model_path: str
 
 
+_MODEL_URI = "http://github.com/mikeoliphant/neural-amp-modeler-lv2#model"
+
+
 def _parse_nam(ttl: str) -> NamData | None:
     m = _MODEL_RE.search(ttl)
     return NamData(model_path=m.group(1)) if m else None
+
+
+def _patch_nam(param_uri: str, value: str) -> NamData | None:
+    # An unloaded slot patches an empty path; keep the generic name over "".
+    if param_uri != _MODEL_URI or not value:
+        return None
+    return NamData(model_path=value)
 
 
 def _model_filename(plugin: Plugin) -> str | None:
@@ -86,4 +96,5 @@ register(
         ),
     ),
     extra_data_fn=_parse_nam,
+    patch_data_fn=_patch_nam,
 )
