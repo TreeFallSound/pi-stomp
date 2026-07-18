@@ -259,12 +259,9 @@ class ControllerManager:
         LONGPRESS row (RelayEffect). It's added for any footswitch with a
         relay_list, regardless of its PRESS binding.
 
-        Mapping-form longpress (the new config spelling — `longpress: {midi_CC:
-        64}` etc., exclusive with the chord string/list form) rows a single
-        LONGPRESS decl: a RawMidiCcEffect, PresetEffect, or PedalboardEffect.
-        Co-declaring a relay_list with a mapping form is an odd config; the
-        relay row is added first so the resolver keeps its precedent if both
-        happen to be present."""
+        Mapping-form longpress (`longpress: {midi_CC: 64}` etc., exclusive with
+        the chord string/list form) rows a single LONGPRESS decl. The relay row
+        is added first so it keeps precedence if both are present."""
         for fs in self._hw.footswitches:
             if self._hw.is_external(fs):
                 continue  # owned by _bind_external_controllers
@@ -345,13 +342,11 @@ class ControllerManager:
     @staticmethod
     def _longpress_action_effects(lp: dict, fs: Footswitch) -> tuple[Effect, ...]:
         """Translate a mapping-form longpress dict into a single-effect tuple.
-        Schema guarantees one key; we take the first present form to keep the
-        shape closed (config is mutually exclusive — see config.py)."""
+        The schema guarantees exactly one key."""
         if "midi_CC" in lp:
             return (RawMidiCcEffect(channel=fs.midi_channel, cc=int(lp["midi_CC"])),)
         if "preset" in lp:
             return (PresetEffect(direction=str(lp["preset"])),)
         if "pedalboard" in lp:
             return (PedalboardEffect(direction=str(lp["pedalboard"])),)
-        # Schema rejects; defensively empty rather than raise.
         return ()

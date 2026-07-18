@@ -126,9 +126,8 @@ def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
 
 
 class LongpressCcKey(namedtuple("LongpressCcKey", ["channel", "cc"])):
-    """(channel, cc) identity for a raw-CC longpress row. Echo from mod-ui
-    reconciles the learned plugin; this key tracks "what to send next" between
-    presses. Drift self-corrects on every longpress (see PLAN.md §1)."""
+    """(channel, cc) identity for a raw-CC longpress row; tracks what value to
+    send next. mod-ui's echo reconciles the learned plugin."""
 
 
 class Modhandler(Handler):
@@ -246,10 +245,7 @@ class Modhandler(Handler):
         # Footswitch longpress/chord resolver (rebuilt on pedalboard change)
         self.chord_helper = FootswitchChords()
 
-        # Toggle direction for raw-CC longpress rows (Feature 1). Each (channel,
-        # cc) tracks "next value to send"; first press is always 127 (on). The
-        # WS echo from mod-ui keeps the plugin tile/badge correct; the footswitch
-        # LED stays in its PRESS role by design. See PLAN.md §1.
+        # First raw-CC longpress sends 127; alternates thereafter.
         self._longpress_cc_state: dict[LongpressCcKey, bool] = {}
 
     def cleanup(self):
@@ -541,8 +537,8 @@ class Modhandler(Handler):
         return decl.consume
 
     def _emit_raw_cc(self, channel: int, cc: int, value: int) -> None:
-        """Send a CC with no owning controller (Feature 1 longpress). Bypasses
-        _emit_midi's controller.midi_CC guard; routes to virtual out only."""
+        """Send a CC with no owning controller, bypassing _emit_midi's
+        controller.midi_CC guard; virtual out only."""
         self.hardware.midiout.send_message([channel | CONTROL_CHANGE, cc, int(value)])
 
     def _emit_midi(self, controller, midi_value: int) -> None:
