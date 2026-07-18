@@ -4,6 +4,37 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Added
+- Welcome screen on startup
+- Custom UI for MOD Mixer plugins (mono + stereo)
+- Redesigned Audio & MIDI settings menu with graphical EQ
+- New longpress actions for footswitches: emit MIDI CC, select snapshot, pedalboard up/down
+- v2 hardware: correct SPI clock detection for Pi 3 (no longer assumes Pi 4/5)
+- v2 hardware: parameter editing now uses the same quantized step grid as v3
+- WiFi: optimistic menu — acts on selection immediately
+
+### Changed
+- System IP addresses now shown in System Info
+- For external MIDI, `midi_port` now requires `midi_channel` as well
+- Parameter menus redesigned with EQ badges, arc rings, and selection reticules (yellow highlights)
+- WiFi: fix stale scan results in network list
+- WiFi: simplified internals
+- v2 hardware: skip aggressive LCD reset (no longer needed)
+- Performance: faster pedalboard rendering (cached glyphs/tints, fewer repaints)
+- Performance: WebSocket reconnects immediately on close instead of polling
+- Performance: startup no longer stalls on dpkg version check
+- Performance: MIDI/control updates coalesced (less CPU)
+
+### Fixed
+- WiFi: fixed WPA3 support
+- Fix footswitch ↔ plugin param binding updates in menus
+- Fix inverted Q factor in x42 EQ panel
+- Fix plugin panels not refreshing bypass on main screen (v3)
+- Fix parameter dialog autoclose and system menu expand-git
+- Fix non-idempotent plugin tile renders and dirty corner invalidation
+- Only scan once on root wifi menu
+
 ## [v3.2.0] - 2026-07-05
 ### Added
 - Pedalboard signal-path routing: the main screen now derives the real plugin graph from MOD-UI and lays pedals out to reflect actual topology (linear chains, parallel splits, stereo chains, split/merge), instead of a flat list
