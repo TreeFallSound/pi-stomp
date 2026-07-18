@@ -202,9 +202,12 @@ class WifiMenu:
         self._submit_scan()
 
     def tick(self) -> None:
-        """Handler poll hook (2s). Paces a fresh scan at RESCAN_INTERVAL_S."""
-        current = self._pstack.current
-        if current is not self._root_menu and current is not self._nearby_menu:
+        """
+        Handler poll hook (2s). Paces a fresh scan at RESCAN_INTERVAL_S.
+        Only the "Nearby networks" list repeats scans; the root menu gets
+        a single scan when opened.
+        """
+        if self._pstack.current is not self._nearby_menu:
             return
         now = time.monotonic()
         if now - self._last_scan >= RESCAN_INTERVAL_S:
