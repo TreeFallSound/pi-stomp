@@ -682,7 +682,14 @@ def band_readout_fields(band: BandSpec, p: BandParams) -> tuple[str, str, str, s
     """Format readout fields for a parametric band. Returns (name, freq, q, gain)."""
     name = band.name
     freq = _fmt_freq(p.freq)
-    q = f"Q {p.q:.2f}"
+    if band.q_is_bw_oct and p.q > 0:
+        _n = 2.0 ** p.q
+        disp_q = _n ** 0.5 / (_n - 1.0)
+    elif band.kind == "shelf":
+        disp_q = 0.2129 + p.q / 2.25
+    else:
+        disp_q = p.q
+    q = f"Q {disp_q:.2f}"
     if not p.enabled:
         gain = "disabled"
     elif band.gain_sym is None:
@@ -806,7 +813,8 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
         elif encoder_id == 3:
             if band.q_sym is None:
                 return True
-            new_q = _clip(p.q + delta * _Q_STEP, band.q_min, band.q_max)
+            q_delta = -delta if band.q_is_bw_oct else delta
+            new_q = _clip(p.q + q_delta * _Q_STEP, band.q_min, band.q_max)
             if new_q == p.q:
                 return True
             self.set_param(band.q_sym, new_q)
