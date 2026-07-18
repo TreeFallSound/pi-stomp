@@ -30,6 +30,7 @@ from common.contexts import (
     ControlRef,
     Effect,
     EventKind,
+    LongpressActionConfig,
     MidiCcEffect,
     ParamEffect,
     PedalboardEffect,
@@ -340,7 +341,7 @@ class ControllerManager:
                 )
 
     @staticmethod
-    def _longpress_action_effects(lp: dict, fs: Footswitch) -> tuple[Effect, ...]:
+    def _longpress_action_effects(lp: LongpressActionConfig, fs: Footswitch) -> tuple[Effect, ...]:
         """Translate a mapping-form longpress dict into a single-effect tuple.
         The schema guarantees exactly one key."""
         if "midi_CC" in lp:

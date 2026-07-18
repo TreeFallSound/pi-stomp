@@ -15,6 +15,8 @@
 
 import logging
 import sys
+from typing import cast
+
 from typing_extensions import override
 
 import common.token as Token
@@ -23,6 +25,7 @@ import pistomp.analogswitch as analogswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
 from pistomp.input.event import SwitchEvent, SwitchEventKind
+from common.contexts import LongpressActionConfig
 from common.parameter import BYPASS_SYMBOL
 
 
@@ -43,9 +46,8 @@ class Footswitch(controller.StatefulController):
         self.category = None
         self.pixel = pixel
         self.longpress_groups = []
-        # Mapping-form longpress ({midi_CC|preset|pedalboard: ...}); exclusive
-        # with the chord form.
-        self.longpress_action: dict | None = None
+        # Mapping-form longpress; exclusive with the chord form.
+        self.longpress_action: LongpressActionConfig | None = None
         self.disabled = False
         self.taptempo = taptempo
 
@@ -171,7 +173,7 @@ class Footswitch(controller.StatefulController):
             self.longpress_action = None
         elif isinstance(groups, dict):
             self.longpress_groups = []
-            self.longpress_action = groups
+            self.longpress_action = cast(LongpressActionConfig, groups)
 
     def poll(self):
         if self.disabled:
