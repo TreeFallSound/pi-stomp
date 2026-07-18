@@ -25,8 +25,7 @@ hardware:
   # midi_CC: <integer>            The MIDI CC message to be sent when switch is clicked (optional)
   # midi_port: <port_name>        Send MIDI to this external port INSTEAD of the virtual MIDI Through port (optional)
   #                               Falls back to the virtual port only if the device is unavailable; must be the device name (e.g. 'Source Audio C4 Synth')
-  # midi_channel: <integer>       Override MIDI channel for this encoder (0-15, optional)
-  #                               Use when the external device is on a different channel than the hardware default
+  # midi_channel: <integer>       Override MIDI channel for this footswitch (0-15); required when midi_port is set
   # longpress: <callback_name>    The name of a handler method to call when switch is long-pressed (optional)
   #                               longpress can be a list enclosed with []'s
   #
@@ -61,6 +60,7 @@ hardware:
   # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
   # midi_port: <port_name>        Send MIDI to this external port INSTEAD of the virtual MIDI Through port (optional)
   #                               Falls back to the virtual port only if the device is unavailable; must be the device name (e.g. 'Source Audio C4 Synth')
+  # midi_channel: <integer>       Override MIDI channel for this control (0-15); required when midi_port is set
   # autosync: <true | false>      Whether to send current value on pedalboard load (optional, default: false)
   #
   #analog_controllers:
@@ -78,8 +78,8 @@ hardware:
   #                               cannot be used along with type=VOLUME
   # midi_port: <port_name>        Send MIDI to this external port INSTEAD of the virtual MIDI Through port (optional)
   #                               Falls back to the virtual port only if the device is unavailable; must be the device name (e.g. 'Source Audio C4 Synth')
-  # midi_channel: <integer>       Override MIDI channel for this encoder (0-15, optional)
-  #                               Use when the external device is on a different channel than the hardware default
+  # midi_channel: <integer>       Override MIDI channel for this encoder (0-15); required when midi_port is set,
+  #                               since external devices rarely share the hardware default channel
   # longpress: <callback_name>    The name of a handler method to call when switch is long-pressed (optional)
   #
   encoders:

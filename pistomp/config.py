@@ -96,6 +96,12 @@ schema = {
                 "type": "string",
                 "description": "Send MIDI to this external port instead of the virtual MIDI Through port; falls back to virtual if the device is unavailable (must match a port in external_midi)"
               },
+              "midi_channel": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 15,
+                "description": "Override MIDI channel for this footswitch; required when midi_port is set, since external devices rarely share the hardware default channel"
+              },
               "preset": {
                 "oneOf": [
                   {
@@ -113,7 +119,10 @@ schema = {
             },
             "required": [
               "id",
-            ]
+            ],
+            "dependencies": {
+              "midi_port": ["midi_channel"]
+            }
           }
         },
         "analog_controllers": {
@@ -135,6 +144,12 @@ schema = {
                 "type": "string",
                 "description": "Send MIDI to this external port instead of the virtual MIDI Through port; falls back to virtual if the device is unavailable (must match a port in external_midi)"
               },
+              "midi_channel": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 15,
+                "description": "Override MIDI channel for this controller; required when midi_port is set, since external devices rarely share the hardware default channel"
+              },
               "threshold": {
                 "type": "integer",
                 "minimum": 0,
@@ -150,7 +165,10 @@ schema = {
             "required": [
               "adc_input",
               "midi_CC"
-            ]
+            ],
+            "dependencies": {
+              "midi_port": ["midi_channel"]
+            }
           }
         },
         "encoders": {
@@ -173,7 +191,7 @@ schema = {
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 15,
-                "description": "Override MIDI channel for this encoder (0-15); useful when the external device is on a different channel than the hardware default"
+                "description": "Override MIDI channel for this encoder; required when midi_port is set, since external devices rarely share the hardware default channel"
               },
               "type": {
                 "enum": ["KNOB", "VOLUME"]
@@ -184,7 +202,10 @@ schema = {
             },
             "required": [
               "id"
-            ]
+            ],
+            "dependencies": {
+              "midi_port": ["midi_channel"]
+            }
           }
         },
         "external_midi": {

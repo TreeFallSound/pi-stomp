@@ -377,7 +377,7 @@ class Hardware(ABC):
 
     def __resolve_midiout(self, cfg_entry) -> tuple[MidiOut, RoutingInfo]:
         """Return (midiout, routing): always the virtual MidiOut; routing tells _emit_midi where to go."""
-        midi_port = Util.DICT_GET(cfg_entry, "midi_port")
+        midi_port = Util.DICT_GET(cfg_entry, Token.MIDI_PORT)
         if midi_port:
             midi_port = self.__validate_midi_port(midi_port)
         if not midi_port or self.external_midi is None:
@@ -401,9 +401,14 @@ class Hardware(ABC):
                 midi_cc = Util.DICT_GET(entry, Token.MIDI_CC)
                 if midi_cc is not None and hasattr(ctrl, 'midi_CC'):
                     ctrl.midi_CC = midi_cc
-                midi_channel = Util.DICT_GET(entry, "midi_channel")
-                if midi_channel is not None and hasattr(ctrl, 'midi_channel'):
-                    ctrl.midi_channel = midi_channel
+            midi_port = Util.DICT_GET(entry, Token.MIDI_PORT)
+            midi_channel = Util.DICT_GET(entry, Token.MIDI_CHANNEL)
+            if midi_port and midi_channel is None:
+                logging.error("Config file error: %s id=%s sets midi_port '%s' without midi_channel; "
+                               "external devices rarely share the hardware default channel" %
+                               (section, ctrl_id, midi_port))
+            if midi_channel is not None:
+                ctrl.midi_channel = midi_channel
             _, routing = self.__resolve_midiout(entry)
             if routing.destination == RoutingDestination.EXTERNAL:
                 self.external_routing[ctrl] = routing
