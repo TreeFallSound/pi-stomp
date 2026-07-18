@@ -91,7 +91,6 @@ _ROWS_W = _EQ_COL_W - 4  # four-px narrower than the EQ above it
 _ROW_H = 24  # matches parameter_window's plugin-menu row height
 _FREQ_LABEL_H = 11
 
-_BADGE_TWEAK1 = BadgeGlyph("1")
 _BADGE_TWEAK2 = BadgeGlyph("2")
 _BADGE_TWEAK3 = BadgeGlyph("3")
 
@@ -215,7 +214,9 @@ class _DiscreteRow(RichTextWidget):
     None so ``SelectionEditEffect`` no-ops on it — the row is NAV-click-only,
     opening a submenu/dialog rather than editing a continuous value."""
 
-    def __init__(self, *, box: Box, segments: list[Segment], action: Callable[[InputEvent], bool], font, parent: Widget) -> None:
+    def __init__(
+        self, *, box: Box, segments: list[Segment], action: Callable[[InputEvent], bool], font, parent: Widget
+    ) -> None:
         super().__init__(box=box, segments=segments, font=font, h_margin=5, v_margin=1, parent=parent, action=action)
         self._discrete_action = action
 
@@ -260,9 +261,7 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
         )
 
     def title_text(self) -> str:
-        sync = self._handler.sync_mode if hasattr(self, "_handler") else SyncMode.INTERNAL
-        suffix = "LINK" if sync is SyncMode.LINK else ("MIDI" if sync is SyncMode.MIDI_CLOCK_SLAVE else "")
-        return "Audio & MIDI" + (f" · {suffix}" if suffix else "")
+        return "Audio & MIDI"
 
     def scheme(self):
         return None  # default dialog scheme — menu-idiom, not plugin-coloured
@@ -395,10 +394,16 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
 
     def _sync_row_segments(self) -> list[Segment]:
         from uilib.glyphs import DEFAULT_COLOR
+
         mode = self._handler.sync_mode
         label = "INT" if mode is SyncMode.INTERNAL else ("LINK" if mode is SyncMode.LINK else "MIDI")
         glyph_h = 12
-        return [TextSeg("Clock Source"), Spacer(), IconSeg(PillGlyph(label, height=glyph_h, color=DEFAULT_COLOR)), TextSeg(" ▸")]
+        return [
+            TextSeg("Clock Source"),
+            Spacer(),
+            IconSeg(PillGlyph(label, height=glyph_h, color=DEFAULT_COLOR)),
+            TextSeg(" ▸"),
+        ]
 
     def _select_initial(self) -> None:
         # NAV order per §6: Input arc → Output arc → EQ bands (Low..High) →
@@ -417,8 +422,10 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
             self.add_sel_widget(self._sync_row)
         if self._vu_row is not None:
             self.add_sel_widget(self._vu_row)
-        first = self._in_arc if self._in_arc is not None else (
-            self._band_sels.get(BAND_SPECS[0].name) if self._has_eq else self._out_arc
+        first = (
+            self._in_arc
+            if self._in_arc is not None
+            else (self._band_sels.get(BAND_SPECS[0].name) if self._has_eq else self._out_arc)
         )
         if first is not None:
             self.sel_widget(first)
@@ -439,19 +446,23 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
             ),
         ]
         if in_sym is not None:
-            rows.append(BindingDecl(
-                control=ControlRef(cls=ControlClass.TWEAK, id=2),
-                event_kind=EventKind.ROTATE,
-                effects=(ParamEffect(plugin=self.plugin, symbol=in_sym),),
-                context=ctx,
-            ))
+            rows.append(
+                BindingDecl(
+                    control=ControlRef(cls=ControlClass.TWEAK, id=2),
+                    event_kind=EventKind.ROTATE,
+                    effects=(ParamEffect(plugin=self.plugin, symbol=in_sym),),
+                    context=ctx,
+                )
+            )
         if out_sym is not None:
-            rows.append(BindingDecl(
-                control=ControlRef(cls=ControlClass.TWEAK, id=3),
-                event_kind=EventKind.ROTATE,
-                effects=(ParamEffect(plugin=self.plugin, symbol=out_sym),),
-                context=ctx,
-            ))
+            rows.append(
+                BindingDecl(
+                    control=ControlRef(cls=ControlClass.TWEAK, id=3),
+                    event_kind=EventKind.ROTATE,
+                    effects=(ParamEffect(plugin=self.plugin, symbol=out_sym),),
+                    context=ctx,
+                )
+            )
         return tuple(rows)
 
     # ── no mod-host echo to send; the synthetic source already wrote the card ──
@@ -500,6 +511,7 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
     def open_selection_dialog(self, parameter: Parameter) -> bool:
         def _commit(symbol: str, value: float) -> None:
             self.plugin.set_param_value(Symbol(symbol), value)
+
         self._handler.open_audio_parameter_dialog(parameter, _commit)
         return True
 
