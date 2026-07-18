@@ -6,7 +6,7 @@ from common.param_roles import ParamRole
 from common.parameter import Parameter
 from uilib.box import Box
 from uilib.config import Config
-from uilib.misc import InputEvent, get_text_size
+from uilib.misc import InputEvent, get_line_height, get_text_size
 from uilib.widget import Widget
 from common.parameter import Symbol
 
@@ -112,13 +112,15 @@ class ModeSelectorWidget(Widget):
         label = self._labels[self._value] if self._value < len(self._labels) else "?"
         text = f"\u2039  {label}  \u203a"
 
-        tw, th = get_text_size(text, self._font)
+        tw, _ = get_text_size(text, self._font)
         cx = ctx.width // 2
         ty = _TOP_PADDING
 
         ctx.draw_text((cx - tw // 2, ty), text, fill=_LABEL_FG, font=self._font)
 
-        bar_y = ty + th + _BAR_Y_OFFSET
+        # Fixed line height, not get_text_size()'s per-glyph descent overflow —
+        # else labels with descenders (e.g. "Voyager") push the bar out of frame.
+        bar_y = ty + get_line_height(self._font) + _BAR_Y_OFFSET
         bar_x0 = 4
         bar_x1 = ctx.width - 4
         bar_w = bar_x1 - bar_x0
