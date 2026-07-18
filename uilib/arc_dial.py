@@ -139,6 +139,11 @@ def paint_arc_dial(
     ring = glyph.render(t, filled_color, empty_color)
     ctx.paste(ring, (cx - half, cy - half + ring_dy))
 
+    # Selection sandwich inset into the filled sector, weight-matched to the
+    # handle. Pasted over the ring, before the handle so the handle caps the tip.
+    if selected:
+        ctx.paste(glyph.render_halo(t, SELECT_COLOR), (cx - half, cy - half + ring_dy))
+
     # Value handle: the same circle-handle bubble every other value marker uses,
     # sized from the ring track and placed at the value position on the ring.
     # White, not the arc colour, so it reads against any filled hue.
