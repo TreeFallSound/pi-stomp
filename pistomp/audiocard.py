@@ -18,30 +18,40 @@ import mmap
 import os
 import re
 import subprocess
+import time
 
 from pistomp.alsa_pcm import read_hw_params
 
 
 class Audiocard:
-    def __init__(self, cwd):
-        self.cwd = cwd
-        self.card_index = 0
-        self.config_file = "/var/lib/alsa/asound.state"  # global config used by alsamixer, etc.
-        self.initial_config_file = None  # use this if common config_file loading fails
-        self.initial_config_name = None
-        self.card_index = 0
-        self.bypass = False
+    """Base card: an amixer/alsactl wrapper over one ALSA card."""
 
-        # Superset of Alsa parameters for all cards (None == not supported)
-        # Override in subclass with actual name
-        self.CAPTURE_VOLUME = None
-        self.DAC_EQ = None
-        self.EQ_1 = None
-        self.EQ_2 = None
-        self.EQ_3 = None
-        self.EQ_4 = None
-        self.EQ_5 = None
-        self.MASTER = None
+    # `alsactl store` costs ~39 ms and every setter runs on the 10 ms UI thread,
+    # so persisting is debounced to this long after the last write. Callers ask
+    # for persistence; poll_store() decides when it happens.
+    STORE_IDLE_S: float = 1.0
+
+    cwd: str
+    card_index: int = 0
+    config_file: str = "/var/lib/alsa/asound.state"  # global config used by alsamixer, etc.
+    initial_config_file: str | None = None  # use this if common config_file loading fails
+    initial_config_name: str | None = None
+    bypass: bool = False
+    _store_at: float | None = None
+
+    # Superset of Alsa control names for all cards (None == not supported).
+    # Override in subclass with the actual name.
+    CAPTURE_VOLUME: str | None = None
+    DAC_EQ: str | None = None
+    EQ_1: str | None = None
+    EQ_2: str | None = None
+    EQ_3: str | None = None
+    EQ_4: str | None = None
+    EQ_5: str | None = None
+    MASTER: str | None = None
+
+    def __init__(self, cwd: str) -> None:
+        self.cwd = cwd
 
     def restore(self):
         # If the global config_file either doesn't exist, doesn't contain the name of our audiocard, or fails restore,
@@ -77,6 +87,18 @@ class Audiocard:
         except Exception:
             logging.error("Failed trying to store audio card settings to: %s" % self.config_file)
 
+    def poll_store(self) -> None:
+        """Run a pending persist once it has settled. Drive from the main loop."""
+        if self._store_at is not None and time.monotonic() >= self._store_at:
+            self.flush_store()
+
+    def flush_store(self) -> None:
+        """Persist now if anything is pending. Call before shutdown."""
+        if self._store_at is None:
+            return
+        self._store_at = None
+        self.store()
+
     def get_sample_rate(self) -> int:
         # Raises rather than returning None: we Requires=jack.service, so jackd
         # holds the PCM open whenever we run and a missing rate is a broken invariant
@@ -95,9 +117,9 @@ class Audiocard:
         return output.decode()
 
     def _amixer_sset(self, param_name, value, store):
-        # when store is False settings will not be persisted between sessions unless an explicit call
-        # to store() is made
-        # setting to False is good when you want to set a bunch of things, then store
+        # store=False means the setting is transient and must not survive a
+        # reboot (mute), not merely that persisting is deferred — every store
+        # is deferred now.
         cmd = "amixer -c %d -q -- sset '%s' '%s'" % (self.card_index, param_name, value)
         try:
             subprocess.check_output(cmd, shell=True)
@@ -105,7 +127,7 @@ class Audiocard:
             logging.error("Failed trying to set audio card parameter")
             return False
         if store:
-            self.store()
+            self._store_at = time.monotonic() + self.STORE_IDLE_S
         return True
 
     def get_bypass_left(self) -> bool:
