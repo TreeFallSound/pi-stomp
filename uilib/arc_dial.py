@@ -33,7 +33,6 @@ that wraps it for the common one-ring-per-widget case.
 
 from __future__ import annotations
 
-import math
 from enum import Enum
 from typing import Callable, Literal
 
@@ -67,8 +66,8 @@ _VARIANT_FONTS: dict[DialVariant, tuple[FontName, FontName]] = {
     DialVariant.LARGE: ("arc_label_lg", "default"),
 }
 
-_LABEL_GAP = 1   # px between label ink and the ring bounding box
-_LINE_GAP = 3    # px between the value line and the unit line
+_LABEL_GAP = 1  # px between label ink and the ring bounding box
+_LINE_GAP = 3  # px between the value line and the unit line
 _RING_NUDGE_Y = 3  # push the ring down from the centred position
 
 
@@ -177,15 +176,13 @@ def paint_arc_dial(
     if label_pos == "top":
         oy = (cy - half - _LABEL_GAP) - (ly0 + lh)  # ink bottom sits above the ring
     else:
-        oy = (cy + half + _LABEL_GAP) - ly0          # ink top sits below the ring
+        oy = (cy + half + _LABEL_GAP) - ly0  # ink top sits below the ring
     ox = cx - (lx0 + lw / 2)
     fill = SELECT_COLOR if selected else label_fg
     ctx.draw_text((int(round(ox)), int(round(oy))), text, fill=fill, font=label_font)
 
 
-def _handle_pos(
-    ctx: PaintContext, glyph: ArcRingGlyph, cx: int, cy: int, t: float, ring_dy: int
-) -> tuple[int, int]:
+def _handle_pos(ctx: PaintContext, glyph: ArcRingGlyph, cx: int, cy: int, t: float, ring_dy: int) -> tuple[int, int]:
     """(x, y) of the value handle centre in ctx coords for the ring pasted at
     (cx, cy) with offset ring_dy."""
     half = glyph.half_size

@@ -878,7 +878,7 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
         elif symbol == band.freq_sym:
             current, lo, hi, field_name = p.freq, band.freq_min, band.freq_max, "freq"
         elif symbol == band.q_sym:
-            role, current, lo, hi, field_name = ParamRole.Q_FACTOR, p.q, band.q_min, band.q_max, "q"
+            _role, current, lo, hi, field_name = ParamRole.Q_FACTOR, p.q, band.q_min, band.q_max, "q"
             # Bandwidth-in-octaves bands invert the knob: clockwise widens, narrowing Q.
             if band.q_is_bw_oct:
                 rotations = -rotations
