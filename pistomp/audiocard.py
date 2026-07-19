@@ -19,13 +19,14 @@ import os
 import re
 import subprocess
 
+from pistomp.alsa_pcm import read_hw_params
+
 
 class Audiocard:
-
     def __init__(self, cwd):
         self.cwd = cwd
         self.card_index = 0
-        self.config_file = '/var/lib/alsa/asound.state'  # global config used by alsamixer, etc.
+        self.config_file = "/var/lib/alsa/asound.state"  # global config used by alsamixer, etc.
         self.initial_config_file = None  # use this if common config_file loading fails
         self.initial_config_name = None
         self.card_index = 0
@@ -51,13 +52,13 @@ class Audiocard:
         for fname in conf_files:
             if os.access(fname, os.R_OK) is True:
                 try:
-                    looking_for = bytes(("state.%s" % self.initial_config_name), 'utf-8')
+                    looking_for = bytes(("state.%s" % self.initial_config_name), "utf-8")
                     f = open(fname)
                     with f as text:
                         s = mmap.mmap(text.fileno(), 0, access=mmap.ACCESS_READ)
                         if s.find(looking_for) != -1:
                             logging.info("restoring audio card settings from: %s" % fname)
-                            subprocess.run(['/usr/sbin/alsactl', '-f', fname, '--no-lock', '--no-ucm', 'restore'])
+                            subprocess.run(["/usr/sbin/alsactl", "-f", fname, "--no-lock", "--no-ucm", "restore"])
                             f.close()
                             # If the file loaded was not the global, then save it so it will be next time
                             if fname is not self.config_file:
@@ -71,10 +72,18 @@ class Audiocard:
         # /var/lib/alsa/asound.state is root:root; this process runs as the
         # unprivileged pistomp user, so alsactl needs sudo to lock and write it.
         try:
-            subprocess.run(['sudo', '/usr/sbin/alsactl', '-f', self.config_file, 'store'], stderr=subprocess.DEVNULL)
+            subprocess.run(["sudo", "/usr/sbin/alsactl", "-f", self.config_file, "store"], stderr=subprocess.DEVNULL)
             logging.info("audio card settings saved to: %s" % self.config_file)
         except Exception:
             logging.error("Failed trying to store audio card settings to: %s" % self.config_file)
+
+    def get_sample_rate(self) -> int:
+        # Raises rather than returning None: we Requires=jack.service, so jackd
+        # holds the PCM open whenever we run and a missing rate is a broken invariant
+        rate = read_hw_params(self.card_index).get("rate")
+        if rate is None:
+            raise RuntimeError("no PCM rate for card %d; is jackd holding it?" % self.card_index)
+        return int(rate)
 
     def _amixer_sget(self, param_name):
         cmd = "amixer -c %d -- sget '%s'" % (self.card_index, param_name)
@@ -123,7 +132,7 @@ class Audiocard:
         if param_name is None:
             return float(0)
         s = self._amixer_sget(param_name)
-        pattern = r': (.*)(\d+) \[(\d+%)\] \[(-?\d+\.\d+)dB\]'
+        pattern = r": (.*)(\d+) \[(\d+%)\] \[(-?\d+\.\d+)dB\]"
         matches = re.search(pattern, s)
         if matches:
             return round(float(matches.group(4)), 1)
@@ -134,7 +143,7 @@ class Audiocard:
         if param_name is None:
             return False
         s = self._amixer_sget(param_name)
-        pattern = r': (.*) \[(on|off)\]'
+        pattern = r": (.*) \[(on|off)\]"
         matches = re.search(pattern, s)
         if matches:
             return bool("on" == matches.group(2))
@@ -162,4 +171,3 @@ class Audiocard:
     def set_enum_parameter(self, param_name, value, store=True):
         # value expected to be a string (specifically one of the enum choices for the parameter)
         return self._amixer_sset(param_name, str(value), store)
-
