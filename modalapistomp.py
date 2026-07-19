@@ -206,6 +206,7 @@ def main():
         while True:
             handler.poll_controls()
             handler.poll_ws_messages()  # drain inbound WS every tick for instant bypass/snapshot indicators
+            handler.audiocard.poll_store()  # debounced alsactl store; see Audiocard.STORE_IDLE_S
 
             # For less frequent events
             period += 1
@@ -236,6 +237,7 @@ def main():
         logging.info("keyboard interrupt")
     finally:
         logging.info("Exit.")
+        handler.audiocard.flush_store()  # a debounced store must not die with the loop
         if midiout:
             midiout.close_port()
         handler.cleanup()
