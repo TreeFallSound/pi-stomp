@@ -336,6 +336,7 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
         self._band_sels: dict[str, GraphicBandSelectable] = {}
         self._readout = None  # no readout strip on a menu-idiom dialog
         source = AudioMidiParamSource(handler.audiocard, handler.hardware)
+
         self._has_eq = handler.audiocard.DAC_EQ is not None and bool(source.parameters)
         try:
             # the iqaudiocodec hardware EQ is rate-dependent
@@ -464,7 +465,7 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
             parent=self,
         )
         y += _ROW_H
-        vu_segs: list[Segment] = [TextSeg("VU Calibration"), Spacer(), TextSeg("▸")]
+        vu_segs: list[Segment] = [TextSeg("VU Calibration"), Spacer()]
         self._vu_row = _DiscreteRow(
             box=Box.xywh(cb.x0 + _ROWS_X, y, _ROWS_W, _ROW_H),
             segments=vu_segs,
@@ -486,7 +487,6 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
             TextSeg("Clock Source"),
             Spacer(),
             IconSeg(PillGlyph(label, height=glyph_h, color=DEFAULT_COLOR)),
-            TextSeg(" ▸"),
         ]
 
     def _select_initial(self) -> None:

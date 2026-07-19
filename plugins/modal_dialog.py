@@ -111,6 +111,7 @@ class ModalDialog(PluginPanel[TState], Dialog):
 
         w, h = self._window_size()
         from plugins.chrome import MIN_CHROME_WIDTH
+
         w = max(w, MIN_CHROME_WIDTH)
         self._win_w, self._win_h = w, h
 
@@ -135,7 +136,9 @@ class ModalDialog(PluginPanel[TState], Dialog):
         self._layout_footer(footer)
 
         pad = self._CONTENT_PAD
-        self.content_box = Box.xywh(0, pad, w, btn_y - BTN_GAP - 2 * pad) if footer else Box.xywh(0, pad, w, h - 2 * pad)
+        self.content_box = (
+            Box.xywh(0, pad, w, btn_y - BTN_GAP - 2 * pad) if footer else Box.xywh(0, pad, w, h - 2 * pad)
+        )
 
         self.build_widgets()
         for btn in footer:
