@@ -27,6 +27,7 @@ the bands out of the NAV cycle and dims them.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
@@ -44,7 +45,7 @@ from common.contexts import (
 from common.param_roles import ParamRole
 from common.parameter import Parameter, Symbol
 from modalapi.sync import SyncMode
-from plugins.audio_midi.band_spec import BAND_SPECS
+from plugins.audio_midi.band_spec import BAND_SPECS, band_specs_for
 from plugins.audio_midi.source import AudioMidiParamSource
 from plugins.eq.band_spec import GraphicBandSpec
 from plugins.eq.graphic import (
@@ -116,9 +117,12 @@ def _fmt_vol(value: float) -> tuple[str, str]:
     return f"{value:+.1f}", "dB"
 
 
-def _eq_badge(on: bool) -> PillGlyph:
+def _eq_badge(on: bool, supported: bool = True) -> PillGlyph:
     from uilib.glyphs import DEFAULT_COLOR
 
+    if not supported:
+        # Never toggles, so it can size to its own label.
+        return PillGlyph("DISABLED", height=_BADGE_GLYPH_H, color=DEFAULT_COLOR, outline=True)
     # Both states share the wider of the two labels so the row doesn't reflow.
     w = max(PillGlyph(t, height=_BADGE_GLYPH_H).width for t in ("ON", "OFF"))
     return PillGlyph(
@@ -333,6 +337,15 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
         self._readout = None  # no readout strip on a menu-idiom dialog
         source = AudioMidiParamSource(handler.audiocard, handler.hardware)
         self._has_eq = handler.audiocard.DAC_EQ is not None and bool(source.parameters)
+        try:
+            # the iqaudiocodec hardware EQ is rate-dependent
+            # and furthermore doesn't work at 88.2/96 kHz
+            specs = band_specs_for(handler.audiocard.get_sample_rate())
+        except RuntimeError:
+            logging.warning("no sample rate; disabling the DAC EQ")
+            specs = None
+        self._eq_supported = specs is not None
+        self._bands = specs if specs is not None else BAND_SPECS
         super().__init__(
             plugin=source,  # type: ignore[arg-type]  # ParamSource, not Plugin
             handler=handler,
@@ -344,7 +357,7 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
 
     @property
     def eq_enabled(self) -> bool:
-        return bool(self._handler.eq_status)
+        return self._eq_supported and bool(self._handler.eq_status)
 
     # ── PluginPanel behaviour contract ─────────────────────────────────────
 
@@ -352,7 +365,7 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
         params = self.plugin.parameters
         bands: dict[str, GraphicBandParams] = {}
         if self._has_eq:
-            for band in BAND_SPECS:
+            for band in self._bands:
                 p = params.get(band.gain_sym)
                 gain = float(p.value) if p is not None else 0.0
                 bands[band.name] = GraphicBandParams(enabled=True, gain_db=gain)
@@ -422,7 +435,7 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
         if self._has_eq:
             self._bar_widget = _CompactEqWidget(
                 box=Box.xywh(cb.x0 + _EQ_BAR_X, cb.y0 + _EQ_Y, _EQ_BAR_W, _EQ_H),
-                bands=BAND_SPECS,
+                bands=self._bands,
                 font=self._tiny_font,
                 parent=self,
             )
@@ -461,7 +474,7 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
         )
 
     def _eq_row_segments(self) -> list[Segment]:
-        return [TextSeg("Equalizer"), Spacer(), IconSeg(_eq_badge(self.eq_enabled))]
+        return [TextSeg("Equalizer"), Spacer(), IconSeg(_eq_badge(self.eq_enabled, self._eq_supported))]
 
     def _sync_row_segments(self) -> list[Segment]:
         from uilib.glyphs import DEFAULT_COLOR
@@ -479,10 +492,10 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
     def _select_initial(self) -> None:
         # NAV order: Equalizer → EQ bands (Low..High) → Clock Source → VU Cal
         # → Input arc → Output arc → Back.
-        if self._eq_row is not None:
+        if self._eq_row is not None and self._eq_supported:
             self.add_sel_widget(self._eq_row)
         if self._has_eq:
-            for band in BAND_SPECS:
+            for band in self._bands:
                 sel = _BandSelectable(self, band)
                 self._band_sels[band.name] = sel
                 self.add_sel_widget(sel)
@@ -494,7 +507,7 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
             self.add_sel_widget(self._in_arc)
         if self._out_arc is not None:
             self.add_sel_widget(self._out_arc)
-        first = self._eq_row if self._eq_row is not None else self._in_arc
+        first = self._eq_row if (self._eq_row is not None and self._eq_supported) else self._in_arc
         if first is not None:
             self.sel_widget(first)
 
@@ -551,7 +564,7 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
     # ── drill-in actions ─────────────────────────────────────────────────────
 
     def _on_eq_row(self, event: InputEvent) -> bool:
-        if event != InputEvent.CLICK or self._eq_row is None:
+        if event != InputEvent.CLICK or self._eq_row is None or not self._eq_supported:
             return False
         enabled = not self.eq_enabled
         # Optimistic: paint the new state, then write. alsactl store is slow
