@@ -21,6 +21,8 @@ import time
 from functools import cached_property
 from typing import Optional
 
+from pistomp.alsa_pcm import read_hw_params
+
 # Contract with the JackBridge service: truncate-on-start, atomic-rewrite of a
 # bounded list (entries older than 15 min are dropped on each append). The UI
 # just reads the whole file each poll.
@@ -87,8 +89,11 @@ class EthernetManager:
         active = self._probe_service_active() if carrier else False
         ipv4 = self._probe_ipv4() if carrier else None
         if active:
-            sample_rate = self._probe_jack_int("jack_samplerate")
-            period = self._probe_jack_int("jack_bufsize")
+            # One /proc read for both — jack_samplerate/jack_bufsize each fork
+            # and join the RT graph to learn what hw_params already states.
+            params = read_hw_params()
+            sample_rate = int(params["rate"]) if "rate" in params else None
+            period = int(params["period_size"]) if "period_size" in params else None
             xruns = self._probe_xrun_buckets()
         else:
             sample_rate = period = None
@@ -137,15 +142,6 @@ class EthernetManager:
                 if i + 1 < len(parts):
                     return parts[i + 1]
         return None
-
-    @staticmethod
-    def _probe_jack_int(cmd: str) -> Optional[int]:
-        try:
-            out = subprocess.check_output([cmd], timeout=2).decode().strip()
-            return int(out.split()[0]) if out else None
-        except Exception as e:
-            logging.debug("%s failed: %s", cmd, e)
-            return None
 
     @staticmethod
     def _probe_xrun_buckets() -> tuple[int, int, int]:
