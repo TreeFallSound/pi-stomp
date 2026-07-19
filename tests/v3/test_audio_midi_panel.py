@@ -22,7 +22,7 @@ from emulator.stubs import StubJackMute
 from modalapi.sync import SyncMode
 from pistomp.controller import Controller
 from plugins.audio_midi.band_spec import BAND_SPECS
-from plugins.audio_midi.panel import AudioMidiPanel
+from plugins.audio_midi.panel import AudioMidiPanel, _BandSelectable
 from tests.conftest import FakeWebSocketBridge
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_step
@@ -70,6 +70,7 @@ def audio_midi_system(v3_system: SystemFixture) -> SystemFixture:
     ac.EQ_5 = "DAC EQ5"
     # All gains/volumes start at 0 dB.
     ac.get_volume_parameter.return_value = 0.0
+    ac.get_sample_rate.return_value = 48000
     handler.audiocard = ac
     handler.jack_mute = StubJackMute()
     handler.sync_mode = SyncMode.INTERNAL
@@ -140,6 +141,32 @@ class TestAudioMidiPanelSnapshot:
 
 
 class TestAudioMidiPanelBehaviour:
+    @pytest.mark.parametrize(
+        "rate",
+        [
+            96000,  # datasheet marks the EQ N/A at 88.2/96 kHz
+            RuntimeError("no PCM rate"),  # nothing holds the card open
+        ],
+        ids=["unsupported_rate", "rate_unreadable"],
+    )
+    def test_eq_disabled_when_rate_gives_no_band_table(self, audio_midi_system: SystemFixture, rate):
+        handler = audio_midi_system.handler
+        ac = cast(MagicMock, handler.audiocard)
+        if isinstance(rate, Exception):
+            ac.get_sample_rate.side_effect = rate
+        else:
+            ac.get_sample_rate.return_value = rate
+        handler.eq_status = True  # hardware bit on; the panel must still grey it
+
+        panel = _open_panel(audio_midi_system)
+
+        assert panel.eq_enabled is False
+        assert panel._eq_row is not None  # shown, not hidden
+        assert panel._eq_row not in panel.sel_list
+        assert not any(isinstance(w, _BandSelectable) for w in panel.sel_children())
+        # Display-only: opening the menu must not write the hardware.
+        ac.set_switch_parameter.assert_not_called()
+
     def test_tweak1_edits_selected_eq_band(self, audio_midi_system: SystemFixture):
         from tests.v3.nav_helpers import nav_step
 
