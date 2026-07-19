@@ -119,6 +119,10 @@ from pistomp.tuner.engine import TunerBackend, TunerEngine
 from rtmidi.midiconstants import CONTROL_CHANGE
 from pathlib import Path
 
+# Front-loaded: mod-ui usually binds its port within ~300ms of us first asking, so the
+# common case costs one short sleep. Tail covers a slow LV2 scan. 4s total, 6 attempts.
+STARTUP_REST_BACKOFF_S = (0.25, 0.25, 0.5, 1.0, 2.0)
+
 
 def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
     # Drop any PEDALBOARD-layer row whose control.id matches a learned binding
@@ -271,6 +275,19 @@ class Modhandler(Handler):
         except Exception as e:
             logging.error("REST GET failed: %s %s" % (url, e))
             return None
+
+    def _rest_get_with_retry(self, url: str) -> Response | None:
+        """Poll a GET until mod-ui answers. Startup only — this blocks, so it must
+        never run once the 10ms loop is live."""
+        for attempt, delay in enumerate(STARTUP_REST_BACKOFF_S, start=1):
+            resp = self._rest_get(url)
+            if resp is not None and resp.status_code == 200:
+                return resp
+            logging.info(
+                "mod-ui not ready, retrying (%d/%d) in %ss...", attempt, len(STARTUP_REST_BACKOFF_S), delay
+            )
+            time.sleep(delay)
+        return self._rest_get(url)
 
     def _rest_post(self, url: str, *, json=None, data=None) -> Response | None:
         try:
@@ -1018,7 +1035,7 @@ class Modhandler(Handler):
     def load_pedalboards(self):
         url = self.root_uri + "pedalboard/list"
 
-        resp = self._rest_get(url)
+        resp = self._rest_get_with_retry(url)
         if resp is None or resp.status_code != 200:
             logging.error("Cannot connect to mod-host")
             sys.exit()
