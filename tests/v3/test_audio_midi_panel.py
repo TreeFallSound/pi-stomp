@@ -244,25 +244,25 @@ class TestAudioMidiPanelBehaviour:
 _TARGET_INPUT_DETENTS = -36
 _TARGET_OUTPUT_DETENTS = -12
 _V_DETENTS = {  # band-name → detents from 0
-    "Low":   +34,   # ≈ +5.96 dB
-    "L-Mid": -17,   # ≈ -3.06 dB
-    "Mid":    -34,  # ≈ -6.07 dB
-    "H-Mid": -17,   # ≈ -3.06 dB
-    "High":   +34,  # ≈ +5.96 dB
+    "Low": +34,  # ≈ +5.96 dB
+    "L-Mid": -17,  # ≈ -3.06 dB
+    "Mid": -34,  # ≈ -6.07 dB
+    "H-Mid": -17,  # ≈ -3.06 dB
+    "High": +34,  # ≈ +5.96 dB
 }
 _V_EXPECTED_DB = {  # coarse tolerance used by the assertion (see `assert_also`)
-    "Low":   pytest.approx(+6.0, abs=0.5),
+    "Low": pytest.approx(+6.0, abs=0.5),
     "L-Mid": pytest.approx(-3.0, abs=0.5),
-    "Mid":    pytest.approx(-6.0, abs=0.5),
+    "Mid": pytest.approx(-6.0, abs=0.5),
     "H-Mid": pytest.approx(-3.0, abs=0.5),
-    "High":   pytest.approx(+6.0, abs=0.5),
+    "High": pytest.approx(+6.0, abs=0.5),
 }
 _BAND_ALSA_INDEX = {  # name → DAC EQ* symbol string
-    "Low":   "DAC EQ1",
+    "Low": "DAC EQ1",
     "L-Mid": "DAC EQ2",
-    "Mid":    "DAC EQ3",
+    "Mid": "DAC EQ3",
     "H-Mid": "DAC EQ4",
-    "High":   "DAC EQ5",
+    "High": "DAC EQ5",
 }
 
 
@@ -425,7 +425,6 @@ class TestAudioMidiTileState:
         assert handler.transport_rolling is False
 
     def test_tile_swaps_to_rolling_glyph_on_transport_roll(self, audio_midi_system: SystemFixture):
-
         handler = audio_midi_system.handler
         handler.lcd.draw_main_panel()
         nominal_before = self._w_eq_surface(audio_midi_system)
