@@ -73,6 +73,7 @@ def audio_midi_system(v3_system: SystemFixture) -> SystemFixture:
     handler.audiocard = ac
     handler.jack_mute = StubJackMute()
     handler.sync_mode = SyncMode.INTERNAL
+    handler.eq_status = True
     # recalibrateVU_gain is real on Hardware (delegates to indicators); replace
     # the method on the per-test fixture instance so VU-recalibration calls can
     # be spied via mock call_args_list.
@@ -107,11 +108,30 @@ class TestAudioMidiPanelSnapshot:
 
         handler = audio_midi_system.handler
         _open_panel(audio_midi_system)
-        # NAV down past 5 EQ bands + 2 arcs to the Clock Source row (7 steps).
-        for _ in range(7):
+        # NAV down past the 5 EQ bands to Clock Source.
+        for _ in range(6):
             nav_step(handler, 1)
             handler.poll_lcd_updates()
         snapshot("clock_source_selected")
+
+    def test_eq_switched_off(self, audio_midi_system: SystemFixture, snapshot):
+        """NAV-click the Equalizer row: badge flips to the outline [OFF], the
+        bands dim, and they drop out of the nav cycle (next step is Clock
+        Source, not Low)."""
+        from tests.v3.nav_helpers import nav_click, nav_step
+
+        handler = audio_midi_system.handler
+        panel = _open_panel(audio_midi_system)  # opens on the Equalizer row
+        nav_click(handler)
+        handler.poll_lcd_updates()
+        assert handler.eq_status is False
+        ac = cast(MagicMock, handler.audiocard)
+        ac.set_switch_parameter.assert_called_once_with("DAC EQ", False)
+        snapshot("eq_off")
+
+        nav_step(handler, 1)
+        handler.poll_lcd_updates()
+        assert panel.sel_ref is panel._sync_row
 
 
 # ---------------------------------------------------------------------------
@@ -125,8 +145,7 @@ class TestAudioMidiPanelBehaviour:
 
         handler = audio_midi_system.handler
         _open_panel(audio_midi_system)
-        # Initial selection is Input arc; nav forward to Low (2 steps: Out, Low).
-        nav_step(handler, 1)
+        # Initial selection is the Equalizer row; one step forward lands on Low.
         nav_step(handler, 1)
         handler.poll_lcd_updates()
         _tweak(audio_midi_system, id=1, rotations=4)
@@ -247,8 +266,7 @@ class TestAudioMidiPanelSaga:
 
         # Shape the 5-band EQ to a V. Tweak1 acts on the *currently selected*
         # widget's symbol. Initial selection is Input arc, so nav forward 2
-        # steps (Output, Low) to land on the Low band before tweaking.
-        nav_step(handler, +1)  # Output arc
+        # step to land on the Low band before tweaking.
         nav_step(handler, +1)  # Low band
         handler.poll_lcd_updates()
         for band in BAND_SPECS:
@@ -291,8 +309,8 @@ class TestAudioMidiPanelSaga:
         assert mute_btn.text == "Mute"
         assert mute_btn.bkgnd_color != _BTN_MUTE_ACTIVE_COLOR  # not muted on open
 
-        # NAV forward to the Mute button: in→out→5bands→sync→vu→Back→Mute = 10 steps
-        for _ in range(10):
+        # eq→5bands→sync→vu→in→out→Back→Mute = 11 steps
+        for _ in range(11):
             nav_step(handler, +1)
             handler.poll_lcd_updates()
         assert panel.sel_ref is mute_btn
