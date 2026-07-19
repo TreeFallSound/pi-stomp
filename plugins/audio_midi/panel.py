@@ -8,20 +8,21 @@ plugin panel. See ``docs/audio-midi-menu.md`` §5-6 for layout and the
 declared-bindings table.
 
 Layout (``DIMMED_WINDOW`` 304×208 body + title strip + Back footer):
-- Left column: Input Gain + Output Volume arc dials (stacked).
-- Right column: 5-band EQ bar curve (compact, sized to its box), then
-  Clock Source and VU Calibration drill-in rows below it. The rows follow
-  the menu system's padding (line-height spacing, h_margin=5, v_margin=1)
-  so they read as-of-a-piece with the other menus.
+- Left column: the Equalizer on/off row, the 5-band EQ bar curve (compact,
+  sized to its box), then Clock Source and VU Calibration drill-in rows.
+  The rows follow the menu system's padding (line-height spacing,
+  h_margin=5, v_margin=1) so they read as-of-a-piece with the other menus.
+- Right column: Input Gain + Output Volume arc dials (stacked).
 
 No readout strip — this is a menu-idiom dialog, not a fullscreen panel;
 the arcs and the EQ bars carry their own value readouts inline.
 
-NAV reticule scans: Input → Output → Low → L-Mid → Mid → H-Mid → High →
-Clock Source → VU Cal → Back. Tweak1 edits the selection; Tweak2 = Input
-Gain; Tweak3/Vol = Output Volume (per §6). Clock Source opens a radio
-submenu (Internal / Ableton Link / MIDI Clock Slave); VU Cal opens the
-existing VU calibration dialog.
+NAV reticule scans: Equalizer → Low → L-Mid → Mid → H-Mid → High → Clock
+Source → VU Cal → Input → Output → Back. Tweak1 edits the selection;
+Tweak2 = Input Gain; Tweak3/Vol = Output Volume (per §6). Clock Source
+opens a radio submenu (Internal / Ableton Link / MIDI Clock Slave); VU Cal
+opens the existing VU calibration dialog. Switching the Equalizer off drops
+the bands out of the NAV cycle and dims them.
 """
 
 from __future__ import annotations
@@ -73,23 +74,29 @@ if TYPE_CHECKING:
 # ── layout (within the body, after footer) ───────────────────────────────────
 
 _MARGIN = 4  # top/left/right inset for the arc column and the EQ top
-_W = 244
-_ARC_COL_W = 69  # left column for the two arc dials (dial_box_size r=26)
-_ARC_COL_X = _MARGIN
-_EQ_COL_X = _ARC_COL_X + _ARC_COL_W + _MARGIN
-_EQ_COL_W = _W - _EQ_COL_X - _MARGIN
+_W = 268  # AudioMidiPanel.WIN_W
+_ARC_COL_W = 69  # right column for the two arc dials (dial_box_size r=26)
+_ARC_COL_X = _W - _MARGIN - _ARC_COL_W
+_EQ_H_PAD = 12  # the bars keep their width; the column grows 2×_EQ_H_PAD around them
+_EQ_COL_X = _MARGIN
+_EQ_COL_W = _ARC_COL_X - _MARGIN - _EQ_COL_X
+_EQ_BAR_X = _EQ_COL_X + _EQ_H_PAD
+_EQ_BAR_W = _EQ_COL_W - 2 * _EQ_H_PAD
 _ARC_RADIUS = 26
 _ARC_H = 78
 _ARC_GAP = 8  # extra spacing between the two arc-rings
 _ARC_IN_Y = _MARGIN
 _ARC_OUT_Y = _ARC_IN_Y + _ARC_H + _ARC_GAP
-_EQ_Y = _MARGIN
-_EQ_H = 112  # EQ bar widget height
-_ROWS_Y = _EQ_Y + _EQ_H + 9  # 8px gap above the menu rows + the original 4, nudged up 3
-_ROWS_X = _EQ_COL_X + 4  # indented 4px in from the EQ bar's left edge
-_ROWS_W = _EQ_COL_W - 4  # four-px narrower than the EQ above it
 _ROW_H = 24  # matches parameter_window's plugin-menu row height
 _FREQ_LABEL_H = 11
+_GAIN_LABEL_H = 11
+_EQ_BAR_H = 58  # 60% of the bar travel this had before
+_EQ_SW_Y = _MARGIN - 2  # Equalizer on/off row, above the bars
+_EQ_Y = _MARGIN + _ROW_H + 2
+_EQ_H = _GAIN_LABEL_H + 2 + _EQ_BAR_H + 2 + _FREQ_LABEL_H
+_ROWS_Y = _EQ_Y + _EQ_H + 8  # gap above the menu rows
+_ROWS_X = _EQ_COL_X
+_ROWS_W = _EQ_COL_W
 
 _BADGE_TWEAK2 = BadgeGlyph("2")
 _BADGE_TWEAK3 = BadgeGlyph("3")
@@ -102,8 +109,25 @@ FREQ_LABEL_COLOR = (110, 110, 110)
 NODE_COLOR = (255, 255, 255)
 
 
+_BADGE_GLYPH_H = 12
+
+
 def _fmt_vol(value: float) -> tuple[str, str]:
     return f"{value:+.1f}", "dB"
+
+
+def _eq_badge(on: bool) -> PillGlyph:
+    from uilib.glyphs import DEFAULT_COLOR
+
+    # Both states share the wider of the two labels so the row doesn't reflow.
+    w = max(PillGlyph(t, height=_BADGE_GLYPH_H).width for t in ("ON", "OFF"))
+    return PillGlyph(
+        "ON" if on else "OFF",
+        height=_BADGE_GLYPH_H,
+        color=DEFAULT_COLOR,
+        outline=not on,
+        min_width=w,
+    )
 
 
 # ── state ────────────────────────────────────────────────────────────────────
@@ -136,9 +160,16 @@ class _CompactEqWidget(Widget):
         self._font = font
         self._state: Optional[GraphicEqState] = None
         self._selected: Optional[str] = None
+        self._enabled = True
 
     def set_state(self, state: GraphicEqState) -> None:
         self._state = state
+        self.refresh()
+
+    def set_enabled(self, enabled: bool) -> None:
+        if enabled == self._enabled:
+            return
+        self._enabled = enabled
         self.refresh()
 
     def set_selected(self, name: Optional[str]) -> None:  # type: ignore[override]
@@ -156,9 +187,9 @@ class _CompactEqWidget(Widget):
             return
         n = len(self._bands)
         col_w = ctx.width // n
-        label_h = _FREQ_LABEL_H
-        bar_y0 = 2
-        bar_y1 = ctx.height - label_h - 2
+        shade = 1.0 if self._enabled else INACTIVE_SHADE
+        bar_y0 = _GAIN_LABEL_H + 2
+        bar_y1 = ctx.height - _FREQ_LABEL_H - 2
         bar_h = bar_y1 - bar_y0
 
         # 0 dB reference line — drawn first so the bars and nodes paint
@@ -171,7 +202,7 @@ class _CompactEqWidget(Widget):
             zero_y = int(bar_y1 - zero_frac * bar_h)
             ctx.draw_line(
                 [(0, zero_y), (ctx.width - 1, zero_y)],
-                fill=(60, 60, 60),
+                fill=shade_color((60, 60, 60), shade),
                 width=1,
             )
 
@@ -185,25 +216,37 @@ class _CompactEqWidget(Widget):
             else:
                 gain = p.gain_db if p.enabled else band.gain_min
                 frac = 0.0 if span <= 0 else (gain - band.gain_min) / span
-            fill_color = FILL_ACTIVE if is_sel else FILL_INACTIVE
+            fill_color = shade_color(FILL_ACTIVE if is_sel else FILL_INACTIVE, shade)
             bar_x = cx - 1  # 3px-wide bar
             _, gain_y = paint_bar(
                 ctx,
                 box=Box(bar_x, bar_y0, bar_x + 3, bar_y1),
                 orientation="vertical",
                 frac=frac,
-                track_color=TRACK_COLOR,
+                track_color=shade_color(TRACK_COLOR, shade),
                 fill_color=fill_color,
                 thickness=3,
             )
             if p is not None:
-                node_color = shade_color(band.color, 1.0)
-                paint_circle_handle(ctx, cx, gain_y, node_color, is_sel)
-            # freq label below bars
+                paint_circle_handle(ctx, cx, gain_y, shade_color(band.color, shade), is_sel)
             if self._font is not None:
+                if p is not None:
+                    gain_label = f"{p.gain_db:+.1f}"
+                    tw, _ = get_text_size(gain_label, self._font)
+                    ctx.draw_text(
+                        (cx - tw // 2, 0),
+                        gain_label,
+                        fill=shade_color(NODE_COLOR, shade),
+                        font=self._font,
+                    )
                 label = _fmt_freq(band.freq_hz)
                 tw, _ = get_text_size(label, self._font)
-                ctx.draw_text((cx - tw // 2, bar_y1 + 1), label, fill=FREQ_LABEL_COLOR, font=self._font)
+                ctx.draw_text(
+                    (cx - tw // 2, bar_y1 + 1),
+                    label,
+                    fill=shade_color(FREQ_LABEL_COLOR, shade),
+                    font=self._font,
+                )
 
 
 # ── discrete row selectables ─────────────────────────────────────────────────
@@ -227,13 +270,24 @@ class _DiscreteRow(RichTextWidget):
         return self._discrete_action(event)
 
 
+class _BandSelectable(GraphicBandSelectable):
+    """Drops out of the nav cycle while the EQ switch is off."""
+
+    def __init__(self, panel: "AudioMidiPanel", band: GraphicBandSpec) -> None:
+        super().__init__(panel, band)  # type: ignore[arg-type]
+        self._audio_panel = panel
+
+    def sel_children(self):  # type: ignore[override]
+        return [self] if self._audio_panel.eq_enabled else []
+
+
 # ── the panel ────────────────────────────────────────────────────────────────
 
 
 class AudioMidiPanel(ModalDialog[AudioMidiState]):
     """The Audio & MIDI menu surface (§5-7 of audio-midi-menu.md)."""
 
-    WIN_W = 244  # ~80% of the 304 plugin-window width — menu-idiom, not full-bleed
+    WIN_W = _W  # narrower than the 304 plugin window — menu-idiom, not full-bleed
     WIN_H = 208
 
     def footer_buttons(self, btn_y: int, btn_v_margin: int) -> tuple[Button, ...]:
@@ -270,6 +324,7 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
         self._handler: Modhandler = handler
         self._sync_row: Optional[_DiscreteRow] = None
         self._vu_row: Optional[_DiscreteRow] = None
+        self._eq_row: Optional[_DiscreteRow] = None
         self._bar_widget: Optional[_CompactEqWidget] = None
         self._in_arc: Optional[ArcKnobWidget] = None
         self._out_arc: Optional[ArcKnobWidget] = None
@@ -286,6 +341,10 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
         )
         self._build_rows()
         self._select_initial()
+
+    @property
+    def eq_enabled(self) -> bool:
+        return bool(self._handler.eq_status)
 
     # ── PluginPanel behaviour contract ─────────────────────────────────────
 
@@ -362,17 +421,26 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
         # Right column: EQ bars (4px top margin).
         if self._has_eq:
             self._bar_widget = _CompactEqWidget(
-                box=Box.xywh(cb.x0 + _EQ_COL_X, cb.y0 + _EQ_Y, _EQ_COL_W, _EQ_H),
+                box=Box.xywh(cb.x0 + _EQ_BAR_X, cb.y0 + _EQ_Y, _EQ_BAR_W, _EQ_H),
                 bands=BAND_SPECS,
                 font=self._tiny_font,
                 parent=self,
             )
+            self._bar_widget.set_enabled(self.eq_enabled)
             self._bar_widget.set_state(self.snapshot_state().eq)
 
         self.apply_state(self.snapshot_state())
 
     def _build_rows(self) -> None:
         cb = self.content_box
+        if self._has_eq:
+            self._eq_row = _DiscreteRow(
+                box=Box.xywh(cb.x0 + _ROWS_X, cb.y0 + _EQ_SW_Y, _ROWS_W, _ROW_H),
+                segments=self._eq_row_segments(),
+                action=self._on_eq_row,
+                font=self._row_font,
+                parent=self,
+            )
         y = cb.y0 + _ROWS_Y
         sync_segs = self._sync_row_segments()
         self._sync_row = _DiscreteRow(
@@ -392,6 +460,9 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
             parent=self,
         )
 
+    def _eq_row_segments(self) -> list[Segment]:
+        return [TextSeg("Equalizer"), Spacer(), IconSeg(_eq_badge(self.eq_enabled))]
+
     def _sync_row_segments(self) -> list[Segment]:
         from uilib.glyphs import DEFAULT_COLOR
 
@@ -406,27 +477,24 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
         ]
 
     def _select_initial(self) -> None:
-        # NAV order per §6: Input arc → Output arc → EQ bands (Low..High) →
-        # Clock Source → VU Cal → Back. Visual layout (arcs left, EQ right) is
-        # independent of the selection cycle order.
-        if self._in_arc is not None:
-            self.add_sel_widget(self._in_arc)
-        if self._out_arc is not None:
-            self.add_sel_widget(self._out_arc)
+        # NAV order: Equalizer → EQ bands (Low..High) → Clock Source → VU Cal
+        # → Input arc → Output arc → Back.
+        if self._eq_row is not None:
+            self.add_sel_widget(self._eq_row)
         if self._has_eq:
             for band in BAND_SPECS:
-                sel = GraphicBandSelectable(self, band)  # type: ignore[arg-type]
+                sel = _BandSelectable(self, band)
                 self._band_sels[band.name] = sel
                 self.add_sel_widget(sel)
         if self._sync_row is not None:
             self.add_sel_widget(self._sync_row)
         if self._vu_row is not None:
             self.add_sel_widget(self._vu_row)
-        first = (
-            self._in_arc
-            if self._in_arc is not None
-            else (self._band_sels.get(BAND_SPECS[0].name) if self._has_eq else self._out_arc)
-        )
+        if self._in_arc is not None:
+            self.add_sel_widget(self._in_arc)
+        if self._out_arc is not None:
+            self.add_sel_widget(self._out_arc)
+        first = self._eq_row if self._eq_row is not None else self._in_arc
         if first is not None:
             self.sel_widget(first)
 
@@ -481,6 +549,23 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
                 self._bar_widget.set_selected(None)
 
     # ── drill-in actions ─────────────────────────────────────────────────────
+
+    def _on_eq_row(self, event: InputEvent) -> bool:
+        if event != InputEvent.CLICK or self._eq_row is None:
+            return False
+        enabled = not self.eq_enabled
+        # Optimistic: paint the new state, then write. alsactl store is slow
+        # enough that gating the repaint on it reads as a dropped click.
+        self._handler.eq_status = enabled
+        self._eq_row.segments = self._eq_row_segments()
+        self._eq_row.refresh()
+        if self._bar_widget is not None:
+            self._bar_widget.set_enabled(enabled)
+        if not enabled and isinstance(self.sel_ref, _BandSelectable):
+            self._select_widget_ref(self._eq_row)
+        ac = self._handler.audiocard
+        ac.set_switch_parameter(ac.DAC_EQ, enabled)
+        return True
 
     def _on_sync_row(self, event: InputEvent) -> bool:
         if event != InputEvent.CLICK:

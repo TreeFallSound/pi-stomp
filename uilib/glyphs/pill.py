@@ -26,17 +26,24 @@ class PillGlyph:
     """Rounded-rectangle badge with a short label inside."""
 
     def __init__(
-        self, label: str, height: int, label_size: int = 9, color: tuple[int, int, int] = _DEFAULT_COLOR
+        self,
+        label: str,
+        height: int,
+        label_size: int = 9,
+        color: tuple[int, int, int] = _DEFAULT_COLOR,
+        outline: bool = False,
+        min_width: int = 0,
     ) -> None:
         self._label = label
         self._height = height
         self._color = color
+        self._outline = outline
         self._font = _make_font(_FONTS_DIR / "DejaVuSans.ttf", label_size)
         # Measure once: width is text-driven (text + padding), height is fixed.
         rect = self._font.get_rect(label)
         self._text_w = rect.width
         self._text_h = rect.height
-        self._width = self._text_w + 8 + 2  # 4px padding each side + 1px breathing
+        self._width = max(min_width, self._text_w + 8 + 2)  # 4px padding each side + 1px breathing
 
     @property
     def width(self) -> int:
@@ -58,7 +65,8 @@ class PillGlyph:
         bx = 1
         bh = self._text_h + 4
         by = max(0, (self._height - bh) // 2)
-        pygame.draw.rect(surf, color, pygame.Rect(bx, by, bw, bh), 0, border_radius=2)
+        pygame.draw.rect(surf, color, pygame.Rect(bx, by, bw, bh), 1 if self._outline else 0, border_radius=2)
+        label_color = color if self._outline else (0, 0, 0)
         # Center the label's ink rect (not line box) inside the pill. With
         # origin=False, render_to's pen position is the top-left of the ink
         prev = self._font.origin
@@ -67,7 +75,7 @@ class PillGlyph:
             rect = self._font.get_rect(self._label)
             tx = bx + (bw - rect.width) // 2
             ty = by + (bh - rect.height) // 2
-            self._font.render_to(surf, (tx, ty), self._label, fgcolor=(0, 0, 0))
+            self._font.render_to(surf, (tx, ty), self._label, fgcolor=label_color)
         finally:
             self._font.origin = prev
         return surf
