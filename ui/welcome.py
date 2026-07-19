@@ -15,14 +15,16 @@ _W, _H = 320, 240
 BTN_GAP, BTN_H = 2, 28
 _BTN_Y = _H - BTN_H - BTN_GAP
 _BOX = 160
-_LEFT_X = 16
+_LEFT_X = 10
 _QR_SZ = 140
 _BOX_Y = (_BTN_Y - BTN_GAP - _BOX) // 2
+_LOGO_Y = _BOX_Y + 8
 _QR_X = _W - _QR_SZ - 4
-_QR_Y = _BOX_Y + (_BOX - _QR_SZ) // 2
+_QR_Y = _BOX_Y + (_BOX - _QR_SZ) // 2 + 10
 _BG = (255, 255, 255)
-_FG = (0, 0, 0)
-_LIGHT = (160, 160, 160)
+_FG = (48, 48, 48)
+_QR_COLOUR = (0, 0, 0)
+_LIGHT = (120, 120, 120)
 QR_TEXT = "sastraxi.github.io/pistomp-manual/"
 
 
@@ -32,7 +34,7 @@ def _make_qr_surface() -> pygame.Surface:
     qr.make(fit=True)
     from PIL import Image as PILImage
 
-    img: PILImage.Image = qr.make_image(fill_color=_FG, back_color=_BG)  # pyright: ignore[reportAssignmentType]
+    img: PILImage.Image = qr.make_image(fill_color=_QR_COLOUR, back_color=_BG)  # pyright: ignore[reportAssignmentType]
     return pygame.image.frombuffer(img.tobytes(), img.size, "RGB")
 
 
@@ -58,10 +60,14 @@ class WelcomePanel(Panel):
 
         # Left box: TFS logo, pi-Stomp logo, version
         imagedir = os.path.join(handler.homedir, "images")
-        ImageWidget(os.path.join(imagedir, "treefallsound-logo.png"), box=Box.xywh(_LEFT_X, _BOX_Y, _BOX, 78), parent=self)
-        ImageWidget(os.path.join(imagedir, "pistomp-logo.png"), box=Box.xywh(_LEFT_X, _BOX_Y + 80, _BOX, 56), parent=self)
+        ImageWidget(
+            os.path.join(imagedir, "treefallsound-logo.png"), box=Box.xywh(_LEFT_X, _LOGO_Y, _BOX, 78), parent=self
+        )
+        ImageWidget(
+            os.path.join(imagedir, "pistomp-logo.png"), box=Box.xywh(_LEFT_X, _LOGO_Y + 80, _BOX, 56), parent=self
+        )
         TextWidget(
-            box=Box.xywh(_LEFT_X + 80, _BOX_Y + 112, 52, 14),
+            box=Box.xywh(_LEFT_X + 80, _LOGO_Y + 112, 52, 14),
             text=f"v{handler.software_version or ''}",
             font=cfg.get_font("tiny"),
             fgnd_color=_LIGHT,
@@ -73,8 +79,8 @@ class WelcomePanel(Panel):
         # Right box: QR code
         ImageWidget(_make_qr_surface(), box=Box.xywh(_QR_X, _QR_Y, _QR_SZ, _QR_SZ), parent=self)
         TextWidget(
-            box=Box.xywh(_QR_X, _QR_Y + _QR_SZ - 4, _QR_SZ, 16),
-            text="Welcome Guide",
+            box=Box.xywh(_QR_X, _QR_Y - 8, _QR_SZ, 16),
+            text="USER GUIDE",
             font=cfg.get_font("tiny"),
             fgnd_color=_FG,
             text_halign=TextHAlign.CENTRE,
