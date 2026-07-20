@@ -27,9 +27,56 @@ from modalapi.connections import Connection, build_connection
 from modalapi.plugin_customization import Customizer, default_customizer
 
 
+# mod-ui addresses pedalboard-level transport controls through a pseudo-instance
+# "/pedalboard" (id 9995) with virtual port symbols :bpm, :bpb, :rolling. We
+# mirror it as a synthetic Plugin so the binding/label machinery treats them
+# like effect params. Keep the bare id in sync with mod-ui's PEDALBOARD_INSTANCE.
+TRANSPORT_INSTANCE_ID = "pedalboard"
+
+BPM_SYMBOL = Symbol(":bpm")
+BPB_SYMBOL = Symbol(":bpb")
+ROLLING_SYMBOL = Symbol(":rolling")
+
+# mod-ui's defaults when the TTL carries no ranges (utils_lilv.cpp).
+_BPM_RANGE = (20.0, 280.0)
+_BPB_RANGE = (1.0, 16.0)
+
+
 def _bypass_info() -> PortInfo:
     # mod-ui reports bypass as a bool alongside the ports, not as a port row.
     return PortInfo(shortName="bypass", symbol=BYPASS_SYMBOL, ranges={"minimum": 0.0, "maximum": 1.0})
+
+
+def _transport_port_info(symbol: Symbol) -> PortInfo:
+    # The three virtual ports on mod-ui's /pedalboard pseudo-instance. :rolling
+    # is a toggle whose value names the state — render via the enum path so the
+    # footswitch label and parameter dialog read "Playing"/"Stopped".
+    if symbol == BPM_SYMBOL:
+        return PortInfo(
+            shortName="Tempo",
+            symbol=":bpm",
+            ranges={"minimum": _BPM_RANGE[0], "maximum": _BPM_RANGE[1]},
+            units={"symbol": "BPM", "label": "beats per minute"},
+        )
+    if symbol == BPB_SYMBOL:
+        return PortInfo(
+            shortName="BPB",
+            symbol=":bpb",
+            ranges={"minimum": _BPB_RANGE[0], "maximum": _BPB_RANGE[1]},
+            properties=["integer"],
+        )
+    # :rolling — render via the enum path so its label names the state
+    # ("Playing"/"Stopped") rather than the generic On/Off a TOGGLED param shows.
+    return PortInfo(
+        shortName="Transport",
+        symbol=":rolling",
+        ranges={"minimum": 0.0, "maximum": 1.0},
+        properties=["enumeration"],
+        scalePoints=[
+            {"label": "Stopped", "value": 0.0},
+            {"label": "Playing", "value": 1.0},
+        ],
+    )
 
 
 def _control_inputs(plugin_info: dict | None) -> list[PortInfo] | None:
@@ -53,6 +100,11 @@ class Pedalboard:
         self.plugins = []
         self.connections: list[Connection] = []
         self.hydrated = False
+        # Synthetic /pedalboard pseudo-instance carrying :bpm/:bpb/:rolling.
+        # Built in hydrate() from timeInfo; None before the first hydrate and
+        # on boards with no transport metadata. Excluded from self.plugins so
+        # the effect-graph render never paints it.
+        self.transport_plugin: Plugin.Plugin | None = None
 
     def get_plugin_data(self, uri):
         url = self.root_uri + "effect/get?uri=" + urllib.parse.quote(uri)
@@ -181,7 +233,72 @@ class Pedalboard:
                 sym: float(p.value) for sym, p in plugin.parameters.items()
             }
 
+        self.transport_plugin = self._build_transport_plugin(info.get("timeInfo"))
+
         self.hydrated = True
+
+    def _build_transport_plugin(self, time_info: dict | None) -> Plugin.Plugin | None:
+        """The /pedalboard pseudo-instance carrying :bpm/:bpb/:rolling. Built
+        from mod-ui's timeInfo block. None when the board reports no transport
+        metadata (available == 0 or absent)."""
+        if not time_info:
+            return None
+        available = int(time_info.get("available", 0) or 0)
+        if available == 0:
+            return None
+
+        parameters: dict[Symbol, Parameter] = {}
+        # mod-ui's kPedalboardTimeAvailable* bit masks.
+        if available & 0x1:  # BPB
+            cc = time_info.get("bpbCC")
+            parameters[BPB_SYMBOL] = Parameter(
+                _transport_port_info(BPB_SYMBOL),
+                float(time_info.get("bpb", _BPB_RANGE[0])),
+                self._binding(cc),
+                TRANSPORT_INSTANCE_ID,
+            )
+        if available & 0x2:  # BPM
+            cc = time_info.get("bpmCC")
+            parameters[BPM_SYMBOL] = Parameter(
+                _transport_port_info(BPM_SYMBOL),
+                float(time_info.get("bpm", _BPM_RANGE[0])),
+                self._binding(cc),
+                TRANSPORT_INSTANCE_ID,
+            )
+        if available & 0x4:  # Rolling
+            cc = time_info.get("rollingCC")
+            parameters[ROLLING_SYMBOL] = Parameter(
+                _transport_port_info(ROLLING_SYMBOL),
+                1.0 if time_info.get("rolling") else 0.0,
+                self._binding(cc),
+                TRANSPORT_INSTANCE_ID,
+            )
+
+        if not parameters:
+            return None
+
+        # category drives footswitch color; "Utility" is the benign choice for
+        # transport — no LV2 category exists for it. uri=urn:mod:pedalboard so
+        # the customizer resolves the transport labeling hook.
+        return Plugin.Plugin(
+            TRANSPORT_INSTANCE_ID,
+            parameters,
+            None,
+            category="Utility",
+            uri="urn:mod:pedalboard",
+            customization=self._customizer("urn:mod:pedalboard"),
+        )
+
+    def find_plugin(self, instance_id: str) -> Plugin.Plugin | None:
+        """Lookup by bare instance id, including the transport pseudo-plugin.
+        Returns None for unknown instances."""
+        for p in self.plugins:
+            if p.instance_id == instance_id:
+                return p
+        tp = self.transport_plugin
+        if tp is not None and tp.instance_id == instance_id:
+            return tp
+        return None
 
     def _build_plugin(self, instance_id: str, uri: str, x: float, y: float, info: dict) -> Optional[Plugin.Plugin]:
         """Build a Plugin from REST metadata (no LILV). Used for dynamic adds.

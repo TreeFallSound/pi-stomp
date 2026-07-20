@@ -51,6 +51,7 @@ import plugins.pinned_params  # noqa: F401  # explicit pinned-param customizatio
 import plugins.mixer  # noqa: F401
 import plugins.layouts  # noqa: F401  # Layout components
 import plugins.redundant_ports  # noqa: F401  # curated hidden_params, no panels
+import plugins.transport  # noqa: F401  # /pedalboard :bpm/:bpb/:rolling labels
 
 __all__ = [
     "PluginCustomization",

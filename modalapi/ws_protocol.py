@@ -32,6 +32,14 @@ from common.parameter import Symbol
 SyncModeWire = Literal["Internal", "link", "midi_clock_slave"]
 
 
+def _bare_instance(path: str) -> str:
+    """Reduce a mod-ui instance path to its bare id: ``/graph/Foo`` → ``Foo``,
+    ``/pedalboard`` → ``pedalboard``. Plugins already ``lstrip("/")`` at the
+    pedalboard model; this keeps the two arms consistent so a pseudo-instance
+    like the transport target matches the same lookup plugins use."""
+    return path.removeprefix("/graph/").lstrip("/")
+
+
 @dataclass
 class LoadingStartMessage:
     """Pedalboard loading started."""
@@ -107,6 +115,7 @@ class TransportMessage:
 
     rolling: bool
     bpm: float
+    beats_per_bar: float = 4.0
     sync_mode: SyncModeWire = "Internal"
 
 
@@ -271,7 +280,7 @@ def parse_message(raw_message: str) -> WebSocketMessage:
             case ["add", instance_path, rest]:
                 parts = rest.split()
                 return AddPluginMessage(
-                    instance=instance_path.removeprefix("/graph/"),
+                    instance=_bare_instance(instance_path),
                     uri=parts[0],
                     x=float(parts[1]),
                     y=float(parts[2]),
@@ -284,7 +293,7 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                 if len(parts) < 4:
                     return UnknownMessage(raw=raw_message)
                 return PatchSetMessage(
-                    instance=instance_path.removeprefix("/graph/"),
+                    instance=_bare_instance(instance_path),
                     param_uri=parts[1],
                     value_type=parts[2],
                     value=parts[3],
@@ -292,7 +301,7 @@ def parse_message(raw_message: str) -> WebSocketMessage:
 
             # Format: remove {instance}
             case ["remove", instance_path]:
-                return RemovePluginMessage(instance=instance_path.removeprefix("/graph/"))
+                return RemovePluginMessage(instance=_bare_instance(instance_path))
 
             # Format: connect {port_from} {port_to}
             case ["connect", port_from, port_to]:
@@ -310,13 +319,13 @@ def parse_message(raw_message: str) -> WebSocketMessage:
 
             # Format: param_set /graph/{instance} :bypass {value}
             case ["param_set", path, rest] if rest.startswith(":bypass "):
-                instance = path.removeprefix("/graph/")
+                instance = _bare_instance(path)
                 value_str = rest.split(" ", 1)[1]
                 return PluginBypassMessage(instance=instance, bypassed=float(value_str) != 0.0)
 
             # Format: param_set /graph/{instance} {symbol} {value}  (must follow :bypass arm)
             case ["param_set", path, rest]:
-                instance = path.removeprefix("/graph/")
+                instance = _bare_instance(path)
                 symbol, value_str = rest.split(" ", 1)
                 return ParamSetMessage(instance=instance, symbol=Symbol(symbol), value=float(value_str))
 
@@ -324,7 +333,7 @@ def parse_message(raw_message: str) -> WebSocketMessage:
             case ["midi_map", path, rest]:
                 symbol, ch, ctrl = rest.split(" ")[:3]
                 return MidiMapMessage(
-                    instance=path.removeprefix("/graph/"),
+                    instance=_bare_instance(path),
                     symbol=Symbol(symbol),
                     channel=int(ch),
                     controller=int(ctrl),
@@ -341,11 +350,17 @@ def parse_message(raw_message: str) -> WebSocketMessage:
             # Format: transport {rolling} {beatsPerBar} {bpm} {syncMode}
             case ["transport", rolling, rest]:
                 parts = rest.split()
+                bpb = float(parts[0])
                 bpm = float(parts[1])
                 # mod-ui broadcasts the syncMode token on every transport message
                 # (and on new WebSocket connect); older installs may omit it.
                 sync_mode = parts[2] if len(parts) > 2 else "Internal"
-                return TransportMessage(rolling=rolling != "0", bpm=bpm, sync_mode=cast(SyncModeWire, sync_mode))
+                return TransportMessage(
+                    rolling=rolling != "0",
+                    bpm=bpm,
+                    beats_per_bar=bpb,
+                    sync_mode=cast(SyncModeWire, sync_mode),
+                )
 
     except (ValueError, IndexError) as e:
         logging.warning(f"Failed to parse WebSocket message '{raw_message}': {e}")
