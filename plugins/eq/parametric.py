@@ -784,6 +784,11 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
     def build_band_specs(self) -> Sequence[BandSpec]:
         raise NotImplementedError
 
+    def _port_value_for_band_param(self, band: BandSpec, field_name: str, value: float) -> float:
+        """Override when the LV2 port uses a different unit than the panel's
+        internal representation (e.g. linear gain vs dB). Default: pass through."""
+        return value
+
     # ── PluginPanel subclass contract ────────────────────────────────────────
 
     def snapshot_state(self) -> EqState:
@@ -895,7 +900,7 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
         new_val = steps.move(delta)
         if new_val == current:
             return False
-        self.set_param(symbol, new_val)
+        self.set_param(symbol, self._port_value_for_band_param(band, field_name, new_val))
         self._replace_band(band, **{field_name: new_val})
         return True
 
