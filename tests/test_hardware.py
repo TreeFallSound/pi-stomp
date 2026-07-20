@@ -149,6 +149,7 @@ class TestReinitDefaultRouting:
         hw.handler = MagicMock()
         hw.footswitches = []  # reinit registers longpress groups over these
         hw.external_routing = {}  # __new__ bypasses __init__; reinit clears it
+        hw.midi_input_manager = None  # __new__ bypasses __init__; reinit syncs it
 
         for name in (
             "_Hardware__init_midi_default",

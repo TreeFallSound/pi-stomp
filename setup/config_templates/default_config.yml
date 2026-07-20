@@ -52,21 +52,36 @@ hardware:
     tap_tempo: set_mod_tap_tempo
 
   # analog_controllers:
-  # Each control definition is a list which starts with the adc_input
-  # adc_input: <integer>          The analog input to which the control is connected (required)
+  # Each control has one input source and re-emits its value as a MIDI CC.
   # id: <integer>                 The id and position on the screen (starting with 0 on the left)
   # type: <KNOB | EXPRESSION>     The control type, used to represent the control on the screen (optional)
-  # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (optional)
+  # midi_CC: <integer>            The MIDI CC message to be sent when the control is adjusted (required)
+  # input:                        The input source (required). One of:
+  #   adc: <integer>                A physical ADC channel
+  #   alsa: <name | [names]>        ALSA client name of a MIDI device (USB or Bluetooth — pi-Stomp
+  #                                 doesn't distinguish). Give a list to try candidates in order,
+  #                                 e.g. a BLE name before a USB name for the same physical pedal.
   # midi_port: <port_name>        Send MIDI to this external port INSTEAD of the virtual MIDI Through port (optional)
   #                               Falls back to the virtual port only if the device is unavailable; must be the device name (e.g. 'Source Audio C4 Synth')
-  # autosync: <true | false>      Whether to send current value on pedalboard load (optional, default: false)
+  # autosync: <true | false>      Whether to send current value on pedalboard load (optional, default: false; ADC only)
+  #
+  # A MIDI-input pedal is re-emitted on this hardware's midi channel + midi_CC, exactly
+  # like an ADC pedal — the incoming device channel is ignored. Do NOT also enable the
+  # same device as a MIDI input inside MOD-UI, or mod-host will see both the device's
+  # native CC and our re-emitted CC (double events). Let pi-Stomp be the sole consumer.
   #
   #analog_controllers:
-  #  - adc_input: 5
-  #    id: 0
+  #  - id: 0
   #    type: EXPRESSION
   #    midi_CC: 75
+  #    input:
+  #      adc: 5
   #    autosync: true
+  #  - id: 1                       # USB expression pedal
+  #    type: EXPRESSION
+  #    midi_CC: 77
+  #    input:
+  #      alsa: "EV-1-WL USB-MIDI"
 
   # encoders:
   # Each encoder definition is a list which starts with the id

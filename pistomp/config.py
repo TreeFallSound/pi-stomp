@@ -123,7 +123,32 @@ schema = {
             "type": "object",
             "properties": {
               "adc_input": {
-                "type": "integer"
+                "type": "integer",
+                "description": "Legacy top-level ADC channel; equivalent to input.adc"
+              },
+              "input": {
+                "type": "object",
+                "description": "Input source: a physical ADC channel (adc) or a MIDI device (alsa)",
+                "properties": {
+                  "adc": {
+                    "type": "integer",
+                    "description": "ADC channel of a physical control"
+                  },
+                  "alsa": {
+                    "oneOf": [
+                      {"type": "string"},
+                      {"type": "array", "items": {"type": "string"}, "minItems": 1}
+                    ],
+                    "description": "ALSA client name(s) of a MIDI device (USB or Bluetooth make no difference here; "
+                                    "list multiple names to try candidates in order, e.g. BLE name then USB name for "
+                                    "the same physical pedal)"
+                  }
+                },
+                "anyOf": [
+                  {"required": ["adc"]},
+                  {"required": ["alsa"]}
+                ],
+                "additionalProperties": False
               },
               "id": {
                 "type": "integer"
@@ -148,8 +173,11 @@ schema = {
               }
             },
             "required": [
-              "adc_input",
               "midi_CC"
+            ],
+            "anyOf": [
+              {"required": ["adc_input"]},
+              {"required": ["input"]}
             ]
           }
         },

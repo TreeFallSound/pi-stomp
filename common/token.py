@@ -14,7 +14,9 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 ACTION = 'action'
+ADC = 'adc'
 ADC_INPUT = 'adc_input'
+ALSA = 'alsa'
 ANALOG_CONTROLLERS = 'analog_controllers'
 AUTOSYNC = 'autosync'
 BANK = 'bank'
