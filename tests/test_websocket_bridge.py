@@ -157,6 +157,82 @@ def test_receive_output_set_is_dropped():
     assert ws._sent == []
 
 
+def test_receive_output_set_subscribed_survives():
+    worker = _make_worker()
+    worker.running = True
+    worker.set_interesting_outputs(frozenset({"loopjefe/state", "loopjefe/measure_number"}))
+    ws = _FakeWs(["output_set /graph/loopjefe state 2.0"])
+
+    asyncio.run(worker._receive_messages(ws))
+
+    msgs = []
+    while not worker.received_queue.empty():
+        msgs.append(worker.received_queue.get_nowait())
+    assert msgs == ["output_set /graph/loopjefe state 2.0"]
+    assert worker.messages_received == 1
+
+
+def test_receive_output_set_unsubscribed_is_dropped():
+    worker = _make_worker()
+    worker.running = True
+    worker.set_interesting_outputs(frozenset({"loopjefe/state"}))
+    ws = _FakeWs(["output_set /graph/Delay/meter 0.5"])
+
+    asyncio.run(worker._receive_messages(ws))
+
+    assert worker.received_queue.empty()
+    assert worker.messages_received == 0
+
+
+def test_receive_output_set_empty_interesting_drops_all():
+    """Regression: empty interesting-set must reproduce today's behavior —
+    every output_set is dropped before it floods the queue."""
+    worker = _make_worker()
+    worker.running = True
+    worker.set_interesting_outputs(frozenset())
+    ws = _FakeWs(["output_set /graph/loopjefe state 2.0", "output_set /graph/Amp/meter 0.9"])
+
+    asyncio.run(worker._receive_messages(ws))
+
+    assert worker.received_queue.empty()
+    assert worker.messages_received == 0
+
+
+def test_set_interesting_outputs_swaps_atomically():
+    """A subscription set swap takes effect immediately for subsequent frames;
+    the worker never sees a partially-updated set."""
+    worker = _make_worker()
+    worker.running = True
+    worker.set_interesting_outputs(frozenset({"loopjefe/state"}))
+    ws = _FakeWs([
+        "output_set /graph/loopjefe state 1.0",   # subscribed → kept
+        "output_set /graph/loopjefe measure_number 0.0",  # not subscribed → dropped
+    ])
+
+    asyncio.run(worker._receive_messages(ws))
+
+    msgs = []
+    while not worker.received_queue.empty():
+        msgs.append(worker.received_queue.get_nowait())
+    assert msgs == ["output_set /graph/loopjefe state 1.0"]
+
+
+def test_worker_does_not_hold_bridge_reference():
+    """Layering: the worker must not know about the bridge. The bridge owns the
+    worker, so a back-reference inverts the dependency and lets the worker reach
+    into bridge internals. The worker owns its own interesting-set instead."""
+    import inspect
+    worker = _make_worker()
+    sig = inspect.signature(WebSocketWorker.__init__)
+    assert "bridge" not in sig.parameters, (
+        "WebSocketWorker.__init__ must not take a bridge param — the worker "
+        "should own its interesting-set, not reach back into the bridge"
+    )
+    assert not hasattr(worker, "_bridge"), (
+        "WebSocketWorker must not store a _bridge reference"
+    )
+
+
 def test_receive_mixed_messages_routes_correctly():
     worker = _make_worker()
     worker.running = True

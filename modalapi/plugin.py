@@ -62,6 +62,10 @@ class Plugin:
         self.category: str | None = category
         self.uri: str | None = uri
         self.pedalboard_snapshot: dict[str, float] = {}
+        # Generic mirror of this plugin's subscribed lv2:OutputPort values (see
+        # `monitored_output_symbols`). Populated from WS `output_set` messages;
+        # consumed by the LED driver's LedSpec lookups. No footswitch involved.
+        self.output_values: dict[str, float] = {}
         c: PluginCustomization = customization or PluginCustomization()
         if extra_data is not None:
             c = replace(c, extra_data=extra_data)
@@ -70,6 +74,22 @@ class Plugin:
     @property
     def extra_data(self) -> PluginExtraData | None:
         return self.customization.extra_data
+
+    @property
+    def monitored_output_symbols(self) -> tuple[str, ...]:
+        """Output-port symbols this plugin wants mirrored via WS output_set,
+        derived from its LedSpec (if any). Generic — no footswitch involved."""
+        spec = self.customization.led_spec
+        if spec is None:
+            return ()
+        symbols = [spec.state_symbol]
+        if spec.downbeat_symbol is not None:
+            symbols.append(spec.downbeat_symbol)
+        return tuple(symbols)
+
+    def set_output_value(self, symbol: str, value: float) -> None:
+        """Cache a subscribed lv2:OutputPort value (from WS output_set)."""
+        self.output_values[symbol] = value
 
     @property
     def display_name(self) -> str:

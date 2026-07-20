@@ -33,9 +33,10 @@ import modalapi.wifi as Wifi
 import modalapi.external_midi as ExternalMidi
 from pistomp.encoder_controller import EncoderController
 from pistomp.input.event import AnalogEvent, ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
-from rtmidi.midiconstants import CONTROL_CHANGE
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
+from modalapi.led_render import render_led_spec
+from pistomp.category import get_category_color
 from typing import Optional
 
 from blend.snapshot import SnapshotManager
@@ -260,19 +261,6 @@ class Mod(Handler):
         if isinstance(c, Footswitch):
             return self._handle_footswitch(c, event.kind, event.timestamp)
         return False
-
-    def _emit_midi(self, controller, midi_value: int) -> None:
-        if controller.midi_CC is None:
-            return
-        cc = [controller.midi_channel | CONTROL_CHANGE, controller.midi_CC, int(midi_value)]
-        port_name = self.hardware.external_port_name(controller)
-        if port_name is not None and self.external_midi is not None:
-            try:
-                if self.external_midi.send_raw(port_name, cc):
-                    return
-            except Exception as e:
-                logging.warning("External CC send failed on %s: %s", port_name, e)
-        self.hardware.midiout.send_message(cc)
 
     def add_lcd(self, lcd):
         self.lcd = lcd
@@ -534,6 +522,35 @@ class Mod(Handler):
         if self.universal_encoder_mode is not UniversalEncoderMode.LOADING:
             self.hardware.poll_controls()
             self._tick_chords()
+            self._drive_footswitch_leds()
+
+    def _drive_footswitch_leds(self) -> None:
+        """v1 has no beat_grid and no pixel (mono LCD) — just render each
+        footswitch's GPIO on/off state from its bound plugin's LedSpec (if
+        any) or the default toggle/category behavior. No metronome style."""
+        if self.hardware is None:
+            return
+        for fs in self.hardware.footswitches:
+            plugin = self._bound_plugin(fs)
+            if plugin is not None and plugin.customization.led_spec is not None:
+                color, _style = render_led_spec(plugin.customization.led_spec, plugin.output_values)
+            elif fs.toggled:
+                color = get_category_color(fs.category) if fs.category is not None else (255, 255, 255)
+            else:
+                color = None
+            if fs.led is not None:
+                if color is None:
+                    fs.led.off()
+                else:
+                    fs.led.on()
+
+    def _bound_plugin(self, fs):
+        if fs.parameter is None or self._current is None:
+            return None
+        for plugin in self.current.pedalboard.plugins:
+            if plugin.instance_id == fs.parameter.instance_id:
+                return plugin
+        return None
 
     def poll_wifi(self):
         self.wifi_manager.poll()

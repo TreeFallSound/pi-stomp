@@ -25,6 +25,15 @@ data_dir = '/home/pistomp/data/config'
 
 DEFAULT_CONFIG_FILE = "default_config.yml"
 
+LONGPRESS_GROUP_NAMES = [
+    "next_snapshot",
+    "previous_snapshot",
+    "toggle_bypass",
+    "set_mod_tap_tempo",
+    "toggle_tap_tempo_enable",
+    "toggle_tuner_enable",
+]
+
 schema = {
   "$schema": "http://json-schema.org/draft-04/schema#",
   "type": "object",
@@ -83,11 +92,30 @@ schema = {
                 "type": "integer"
               },
               "longpress": {
-                "type" : ["array", "string"],
-                "items" : {
-                  "type" : "string",
-                  "enum" : ["next_snapshot", "previous_snapshot", "toggle_bypass", "set_mod_tap_tempo", "toggle_tap_tempo_enable"]
-                }
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "enum": LONGPRESS_GROUP_NAMES
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": LONGPRESS_GROUP_NAMES
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "description": "Send this CC (value 127) on longpress instead of resolving a named longpress group.",
+                    "properties": {
+                      "midi_CC": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["midi_CC"],
+                    "additionalProperties": False
+                  }
+                ]
               },
               "midi_CC": {
                 "type": "integer"

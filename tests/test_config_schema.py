@@ -60,3 +60,60 @@ def test_non_string_midi_port_rejected():
     }
     with pytest.raises(exceptions.ValidationError):
         validate(instance=cfg, schema=schema)
+
+
+def test_longpress_group_name_accepted():
+    cfg = {
+        "hardware": {
+            "version": 3.0,
+            "midi": {"channel": 14},
+            "footswitches": [{"id": 0, "longpress": "toggle_bypass"}],
+        }
+    }
+    validate(instance=cfg, schema=schema)
+
+
+def test_longpress_group_name_list_accepted():
+    cfg = {
+        "hardware": {
+            "version": 3.0,
+            "midi": {"channel": 14},
+            "footswitches": [{"id": 0, "longpress": ["next_snapshot", "toggle_bypass"]}],
+        }
+    }
+    validate(instance=cfg, schema=schema)
+
+
+def test_longpress_midi_cc_object_accepted():
+    cfg = {
+        "hardware": {
+            "version": 3.0,
+            "midi": {"channel": 14},
+            "footswitches": [{"id": 0, "longpress": {"midi_CC": 65}}],
+        }
+    }
+    validate(instance=cfg, schema=schema)
+
+
+def test_longpress_unknown_group_name_rejected():
+    cfg = {
+        "hardware": {
+            "version": 3.0,
+            "midi": {"channel": 14},
+            "footswitches": [{"id": 0, "longpress": "not_a_real_group"}],
+        }
+    }
+    with pytest.raises(exceptions.ValidationError):
+        validate(instance=cfg, schema=schema)
+
+
+def test_longpress_object_without_midi_cc_rejected():
+    cfg = {
+        "hardware": {
+            "version": 3.0,
+            "midi": {"channel": 14},
+            "footswitches": [{"id": 0, "longpress": {}}],
+        }
+    }
+    with pytest.raises(exceptions.ValidationError):
+        validate(instance=cfg, schema=schema)

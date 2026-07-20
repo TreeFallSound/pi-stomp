@@ -8,6 +8,7 @@ import pytest
 
 import common.token as Token
 from modalapi.external_midi import ExternalMidiManager
+from pistomp.footswitch import Footswitch
 from pistomp.hardware import Hardware
 
 
@@ -139,6 +140,38 @@ class TestApplyMidiRouting:
         cfg = {Token.HARDWARE: {Token.FOOTSWITCHES: [{Token.ID: 0, "midi_port": "My MIDI Device"}]}}
         _route(routed_hw, cfg)
         assert "My MIDI Device" in routed_hw.external_midi.midi_ports
+
+
+def _init_footswitches(hw, cfg):
+    hw._Hardware__init_footswitches(cfg)
+
+
+class TestInitFootswitchesLongpress:
+    """__init_footswitches dispatches the 'longpress' config value to
+    Footswitch.set_longpress: a group name (or list) vs. a {midi_CC: N} object."""
+
+    def _hw_with_footswitch(self, fs):
+        hw = object.__new__(_StubHardware)
+        hw.footswitches = [fs]
+        return hw
+
+    def test_group_name_sets_longpress_groups(self):
+        fs = Footswitch(id=0, led_pin=None, pixel=None, midi_CC=None, midi_channel=0,
+                         refresh_callback=lambda **kw: None)
+        hw = self._hw_with_footswitch(fs)
+        cfg = {Token.HARDWARE: {Token.FOOTSWITCHES: [{Token.ID: 0, Token.LONGPRESS: "toggle_bypass"}]}}
+        _init_footswitches(hw, cfg)
+        assert fs.longpress_groups == ["toggle_bypass"]
+        assert fs.longpress_midi_CC is None
+
+    def test_midi_cc_object_sets_longpress_midi_cc(self):
+        fs = Footswitch(id=0, led_pin=None, pixel=None, midi_CC=None, midi_channel=0,
+                         refresh_callback=lambda **kw: None)
+        hw = self._hw_with_footswitch(fs)
+        cfg = {Token.HARDWARE: {Token.FOOTSWITCHES: [{Token.ID: 0, Token.LONGPRESS: {"midi_CC": 65}}]}}
+        _init_footswitches(hw, cfg)
+        assert fs.longpress_midi_CC == 65
+        assert fs.longpress_groups == []
 
 
 class TestReinitDefaultRouting:

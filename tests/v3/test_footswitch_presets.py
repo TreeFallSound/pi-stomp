@@ -10,15 +10,15 @@ Covers four behaviors:
      ControllerManager.bind() can match it against an unrelated plugin's
      MIDI-learned binding and steal fs.parameter.
   3. The label survives even if `fs.parameter` still ends up set by some
-     other path -- defense in depth on top of (2), so
-     `draw_footswitches`/`update_footswitch` never let a plugin/param name
-     clobber a preset label.
+      other path -- defense in depth on top of (2), so
+      `draw_footswitches`/`update_footswitch` never let a plugin/param name
+      clobber a preset label.
   4. The footswitch's LED/indicator lights only when its mapped snapshot is
      the currently active one.
 """
 
 import yaml
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from common.parameter import Parameter
 from tests.types import SystemFixture
@@ -116,13 +116,21 @@ class TestPresetFootswitchIndicator:
     def test_active_snapshot_footswitch_drives_physical_led(self, v3_system: SystemFixture):
         """A press never touches fs.toggled for preset footswitches (handler.py
         returns early on the preset_callback branch), so the LCD redraw path
-        is the only place that can also light the physical LED/pixel."""
+        is the only place that can also light the physical LED/pixel.
+
+        The per-tick LED driver (_drive_footswitch_leds) runs in poll_controls
+        and must light the pixel of the footswitch bound to the active preset.
+        Regression: stripping set_led/set_category's pixel calls left preset
+        footswitch pixels dark because preset switches never get a behavior
+        via ControllerManager.bind (no plugin parameter)."""
         handler = v3_system.handler
         hw = v3_system.hw
         lcd = handler.lcd
         fs0, fs1 = hw.footswitches[0], hw.footswitches[1]
         fs0.pixel = MagicMock()
         fs1.pixel = MagicMock()
+        fs0.led = MagicMock()
+        fs1.led = MagicMock()
         fs0.add_preset(callback=handler.preset_set_and_change, callback_arg=0)
         fs1.add_preset(callback=handler.preset_set_and_change, callback_arg=1)
         handler.current.preset_index = 1
@@ -130,8 +138,16 @@ class TestPresetFootswitchIndicator:
         lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
         lcd.draw_main_panel()
 
-        fs0.pixel.set_enable.assert_called_once_with(False)
-        fs1.pixel.set_enable.assert_called_once_with(True)
+        # Drive one controls tick — the active preset's pixel must light.
+        # Patch hardware.poll_controls to skip the analog control refresh,
+        # which needs real SPI; we only want to exercise the handler's LED driver.
+        with patch.object(hw, "poll_controls"):
+            handler.poll_controls()
+
+        # fs1 is the active preset (index 1) → its pixel must be enabled.
+        fs1.pixel.set_enable.assert_called_with(True)
+        # fs0 is inactive → its pixel must be disabled.
+        fs0.pixel.set_enable.assert_called_with(False)
         assert fs0.toggled is False
         assert fs1.toggled is True
 

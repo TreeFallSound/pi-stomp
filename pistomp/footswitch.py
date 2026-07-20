@@ -42,6 +42,7 @@ class Footswitch(controller.Controller):
         self.category = None
         self.pixel = pixel
         self.longpress_groups = []
+        self.longpress_midi_CC = None
         self.disabled = False
         self.taptempo = taptempo
 
@@ -112,27 +113,26 @@ class Footswitch(controller.Controller):
                 r.disable()
 
     def set_led(self, enabled):
-        if self.led is not None:
-            if self.taptempo:
-                tempo = self.taptempo.get_bpm()
-                if tempo:
-                    period = 60/tempo
-                    on = 0.1
-                    self.led.blink(on_time=on, off_time=period - 0.1)
-            elif enabled:
-                self.led.on()
-            else:
-                self.led.off()
-        if self.pixel:
-            self.pixel.set_enable(enabled)
+        """Pure state update — flips fs.toggled only. The per-tick LED driver
+        (_drive_footswitch_leds in poll_controls) renders the new state to both
+        fs.pixel and fs.led on the next 10ms tick. No hardware writes here."""
+        self.toggled = enabled
 
     def set_category(self, category):
         self.category = category
-        if self.pixel:
-            self.pixel.set_color_by_category(category, self.toggled)
 
     def set_lcd_color(self, color):
         self.lcd_color = color
+
+    def set_longpress(self, value):
+        """Apply the raw 'longpress' config value: a group name, a list of
+        group names, a {midi_CC: N} object, or None."""
+        if isinstance(value, dict):
+            self.longpress_midi_CC = value.get(Token.MIDI_CC)
+            self.longpress_groups = []
+        else:
+            self.longpress_midi_CC = None
+            self.set_longpress_groups(value)
 
     def set_longpress_groups(self, groups):
         if groups is None:

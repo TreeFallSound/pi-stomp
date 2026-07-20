@@ -3,11 +3,13 @@
 from modalapi.ws_protocol import (
     AddHwPortMessage,
     AddPluginMessage,
+    BeatSyncMessage,
     ConnectMessage,
     DisconnectMessage,
     LoadingEndMessage,
     LoadingStartMessage,
     MidiMapMessage,
+    OutputSetMessage,
     PedalSnapshotMessage,
     ParamSetMessage,
     PluginBypassMessage,
@@ -235,6 +237,43 @@ def test_transport_malformed_bpm_is_unknown():
     )
 
 
+# ---------------------------------------------------------------------------
+# beat_sync (beat_sync {t_us} {bpm} {bpb} {beat_in_bar}) — a clock sample
+# (t_us=now), not a back-dated downbeat event. No absolute bar count — that's
+# DAW context mod-host doesn't need to expose.
+# ---------------------------------------------------------------------------
+
+
+def test_beat_sync_basic():
+    assert parse_message("beat_sync 1234567890 120.0 4 0.0") == BeatSyncMessage(
+        t_us=1234567890, bpm=120.0, bpb=4.0, beat_in_bar=0.0
+    )
+
+
+def test_beat_sync_zero_beat_in_bar():
+    assert parse_message("beat_sync 0 60.0 3 0.0") == BeatSyncMessage(
+        t_us=0, bpm=60.0, bpb=3.0, beat_in_bar=0.0
+    )
+
+
+def test_beat_sync_fractional_bpb():
+    assert parse_message("beat_sync 1000000 90.5 7 2.5") == BeatSyncMessage(
+        t_us=1000000, bpm=90.5, bpb=7.0, beat_in_bar=2.5
+    )
+
+
+def test_beat_sync_too_few_fields_is_unknown():
+    assert isinstance(parse_message("beat_sync 5 1234567890 120.0"), UnknownMessage)
+
+
+def test_beat_sync_non_int_t_us_is_unknown():
+    assert isinstance(parse_message("beat_sync 5 notanumber 120.0 4"), UnknownMessage)
+
+
+def test_beat_sync_non_float_bpm_is_unknown():
+    assert isinstance(parse_message("beat_sync 5 1234567890 notanumber 4"), UnknownMessage)
+
+
 def test_plugin_bypass_nonzero_is_true():
     msg = parse_message("param_set /graph/Reverb :bypass 0.5")
     assert msg == PluginBypassMessage(instance="Reverb", bypassed=True)
@@ -353,3 +392,33 @@ def test_malformed_pedal_snapshot_non_int():
 def test_empty_string():
     msg = parse_message("")
     assert isinstance(msg, UnknownMessage)
+
+
+# ---------------------------------------------------------------------------
+# output_set (output_set /graph/{instance} {symbol} {value})
+# ---------------------------------------------------------------------------
+
+
+def test_output_set_parses_to_output_set_message():
+    msg = parse_message("output_set /graph/loopjefe state 2.0")
+    assert msg == OutputSetMessage(instance="loopjefe", symbol="state", value=2.0)
+
+
+def test_output_set_integer_port():
+    msg = parse_message("output_set /graph/loopjefe measure_number 0.0")
+    assert msg == OutputSetMessage(instance="loopjefe", symbol="measure_number", value=0.0)
+
+
+def test_output_set_missing_value_is_unknown():
+    msg = parse_message("output_set /graph/loopjefe state")
+    assert isinstance(msg, UnknownMessage)
+
+
+def test_output_set_non_float_value_is_unknown():
+    msg = parse_message("output_set /graph/loopjefe state notanumber")
+    assert isinstance(msg, UnknownMessage)
+
+
+def test_output_set_strips_graph_prefix():
+    msg = parse_message("output_set /graph/loopjefe state 4.0")
+    assert msg == OutputSetMessage(instance="loopjefe", symbol="state", value=4.0)

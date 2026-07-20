@@ -97,13 +97,30 @@ class TransportMessage:
 
 
 @dataclass
+class BeatSyncMessage:
+    """A sample of the transport clock (t_us=now, CLOCK_MONOTONIC) — not a
+    back-dated downbeat event. Consumers forward-extrapolate
+    pos(t) = beat_in_bar + (t - t_us) * bpm / 60, so cadence controls
+    tightness, never correctness; each sample fully replaces any prior
+    anchor. Emitted on a new bar (heartbeat) and on any discrete bpm/bpb
+    change while rolling. No absolute bar count — that's DAW-context mod-host
+    doesn't need to expose; only the fractional position within the current
+    bar matters for phase/downbeat math."""
+
+    t_us: int
+    bpm: float
+    bpb: float
+    beat_in_bar: float
+
+
+@dataclass
 class AddPluginMessage:
     """Plugin present in a (re)connect/load dump, or dynamically added (add ...)."""
 
     instance: str  # canonical bare form, e.g. "CollisionDrive"
-    uri: str       # LV2 plugin URI
-    x: float       # mod-ui canvas X
-    y: float       # mod-ui canvas Y
+    uri: str  # LV2 plugin URI
+    x: float  # mod-ui canvas X
+    y: float  # mod-ui canvas Y
     bypassed: bool
 
 
@@ -119,7 +136,7 @@ class ConnectMessage:
     """Two ports connected in the active pedalboard (connect ...)."""
 
     port_from: str  # e.g. "/graph/PluginA/out_L"
-    port_to: str    # e.g. "/graph/PluginB/in_L"
+    port_to: str  # e.g. "/graph/PluginB/in_L"
 
 
 @dataclass
@@ -136,6 +153,15 @@ class ParamSetMessage:
 
     instance: str  # canonical bare form, e.g. "HotBox"
     symbol: str  # e.g. "gain"
+    value: float
+
+
+@dataclass
+class OutputSetMessage:
+    """A plugin output-port value changed (output_set)."""
+
+    instance: str
+    symbol: str
     value: float
 
 
@@ -172,11 +198,13 @@ WebSocketMessage = Union[
     TrueBypassMessage,
     PluginBypassMessage,
     TransportMessage,
+    BeatSyncMessage,
     AddPluginMessage,
     RemovePluginMessage,
     ConnectMessage,
     DisconnectMessage,
     ParamSetMessage,
+    OutputSetMessage,
     MidiMapMessage,
     UnknownMessage,
 ]
@@ -281,6 +309,12 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                 symbol, value_str = rest.split(" ", 1)
                 return ParamSetMessage(instance=instance, symbol=symbol, value=float(value_str))
 
+            # Format: output_set /graph/{instance} {symbol} {value}
+            case ["output_set", path, rest]:
+                instance = path.removeprefix("/graph/")
+                symbol, value_str = rest.split(" ", 1)
+                return OutputSetMessage(instance=instance, symbol=symbol, value=float(value_str))
+
             # Format: midi_map /graph/{instance} {symbol} {channel} {controller} {min} {max}
             case ["midi_map", path, rest]:
                 symbol, ch, ctrl = rest.split(" ")[:3]
@@ -303,6 +337,16 @@ def parse_message(raw_message: str) -> WebSocketMessage:
             case ["transport", rolling, rest]:
                 bpm = float(rest.split()[1])
                 return TransportMessage(rolling=rolling != "0", bpm=bpm)
+
+            # Format: beat_sync {t_us} {bpm} {bpb} {beat_in_bar}
+            case ["beat_sync", t_us, rest]:
+                bpm, bpb, beat_in_bar = rest.split(" ")
+                return BeatSyncMessage(
+                    t_us=int(t_us),
+                    bpm=float(bpm),
+                    bpb=float(bpb),
+                    beat_in_bar=float(beat_in_bar),
+                )
 
     except (ValueError, IndexError) as e:
         logging.warning(f"Failed to parse WebSocket message '{raw_message}': {e}")

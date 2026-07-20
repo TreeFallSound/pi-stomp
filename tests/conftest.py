@@ -155,6 +155,7 @@ class FakeWebSocketBridge:
     def __init__(self):
         self.sent: list[str] = []
         self._inbox: list[str] = []
+        self.interesting_calls: list[frozenset[str]] = []
 
     def start(self) -> None:
         pass
@@ -172,6 +173,9 @@ class FakeWebSocketBridge:
 
     def clear_queue(self) -> int:
         return 0
+
+    def set_interesting_outputs(self, keys: frozenset[str]) -> None:
+        self.interesting_calls.append(keys)
 
     def get_received_messages(self) -> list[str]:
         msgs, self._inbox = self._inbox, []

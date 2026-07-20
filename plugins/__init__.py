@@ -49,6 +49,7 @@ import plugins.mda_dynamics  # noqa: F401
 import plugins.system_compressor  # noqa: F401
 import plugins.multiband_menu  # noqa: F401  # MultibandWindow base
 import plugins.layouts  # noqa: F401  # Layout components
+import plugins.loopjefe  # noqa: F401  # LoopJefe footswitch behavior
 
 __all__ = [
     "PluginCustomization",

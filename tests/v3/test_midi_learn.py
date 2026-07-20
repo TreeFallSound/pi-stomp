@@ -109,3 +109,94 @@ def test_v3_midi_learn_unknown_instance_is_ignored(v3_system: SystemFixture, mak
 
     assert fs0.parameter is None
     assert plugin.has_footswitch is False
+
+
+def _make_loopjefe_plugin_with_advance(make_parameter, instance_id="loopjefe"):
+    """Build a loopjefe plugin with an `advance` trigger parameter, using the
+    real registered loopjefe customization (plugins/__init__.py imports
+    plugins.loopjefe, which registers its LedSpec)."""
+    from common.parameter import Type
+    from modalapi.plugin import Plugin
+    from plugins import lookup
+    from plugins.loopjefe import LOOPJEFE_URIS
+
+    advance = make_parameter("advance", instance_id, value=0.0)
+    advance.type = Type.TRIGGER  # pprops:trigger in loopjefe.ttl
+    uri = LOOPJEFE_URIS[0]
+    return Plugin(instance_id, {"advance": advance}, {}, "Looper",
+                  uri=uri, customization=lookup(uri))
+
+
+class TestMidiLearnBindsMomentaryAndOutputs:
+    """Regression: the live MIDI-learn path (Handler._apply_midi_binding →
+    _bind_controller_to_param) must not need any plugin-specific input code —
+    momentary semantics come for free from the bound parameter's port type
+    (pprops:trigger → Type.TRIGGER), and the LED driver reads the plugin's own
+    generically-mirrored output_values (from its LedSpec), not anything cached
+    on the footswitch."""
+
+    def test_midi_learn_binds_trigger_parameter_as_momentary(self, v3_system: SystemFixture, make_parameter):
+        handler = v3_system.handler
+        hw = v3_system.hw
+        ws_bridge = v3_system.ws_bridge
+        assert handler.current
+
+        fs0 = hw.footswitches[0]
+        channel, cc = _binding_for(hw, fs0).split(":")
+
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        handler.current.pedalboard.plugins = [plugin]
+
+        ws_bridge.inject(f"midi_map /graph/loopjefe advance {channel} {cc} 0.0 1.0")
+        handler.poll_ws_messages()
+
+        assert fs0.parameter is plugin.parameters["advance"]
+        assert fs0.parameter is not None
+        assert fs0.parameter.is_momentary is True, (
+            "advance is pprops:trigger — momentary must be derived from the "
+            "port type, with zero loopjefe-specific input code"
+        )
+
+    def test_update_interesting_outputs_derives_from_plugin_led_spec(
+        self, v3_system: SystemFixture, make_parameter
+    ):
+        """Monitored outputs are owned by the plugin (its LedSpec), not by
+        whichever footswitch happens to be bound to it."""
+        handler = v3_system.handler
+        assert handler.current
+
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        handler.current.pedalboard.plugins = [plugin]
+
+        handler._update_interesting_outputs()
+
+        last = v3_system.ws_bridge.interesting_calls[-1]
+        assert "loopjefe/state" in last
+        assert "loopjefe/measure_number" in last
+
+    def test_output_set_updates_plugin_output_values_for_led_spec(
+        self, v3_system: SystemFixture, make_parameter
+    ):
+        """End-to-end: an output_set for loopjefe/state and measure_number
+        updates plugin.output_values generically, and the plugin's LedSpec
+        renders the right color/style from them — no footswitch involved."""
+        from modalapi.led_render import LedDisplayStyle, render_led_spec
+
+        handler = v3_system.handler
+        ws_bridge = v3_system.ws_bridge
+        assert handler.current
+
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        handler.current.pedalboard.plugins = [plugin]
+
+        ws_bridge.inject("output_set /graph/loopjefe state 2.0")
+        ws_bridge.inject("output_set /graph/loopjefe measure_number 1.0")
+        handler.poll_ws_messages()
+
+        assert plugin.output_values["state"] == 2.0
+        assert plugin.output_values["measure_number"] == 1.0
+
+        assert plugin.customization.led_spec is not None
+        color, style = render_led_spec(plugin.customization.led_spec, plugin.output_values)
+        assert color == (255, 0, 0)  # Recording → red
+        assert style == LedDisplayStyle.METRONOME

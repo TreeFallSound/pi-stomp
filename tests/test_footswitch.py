@@ -59,6 +59,37 @@ class TestLongpressGroups:
             assert fs.longpress_groups == []
 
 
+class TestSetLongpress:
+    """set_longpress is the config-facing entry point: dispatches between the
+    named-group form (str/list/None) and the {midi_CC: N} form."""
+
+    def test_string_sets_groups(self):
+        with _make_footswitch() as (fs, _sink):
+            fs.set_longpress("toggle_bypass")
+            assert fs.longpress_groups == ["toggle_bypass"]
+            assert fs.longpress_midi_CC is None
+
+    def test_list_sets_groups(self):
+        with _make_footswitch() as (fs, _sink):
+            fs.set_longpress(["next_snapshot", "toggle_bypass"])
+            assert fs.longpress_groups == ["next_snapshot", "toggle_bypass"]
+            assert fs.longpress_midi_CC is None
+
+    def test_none_clears_both(self):
+        with _make_footswitch() as (fs, _sink):
+            fs.set_longpress({"midi_CC": 65})
+            fs.set_longpress(None)
+            assert fs.longpress_groups == []
+            assert fs.longpress_midi_CC is None
+
+    def test_dict_sets_midi_cc_and_clears_groups(self):
+        with _make_footswitch() as (fs, _sink):
+            fs.set_longpress_groups(["toggle_bypass"])
+            fs.set_longpress({"midi_CC": 65})
+            assert fs.longpress_midi_CC == 65
+            assert fs.longpress_groups == []
+
+
 class TestOnSwitch:
     def test_short_press_dispatches_press_event(self):
         with _make_footswitch() as (fs, sink):
