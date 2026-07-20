@@ -2,10 +2,10 @@
 
 `draw_plugins` tears down the old grid and builds new tiles. Each PluginTile
 paints once on construction (unstyled: label on the bare backdrop) and again
-once `color_plugin` gives it its fill. If those intermediate paints reach the
-LCD, the user sees every effect's name flash in white-on-black before the tiles
-fill in. The redraw must present atomically — every frame pushed during the
-rebuild is identical to the finished screen.
+once `_apply_bypass_colors` gives it its fill. If those intermediate paints
+reach the LCD, the user sees every effect's name flash in white-on-black
+before the tiles fill in. The redraw must present atomically — every frame
+pushed during the rebuild is identical to the finished screen.
 """
 
 from __future__ import annotations

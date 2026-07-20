@@ -28,7 +28,7 @@ from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, Type
 from modalapi.plugin import Plugin
 from ui.ethernet_menu import EthernetMenu
 from ui.wifi_menu import WifiMenu
-import pistomp.category as Category
+from common.color import accent_color_for, TILE_DEFAULT_COLOR
 import pistomp.switchstate as switchstate
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
@@ -155,21 +155,6 @@ class Lcd:
         self.foreground = (255, 255, 255)
         self.color_splash_up = (70, 255, 70)
         self.color_splash_down = (255, 20, 20)
-        self.default_plugin_color = "Silver"
-        self.category_color_map = {
-            "Delay": "MediumVioletRed",
-            "Distortion": "Lime",
-            "Dynamics": "OrangeRed",
-            "Filter": (205, 133, 40),
-            "Generator": "Indigo",
-            "Midiutility": "Gray",
-            "Modulator": (50, 50, 255),
-            "Reverb": (20, 160, 255),
-            "Simulator": "SaddleBrown",
-            "Spacial": "Gray",
-            "Spectral": "Red",
-            "Utility": "Gray",
-        }
 
         # TODO get fonts from config.json
         self.title_font = _make_font(font_path("DejaVuSans-Bold.ttf"), 26)
@@ -205,11 +190,9 @@ class Lcd:
         self.w_colon = None
         self.w_preset = None
         self.w_plugins = []
-        self._plugin_unsubs: list[Callable[[], None]] = []
         self.grid_panel: Optional[GridPanel] = None
         self.w_footswitches = []
         self.w_controls = []
-        self._control_unsubs: list[Callable[[], None]] = []
         self.w_splash = None
         self.w_info_msg = None
         self.w_subtitle: Optional[Subtitle] = None
@@ -628,18 +611,18 @@ class Lcd:
             label = self.shorten_name(label, box.width)
             subtitle = plugin.subtitle or (f"{plugin.category}: {display_name}" if plugin.category else display_name)
             tile = PluginTile(
+                plugin=plugin,
                 box=box,
                 text=label,
                 outline_radius=5,
                 parent=parent,
                 action=self.plugin_event,
-                object=plugin,
                 subtitle=subtitle,
                 border=plugin.tile_border,
                 backdrop=self.background,
+                foreground=self.foreground,
             )
             tile.set_font(self.small_font)
-            self.color_plugin(tile, plugin)
             self.w_plugins.append(tile)
             return tile
 
@@ -657,20 +640,6 @@ class Lcd:
         # Repaint the grid's backing surface with the final tile colors before main_panel blits it
         self.grid_panel.refresh()
         self.main_panel.refresh()
-        self._subscribe_plugins()
-
-    def _subscribe_plugins(self) -> None:
-        self._unsubscribe_plugins()
-        for plugin in self.current.pedalboard.plugins:
-            bp = plugin.parameters.get(BYPASS_SYMBOL)
-            if bp is None:
-                continue
-            self._plugin_unsubs.append(bp.subscribe(lambda _, pl=plugin: self._refresh_plugin(pl)))
-
-    def _unsubscribe_plugins(self) -> None:
-        for u in self._plugin_unsubs:
-            u()
-        self._plugin_unsubs = []
 
     def plugin_event(self, event, widget, plugin):
         panel_cls = plugin.panel_cls
@@ -699,54 +668,6 @@ class Lcd:
             footswitch._on_switch(switchstate.Value.RELEASED, time.monotonic())
         elif event == InputEvent.LONG_CLICK:
             footswitch._on_switch(switchstate.Value.LONGPRESSED, time.monotonic())
-
-    def color_plugin(self, widget, plugin):
-        if plugin.is_bypassed():
-            widget.set_outline(1, self.get_plugin_color(plugin))
-            widget.set_background(self.background)
-            widget.set_foreground(self.foreground)
-        else:
-            # Active: body fill only, no outline. PluginTile's glyph
-            # treats outline_color=None as "no border". Custom borders
-            # (e.g. NAM tri-color) are passed via PluginCustomization.tile_border.
-            widget.set_outline(0, None)
-            if plugin.tile_active_color is not None:
-                widget.set_background(plugin.tile_active_color)
-            else:
-                widget.set_background(self.get_plugin_color(plugin))
-            widget.set_foreground(self.background)
-
-    def _refresh_plugin(self, plugin):
-        for w in self.w_plugins:
-            if w.object is plugin:
-                self.color_plugin(w, plugin)
-                w.refresh()
-                break
-
-    # Try to map color to a valid displayable color, if not use foreground
-    def valid_color(self, color):
-        if color is None:
-            return self.foreground
-        try:
-            c = pygame.Color(color)
-            return (c.r, c.g, c.b)
-        except (ValueError, TypeError):
-            logging.error("Cannot convert color name: %s" % color)
-            return self.foreground
-
-    # Get the color assigned to the plugin category
-    def get_category_color(self, category):
-        color = self.default_plugin_color
-        if category:
-            c = util.DICT_GET(self.category_color_map, category)
-            if c:
-                color = c if isinstance(c, tuple) else self.valid_color(c)
-        return color
-
-    def get_plugin_color(self, plugin):
-        if plugin.category:
-            return self.get_category_color(plugin.category)
-        return self.default_plugin_color
 
     #
     # Parameter Editing
@@ -956,7 +877,7 @@ class Lcd:
             elif fs.parameter is not None:
                 label = self.footswitch_label(fs, slot_w)
                 fs.set_display_label(label)
-                color = Category.get_category_color(fs.category)
+                color = accent_color_for(fs.category)
                 action = self.footswitch_event
             else:
                 label = fs.get_display_label() or ""
@@ -989,7 +910,7 @@ class Lcd:
                 elif footswitch.parameter is not None:
                     # Binding may be new (e.g. MIDI learn) — reflect label + color.
                     footswitch.set_display_label(self.footswitch_label(footswitch, slot_w))
-                    wfs.color = Category.get_category_color(footswitch.category)
+                    wfs.color = accent_color_for(footswitch.category)
                 wfs.toggle(not footswitch.toggled)
                 wfs.label = footswitch.get_display_label() or ""
                 wfs.refresh()
@@ -1281,9 +1202,6 @@ class Lcd:
         for w in self.w_controls:
             w.destroy()
         self.w_controls = []
-        for unsub in self._control_unsubs:
-            unsub()
-        self._control_unsubs = []
 
         y = 56  # vertical position on screen
         for i in range(0, num):
@@ -1318,7 +1236,7 @@ class Lcd:
                 name = "none"
                 control_type = Token.EXPRESSION if i == 0 else Token.KNOB  # HACK cuz we don't know type of unmapped
                 subtitle = "Expression pedal (unassigned)" if control_type == Token.EXPRESSION else "Knob (unassigned)"
-                color = Category.get_category_color(None)
+                color = accent_color_for(None)
                 text_color = color
                 control_label_fn = None
                 control_param = None
@@ -1331,7 +1249,7 @@ class Lcd:
                     name = "volume"
                     subtitle = "Output volume"
                     control_type = Token.KNOB
-                    color = self.default_plugin_color
+                    color = TILE_DEFAULT_COLOR
                     text_color = color
                 else:
                     port_name = util.DICT_GET(v, "port_name")
@@ -1339,7 +1257,7 @@ class Lcd:
                         midi_cc = util.DICT_GET(v, "midi_cc")
                         subtitle = f"{port_name}:{midi_cc} (external MIDI)"
                         name = self.shorten_name(f"{port_name}:{midi_cc}", text_per_control)
-                        color = self.default_plugin_color
+                        color = TILE_DEFAULT_COLOR
                         text_color = (180, 180, 255)  # light blue = external routing
                     else:
                         subtitle = k.split(":")[1]
@@ -1352,15 +1270,15 @@ class Lcd:
                         color = util.DICT_GET(v, Token.COLOR)
                         if color is None:
                             category = util.DICT_GET(v, Token.CATEGORY)
-                            text_color = Category.get_category_color(category)
-                            color = self.default_plugin_color
+                            text_color = accent_color_for(category)
+                            color = TILE_DEFAULT_COLOR
                         else:
                             text_color = color
 
             blend_initial_progress = None
             if isinstance(icon_object, BlendMode):
-                text_color = self.default_plugin_color
-                color = self.default_plugin_color
+                text_color = TILE_DEFAULT_COLOR
+                color = TILE_DEFAULT_COLOR
                 # Initialize label and progress bar from the current input position.
                 ic = icon_object.input_controller
                 input_ctrl = ic.controlled_input if ic is not None else None
@@ -1407,13 +1325,9 @@ class Lcd:
                 self.w_controls.append(w)
 
             # Live-value labels (transport's ♩=120, Playing/Stopped) track the
-            # param: subscribe so a value echo re-renders the icon text.
+            # param: the icon subscribes and re-renders its text on value echo.
             if control_label_fn is not None and control_param is not None and w is not None:
-                fn = control_label_fn
-                p = control_param
-                self._control_unsubs.append(
-                    p.subscribe(lambda _, w=w, fn=fn, p=p: w.set_text(fn(p)))
-                )
+                w.bind_label(control_param, control_label_fn)
 
         # Rebuild path: widget create/destroy above marks regions dirty, but
         # the LCD push only fires on a refresh. Called standalone from

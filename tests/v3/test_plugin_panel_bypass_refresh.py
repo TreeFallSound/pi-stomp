@@ -58,7 +58,7 @@ def _tile_for(v3_system: SystemFixture, plugin: Plugin):
 
 
 def _assert_tile_matches_bypass_state(tile, plugin: Plugin) -> None:
-    """Mirrors Lcd320x240.color_plugin's outline/background contract."""
+    """Mirrors PluginTile._apply_bypass_colors' outline/background contract."""
     if plugin.is_bypassed():
         assert tile.outline == 1
     else:

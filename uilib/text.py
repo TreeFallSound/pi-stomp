@@ -18,6 +18,7 @@ from math import log
 
 from typing import Optional, TYPE_CHECKING
 from typing_extensions import override
+from collections.abc import Callable
 import pygame
 
 from uilib.pygame_init import font as _make_font
@@ -25,8 +26,14 @@ from uilib.box import Box
 from uilib.widget import Widget
 from uilib.panel import RoundedPanel
 from uilib.misc import InputEvent, TextHAlign, get_text_size, trace
+
+if TYPE_CHECKING:
+    from common.parameter import Parameter
+    from modalapi.plugin import Plugin
+
+from common.parameter import BYPASS_SYMBOL
 from uilib.config import Config
-from common.color import ColorRGB, RectBorder
+from common.color import ColorRGB, RectBorder, tile_color_for
 
 from uilib.paint import ColorLike
 from uilib.glyphs import RoundedRectGlyph
@@ -459,10 +466,41 @@ class PluginTile(TextWidget):
     widget must fully, opaquely cover its own rect.
     """
 
-    def __init__(self, *, border: RectBorder | None = None, backdrop: tuple[int, int, int] = (0, 0, 0), **kwargs):
+    def __init__(self, *, plugin: "Plugin", border: RectBorder | None = None, backdrop: tuple[int, int, int] = (0, 0, 0), foreground: tuple[int, int, int] = (255, 255, 255), **kwargs):
         self._custom_border = border
         self._backdrop = backdrop
-        super().__init__(**kwargs)
+        self._foreground = foreground
+        self._plugin: "Plugin" = plugin
+        self._bypass_unsub: Callable[[], None] | None = None
+        super().__init__(object=plugin, **kwargs)
+        self._apply_bypass_colors()
+        bp = plugin.parameters.get(BYPASS_SYMBOL)
+        if bp is not None:
+            self._bypass_unsub = bp.subscribe(self._on_bypass_changed)
+
+    def _apply_bypass_colors(self) -> None:
+        plugin = self._plugin
+        if plugin.is_bypassed():
+            self.set_outline(1, tile_color_for(plugin.category))
+            self.set_background(self._backdrop)
+            self.set_foreground(self._foreground)
+        else:
+            self.set_outline(0, None)
+            if plugin.tile_active_color is not None:
+                self.set_background(plugin.tile_active_color)
+            else:
+                self.set_background(tile_color_for(plugin.category))
+            self.set_foreground(self._backdrop)
+
+    def _on_bypass_changed(self, _param: "Parameter") -> None:
+        self._apply_bypass_colors()
+        self.refresh()
+
+    def destroy(self) -> None:
+        if self._bypass_unsub is not None:
+            self._bypass_unsub()
+            self._bypass_unsub = None
+        super().destroy()
 
     def _get_border(self) -> RectBorder:
         if self._custom_border is not None:

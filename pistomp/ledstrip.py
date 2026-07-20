@@ -18,7 +18,7 @@ import logging
 import pygame
 
 import common.util as Util
-import pistomp.category as Category
+from common.color import accent_color_for
 
 # LED strip configuration:  # TODO get these from hardware impl (pisompcore.py)
 LED_COUNT = 6          # Number of LED pixels.
@@ -58,7 +58,7 @@ class Pixel:
 
     # set the color for the pixel based on category, then render based on enabled status
     def set_color_by_category(self, category, enabled):
-        self.set_color(Category.get_category_color(category))
+        self.set_color(accent_color_for(category))
         self.set_enable(enabled)
 
     # render based on enable

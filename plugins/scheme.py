@@ -7,7 +7,7 @@ pass ``None`` and get the fixed default look.
 
 from __future__ import annotations
 
-from pistomp.category import get_category_color
+from common.color import accent_color_for
 from uilib.dialog import DialogScheme
 from uilib.misc import shade_color
 
@@ -22,7 +22,7 @@ def scheme_for_category(category: str | None) -> DialogScheme | None:
     """
     if category is None:
         return None
-    accent = get_category_color(category)
+    accent = accent_color_for(category)
     return DialogScheme(
         title_fgnd=(255, 255, 255),
         title_bkgnd=shade_color(accent, 0.3),
