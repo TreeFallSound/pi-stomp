@@ -249,3 +249,23 @@ def test_websocket_bridge_is_connected_version_agnostic():
     mock_ws_legacy.closed = True
     assert bridge.is_connected is False
 
+
+def test_set_mod_tap_tempo_rest_fallback(modhandler_system: SystemFixture):
+    """set_mod_tap_tempo() falls back to REST when WebSocket bridge is disconnected."""
+    handler = modhandler_system.handler
+    ws_bridge = modhandler_system.ws_bridge
+    mock_post = modhandler_system.mock_post
+
+    # Simulate disconnected WebSocket bridge
+    ws_bridge.is_connected = False
+
+    handler.set_mod_tap_tempo(120)
+
+    # Should NOT have sent via WebSocket
+    assert not any(m.startswith("transport-bpm") for m in ws_bridge.sent)
+
+    # Should have fallen back to REST
+    mock_post.assert_called_once()
+    call_args = mock_post.call_args
+    assert "set_bpm" in call_args.args[0]
+    assert call_args.kwargs.get("json", {}).get("value") == 120

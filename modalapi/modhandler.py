@@ -21,6 +21,7 @@ from pistomp.audiocard import Audiocard
 import json
 import logging
 import os
+import time
 import requests as req
 from requests import Response
 import subprocess
@@ -398,7 +399,6 @@ class Modhandler(Handler):
 
         elif isinstance(msg, TransportMessage):
             if self.hardware and self.hardware.taptempo:
-                import time
                 # Prevent WebSocket feedback echo from overriding recently adjusted local BPM (0.5s cooldown)
                 if not hasattr(self, '_last_bpm_change_time') or (time.time() - self._last_bpm_change_time > 0.5):
                     self.hardware.taptempo.set_bpm(msg.bpm)
@@ -1076,12 +1076,9 @@ class Modhandler(Handler):
 
     def set_mod_tap_tempo(self, bpm):
         if bpm is not None:
-            import time
             self._last_bpm_change_time = time.time()
             # Send BPM updates via WebSocket bridge if connected for low-latency; fallback to REST API
-            if self.ws_bridge and self.ws_bridge.is_connected:
-                self.ws_bridge.send_bpm(bpm)
-            else:
+            if not self.ws_bridge or not self.ws_bridge.is_connected or not self.ws_bridge.send_bpm(bpm):
                 self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
             self._pending_bpm_update = bpm
 

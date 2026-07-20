@@ -758,7 +758,7 @@ class Lcd(abstract_lcd.Lcd):
 
     def update_bpm(self, bpm):
         if self.w_bpm is not None:
-            self.w_bpm.set_text(f"{round(bpm)} BPM" if bpm else "")
+            self.w_bpm.set_text(f"{round(bpm)} BPM" if bpm else "--- BPM")
 
     def draw_tool_select(self, tool_type):
         pass
