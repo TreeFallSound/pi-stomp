@@ -151,12 +151,20 @@ class ControllerManager:
                     event_kind = EventKind.ROTATE
                     cls = ControlClass.ANALOG
 
+                # the ParamEffect row must defer when tap tempo is active
+                # N.B. closure captures the right taptempo instance for each row
+                enabled_when = None
+                if isinstance(controller, Footswitch) and controller.taptempo is not None:
+                    _tap = controller.taptempo
+                    enabled_when = lambda _tap=_tap: not _tap.is_enabled()  # noqa: E731
+
                 pedalboard_layer.add(
                     BindingDecl(
                         control=ControlRef(cls=cls, id=param.binding),
                         event_kind=event_kind,
                         effects=(ParamEffect(plugin=plugin, symbol=param.symbol),),
                         context=pedalboard_layer.ref,
+                        enabled_when=enabled_when,
                     )
                 )
         return footswitch_plugins
@@ -301,21 +309,20 @@ class ControllerManager:
                     )
                 )
 
-            if fs.parameter is not None:
-                continue  # plugin :bypass — _bind_plugin_parameters rowed it
-
             if fs.taptempo is not None:
                 # Taptempo footswitch has two modes: stamp when enabled, CC toggle
                 # when disabled. Two rows, gated by enabled_when so the resolver
                 # picks the active one. The CC-toggle row carries the same midi_CC.
-                tap = fs.taptempo
+                # Must come before the plugin-:bypass guard so a footswitch with
+                # both taptempo and a plugin binding still gets its TapTempoEffect row
+                _tap = fs.taptempo
                 pedalboard_layer.add(
                     BindingDecl(
                         control=ControlRef(cls=ControlClass.FOOTSWITCH, id=key),
                         event_kind=EventKind.PRESS,
                         effects=(TapTempoEffect(),),
                         context=pedalboard_layer.ref,
-                        enabled_when=tap.is_enabled,
+                        enabled_when=_tap.is_enabled,
                     )
                 )
                 if fs.midi_CC is not None:
@@ -325,10 +332,15 @@ class ControllerManager:
                             event_kind=EventKind.PRESS,
                             effects=(MidiCcEffect(cc_ref=key, toggle=True),),
                             context=pedalboard_layer.ref,
-                            enabled_when=lambda: not tap.is_enabled(),
+                            enabled_when=lambda _tap=_tap: not _tap.is_enabled(),  # noqa: E731
                         )
                     )
-            elif fs.preset_direction is not None:
+                continue  # taptempo owns both rows; skip the elif chain below
+
+            if fs.parameter is not None:
+                continue  # plugin :bypass — _bind_plugin_parameters rowed it
+
+            if fs.preset_direction is not None:
                 pedalboard_layer.add(
                     BindingDecl(
                         control=ControlRef(cls=ControlClass.FOOTSWITCH, id=key),
