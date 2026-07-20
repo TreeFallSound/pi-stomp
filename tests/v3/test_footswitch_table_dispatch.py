@@ -7,7 +7,6 @@ action type — preset, taptempo, midi_CC toggle, relay longpress, plugin-:bypas
 hardware side effects.
 """
 
-
 from common.contexts import (
     ControlClass,
     EventKind,
@@ -145,8 +144,7 @@ def test_toggle_plugin_bypass_through_table_fires_param_effect(v3_system: System
     rows = handler._controller_manager.effective_table.layers[0].rows.get(
         (ControlClass.FOOTSWITCH, EventKind.PRESS), []
     )
-    param_rows = [r for r in rows if r.control.id == binding
-                  and any(isinstance(e, ParamEffect) for e in r.effects)]
+    param_rows = [r for r in rows if r.control.id == binding and any(isinstance(e, ParamEffect) for e in r.effects)]
     assert len(param_rows) == 1
 
     hw.midiout.send_message.reset_mock()
@@ -178,9 +176,8 @@ def test_midi_cc_toggle_footswitch_press_emits_cc_and_toggles_led(v3_system: Sys
     assert fs0.toggled is True
     # midiout.send_message called with [channel|CONTROL_CHANGE, CC, 127]
     from rtmidi.midiconstants import CONTROL_CHANGE
-    v3_system.hw.midiout.send_message.assert_called_with(
-        [fs0.midi_channel | CONTROL_CHANGE, fs0.midi_CC, 127]
-    )
+
+    v3_system.hw.midiout.send_message.assert_called_with([fs0.midi_channel | CONTROL_CHANGE, fs0.midi_CC, 127])
 
 
 def test_preset_footswitch_press_changes_preset(v3_system: SystemFixture):
@@ -241,6 +238,65 @@ def test_taptempo_footswitch_press_when_disabled_emits_cc(v3_system: SystemFixtu
     assert handler.handle(event) is True
 
     assert fs3.toggled is True  # CC toggle fired
+
+
+def test_taptempo_footswitch_with_plugin_binding_stamps_when_enabled(v3_system: SystemFixture, make_plugin):
+    """A footswitch with both taptempo and a plugin :bypass binding must
+    stamp the tempo when tap mode is enabled, not toggle bypass. Regression:
+    _bind_footswitch_actions skipped taptempo rows for any footswitch with
+    fs.parameter set, leaving only the ParamEffect row."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ch = hw.midi_channel
+
+    # fs3 has taptempo in the default config
+    fs3 = hw.footswitches[3]
+    assert fs3.taptempo is not None
+    binding = f"{ch}:{fs3.midi_CC}"
+
+    # Bind fs3 to a plugin :bypass
+    plugin = make_plugin("fuzz", has_footswitch=True)
+    plugin.parameters[BYPASS_SYMBOL].binding = binding
+    handler.current.pedalboard.plugins = [plugin]
+    handler.bind_current_pedalboard()
+
+    # Enable tap tempo
+    hw.toggle_tap_tempo_enable(120)
+    assert fs3.taptempo.is_enabled()
+
+    stamped: list[float] = []
+    original = fs3.taptempo.stamp
+    fs3.taptempo.stamp = lambda t: stamped.append(t)
+
+    event = SwitchEvent(controller=fs3, kind=SwitchEventKind.PRESS, timestamp=42.0)
+    assert handler.handle(event) is True
+    assert stamped == [42.0], "Tap tempo stamp was not called — ParamEffect row won instead"
+
+    fs3.taptempo.stamp = original
+
+
+def test_taptempo_footswitch_with_plugin_binding_toggles_bypass_when_disabled(v3_system: SystemFixture, make_plugin):
+    """Same footswitch, tap tempo disabled: pressing toggles the plugin
+    :bypass (ParamEffect), not the tap tempo stamp."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ch = hw.midi_channel
+
+    fs3 = hw.footswitches[3]
+    assert fs3.taptempo is not None
+    assert not fs3.taptempo.is_enabled()  # disabled by default
+    binding = f"{ch}:{fs3.midi_CC}"
+
+    plugin = make_plugin("fuzz", has_footswitch=True)
+    plugin.parameters[BYPASS_SYMBOL].binding = binding
+    handler.current.pedalboard.plugins = [plugin]
+    handler.bind_current_pedalboard()
+
+    fs3.toggled = False
+
+    event = SwitchEvent(controller=fs3, kind=SwitchEventKind.PRESS, timestamp=1000.0)
+    assert handler.handle(event) is True
+    assert fs3.toggled is True  # bypass toggled
 
 
 def test_unbound_footswitch_press_does_nothing(v3_system: SystemFixture):
@@ -355,6 +411,7 @@ def test_bypass_config_on_relayless_hardware_is_ignored(v3_system: SystemFixture
     crash — the relay is None, so the config is ignored with a warning instead
     of calling add_relay(None) which would blow up on None.init_state()."""
     import yaml
+
     handler = v3_system.handler
     hw = v3_system.hw
     assert hw.relay is None  # v3 has no relay hardware
