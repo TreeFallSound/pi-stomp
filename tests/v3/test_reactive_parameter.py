@@ -243,8 +243,8 @@ def _grid_tile(v3_system: SystemFixture, plugin: Plugin):
 
 def test_external_bypass_message_repaints_grid_tile(v3_system: SystemFixture, make_plugin):
     """No panel open: an external bypass echo must still repaint the main-grid
-    tile (`_subscribe_plugins` -> `_refresh_plugin` -> `color_plugin`), not
-    just an open panel's Bypass button. Face-3 coverage without a panel."""
+    tile (PluginTile's bypass subscription fires _apply_bypass_colors + refresh),
+    not just an open panel's Bypass button. Face-3 coverage without a panel."""
     plugin = _install(v3_system, make_plugin, bypassed=False)
     tile = _grid_tile(v3_system, plugin)
     assert tile.outline == 0
