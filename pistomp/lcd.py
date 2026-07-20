@@ -58,6 +58,10 @@ class Lcd(ABC):
         pass
 
     @abstractmethod
+    def update_bpm(self, bpm):
+        pass
+
+    @abstractmethod
     def draw_tool_select(self, tool_type):
         pass
 

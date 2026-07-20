@@ -107,6 +107,7 @@ class Lcd(abstract_lcd.Lcd):
         self.footswitch_slots = {}
 
         # widgets
+        self.w_bpm = None
         self.w_wifi = None
         self._wifi_frames: list[Image.Image] = [
             Image.open(os.path.join(self.imagedir, f'wifi_processing_{i}.png'))
@@ -218,6 +219,15 @@ class Lcd(abstract_lcd.Lcd):
     def draw_tools(self, wifi_type=None, eq_type=None, bypass_type=None, system_type=None):
         if self.w_wifi is not None:
             return
+        bpm = self.handler.get_bpm() if self.handler else 120.0
+        self.w_bpm = TextWidget(
+            box=Box.xywh(5, 0, 80, 20),
+            text=f"{round(bpm)} BPM" if bpm else "--- BPM",
+            font=self.tiny_font,
+            parent=self.main_panel,
+            action=self.click_bpm
+        )
+        self.main_panel.add_sel_widget(self.w_bpm)
         self.w_wifi = ImageWidget(
             box=Box.xywh(210, 0, 20, 20),
             image=os.path.join(self.imagedir, 'wifi_gray.png'),
@@ -574,6 +584,7 @@ class Lcd(abstract_lcd.Lcd):
     def draw_system_menu(self, event, widget):
         items = [("System info", self.draw_system_info_dialog, None),
                  ("Tuner", self._toggle_tuner_from_menu, None),
+                 ("Set MIDI Tempo", self.handler.system_menu_bpm, None),
                  ("System shutdown", self.handler.system_menu_shutdown, None),
                  ("System reboot",  self.handler.system_menu_reboot, None),
                  ("Restart sound engine", self.handler.system_menu_restart_sound, None),
@@ -651,14 +662,14 @@ class Lcd(abstract_lcd.Lcd):
                  ("High Band Gain", self.handler.system_menu_eq5_gain, None)]
         self.draw_selection_menu(items, "Audio Menu") 
 
-    def draw_audio_parameter_dialog(self, name, symbol, value, min, max, commit_callback):
+    def draw_audio_parameter_dialog(self, name, symbol, value, min, max, commit_callback, step=None):
         d = util.DICT_GET(self.w_parameter_dialogs, symbol)
         if d is not None and d.parent is not None:
             return d
 
         d = Parameterdialog(self.pstack, name, value, min, max,
                             width=270, height=130, auto_destroy=True, title=name, timeout=2.2,
-                            action=commit_callback, object=symbol, taper=1)
+                            action=commit_callback, object=symbol, taper=1, step=step)
         self.w_parameter_dialogs[symbol] = d
         self.pstack.push_panel(d)
         return d
@@ -740,6 +751,14 @@ class Lcd(abstract_lcd.Lcd):
             img = 'power_gray.png'
         image_path = os.path.join(self.imagedir, img)
         self.w_power.replace_img(image_path)
+
+    def click_bpm(self, event, widget):
+        if event == InputEvent.CLICK and self.handler:
+            self.handler.system_menu_bpm(None)
+
+    def update_bpm(self, bpm):
+        if self.w_bpm is not None:
+            self.w_bpm.set_text(f"{round(bpm)} BPM" if bpm else "")
 
     def draw_tool_select(self, tool_type):
         pass
@@ -833,6 +852,11 @@ class Lcd(abstract_lcd.Lcd):
                                          sel_width=0)
         else:
             self.w_info_msg.set_text(text)
+        if self.w_bpm is not None:
+            if text:
+                self.w_bpm.hide(refresh=False)
+            else:
+                self.w_bpm.show(refresh=False)
         if refresh:
             self.main_panel.refresh()
 

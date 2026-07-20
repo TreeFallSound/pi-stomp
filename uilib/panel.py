@@ -42,6 +42,9 @@ class Panel(ContainerWidget):
         self.sel_list = []
         self.sel = None
         self.auto_destroy = auto_destroy
+        # Set to True for modal dialogs to prevent underlying modal panels (like Menu)
+        # from being drawn/blended behind them, avoiding visual overlap/leakage.
+        self.is_modal = False
         if decorator:
             self.decorator = decorator(self)
         else:
@@ -237,8 +240,22 @@ class PanelStack(ContainerWidget):
 
         # XXX Do some alpha blending to "dim" inactive panels ?
 
-        # Compose panels
+        # Compose panels.
+        # Find the highest/top-most modal panel in the stack.
+        top_modal = None
+        for p in reversed(self.stack):
+            if getattr(p, "is_modal", False):
+                top_modal = p
+                break
+
         for p in self.stack:
+            # If there are multiple modal panels (e.g. Menu and Parameterdialog),
+            # only render the active (top-most) modal panel. Sibling/underlying
+            # non-modal panels (like main_panel and footswitch_panel) should still
+            # be drawn in the background.
+            if getattr(p, "is_modal", False) and p is not top_modal:
+                continue
+
             if self.dimmer is not None:
                 self.image.alpha_composite(self.dimmer, box.topleft, box.rect)
             d = p.decorator

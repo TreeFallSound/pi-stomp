@@ -4,6 +4,21 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Added
+- "Set MIDI Tempo" option in the System Menu to adjust global BPM directly from the hardware encoders.
+- Permanent, real-time top-bar MIDI BPM display on the color LCD (v2/v3) that updates instantly on tap-tempo stamps or WebSocket updates, and acts as a clickable shortcut to open the MIDI Tempo editor dialog.
+
+### Fixed
+- Fixed tap-tempo lag and timing jitter by routing stomp button BPM updates asynchronously via the WebSocket bridge instead of blocking synchronous HTTP REST requests (removing a 50-200ms stall from the 10ms critical path polling thread).
+- Improved BPM adjustment encoder granularity to 1.0 BPM per notch.
+- Immediate local hardware tap-tempo sync for BPM updates (fixing delay/out-of-sync LCD footswitches and LED blinking).
+- High-efficiency reuse of line widgets in `Parameterdialog` to eliminate memory leaks and SPI rendering lag.
+- Legacy MOD REST API exception safety to protect the system main loop from crashing if MOD host is unreachable.
+- Thread-safe deferred BPM updates to prevent UI crashes/restarts when adjusting BPM or performing tap-tempo.
+- Synced Parameterdialog BPM display to use rounded integers (matching top-bar status and footswitch displays) instead of truncation.
+- Isolated modal dialog rendering in the UI library to prevent background panels (like the parent Menu) from leaking visually behind active popups/dialogs.
+
 ## [v3.1.0] - 2026-06-20
 ### Added
 - On-device (LCD) strobe tuner with mute (v3 hardware only). Defaults to longpress on footswitch C

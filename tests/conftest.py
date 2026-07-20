@@ -129,6 +129,7 @@ class FakeWebSocketBridge:
     def __init__(self):
         self.sent: list[str] = []
         self._inbox: list[str] = []
+        self.is_connected = True
 
     def start(self) -> None:
         pass

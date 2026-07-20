@@ -76,6 +76,8 @@ class Dialog(Panel):
         if "mask_format" not in kwargs:
             kwargs["mask_format"] = "1"
         super(Dialog, self).__init__(box=box, align=WidgetAlign.CENTRE, radius=radius, decorator=deco, **kwargs)
+        # Mark all popup dialogs (menus, parameter adjustments, messages) as modal.
+        self.is_modal = True
         # Setup mask
         mdraw = ImageDraw.Draw(self.mask)  # FIXME: self.mask can be None
         # Base is a rounded rectangle

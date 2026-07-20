@@ -85,6 +85,8 @@ class Modhandler(Handler):
 
         # Stores snapshot index from loading_end until pedalboard change is detected
         self.next_pedalboard_preset_index = None
+        # Thread-safe queueing of BPM updates to be processed on the main thread (avoiding Pygame/SPI concurrent writes)
+        self._pending_bpm_update = None
 
         # Backup
         self.backup_dir = "/media/usb0/backups"
@@ -346,6 +348,13 @@ class Modhandler(Handler):
             logging.debug(f"WebSocket: Pedalboard loading finished, snapshot={msg.snapshot_id}")
             # Sometimes mod-ui sends us -1 for preset index, but shows 0 anyway ("Default")
             self.next_pedalboard_preset_index = max(0, msg.snapshot_id)
+            mod_bundle = self.get_current_pedalboard_bundle_path()
+            if self.current and mod_bundle == self.current.pedalboard.bundle:
+                self.current.preset_index = self.next_pedalboard_preset_index
+                self._handle_blend_mode_snapshot_change(self.next_pedalboard_preset_index)
+                self.next_pedalboard_preset_index = None
+                self.lcd.draw_title()
+                self._is_pedalboard_loading = False
 
         elif isinstance(msg, PedalSnapshotMessage):
             if self.next_pedalboard_preset_index is not None:
@@ -389,10 +398,14 @@ class Modhandler(Handler):
 
         elif isinstance(msg, TransportMessage):
             if self.hardware and self.hardware.taptempo:
-                self.hardware.taptempo.set_bpm(msg.bpm)
-                if self.hardware.taptempo.is_enabled():
-                    fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
-                    self.update_lcd_fs(footswitch=fs)
+                import time
+                # Prevent WebSocket feedback echo from overriding recently adjusted local BPM (0.5s cooldown)
+                if not hasattr(self, '_last_bpm_change_time') or (time.time() - self._last_bpm_change_time > 0.5):
+                    self.hardware.taptempo.set_bpm(msg.bpm)
+                    self._pending_bpm_update = msg.bpm
+                    if self.hardware.taptempo.is_enabled():
+                        fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
+                        self.update_lcd_fs(footswitch=fs)
 
         elif isinstance(msg, ParamSetMessage):
             # Mirror mod-ui's live value: refresh the cache (so a later edit opens
@@ -412,6 +425,17 @@ class Modhandler(Handler):
     def poll_ws_messages(self):
         """Drain inbound WS messages (fast ~10ms cadence). Main-thread only.
         Must not touch next_pedalboard_preset_index (owned by the file-watch path)."""
+        # Defer BPM display updates to the main thread's fast 10ms execution loop.
+        bpm = getattr(self, '_pending_bpm_update', None)
+        if bpm is not None:
+            self._pending_bpm_update = None
+            if self.lcd:
+                self.lcd.update_bpm(bpm)
+            if self.hardware and self.hardware.taptempo and self.hardware.taptempo.is_enabled():
+                fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
+                if fs:
+                    self.update_lcd_fs(footswitch=fs)
+
         for msg in self.ws_bridge.get_received_messages():
             try:
                 self._handle_ws_message(parse_message(msg))
@@ -426,10 +450,10 @@ class Modhandler(Handler):
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
-            self._is_pedalboard_loading = True
-            self.lcd.draw_info_message("Loading...")
             mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
             if mod_bundle and self.current and mod_bundle != self.current.pedalboard.bundle:
+                self._is_pedalboard_loading = True
+                self.lcd.draw_info_message("Loading...")
                 logging.info(f"Pedalboard changed via MOD from: {self.current.pedalboard.bundle} to: {mod_bundle}")
 
                 if mod_bundle not in self.pedalboards:
@@ -438,12 +462,15 @@ class Modhandler(Handler):
                 pb = self.reload_pedalboard(mod_bundle)
                 self.set_current_pedalboard(pb)
             elif mod_bundle and self.current and self.next_pedalboard_preset_index is not None:
+                self._is_pedalboard_loading = True
+                self.lcd.draw_info_message("Loading...")
                 # Same pedalboard reloaded with a pending snapshot - apply it now
                 logging.info(f"Applying pending snapshot {self.next_pedalboard_preset_index} to current pedalboard")
                 self.current.preset_index = self.next_pedalboard_preset_index
                 self._handle_blend_mode_snapshot_change(self.next_pedalboard_preset_index)
                 self.next_pedalboard_preset_index = None
                 self.lcd.draw_title()
+                self._is_pedalboard_loading = False
 
         # Look for a change in banks file
         if self.banks_monitor.check_for_change():
@@ -837,6 +864,8 @@ class Modhandler(Handler):
 
         self.eq_status = self.audiocard.get_switch_parameter(self.audiocard.DAC_EQ)
         self.lcd.update_eq(self.eq_status)
+        if self.lcd:
+            self.lcd.update_bpm(self.get_bpm())
         if self.hardware.relay is not None:
             enabled = not self.hardware.relay.get()
             self.lcd.update_bypass(enabled, enabled)
@@ -983,9 +1012,9 @@ class Modhandler(Handler):
     def change_bypass_preference(self, pref):
         self.settings.set_setting(Token.BYPASS, pref)
 
-    def audio_parameter_change(self, direction, name, symbol, value, min, max, commit_callback):
+    def audio_parameter_change(self, direction, name, symbol, value, min, max, commit_callback, step=None):
         if symbol is not None:
-            d = self.lcd.draw_audio_parameter_dialog(name, symbol, value, min, max, commit_callback)
+            d = self.lcd.draw_audio_parameter_dialog(name, symbol, value, min, max, commit_callback, step=step)
             if d is not None:
                 self.lcd.enc_step_widget(d, direction)
 
@@ -1047,18 +1076,40 @@ class Modhandler(Handler):
 
     def set_mod_tap_tempo(self, bpm):
         if bpm is not None:
-            self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
+            import time
+            self._last_bpm_change_time = time.time()
+            # Send BPM updates via WebSocket bridge if connected for low-latency; fallback to REST API
+            if self.ws_bridge and self.ws_bridge.is_connected:
+                self.ws_bridge.send_bpm(bpm)
+            else:
+                self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
+            self._pending_bpm_update = bpm
 
     def get_bpm(self):
         url = self.root_uri + "get_bpm"
         resp = self._rest_get(url)
         if resp is None or resp.status_code != 200:
             return 0.0
-        return float(resp.text)
+        try:
+            return float(resp.text)
+        except ValueError:
+            return 0.0
 
     def toggle_tap_tempo_enable(self, *argv):
         self.hardware.toggle_tap_tempo_enable(self.get_bpm())
         self.lcd.update_footswitches()
+
+    def system_menu_bpm(self, arg):
+        value = self.get_bpm()
+        if arg is None:
+            arg = 0
+        self.audio_parameter_change(arg, "BPM", "bpm", value,
+                                             40.0, 240.0, self.bpm_commit_callback, step=1.0)
+
+    def bpm_commit_callback(self, symbol, value):
+        self.set_mod_tap_tempo(value)
+        if self.hardware and self.hardware.taptempo:
+            self.hardware.taptempo.set_bpm(value)
 
     def set_tuner_source_factory(self, factory: TunerSourceFactory) -> None:
         self._tuner_source_factory = factory

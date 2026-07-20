@@ -134,6 +134,9 @@ class Lcd(abstract_lcd.Lcd):
     def update_bypass(self, bypass):
         pass
 
+    def update_bpm(self, bpm):
+        pass
+
     def update_eq(self, eq_status):
         pass
 

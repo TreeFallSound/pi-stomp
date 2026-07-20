@@ -26,6 +26,8 @@ import traceback
 class Parameterdialog(Dialog):
     def __init__(self, stack, param_name, param_value, param_min, param_max,
                  width, height, title, title_font=None, timeout=None, taper=1, **kwargs):
+        # Optional step size for parameter increment/decrement (e.g. 1.0 for BPM).
+        self.step = kwargs.pop('step', None)
         self._init_attrs(Widget.INH_ATTRS, kwargs)
         super(Parameterdialog,self).__init__(width, height, title, title_font, **kwargs)
         self.stack = stack  # TODO very LAME to require the stack to be passed, ideally panel would be able to pop itself
@@ -71,7 +73,11 @@ class Parameterdialog(Dialog):
         # TODO detailed dimensions, colors, etc. should not be defined in uilib
         y0 = 80
         x_offset = 10
-        val_text = util.format_float(self.param_value)
+        # Round BPM to nearest integer to match status bar and footswitch displays.
+        if self.param_name == "BPM":
+            val_text = f"{round(self.param_value)}"
+        else:
+            val_text = util.format_float(self.param_value)
         if self.w_value is None:
             self.w_value = TextWidget(box=Box.xywh(118, 20, 0, 0), text=val_text, parent=self,
                        align=WidgetAlign.NONE, name='value')
@@ -83,21 +89,28 @@ class Parameterdialog(Dialog):
         else:
             self.w_value.set_text(val_text)
 
-        # TODO would be nice to only redraw the lines that need changing
-        x = 0
-        for i in self.graph_abscissa:
-            i = int(i) - 1  # abscissa start at 1, arrays start at 0
+        # Reuse/cache line widgets instead of recreating them on every redraw to prevent memory leaks and SPI rendering lag.
+        if not hasattr(self, 'line_widgets'):
+            self.line_widgets = []
+            x = 0
+            for i in self.graph_abscissa:
+                i = int(i) - 1  # abscissa start at 1, arrays start at 0
+                g = self.graph_points[i]
+                line_box = Box.xywh(x + x_offset, y0 - g, 1, g)
+                w = Widget(box=line_box, parent=self, outline=1, sel_width=0, outline_radius=0,
+                           align=WidgetAlign.NONE)
+                self.line_widgets.append(w)
+                x = x + self.points_per_actual
+
+        for idx, i in enumerate(self.graph_abscissa):
+            i = int(i) - 1
             a = int(np.ceil(i) / self.points_per_actual)
             p = self.actual_points[a]
-            g = self.graph_points[i]
-            line_box = Box.xywh(x + x_offset, y0 - g, 1, g)
-            w = Widget(box=line_box, parent=self, outline=1, sel_width=0, outline_radius=0,
-                       align=WidgetAlign.NONE)
+            w = self.line_widgets[idx]
             if p <= self.param_value:
                 w.set_foreground('yellow')
             else:
                 w.set_foreground((100, 100, 240))
-            x = x + self.points_per_actual
 
         self.refresh()
 
@@ -114,15 +127,20 @@ class Parameterdialog(Dialog):
 
         # Find the point on the graph for the current param_value, then get the previous or next value
         value = float(self.param_value)
-        i = self._find_nearest_element_index(self.actual_points, value)
-        new = i-1 if (direction != 1) else i+1
-        new_value = self.actual_points[new] if (0 <= new < self.num_actual) else value
+        # Use simple step-based adjustment if a step size is specified (e.g. for BPM)
+        # otherwise find the nearest point on the curve/taper points.
+        if self.step is not None:
+            new_value = round(value + direction * self.step, 1)
+        else:
+            i = self._find_nearest_element_index(self.actual_points, value)
+            new = i-1 if (direction != 1) else i+1
+            new_value = self.actual_points[new] if (0 <= new < self.num_actual) else value
 
         if new_value > self.param_max:
             new_value = self.param_max
         if new_value < self.param_min:
             new_value = self.param_min
-        if new_value is value:
+        if new_value == value:
             return
         self.param_value = new_value
         if self.action is not None:

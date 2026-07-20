@@ -53,6 +53,7 @@ class TopEncoderMode(Enum):
     SYSTEM_MENU = 5
     HEADPHONE_VOLUME = 6
     INPUT_GAIN = 7
+    BPM = 8
 
 class BotEncoderMode(Enum):
     DEFAULT = 0
@@ -76,6 +77,7 @@ class UniversalEncoderMode(Enum):
     DEEP_EDIT = 13
     VALUE_EDIT = 14
     LOADING = 15
+    BPM = 16
 
 class SelectedType(Enum):
     PEDALBOARD = 0
@@ -140,6 +142,8 @@ class Mod(Handler):
 
         # Stores snapshot index from loading_end until pedalboard change is detected
         self.next_pedalboard_preset_index = None
+        # Thread-safe queueing of BPM updates to be processed on the main thread (avoiding Pygame/SPI concurrent writes)
+        self._pending_bpm_update = None
 
         self.selected_menu_index = 0
         self.menu_items = None
@@ -239,6 +243,8 @@ class Mod(Handler):
                 self.top_encoder_mode = TopEncoderMode.SYSTEM_MENU
             elif mode == TopEncoderMode.INPUT_GAIN:
                 self.top_encoder_mode = TopEncoderMode.SYSTEM_MENU
+            elif mode == TopEncoderMode.BPM:
+                self.top_encoder_mode = TopEncoderMode.SYSTEM_MENU
             else:
                 if len(self.current.presets) > 0:
                     self.top_encoder_mode = TopEncoderMode.PRESET_SELECT
@@ -277,12 +283,15 @@ class Mod(Handler):
             self.parameter_value_change(direction, self.headphone_volume_commit)
         elif mode == TopEncoderMode.INPUT_GAIN:
             self.parameter_value_change(direction, self.input_gain_commit)
+        elif mode == TopEncoderMode.BPM:
+            self.parameter_value_change(direction, self.bpm_commit)
 
     def bottom_encoder_sw(self, value):
         # State machine for bottom rotary encoder switch
         if (self.top_encoder_mode == TopEncoderMode.SYSTEM_MENU or
                 self.top_encoder_mode == TopEncoderMode.HEADPHONE_VOLUME or
-                self.top_encoder_mode == TopEncoderMode.INPUT_GAIN):
+                self.top_encoder_mode == TopEncoderMode.INPUT_GAIN or
+                self.top_encoder_mode == TopEncoderMode.BPM):
             return  # Ignore bottom encoder if top encoder has navigated to the system menu
         mode = self.bot_encoder_mode
         if value == switchstate.Value.RELEASED:
@@ -303,7 +312,8 @@ class Mod(Handler):
     def bot_encoder_select(self, direction):
         if (self.top_encoder_mode == TopEncoderMode.SYSTEM_MENU or
                 self.top_encoder_mode == TopEncoderMode.HEADPHONE_VOLUME or
-                self.top_encoder_mode == TopEncoderMode.INPUT_GAIN):
+                self.top_encoder_mode == TopEncoderMode.INPUT_GAIN or
+                self.top_encoder_mode == TopEncoderMode.BPM):
             return
         mode = self.bot_encoder_mode
         if mode == BotEncoderMode.DEFAULT:
@@ -358,6 +368,9 @@ class Mod(Handler):
             elif mode == UniversalEncoderMode.INPUT_GAIN:
                 self.universal_encoder_mode = UniversalEncoderMode.SYSTEM_MENU
                 self.system_menu_show()
+            elif mode == UniversalEncoderMode.BPM:
+                self.universal_encoder_mode = UniversalEncoderMode.SYSTEM_MENU
+                self.system_menu_show()
             elif mode == UniversalEncoderMode.EQ1_GAIN:
                 self.universal_encoder_mode = UniversalEncoderMode.SYSTEM_MENU
                 self.system_audio_menu()
@@ -410,6 +423,8 @@ class Mod(Handler):
             self.parameter_value_change(direction, self.headphone_volume_commit)
         elif mode == UniversalEncoderMode.INPUT_GAIN:
             self.parameter_value_change(direction, self.input_gain_commit)
+        elif mode == UniversalEncoderMode.BPM:
+            self.parameter_value_change(direction, self.bpm_commit)
         elif mode == UniversalEncoderMode.EQ1_GAIN:
             self.parameter_value_change(direction, self.eq1_gain_commit)
         elif mode == UniversalEncoderMode.EQ2_GAIN:
@@ -491,6 +506,9 @@ class Mod(Handler):
         elif isinstance(msg, LoadingEndMessage):
             logging.debug(f"WebSocket: Pedalboard loading finished, snapshot={msg.snapshot_id}")
             self.next_pedalboard_preset_index = msg.snapshot_id
+            mod_bundle = self.get_current_pedalboard_bundle_path()
+            if self.current and mod_bundle == self.current.pedalboard.bundle:
+                self._is_pedalboard_loading = False
 
         elif isinstance(msg, PedalSnapshotMessage):
             if self.next_pedalboard_preset_index is not None:
@@ -518,10 +536,14 @@ class Mod(Handler):
 
         elif isinstance(msg, TransportMessage):
             if self.hardware and self.hardware.taptempo:
-                self.hardware.taptempo.set_bpm(msg.bpm)
-                if self.hardware.taptempo.is_enabled():
-                    fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
-                    self.update_lcd_fs(footswitch=fs)
+                import time
+                # Prevent WebSocket feedback echo from overriding recently adjusted local BPM (0.5s cooldown)
+                if not hasattr(self, '_last_bpm_change_time') or (time.time() - self._last_bpm_change_time > 0.5):
+                    self.hardware.taptempo.set_bpm(msg.bpm)
+                    self._pending_bpm_update = msg.bpm
+                    if self.hardware.taptempo.is_enabled():
+                        fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
+                        self.update_lcd_fs(footswitch=fs)
 
         elif isinstance(msg, ParamSetMessage):
             # Mirror mod-ui's live value: refresh the cache (so a later edit opens
@@ -540,6 +562,17 @@ class Mod(Handler):
 
     def poll_ws_messages(self):
         """Drain and dispatch inbound WebSocket messages (fast ~10ms cadence)."""
+        # Defer BPM display updates to the main thread's fast 10ms execution loop.
+        bpm = getattr(self, '_pending_bpm_update', None)
+        if bpm is not None:
+            self._pending_bpm_update = None
+            if self.lcd:
+                self.lcd.update_bpm(bpm)
+            if self.hardware and self.hardware.taptempo and self.hardware.taptempo.is_enabled():
+                fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
+                if fs:
+                    self.update_lcd_fs(footswitch=fs)
+
         for msg in self.ws_bridge.get_received_messages():
             try:
                 self._handle_ws_message(parse_message(msg))
@@ -552,10 +585,10 @@ class Mod(Handler):
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
-            self._is_pedalboard_loading = True
-            self.lcd.draw_info_message("Loading...")
             mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
             if mod_bundle and mod_bundle != self.current.pedalboard.bundle:
+                self._is_pedalboard_loading = True
+                self.lcd.draw_info_message("Loading...")
                 logging.info(f"Pedalboard changed via MOD from: {self.current.pedalboard.bundle} to: {mod_bundle}")
 
                 if mod_bundle not in self.pedalboards:
@@ -981,7 +1014,8 @@ class Mod(Handler):
                            "5": {Token.NAME: "Reload pedalboards", Token.ACTION: self.system_menu_reload},
                            "6": {Token.NAME: "Restart sound engine", Token.ACTION: self.system_menu_restart_sound},
                            "7": {Token.NAME: "Audio Options", Token.ACTION: self.system_audio_menu},
-                           "8": {Token.NAME: "Advanced Settings", Token.ACTION: self.system_advanced_menu}}
+                           "8": {Token.NAME: "Advanced Settings", Token.ACTION: self.system_advanced_menu},
+                           "9": {Token.NAME: "Set MIDI Tempo", Token.ACTION: self.system_menu_bpm}}
         self.lcd.menu_show("System menu", self.menu_items)
         # Trick: we display the wifi status in the menu, Ideally we need a better
         # state handling to know what needs to be displayed or not based on whether
@@ -1318,7 +1352,45 @@ class Mod(Handler):
 
     def set_mod_tap_tempo(self, bpm):
         if bpm is not None:
-            req.post(self.root_uri + "set_bpm", json={"value": bpm})
+            import time
+            self._last_bpm_change_time = time.time()
+            # Send BPM updates via WebSocket bridge if connected for low-latency; fallback to REST API
+            if self.ws_bridge and self.ws_bridge.is_connected:
+                self.ws_bridge.send_bpm(bpm)
+            else:
+                try:
+                    req.post(self.root_uri + "set_bpm", json={"value": bpm}, timeout=1.0)
+                except Exception as e:
+                    logging.error("Failed to set BPM: %s", e)
+            self._pending_bpm_update = bpm
+
+    def get_bpm(self):
+        url = self.root_uri + "get_bpm"
+        try:
+            resp = req.get(url, timeout=2.0)
+            if resp.status_code != 200:
+                return 0.0
+            return float(resp.text)
+        except Exception:
+            return 0.0
+
+    def system_menu_bpm(self):
+        title = "BPM"
+        self.top_encoder_mode = TopEncoderMode.BPM
+        self.universal_encoder_mode = UniversalEncoderMode.BPM
+        value = self.get_bpm()
+        info = {"shortName": title, "symbol": "bpm", "ranges": {"minimum": 40.0, "maximum": 240.0}}
+        self.deep = self.Deep(None)
+        param = Parameter.Parameter(info, value, None)
+        self.deep.selected_parameter = param
+        self.lcd.draw_value_edit_graph(param, value)
+        self.lcd.draw_info_message(title)
+
+    def bpm_commit(self):
+        value = self.deep.selected_parameter.value
+        self.set_mod_tap_tempo(value)
+        if self.hardware and self.hardware.taptempo:
+            self.hardware.taptempo.set_bpm(value)
 
     #
     # Parameter Edit
@@ -1357,7 +1429,10 @@ class Mod(Handler):
         param = self.deep.selected_parameter
         value = float(param.value)
         # TODO tweak value won't change from call to call, cache it
-        tweak = util.renormalize_float(self.parameter_tweak_amount, 0, 127, param.minimum, param.maximum)
+        if param.symbol == "bpm":
+            tweak = 1.0
+        else:
+            tweak = util.renormalize_float(self.parameter_tweak_amount, 0, 127, param.minimum, param.maximum)
         new_value = round(value + direction * tweak, 2)
         if new_value > param.maximum:
             new_value = param.maximum
@@ -1382,6 +1457,8 @@ class Mod(Handler):
         self.lcd.draw_tools(SelectedType.WIFI, SelectedType.EQ, SelectedType.BYPASS, SelectedType.SYSTEM)
         self.lcd.update_bypass(self.hardware.relay.enabled)
         self.lcd.update_eq(self.eq_status)
+        if self.lcd:
+            self.lcd.update_bpm(self.get_bpm())
         self.update_lcd_title()
         self.lcd.draw_analog_assignments(self.current.analog_controllers)
         self.lcd.draw_plugins(self.current.pedalboard.plugins)

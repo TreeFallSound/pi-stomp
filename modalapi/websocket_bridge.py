@@ -127,6 +127,7 @@ class WebSocketWorker:
                     continue
 
                 await ws.send(msg)
+                logging.debug(f"WebSocket: Sent message to MOD-UI: {msg}")
                 self.messages_sent += 1
                 self.command_queue.task_done()
 
@@ -202,6 +203,22 @@ class AsyncWebSocketBridge:
         self.received_queue: queue.Queue = queue.Queue()
         self._worker = WebSocketWorker(ws_url, backpressure_threshold, self.command_queue, self.received_queue)
         self._thread: Optional[threading.Thread] = None
+
+    @property
+    def is_connected(self) -> bool:
+        """Return True if the WebSocket connection is active and open."""
+        ws = self._worker.ws
+        if ws is None:
+            return False
+        # Handle websockets package state checking safely across different versions.
+        if hasattr(ws, 'state'):
+            try:
+                return ws.state.name == "OPEN"
+            except AttributeError:
+                pass
+        if hasattr(ws, 'closed'):
+            return not ws.closed
+        return True
 
     def start(self):
         """Start background async worker thread."""
