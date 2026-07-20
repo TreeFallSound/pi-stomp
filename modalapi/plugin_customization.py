@@ -11,6 +11,7 @@ from common.param_roles import ParamRole
 from common.parameter import Symbol
 
 if TYPE_CHECKING:
+    from common.parameter import Parameter
     from modalapi.plugin import Plugin
     from plugins.base import PluginPanel
 
@@ -63,9 +64,12 @@ class PluginCustomization:
     pinned_params: tuple[PinnedParam, ...] | None = None
 
     # Redundant ports the UI must never paint: author-rolled bypass/enable ports
-    # carrying no LV2 metadata to catch them by. `common.parameter.is_hidden_port`
+    # carrying no LV2 metadata to catch them. `common.parameter.is_hidden_port`
     # handles the ones that do.
     hidden_params: frozenset[Symbol] = frozenset()
+
+    # Live label for a bound control (knob/footswitch/dialog title).
+    control_label_fn: Callable[[Parameter], str] | None = field(default=None, compare=False, hash=False)
 
 
 class Customizer(Protocol):

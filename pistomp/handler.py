@@ -211,7 +211,7 @@ class Handler(InputSink):
         # a pedalboard reload. Idempotent: replayed connect-dump maps are no-ops.
         if self._current is None:
             return
-        plugin = next((p for p in self.current.pedalboard.plugins if p is not None and p.instance_id == instance), None)
+        plugin = self.current.pedalboard.find_plugin(instance)
         if plugin is None or plugin.parameters is None:
             return
         param = plugin.parameters.get(symbol)

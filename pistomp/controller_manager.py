@@ -100,7 +100,14 @@ class ControllerManager:
         """Bind controllers referenced by plugin parameters; return the plugins
         that gained a footswitch."""
         footswitch_plugins = []
-        for plugin in current.pedalboard.plugins:
+        # The transport pseudo-plugin carries :bpm/:bpb/:rolling; it's not in
+        # pedalboard.plugins (the effect-graph render) but its bindings route
+        # through the same machinery.
+        plugins = list(current.pedalboard.plugins)
+        tp = current.pedalboard.transport_plugin
+        if tp is not None:
+            plugins.append(tp)
+        for plugin in plugins:
             if plugin is None or plugin.parameters is None:
                 continue
             for param in plugin.parameters.values():

@@ -61,6 +61,7 @@ from common.parameter_steps import ParameterSteps, effective_multiplier
 from modalapi.plugin import Plugin
 from blend.input_controller import InputController
 import modalapi.pedalboard as Pedalboard
+from modalapi.pedalboard import BPM_SYMBOL, BPB_SYMBOL, ROLLING_SYMBOL
 import modalapi.wifi as Wifi
 
 # Importing the plugins package runs every plugin module's register() — this is
@@ -869,6 +870,18 @@ class Modhandler(Handler):
             rolling_changed = msg.rolling != self.transport_rolling
             self.sync_mode = new_sync
             self.transport_rolling = msg.rolling
+            # Reflect the three transport values onto the pseudo-plugin so the
+            # labels track even when the change originates elsewhere (Link,
+            # MIDI slave, another HMI). :rolling's enum flips Playing/Stopped.
+            if self._current is not None:
+                tp = self.current.pedalboard.transport_plugin
+                if tp is not None:
+                    if ROLLING_SYMBOL in tp.parameters:
+                        tp.set_param_value(ROLLING_SYMBOL, 1.0 if msg.rolling else 0.0)
+                    if BPM_SYMBOL in tp.parameters:
+                        tp.set_param_value(BPM_SYMBOL, msg.bpm)
+                    if BPB_SYMBOL in tp.parameters:
+                        tp.set_param_value(BPB_SYMBOL, msg.beats_per_bar)
             if self.hardware and self.hardware.taptempo:
                 self.hardware.taptempo.set_bpm(msg.bpm)
                 if self.hardware.taptempo.is_enabled():
@@ -888,10 +901,9 @@ class Modhandler(Handler):
             # change through its parameter subscription; no message arm needs to
             # know panels exist.
             if self._current is not None:
-                for plugin in self.current.pedalboard.plugins:
-                    if plugin.instance_id == msg.instance:
-                        plugin.set_param_value(msg.symbol, msg.value)
-                        break
+                plugin = self.current.pedalboard.find_plugin(msg.instance)
+                if plugin is not None:
+                    plugin.set_param_value(msg.symbol, msg.value)
 
         elif isinstance(msg, MidiMapMessage):
             # MIDI learn in mod-ui assigned a hardware control to a parameter.

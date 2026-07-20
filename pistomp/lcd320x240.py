@@ -209,6 +209,7 @@ class Lcd:
         self.grid_panel: Optional[GridPanel] = None
         self.w_footswitches = []
         self.w_controls = []
+        self._control_unsubs: list[Callable[[], None]] = []
         self.w_splash = None
         self.w_info_msg = None
         self.w_subtitle: Optional[Subtitle] = None
@@ -861,7 +862,7 @@ class Lcd:
             return d
 
         # Create a new dialog
-        title = parameter.instance_id + ":" + parameter.name
+        title = parameter.instance_id + ":" + self._param_label(parameter)
         current_value = parameter.value
         if parameter.type == Type.ENUMERATION:
             items = []
@@ -924,8 +925,8 @@ class Lcd:
         if param is None:
             return None
         if param.symbol != BYPASS_SYMBOL:
-            return param.name
-        plugin = next((p for p in self.current.pedalboard.plugins if p.instance_id == param.instance_id), None)
+            return self._param_label(param)
+        plugin = self.current.pedalboard.find_plugin(param.instance_id) if self.current else None
         if plugin is not None:
             name = plugin.display_name
         else:
@@ -1106,7 +1107,7 @@ class Lcd:
             width=270,
             height=130,
             auto_destroy=True,
-            title=parameter.name,
+            title=self._param_label(parameter),
             timeout=PARAMETER_DIALOG_TIMEOUT,
             action=commit_callback,
             object=parameter.symbol,
@@ -1280,6 +1281,9 @@ class Lcd:
         for w in self.w_controls:
             w.destroy()
         self.w_controls = []
+        for unsub in self._control_unsubs:
+            unsub()
+        self._control_unsubs = []
 
         y = 56  # vertical position on screen
         for i in range(0, num):
@@ -1316,9 +1320,13 @@ class Lcd:
                 subtitle = "Expression pedal (unassigned)" if control_type == Token.EXPRESSION else "Knob (unassigned)"
                 color = Category.get_category_color(None)
                 text_color = color
+                control_label_fn = None
+                control_param = None
             else:
                 # Mapped control or Volume
                 control_type = util.DICT_GET(v, Token.TYPE)
+                control_label_fn = None
+                control_param = None
                 if control_type == Token.VOLUME:
                     name = "volume"
                     subtitle = "Output volume"
@@ -1335,7 +1343,12 @@ class Lcd:
                         text_color = (180, 180, 255)  # light blue = external routing
                     else:
                         subtitle = k.split(":")[1]
-                        name = self.shorten_name(subtitle, text_per_control)
+                        control_param = analog_control.parameter if analog_control is not None else None
+                        control_label_fn = self._control_label_fn(control_param)
+                        if control_label_fn is not None and control_param is not None:
+                            name = control_label_fn(control_param)
+                        else:
+                            name = self.shorten_name(subtitle, text_per_control)
                         color = util.DICT_GET(v, Token.COLOR)
                         if color is None:
                             category = util.DICT_GET(v, Token.CATEGORY)
@@ -1361,6 +1374,7 @@ class Lcd:
                         name = snapshot_name
                         subtitle = f"Blend: {snapshot_name}"
 
+            w = None
             if control_type == Token.KNOB:
                 w = Icon(
                     box=Box.xywh(x, y, TILE_W, height_per_control),
@@ -1392,6 +1406,21 @@ class Lcd:
                     w.set_progress(blend_initial_progress)
                 self.w_controls.append(w)
 
+            # Live-value labels (transport's ♩=120, Playing/Stopped) track the
+            # param: subscribe so a value echo re-renders the icon text.
+            if control_label_fn is not None and control_param is not None and w is not None:
+                fn = control_label_fn
+                p = control_param
+                self._control_unsubs.append(
+                    p.subscribe(lambda _, w=w, fn=fn, p=p: w.set_text(fn(p)))
+                )
+
+        # Rebuild path: widget create/destroy above marks regions dirty, but
+        # the LCD push only fires on a refresh. Called standalone from
+        # _redraw_after_binding (midi-learn of an encoder), where there's no
+        # enclosing draw_main_panel to refresh for us.
+        self.main_panel.refresh()
+
     def draw_info_message(self, text, refresh=False):
         if self.w_info_msg is None:
             self.w_info_msg = TextWidget(
@@ -1422,3 +1451,16 @@ class Lcd:
                 break
             text = test
         return text
+
+    def _control_label_fn(self, param: Parameter | None) -> Callable[[Parameter], str] | None:
+        """Look up a parameter's plugin and return the plugin's control_label_fn, if any."""
+        if param is None or self.current is None:
+            return None
+        plugin = self.current.pedalboard.find_plugin(param.instance_id) if param.instance_id else None
+        if plugin is None:
+            return None
+        return plugin.customization.control_label_fn
+
+    def _param_label(self, param: Parameter) -> str:
+        fn = self._control_label_fn(param)
+        return fn(param) if fn is not None else param.name
