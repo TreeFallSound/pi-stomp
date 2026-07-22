@@ -22,13 +22,13 @@ import json
 import common.util as util
 
 # strings as they appear in TTL files
-TTL_ENUMERATION = 'enumeration'
-TTL_INTEGER     = 'integer'
-TTL_LOGARITHMIC = 'logarithmic'
-TTL_PROPERTIES  = 'properties'
-TTL_SCALEPOINTS = 'scalePoints'
-TTL_TAPTEMPO    = 'tapTempo'
-TTL_TOGGLED     = 'toggled'
+TTL_ENUMERATION = "enumeration"
+TTL_INTEGER = "integer"
+TTL_LOGARITHMIC = "logarithmic"
+TTL_PROPERTIES = "properties"
+TTL_SCALEPOINTS = "scalePoints"
+TTL_TAPTEMPO = "tapTempo"
+TTL_TOGGLED = "toggled"
 
 # Identifies a Parameter: the key of plugin.parameters, ParamEffect.symbol,
 # edit_symbol(). Usually an LV2 port symbol (":bypass", "gain"); also an ALSA
@@ -55,8 +55,22 @@ class ScalePoint(TypedDict):
     value: float
 
 
+class MidiCC(TypedDict):
+    """A port's MIDI-CC addressing, as mod-ui's pedalboard JSON and the
+    midi_map WS message report it. channel -1 is the "unmapped" sentinel;
+    hasRanges guards minimum/maximum for old bundles that predate the range
+    fields (utils.py PedalboardMidiControl)."""
+
+    channel: int
+    control: int
+    hasRanges: NotRequired[bool]
+    minimum: NotRequired[float]
+    maximum: NotRequired[float]
+
+
 class PortInfo(TypedDict):
     """One row of an LV2 plugin's control-input ports, as mod-ui reports it."""
+
     symbol: str
     name: NotRequired[str]
     shortName: NotRequired[str]
@@ -72,14 +86,16 @@ class PortInfo(TypedDict):
 # The `enabled` port especially: mod-host writes the *inverse* of the bypass value
 # into it (effects.c), so it isn't merely redundant with :bypass — it IS :bypass, and
 # exposing it hands the user a knob that silently desyncs bypass.
-HIDDEN_DESIGNATIONS = frozenset({
-    "http://lv2plug.in/ns/lv2core#enabled",
-    "http://lv2plug.in/ns/lv2core#freeWheeling",
-    "http://ardour.org/lv2/processing#enable",
-    "http://lv2plug.in/ns/ext/time#beatsPerBar",
-    "http://lv2plug.in/ns/ext/time#beatsPerMinute",
-    "http://lv2plug.in/ns/ext/time#speed",
-})
+HIDDEN_DESIGNATIONS = frozenset(
+    {
+        "http://lv2plug.in/ns/lv2core#enabled",
+        "http://lv2plug.in/ns/lv2core#freeWheeling",
+        "http://ardour.org/lv2/processing#enable",
+        "http://lv2plug.in/ns/ext/time#beatsPerBar",
+        "http://lv2plug.in/ns/ext/time#beatsPerMinute",
+        "http://lv2plug.in/ns/ext/time#speed",
+    }
+)
 
 
 def is_hidden_port(plugin_info: PortInfo) -> bool:
@@ -90,16 +106,23 @@ def is_hidden_port(plugin_info: PortInfo) -> bool:
 
 
 class Type(Enum):
-    DEFAULT = 0      # No explicitly defined type (eg. linear float)
+    DEFAULT = 0  # No explicitly defined type (eg. linear float)
     ENUMERATION = 1
     INTEGER = 2
     LOGARITHMIC = 3
     TAPTEMPO = 4
     TOGGLED = 5
 
-class Parameter:
 
-    def __init__(self, plugin_info: PortInfo, value: float, binding: str | None, instance_id: str | None = None):
+class Parameter:
+    def __init__(
+        self,
+        plugin_info: PortInfo,
+        value: float,
+        binding: str | None,
+        instance_id: str | None = None,
+        binding_range: tuple[float, float] | None = None,
+    ):
         symbol = plugin_info.get("symbol")
         if not symbol:
             raise ValueError(f"LV2 port has no symbol: {plugin_info!r}")
@@ -108,11 +131,16 @@ class Parameter:
         self.hidden: bool = is_hidden_port(plugin_info)
 
         ranges = plugin_info.get("ranges") or Ranges()
-        self.minimum: float = float(ranges.get("minimum", 0.0))
-        self.maximum: float = float(ranges.get("maximum", 1.0))
+        declared_minimum = float(ranges.get("minimum", 0.0))
+        declared_maximum = float(ranges.get("maximum", 1.0))
+        # minimum/maximum are the *effective* extents: the plugin's declared LV2
+        # range, unless a MIDI-CC binding carries a custom sub-range
+        self.minimum: float
+        self.maximum: float
+        self.minimum, self.maximum = binding_range or (declared_minimum, declared_maximum)
         # mod-ui normalises the TTL and always emits all three ranges; the
         # fallbacks only serve the params we synthesise (bypass, volume, VU).
-        self.default: float = float(ranges.get("default", self.minimum))
+        self.default: float = float(ranges.get("default", declared_minimum))
 
         # Reactive value: a property setter that notifies observers. _observers
         # must exist before the first assignment below, or the write fires into
@@ -162,15 +190,21 @@ class Parameter:
         for observe in self._observers:
             observe(self)
 
+    def set_binding_range(self, binding_range: tuple[float, float]) -> None:
+        """Set the effective extents from a MIDI-CC (sub-)range."""
+        self.minimum, self.maximum = binding_range
+
     def subscribe(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
         """Register *cb* to fire on every changed-value write. Returns its own
         unsubscriber. An unchanged write (v == current) does not notify."""
         self._observers.append(cb)
+
         def _unsub() -> None:
             try:
                 self._observers.remove(cb)
             except ValueError:
                 pass
+
         return _unsub
 
     def get_enum_value_list(self) -> list[tuple[str, float]]:
