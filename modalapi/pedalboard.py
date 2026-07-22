@@ -21,7 +21,7 @@ import urllib.parse
 from typing import Optional
 
 
-from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, json_default
+from common.parameter import BYPASS_SYMBOL, TTL_INTEGER, Parameter, PortInfo, Symbol, json_default
 import modalapi.plugin as Plugin
 from modalapi.connections import Connection, build_connection
 from modalapi.plugin_customization import Customizer, default_customizer
@@ -57,6 +57,7 @@ def _transport_port_info(symbol: Symbol) -> PortInfo:
             symbol=":bpm",
             ranges={"minimum": _BPM_RANGE[0], "maximum": _BPM_RANGE[1]},
             units={"symbol": "BPM", "label": "beats per minute"},
+            properties=[TTL_INTEGER],
         )
     if symbol == BPB_SYMBOL:
         return PortInfo(

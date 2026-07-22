@@ -419,6 +419,8 @@ class Modhandler(Handler):
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
             c.parameter.value = new_value
             self.lcd.display_parameter_value(c.parameter, new_value)
+            if c.parameter.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID and c.parameter.symbol == BPM_SYMBOL:
+                self.set_mod_tap_tempo(new_value)
             emit_value = c.bar_midi_value()
         else:
             emit_value = self._advance_encoder_fallback(c, delta)
@@ -426,7 +428,11 @@ class Modhandler(Handler):
         # Unconditional, and must stay that way: an unbound encoder has no row,
         # and this emit is the only way mod-ui sees its CC to MIDI-learn it.
         # Emission is hardware-level, below the table (see input/README.md).
-        self._emit_midi(c, emit_value)
+        # Transport BPM parameters bypass 7-bit MIDI CC emission for high-precision WebSocket transport.
+        if c.parameter is None or not (
+            c.parameter.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID and c.parameter.symbol == BPM_SYMBOL
+        ):
+            self._emit_midi(c, emit_value)
         return True
 
     def encoder_fallback(self, controller: EncoderController) -> int:
@@ -1427,6 +1433,9 @@ class Modhandler(Handler):
         # Audio parameter (volume, EQ, etc.) - handled locally, no remote update needed
         if param.instance_id is None:
             self.audio_parameter_commit(param.symbol, value)
+        # Pedalboard-level transport BPM parameters are set via WebSocket for precision
+        if param.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID and param.symbol == BPM_SYMBOL:
+            self.set_mod_tap_tempo(value)
             return
 
         # External MIDI parameters have no mod-host counterpart. The dialog's NAV
@@ -1442,7 +1451,7 @@ class Modhandler(Handler):
                     self._emit_midi(controller, int(value))
                 return
 
-        if not self._is_pedalboard_loading:
+        if not self._is_pedalboard_loading and param.instance_id is not None:
             self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     @property
@@ -1798,8 +1807,11 @@ class Modhandler(Handler):
     def get_callback(self, callback_name):
         return util.DICT_GET(self.callbacks, callback_name)
 
-    def set_mod_tap_tempo(self, bpm):
+    def set_mod_tap_tempo(self, bpm: float | None) -> None:
         if bpm is not None:
+            self._last_bpm_change_time = time.time()
+            if self.ws_bridge is not None:
+                self.ws_bridge.send_bpm(bpm)
             self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
 
     def set_sync_mode(self, mode: SyncMode) -> None:
