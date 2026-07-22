@@ -124,9 +124,9 @@ class AddPluginMessage:
     """Plugin present in a (re)connect/load dump, or dynamically added (add ...)."""
 
     instance: str  # canonical bare form, e.g. "CollisionDrive"
-    uri: str       # LV2 plugin URI
-    x: float       # mod-ui canvas X
-    y: float       # mod-ui canvas Y
+    uri: str  # LV2 plugin URI
+    x: float  # mod-ui canvas X
+    y: float  # mod-ui canvas Y
     bypassed: bool
 
 
@@ -136,10 +136,10 @@ class PatchSetMessage:
     on the connect dump, so it also carries state for boards loaded before we
     connected."""
 
-    instance: str    # canonical bare form, e.g. "notes"
-    param_uri: str   # LV2 property URI
+    instance: str  # canonical bare form, e.g. "notes"
+    param_uri: str  # LV2 property URI
     value_type: str  # mod-host type char: s(tring) p(ath) i(nt) f(loat) ...
-    value: str       # raw; paths may contain spaces
+    value: str  # raw; paths may contain spaces
 
 
 @dataclass
@@ -154,7 +154,7 @@ class ConnectMessage:
     """Two ports connected in the active pedalboard (connect ...)."""
 
     port_from: str  # e.g. "/graph/PluginA/out_L"
-    port_to: str    # e.g. "/graph/PluginB/in_L"
+    port_to: str  # e.g. "/graph/PluginB/in_L"
 
 
 @dataclass
@@ -182,11 +182,18 @@ class MidiMapMessage:
     symbol: Symbol  # e.g. Symbol("gain") or BYPASS_SYMBOL
     channel: int
     controller: int
+    minimum: float
+    maximum: float
 
     @property
     def binding(self) -> str:
         # Matches Parameter.binding's "channel:controller" form.
         return "%d:%d" % (self.channel, self.controller)
+
+    @property
+    def binding_range(self) -> tuple[float, float]:
+        # N.B. mod-host always sends a range
+        return (self.minimum, self.maximum)
 
 
 @dataclass
@@ -331,12 +338,14 @@ def parse_message(raw_message: str) -> WebSocketMessage:
 
             # Format: midi_map /graph/{instance} {symbol} {channel} {controller} {min} {max}
             case ["midi_map", path, rest]:
-                symbol, ch, ctrl = rest.split(" ")[:3]
+                symbol, ch, ctrl, mn, mx = rest.split(" ")[:5]
                 return MidiMapMessage(
                     instance=_bare_instance(path),
                     symbol=Symbol(symbol),
                     channel=int(ch),
                     controller=int(ctrl),
+                    minimum=float(mn),
+                    maximum=float(mx),
                 )
 
             # Format: truebypass {left} {right}

@@ -204,12 +204,23 @@ def test_plugin_bypass_nested_instance():
 
 def test_midi_map_bypass():
     msg = parse_message("midi_map /graph/CollisionDrive :bypass 0 60 0.0 1.0")
-    assert msg == MidiMapMessage(instance="CollisionDrive", symbol=Symbol(":bypass"), channel=0, controller=60)
+    assert msg == MidiMapMessage(
+        instance="CollisionDrive", symbol=Symbol(":bypass"), channel=0, controller=60, minimum=0.0, maximum=1.0
+    )
 
 
 def test_midi_map_control_port():
     msg = parse_message("midi_map /graph/HotBox gain 13 70 0.0 1.0")
-    assert msg == MidiMapMessage(instance="HotBox", symbol=Symbol("gain"), channel=13, controller=70)
+    assert msg == MidiMapMessage(
+        instance="HotBox", symbol=Symbol("gain"), channel=13, controller=70, minimum=0.0, maximum=1.0
+    )
+
+
+def test_midi_map_carries_custom_sub_range():
+    msg = parse_message("midi_map /graph/HotBox gain 13 70 0.0 0.5")
+    assert isinstance(msg, MidiMapMessage)
+    assert (msg.minimum, msg.maximum) == (0.0, 0.5)
+    assert msg.binding_range == (0.0, 0.5)
 
 
 def test_midi_map_malformed_is_unknown():
@@ -236,9 +247,7 @@ def test_transport_stopped():
 
 
 def test_transport_link_sync_mode():
-    assert parse_message("transport 1 4.0 110.0 link") == TransportMessage(
-        rolling=True, bpm=110.0, sync_mode="link"
-    )
+    assert parse_message("transport 1 4.0 110.0 link") == TransportMessage(rolling=True, bpm=110.0, sync_mode="link")
 
 
 def test_transport_midi_clock_slave_sync_mode():
@@ -249,9 +258,7 @@ def test_transport_midi_clock_slave_sync_mode():
 
 def test_transport_legacy_omits_sync_mode():
     # Older mod-ui installs shipped no syncMode token — default to Internal.
-    assert parse_message("transport 1 4.0 120.0") == TransportMessage(
-        rolling=True, bpm=120.0, sync_mode="Internal"
-    )
+    assert parse_message("transport 1 4.0 120.0") == TransportMessage(rolling=True, bpm=120.0, sync_mode="Internal")
 
 
 def test_transport_malformed_bpm_is_unknown():
@@ -290,7 +297,9 @@ def test_param_set_missing_value_is_unknown():
 def test_add_plugin_bypassed():
     # add {instance} {uri} {x} {y} {bypassed} {sversion} {buildEnv}
     msg = parse_message("add CollisionDrive http://moddevices.com/caps 419.0 198.0 1 2 1")
-    assert msg == AddPluginMessage(instance="CollisionDrive", uri="http://moddevices.com/caps", x=419.0, y=198.0, bypassed=True)
+    assert msg == AddPluginMessage(
+        instance="CollisionDrive", uri="http://moddevices.com/caps", x=419.0, y=198.0, bypassed=True
+    )
 
 
 def test_add_plugin_active():
