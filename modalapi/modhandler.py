@@ -225,6 +225,10 @@ class Modhandler(Handler):
         # Suppress outbound WebSocket messages while a pedalboard change is in flight.
         self._is_pedalboard_loading = False
 
+        # Reactive BPM parameter observer state
+        self._bpm_unsub: Callable[[], None] | None = None
+        self._suppress_bpm_event: bool = False
+
         # Tuner state
         self._tuner_source_factory: TunerSourceFactory | None = None
         self._tuner_source_spec: str = "jack"
@@ -419,8 +423,6 @@ class Modhandler(Handler):
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
             c.parameter.value = new_value
             self.lcd.display_parameter_value(c.parameter, new_value)
-            if c.parameter.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID and c.parameter.symbol == BPM_SYMBOL:
-                self.set_mod_tap_tempo(new_value)
             emit_value = c.bar_midi_value()
         else:
             emit_value = self._advance_encoder_fallback(c, delta)
@@ -428,10 +430,8 @@ class Modhandler(Handler):
         # Unconditional, and must stay that way: an unbound encoder has no row,
         # and this emit is the only way mod-ui sees its CC to MIDI-learn it.
         # Emission is hardware-level, below the table (see input/README.md).
-        # Transport BPM parameters bypass 7-bit MIDI CC emission for high-precision WebSocket transport.
-        if c.parameter is None or not (
-            c.parameter.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID and c.parameter.symbol == BPM_SYMBOL
-        ):
+        # Transport parameters bypass 7-bit MIDI CC emission for high-precision WebSocket transport.
+        if c.parameter is None or c.parameter.instance_id != Pedalboard.TRANSPORT_INSTANCE_ID:
             self._emit_midi(c, emit_value)
         return True
 
@@ -881,13 +881,13 @@ class Modhandler(Handler):
             # MIDI slave, another HMI). :rolling's enum flips Playing/Stopped.
             if self._current is not None:
                 tp = self.current.pedalboard.transport_plugin
-                if tp is not None:
-                    if ROLLING_SYMBOL in tp.parameters:
-                        tp.set_param_value(ROLLING_SYMBOL, 1.0 if msg.rolling else 0.0)
-                    if BPM_SYMBOL in tp.parameters:
-                        tp.set_param_value(BPM_SYMBOL, msg.bpm)
-                    if BPB_SYMBOL in tp.parameters:
-                        tp.set_param_value(BPB_SYMBOL, msg.beats_per_bar)
+                tp.set_param_value(ROLLING_SYMBOL, 1.0 if msg.rolling else 0.0)
+                tp.set_param_value(BPB_SYMBOL, msg.beats_per_bar)
+                self._suppress_bpm_event = True
+                try:
+                    tp.set_param_value(BPM_SYMBOL, msg.bpm)
+                finally:
+                    self._suppress_bpm_event = False
             if self.hardware and self.hardware.taptempo:
                 self.hardware.taptempo.set_bpm(msg.bpm)
                 if self.hardware.taptempo.is_enabled():
@@ -1213,6 +1213,19 @@ class Modhandler(Handler):
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
         self._controller_manager.bind(self.current)
+        self._bind_transport_bpm_listener()
+
+    def _bind_transport_bpm_listener(self) -> None:
+        if self._bpm_unsub is not None:
+            self._bpm_unsub()
+            self._bpm_unsub = None
+        if self._current is not None:
+            bpm_param = self.current.pedalboard.transport_plugin.parameters[BPM_SYMBOL]
+            self._bpm_unsub = bpm_param.subscribe(self._on_bpm_param_changed)
+
+    def _on_bpm_param_changed(self, param: Parameter) -> None:
+        if not self._suppress_bpm_event:
+            self.set_mod_tap_tempo(param.value)
 
     def _redraw_after_binding(self, controller: Controller, is_footswitch: bool) -> None:
         if is_footswitch:
@@ -1433,10 +1446,6 @@ class Modhandler(Handler):
         # Audio parameter (volume, EQ, etc.) - handled locally, no remote update needed
         if param.instance_id is None:
             self.audio_parameter_commit(param.symbol, value)
-        # Pedalboard-level transport BPM parameters are set via WebSocket for precision
-        if param.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID and param.symbol == BPM_SYMBOL:
-            self.set_mod_tap_tempo(value)
-            return
 
         # External MIDI parameters have no mod-host counterpart. The dialog's NAV
         # path owns sending the CC that _handle_encoder would have sent for a turn;
@@ -1451,7 +1460,7 @@ class Modhandler(Handler):
                     self._emit_midi(controller, int(value))
                 return
 
-        if not self._is_pedalboard_loading and param.instance_id is not None:
+        if not self._is_pedalboard_loading and param.instance_id is not None and param.instance_id != Pedalboard.TRANSPORT_INSTANCE_ID:
             self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     @property

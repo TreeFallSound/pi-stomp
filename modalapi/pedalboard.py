@@ -102,10 +102,8 @@ class Pedalboard:
         self.connections: list[Connection] = []
         self.hydrated = False
         # Synthetic /pedalboard pseudo-instance carrying :bpm/:bpb/:rolling.
-        # Built in hydrate() from timeInfo; None before the first hydrate and
-        # on boards with no transport metadata. Excluded from self.plugins so
-        # the effect-graph render never paints it.
-        self.transport_plugin: Plugin.Plugin | None = None
+        # Excluded from self.plugins so the effect-graph render never paints it.
+        self.transport_plugin: Plugin.Plugin = self._build_transport_plugin(None)
 
     def get_plugin_data(self, uri):
         url = self.root_uri + "effect/get?uri=" + urllib.parse.quote(uri)
@@ -238,45 +236,31 @@ class Pedalboard:
 
         self.hydrated = True
 
-    def _build_transport_plugin(self, time_info: dict | None) -> Plugin.Plugin | None:
+    def _build_transport_plugin(self, time_info: dict | None) -> Plugin.Plugin:
         """The /pedalboard pseudo-instance carrying :bpm/:bpb/:rolling. Built
-        from mod-ui's timeInfo block. None when the board reports no transport
-        metadata (available == 0 or absent)."""
-        if not time_info:
-            return None
-        available = int(time_info.get("available", 0) or 0)
-        if available == 0:
-            return None
+        from mod-ui's timeInfo block (or default unbound parameters when absent)."""
+        time_info = time_info or {}
 
-        parameters: dict[Symbol, Parameter] = {}
-        # mod-ui's kPedalboardTimeAvailable* bit masks.
-        if available & 0x1:  # BPB
-            cc = time_info.get("bpbCC")
-            parameters[BPB_SYMBOL] = Parameter(
+        parameters: dict[Symbol, Parameter] = {
+            BPB_SYMBOL: Parameter(
                 _transport_port_info(BPB_SYMBOL),
-                float(time_info.get("bpb", _BPB_RANGE[0])),
-                self._binding(cc),
+                float(time_info.get("bpb", 4.0)),
+                self._binding(time_info.get("bpbCC")),
                 TRANSPORT_INSTANCE_ID,
-            )
-        if available & 0x2:  # BPM
-            cc = time_info.get("bpmCC")
-            parameters[BPM_SYMBOL] = Parameter(
+            ),
+            BPM_SYMBOL: Parameter(
                 _transport_port_info(BPM_SYMBOL),
-                float(time_info.get("bpm", _BPM_RANGE[0])),
-                self._binding(cc),
+                float(time_info.get("bpm", 120.0)),
+                self._binding(time_info.get("bpmCC")),
                 TRANSPORT_INSTANCE_ID,
-            )
-        if available & 0x4:  # Rolling
-            cc = time_info.get("rollingCC")
-            parameters[ROLLING_SYMBOL] = Parameter(
+            ),
+            ROLLING_SYMBOL: Parameter(
                 _transport_port_info(ROLLING_SYMBOL),
                 1.0 if time_info.get("rolling") else 0.0,
-                self._binding(cc),
+                self._binding(time_info.get("rollingCC")),
                 TRANSPORT_INSTANCE_ID,
-            )
-
-        if not parameters:
-            return None
+            ),
+        }
 
         # category drives footswitch color; "Utility" is the benign choice for
         # transport — no LV2 category exists for it. uri=urn:mod:pedalboard so
@@ -296,9 +280,8 @@ class Pedalboard:
         for p in self.plugins:
             if p.instance_id == instance_id:
                 return p
-        tp = self.transport_plugin
-        if tp is not None and tp.instance_id == instance_id:
-            return tp
+        if self.transport_plugin.instance_id == instance_id:
+            return self.transport_plugin
         return None
 
     def _build_plugin(self, instance_id: str, uri: str, x: float, y: float, info: dict) -> Optional[Plugin.Plugin]:

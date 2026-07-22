@@ -64,6 +64,99 @@ def test_transport_plugin_built_from_timeinfo(v3_system: SystemFixture):
     assert rolling.value == 0.0
 
 
+def test_transport_plugin_unconditional_fallback(v3_system: SystemFixture):
+    """When timeInfo is empty, None, or available=0, transport_plugin is unconditionally
+    created with default unbound parameters for :bpm, :bpb, and :rolling."""
+    handler = v3_system.handler
+    assert handler.current is not None
+
+    # Test empty dict/None
+    tp = handler.current.pedalboard._build_transport_plugin(None)
+    assert tp is not None
+    assert tp.instance_id == TRANSPORT_INSTANCE_ID
+    assert BPM_SYMBOL in tp.parameters
+    assert BPB_SYMBOL in tp.parameters
+    assert ROLLING_SYMBOL in tp.parameters
+    assert tp.parameters[BPM_SYMBOL].binding is None
+    assert tp.parameters[BPM_SYMBOL].value == 120.0
+    assert tp.parameters[BPB_SYMBOL].value == 4.0
+    assert tp.parameters[ROLLING_SYMBOL].value == 0.0
+
+    # Test available=0
+    tp_zero = handler.current.pedalboard._build_transport_plugin({"available": 0})
+    assert tp_zero is not None
+    assert BPM_SYMBOL in tp_zero.parameters
+    assert BPB_SYMBOL in tp_zero.parameters
+    assert ROLLING_SYMBOL in tp_zero.parameters
+
+
+def test_reactive_bpm_parameter_change_triggers_set_mod_tap_tempo(v3_system: SystemFixture):
+    """Writing to transport_plugin.parameters[BPM_SYMBOL].value reactively notifies
+    subscribers and triggers set_mod_tap_tempo."""
+    from unittest.mock import MagicMock
+
+    handler = v3_system.handler
+    ws_bridge = v3_system.ws_bridge
+    assert handler.current is not None
+
+    _attach_transport_plugin(handler)
+    ws_bridge.send_bpm = MagicMock(return_value=True)
+
+    # Change BPM parameter value directly (e.g. via encoder or set_param_value)
+    tp = handler.current.pedalboard.transport_plugin
+    tp.set_param_value(BPM_SYMBOL, 148.0)
+
+    # Verify reactive subscriber triggered send_bpm
+    ws_bridge.send_bpm.assert_called_once_with(148.0)
+
+
+def test_transport_message_ws_suppresses_bpm_echo(v3_system: SystemFixture):
+    """An incoming WebSocket TransportMessage updates transport parameters without
+    echo-calling send_bpm back to mod-ui."""
+    from unittest.mock import MagicMock
+
+    handler = v3_system.handler
+    ws_bridge = v3_system.ws_bridge
+    assert handler.current is not None
+
+    _attach_transport_plugin(handler)
+    ws_bridge.send_bpm = MagicMock(return_value=True)
+
+    # Inject incoming WS TransportMessage from mod-ui: transport {rolling} {bpb} {bpm} {syncMode}
+    ws_bridge.inject("transport 1 4.0 155.0 Internal")
+    handler.poll_ws_messages()
+
+    tp = handler.current.pedalboard.transport_plugin
+    assert tp.parameters[BPM_SYMBOL].value == 155.0
+    assert tp.parameters[ROLLING_SYMBOL].value == 1.0
+    assert tp.parameters[BPB_SYMBOL].value == 4.0
+
+    # Ensure send_bpm was NOT called because update originated from WS
+    ws_bridge.send_bpm.assert_not_called()
+
+
+def test_partial_timeinfo_bitmask_creates_all_parameters(v3_system: SystemFixture):
+    """When timeInfo has a partial bitmask (e.g. only BPM), all 3 parameters
+    are still created, with missing ones remaining unbound."""
+    handler = v3_system.handler
+    assert handler.current is not None
+
+    # Available bitmask 0x2 = BPM only
+    tp = handler.current.pedalboard._build_transport_plugin({
+        "available": 0x2,
+        "bpm": 130.0,
+        "bpmCC": {"channel": 0, "control": 10},
+    })
+    assert tp is not None
+    assert BPM_SYMBOL in tp.parameters
+    assert BPB_SYMBOL in tp.parameters
+    assert ROLLING_SYMBOL in tp.parameters
+
+    assert tp.parameters[BPM_SYMBOL].binding == "0:10"
+    assert tp.parameters[BPB_SYMBOL].binding is None
+    assert tp.parameters[ROLLING_SYMBOL].binding is None
+
+
 def test_find_plugin_resolves_transport(v3_system: SystemFixture):
     """find_plugin returns the transport pseudo-plugin for the /pedalboard id,
     where the old `next(p for p in plugins)` lookup returned None."""
