@@ -101,15 +101,15 @@ class Handler(InputSink):
         repaints through its own subscription — no resync hook needed."""
         raise NotImplementedError()
 
-    def open_parameter_submenu(
-        self, plugin: "Plugin", rows: tuple[tuple[str, Symbol], ...], title: str
-    ) -> None:
+    def open_parameter_submenu(self, plugin: "Plugin", rows: tuple[tuple[str, Symbol], ...], title: str) -> None:
         """NAV CLICK on a compound selection (e.g. an EQ band's gain/freq/Q):
         open a submenu over just these symbols, each row opening the same
         per-parameter dialog as open_parameter_dialog."""
         raise NotImplementedError()
 
-    def open_audio_parameter_dialog(self, parameter: "Parameter", commit_callback: Callable[[str, float], None]) -> None:
+    def open_audio_parameter_dialog(
+        self, parameter: "Parameter", commit_callback: Callable[[str, float], None]
+    ) -> None:
         """Same as open_parameter_dialog, for a synthetic audio-card
         parameter (no backing LV2 plugin, e.g. NAM's capture gain/volume)."""
         raise NotImplementedError()
@@ -205,7 +205,9 @@ class Handler(InputSink):
     def hide_fullscreen_panel(self) -> None:
         pass
 
-    def _apply_midi_binding(self, instance: str, symbol: Symbol, binding: str) -> None:
+    def _apply_midi_binding(
+        self, instance: str, symbol: Symbol, binding: str, binding_range: tuple[float, float] | None = None
+    ) -> None:
         # A MIDI mapping was learned in mod-ui. Update the matching parameter's
         # binding and wire its hardware controller so the LCD reflects it without
         # a pedalboard reload. Idempotent: replayed connect-dump maps are no-ops.
@@ -215,7 +217,13 @@ class Handler(InputSink):
         if plugin is None or plugin.parameters is None:
             return
         param = plugin.parameters.get(symbol)
-        if param is None or param.binding == binding:
+        if param is None:
+            return
+        # The range can change without the binding (re-address the same CC to a
+        # different sub-range), so apply it before the binding-unchanged bail.
+        if binding_range is not None:
+            param.set_binding_range(binding_range)
+        if param.binding == binding:
             return
         controller = self.hardware.controllers.get(binding)
         if controller is None:
