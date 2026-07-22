@@ -21,7 +21,7 @@ import urllib.parse
 from typing import Optional
 
 
-from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, json_default
+from common.parameter import BYPASS_SYMBOL, MidiCC, Parameter, PortInfo, Symbol, json_default
 import modalapi.plugin as Plugin
 from modalapi.connections import Connection, build_connection
 from modalapi.plugin_customization import Customizer, default_customizer
@@ -86,11 +86,21 @@ class Pedalboard:
         return json.loads(resp.text)
 
     @staticmethod
-    def _binding(cc: dict | None) -> Optional[str]:
+    def _binding(cc: MidiCC | None) -> Optional[str]:
         # channel -1 is mod-ui's "unmapped" sentinel (utils_lilv.cpp).
         if not cc or cc.get("channel", -1) < 0:
             return None
         return "%d:%d" % (cc["channel"], cc["control"])
+
+    @staticmethod
+    def _binding_range(cc: MidiCC | None) -> Optional[tuple[float, float]]:
+        # A MIDI-CC addressing's custom sub-range. hasRanges guards the format
+        # compat default (0..1); mirror mod-ui's max>min guard (host.py).
+        if not cc or cc.get("channel", -1) < 0 or not cc.get("hasRanges"):
+            return None
+        lo = float(cc.get("minimum", 0.0))
+        hi = float(cc.get("maximum", 1.0))
+        return (lo, hi) if hi > lo else None
 
     def hydrate(self, plugin_dict) -> None:
         """Populate plugins and connections from mod-ui. Idempotent."""
@@ -143,6 +153,7 @@ class Pedalboard:
                     float(port["value"]),
                     self._binding(port.get("midiCC")),
                     instance_id,
+                    binding_range=self._binding_range(port.get("midiCC")),
                 )
 
             n_int = pb_plugin.get("instanceNumber")

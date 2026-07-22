@@ -895,7 +895,7 @@ class Modhandler(Handler):
 
         elif isinstance(msg, MidiMapMessage):
             # MIDI learn in mod-ui assigned a hardware control to a parameter.
-            self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
+            self._apply_midi_binding(msg.instance, msg.symbol, msg.binding, msg.binding_range)
 
         elif isinstance(msg, PatchSetMessage):
             self._handle_patch_set(msg)
