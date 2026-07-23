@@ -220,9 +220,6 @@ class Parameter:
             return False
         return all(v["value"] == self.minimum + i for i, v in enumerate(self.enum_values))
 
-    def get_taper(self):
-        return 2 if self.is_logarithmic else 1
-
     def format_value(self, value) -> str:
         """The numeric text alone. Callers that lay value and unit out
         separately (arc dials) need them unglued."""

@@ -462,7 +462,7 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
         lv2 = self.plugin.parameters.get(symbol)
         if lv2 is None:
             return False
-        steps = ParameterSteps(band.gain_min, band.gain_max, lv2.get_taper(), resolution(lv2))
+        steps = ParameterSteps(band.gain_min, band.gain_max, lv2.is_logarithmic, resolution(lv2))
         steps.set_value(p.gain_db)
         delta = int(round(rotations * effective_multiplier(multiplier, lv2)))
         if delta == 0:
