@@ -380,6 +380,8 @@ def test_v3_midi_unlearn_footswitch_clears_binding(v3_system: SystemFixture, mak
     ws_bridge.inject("midi_map /graph/noise :bypass -1 -1 0.0 1.0")
     handler.poll_ws_messages()
     assert fs0.parameter is None
+    assert fs0.display_label is None
+    assert fs0.category is None
     assert plugin.has_footswitch is False
     snapshot("unbound")
 

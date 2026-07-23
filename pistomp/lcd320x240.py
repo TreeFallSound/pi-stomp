@@ -911,6 +911,10 @@ class Lcd:
                     # Binding may be new (e.g. MIDI learn) — reflect label + color.
                     footswitch.set_display_label(self.footswitch_label(footswitch, slot_w))
                     wfs.color = accent_color_for(footswitch.category)
+                    wfs.action = self.footswitch_event
+                else:
+                    wfs.color = None
+                    wfs.action = None
                 wfs.toggle(not footswitch.toggled)
                 wfs.label = footswitch.get_display_label() or ""
                 wfs.refresh()
