@@ -892,7 +892,7 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
         lv2 = self.plugin.parameters.get(symbol)
         if lv2 is None:
             return False
-        steps = ParameterSteps(lo, hi, lv2.get_taper(), resolution(lv2))
+        steps = ParameterSteps(lo, hi, lv2.is_logarithmic, resolution(lv2))
         steps.set_value(current)
         delta = int(round(rotations * effective_multiplier(multiplier, lv2)))
         if delta == 0:
