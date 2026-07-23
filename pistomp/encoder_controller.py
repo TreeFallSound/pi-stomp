@@ -145,7 +145,7 @@ class EncoderController(controller.Controller):
         position = util.to_normalized(
             value, self.parameter.minimum, self.parameter.maximum, self.parameter.is_logarithmic
         )
-        midi_value = round(self.midi_min + position * (self.midi_max - self.midi_min))
+        midi_value = round(util.from_normalized(position, self.midi_min, self.midi_max))
         return int(_clamp(midi_value, 0, 127))
 
     def bar_midi_value(self) -> int:
