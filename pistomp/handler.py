@@ -209,9 +209,10 @@ class Handler(InputSink):
     def _apply_midi_binding(
         self, instance: str, symbol: Symbol, binding: str, binding_range: tuple[float, float] | None = None
     ) -> None:
-        # A MIDI mapping was learned in mod-ui. Update the matching parameter's
-        # binding and wire its hardware controller so the LCD reflects it without
-        # a pedalboard reload. Idempotent: replayed connect-dump maps are no-ops.
+        # A MIDI mapping was learned or cleared in mod-ui. Update the matching
+        # parameter's binding and wire/unwire its hardware controller so the LCD
+        # reflects it without a pedalboard reload. Idempotent: replayed connect-dump
+        # maps are no-ops.
         if self._current is None:
             return
         plugin = self.current.pedalboard.find_plugin(instance)
@@ -226,9 +227,31 @@ class Handler(InputSink):
             param.set_binding_range(binding_range)
         if param.binding == binding:
             return
+
+        old_binding = param.binding
         controller = self.hardware.controllers.get(binding)
+        old_controller = self.hardware.controllers.get(old_binding) if old_binding is not None else None
+
+        if old_controller is not None and old_binding != binding:
+            old_controller.unbind_from_parameter()
+            if old_controller in plugin.controllers:
+                plugin.controllers.remove(old_controller)
+            if isinstance(old_controller, Footswitch):
+                plugin.has_footswitch = any(
+                    isinstance(c, Footswitch) for c in plugin.controllers
+                )
+            elif isinstance(old_controller, (AnalogMidiControl, EncoderController)):
+                key = "%s:%s" % (plugin.instance_id, param.name)
+                self.current.analog_controllers.pop(key, None)
+
         if controller is None:
+            param.binding = None
+            self._add_learned_binding_row(plugin, param, None, old_binding)
+            if old_controller is not None:
+                is_footswitch = isinstance(old_controller, Footswitch)
+                self._redraw_after_binding(old_controller, is_footswitch)
             return
+
         # Externally-routed controls aren't bound to plugin parameters; board
         # load ignores such bindings (_bind_plugin_parameters) and the live
         # learn must agree, or the control's MidiCcEffect row shadows the
@@ -238,8 +261,7 @@ class Handler(InputSink):
                 f"MIDI learn for {instance}:{param.name} names external controller "
                 f"{binding} (routed to {self.hardware.external_port_name(controller)}) - ignoring"
             )
-            return
-        old_binding = param.binding
+
         param.binding = binding
         is_footswitch = self._bind_controller_to_param(plugin, param, controller)
         self._add_learned_binding_row(plugin, param, controller, old_binding)
@@ -263,13 +285,13 @@ class Handler(InputSink):
             self.current.analog_controllers[key] = display_info
         return False
 
-    def _redraw_after_binding(self, controller, is_footswitch):
+    def _redraw_after_binding(self, controller: Controller | None, is_footswitch: bool) -> None:
         # Refresh the LCD after a learned binding. Subclasses redraw at their
         # own granularity.
         raise NotImplementedError()
 
     def _add_learned_binding_row(
-        self, plugin: "Plugin", param: "Parameter", controller: Controller, old_binding: str | None
+        self, plugin: "Plugin", param: "Parameter", controller: Controller | None, old_binding: str | None
     ) -> None:
         # Add a table row for a live-learned binding so dispatch and badges
         # reflect it without a pedalboard reload. MOD subclasses override;
