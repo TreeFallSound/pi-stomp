@@ -44,6 +44,12 @@ import pygame
 import time
 
 
+# A wide-ratio log port's true curve is sub-pixel across the bottom decades,
+# and a fill you can't see reads as "knob at minimum" — squeeze the log
+# envelope to [MIN_BAR_PX, full]. Linear ramps already start visible; they
+# render exactly as they always have.
+MIN_BAR_PX = 3
+
 # Bar geometry/colors are fixed constants so the rendered bar surface depends
 # only on the taper shape and color. A log port's height curve depends only on
 # max/min (bar height = the value at sweep position p as a linear fraction of
@@ -64,7 +70,8 @@ def _render_bar_surface(
     if log_ratio is None:
         graph_points = num_points * p
     else:
-        graph_points = num_points * (log_ratio**p - 1.0) / (log_ratio - 1.0)
+        shape = (log_ratio**p - 1.0) / (log_ratio - 1.0)
+        graph_points = MIN_BAR_PX + (num_points - MIN_BAR_PX) * shape
 
     surf = pygame.Surface((graph_width, graph_height), pygame.SRCALPHA)
     for idx in range(num_points):
