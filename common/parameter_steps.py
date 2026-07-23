@@ -23,6 +23,7 @@ by the same amount whichever control you turn.
 import bisect
 from typing import List
 
+import common.util as util
 from common.parameter import Parameter, Type
 
 # Steps for a continuous parameter. Matches the 0-127 MIDI CC range, so a full
@@ -89,20 +90,22 @@ def effective_multiplier(multiplier: float, parameter: Parameter | None) -> floa
 class ParameterSteps:
     """A tapered grid of reachable values, plus a cursor into it."""
 
-    def __init__(self, minimum: float, maximum: float, taper: float, num_steps: int):
+    def __init__(self, minimum: float, maximum: float, logarithmic: bool, num_steps: int):
         self.num_steps = num_steps
         self.index = 0
         self.values: List[float] = []
         if num_steps <= 1:
             self.values = [minimum]
             return
-        rng = maximum - minimum
-        for i in range(num_steps):
-            self.values.append(minimum + rng * ((i / (num_steps - 1)) ** taper))
+        # Geometric for log ports — the same curve mod-host decodes a CC with,
+        # so a 128-step grid lands on exactly the CC-expressible values.
+        self.values = [
+            util.from_normalized(i / (num_steps - 1), minimum, maximum, logarithmic) for i in range(num_steps)
+        ]
 
     @classmethod
     def for_parameter(cls, parameter: Parameter) -> "ParameterSteps":
-        steps = cls(parameter.minimum, parameter.maximum, parameter.get_taper(), resolution(parameter))
+        steps = cls(parameter.minimum, parameter.maximum, parameter.is_logarithmic, resolution(parameter))
         steps.set_value(parameter.value)
         return steps
 
