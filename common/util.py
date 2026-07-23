@@ -14,6 +14,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 
+import math
 from typing import Any
 
 
@@ -39,6 +40,26 @@ def renormalize(n, left_min, left_max, right_min, right_max):
     delta1 = left_max - left_min
     delta2 = right_max - right_min
     return round((delta2 * (n - left_min) / delta1) + right_min)
+
+
+def to_normalized(value: float, minimum: float, maximum: float, logarithmic: bool = False) -> float:
+    """Value → [0,1] position in [minimum, maximum], honoring the port taper.
+    Inverse of from_normalized. Logarithmic ports are geometric — the taper that
+    mod-host applies to a MIDI-CC-addressed control, so the CC we emit must invert
+    it or the port lands on the wrong value. Falls back to linear when a log range
+    is non-positive (undefined), which log ports never are."""
+    if logarithmic and minimum > 0.0 and maximum > 0.0:
+        return math.log(value / minimum) / math.log(maximum / minimum)
+    span = maximum - minimum
+    return (value - minimum) / span if span else 0.0
+
+
+def from_normalized(position: float, minimum: float, maximum: float, logarithmic: bool = False) -> float:
+    """[0,1] position → value. Mirrors mod-host's CC→value mapping (geometric for
+    logarithmic ports); the inverse of to_normalized."""
+    if logarithmic and minimum > 0.0 and maximum > 0.0:
+        return minimum * (maximum / minimum) ** position
+    return minimum + position * (maximum - minimum)
 
 
 def renormalize_float(value, left_min, left_max, right_min, right_max):
