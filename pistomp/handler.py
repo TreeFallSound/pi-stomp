@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -227,6 +228,16 @@ class Handler(InputSink):
             return
         controller = self.hardware.controllers.get(binding)
         if controller is None:
+            return
+        # Externally-routed controls aren't bound to plugin parameters; board
+        # load ignores such bindings (_bind_plugin_parameters) and the live
+        # learn must agree, or the control's MidiCcEffect row shadows the
+        # learned row and commits emit raw values out the external port.
+        if self.hardware.is_external(controller):
+            logging.warning(
+                f"MIDI learn for {instance}:{param.name} names external controller "
+                f"{binding} (routed to {self.hardware.external_port_name(controller)}) - ignoring"
+            )
             return
         old_binding = param.binding
         param.binding = binding

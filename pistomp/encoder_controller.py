@@ -140,13 +140,15 @@ class EncoderController(controller.Controller):
         derived from the parameter (the owner). Unbound, the value lives on the
         handler — ask Modhandler.encoder_fallback."""
         assert self.parameter is not None, "bar_midi_value is bound-only; unbound lives on the handler"
-        midi_value = util.renormalize(
+        # mod-host maps the CC back onto the port with the port's own taper, so a
+        # logarithmic port needs the geometric inverse
+        position = util.to_normalized(
             self.parameter.value,
             self.parameter.minimum,
             self.parameter.maximum,
-            self.midi_min,
-            self.midi_max,
+            self.parameter.is_logarithmic,
         )
+        midi_value = round(self.midi_min + position * (self.midi_max - self.midi_min))
         return int(_clamp(midi_value, 0, 127))
 
     def _compute_multiplier(self, rotations: int) -> float:

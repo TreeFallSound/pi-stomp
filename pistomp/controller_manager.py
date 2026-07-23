@@ -186,7 +186,7 @@ class ControllerManager:
             if controller.parameter is None:
                 if isinstance(controller, AnalogMidiControl):
                     controller.parameter = self._hw.create_external_parameter(
-                        controller, port_name, controller.midi_channel, controller.midi_CC
+                        port_name, controller.midi_channel, controller.midi_CC, controller.midi_value
                     )
                 else:
                     ext_info = PortInfo(

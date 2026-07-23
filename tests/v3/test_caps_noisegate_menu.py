@@ -367,7 +367,7 @@ def test_tweak_bound_to_pedalboard_param_not_corrupted_by_open_menu(v3_system: S
 
     # tweak1 (the real hardware encoder id=1) bound to a separate pedalboard param B.
     enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1 and e.midi_CC is not None)
-    bound_param = hw.create_external_parameter(enc1, "virtual", enc1.midi_channel, enc1.midi_CC)
+    bound_param = hw.create_external_parameter("virtual", enc1.midi_channel, enc1.midi_CC)
     enc1.bind_to_parameter(bound_param)
 
     slot = plugin.parameters[Symbol("open")]  # the initially-selected menu slot
