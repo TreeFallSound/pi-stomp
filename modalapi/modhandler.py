@@ -30,6 +30,7 @@ import sys
 import yaml
 from collections import namedtuple
 from collections.abc import Callable
+from dataclasses import replace
 import functools
 from functools import cached_property
 from typing import cast, Any
@@ -67,6 +68,7 @@ import modalapi.wifi as Wifi
 # injected into Pedalboard as its Customizer.
 from plugins.base import PluginPanel
 from plugins.customization import lookup as plugin_lookup
+from plugins.customization import patch_extra_data
 import modalapi.external_midi as ExternalMidi
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
@@ -83,6 +85,7 @@ from modalapi.ws_protocol import (
     PluginBypassMessage,
     TransportMessage,
     AddPluginMessage,
+    PatchSetMessage,
     RemovePluginMessage,
     ConnectMessage,
     DisconnectMessage,
@@ -181,6 +184,7 @@ class Modhandler(Handler):
         # instance_id.  Applied after the new board loads when the dump and the
         # last.json reload land in the same poll tick.
         self._pending_dump_bypass: dict[str, bool] = {}
+        self._pending_dump_patch: dict[tuple[str, str], str] = {}
 
         # Backup
         self.backup_file = "pistomp_backup.zip"
@@ -735,6 +739,7 @@ class Modhandler(Handler):
         if isinstance(msg, LoadingStartMessage):
             self._is_pedalboard_loading = True
             self._pending_dump_bypass.clear()
+            self._pending_dump_patch.clear()
             cleared = self.ws_bridge.clear_queue()
             if cleared:
                 logging.debug(f"Cleared {cleared} stale outbound messages on loading_start")
@@ -874,6 +879,35 @@ class Modhandler(Handler):
         elif isinstance(msg, MidiMapMessage):
             # MIDI learn in mod-ui assigned a hardware control to a parameter.
             self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
+
+        elif isinstance(msg, PatchSetMessage):
+            self._handle_patch_set(msg)
+
+    @staticmethod
+    def _apply_patch(plugin: Plugin, param_uri: str, value: str) -> bool:
+        """Refresh one plugin's extra_data. False if nothing owns this property
+        or the value is unchanged."""
+        extra = patch_extra_data(plugin.uri, param_uri, value)
+        if extra is None or extra == plugin.customization.extra_data:
+            return False
+        plugin.customization = replace(plugin.customization, extra_data=extra)
+        return True
+
+    def _handle_patch_set(self, msg: PatchSetMessage) -> None:
+        """A plugin's writable property changed. This is the only source of extra
+        data for a freshly added plugin — it has no effect-N bundle on disk until
+        the board is saved."""
+        # Buffer for the connect-dump race, same as bypass: the dump can drain
+        # before last.json reload sets current.
+        self._pending_dump_patch[(msg.instance, msg.param_uri)] = msg.value
+        if self._current is None:
+            return
+        plugin = next(
+            (p for p in self.current.pedalboard.plugins if p.instance_id == msg.instance),
+            None,
+        )
+        if plugin is not None and self._apply_patch(plugin, msg.param_uri, msg.value):
+            self.lcd.draw_main_panel()
 
     def _handle_dynamic_plugin_add(self, msg: AddPluginMessage) -> None:
         """Handle an `add` WS message for a plugin not yet in the pedalboard model."""
@@ -1062,6 +1096,15 @@ class Modhandler(Handler):
                 if plugin.instance_id in self._pending_dump_bypass:
                     plugin.set_bypass(self._pending_dump_bypass[plugin.instance_id])
             self._pending_dump_bypass.clear()
+
+        # Same race, same scoping: only instances present on the board being
+        # made current are applied; anything else is dropped with the buffer.
+        if self._pending_dump_patch:
+            for plugin in pedalboard.plugins:
+                for (instance, param_uri), value in self._pending_dump_patch.items():
+                    if instance == plugin.instance_id:
+                        self._apply_patch(plugin, param_uri, value)
+            self._pending_dump_patch.clear()
 
         # Load Pedalboard specific config (overrides default set during initial hardware init)
         config_file = Path(pedalboard.bundle) / "config.yml"
