@@ -162,6 +162,29 @@ def test_v3_midi_learn_sub_range_saga(v3_system: SystemFixture, make_plugin, mak
     snapshot("min_0p10")
 
 
+def test_v3_log_parameter_dialog_paints_geometric_curve(v3_system: SystemFixture, make_plugin, snapshot):
+    """The dial for a log port paints the geometric envelope — the same curve
+    the step grid and mod-host's CC lattice use — with the current value's fill
+    matching where a detent puts it."""
+    from common.parameter import Parameter, PortInfo
+
+    handler = v3_system.handler
+    hw = v3_system.hw
+
+    assert handler.current and handler.lcd
+
+    info: PortInfo = {"shortName": "HP", "symbol": "hpfreq",
+                      "ranges": {"minimum": 30.0, "maximum": 800.0}, "properties": ["logarithmic"]}
+    freq = Parameter(info, 155.0, None, "eq")  # geometric midpoint: half the bars fill
+    plugin = make_plugin("eq", bypassed=False, has_footswitch=False, parameters={"hpfreq": freq})
+    handler.current.pedalboard.plugins = [plugin]
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    handler.lcd.draw_parameter_dialog(freq)
+    snapshot("log_dialog_midpoint")
+
+
 def test_v3_midi_learn_logarithmic_cc_round_trips(v3_system: SystemFixture, make_plugin):
     """A logarithmic port (x42-eq highpass, 30..800 Hz) bound to a tweak must emit
     a CC that inverts mod-host's *geometric* CC->value map, so MOD-UI lands on the

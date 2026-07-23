@@ -18,8 +18,11 @@
 ParameterSteps.for_parameter, so one detent moves a parameter identically
 whichever control is turned."""
 
+import math
+
 import pytest
 
+import common.util as util
 from common.parameter import Parameter, Symbol, Type
 from common.parameter_steps import (
     CONTINUOUS_STEPS,
@@ -106,28 +109,48 @@ def test_enumeration_parameter_gets_one_step_per_entry():
 
 
 def test_linear_grid_spans_the_range():
-    steps = ParameterSteps(0.0, 10.0, taper=1.0, num_steps=11)
+    steps = ParameterSteps(0.0, 10.0, logarithmic=False, num_steps=11)
     assert steps.values[0] == pytest.approx(0.0)
     assert steps.values[-1] == pytest.approx(10.0)
     assert steps.values[5] == pytest.approx(5.0)
 
 
-def test_tapered_grid_is_denser_at_the_bottom():
-    """A log parameter's detents move less near the minimum."""
-    steps = ParameterSteps(0.0, 100.0, taper=2.0, num_steps=11)
-    low = steps.values[1] - steps.values[0]
-    high = steps.values[-1] - steps.values[-2]
-    assert low < high
+def test_logarithmic_grid_is_geometric():
+    """A log grid spaces detents by equal *ratio* — mod-host's CC taper — so
+    equal rotation covers equal octaves, and the middle detent sits at the
+    geometric mean, where mod-ui's slider puts it."""
+    steps = ParameterSteps(30.0, 800.0, logarithmic=True, num_steps=11)
+    assert steps.values[0] == pytest.approx(30.0)
+    assert steps.values[-1] == pytest.approx(800.0)
+    assert steps.values[5] == pytest.approx(math.sqrt(30.0 * 800.0))
+    ratios = [b / a for a, b in zip(steps.values, steps.values[1:])]
+    assert all(r == pytest.approx(ratios[0]) for r in ratios)
+
+
+def test_logarithmic_grid_aligns_with_cc_lattice():
+    """The 128-step log grid *is* mod-host's CC lattice: detent i encodes to
+    exactly CC i, so every detent changes the wire value (no dead detents) and
+    every CC code is reachable (no skips)."""
+    steps = ParameterSteps(30.0, 800.0, logarithmic=True, num_steps=128)
+    for i, v in enumerate(steps.values):
+        assert round(util.to_normalized(v, 30.0, 800.0, logarithmic=True) * 127) == i
+
+
+def test_logarithmic_grid_with_zero_minimum_falls_back_to_linear():
+    """Log is undefined at 0; the grid follows from_normalized's linear
+    fallback — the same shape mod-host can express for such a port."""
+    steps = ParameterSteps(0.0, 100.0, logarithmic=True, num_steps=11)
+    assert steps.values[5] == pytest.approx(50.0)
 
 
 def test_degenerate_grid_collapses_to_minimum():
-    steps = ParameterSteps(5.0, 5.0, taper=1.0, num_steps=1)
+    steps = ParameterSteps(5.0, 5.0, logarithmic=False, num_steps=1)
     assert steps.values == [5.0]
     assert steps.value == 5.0
 
 
 def test_move_clamps_at_both_ends():
-    steps = ParameterSteps(0.0, 1.0, taper=1.0, num_steps=5)
+    steps = ParameterSteps(0.0, 1.0, logarithmic=False, num_steps=5)
     assert steps.move(-10) == pytest.approx(0.0)
     assert steps.move(100) == pytest.approx(1.0)
     assert steps.index == 4
@@ -145,7 +168,7 @@ def test_move_clamps_at_both_ends():
     ],
 )
 def test_set_value_snaps_to_nearest_step(value, expected_index):
-    steps = ParameterSteps(0.0, 1.0, taper=1.0, num_steps=5)
+    steps = ParameterSteps(0.0, 1.0, logarithmic=False, num_steps=5)
     steps.set_value(value)
     assert steps.index == expected_index
 
@@ -276,26 +299,28 @@ def test_effective_multiplier_toggled_passes_through():
 
 def test_integer_logarithmic_keeps_integer_type_but_log_taper():
     """An integer+logarithmic port (Degrade Rate/Post Filter) classifies as
-    INTEGER (one notch per value) but renders with a logarithmic taper —
-    the step grid stays notched, the graph is log-shaped."""
+    INTEGER (one notch per value) but its grid follows the log taper —
+    the step grid stays notched, the curve is geometric."""
     p = _param(4800, 48000, 4800, Type.INTEGER, is_logarithmic=True)
     assert p.type is Type.INTEGER
     assert p.is_logarithmic is True
-    assert p.get_taper() == 2
     # Step grid is one-per-integer (notched), not the 128-step continuous grid.
     assert resolution(p) == 43201
+    steps = ParameterSteps.for_parameter(p)
+    assert steps.values[len(steps.values) // 2] == pytest.approx(math.sqrt(4800 * 48000), rel=1e-3)
 
 
-def test_logarithmic_port_is_log_type_and_taper():
-    """A pure logarithmic float port keeps the historic shape: Type.LOGARITHMIC
-    and taper 2."""
+def test_logarithmic_port_grid_is_geometric():
+    """A pure logarithmic float port: Type.LOGARITHMIC, geometric grid."""
     p = _param(20.0, 20000.0, 440.0, Type.LOGARITHMIC, is_logarithmic=True)
     assert p.type is Type.LOGARITHMIC
     assert p.is_logarithmic is True
-    assert p.get_taper() == 2
+    steps = ParameterSteps.for_parameter(p)
+    assert steps.values[64] == pytest.approx(util.from_normalized(64 / 127, 20.0, 20000.0, logarithmic=True))
 
 
-def test_plain_integer_is_linear_taper():
+def test_plain_integer_grid_is_linear():
     p = _param(0, 10, 5, Type.INTEGER)
     assert p.is_logarithmic is False
-    assert p.get_taper() == 1
+    steps = ParameterSteps.for_parameter(p)
+    assert steps.values == pytest.approx([float(i) for i in range(11)])
