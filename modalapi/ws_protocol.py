@@ -122,6 +122,18 @@ class AddPluginMessage:
 
 
 @dataclass
+class PatchSetMessage:
+    """A plugin's writable property changed (`patch_set ...`). Replayed in full
+    on the connect dump, so it also carries state for boards loaded before we
+    connected."""
+
+    instance: str    # canonical bare form, e.g. "notes"
+    param_uri: str   # LV2 property URI
+    value_type: str  # mod-host type char: s(tring) p(ath) i(nt) f(loat) ...
+    value: str       # raw; paths may contain spaces
+
+
+@dataclass
 class RemovePluginMessage:
     """Plugin dynamically removed from the active pedalboard (remove ...)."""
 
@@ -187,6 +199,7 @@ WebSocketMessage = Union[
     PluginBypassMessage,
     TransportMessage,
     AddPluginMessage,
+    PatchSetMessage,
     RemovePluginMessage,
     ConnectMessage,
     DisconnectMessage,
@@ -263,6 +276,18 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                     x=float(parts[1]),
                     y=float(parts[2]),
                     bypassed=int(parts[3]) != 0,
+                )
+
+            # Format: patch_set {instance} {writable} {paramUri} {valueType} {value}
+            case ["patch_set", instance_path, rest]:
+                parts = rest.split(" ", 3)
+                if len(parts) < 4:
+                    return UnknownMessage(raw=raw_message)
+                return PatchSetMessage(
+                    instance=instance_path.removeprefix("/graph/"),
+                    param_uri=parts[1],
+                    value_type=parts[2],
+                    value=parts[3],
                 )
 
             # Format: remove {instance}

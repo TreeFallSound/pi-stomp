@@ -897,3 +897,105 @@ def test_v3_websocket_bypass_event_with_multiword_id(v3_system):
     handler.poll_modui_changes()
 
     assert plugin.is_bypassed()
+
+
+# ---------------------------------------------------------------------------
+# patch_set -> extra_data
+# ---------------------------------------------------------------------------
+
+_NAM_URI = "http://github.com/mikeoliphant/neural-amp-modeler-lv2"
+_NAM_MODEL = f"{_NAM_URI}#model"
+
+
+def test_v3_live_patch_set_names_nam_tile(v3_system: SystemFixture, make_plugin):
+    """A mid-session model change renames the tile without a board reload."""
+    handler = v3_system.handler
+    nam = make_plugin("nam", category="Simulator", uri=_NAM_URI)
+    assert handler.current
+    handler.current.pedalboard.plugins = [nam]
+    generic = nam.display_name
+
+    v3_system.ws_bridge.inject(f"patch_set /graph/nam 1 {_NAM_MODEL} p /models/Marshall JCM800.nam")
+    handler.poll_ws_messages()
+
+    assert nam.display_name == "Marshall JCM800"
+    assert nam.display_name != generic
+    assert nam.subtitle == "NAM: Marshall JCM800.nam"
+
+
+def test_v3_patch_set_ignores_unowned_property(v3_system: SystemFixture, make_plugin):
+    handler = v3_system.handler
+    nam = make_plugin("nam", category="Simulator", uri=_NAM_URI)
+    assert handler.current
+    handler.current.pedalboard.plugins = [nam]
+
+    v3_system.ws_bridge.inject(f"patch_set /graph/nam 1 {_NAM_URI}#unrelated s whatever")
+    handler.poll_ws_messages()
+
+    assert nam.customization.extra_data is None
+
+
+def test_v3_patch_set_for_unknown_instance_is_harmless(v3_system: SystemFixture, make_plugin):
+    """Dump frames can name instances that aren't on the board — must not raise."""
+    handler = v3_system.handler
+    nam = make_plugin("nam", category="Simulator", uri=_NAM_URI)
+    assert handler.current
+    handler.current.pedalboard.plugins = [nam]
+
+    v3_system.ws_bridge.inject(f"patch_set /graph/ghost 1 {_NAM_MODEL} p /models/Ghost.nam")
+    handler.poll_ws_messages()
+
+    assert nam.customization.extra_data is None
+
+
+def test_v3_dump_patch_set_same_tick_applies_to_new_board(v3_system: SystemFixture, make_plugin):
+    """Same-tick race, patch_set flavour: the dump drains before last.json reload
+    switches the board, so the model must be buffered and flushed into the new one."""
+    handler = v3_system.handler
+
+    nam = make_plugin("nam", category="Simulator", uri=_NAM_URI)
+    new_pb = handler.pedalboards["/path/to/new.pedalboard"]
+    new_pb.plugins = [nam]
+    handler.reload_pedalboard = lambda bundle: new_pb
+
+    ws_bridge = v3_system.ws_bridge
+    ws_bridge.inject("loading_start 0")
+    ws_bridge.inject(f"add nam {_NAM_URI} 0.0 0.0 0 1 1")
+    ws_bridge.inject(f"patch_set /graph/nam 1 {_NAM_MODEL} p /models/Marshall JCM800.nam")
+    ws_bridge.inject("loading_end 0")
+
+    last_json = Path(handler.data_dir) / "last.json"
+    last_json.write_text(json.dumps({"pedalboard": "/path/to/new.pedalboard"}))
+    os.utime(last_json, (9999, 9999))
+
+    handler.poll_modui_changes()
+
+    assert handler.current
+    assert handler.current.pedalboard.bundle == "/path/to/new.pedalboard"
+    assert nam.display_name == "Marshall JCM800"
+    assert not handler._pending_dump_patch
+
+
+def test_v3_loading_start_discards_previous_boards_patches(v3_system: SystemFixture, make_plugin):
+    """A patch buffered for board A must not land on board B."""
+    handler = v3_system.handler
+
+    nam = make_plugin("nam", category="Simulator", uri=_NAM_URI)
+    new_pb = handler.pedalboards["/path/to/new.pedalboard"]
+    new_pb.plugins = [nam]
+    handler.reload_pedalboard = lambda bundle: new_pb
+
+    ws_bridge = v3_system.ws_bridge
+    ws_bridge.inject(f"patch_set /graph/nam 1 {_NAM_MODEL} p /models/Stale.nam")
+    ws_bridge.inject("loading_start 0")
+    ws_bridge.inject(f"add nam {_NAM_URI} 0.0 0.0 0 1 1")
+    ws_bridge.inject("loading_end 0")
+
+    last_json = Path(handler.data_dir) / "last.json"
+    last_json.write_text(json.dumps({"pedalboard": "/path/to/new.pedalboard"}))
+    os.utime(last_json, (9999, 9999))
+
+    handler.poll_modui_changes()
+
+    assert nam.customization.extra_data is None
+    assert nam.display_name != "Stale"

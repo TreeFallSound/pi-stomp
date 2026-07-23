@@ -30,7 +30,7 @@ how the pieces fit together end to end."""
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Callable, Union
+from typing import Callable, TypedDict, Union
 
 from common.param_roles import ParamRole
 from common.parameter import Symbol
@@ -125,6 +125,28 @@ class RelayEffect(Effect):
 @dataclass(frozen=True)
 class PresetEffect(Effect):
     direction: str  # "UP" | "DOWN" | "<int>"
+
+
+@dataclass(frozen=True)
+class PedalboardEffect(Effect):
+    direction: str  # "UP" | "DOWN" — next/prev pedalboard within the current bank
+
+
+@dataclass(frozen=True)
+class RawMidiCcEffect(Effect):
+    # No owning controller; mod-ui's echo reconciles a MIDI-learned plugin.
+    channel: int  # 0-15
+    cc: int
+
+
+class LongpressActionConfig(TypedDict, total=False):
+    """Mapping-form `longpress:` config, exactly one key (enforced by the schema
+    in pistomp/config.py). Stays plain data — controller_manager builds the
+    Effect at bind time, when the footswitch's channel is resolved."""
+
+    midi_CC: int
+    preset: int | str  # "UP" | "DOWN" | <index>
+    pedalboard: str  # "UP" | "DOWN"
 
 
 @dataclass(frozen=True)

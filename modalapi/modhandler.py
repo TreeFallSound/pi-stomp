@@ -28,7 +28,9 @@ from pistomp.httpclient import Response
 import subprocess
 import sys
 import yaml
+from collections import namedtuple
 from collections.abc import Callable
+from dataclasses import replace
 import functools
 from functools import cached_property
 from typing import cast, Any
@@ -48,7 +50,9 @@ from common.contexts import (
     EventKind,
     MidiCcEffect,
     ParamEffect,
+    PedalboardEffect,
     PresetEffect,
+    RawMidiCcEffect,
     RelayEffect,
     TapTempoEffect,
 )
@@ -64,6 +68,7 @@ import modalapi.wifi as Wifi
 # injected into Pedalboard as its Customizer.
 from plugins.base import PluginPanel
 from plugins.customization import lookup as plugin_lookup
+from plugins.customization import patch_extra_data
 import modalapi.external_midi as ExternalMidi
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
@@ -80,6 +85,7 @@ from modalapi.ws_protocol import (
     PluginBypassMessage,
     TransportMessage,
     AddPluginMessage,
+    PatchSetMessage,
     RemovePluginMessage,
     ConnectMessage,
     DisconnectMessage,
@@ -120,6 +126,11 @@ def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
     # cross controller classes (footswitch ↔ encoder).
     for (cls, event_kind), rows in list(layer.rows.items()):
         layer.rows[(cls, event_kind)] = [d for d in rows if d.control.id != binding_id]
+
+
+class LongpressCcKey(namedtuple("LongpressCcKey", ["channel", "cc"])):
+    """(channel, cc) identity for a raw-CC longpress row; tracks what value to
+    send next. mod-ui's echo reconciles the learned plugin."""
 
 
 class Modhandler(Handler):
@@ -173,6 +184,7 @@ class Modhandler(Handler):
         # instance_id.  Applied after the new board loads when the dump and the
         # last.json reload land in the same poll tick.
         self._pending_dump_bypass: dict[str, bool] = {}
+        self._pending_dump_patch: dict[tuple[str, str], str] = {}
 
         # Backup
         self.backup_file = "pistomp_backup.zip"
@@ -222,6 +234,8 @@ class Modhandler(Handler):
             "toggle_bypass": self.system_toggle_bypass,
             "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable,
             "toggle_tuner_enable": self.toggle_tuner_enable,
+            "next_pedalboard": self.next_pedalboard,
+            "previous_pedalboard": self.previous_pedalboard,
         }
 
         # External MIDI device synchronization
@@ -234,6 +248,9 @@ class Modhandler(Handler):
 
         # Footswitch longpress/chord resolver (rebuilt on pedalboard change)
         self.chord_helper = FootswitchChords()
+
+        # First raw-CC longpress sends 127; alternates thereafter.
+        self._longpress_cc_state: dict[LongpressCcKey, bool] = {}
 
     def cleanup(self):
         if self._tuner_muted:
@@ -512,7 +529,21 @@ class Modhandler(Handler):
                         fs.toggle_relays(new_toggled)
                         fs.set_led(new_toggled)
                         self.update_lcd_fs(bypass_change=True)
+                case RawMidiCcEffect(channel=ch, cc=cc):
+                    key = LongpressCcKey(channel=ch, cc=cc)
+                    on = self._longpress_cc_state[key] = not self._longpress_cc_state.get(key, False)
+                    self._emit_raw_cc(ch, cc, 127 if on else 0)
+                case PedalboardEffect(direction=direction):
+                    if direction == "DOWN":
+                        self.previous_pedalboard()
+                    else:
+                        self.next_pedalboard()
         return decl.consume
+
+    def _emit_raw_cc(self, channel: int, cc: int, value: int) -> None:
+        """Send a CC with no owning controller, bypassing _emit_midi's
+        controller.midi_CC guard; virtual out only."""
+        self.hardware.midiout.send_message([channel | CONTROL_CHANGE, cc, int(value)])
 
     def _emit_midi(self, controller, midi_value: int) -> None:
         """Send a CC. Tries the external port if routed; falls back to virtual."""
@@ -708,6 +739,7 @@ class Modhandler(Handler):
         if isinstance(msg, LoadingStartMessage):
             self._is_pedalboard_loading = True
             self._pending_dump_bypass.clear()
+            self._pending_dump_patch.clear()
             cleared = self.ws_bridge.clear_queue()
             if cleared:
                 logging.debug(f"Cleared {cleared} stale outbound messages on loading_start")
@@ -847,6 +879,35 @@ class Modhandler(Handler):
         elif isinstance(msg, MidiMapMessage):
             # MIDI learn in mod-ui assigned a hardware control to a parameter.
             self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
+
+        elif isinstance(msg, PatchSetMessage):
+            self._handle_patch_set(msg)
+
+    @staticmethod
+    def _apply_patch(plugin: Plugin, param_uri: str, value: str) -> bool:
+        """Refresh one plugin's extra_data. False if nothing owns this property
+        or the value is unchanged."""
+        extra = patch_extra_data(plugin.uri, param_uri, value)
+        if extra is None or extra == plugin.customization.extra_data:
+            return False
+        plugin.customization = replace(plugin.customization, extra_data=extra)
+        return True
+
+    def _handle_patch_set(self, msg: PatchSetMessage) -> None:
+        """A plugin's writable property changed. This is the only source of extra
+        data for a freshly added plugin — it has no effect-N bundle on disk until
+        the board is saved."""
+        # Buffer for the connect-dump race, same as bypass: the dump can drain
+        # before last.json reload sets current.
+        self._pending_dump_patch[(msg.instance, msg.param_uri)] = msg.value
+        if self._current is None:
+            return
+        plugin = next(
+            (p for p in self.current.pedalboard.plugins if p.instance_id == msg.instance),
+            None,
+        )
+        if plugin is not None and self._apply_patch(plugin, msg.param_uri, msg.value):
+            self.lcd.draw_main_panel()
 
     def _handle_dynamic_plugin_add(self, msg: AddPluginMessage) -> None:
         """Handle an `add` WS message for a plugin not yet in the pedalboard model."""
@@ -1036,6 +1097,15 @@ class Modhandler(Handler):
                     plugin.set_bypass(self._pending_dump_bypass[plugin.instance_id])
             self._pending_dump_bypass.clear()
 
+        # Same race, same scoping: only instances present on the board being
+        # made current are applied; anything else is dropped with the buffer.
+        if self._pending_dump_patch:
+            for plugin in pedalboard.plugins:
+                for (instance, param_uri), value in self._pending_dump_patch.items():
+                    if instance == plugin.instance_id:
+                        self._apply_patch(plugin, param_uri, value)
+            self._pending_dump_patch.clear()
+
         # Load Pedalboard specific config (overrides default set during initial hardware init)
         config_file = Path(pedalboard.bundle) / "config.yml"
         cfg = None
@@ -1148,6 +1218,46 @@ class Modhandler(Handler):
         resp2 = self._rest_post(uri, data=data)
         if resp2 is None or resp2.status_code != 200:
             logging.error("Bad Rest request: %s %s" % (uri, data))
+
+    def pedalboards_in_bank(self) -> list[Pedalboard.Pedalboard] | None:
+        """Ordered Pedalboards for the current bank, or None if no bank is set
+        (caller falls back to pedalboard_list). Same O(N²) title→bundle lookup
+        the pedalboard menu does."""
+        bank_pbs = self.banks.get(self.current_bank) if self.current_bank else None
+        if bank_pbs is None:
+            return None
+        result = []
+        for title in bank_pbs:
+            for p in self.pedalboard_list:
+                if p.title == title:
+                    result.append(p)
+                    break
+        return result
+
+    def _next_pedalboard_index(self, incr: bool) -> int | None:
+        pbs = self.pedalboards_in_bank()
+        if pbs is None:
+            pbs = self.pedalboard_list
+        if not pbs:
+            return None
+        current = self.current.pedalboard
+        try:
+            idx = next(i for i, p in enumerate(pbs) if p.bundle == current.bundle)
+        except StopIteration:
+            return 0 if incr else len(pbs) - 1
+        return (idx + 1) % len(pbs) if incr else (idx - 1) % len(pbs)
+
+    def _pedalboard_nav(self, incr: bool) -> None:
+        pbs = self.pedalboards_in_bank() or self.pedalboard_list
+        idx = self._next_pedalboard_index(incr)
+        if idx is not None:
+            self.pedalboard_change(pbs[idx])
+
+    def next_pedalboard(self) -> None:
+        self._pedalboard_nav(True)
+
+    def previous_pedalboard(self) -> None:
+        self._pedalboard_nav(False)
 
     #
     # Preset Stuff

@@ -45,6 +45,7 @@ from typing import Literal
 import numpy as np
 import pygame
 
+
 State = Literal["nominal", "muted", "rolling"]
 
 _SIZE = 16

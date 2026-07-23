@@ -83,11 +83,35 @@ schema = {
                 "type": "integer"
               },
               "longpress": {
-                "type" : ["array", "string"],
-                "items" : {
-                  "type" : "string",
-                  "enum" : ["next_snapshot", "previous_snapshot", "toggle_bypass", "set_mod_tap_tempo", "toggle_tap_tempo_enable"]
-                }
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "enum": ["next_snapshot", "previous_snapshot", "toggle_bypass", "set_mod_tap_tempo", "toggle_tap_tempo_enable", "toggle_tuner_enable"]
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": ["next_snapshot", "previous_snapshot", "toggle_bypass", "set_mod_tap_tempo", "toggle_tap_tempo_enable", "toggle_tuner_enable"]
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "minProperties": 1,
+                    "maxProperties": 1,
+                    "properties": {
+                      "midi_CC": {"type": "integer", "minimum": 0, "maximum": 127},
+                      "preset": {
+                        "oneOf": [
+                          {"type": "integer"},
+                          {"type": "string", "enum": ["UP", "DOWN"]}
+                        ]
+                      },
+                      "pedalboard": {"type": "string", "enum": ["UP", "DOWN"]}
+                    }
+                  }
+                ]
               },
               "midi_CC": {
                 "type": "integer"
