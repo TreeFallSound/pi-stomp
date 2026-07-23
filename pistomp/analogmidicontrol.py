@@ -37,6 +37,7 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.StatefulControll
         self.type = type
         self.id = id
         self.last_read = 0
+        self.midi_value = 0
         self.value = None
         self.cfg: dict[str, Any] = cfg or {}
         self._connection = AnalogConnectionMonitor()

@@ -162,6 +162,80 @@ def test_v3_midi_learn_sub_range_saga(v3_system: SystemFixture, make_plugin, mak
     snapshot("min_0p10")
 
 
+def test_v3_midi_learn_logarithmic_cc_round_trips(v3_system: SystemFixture, make_plugin):
+    """A logarithmic port (x42-eq highpass, 30..800 Hz) bound to a tweak must emit
+    a CC that inverts mod-host's *geometric* CC->value map, so MOD-UI lands on the
+    dialed value — not a much smaller one. bar_midi_value used to map linearly,
+    which for a log taper collapses toward the bottom of the range."""
+    import common.util as util
+    from common.parameter import Parameter, PortInfo
+
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+
+    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+
+    info: PortInfo = {"shortName": "HP", "symbol": "hpfreq",
+                      "ranges": {"minimum": 30.0, "maximum": 800.0}, "properties": ["logarithmic"]}
+    freq = Parameter(info, 400.0, None, "eq")
+    plugin = make_plugin("eq", bypassed=False, has_footswitch=False, parameters={"hpfreq": freq})
+    handler.current.pedalboard.plugins = [plugin]
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    ws_bridge.inject(f"midi_map /graph/eq hpfreq {channel} {cc} 30.0 800.0")
+    handler.poll_ws_messages()
+    assert enc1.parameter is freq
+
+    # mod-host decodes the CC we emit geometrically over [30, 800]. Feeding our CC
+    # back through that map must return ~400 Hz (within one CC step), the value the
+    # user set — a linear emit would decode to ~145 Hz.
+    emitted_cc = enc1.bar_midi_value()
+    mod_host_value = util.from_normalized(emitted_cc / 127.0, 30.0, 800.0, logarithmic=True)
+    assert abs(mod_host_value - 400.0) < 12.0
+    # Guard the regression explicitly: the old linear CC would land far too low.
+    assert emitted_cc > 90
+
+
+def test_v3_midi_learn_external_controller_is_refused(v3_system: SystemFixture, make_plugin, make_parameter):
+    """A midi_map whose channel:CC collides with an externally-routed control is
+    ignored, matching the board-load guard (_bind_plugin_parameters). Accepting it
+    would clobber the control's synthetic external parameter and leave its
+    MidiCcEffect row shadowing the learned ParamEffect row, so the dialog commit
+    would emit the raw param value out the external port instead of updating
+    mod-host."""
+    from pistomp.controller import RoutingInfo
+
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+
+    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1)
+    key = _binding_for(hw, enc1)
+    channel, cc = key.split(":")
+    hw.external_routing[enc1] = RoutingInfo.external("My MIDI Device")
+    parameter_before = enc1.parameter
+
+    gain = make_parameter("Gain", "noise", value=0.5)
+    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    handler.current.pedalboard.plugins = [plugin]
+
+    ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.0 1.0")
+    handler.poll_ws_messages()
+
+    assert gain.binding is None
+    assert enc1.parameter is parameter_before
+    assert enc1 not in plugin.controllers
+    rows = handler.effective_table.layers[0].rows.get((ControlClass.ANALOG, EventKind.ROTATE), [])
+    assert not any(r.control.id == key and isinstance(r.effects[0], ParamEffect) for r in rows)
+
+
 def test_v3_midi_learn_unknown_instance_is_ignored(v3_system: SystemFixture, make_plugin):
     """A midi_map for an instance we don't have is a safe no-op."""
     handler = v3_system.handler

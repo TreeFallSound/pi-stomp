@@ -358,7 +358,7 @@ class Hardware(ABC):
             pass
         return chan
 
-    def create_external_parameter(self, controller, port_name, midi_channel, midi_cc):
+    def create_external_parameter(self, port_name, midi_channel, midi_cc, initial_value: int = 0):
         name = f"{port_name}:{midi_cc}"
         info = PortInfo(
             name=name,
@@ -366,8 +366,7 @@ class Hardware(ABC):
             ranges={"minimum": 0, "maximum": 127},
             properties=[TTL_INTEGER],
         )
-        val = getattr(controller, 'midi_value', 0)
-        return Parameter(info, val, f"{midi_channel}:{midi_cc}", EXTERNAL_INSTANCE_ID)
+        return Parameter(info, initial_value, f"{midi_channel}:{midi_cc}", EXTERNAL_INSTANCE_ID)
 
     def __validate_midi_port(self, port_name):
         if self.external_midi is None:

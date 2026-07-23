@@ -140,9 +140,12 @@ class EncoderController(controller.Controller):
         MIDI mechanics (range, channel, routing) are the controller's, not the
         param's — the param stays MIDI-agnostic."""
         assert self.parameter is not None, "to_midi is bound-only; unbound lives on the handler"
-        midi_value = util.renormalize(
-            value, self.parameter.minimum, self.parameter.maximum, self.midi_min, self.midi_max
+        # mod-host maps the CC back onto the port with the port's own taper, so a
+        # logarithmic port needs the geometric inverse
+        position = util.to_normalized(
+            value, self.parameter.minimum, self.parameter.maximum, self.parameter.is_logarithmic
         )
+        midi_value = round(self.midi_min + position * (self.midi_max - self.midi_min))
         return int(_clamp(midi_value, 0, 127))
 
     def bar_midi_value(self) -> int:
