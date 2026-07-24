@@ -129,7 +129,7 @@ class Plugin:
         if param is None:
             return 0.0
         new_value = 0.0 if param.value else 1.0
-        param.value = new_value
+        param.preview(new_value)
         return new_value
 
     def set_param_value(self, symbol: Symbol, value: float) -> None:
@@ -141,7 +141,7 @@ class Plugin:
         param = self.parameters.get(symbol)
         if param is None:
             return
-        param.value = value
+        param.reconcile(value)
         for c in self.controllers:
             # Only stateful controllers hold a presentation copy to sync (a
             # footswitch keycap, a pot's reading). Encoders own no copy.

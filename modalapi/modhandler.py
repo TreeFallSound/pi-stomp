@@ -135,15 +135,15 @@ def _is_transport_bpm(param: Parameter | None) -> bool:
 
 class _TransportBpmSink:
     """:bpm's upstream channel. mod-ui's :bpm is a global designation, not a
-    plugin control port — param_set is rejected — so an edit rides the dedicated
-    transport-bpm command (POST fallback). That routing lives in
-    set_mod_tap_tempo; this just names :bpm's edits as its callers."""
+    plugin control port — param_set is rejected — so a commit rides the dedicated
+    transport-bpm command (POST fallback). set_mod_tap_tempo returns whether the
+    send left; commit rolls back if it didn't."""
 
-    def __init__(self, send: Callable[[float], None]):
+    def __init__(self, send: Callable[[float], bool]):
         self._send = send
 
-    def publish(self, param: Parameter) -> None:
-        self._send(param.value)
+    def publish(self, param: Parameter) -> bool:
+        return self._send(param.value)
 
 
 def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
@@ -419,7 +419,7 @@ class Modhandler(Handler):
 
         if c.type == Token.VOLUME and c.parameter is not None:
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
-            c.parameter.value = new_value
+            c.parameter.preview(new_value)
             self.audiocard.set_volume_parameter(self.audiocard.MASTER, new_value)
             d = self.lcd.draw_audio_parameter_dialog(c.parameter, self.audio_parameter_commit)
             if d is not None:
@@ -442,10 +442,10 @@ class Modhandler(Handler):
             # bits — and must not also emit CC. Every other bound param's CC is
             # its transport to mod-host, so it falls through to the emit below.
             if _is_transport_bpm(c.parameter):
-                c.parameter.edit(new_value)
+                c.parameter.commit(new_value)
                 self.lcd.display_parameter_value(c.parameter, new_value)
                 return True
-            c.parameter.value = new_value
+            c.parameter.preview(new_value)
             self.lcd.display_parameter_value(c.parameter, new_value)
             emit_value = c.bar_midi_value()
         else:
@@ -551,7 +551,7 @@ class Modhandler(Handler):
                             controller.set_led(controller.toggled)
                             self._emit_midi(controller, 127 if controller.toggled else 0)
                         if controller.parameter is not None:
-                            controller.parameter.value = controller.value_for(controller.toggled)
+                            controller.parameter.preview(controller.value_for(controller.toggled))
                         self.update_lcd_fs(footswitch=controller)
                 case ParamEffect():
                     # Footswitch PRESS with a bound plugin param. "on" polarity
@@ -566,7 +566,7 @@ class Modhandler(Handler):
                         if fs.midi_CC is not None:
                             self._emit_midi(fs, 127 if new_toggled else 0)
                         if fs.parameter is not None:
-                            fs.parameter.value = fs.value_for(new_toggled)
+                            fs.parameter.preview(fs.value_for(new_toggled))
                         self.update_lcd_fs(footswitch=fs)
                 case RelayEffect():
                     if fs is not None:
@@ -903,8 +903,8 @@ class Modhandler(Handler):
             # MIDI slave, another HMI). :rolling's enum flips Playing/Stopped.
             if self._current is not None:
                 # A remote reconcile: adopt mod-ui's values, publish nothing.
-                # set_param_value routes through the plain setter, not edit(),
-                # so :bpm's sink never fires back at the sender.
+                # set_param_value routes through reconcile, not commit, so :bpm's
+                # sink never fires back at the sender.
                 tp = self.current.pedalboard.transport_plugin
                 tp.set_param_value(ROLLING_SYMBOL, 1.0 if msg.rolling else 0.0)
                 tp.set_param_value(BPB_SYMBOL, msg.beats_per_bar)
@@ -1448,7 +1448,7 @@ class Modhandler(Handler):
         # value and publishes through it. It is neither a plugin control port
         # nor an audio/external param, so it exits before those arms.
         if _is_transport_bpm(param):
-            param.edit(value)
+            param.commit(value)
             return
 
         # Route plugin params through the plugin's mirror so a bound footswitch
@@ -1462,7 +1462,7 @@ class Modhandler(Handler):
         if plugin is not None:
             plugin.set_param_value(param.symbol, value)
         else:
-            param.value = value
+            param.preview(value)
 
         # Audio parameter (volume, EQ, etc.) - handled locally, no remote update needed
         if param.instance_id is None:
@@ -1842,14 +1842,16 @@ class Modhandler(Handler):
     def get_callback(self, callback_name):
         return util.DICT_GET(self.callbacks, callback_name)
 
-    def set_mod_tap_tempo(self, bpm: float | None) -> None:
+    def set_mod_tap_tempo(self, bpm: float | None) -> bool:
         # WebSocket first: _rest_post blocks the 10ms loop, and an encoder spin
         # calls this once per detent. POST only when backpressure refused the send.
+        # Returns whether the value left, so a failed send rolls the LCD back.
         if bpm is None:
-            return
+            return False
         if self.ws_bridge is not None and self.ws_bridge.send_bpm(bpm):
-            return
-        self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
+            return True
+        resp = self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
+        return resp is not None and resp.ok
 
     def set_sync_mode(self, mode: SyncMode) -> None:
         """Optimistically switch the clock source; mod-ui's transport echo

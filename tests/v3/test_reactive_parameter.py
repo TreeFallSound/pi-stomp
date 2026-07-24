@@ -108,26 +108,69 @@ def _open_fullscreen(v3_system: SystemFixture, plugin: Plugin) -> _TrackedFullsc
 
 
 # ---------------------------------------------------------------------------
-# 1. Parameter.value setter notifies on change, skips on no-change
+# 1. reconcile notifies on change, skips on no-change
 # ---------------------------------------------------------------------------
 
 
-def test_param_value_setter_notifies_on_change_not_on_noop():
-    """Writing param.value from any site notifies; an unchanged write does not."""
+def test_reconcile_notifies_on_change_not_on_noop():
+    """A value write notifies observers; an unchanged write does not."""
     info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 1}}
     p = Parameter(info, 0.0, None, "inst")
     calls: list[Parameter] = []
     p.subscribe(lambda param: calls.append(param))
 
-    p.value = 1.0
+    p.reconcile(1.0)
     assert len(calls) == 1
     assert calls[0] is p
 
-    p.value = 1.0  # unchanged — no notification
+    p.reconcile(1.0)  # unchanged — no notification
     assert len(calls) == 1
 
-    p.value = 0.5
+    p.reconcile(0.5)
     assert len(calls) == 2
+
+
+def test_commit_publishes_and_stays_pending_until_reconciled():
+    """A committed edit publishes, holds its value, and reads pending until the
+    single writer echoes it back."""
+    info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 200}}
+    p = Parameter(info, 120.0, None, "inst")
+    sent: list[float] = []
+
+    class OkSink:
+        def publish(self, param: Parameter) -> bool:
+            sent.append(param.value)
+            return True
+
+    p.sink = OkSink()
+    p.commit(150.0)
+
+    assert p.value == 150.0
+    assert sent == [150.0]
+    assert p.pending
+
+    p.reconcile(150.0)
+    assert not p.pending
+
+
+def test_commit_rolls_back_when_publish_never_leaves():
+    """A send that doesn't leave reverts the value to the last confirmed one —
+    the LCD must never show a number the single writer didn't accept."""
+    info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 200}}
+    p = Parameter(info, 120.0, None, "inst")
+    seen: list[float] = []
+    p.subscribe(lambda param: seen.append(param.value))
+
+    class DeadSink:
+        def publish(self, param: Parameter) -> bool:
+            return False
+
+    p.sink = DeadSink()
+    p.commit(150.0)
+
+    assert p.value == 120.0
+    assert not p.pending
+    assert seen == [150.0, 120.0]  # painted optimistically, then reverted
 
 
 def test_subscribe_returns_unsubscriber():
@@ -137,11 +180,11 @@ def test_subscribe_returns_unsubscriber():
     calls: list[Parameter] = []
     unsub = p.subscribe(lambda param: calls.append(param))
 
-    p.value = 1.0
+    p.reconcile(1.0)
     assert len(calls) == 1
 
     unsub()
-    p.value = 0.0
+    p.reconcile(0.0)
     assert len(calls) == 1  # no more notifications after unsubscribe
 
 
@@ -151,12 +194,12 @@ def test_plugin_subscribe_fans_out_to_all_params(make_plugin):
     calls: list[Parameter] = []
     unsub = plugin.subscribe(lambda param: calls.append(param))
 
-    plugin.parameters[BYPASS_SYMBOL].value = 1.0
-    plugin.parameters[Symbol("gain")].value = 0.9
+    plugin.parameters[BYPASS_SYMBOL].reconcile(1.0)
+    plugin.parameters[Symbol("gain")].reconcile(0.9)
     assert len(calls) == 2
 
     unsub()
-    plugin.parameters[BYPASS_SYMBOL].value = 0.0
+    plugin.parameters[BYPASS_SYMBOL].reconcile(0.0)
     assert len(calls) == 2  # unsubscribed
 
 
@@ -539,5 +582,5 @@ def test_dismissed_dialog_unsubscribes(v3_system: SystemFixture, make_plugin):
     dialog.pop()
     v3_system.handler.poll_lcd_updates()
 
-    gain.value = 0.75
+    gain.reconcile(0.75)
     assert dialog.last_param_value == 0.5  # never redrew after dismissal

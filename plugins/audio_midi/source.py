@@ -106,7 +106,7 @@ class AudioMidiParamSource:
                 self._hardware.recalibrateVU_gain(value)
         p = self.parameters.get(symbol)
         if p is not None:
-            p.value = value
+            p.reconcile(value)
 
     def subscribe(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
         unsubs = [p.subscribe(cb) for p in self.parameters.values()]

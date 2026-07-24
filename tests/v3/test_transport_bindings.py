@@ -105,12 +105,12 @@ def test_bpm_edit_publishes_but_reconcile_does_not(v3_system: SystemFixture):
     bpm = handler.current.pedalboard.transport_plugin.parameters[BPM_SYMBOL]
 
     # Reconcile (mod-ui echoing its own state): adopt the value, send nothing.
-    bpm.value = 148.0
+    bpm.reconcile(148.0)
     handler.current.pedalboard.transport_plugin.set_param_value(BPM_SYMBOL, 149.0)
     ws_bridge.send_bpm.assert_not_called()
 
     # Local edit (a knob turn): set and publish through the sink.
-    bpm.edit(150.0)
+    bpm.commit(150.0)
     ws_bridge.send_bpm.assert_called_once_with(150.0)
 
 

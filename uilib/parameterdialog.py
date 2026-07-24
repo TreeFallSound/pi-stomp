@@ -296,7 +296,7 @@ class Parameterdialog(Dialog):
     def update_value(self, new_value: float) -> None:
         """Update display with new value (controller already calculated it)."""
         self.reset_timeout()
-        self.parameter.value = new_value
+        self.parameter.preview(new_value)
 
     def parameter_value_change(self, direction, count: int = 1, multiplier: float = 1.0):
         self.reset_timeout()
@@ -311,7 +311,7 @@ class Parameterdialog(Dialog):
         if new_value == self.parameter.value:
             return
 
-        self.parameter.value = new_value
+        self.parameter.preview(new_value)
         if self.action is not None:
             self.action(self.object, new_value)
 

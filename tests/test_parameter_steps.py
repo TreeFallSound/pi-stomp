@@ -59,7 +59,7 @@ class _StubPlugin:
     def set_param_value(self, symbol: Symbol, value: float) -> None:
         p = self.parameters.get(symbol)
         if p is not None:
-            p.value = value
+            p.reconcile(value)
 
 
 class _ConcretePluginPanel:

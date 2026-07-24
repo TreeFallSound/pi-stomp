@@ -117,12 +117,13 @@ class Parameter:
         # fallbacks only serve the params we synthesise (bypass, volume, VU).
         self.default: float = float(ranges.get("default", self.minimum))
 
-        # Reactive value: a property setter that notifies observers. _observers
-        # must exist before the first assignment below, or the write fires into
-        # a missing list.
+        # Reactive value. Writes go through reconcile/preview/commit, never a raw
+        # setter — the verb names the provenance (see those methods). _confirmed
+        # is the last value the single writer (mod-ui) echoed back; the gap from
+        # _value is `pending`.
         self._observers: list[Callable[[Parameter], None]] = []
-        self._value: float = 0.0
-        self.value = float(value)
+        self._value: float = float(value)
+        self._confirmed: float = float(value)
         # Where local edits go upstream. None = display-only: reconciled from
         # mod-ui, never sent back. Attached at bind time by whoever owns the
         # remote channel.
@@ -161,24 +162,40 @@ class Parameter:
     def value(self) -> float:
         return self._value
 
-    @value.setter
-    def value(self, v: float) -> None:
-        if v == self._value:
+    @property
+    def pending(self) -> bool:
+        """A committed edit the single writer hasn't echoed back yet."""
+        return self._value != self._confirmed
+
+    def reconcile(self, value: float) -> None:
+        """Adopt the single writer's value: repaint and mark confirmed, publish
+        nothing. Also the optimistic-preview channel — the dialog scrubs by
+        reconciling its own value, which is why commit can't gate on change."""
+        self._confirmed = value
+        self._set(value)
+
+    def preview(self, value: float) -> None:
+        """An optimistic local move not yet committed — a knob mid-turn whose CC
+        emit is the real send. Repaint; leave the edit unconfirmed; publish
+        nothing through the sink."""
+        self._set(value)
+
+    def commit(self, value: float) -> None:
+        """A finished local edit: repaint, then publish through the sink. Roll
+        back to the last confirmed value if the send never leaves — otherwise the
+        LCD would show a number mod-ui never accepted. Publishing is
+        unconditional; preview and reconcile share mechanics, so there is nothing
+        to diff against here."""
+        self._set(value)
+        if self.sink is not None and not self.sink.publish(self):
+            self._set(self._confirmed)
+
+    def _set(self, value: float) -> None:
+        if value == self._value:
             return
-        self._value = v
+        self._value = value
         for observe in self._observers:
             observe(self)
-
-    def edit(self, value: float) -> None:
-        """A local edit — a knob turn or dialog commit. Set the value (notifying
-        observers to repaint) and publish it upstream. Publishing is
-        unconditional, like the CC emit and param_set it stands in for: the LCD
-        paths pre-write `value` for display, so an edit cannot rely on the
-        setter's change detection. Contrast the plain setter, which reconciles a
-        remote echo and publishes nothing."""
-        self.value = value
-        if self.sink is not None:
-            self.sink.publish(self)
 
     def subscribe(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
         """Register *cb* to fire on every changed-value write. Returns its own

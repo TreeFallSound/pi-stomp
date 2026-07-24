@@ -79,19 +79,12 @@ class BypassSource(Protocol):
 
 @runtime_checkable
 class ParamSink(Protocol):
-    """The outbound dual of `ParamSource` — where a *local edit* goes next.
+    """The outbound dual of `ParamSource` — where a `Parameter.commit` goes next.
 
-    A parameter's value moves for one of two reasons, and they are not the same
-    event. A **local edit** (a knob turn, a dialog commit) is a command: set the
-    value and tell whoever owns it upstream. A **remote reconcile** (mod-ui
-    echoing its own state back at us) is the opposite: adopt the value, tell
-    nobody — mod-ui is already the single writer.
-
-    `Parameter.value`'s setter carries the reconcile semantics (notify observers
-    to repaint, publish nothing); `Parameter.edit()` carries the command (set,
-    then publish through this sink). A reconcile has no send to suppress — the
-    distinction is which method the caller reaches for, not a flag guarding a
-    shared one. A parameter with no sink is display-only: reconciled, never sent.
+    `reconcile` adopts the single writer's value and sends nothing; `commit`
+    publishes a finished local edit through this sink. `publish` returns whether
+    the send left — False lets commit roll the value back. A param with no sink
+    is display-only.
     """
 
-    def publish(self, param: "Parameter") -> None: ...
+    def publish(self, param: "Parameter") -> bool: ...
