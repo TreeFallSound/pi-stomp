@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 from common.color import RectBorder
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol, json_default
 from modalapi.plugin_customization import PluginCustomization, PluginExtraData
-from pistomp.controller import Controller, StatefulController
+from pistomp.controller import Controller
 
 if TYPE_CHECKING:
     from plugins.base import PluginPanel
@@ -133,20 +133,12 @@ class Plugin:
         return new_value
 
     def set_param_value(self, symbol: Symbol, value: float) -> None:
-        """Cache a param's value from mod-ui and mirror it onto any bound
-        footswitch. The mirror is unconditional (outside the idempotent setter)
-        because a MIDI-originated echo arrives at the same value we already
-        wrote optimistically — the setter skips it, but the footswitch keycap
-        still needs to update. See plan: the mod-ui MIDI echo asymmetry."""
+        """Reconcile a param to mod-ui's value. Any bound stateful controller
+        (a footswitch keycap) resyncs through its own subscription, so this
+        doesn't reach for controllers."""
         param = self.parameters.get(symbol)
-        if param is None:
-            return
-        param.reconcile(value)
-        for c in self.controllers:
-            # Only stateful controllers hold a presentation copy to sync (a
-            # footswitch keycap, a pot's reading). Encoders own no copy.
-            if c.parameter is param and isinstance(c, StatefulController):
-                c.set_value(value)
+        if param is not None:
+            param.reconcile(value)
 
     def set_bypass(self, bypass: bool) -> None:
         self.set_param_value(BYPASS_SYMBOL, 1.0 if bypass else 0.0)

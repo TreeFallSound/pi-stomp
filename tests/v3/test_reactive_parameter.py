@@ -173,6 +173,37 @@ def test_commit_rolls_back_when_publish_never_leaves():
     assert seen == [150.0, 120.0]  # painted optimistically, then reverted
 
 
+def test_settled_fires_on_reconcile_and_commit_not_preview():
+    """subscribe_settled fires for a reconcile (even unchanged) and a successful
+    commit, but never a bare preview — and not a rolled-back commit."""
+    info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 200}}
+    p = Parameter(info, 120.0, None, "inst")
+    settled: list[float] = []
+    p.subscribe_settled(lambda param: settled.append(param.value))
+
+    p.preview(130.0)
+    assert settled == []  # a scrub does not settle
+
+    p.reconcile(130.0)  # echo confirming the previewed value — unchanged
+    assert settled == [130.0]  # ...still settles, unconditionally
+
+    class OkSink:
+        def publish(self, param: Parameter) -> bool:
+            return True
+
+    p.sink = OkSink()
+    p.commit(140.0)
+    assert settled == [130.0, 140.0]
+
+    class DeadSink:
+        def publish(self, param: Parameter) -> bool:
+            return False
+
+    p.sink = DeadSink()
+    p.commit(150.0)
+    assert settled == [130.0, 140.0]  # rolled back — did not settle
+
+
 def test_subscribe_returns_unsubscriber():
     """The returned callable tears down the subscription."""
     info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 1}}

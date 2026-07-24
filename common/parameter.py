@@ -122,6 +122,7 @@ class Parameter:
         # is the last value the single writer (mod-ui) echoed back; the gap from
         # _value is `pending`.
         self._observers: list[Callable[[Parameter], None]] = []
+        self._settled_observers: list[Callable[[Parameter], None]] = []
         self._value: float = float(value)
         self._confirmed: float = float(value)
         # Where local edits go upstream. None = display-only: reconciled from
@@ -168,33 +169,41 @@ class Parameter:
         return self._value != self._confirmed
 
     def reconcile(self, value: float) -> None:
-        """Adopt the single writer's value: repaint and mark confirmed, publish
-        nothing. Also the optimistic-preview channel — the dialog scrubs by
-        reconciling its own value, which is why commit can't gate on change."""
+        """Adopt the single writer's value: repaint, mark confirmed, settle,
+        publish nothing. The settle fires even at an unchanged value — a mod-ui
+        echo confirming what we optimistically previewed still has to refresh a
+        keycap the preview left alone."""
         self._confirmed = value
         self._set(value)
+        self._notify_settled()
 
     def preview(self, value: float) -> None:
         """An optimistic local move not yet committed — a knob mid-turn whose CC
-        emit is the real send. Repaint; leave the edit unconfirmed; publish
-        nothing through the sink."""
+        emit is the real send, a footswitch keycap already toggled by the press.
+        Repaints live observers; does not settle; publishes nothing."""
         self._set(value)
 
     def commit(self, value: float) -> None:
-        """A finished local edit: repaint, then publish through the sink. Roll
-        back to the last confirmed value if the send never leaves — otherwise the
-        LCD would show a number mod-ui never accepted. Publishing is
-        unconditional; preview and reconcile share mechanics, so there is nothing
-        to diff against here."""
+        """A finished local edit: repaint, publish through the sink, then settle.
+        Rolls back to the last confirmed value (and does not settle) if the send
+        never leaves — otherwise the LCD would show a number mod-ui never took.
+        Publishing is unconditional; preview and reconcile share mechanics, so
+        there is nothing to diff against here."""
         self._set(value)
         if self.sink is not None and not self.sink.publish(self):
             self._set(self._confirmed)
+            return
+        self._notify_settled()
 
     def _set(self, value: float) -> None:
         if value == self._value:
             return
         self._value = value
         for observe in self._observers:
+            observe(self)
+
+    def _notify_settled(self) -> None:
+        for observe in self._settled_observers:
             observe(self)
 
     def subscribe(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
@@ -204,6 +213,19 @@ class Parameter:
         def _unsub() -> None:
             try:
                 self._observers.remove(cb)
+            except ValueError:
+                pass
+        return _unsub
+
+    def subscribe_settled(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
+        """Register *cb* for settled values only — a reconcile or a committed
+        edit, never a bare preview — fired unconditionally, even when the value
+        is unchanged. Stateful presentation (a footswitch keycap) uses this so it
+        tracks confirmed state, not a mid-scrub. Returns its own unsubscriber."""
+        self._settled_observers.append(cb)
+        def _unsub() -> None:
+            try:
+                self._settled_observers.remove(cb)
             except ValueError:
                 pass
         return _unsub

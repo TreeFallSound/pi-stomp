@@ -113,3 +113,8 @@ class StatefulController(Controller):
     def bind_to_parameter(self, parameter: Parameter) -> None:
         super().bind_to_parameter(parameter)
         self.set_value(parameter.value)
+        # The keycap mirrors settled values — a mod-ui echo or a menu/dialog
+        # commit — but not a bare preview: a local press updates its own toggle
+        # and LED, then waits for the echo to refresh. Neither write path needs
+        # to know the controller exists.
+        self._unsub_param = parameter.subscribe_settled(lambda p: self.set_value(p.value))
