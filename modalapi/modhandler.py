@@ -133,6 +133,19 @@ def _is_transport_bpm(param: Parameter | None) -> bool:
     )
 
 
+class _TransportBpmSink:
+    """:bpm's upstream channel. mod-ui's :bpm is a global designation, not a
+    plugin control port — param_set is rejected — so an edit rides the dedicated
+    transport-bpm command (POST fallback). That routing lives in
+    set_mod_tap_tempo; this just names :bpm's edits as its callers."""
+
+    def __init__(self, send: Callable[[float], None]):
+        self._send = send
+
+    def publish(self, param: Parameter) -> None:
+        self._send(param.value)
+
+
 def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
     # Drop any PEDALBOARD-layer row whose control.id matches a learned binding
     # that's being replaced. Scans all event_kind buckets since a re-learn could
@@ -232,10 +245,6 @@ class Modhandler(Handler):
 
         # Suppress outbound WebSocket messages while a pedalboard change is in flight.
         self._is_pedalboard_loading = False
-
-        # Reactive BPM parameter observer state
-        self._bpm_unsub: Callable[[], None] | None = None
-        self._suppress_bpm_event: bool = False
 
         # Tuner state
         self._tuner_source_factory: TunerSourceFactory | None = None
@@ -429,6 +438,13 @@ class Modhandler(Handler):
             )
         if c.parameter is not None:
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
+            # :bpm rides its own WebSocket sink — 20..280 does not survive 7
+            # bits — and must not also emit CC. Every other bound param's CC is
+            # its transport to mod-host, so it falls through to the emit below.
+            if _is_transport_bpm(c.parameter):
+                c.parameter.edit(new_value)
+                self.lcd.display_parameter_value(c.parameter, new_value)
+                return True
             c.parameter.value = new_value
             self.lcd.display_parameter_value(c.parameter, new_value)
             emit_value = c.bar_midi_value()
@@ -438,10 +454,7 @@ class Modhandler(Handler):
         # Unconditional, and must stay that way: an unbound encoder has no row,
         # and this emit is the only way mod-ui sees its CC to MIDI-learn it.
         # Emission is hardware-level, below the table (see input/README.md).
-        # :bpm alone leaves by WebSocket — 20..280 does not survive 7 bits. The
-        # other transport ports still ride CC; they have no other way out.
-        if not _is_transport_bpm(c.parameter):
-            self._emit_midi(c, emit_value)
+        self._emit_midi(c, emit_value)
         return True
 
     def encoder_fallback(self, controller: EncoderController) -> int:
@@ -889,14 +902,13 @@ class Modhandler(Handler):
             # labels track even when the change originates elsewhere (Link,
             # MIDI slave, another HMI). :rolling's enum flips Playing/Stopped.
             if self._current is not None:
+                # A remote reconcile: adopt mod-ui's values, publish nothing.
+                # set_param_value routes through the plain setter, not edit(),
+                # so :bpm's sink never fires back at the sender.
                 tp = self.current.pedalboard.transport_plugin
                 tp.set_param_value(ROLLING_SYMBOL, 1.0 if msg.rolling else 0.0)
                 tp.set_param_value(BPB_SYMBOL, msg.beats_per_bar)
-                self._suppress_bpm_event = True
-                try:
-                    tp.set_param_value(BPM_SYMBOL, msg.bpm)
-                finally:
-                    self._suppress_bpm_event = False
+                tp.set_param_value(BPM_SYMBOL, msg.bpm)
             if self.hardware and self.hardware.taptempo:
                 self.hardware.taptempo.set_bpm(msg.bpm)
                 if self.hardware.taptempo.is_enabled():
@@ -1222,19 +1234,12 @@ class Modhandler(Handler):
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
         self._controller_manager.bind(self.current)
-        self._bind_transport_bpm_listener()
+        self._attach_transport_bpm_sink()
 
-    def _bind_transport_bpm_listener(self) -> None:
-        if self._bpm_unsub is not None:
-            self._bpm_unsub()
-            self._bpm_unsub = None
+    def _attach_transport_bpm_sink(self) -> None:
         if self._current is not None:
             bpm_param = self.current.pedalboard.transport_plugin.parameters[BPM_SYMBOL]
-            self._bpm_unsub = bpm_param.subscribe(self._on_bpm_param_changed)
-
-    def _on_bpm_param_changed(self, param: Parameter) -> None:
-        if not self._suppress_bpm_event:
-            self.set_mod_tap_tempo(param.value)
+            bpm_param.sink = _TransportBpmSink(self.set_mod_tap_tempo)
 
     def _redraw_after_binding(self, controller: Controller, is_footswitch: bool) -> None:
         if is_footswitch:
@@ -1439,6 +1444,13 @@ class Modhandler(Handler):
     # Parameter Stuff
     #
     def parameter_value_commit(self, param, value):
+        # :bpm carries its own sink (transport-bpm WebSocket); edit() sets the
+        # value and publishes through it. It is neither a plugin control port
+        # nor an audio/external param, so it exits before those arms.
+        if _is_transport_bpm(param):
+            param.edit(value)
+            return
+
         # Route plugin params through the plugin's mirror so a bound footswitch
         # reconciles now, not only on the mod-host echo — the same set_value the
         # ParamSetMessage arm runs. Audio/external params have no plugin mirror.

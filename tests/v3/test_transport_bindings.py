@@ -90,9 +90,10 @@ def test_transport_plugin_unconditional_fallback(v3_system: SystemFixture):
     assert ROLLING_SYMBOL in tp_zero.parameters
 
 
-def test_reactive_bpm_parameter_change_triggers_set_mod_tap_tempo(v3_system: SystemFixture):
-    """Writing to transport_plugin.parameters[BPM_SYMBOL].value reactively notifies
-    subscribers and triggers set_mod_tap_tempo."""
+def test_bpm_edit_publishes_but_reconcile_does_not(v3_system: SystemFixture):
+    """The provenance split: `edit()` is a local command and publishes upstream;
+    the plain setter / `set_param_value` is a remote reconcile and publishes
+    nothing. mod-ui stays the single writer with no flag to suppress."""
     from unittest.mock import MagicMock
 
     handler = v3_system.handler
@@ -101,18 +102,21 @@ def test_reactive_bpm_parameter_change_triggers_set_mod_tap_tempo(v3_system: Sys
 
     _attach_transport_plugin(handler)
     ws_bridge.send_bpm = MagicMock(return_value=True)
+    bpm = handler.current.pedalboard.transport_plugin.parameters[BPM_SYMBOL]
 
-    # Change BPM parameter value directly (e.g. via encoder or set_param_value)
-    tp = handler.current.pedalboard.transport_plugin
-    tp.set_param_value(BPM_SYMBOL, 148.0)
+    # Reconcile (mod-ui echoing its own state): adopt the value, send nothing.
+    bpm.value = 148.0
+    handler.current.pedalboard.transport_plugin.set_param_value(BPM_SYMBOL, 149.0)
+    ws_bridge.send_bpm.assert_not_called()
 
-    # Verify reactive subscriber triggered send_bpm
-    ws_bridge.send_bpm.assert_called_once_with(148.0)
+    # Local edit (a knob turn): set and publish through the sink.
+    bpm.edit(150.0)
+    ws_bridge.send_bpm.assert_called_once_with(150.0)
 
 
-def test_transport_message_ws_suppresses_bpm_echo(v3_system: SystemFixture):
-    """An incoming WebSocket TransportMessage updates transport parameters without
-    echo-calling send_bpm back to mod-ui."""
+def test_transport_message_reconciles_without_echo(v3_system: SystemFixture):
+    """An incoming TransportMessage reconciles the transport parameters through the
+    plain setter, so :bpm's sink never echoes send_bpm back at mod-ui."""
     from unittest.mock import MagicMock
 
     handler = v3_system.handler

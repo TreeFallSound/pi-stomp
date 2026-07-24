@@ -17,9 +17,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from enum import Enum
-from typing import NewType, NotRequired, TypedDict
+from typing import NewType, NotRequired, TypedDict, TYPE_CHECKING
 import json
 import common.util as util
+
+if TYPE_CHECKING:
+    from common.param_source import ParamSink
 
 # strings as they appear in TTL files
 TTL_ENUMERATION = 'enumeration'
@@ -120,6 +123,10 @@ class Parameter:
         self._observers: list[Callable[[Parameter], None]] = []
         self._value: float = 0.0
         self.value = float(value)
+        # Where local edits go upstream. None = display-only: reconciled from
+        # mod-ui, never sent back. Attached at bind time by whoever owns the
+        # remote channel.
+        self.sink: ParamSink | None = None
         self.binding: str | None = binding
         self.instance_id: str | None = instance_id.lstrip("/") if instance_id else instance_id
         self.type = Type.DEFAULT
@@ -161,6 +168,17 @@ class Parameter:
         self._value = v
         for observe in self._observers:
             observe(self)
+
+    def edit(self, value: float) -> None:
+        """A local edit — a knob turn or dialog commit. Set the value (notifying
+        observers to repaint) and publish it upstream. Publishing is
+        unconditional, like the CC emit and param_set it stands in for: the LCD
+        paths pre-write `value` for display, so an edit cannot rely on the
+        setter's change detection. Contrast the plain setter, which reconciles a
+        remote echo and publishes nothing."""
+        self.value = value
+        if self.sink is not None:
+            self.sink.publish(self)
 
     def subscribe(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
         """Register *cb* to fire on every changed-value write. Returns its own
