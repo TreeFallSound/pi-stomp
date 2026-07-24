@@ -431,7 +431,9 @@ class Modhandler(Handler):
         # and this emit is the only way mod-ui sees its CC to MIDI-learn it.
         # Emission is hardware-level, below the table (see input/README.md).
         # Transport parameters bypass 7-bit MIDI CC emission for high-precision WebSocket transport.
-        if c.parameter is None or c.parameter.instance_id != Pedalboard.TRANSPORT_INSTANCE_ID:
+        if c.parameter is None or not (
+            c.parameter.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID and c.parameter.symbol == BPM_SYMBOL
+        ):
             self._emit_midi(c, emit_value)
         return True
 
@@ -1446,6 +1448,7 @@ class Modhandler(Handler):
         # Audio parameter (volume, EQ, etc.) - handled locally, no remote update needed
         if param.instance_id is None:
             self.audio_parameter_commit(param.symbol, value)
+            return
 
         # External MIDI parameters have no mod-host counterpart. The dialog's NAV
         # path owns sending the CC that _handle_encoder would have sent for a turn;
@@ -1460,7 +1463,9 @@ class Modhandler(Handler):
                     self._emit_midi(controller, int(value))
                 return
 
-        if not self._is_pedalboard_loading and param.instance_id is not None and param.instance_id != Pedalboard.TRANSPORT_INSTANCE_ID:
+        if not self._is_pedalboard_loading and param.instance_id is not None and not (
+            param.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID and param.symbol == BPM_SYMBOL
+        ):
             self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     @property
@@ -1818,10 +1823,10 @@ class Modhandler(Handler):
 
     def set_mod_tap_tempo(self, bpm: float | None) -> None:
         if bpm is not None:
-            self._last_bpm_change_time = time.time()
-            if self.ws_bridge is not None:
+            if self._ws_bridge is not None:
                 self.ws_bridge.send_bpm(bpm)
-            self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
+            else:
+                self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
 
     def set_sync_mode(self, mode: SyncMode) -> None:
         """Optimistically switch the clock source; mod-ui's transport echo

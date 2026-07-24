@@ -6,16 +6,21 @@ from tests.types import SystemFixture
 
 
 def test_set_mod_tap_tempo(modhandler_system: SystemFixture):
-    """set_mod_tap_tempo() POSTs to /set_bpm with the BPM value."""
+    """set_mod_tap_tempo() sends high-precision BPM via WS bridge (or REST fallback)."""
     handler = modhandler_system.handler
+    ws_bridge = modhandler_system.ws_bridge
     mock_post = modhandler_system.mock_post
 
     handler.set_mod_tap_tempo(120)
 
-    mock_post.assert_called_once()
-    call_args = mock_post.call_args
-    assert "set_bpm" in call_args.args[0]
-    assert call_args.kwargs.get("json", {}).get("value") == 120
+    if handler._ws_bridge is not None:
+        assert any("transport-bpm 120" in msg for msg in ws_bridge.sent)
+        mock_post.assert_not_called()
+    else:
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args
+        assert "set_bpm" in call_args.args[0]
+        assert call_args.kwargs.get("json", {}).get("value") == 120
 
 
 def test_set_mod_tap_tempo_none(modhandler_system: SystemFixture):

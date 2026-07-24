@@ -477,13 +477,12 @@ def test_incoming_transport_decimal_bpm_sync(v3_system: SystemFixture, make_plug
 def test_encoder_bpm_turn_without_websocket_bridge_falls_back_to_rest_post(
     v3_system: SystemFixture, make_plugin
 ):
-    """If ws_bridge.send_bpm returns False, encoder tempo turns execute REST POST fallback."""
+    """If ws_bridge is None, encoder tempo turns execute REST POST fallback."""
     from unittest.mock import MagicMock
     from pistomp.input.event import EncoderEvent
 
     handler = v3_system.handler
     hw = v3_system.hw
-    ws_bridge = v3_system.ws_bridge
     mock_post = v3_system.mock_post
     assert handler.current is not None
 
@@ -497,8 +496,8 @@ def test_encoder_bpm_turn_without_websocket_bridge_falls_back_to_rest_post(
         bpm_cc={"channel": int(channel), "control": int(cc), "hasRanges": True, "minimum": 20.0, "maximum": 280.0},
     )
 
-    # Mock send_bpm to return False (simulating backpressure/send failure)
-    ws_bridge.send_bpm = MagicMock(return_value=False)
+    # Set _ws_bridge to None to simulate missing WebSocket bridge
+    handler._ws_bridge = None
     mock_post.reset_mock()
 
     # Turn encoder
@@ -537,5 +536,59 @@ def test_encoder_bpm_turn_parameter_dialog_snapshot(v3_system: SystemFixture, ma
 
     # Capture LCD snapshot of 121 BPM parameter dialog badge
     snapshot("bpm_dialog_121")
+
+
+def test_encoder_rolling_or_bpb_emits_midi_cc(v3_system: SystemFixture, make_plugin):
+    """Transport parameters other than :bpm (e.g., :rolling, :bpb) still emit MIDI CC when turned."""
+    from unittest.mock import MagicMock
+    from modalapi.pedalboard import ROLLING_SYMBOL
+    from pistomp.input.event import EncoderEvent
+
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+    assert handler.current is not None
+
+    plugin = make_plugin("noise", bypassed=False)
+    handler.current.pedalboard.plugins = [plugin]
+    _attach_transport_plugin(handler)
+
+    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+
+    ws_bridge.inject(f"midi_map /pedalboard :rolling {channel} {cc} 0.0 1.0")
+    handler.poll_ws_messages()
+
+    tp = handler.current.pedalboard.transport_plugin
+    assert tp is not None
+    assert enc1.parameter is tp.parameters[ROLLING_SYMBOL]
+
+    handler._emit_midi = MagicMock()
+    handler._handle_encoder(EncoderEvent(controller=enc1, rotations=1, multiplier=1.0))
+
+    # Assert _emit_midi was called for :rolling (unlike :bpm)
+    handler._emit_midi.assert_called_once()
+
+
+def test_audio_parameter_commit_early_return(v3_system: SystemFixture):
+    """Audio parameters (instance_id is None) commit locally and return early without sending WS or MIDI CC."""
+    from unittest.mock import MagicMock
+
+    handler = v3_system.handler
+    ws_bridge = v3_system.ws_bridge
+    assert handler.current is not None
+
+    param = handler._create_audio_parameter("Input Gain", "capture_volume", -19.75, 12)
+    assert param.instance_id is None
+
+    ws_bridge.send_parameter = MagicMock()
+    handler._emit_midi = MagicMock()
+
+    handler.parameter_value_commit(param, 0.0)
+
+    # Audio param handled locally, no remote parameter set or MIDI CC emitted
+    ws_bridge.send_parameter.assert_not_called()
+    handler._emit_midi.assert_not_called()
+
 
 
