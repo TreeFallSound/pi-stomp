@@ -261,6 +261,7 @@ class Handler(InputSink):
                 f"MIDI learn for {instance}:{param.name} names external controller "
                 f"{binding} (routed to {self.hardware.external_port_name(controller)}) - ignoring"
             )
+            return
 
         param.binding = binding
         is_footswitch = self._bind_controller_to_param(plugin, param, controller)

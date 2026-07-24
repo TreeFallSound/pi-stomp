@@ -385,3 +385,39 @@ def test_v3_midi_unlearn_footswitch_clears_binding(v3_system: SystemFixture, mak
     assert plugin.has_footswitch is False
     snapshot("unbound")
 
+
+def test_v3_midi_learn_updated_binding_range_on_same_parameter(
+    v3_system: SystemFixture, make_plugin, make_parameter
+):
+    """Re-addressing an already bound parameter to a different sub-range on the same CC
+    updates the parameter's binding range and endpoints without bailing early."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+
+    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+
+    gain = make_parameter("Gain", "noise", value=0.5)
+    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    handler.current.pedalboard.plugins = [plugin]
+
+    # Initial mapping: sub-range 0.0 .. 0.5
+    ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.0 0.5")
+    handler.poll_ws_messages()
+
+    assert gain.binding == f"{channel}:{cc}"
+    assert (gain.minimum, gain.maximum) == (0.0, 0.5)
+    assert enc1.parameter is gain
+
+    # Updated mapping on SAME binding: sub-range 0.2 .. 0.8
+    ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.2 0.8")
+    handler.poll_ws_messages()
+
+    assert gain.binding == f"{channel}:{cc}"
+    assert (gain.minimum, gain.maximum) == (0.2, 0.8)
+    assert enc1.parameter is gain
+
+
