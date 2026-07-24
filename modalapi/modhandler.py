@@ -225,6 +225,10 @@ class Modhandler(Handler):
         # Suppress outbound WebSocket messages while a pedalboard change is in flight.
         self._is_pedalboard_loading = False
 
+        # Reactive BPM parameter observer state
+        self._bpm_unsub: Callable[[], None] | None = None
+        self._suppress_bpm_event: bool = False
+
         # Tuner state
         self._tuner_source_factory: TunerSourceFactory | None = None
         self._tuner_source_spec: str = "jack"
@@ -426,7 +430,11 @@ class Modhandler(Handler):
         # Unconditional, and must stay that way: an unbound encoder has no row,
         # and this emit is the only way mod-ui sees its CC to MIDI-learn it.
         # Emission is hardware-level, below the table (see input/README.md).
-        self._emit_midi(c, emit_value)
+        # Transport parameters bypass 7-bit MIDI CC emission for high-precision WebSocket transport.
+        if c.parameter is None or not (
+            c.parameter.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID and c.parameter.symbol == BPM_SYMBOL
+        ):
+            self._emit_midi(c, emit_value)
         return True
 
     def encoder_fallback(self, controller: EncoderController) -> int:
@@ -875,13 +883,13 @@ class Modhandler(Handler):
             # MIDI slave, another HMI). :rolling's enum flips Playing/Stopped.
             if self._current is not None:
                 tp = self.current.pedalboard.transport_plugin
-                if tp is not None:
-                    if ROLLING_SYMBOL in tp.parameters:
-                        tp.set_param_value(ROLLING_SYMBOL, 1.0 if msg.rolling else 0.0)
-                    if BPM_SYMBOL in tp.parameters:
-                        tp.set_param_value(BPM_SYMBOL, msg.bpm)
-                    if BPB_SYMBOL in tp.parameters:
-                        tp.set_param_value(BPB_SYMBOL, msg.beats_per_bar)
+                tp.set_param_value(ROLLING_SYMBOL, 1.0 if msg.rolling else 0.0)
+                tp.set_param_value(BPB_SYMBOL, msg.beats_per_bar)
+                self._suppress_bpm_event = True
+                try:
+                    tp.set_param_value(BPM_SYMBOL, msg.bpm)
+                finally:
+                    self._suppress_bpm_event = False
             if self.hardware and self.hardware.taptempo:
                 self.hardware.taptempo.set_bpm(msg.bpm)
                 if self.hardware.taptempo.is_enabled():
@@ -1207,6 +1215,19 @@ class Modhandler(Handler):
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
         self._controller_manager.bind(self.current)
+        self._bind_transport_bpm_listener()
+
+    def _bind_transport_bpm_listener(self) -> None:
+        if self._bpm_unsub is not None:
+            self._bpm_unsub()
+            self._bpm_unsub = None
+        if self._current is not None:
+            bpm_param = self.current.pedalboard.transport_plugin.parameters[BPM_SYMBOL]
+            self._bpm_unsub = bpm_param.subscribe(self._on_bpm_param_changed)
+
+    def _on_bpm_param_changed(self, param: Parameter) -> None:
+        if not self._suppress_bpm_event:
+            self.set_mod_tap_tempo(param.value)
 
     def _redraw_after_binding(self, controller: Controller, is_footswitch: bool) -> None:
         if is_footswitch:
@@ -1442,7 +1463,9 @@ class Modhandler(Handler):
                     self._emit_midi(controller, int(value))
                 return
 
-        if not self._is_pedalboard_loading:
+        if not self._is_pedalboard_loading and param.instance_id is not None and not (
+            param.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID and param.symbol == BPM_SYMBOL
+        ):
             self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     @property
@@ -1798,9 +1821,12 @@ class Modhandler(Handler):
     def get_callback(self, callback_name):
         return util.DICT_GET(self.callbacks, callback_name)
 
-    def set_mod_tap_tempo(self, bpm):
+    def set_mod_tap_tempo(self, bpm: float | None) -> None:
         if bpm is not None:
-            self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
+            if self._ws_bridge is not None:
+                self.ws_bridge.send_bpm(bpm)
+            else:
+                self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
 
     def set_sync_mode(self, mode: SyncMode) -> None:
         """Optimistically switch the clock source; mod-ui's transport echo
