@@ -307,3 +307,117 @@ def test_v3_midi_learn_adds_table_row_for_encoder(v3_system: SystemFixture, make
     assert isinstance(effect, ParamEffect)
     assert effect.plugin is plugin
     assert effect.symbol == Symbol("gain")
+
+
+def test_v3_midi_unlearn_encoder_clears_binding_and_updates_lcd(
+    v3_system: SystemFixture, make_plugin, make_parameter, snapshot
+):
+    """Removing a MIDI mapping in MOD-UI (channel=-1, controller=-1) unbinds the encoder,
+    removes the analog controller assignment, drops the binding row, and reverts LCD displays."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current and handler.lcd
+
+    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1)
+    binding_id = _binding_for(hw, enc1)
+    channel, cc = binding_id.split(":")
+
+    gain = make_parameter("Gain", "noise", value=0.5)
+    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    handler.current.pedalboard.plugins = [plugin]
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    # Learn binding to Tweak1
+    ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.0 1.0")
+    handler.poll_ws_messages()
+
+    assert gain.binding == binding_id
+    assert enc1.parameter is gain
+    assert f"noise:{gain.name}" in handler.current.analog_controllers
+    snapshot("bound")
+
+    # Unmap binding in MOD-UI
+    ws_bridge.inject("midi_map /graph/noise gain -1 -1 0.0 1.0")
+    handler.poll_ws_messages()
+
+    assert gain.binding is None
+    assert enc1.parameter is None
+    assert f"noise:{gain.name}" not in handler.current.analog_controllers
+
+    rows = handler.effective_table.layers[0].rows.get((ControlClass.ANALOG, EventKind.ROTATE), [])
+    matched = [r for r in rows if r.control.id == binding_id]
+    assert len(matched) == 0
+    snapshot("unbound")
+
+
+def test_v3_midi_unlearn_footswitch_clears_binding(v3_system: SystemFixture, make_plugin, snapshot):
+    """Removing a footswitch MIDI mapping in MOD-UI clears footswitch state and has_footswitch flag."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current and handler.lcd
+
+    fs0 = hw.footswitches[0]
+    binding_id = _binding_for(hw, fs0)
+    channel, cc = binding_id.split(":")
+
+    plugin = make_plugin("noise", bypassed=False, has_footswitch=False)
+    handler.current.pedalboard.plugins = [plugin]
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    ws_bridge.inject(f"midi_map /graph/noise :bypass {channel} {cc} 0.0 1.0")
+    handler.poll_ws_messages()
+    assert fs0.parameter is plugin.parameters[BYPASS_SYMBOL]
+    assert plugin.has_footswitch is True
+    snapshot("bound")
+
+    # Unmap in MOD-UI
+    ws_bridge.inject("midi_map /graph/noise :bypass -1 -1 0.0 1.0")
+    handler.poll_ws_messages()
+    assert fs0.parameter is None
+    assert fs0.display_label is None
+    assert fs0.category is None
+    assert plugin.has_footswitch is False
+    snapshot("unbound")
+
+
+def test_v3_midi_learn_updated_binding_range_on_same_parameter(
+    v3_system: SystemFixture, make_plugin, make_parameter
+):
+    """Re-addressing an already bound parameter to a different sub-range on the same CC
+    updates the parameter's binding range and endpoints without bailing early."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+
+    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+
+    gain = make_parameter("Gain", "noise", value=0.5)
+    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    handler.current.pedalboard.plugins = [plugin]
+
+    # Initial mapping: sub-range 0.0 .. 0.5
+    ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.0 0.5")
+    handler.poll_ws_messages()
+
+    assert gain.binding == f"{channel}:{cc}"
+    assert (gain.minimum, gain.maximum) == (0.0, 0.5)
+    assert enc1.parameter is gain
+
+    # Updated mapping on SAME binding: sub-range 0.2 .. 0.8
+    ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.2 0.8")
+    handler.poll_ws_messages()
+
+    assert gain.binding == f"{channel}:{cc}"
+    assert (gain.minimum, gain.maximum) == (0.2, 0.8)
+    assert enc1.parameter is gain
+
+
