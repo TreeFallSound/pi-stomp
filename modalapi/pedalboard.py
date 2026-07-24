@@ -238,7 +238,12 @@ class Pedalboard:
 
     def _build_transport_plugin(self, time_info: dict | None) -> Plugin.Plugin:
         """The /pedalboard pseudo-instance carrying :bpm/:bpb/:rolling. Built
-        from mod-ui's timeInfo block (or default unbound parameters when absent)."""
+        from mod-ui's timeInfo block, or from mod-ui's own defaults when the
+        board carries none."""
+        # timeInfo's `available` mask says which ports mod-ui has *addressed*,
+        # not which exist — transport is global and all three are always
+        # settable. Built unconditionally so the type stays non-Optional; a
+        # board that never addressed them just has unbound parameters.
         time_info = time_info or {}
 
         parameters: dict[Symbol, Parameter] = {

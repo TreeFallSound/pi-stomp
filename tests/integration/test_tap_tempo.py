@@ -6,9 +6,21 @@ from tests.types import SystemFixture
 
 
 def test_set_mod_tap_tempo(modhandler_system: SystemFixture):
-    """set_mod_tap_tempo() POSTs to /set_bpm with the BPM value."""
+    """set_mod_tap_tempo() sends BPM over the WebSocket, not the blocking POST."""
     handler = modhandler_system.handler
     mock_post = modhandler_system.mock_post
+
+    handler.set_mod_tap_tempo(120)
+
+    assert "transport-bpm 120" in modhandler_system.ws_bridge.sent
+    mock_post.assert_not_called()
+
+
+def test_set_mod_tap_tempo_falls_back_to_post_under_backpressure(modhandler_system: SystemFixture):
+    """A refused WebSocket send (backpressure) falls back to POST /set_bpm."""
+    handler = modhandler_system.handler
+    mock_post = modhandler_system.mock_post
+    modhandler_system.ws_bridge.send_bpm = MagicMock(return_value=False)
 
     handler.set_mod_tap_tempo(120)
 

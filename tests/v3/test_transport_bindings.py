@@ -510,6 +510,65 @@ def test_encoder_bpm_turn_without_websocket_bridge_falls_back_to_rest_post(
     assert mock_post.call_args[1]["json"] == {"value": 121.0}
 
 
+def test_encoder_bpm_turn_does_not_post_when_websocket_accepts(v3_system: SystemFixture, make_plugin):
+    """The POST is a backpressure fallback, not a companion to the send — it blocks
+    the 10ms loop and an encoder spin calls it once per detent."""
+    from pistomp.input.event import EncoderEvent
+
+    handler = v3_system.handler
+    hw = v3_system.hw
+    mock_post = v3_system.mock_post
+    assert handler.current is not None
+
+    handler.current.pedalboard.plugins = [make_plugin("noise", bypassed=False)]
+    enc1 = next(e for e in hw.encoders if e.id == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+    _attach_transport_plugin(handler, bpm_cc={"channel": int(channel), "control": int(cc)})
+
+    mock_post.reset_mock()
+    handler._handle_encoder(EncoderEvent(controller=enc1, rotations=1, multiplier=1.0))
+
+    assert any("transport-bpm 121.0" in m for m in v3_system.ws_bridge.sent)
+    mock_post.assert_not_called()
+
+
+def test_encoder_bpb_turn_still_emits_midi_cc(v3_system: SystemFixture, make_plugin):
+    """Only :bpm leaves by WebSocket. :bpb and :rolling have no other way out, so
+    their bound encoders must keep emitting CC."""
+    from unittest.mock import MagicMock
+    from pistomp.input.event import EncoderEvent
+
+    handler = v3_system.handler
+    hw = v3_system.hw
+    assert handler.current is not None
+
+    handler.current.pedalboard.plugins = [make_plugin("noise", bypassed=False)]
+    enc1 = next(e for e in hw.encoders if e.id == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+    tp = _attach_transport_plugin(handler, bpb_cc={"channel": int(channel), "control": int(cc)})
+
+    handler._emit_midi = MagicMock()
+    handler._handle_encoder(EncoderEvent(controller=enc1, rotations=1, multiplier=1.0))
+
+    assert tp.parameters[BPB_SYMBOL].value == 5.0
+    handler._emit_midi.assert_called_once()
+
+
+def test_transport_dialog_commit_never_param_sets(v3_system: SystemFixture, make_plugin):
+    """mod-ui rejects param_set on the transport designations, so a :bpb dialog
+    commit must not emit one — it would draw a "specially designated port" error."""
+    handler = v3_system.handler
+    assert handler.current is not None
+
+    handler.current.pedalboard.plugins = [make_plugin("noise", bypassed=False)]
+    tp = _attach_transport_plugin(handler)
+
+    v3_system.ws_bridge.sent.clear()
+    handler.parameter_value_commit(tp.parameters[BPB_SYMBOL], 6.0)
+
+    assert not any("param_set" in m and ":bpb" in m for m in v3_system.ws_bridge.sent)
+
+
 def test_encoder_bpm_turn_parameter_dialog_snapshot(v3_system: SystemFixture, make_plugin, snapshot):
     """Turning a BPM-bound encoder 1 detent notch displays the parameter dialog on the LCD at 121 BPM."""
     from pistomp.input.event import EncoderEvent

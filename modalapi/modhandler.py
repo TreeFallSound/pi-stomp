@@ -125,6 +125,14 @@ from pathlib import Path
 STARTUP_REST_BACKOFF_S = (0.25, 0.25, 0.5, 1.0, 2.0)
 
 
+def _is_transport_bpm(param: Parameter | None) -> bool:
+    return (
+        param is not None
+        and param.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID
+        and param.symbol == BPM_SYMBOL
+    )
+
+
 def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
     # Drop any PEDALBOARD-layer row whose control.id matches a learned binding
     # that's being replaced. Scans all event_kind buckets since a re-learn could
@@ -430,8 +438,9 @@ class Modhandler(Handler):
         # Unconditional, and must stay that way: an unbound encoder has no row,
         # and this emit is the only way mod-ui sees its CC to MIDI-learn it.
         # Emission is hardware-level, below the table (see input/README.md).
-        # Transport parameters bypass 7-bit MIDI CC emission for high-precision WebSocket transport.
-        if c.parameter is None or c.parameter.instance_id != Pedalboard.TRANSPORT_INSTANCE_ID:
+        # :bpm alone leaves by WebSocket — 20..280 does not survive 7 bits. The
+        # other transport ports still ride CC; they have no other way out.
+        if not _is_transport_bpm(c.parameter):
             self._emit_midi(c, emit_value)
         return True
 
@@ -1446,6 +1455,7 @@ class Modhandler(Handler):
         # Audio parameter (volume, EQ, etc.) - handled locally, no remote update needed
         if param.instance_id is None:
             self.audio_parameter_commit(param.symbol, value)
+            return
 
         # External MIDI parameters have no mod-host counterpart. The dialog's NAV
         # path owns sending the CC that _handle_encoder would have sent for a turn;
@@ -1460,7 +1470,11 @@ class Modhandler(Handler):
                     self._emit_midi(controller, int(value))
                 return
 
-        if not self._is_pedalboard_loading and param.instance_id is not None and param.instance_id != Pedalboard.TRANSPORT_INSTANCE_ID:
+        # mod-ui rejects param_set on the /pedalboard transport designations
+        # (:bpm/:bpb/:rolling) — they travel by CC or the dedicated transport-*
+        # commands, never here. bpm's dialog commit reaches mod-ui reactively.
+        if not self._is_pedalboard_loading and param.instance_id is not None \
+                and param.instance_id != Pedalboard.TRANSPORT_INSTANCE_ID:
             self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
     @property
@@ -1817,11 +1831,13 @@ class Modhandler(Handler):
         return util.DICT_GET(self.callbacks, callback_name)
 
     def set_mod_tap_tempo(self, bpm: float | None) -> None:
-        if bpm is not None:
-            self._last_bpm_change_time = time.time()
-            if self.ws_bridge is not None:
-                self.ws_bridge.send_bpm(bpm)
-            self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
+        # WebSocket first: _rest_post blocks the 10ms loop, and an encoder spin
+        # calls this once per detent. POST only when backpressure refused the send.
+        if bpm is None:
+            return
+        if self.ws_bridge is not None and self.ws_bridge.send_bpm(bpm):
+            return
+        self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
 
     def set_sync_mode(self, mode: SyncMode) -> None:
         """Optimistically switch the clock source; mod-ui's transport echo
