@@ -549,9 +549,12 @@ def test_encoder_bpb_turn_still_emits_midi_cc(v3_system: SystemFixture, make_plu
     handler.current.pedalboard.plugins = [make_plugin("noise", bypassed=False)]
     enc1 = next(e for e in hw.encoders if e.id == 1)
     channel, cc = _binding_for(hw, enc1).split(":")
-    tp = _attach_transport_plugin(handler, bpb_cc={"channel": int(channel), "control": int(cc)})
 
+    # Mock before binding: the CC sink captures its emitter when the encoder binds.
     handler._emit_midi = MagicMock()
+    tp = _attach_transport_plugin(handler, bpb_cc={"channel": int(channel), "control": int(cc)})
+    handler._emit_midi.reset_mock()
+
     handler._handle_encoder(EncoderEvent(controller=enc1, rotations=1, multiplier=1.0))
 
     assert tp.parameters[BPB_SYMBOL].value == 5.0

@@ -158,15 +158,21 @@ class _PluginParamSink:
         return self._send(param)
 
 
-class _ExternalCcSink:
-    """An externally-routed param's upstream channel: a raw CC to outboard gear.
-    No mod-host counterpart, so nothing echoes it back."""
+class _MidiCcSink:
+    """A MIDI-mapped param's upstream channel: the CC its encoder emits. For a
+    pedalboard mapping mod-ui applies its map and echoes param_set (reconciling
+    us); for an external route the CC drives outboard gear. Either way the CC is
+    the whole send and it always lands — so an encoder turn and its dialog agree
+    on one transport. The param carries the value; the controller carries the
+    MIDI mechanics (7-bit conversion, channel, routing)."""
 
-    def __init__(self, emit: Callable[[Parameter], bool]):
+    def __init__(self, controller: EncoderController, emit: Callable[[Controller, int], None]):
+        self._controller = controller
         self._emit = emit
 
     def publish(self, param: Parameter) -> bool:
-        return self._emit(param)
+        self._emit(self._controller, self._controller.to_midi(param.value))
+        return True
 
 
 class _AudioParamSink:
@@ -463,33 +469,26 @@ class Modhandler(Handler):
 
         # Resolve the binding row for badge shadow_state (side effect), even
         # though the effect type no longer branches the encoder-turn response.
-        # CC is the transport for a plugin-bound (MIDI-learned) encoder; mod-ui
-        # applies its mapping on receipt. The local param.value write drives
-        # reactive observers; the CC tail below is the sole transport to mod-host.
         if c.midi_CC is not None:
             self.effective_table.resolve(
                 ControlRef(cls=ControlClass.ANALOG, id=f"{c.midi_channel}:{c.midi_CC}"),
                 EventKind.ROTATE,
             )
         if c.parameter is not None:
+            # One transport per bound turn: the param's sink (CC to mod-host for
+            # a mapped encoder, the WebSocket for :bpm) owns the send. bind
+            # attaches it; a hand-built encoder gets it on first turn.
+            if c.parameter.sink is None:
+                c.parameter.sink = self._sink_for(c.parameter, c)
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
-            # :bpm rides its own WebSocket sink — 20..280 does not survive 7
-            # bits — and must not also emit CC. Every other bound param's CC is
-            # its transport to mod-host, so it falls through to the emit below.
-            if _is_transport_bpm(c.parameter):
-                c.parameter.commit(new_value)
-                self.lcd.display_parameter_value(c.parameter, new_value)
-                return True
-            c.parameter.preview(new_value)
+            c.parameter.commit(new_value)
             self.lcd.display_parameter_value(c.parameter, new_value)
-            emit_value = c.bar_midi_value()
-        else:
-            emit_value = self._advance_encoder_fallback(c, delta)
+            return True
 
-        # Unconditional, and must stay that way: an unbound encoder has no row,
-        # and this emit is the only way mod-ui sees its CC to MIDI-learn it.
-        # Emission is hardware-level, below the table (see input/README.md).
-        self._emit_midi(c, emit_value)
+        # Unbound: no sink, no row. This fallback CC is the only way mod-ui sees
+        # the encoder to MIDI-learn it. Emission is hardware-level, below the
+        # table (see input/README.md).
+        self._emit_midi(c, self._advance_encoder_fallback(c, delta))
         return True
 
     def encoder_fallback(self, controller: EncoderController) -> int:
@@ -1286,21 +1285,29 @@ class Modhandler(Handler):
                 param.sink = self._sink_for(param)
         for controller in self.hardware.controllers.values():
             if controller.parameter is not None:
-                controller.parameter.sink = self._sink_for(controller.parameter)
+                controller.parameter.sink = self._sink_for(controller.parameter, controller)
         if self.volume_parameter is not None:
             self.volume_parameter.sink = self._sink_for(self.volume_parameter)
 
-    def _sink_for(self, param: Parameter) -> ParamSink | None:
+    def _sink_for(self, param: Parameter, controller: Controller | None = None) -> ParamSink | None:
         """The upstream channel a param's commit rides, by provenance. None is
-        display-only: reconciled from mod-ui, never sent back — the transport's
-        :bpb/:rolling designations, which mod-ui rejects on param_set."""
+        display-only: reconciled from mod-ui, never sent back — bpb/rolling when
+        unmapped (mod-ui rejects param_set on them) and an external footswitch
+        (its press path owns the CC). A param mapped to an encoder rides that
+        encoder's CC; :bpm is the exception — its range won't fit 7 bits, so it
+        keeps the WebSocket. Pass *controller* when the caller holds it (an
+        encoder turn); otherwise it's recovered from the binding."""
         if _is_transport_bpm(param):
             return _TransportBpmSink(self.set_mod_tap_tempo)
-        if param.instance_id == ExternalMidi.EXTERNAL_INSTANCE_ID:
-            return _ExternalCcSink(self._emit_external_cc)
         if param.instance_id is None:
             return _AudioParamSink(self.audio_parameter_commit)
-        if param.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID:
+        enc = controller if isinstance(controller, EncoderController) else None
+        if enc is None and param.binding is not None:
+            enc = self.hardware.controllers.get(param.binding)
+            enc = enc if isinstance(enc, EncoderController) else None
+        if enc is not None and enc.midi_CC is not None:
+            return _MidiCcSink(enc, self._emit_midi)
+        if param.instance_id in (ExternalMidi.EXTERNAL_INSTANCE_ID, Pedalboard.TRANSPORT_INSTANCE_ID):
             return None
         return _PluginParamSink(self._publish_plugin_param)
 
@@ -1308,15 +1315,6 @@ class Modhandler(Handler):
         if self._is_pedalboard_loading or self.ws_bridge is None or param.instance_id is None:
             return False
         return self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
-
-    def _emit_external_cc(self, param: Parameter) -> bool:
-        if param.binding is None:
-            return False
-        controller = self.hardware.controllers.get(param.binding)
-        if controller is None:
-            return False
-        self._emit_midi(controller, int(param.value))
-        return True
 
     def _redraw_after_binding(self, controller: Controller, is_footswitch: bool) -> None:
         if is_footswitch:
