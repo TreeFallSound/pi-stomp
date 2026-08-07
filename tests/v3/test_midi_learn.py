@@ -1,9 +1,17 @@
 """MIDI learn in mod-ui (midi_map WS broadcast) binds a hardware control to a
 plugin parameter live, so the LCD reflects it without a pedalboard reload."""
 
+import common.util as util
 from common.contexts import ControlClass, EventKind, ParamEffect
-from common.parameter import BYPASS_SYMBOL, Symbol
+from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from tests.types import SystemFixture
+
+LOG_PORT: PortInfo = {
+    "shortName": "HP",
+    "symbol": "hpfreq",
+    "ranges": {"minimum": 30.0, "maximum": 800.0},
+    "properties": ["logarithmic"],
+}
 
 
 def _binding_for(hw, controller):
@@ -166,16 +174,12 @@ def test_v3_log_parameter_dialog_paints_geometric_curve(v3_system: SystemFixture
     """The dial for a log port paints the geometric envelope — the same curve
     the step grid and mod-host's CC lattice use — with the current value's fill
     matching where a detent puts it."""
-    from common.parameter import Parameter, PortInfo
-
     handler = v3_system.handler
     hw = v3_system.hw
 
     assert handler.current and handler.lcd
 
-    info: PortInfo = {"shortName": "HP", "symbol": "hpfreq",
-                      "ranges": {"minimum": 30.0, "maximum": 800.0}, "properties": ["logarithmic"]}
-    freq = Parameter(info, 155.0, None, "eq")  # geometric midpoint: half the bars fill
+    freq = Parameter(LOG_PORT, 155.0, None, "eq")  # geometric midpoint: half the bars fill
     plugin = make_plugin("eq", bypassed=False, has_footswitch=False, parameters={"hpfreq": freq})
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
@@ -190,21 +194,16 @@ def test_v3_midi_learn_logarithmic_cc_round_trips(v3_system: SystemFixture, make
     a CC that inverts mod-host's *geometric* CC->value map, so MOD-UI lands on the
     dialed value — not a much smaller one. bar_midi_value used to map linearly,
     which for a log taper collapses toward the bottom of the range."""
-    import common.util as util
-    from common.parameter import Parameter, PortInfo
-
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
 
     assert handler.current
 
-    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1)
+    enc1 = next(e for e in hw.encoders if e.id == 1)
     channel, cc = _binding_for(hw, enc1).split(":")
 
-    info: PortInfo = {"shortName": "HP", "symbol": "hpfreq",
-                      "ranges": {"minimum": 30.0, "maximum": 800.0}, "properties": ["logarithmic"]}
-    freq = Parameter(info, 400.0, None, "eq")
+    freq = Parameter(LOG_PORT, 400.0, None, "eq")
     plugin = make_plugin("eq", bypassed=False, has_footswitch=False, parameters={"hpfreq": freq})
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
@@ -222,6 +221,35 @@ def test_v3_midi_learn_logarithmic_cc_round_trips(v3_system: SystemFixture, make
     assert abs(mod_host_value - 400.0) < 12.0
     # Guard the regression explicitly: the old linear CC would land far too low.
     assert emitted_cc > 90
+
+
+def test_v3_log_parameter_commit_emits_tapered_cc(v3_system: SystemFixture, make_plugin):
+    """A committed edit of a mapped log port rides its encoder's CC sink, and that
+    sink applies the same geometric inverse the bar does — the wire value, not just
+    the display, has to invert mod-host's taper."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+
+    enc1 = next(e for e in hw.encoders if e.id == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+
+    freq = Parameter(LOG_PORT, 30.0, None, "eq")
+    plugin = make_plugin("eq", bypassed=False, has_footswitch=False, parameters={"hpfreq": freq})
+    handler.current.pedalboard.plugins = [plugin]
+    handler.bind_current_pedalboard()
+
+    ws_bridge.inject(f"midi_map /graph/eq hpfreq {channel} {cc} 30.0 800.0")
+    handler.poll_ws_messages()
+
+    hw.midiout.send_message.reset_mock()
+    handler.parameter_value_commit(freq, 400.0)
+
+    sent_cc = hw.midiout.send_message.call_args[0][0][2]
+    assert sent_cc == enc1.to_midi(400.0)
+    assert abs(util.from_normalized(sent_cc / 127.0, 30.0, 800.0, logarithmic=True) - 400.0) < 12.0
 
 
 def test_v3_midi_learn_external_controller_is_refused(v3_system: SystemFixture, make_plugin, make_parameter):
