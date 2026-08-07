@@ -1823,10 +1823,7 @@ class Modhandler(Handler):
 
     def set_mod_tap_tempo(self, bpm: float | None) -> None:
         if bpm is not None:
-            if self._ws_bridge is not None:
-                self.ws_bridge.send_bpm(bpm)
-            else:
-                self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
+            self.ws_bridge.send_bpm(bpm)
 
     def set_sync_mode(self, mode: SyncMode) -> None:
         """Optimistically switch the clock source; mod-ui's transport echo

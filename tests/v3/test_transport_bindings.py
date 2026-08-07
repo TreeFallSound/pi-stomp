@@ -474,41 +474,6 @@ def test_incoming_transport_decimal_bpm_sync(v3_system: SystemFixture, make_plug
     assert tp.parameters[BPM_SYMBOL].value == 120.5
 
 
-def test_encoder_bpm_turn_without_websocket_bridge_falls_back_to_rest_post(
-    v3_system: SystemFixture, make_plugin
-):
-    """If ws_bridge is None, encoder tempo turns execute REST POST fallback."""
-    from unittest.mock import MagicMock
-    from pistomp.input.event import EncoderEvent
-
-    handler = v3_system.handler
-    hw = v3_system.hw
-    mock_post = v3_system.mock_post
-    assert handler.current is not None
-
-    plugin = make_plugin("noise", bypassed=False)
-    handler.current.pedalboard.plugins = [plugin]
-
-    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1)
-    channel, cc = _binding_for(hw, enc1).split(":")
-    _attach_transport_plugin(
-        handler,
-        bpm_cc={"channel": int(channel), "control": int(cc), "hasRanges": True, "minimum": 20.0, "maximum": 280.0},
-    )
-
-    # Set _ws_bridge to None to simulate missing WebSocket bridge
-    handler._ws_bridge = None
-    mock_post.reset_mock()
-
-    # Turn encoder
-    handler._handle_encoder(EncoderEvent(controller=enc1, rotations=1, multiplier=1.0))
-
-    # Assert REST POST fallback was executed
-    mock_post.assert_called_once()
-    assert "set_bpm" in mock_post.call_args[0][0]
-    assert mock_post.call_args[1]["json"] == {"value": 121.0}
-
-
 def test_encoder_bpm_turn_parameter_dialog_snapshot(v3_system: SystemFixture, make_plugin, snapshot):
     """Turning a BPM-bound encoder 1 detent notch displays the parameter dialog on the LCD at 121 BPM."""
     from pistomp.input.event import EncoderEvent
