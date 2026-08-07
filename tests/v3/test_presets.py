@@ -1,7 +1,6 @@
 """Preset navigation requiring v3 hardware interactions (longpress, LCD encoder menu)."""
 
 import time
-from unittest.mock import patch
 
 import pistomp.switchstate as switchstate
 from tests.types import SystemFixture
@@ -11,7 +10,6 @@ from tests.v3.nav_helpers import nav_click
 
 def test_v3_preset_change_via_footswitch_longpress(v3_system: SystemFixture, snapshot, get_urls):
     """Footswitch 0 longpress fires previous_snapshot → wraps from 0 to max index."""
-    handler = v3_system.handler
     hw = v3_system.hw
     mock_get = v3_system.mock_get
 
