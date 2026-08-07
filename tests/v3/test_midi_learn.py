@@ -411,6 +411,7 @@ def test_v3_midi_learn_updated_binding_range_on_same_parameter(
     assert gain.binding == f"{channel}:{cc}"
     assert (gain.minimum, gain.maximum) == (0.0, 0.5)
     assert enc1.parameter is gain
+    assert plugin.controllers.count(enc1) == 1
 
     # Updated mapping on SAME binding: sub-range 0.2 .. 0.8
     ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.2 0.8")
@@ -419,5 +420,83 @@ def test_v3_midi_learn_updated_binding_range_on_same_parameter(
     assert gain.binding == f"{channel}:{cc}"
     assert (gain.minimum, gain.maximum) == (0.2, 0.8)
     assert enc1.parameter is gain
+    assert plugin.controllers.count(enc1) == 1
+
+
+def test_v3_midi_unlearn_preserves_sub_range(v3_system: SystemFixture, make_plugin, make_parameter):
+    """Unmapping (-1:-1) must not reset the parameter's bound sub-range to the
+    full 0..1 default that the unmap frame carries."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+
+    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+
+    gain = make_parameter("Gain", "noise", value=0.5)
+    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    handler.current.pedalboard.plugins = [plugin]
+
+    ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.1 0.9")
+    handler.poll_ws_messages()
+    assert (gain.minimum, gain.maximum) == (0.1, 0.9)
+
+    ws_bridge.inject("midi_map /graph/noise gain -1 -1 0.0 1.0")
+    handler.poll_ws_messages()
+    assert gain.binding is None
+    assert (gain.minimum, gain.maximum) == (0.1, 0.9)
+
+
+def test_v3_midi_learn_moving_footswitch_binding_clears_old_lcd_display(
+    v3_system: SystemFixture, make_plugin
+):
+    """A live move of a footswitch :bypass binding (FS0 -> FS1) repaints FS0 as
+    unmapped grey on the LCD -- not just in memory. update_footswitch repaints a
+    single widget, so without redrawing the displaced controller FS0 would keep a
+    stale green badge until the next pedalboard load."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+    lcd = handler.lcd
+
+    assert handler.current and lcd
+
+    fs0, fs1 = hw.footswitches[0], hw.footswitches[1]
+    ch0, cc0 = _binding_for(hw, fs0).split(":")
+    ch1, cc1 = _binding_for(hw, fs1).split(":")
+
+    plugin = make_plugin("noise", bypassed=False, has_footswitch=False)
+    handler.current.pedalboard.plugins = [plugin]
+    lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    lcd.draw_main_panel()
+
+    # Bind :bypass to FS0 -> its widget lights with the category accent
+    ws_bridge.inject(f"midi_map /graph/noise :bypass {ch0} {cc0} 0.0 1.0")
+    handler.poll_ws_messages()
+    assert fs0.parameter is plugin.parameters[BYPASS_SYMBOL]
+    assert plugin.controllers.count(fs0) == 1
+    w0 = next(w for w in lcd.w_footswitches if w.object is fs0)
+    assert w0.color is not None
+
+    # Move the binding live to FS1
+    ws_bridge.inject(f"midi_map /graph/noise :bypass {ch1} {cc1} 0.0 1.0")
+    handler.poll_ws_messages()
+
+    # Model state fully transferred to FS1
+    assert fs1.parameter is plugin.parameters[BYPASS_SYMBOL]
+    assert fs0.parameter is None
+    assert fs0.display_label is None
+    assert fs0.category is None
+    assert plugin.has_footswitch is True
+    assert plugin.controllers.count(fs0) == 0
+    assert plugin.controllers.count(fs1) == 1
+
+    # LCD: FS0 reverted to unbound grey; FS1 active
+    assert w0.color is None
+    assert w0.action is None
+    w1 = next(w for w in lcd.w_footswitches if w.object is fs1)
+    assert w1.color is not None
 
 

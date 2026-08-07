@@ -221,15 +221,16 @@ class Handler(InputSink):
         param = plugin.parameters.get(symbol)
         if param is None:
             return
+        controller = self.hardware.controllers.get(binding)
         # The range can change without the binding (re-address the same CC to a
         # different sub-range), so apply it before the binding-unchanged bail.
-        if binding_range is not None:
+        # Never on unmap: -1:-1 names no controller and must not reset the range.
+        if binding_range is not None and controller is not None:
             param.set_binding_range(binding_range)
         if param.binding == binding:
             return
 
         old_binding = param.binding
-        controller = self.hardware.controllers.get(binding)
         old_controller = self.hardware.controllers.get(old_binding) if old_binding is not None else None
 
         if old_controller is not None and old_binding != binding:
@@ -243,13 +244,13 @@ class Handler(InputSink):
             elif isinstance(old_controller, (AnalogMidiControl, EncoderController)):
                 key = "%s:%s" % (plugin.instance_id, param.name)
                 self.current.analog_controllers.pop(key, None)
+            # Redraw the displaced controller now or a footswitch stays stale-green
+            # on the LCD until the next board load (update_footswitch is single-widget).
+            self._redraw_after_binding(old_controller, isinstance(old_controller, Footswitch))
 
         if controller is None:
             param.binding = None
             self._add_learned_binding_row(plugin, param, None, old_binding)
-            if old_controller is not None:
-                is_footswitch = isinstance(old_controller, Footswitch)
-                self._redraw_after_binding(old_controller, is_footswitch)
             return
 
         # Externally-routed controls aren't bound to plugin parameters; board
