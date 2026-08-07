@@ -248,11 +248,13 @@ class Parameter:
         is unchanged. Stateful presentation (a footswitch keycap) uses this so it
         tracks confirmed state, not a mid-scrub. Returns its own unsubscriber."""
         self._settled_observers.append(cb)
+
         def _unsub() -> None:
             try:
                 self._settled_observers.remove(cb)
             except ValueError:
                 pass
+
         return _unsub
 
     def get_enum_value_list(self) -> list[tuple[str, float]]:
