@@ -30,9 +30,19 @@ from common.parameter import BYPASS_SYMBOL
 
 
 class Footswitch(controller.StatefulController):
-
-    def __init__(self, id: int | None, led_pin, pixel, midi_CC, midi_channel, refresh_callback,
-                 gpio_input=None, adc_input=None, spi=None, taptempo=None):
+    def __init__(
+        self,
+        id: int | None,
+        led_pin,
+        pixel,
+        midi_CC,
+        midi_channel,
+        refresh_callback,
+        gpio_input=None,
+        adc_input=None,
+        spi=None,
+        taptempo=None,
+    ):
         super(Footswitch, self).__init__(midi_channel, midi_CC)
         self.id = id
         self.display_label = None
@@ -45,7 +55,7 @@ class Footswitch(controller.StatefulController):
         self.lcd_color = None
         self.category = None
         self.pixel = pixel
-        self.longpress_groups = []
+        self.longpress_groups: list[str] = []
         # Mapping-form longpress; exclusive with the chord form.
         self.longpress_action: LongpressActionConfig | None = None
         self.disabled = False
@@ -57,17 +67,18 @@ class Footswitch(controller.StatefulController):
 
         self.gpio_switch = None
         if gpio_input is not None:
-            self.gpio_switch = gpioswitch.GpioSwitch(gpio_input, self._on_switch,
-                                                     longpress_callback=self._on_switch)
+            self.gpio_switch = gpioswitch.GpioSwitch(gpio_input, self._on_switch, longpress_callback=self._on_switch)
 
         self.adc_switch = None
         if adc_input is not None:
-            self.adc_switch = analogswitch.AnalogSwitch(spi, adc_input, self._on_switch,
-                                                         longpress_callback=self._on_switch)
+            self.adc_switch = analogswitch.AnalogSwitch(
+                spi, adc_input, self._on_switch, longpress_callback=self._on_switch
+            )
 
         if led_pin is not None:
             try:
                 import gpiozero as GPIO  # pyright: ignore[reportMissingImports]
+
                 self.led = GPIO.LED(led_pin)
             except Exception as e:
                 logging.error("Initializing LED for footswitch %d: %s" % (id, str(e)))
@@ -100,6 +111,20 @@ class Footswitch(controller.StatefulController):
         return f"fs:{self.id}"
 
     @property
+    def press_state(self) -> switchstate.Value:
+        """Physical hold state, read off whichever detector this footswitch
+        owns. Chord resolution needs it to tell a simultaneous stomp from a
+        parked foot. A footswitch with neither detector (mocks, externals)
+        reads RELEASED, so chords never resolve for it — see issue #222."""
+        if self.disabled:
+            return switchstate.Value.RELEASED
+        if self.adc_switch is not None:
+            return self.adc_switch.state
+        if self.gpio_switch is not None:
+            return self.gpio_switch.state
+        return switchstate.Value.RELEASED
+
+    @property
     def drives_display(self) -> bool:
         """True when unbound: no inbound echo will arrive, so the press updates
         indicators itself. When bound to a plugin :bypass, the WS broadcast does."""
@@ -114,7 +139,7 @@ class Footswitch(controller.StatefulController):
             hi = param.maximum if param.maximum is not None else 1
             self.toggled = value >= (lo + hi) / 2
         else:
-            self.toggled = (value < 1)
+            self.toggled = value < 1
         self.set_led(self.toggled)
         self.refresh_callback(footswitch=self)
 
@@ -143,7 +168,7 @@ class Footswitch(controller.StatefulController):
             if self.taptempo:
                 tempo = self.taptempo.get_bpm()
                 if tempo:
-                    period = 60/tempo
+                    period = 60 / tempo
                     on = 0.1
                     self.led.blink(on_time=on, off_time=period - 0.1)
             elif enabled:
@@ -188,8 +213,7 @@ class Footswitch(controller.StatefulController):
         # sink. All toggle / relay / MIDI / preset logic lives in the handler.
         if self.disabled:
             return
-        kind = (SwitchEventKind.LONGPRESS if state is switchstate.Value.LONGPRESSED
-                else SwitchEventKind.PRESS)
+        kind = SwitchEventKind.LONGPRESS if state is switchstate.Value.LONGPRESSED else SwitchEventKind.PRESS
         self.sink.handle(SwitchEvent(controller=self, kind=kind, timestamp=timestamp))
 
     def set_display_label(self, label):

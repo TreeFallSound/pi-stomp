@@ -15,9 +15,8 @@ def test_v3_preset_change_via_footswitch_longpress(v3_system: SystemFixture, sna
     hw = v3_system.hw
     mock_get = v3_system.mock_get
 
+    # A solo longpress group fires at the stomp — no deferral to resolve.
     hw.footswitches[0]._on_switch(switchstate.Value.LONGPRESSED, timestamp=time.monotonic())
-    with patch("time.monotonic", return_value=time.monotonic() + 1.0):
-        handler._tick_chords()
 
     assert any("snapshot/load" in u for u in get_urls(mock_get))
     snapshot()

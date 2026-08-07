@@ -158,7 +158,7 @@ class Hardware(ABC):
 
         # Register final longpress-group membership with the chord resolver.
         for fs in self.footswitches:
-            self.handler.chord_helper.register(fs.longpress_groups)
+            self.handler.chord_helper.register(fs)
 
     @abstractmethod
     def init_analog_controls(self):

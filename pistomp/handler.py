@@ -149,9 +149,9 @@ class Handler(InputSink):
     def handle(self, event: ControllerEvent) -> bool:
         raise NotImplementedError()
 
-    def _tick_chords(self) -> None:
-        """Resolve pending footswitch chords/singletons. Call once per poll cycle."""
-        for name in self.chord_helper.tick():
+    def _fire_longpress_groups(self, fs) -> None:
+        """Resolve a matured footswitch longpress and run what it named."""
+        for name in self.chord_helper.observe(fs):
             cb = self.get_callback(name)
             if cb:
                 cb()
