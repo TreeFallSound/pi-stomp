@@ -112,3 +112,21 @@ def test_cross_pair_stomp_fires_both_solos(v3_system: SystemFixture, chords):
     _mature(fs1)
     _mature(fs2)
     assert chords == ["next_snapshot", "toggle_tuner_enable"]
+
+
+def test_shipped_default_config_forms_the_pedalboard_chords(v3_system: SystemFixture):
+    """Pins what setup/config_templates/default_config_pistomptre.yml ships —
+    the fixture builds hardware straight from it, so this covers the real
+    config-to-group path rather than the hand-built one above."""
+    groups = {
+        name: [m.id for m in group.members]
+        for name, group in v3_system.handler.chord_helper.groups.items()
+    }
+    assert groups == {
+        "previous_snapshot": [0],
+        "previous_pedalboard": [0, 1],
+        "next_snapshot": [1],
+        "toggle_tuner_enable": [2],
+        "next_pedalboard": [2, 3],
+        "toggle_tap_tempo_enable": [3],
+    }
