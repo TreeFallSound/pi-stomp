@@ -43,7 +43,7 @@ BAND_SPECS: tuple[BandSpec, ...] = tuple(
         gain_min=-50.0,
         gain_max=20.0,
         color=_COLORS[i],
-        q_is_bw_oct=True,
+        q_units="bw_oct",
     )
     for i, (fmin, fmax) in enumerate(_FREQ_RANGES)
 )
