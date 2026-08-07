@@ -75,8 +75,7 @@ def test_v3_param_set_syncs_bound_footswitch(v3_system: SystemFixture, make_plug
     channel, cc = _binding_for(hw, fs0).split(":")
 
     solo = make_parameter("Solo", "mixer", value=0.0)
-    plugin = make_plugin("mixer", bypassed=False, has_footswitch=False,
-                         parameters={"solo": solo})
+    plugin = make_plugin("mixer", bypassed=False, has_footswitch=False, parameters={"solo": solo})
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -127,8 +126,7 @@ def test_v3_midi_learn_adds_table_row_for_encoder(v3_system: SystemFixture, make
     channel, cc = _binding_for(hw, enc1).split(":")
 
     gain = make_parameter("Gain", "noise", value=0.5)
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False,
-                         parameters={"gain": gain})
+    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
     handler.current.pedalboard.plugins = [plugin]
 
     ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.0 1.0")
@@ -141,3 +139,35 @@ def test_v3_midi_learn_adds_table_row_for_encoder(v3_system: SystemFixture, make
     assert isinstance(effect, ParamEffect)
     assert effect.plugin is plugin
     assert effect.symbol == Symbol("gain")
+
+
+def test_v3_midi_learn_reroutes_an_already_bound_pedalboard(v3_system: SystemFixture, make_plugin, make_parameter):
+    """A param that was WebSocket-routed at bind time switches to its encoder's CC
+    once mod-ui learns the mapping. The route is derived per commit, so a binding
+    learned after bind can't leave a stale one behind."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+
+    enc1 = next(e for e in hw.encoders if e.id == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+
+    gain = make_parameter("Gain", "noise", value=0.5)
+    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    handler.current.pedalboard.plugins = [plugin]
+    handler.bind_current_pedalboard()
+
+    # Unmapped: the WebSocket is the only way out.
+    handler.parameter_value_commit(gain, 0.6)
+    assert ws_bridge.sent_values_for("noise", Symbol("gain")) == [0.6]
+    hw.midiout.send_message.reset_mock()
+
+    ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.0 1.0")
+    handler.poll_ws_messages()
+
+    # Mapped: the CC is the whole send, and param_set must not double it up.
+    handler.parameter_value_commit(gain, 0.8)
+    assert ws_bridge.sent_values_for("noise", Symbol("gain")) == [0.6]
+    hw.midiout.send_message.assert_called_once()

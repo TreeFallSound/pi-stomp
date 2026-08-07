@@ -119,16 +119,12 @@ class Parameter:
 
         # Reactive value. Writes go through reconcile/preview/commit, never a raw
         # setter — the verb names the provenance (see those methods). _confirmed
-        # is the last value the single writer (mod-ui) echoed back; the gap from
-        # _value is `pending`.
+        # is the last value the single writer (mod-ui) echoed back, and the value
+        # a failed commit rolls back to.
         self._observers: list[Callable[[Parameter], None]] = []
         self._settled_observers: list[Callable[[Parameter], None]] = []
         self._value: float = float(value)
         self._confirmed: float = float(value)
-        # Where local edits go upstream. None = display-only: reconciled from
-        # mod-ui, never sent back. Attached at bind time by whoever owns the
-        # remote channel.
-        self.sink: ParamSink | None = None
         self.binding: str | None = binding
         self.instance_id: str | None = instance_id.lstrip("/") if instance_id else instance_id
         self.type = Type.DEFAULT
@@ -163,11 +159,6 @@ class Parameter:
     def value(self) -> float:
         return self._value
 
-    @property
-    def pending(self) -> bool:
-        """A committed edit the single writer hasn't echoed back yet."""
-        return self._value != self._confirmed
-
     def reconcile(self, value: float) -> None:
         """Adopt the single writer's value: repaint, mark confirmed, settle,
         publish nothing. The settle fires even at an unchanged value — a mod-ui
@@ -183,14 +174,14 @@ class Parameter:
         Repaints live observers; does not settle; publishes nothing."""
         self._set(value)
 
-    def commit(self, value: float) -> None:
-        """A finished local edit: repaint, publish through the sink, then settle.
+    def commit(self, value: float, sink: ParamSink | None) -> None:
+        """A finished local edit: repaint, publish through *sink*, then settle.
         Rolls back to the last confirmed value (and does not settle) if the send
         never leaves — otherwise the LCD would show a number mod-ui never took.
-        Publishing is unconditional; preview and reconcile share mechanics, so
-        there is nothing to diff against here."""
+        A `None` sink is display-only. Publishing is unconditional; preview and
+        reconcile share mechanics, so there is nothing to diff against here."""
         self._set(value)
-        if self.sink is not None and not self.sink.publish(self):
+        if sink is not None and not sink(self):
             self._set(self._confirmed)
             return
         self._notify_settled()

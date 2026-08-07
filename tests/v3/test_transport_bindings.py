@@ -109,8 +109,8 @@ def test_bpm_edit_publishes_but_reconcile_does_not(v3_system: SystemFixture):
     handler.current.pedalboard.transport_plugin.set_param_value(BPM_SYMBOL, 149.0)
     ws_bridge.send_bpm.assert_not_called()
 
-    # Local edit (a knob turn): set and publish through the sink.
-    bpm.commit(150.0)
+    # Local edit (a dialog commit): set and publish through the resolved sink.
+    handler.parameter_value_commit(bpm, 150.0)
     ws_bridge.send_bpm.assert_called_once_with(150.0)
 
 
@@ -146,11 +146,13 @@ def test_partial_timeinfo_bitmask_creates_all_parameters(v3_system: SystemFixtur
     assert handler.current is not None
 
     # Available bitmask 0x2 = BPM only
-    tp = handler.current.pedalboard._build_transport_plugin({
-        "available": 0x2,
-        "bpm": 130.0,
-        "bpmCC": {"channel": 0, "control": 10},
-    })
+    tp = handler.current.pedalboard._build_transport_plugin(
+        {
+            "available": 0x2,
+            "bpm": 130.0,
+            "bpmCC": {"channel": 0, "control": 10},
+        }
+    )
     assert tp is not None
     assert BPM_SYMBOL in tp.parameters
     assert BPB_SYMBOL in tp.parameters
@@ -478,9 +480,7 @@ def test_incoming_transport_decimal_bpm_sync(v3_system: SystemFixture, make_plug
     assert tp.parameters[BPM_SYMBOL].value == 120.5
 
 
-def test_encoder_bpm_turn_without_websocket_bridge_falls_back_to_rest_post(
-    v3_system: SystemFixture, make_plugin
-):
+def test_encoder_bpm_turn_without_websocket_bridge_falls_back_to_rest_post(v3_system: SystemFixture, make_plugin):
     """If ws_bridge.send_bpm returns False, encoder tempo turns execute REST POST fallback."""
     from unittest.mock import MagicMock
     from pistomp.input.event import EncoderEvent
@@ -603,5 +603,3 @@ def test_encoder_bpm_turn_parameter_dialog_snapshot(v3_system: SystemFixture, ma
 
     # Capture LCD snapshot of 121 BPM parameter dialog badge
     snapshot("bpm_dialog_121")
-
-

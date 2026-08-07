@@ -130,27 +130,21 @@ def test_reconcile_notifies_on_change_not_on_noop():
     assert len(calls) == 2
 
 
-def test_commit_publishes_and_stays_pending_until_reconciled():
-    """A committed edit publishes, holds its value, and reads pending until the
-    single writer echoes it back."""
+def test_commit_publishes_and_holds_its_value():
+    """A committed edit publishes through the sink and keeps its value; only the
+    single writer's echo confirms it."""
     info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 200}}
     p = Parameter(info, 120.0, None, "inst")
     sent: list[float] = []
 
-    class OkSink:
-        def publish(self, param: Parameter) -> bool:
-            sent.append(param.value)
-            return True
+    def ok_sink(param: Parameter) -> bool:
+        sent.append(param.value)
+        return True
 
-    p.sink = OkSink()
-    p.commit(150.0)
+    p.commit(150.0, ok_sink)
 
     assert p.value == 150.0
     assert sent == [150.0]
-    assert p.pending
-
-    p.reconcile(150.0)
-    assert not p.pending
 
 
 def test_commit_rolls_back_when_publish_never_leaves():
@@ -161,16 +155,25 @@ def test_commit_rolls_back_when_publish_never_leaves():
     seen: list[float] = []
     p.subscribe(lambda param: seen.append(param.value))
 
-    class DeadSink:
-        def publish(self, param: Parameter) -> bool:
-            return False
-
-    p.sink = DeadSink()
-    p.commit(150.0)
+    p.commit(150.0, lambda param: False)
 
     assert p.value == 120.0
-    assert not p.pending
     assert seen == [150.0, 120.0]  # painted optimistically, then reverted
+
+
+def test_rollback_targets_the_last_reconciled_value_not_the_last_commit():
+    """Only a reconcile confirms. An unechoed commit followed by a failed one
+    reverts all the way to mod-ui's last word, not to the unconfirmed edit."""
+    info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 200}}
+    p = Parameter(info, 120.0, None, "inst")
+
+    p.commit(150.0, lambda param: True)  # sent, not yet echoed
+    p.commit(160.0, lambda param: False)  # never left
+    assert p.value == 120.0
+
+    p.reconcile(150.0)
+    p.commit(160.0, lambda param: False)
+    assert p.value == 150.0
 
 
 def test_settled_fires_on_reconcile_and_commit_not_preview():
@@ -187,20 +190,10 @@ def test_settled_fires_on_reconcile_and_commit_not_preview():
     p.reconcile(130.0)  # echo confirming the previewed value — unchanged
     assert settled == [130.0]  # ...still settles, unconditionally
 
-    class OkSink:
-        def publish(self, param: Parameter) -> bool:
-            return True
-
-    p.sink = OkSink()
-    p.commit(140.0)
+    p.commit(140.0, lambda param: True)
     assert settled == [130.0, 140.0]
 
-    class DeadSink:
-        def publish(self, param: Parameter) -> bool:
-            return False
-
-    p.sink = DeadSink()
-    p.commit(150.0)
+    p.commit(150.0, lambda param: False)
     assert settled == [130.0, 140.0]  # rolled back — did not settle
 
 
@@ -238,6 +231,7 @@ def test_to_json_on_subscribed_plugin_does_not_crash(make_plugin):
     """A subscribed plugin has _observers (callables) in Parameter.__dict__;
     to_json must filter them out so json.dumps doesn't TypeError."""
     import json as _json
+
     plugin = _make_plugin_with_gain(make_plugin)
     unsub = plugin.subscribe(lambda _p: None)
     # Must not raise — _observers and _value are stripped, value re-injected.
@@ -548,7 +542,7 @@ def test_rapid_footswitch_with_panel_open_coalesces(v3_system: SystemFixture, ma
     #   press 1: bypassed=True  → echo :bypass 1.0
     #   press 2: bypassed=False → echo :bypass 0.0
     #   ... so the final echo value depends on N parity.
-    final_bypassed = (N % 2 == 1)
+    final_bypassed = N % 2 == 1
     echo_val = "1.0" if final_bypassed else "0.0"
     for _ in range(N):
         v3_system.ws_bridge.inject(f"param_set /graph/fuzz :bypass {echo_val}")
@@ -563,6 +557,7 @@ def test_rapid_footswitch_with_panel_open_coalesces(v3_system: SystemFixture, ma
     # (b) apply_count bounded by ticks, not 2N. We've ticked twice total;
     # the idempotent echoes at the final value should not have added dirty work.
     assert panel.apply_count <= 3  # initial drain + at most one echo-driven drain
+
 
 # ---------------------------------------------------------------------------
 # 11. An open Parameterdialog follows its parameter (tweak encoder, MOD-UI echo)

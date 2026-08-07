@@ -35,11 +35,10 @@ omits the Bypass/Reset buttons (§4.2 of the doc). The bypass wiring on
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from common.parameter import Parameter, Symbol
 
 
@@ -77,14 +76,8 @@ class BypassSource(Protocol):
     pedalboard_snapshot: "dict[Symbol, float]"
 
 
-@runtime_checkable
-class ParamSink(Protocol):
-    """The outbound dual of `ParamSource` — where a `Parameter.commit` goes next.
-
-    `reconcile` adopts the single writer's value and sends nothing; `commit`
-    publishes a finished local edit through this sink. `publish` returns whether
-    the send left — False lets commit roll the value back. A param with no sink
-    is display-only.
-    """
-
-    def publish(self, param: "Parameter") -> bool: ...
+ParamSink = Callable[["Parameter"], bool]
+"""
+The sink for a committed parameter value (e.g. to mod-ui, MIDI out, the audio
+card). Returns False if it didn't send, which tells `commit` to revert the value.
+"""

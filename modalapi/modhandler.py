@@ -126,67 +126,6 @@ from pathlib import Path
 STARTUP_REST_BACKOFF_S = (0.25, 0.25, 0.5, 1.0, 2.0)
 
 
-def _is_transport_bpm(param: Parameter | None) -> bool:
-    return (
-        param is not None
-        and param.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID
-        and param.symbol == BPM_SYMBOL
-    )
-
-
-class _TransportBpmSink:
-    """:bpm's upstream channel. mod-ui's :bpm is a global designation, not a
-    plugin control port — param_set is rejected — so a commit rides the dedicated
-    transport-bpm command (POST fallback). set_mod_tap_tempo returns whether the
-    send left; commit rolls back if it didn't."""
-
-    def __init__(self, send: Callable[[float], bool]):
-        self._send = send
-
-    def publish(self, param: Parameter) -> bool:
-        return self._send(param.value)
-
-
-class _PluginParamSink:
-    """A plugin control port's upstream channel: param_set over the WebSocket.
-    Returns whether the send left so a failed commit rolls the LCD back."""
-
-    def __init__(self, send: Callable[[Parameter], bool]):
-        self._send = send
-
-    def publish(self, param: Parameter) -> bool:
-        return self._send(param)
-
-
-class _MidiCcSink:
-    """A MIDI-mapped param's upstream channel: the CC its encoder emits. For a
-    pedalboard mapping mod-ui applies its map and echoes param_set (reconciling
-    us); for an external route the CC drives outboard gear. Either way the CC is
-    the whole send and it always lands — so an encoder turn and its dialog agree
-    on one transport. The param carries the value; the controller carries the
-    MIDI mechanics (7-bit conversion, channel, routing)."""
-
-    def __init__(self, controller: EncoderController, emit: Callable[[Controller, int], None]):
-        self._controller = controller
-        self._emit = emit
-
-    def publish(self, param: Parameter) -> bool:
-        self._emit(self._controller, self._controller.to_midi(param.value))
-        return True
-
-
-class _AudioParamSink:
-    """An audio-card level's upstream channel: a local ALSA write, no remote echo,
-    so the send always lands."""
-
-    def __init__(self, commit: Callable[[Symbol, float], None]):
-        self._commit = commit
-
-    def publish(self, param: Parameter) -> bool:
-        self._commit(param.symbol, param.value)
-        return True
-
-
 def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
     # Drop any PEDALBOARD-layer row whose control.id matches a learned binding
     # that's being replaced. Scans all event_kind buckets since a re-learn could
@@ -475,13 +414,10 @@ class Modhandler(Handler):
                 EventKind.ROTATE,
             )
         if c.parameter is not None:
-            # One transport per bound turn: the param's sink (CC to mod-host for
-            # a mapped encoder, the WebSocket for :bpm) owns the send. bind
-            # attaches it; a hand-built encoder gets it on first turn.
-            if c.parameter.sink is None:
-                c.parameter.sink = self._sink_for(c.parameter, c)
+            # One transport per bound turn: the sink (CC to mod-host for a mapped
+            # encoder, the WebSocket for :bpm) owns the send.
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
-            c.parameter.commit(new_value)
+            c.parameter.commit(new_value, self._sink_for(c.parameter, c))
             self.lcd.display_parameter_value(c.parameter, new_value)
             return True
 
@@ -1268,26 +1204,6 @@ class Modhandler(Handler):
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
         self._controller_manager.bind(self.current)
-        self._attach_sinks()
-
-    def _attach_sinks(self) -> None:
-        """Give every editable parameter its upstream channel, keyed by
-        provenance (see `_sink_for`). Eager over the whole board so an encoder
-        turn — which commits with no dialog in between — finds a sink already
-        there; dialog commits fall back to a lazy attach for hand-built params."""
-        if self._current is None:
-            return
-        # transport_plugin is kept out of .plugins (the effect graph must not
-        # paint it), so reach it explicitly for :bpm's sink.
-        boards = [*self.current.pedalboard.plugins, self.current.pedalboard.transport_plugin]
-        for plugin in boards:
-            for param in plugin.parameters.values():
-                param.sink = self._sink_for(param)
-        for controller in self.hardware.controllers.values():
-            if controller.parameter is not None:
-                controller.parameter.sink = self._sink_for(controller.parameter, controller)
-        if self.volume_parameter is not None:
-            self.volume_parameter.sink = self._sink_for(self.volume_parameter)
 
     def _sink_for(self, param: Parameter, controller: Controller | None = None) -> ParamSink | None:
         """The upstream channel a param's commit rides, by provenance. None is
@@ -1297,19 +1213,33 @@ class Modhandler(Handler):
         encoder's CC; :bpm is the exception — its range won't fit 7 bits, so it
         keeps the WebSocket. Pass *controller* when the caller holds it (an
         encoder turn); otherwise it's recovered from the binding."""
-        if _is_transport_bpm(param):
-            return _TransportBpmSink(self.set_mod_tap_tempo)
+        if param.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID and param.symbol == BPM_SYMBOL:
+            return self._publish_bpm
         if param.instance_id is None:
-            return _AudioParamSink(self.audio_parameter_commit)
+            return self._publish_audio
         enc = controller if isinstance(controller, EncoderController) else None
         if enc is None and param.binding is not None:
             enc = self.hardware.controllers.get(param.binding)
             enc = enc if isinstance(enc, EncoderController) else None
         if enc is not None and enc.midi_CC is not None:
-            return _MidiCcSink(enc, self._emit_midi)
+            return functools.partial(self._publish_cc, enc)
         if param.instance_id in (ExternalMidi.EXTERNAL_INSTANCE_ID, Pedalboard.TRANSPORT_INSTANCE_ID):
             return None
-        return _PluginParamSink(self._publish_plugin_param)
+        return self._publish_plugin_param
+
+    def _publish_bpm(self, param: Parameter) -> bool:
+        """Publish the BPM to the transport."""
+        return self.set_mod_tap_tempo(param.value)
+
+    def _publish_audio(self, param: Parameter) -> bool:
+        """ A local ALSA write. No remote echo, so the send always lands."""
+        self.audio_parameter_commit(param.symbol, param.value)
+        return True
+
+    def _publish_cc(self, controller: EncoderController, param: Parameter) -> bool:
+        """Publish the parameter (to MOD-UI or anything else) via MIDI CC."""
+        self._emit_midi(controller, controller.to_midi(param.value))
+        return True
 
     def _publish_plugin_param(self, param: Parameter) -> bool:
         if self._is_pedalboard_loading or self.ws_bridge is None or param.instance_id is None:
@@ -1521,11 +1451,7 @@ class Modhandler(Handler):
     def parameter_value_commit(self, param: Parameter, value: float) -> None:
         # The sink owns the route (WebSocket param_set, transport-bpm, external
         # CC, local ALSA write); commit repaints, publishes through it, settles.
-        # Bind attaches sinks eagerly; a param edited before then (or added to a
-        # live board) gets one on first commit.
-        if param.sink is None:
-            param.sink = self._sink_for(param)
-        param.commit(value)
+        param.commit(value, self._sink_for(param))
 
     @property
     def wifi_ip(self) -> str | None:
