@@ -60,6 +60,7 @@ class BluetoothManager:
         self.on_status_change: Optional[Callable[[BtStatus], None]] = on_status_change
         self.client: BluezClient = BluezClient()
         self.last_status: BtStatus = {}
+        self._last_sig: tuple = ()
         self.changed: bool = False
         self._has_adapter: bool = has_adapter()
         self._capable: bool = False
@@ -79,8 +80,8 @@ class BluetoothManager:
             return
         self._capable = ops.bluetoothd_is_capable()
         self._enabled = ops.service_enabled()
-        if self._enabled:
-            self.client.start(on_change=self.request_refresh)
+        if self._enabled and self.client.start(on_change=self.request_refresh):
+            self.client.call(ops.power_on(self.client))
         self._probed = True
         self.request_refresh()
 
@@ -122,12 +123,25 @@ class BluetoothManager:
         if not publish:
             return
         status = self.status()
+        # Devices are not part of the published status, so the status alone
+        # cannot tell a new discovery from a repeat — dedupe on both.
+        sig = (tuple(sorted(status.items())), self._device_sig())
         with self.lock:
-            if status == self.last_status:
+            if sig == self._last_sig:
                 return
+            self._last_sig = sig
             self.last_status = status
         if self.on_status_change is not None:
             self.on_status_change(status)
+
+    def _device_sig(self) -> tuple:
+        """RSSI bucketed to the drawn bar count so jitter doesn't republish."""
+        return tuple(
+            sorted(
+                (d["address"], d["name"], d["paired"], d["connected"], None if d["rssi"] is None else d["rssi"] // 10)
+                for d in self.devices()
+            )
+        )
 
     def shutdown(self) -> None:
         try:

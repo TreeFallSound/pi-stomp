@@ -49,7 +49,7 @@ from uilib import (
     get_line_height,
 )
 from uilib.glyphs import PillGlyph, SignalBarsGlyph, EthernetCableGlyph
-from uilib.menu import FooterButton, Menu, MenuItem, label_key
+from uilib.menu import FooterButton, FooterSlot, Menu, MenuItem, label_key
 from uilib.rich_text import IconSeg, Segment, Spacer, TextSeg
 
 if TYPE_CHECKING:
@@ -464,16 +464,18 @@ class WifiMenu:
     def _open_ethernet_menu(self, _: object = None) -> None:
         self.lcd.ethernet_menu.open()
 
-    def _footer(self) -> list[FooterButton]:
-        """Close, plus Bluetooth when the board has a radio. Pi 3/4 give the BT
-        UART to DIN MIDI, so there is no adapter and no mention of it anywhere."""
-        buttons: list[FooterButton] = [("Close", self._close)]
+    def _footer(self) -> list[FooterSlot]:
+        """Close left, Bluetooth right, nothing between. Pi 3/4 give the BT UART
+        to DIN MIDI, so there is no adapter and no mention of it anywhere."""
         bt = self._host.bluetooth_manager
-        if bt is not None and bt.supported:
-            count = len((self._host.bluetooth_status or {}).get("connected") or [])
-            label = "Bluetooth (%d)..." % count if count else "Bluetooth..."
-            buttons.append((label, self._open_bluetooth_menu))
-        return buttons
+        if bt is None or not bt.supported:
+            return [None, FooterButton("Close", self._close), None]
+        count = len((self._host.bluetooth_status or {}).get("connected") or [])
+        label = "Bluetooth (%d)..." % count if count else "Bluetooth..."
+        return [
+            FooterButton("Close", self._close),
+            FooterButton(label, self._open_bluetooth_menu, span=2),
+        ]
 
     def _close(self) -> None:
         if self._root_menu is not None:

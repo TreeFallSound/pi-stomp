@@ -23,6 +23,7 @@ loop. Nothing here touches the panel stack."""
 import asyncio
 import logging
 import threading
+import time
 from typing import Any, Callable, Coroutine, Optional, TypeVar
 
 from dbus_fast import BusType, DBusError, Message, MessageType, Variant
@@ -45,6 +46,7 @@ T = TypeVar("T")
 _PROPS_IFACE = "org.freedesktop.DBus.Properties"
 _OM_IFACE = "org.freedesktop.DBus.ObjectManager"
 _BLUEZ_ROOT = "/org/bluez"
+_ADAPTER_WAIT_S = 10.0
 
 _MATCH_RULES = (
     f"type='signal',sender='{BLUEZ_SERVICE}',interface='{_PROPS_IFACE}',member='PropertiesChanged'",
@@ -83,9 +85,14 @@ class BluezClient:
             return self.available
         self._started = True
         self._on_change = on_change
+        self._ready.clear()
         self._thread = threading.Thread(target=self._run_loop, name="bluez", daemon=True)
         self._thread.start()
-        self._ready.wait(timeout=10.0)
+        self._ready.wait(timeout=_ADAPTER_WAIT_S + 5.0)
+        if not self.available:
+            # Retryable: the user can turn Bluetooth off and on again rather
+            # than being stuck until the process restarts.
+            self._started = False
         return self.available
 
     def _run_loop(self) -> None:
@@ -96,6 +103,7 @@ class BluezClient:
             loop.run_until_complete(self._setup())
         except Exception as e:
             logging.info("Bluetooth unavailable: %s", e)
+            loop.close()
             self._ready.set()
             return
         finally:
@@ -126,9 +134,17 @@ class BluezClient:
             )
         bus.add_message_handler(self._on_signal)
 
-        await self._refresh_objects()
-        if self._adapter_path is None:
-            raise RuntimeError("no bluetooth adapter")
+        # `systemctl --now` returns once the unit is started, but bluetoothd
+        # registers its adapter object a moment later. Wait for it rather than
+        # concluding the board has no radio.
+        deadline = time.monotonic() + _ADAPTER_WAIT_S
+        while True:
+            await self._refresh_objects()
+            if self._adapter_path is not None:
+                break
+            if time.monotonic() >= deadline:
+                raise RuntimeError("no bluetooth adapter")
+            await asyncio.sleep(0.25)
         await self._register_agent()
 
     async def _register_agent(self) -> None:

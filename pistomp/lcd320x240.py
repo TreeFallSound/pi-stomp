@@ -409,7 +409,7 @@ class Lcd:
             image=os.path.join(self.imagedir, "wifi_gray.png"),
             parent=self.main_panel,
             action=self.wifi_menu.open,
-            subtitle="Network",
+            subtitle="Wi-Fi and Devices",
         )
         self.main_panel.add_sel_widget(self.w_wifi)
         if self.w_eq is not None:

@@ -304,6 +304,7 @@ class StubBluetoothManager(BluetoothManager):
         self.settings = None
         self.on_status_change = on_status_change
         self.last_status: BtStatus = {}
+        self._last_sig: tuple = ()
         self.changed: bool = True
         self._enabled: bool = True
         self._capable: bool = True

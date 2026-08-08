@@ -33,9 +33,12 @@ _CONNECT_TIMEOUT_S = 30.0
 _POLL_INTERVAL_S = 0.25
 
 
-def _run(args: list[str], timeout: int = 30) -> tuple[int, str]:
+def _run(args: list[str], timeout: int = 30, sudo: bool = False) -> tuple[int, str]:
+    # pi-Stomp runs as the `pistomp` user; anything that mutates system state
+    # needs sudo, as the wifi module's nmcli calls already do.
+    cmd = (["sudo", "-n"] if sudo else []) + args
     try:
-        p = subprocess.run(args, capture_output=True, timeout=timeout)
+        p = subprocess.run(cmd, capture_output=True, timeout=timeout)
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
         return 1, str(e)
     out = (p.stdout or b"").decode("utf-8", "replace") + (p.stderr or b"").decode("utf-8", "replace")
@@ -72,21 +75,21 @@ def service_enabled() -> bool:
 
 
 def enable_service() -> Optional[str]:
-    rc, out = _run(["systemctl", "enable", "--now", SERVICE], timeout=60)
+    rc, out = _run(["systemctl", "enable", "--now", SERVICE], timeout=60, sudo=True)
     return None if rc == 0 else out
 
 
 def disable_service() -> Optional[str]:
-    rc, out = _run(["systemctl", "disable", "--now", SERVICE], timeout=60)
+    rc, out = _run(["systemctl", "disable", "--now", SERVICE], timeout=60, sudo=True)
     return None if rc == 0 else out
 
 
 def install_support_package() -> Optional[str]:
     """Fetch pistomp-bluetooth from the pistomp apt repo. Needs a network."""
-    rc, out = _run(["apt-get", "update"], timeout=180)
+    rc, out = _run(["apt-get", "update"], timeout=180, sudo=True)
     if rc != 0:
         logging.warning("apt-get update failed: %s", out)
-    rc, out = _run(["apt-get", "install", "-y", SUPPORT_PACKAGE], timeout=300)
+    rc, out = _run(["apt-get", "install", "-y", SUPPORT_PACKAGE], timeout=300, sudo=True)
     return None if rc == 0 else out
 
 

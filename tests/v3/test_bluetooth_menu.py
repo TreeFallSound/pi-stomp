@@ -21,6 +21,10 @@ def _open(v3_system):
     return lcd
 
 
+def _footer_labels(menu):
+    return [slot.text for slot in menu.footer if slot is not None]
+
+
 def _labels(menu):
     from uilib.menu import _item_label, label_key
 
@@ -249,7 +253,7 @@ def test_wifi_menu_hides_bluetooth_button_without_hardware(v3_system, bluetooth_
     lcd = v3_system.handler._lcd
     lcd.wifi_menu.open()
     menu = lcd.pstack.current
-    assert not any("Bluetooth" in label for label, _ in menu.footer)
+    assert not any("Bluetooth" in label for label in _footer_labels(menu))
 
 
 def test_wifi_menu_footer_counts_connected_devices(v3_system, bluetooth_state, wifi_state):
@@ -257,7 +261,7 @@ def test_wifi_menu_footer_counts_connected_devices(v3_system, bluetooth_state, w
     bluetooth_state(devices=[make_bt_device(paired=True, connected=True)], known=[make_bt_known()])
     lcd = v3_system.handler._lcd
     lcd.wifi_menu.open()
-    labels = [label for label, _ in lcd.pstack.current.footer]
+    labels = _footer_labels(lcd.pstack.current)
     assert labels == ["Close", "Bluetooth (1)..."]
 
 
@@ -271,7 +275,7 @@ def test_wifi_menu_footer_without_connection(v3_system, bluetooth_state, wifi_st
     bluetooth_state(devices=[], known=[make_bt_known()])
     lcd = v3_system.handler._lcd
     lcd.wifi_menu.open()
-    labels = [label for label, _ in lcd.pstack.current.footer]
+    labels = _footer_labels(lcd.pstack.current)
     assert labels == ["Close", "Bluetooth..."]
     snapshot("wifi_bt_none_connected")
 

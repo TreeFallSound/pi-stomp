@@ -321,11 +321,9 @@ class BluetoothMenu:
 
     def _toggle_power(self, _: object = None) -> None:
         enable = not self._status.get("enabled")
-        self._pstack.pop_panel(None)
         self._manager.queue.submit(PowerCmd(enable), self._on_op_done)
 
     def _install_support(self, _: object = None) -> None:
-        self._pstack.pop_panel(None)
         self._manager.queue.submit(InstallSupportCmd(), self._on_op_done)
 
     def _open_nearby_menu(self, _: object = None) -> None:

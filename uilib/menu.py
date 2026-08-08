@@ -26,11 +26,19 @@ from uilib.text import Button, TextWidget
 
 
 DEFAULT_WIDTH = 240
-FOOTER_GAP = 6
-FOOTER_PAD = 8
 
-# A footer button: label and the zero-arg callable it fires.
-FooterButton = tuple[str, Callable[[], None]]
+# Must match plugins/chrome.py.
+FOOTER_GAP = 2
+FOOTER_H = 28
+
+@dataclass(frozen=True)
+class FooterButton:
+    text: str
+    action: Callable[[], None]
+    span: int = 1  # grid columns to occupy
+
+
+FooterSlot = FooterButton | None  # None is an empty grid column
 
 
 @dataclass(frozen=True)
@@ -96,13 +104,13 @@ class Menu(Dialog):
                  text_halign: TextHAlign = TextHAlign.CENTRE,
                  auto_dismiss: bool = True, dismiss_option: bool = False,
                  default_item: str | None = None,
-                 footer: Sequence[FooterButton] | None = None, **kwargs) -> None:
+                 footer: Sequence[FooterSlot] | None = None, **kwargs) -> None:
         self.max_height = max_height
         self.width = width
         self.items: list[MenuItem] = items
         self.auto_dismiss = auto_dismiss
-        self.footer: list[FooterButton] = list(footer) if footer else []
-        if not self.footer and (auto_dismiss is False or dismiss_option is True):
+        self.footer: list[FooterSlot] = list(footer) if footer else []
+        if not any(self.footer) and (auto_dismiss is False or dismiss_option is True):
             # without auto_dismiss provide a back arrow to close menu
             self.items.append(('\u2b05', self._dismiss, None))
         if font is None:
@@ -128,30 +136,36 @@ class Menu(Dialog):
         self.refresh()
 
     def _build_footer(self, y: int) -> None:
-        """Lay the footer buttons out in one row. They enter the selection list
+        """Lay the footer out as an even grid. Buttons enter the selection list
         last, so a rotate off the final item lands on them."""
-        if not self.footer:
+        if not any(self.footer):
             return
-        count = len(self.footer)
-        avail = self.box.width - FOOTER_GAP * (count + 1)
-        # Proportional, not equal: "Close" next to a long label would otherwise
-        # hog half the row and clip its neighbour.
-        natural = [get_text_size(t, self.font)[0] + FOOTER_PAD * 2 for t, _ in self.footer]
-        total = sum(natural) or 1
-        widths = [max(1, w * avail // total) for w in natural]
-        widths[-1] = avail - sum(widths[:-1])
-        x = FOOTER_GAP
-        for (text, action), btn_w in zip(self.footer, widths):
+        columns = sum(1 if slot is None else slot.span for slot in self.footer)
+        col_w = (self.box.width - FOOTER_GAP * (columns + 1)) // columns
+        font = Config().get_font('small')
+        _, text_h = get_text_size('Close', font)
+        v_margin = max(0, (FOOTER_H - text_h) // 2)
+        col = 0
+        for slot in self.footer:
+            if slot is None:
+                col = col + 1
+                continue
             b = Button(
-                box=Box.xywh(x, y + FOOTER_GAP, btn_w, self.item_h),
-                text=text,
-                font=self.font,
+                box=Box.xywh(
+                    FOOTER_GAP * (col + 1) + col_w * col,
+                    y + FOOTER_GAP,
+                    col_w * slot.span + FOOTER_GAP * (slot.span - 1),
+                    FOOTER_H,
+                ),
+                text=slot.text,
+                font=font,
+                v_margin=v_margin,
                 outline_radius=4,
                 parent=self,
-                action=(lambda _e, _d, a=action: a()),
+                action=(lambda _e, _d, a=slot.action: a()),
             )
             self.add_sel_widget(b)
-            x = x + btn_w + FOOTER_GAP
+            col = col + slot.span
 
     def _make_row_widget(self, item: MenuItem, b: Box) -> TextWidget | RichTextWidget:
         t = _item_label(item)
@@ -237,7 +251,7 @@ class Menu(Dialog):
         self.item_h = item_h
         h = item_h * len(self.items)
         if self.footer:
-            h = h + item_h + FOOTER_GAP * 2
+            h = h + FOOTER_H + FOOTER_GAP * 2
         mh = self.max_height
         if mh is not None and h > mh:
             # Content taller than viewport: enable JIT paint with a tall backing image
