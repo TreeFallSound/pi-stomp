@@ -9,7 +9,7 @@ directly, bypassing shorten_name's lowercasing.
 
 from __future__ import annotations
 
-from common.parameter import Parameter, Symbol
+from common.parameter import Parameter
 from modalapi.plugin_customization import PluginCustomization
 from modalapi.pedalboard import BPM_SYMBOL, BPB_SYMBOL, ROLLING_SYMBOL
 from plugins.customization import register

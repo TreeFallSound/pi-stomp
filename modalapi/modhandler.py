@@ -1208,23 +1208,26 @@ class Modhandler(Handler):
         # any real time settings
         self._controller_manager.bind(self.current)
 
-    def _redraw_after_binding(self, controller: Controller, is_footswitch: bool) -> None:
-        if is_footswitch:
+    def _redraw_after_binding(self, controller: Controller | None, is_footswitch: bool) -> None:
+        if is_footswitch and controller is not None:
             # Footswitch: redraw just that one switch, not the whole board.
             self.lcd.update_footswitch(controller)
         else:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
     def _add_learned_binding_row(
-        self, plugin: Plugin, param: Parameter, controller: Controller, old_binding: str | None
+        self, plugin: Plugin, param: Parameter, controller: Controller | None, old_binding: str | None
     ) -> None:
         layer = self._controller_manager.effective_table.layers[0]
         if old_binding is not None:
             _remove_binding_row(layer, old_binding)
+        if controller is None:
+            return
         if isinstance(controller, Footswitch):
             cls, event_kind = ControlClass.FOOTSWITCH, EventKind.PRESS
         else:
             cls, event_kind = ControlClass.ANALOG, EventKind.ROTATE
+        assert param.binding is not None
         layer.add(
             BindingDecl(
                 control=ControlRef(cls=cls, id=param.binding),
