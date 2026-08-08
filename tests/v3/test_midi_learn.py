@@ -457,7 +457,7 @@ def test_v3_midi_learn_updated_binding_range_on_same_parameter(
 
     assert handler.current
 
-    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1)
+    enc1 = next(e for e in hw.encoders if e.id == 1)
     channel, cc = _binding_for(hw, enc1).split(":")
 
     gain = make_parameter("Gain", "noise", value=0.5)
@@ -492,7 +492,7 @@ def test_v3_midi_unlearn_preserves_sub_range(v3_system: SystemFixture, make_plug
 
     assert handler.current
 
-    enc1 = next(e for e in hw.encoders if getattr(e, "id", None) == 1)
+    enc1 = next(e for e in hw.encoders if e.id == 1)
     channel, cc = _binding_for(hw, enc1).split(":")
 
     gain = make_parameter("Gain", "noise", value=0.5)
