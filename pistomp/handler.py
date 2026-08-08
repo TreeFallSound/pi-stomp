@@ -238,9 +238,7 @@ class Handler(InputSink):
             if old_controller in plugin.controllers:
                 plugin.controllers.remove(old_controller)
             if isinstance(old_controller, Footswitch):
-                plugin.has_footswitch = any(
-                    isinstance(c, Footswitch) for c in plugin.controllers
-                )
+                plugin.has_footswitch = any(isinstance(c, Footswitch) for c in plugin.controllers)
             elif isinstance(old_controller, (AnalogMidiControl, EncoderController)):
                 key = "%s:%s" % (plugin.instance_id, param.name)
                 self.current.analog_controllers.pop(key, None)

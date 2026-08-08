@@ -446,9 +446,7 @@ def test_v3_midi_unlearn_footswitch_clears_binding(v3_system: SystemFixture, mak
     snapshot("unbound")
 
 
-def test_v3_midi_learn_updated_binding_range_on_same_parameter(
-    v3_system: SystemFixture, make_plugin, make_parameter
-):
+def test_v3_midi_learn_updated_binding_range_on_same_parameter(v3_system: SystemFixture, make_plugin, make_parameter):
     """Re-addressing an already bound parameter to a different sub-range on the same CC
     updates the parameter's binding range and endpoints without bailing early."""
     handler = v3_system.handler
@@ -509,9 +507,7 @@ def test_v3_midi_unlearn_preserves_sub_range(v3_system: SystemFixture, make_plug
     assert (gain.minimum, gain.maximum) == (0.1, 0.9)
 
 
-def test_v3_midi_learn_moving_footswitch_binding_clears_old_lcd_display(
-    v3_system: SystemFixture, make_plugin
-):
+def test_v3_midi_learn_moving_footswitch_binding_clears_old_lcd_display(v3_system: SystemFixture, make_plugin):
     """A live move of a footswitch :bypass binding (FS0 -> FS1) repaints FS0 as
     unmapped grey on the LCD -- not just in memory. update_footswitch repaints a
     single widget, so without redrawing the displaced controller FS0 would keep a
@@ -558,5 +554,3 @@ def test_v3_midi_learn_moving_footswitch_binding_clears_old_lcd_display(
     assert w0.action is None
     w1 = next(w for w in lcd.w_footswitches if w.object is fs1)
     assert w1.color is not None
-
-
