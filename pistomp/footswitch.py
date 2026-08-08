@@ -99,6 +99,12 @@ class Footswitch(controller.StatefulController):
             return f"{self.midi_channel}:{self.midi_CC}"
         return f"fs:{self.id}"
 
+    @override
+    def unbind_from_parameter(self) -> None:
+        super().unbind_from_parameter()
+        self.display_label = None
+        self.set_category(None)
+
     @property
     def drives_display(self) -> bool:
         """True when unbound: no inbound echo will arrive, so the press updates
