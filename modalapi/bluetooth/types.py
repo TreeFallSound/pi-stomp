@@ -113,6 +113,7 @@ _ERRORS = {
     "org.bluez.Error.DoesNotExist": "the device is no longer in range",
     "org.bluez.Error.NotSupported": "this device isn't supported",
     "org.bluez.Error.InProgress": "already connecting",
+    "org.bluez.Error.Busy": "the adapter is busy — try again in a moment",
     "org.bluez.Error.NotPermitted": "not permitted",
     "org.bluez.Error.NotAuthorized": "not authorized",
 }

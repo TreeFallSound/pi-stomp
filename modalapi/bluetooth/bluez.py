@@ -170,12 +170,26 @@ class BluezClient:
                     self._devices[path] = _unwrap(ifaces[DEVICE_IFACE])
 
     def stop(self) -> None:
+        """Tear down completely so start() can bring up a fresh connection.
+
+        Stopping bluetoothd destroys every object it published, so a client
+        that keeps its adapter path across a restart will issue calls against
+        a path that no longer exists."""
         loop = self._loop
-        if loop is None:
-            return
-        loop.call_soon_threadsafe(loop.stop)
-        if self._thread is not None:
-            self._thread.join(timeout=2.0)
+        if loop is not None:
+            loop.call_soon_threadsafe(loop.stop)
+            if self._thread is not None:
+                self._thread.join(timeout=2.0)
+        self._loop = None
+        self._thread = None
+        self._bus = None
+        self._agent = None
+        self._started = False
+        self._ready.clear()
+        with self._lock:
+            self._devices.clear()
+            self._adapter_props.clear()
+            self._adapter_path = None
 
     # ----- signals -----
 
@@ -290,7 +304,11 @@ class BluezClient:
         if reply is None:
             return []
         if reply.message_type is MessageType.ERROR:
-            raise DBusError(reply.error_name or "org.bluez.Error.Failed", str(reply.body[0] if reply.body else ""))
+            name = reply.error_name or "org.bluez.Error.Failed"
+            # bluez often replies with an empty body; keep the name in the text
+            # or the whole reason is lost by the time the UI formats it.
+            detail = str(reply.body[0]) if reply.body else ""
+            raise DBusError(name, "%s: %s" % (name, detail) if detail else name)
         return reply.body
 
     @property

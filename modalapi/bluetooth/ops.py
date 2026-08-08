@@ -16,6 +16,7 @@
 """Stateless bluetooth verbs. Every function here blocks and must run on the
 CommandQueue worker thread, never the UI thread."""
 
+import asyncio
 import logging
 import subprocess
 import time
@@ -31,6 +32,8 @@ SERVICE = "bluetooth.service"
 _PAIR_TIMEOUT_S = 45.0
 _CONNECT_TIMEOUT_S = 30.0
 _POLL_INTERVAL_S = 0.25
+_BUSY_RETRIES = 16
+_BUSY_RETRY_INTERVAL_S = 0.25
 
 
 def _run(args: list[str], timeout: int = 30, sudo: bool = False) -> tuple[int, str]:
@@ -96,11 +99,25 @@ def install_support_package() -> Optional[str]:
 # ----- adapter -----
 
 
+async def _set_adapter_flag(client: BluezClient, name: str) -> None:
+    """A freshly restarted bluetoothd answers Busy until the adapter finishes
+    initialising. That resolves on its own, so retry a bounded number of times
+    rather than putting a dialog in front of the user."""
+    for attempt in range(_BUSY_RETRIES + 1):
+        try:
+            await client.set_adapter_property(name, Variant("b", True))
+            return
+        except DBusError as e:
+            if "Busy" not in str(e) or attempt == _BUSY_RETRIES:
+                raise
+            await asyncio.sleep(_BUSY_RETRY_INTERVAL_S)
+
+
 async def power_on(client: BluezClient) -> None:
-    await client.set_adapter_property("Powered", Variant("b", True))
+    await _set_adapter_flag(client, "Powered")
     # Pairable persists in the adapter's settings, but say it explicitly rather
     # than inherit whatever a previous session left behind.
-    await client.set_adapter_property("Pairable", Variant("b", True))
+    await _set_adapter_flag(client, "Pairable")
 
 
 async def start_discovery(client: BluezClient) -> None:

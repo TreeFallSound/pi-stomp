@@ -1,9 +1,11 @@
 """Bluetooth ops/manager tests. The filter-predicate cases are pure functions
 with no fixture — they encode what a live scan actually returned on a Pi 5."""
 
+import asyncio
 from unittest.mock import patch
 
 import pytest
+from dbus_fast import DBusError
 
 from modalapi.bluetooth import DeviceKind, device_kind, is_interesting, parse_bluez_error
 from modalapi.bluetooth import manager as manager_mod
@@ -187,3 +189,50 @@ def test_unsupported_manager_reports_no_devices(manager):
     manager._has_adapter = False
     assert manager.supported is False
     assert manager.devices() == []
+
+
+# ----- Busy retry -----
+
+
+class _FlakyAdapter:
+    """Answers Busy for the first `busy_times` calls, as a bluetoothd that is
+    still initialising does."""
+
+    def __init__(self, busy_times: int, error: str = "org.bluez.Error.Busy"):
+        self.busy_times = busy_times
+        self.calls = 0
+        self.error = error
+
+    async def set_adapter_property(self, name, value):
+        self.calls += 1
+        if self.calls <= self.busy_times:
+            raise DBusError(self.error, self.error)
+
+
+def _run_set_flag(adapter):
+    with patch.object(ops.asyncio, "sleep", new=_no_sleep):
+        return asyncio.run(ops._set_adapter_flag(adapter, "Powered"))
+
+
+async def _no_sleep(_seconds):
+    return None
+
+
+def test_busy_is_retried_until_it_succeeds():
+    adapter = _FlakyAdapter(busy_times=3)
+    _run_set_flag(adapter)
+    assert adapter.calls == 4
+
+
+def test_busy_gives_up_after_the_retry_cap():
+    adapter = _FlakyAdapter(busy_times=ops._BUSY_RETRIES + 1)
+    with pytest.raises(DBusError):
+        _run_set_flag(adapter)
+    assert adapter.calls == ops._BUSY_RETRIES + 1
+
+
+def test_non_busy_errors_are_not_retried():
+    adapter = _FlakyAdapter(busy_times=1, error="org.bluez.Error.NotReady")
+    with pytest.raises(DBusError):
+        _run_set_flag(adapter)
+    assert adapter.calls == 1

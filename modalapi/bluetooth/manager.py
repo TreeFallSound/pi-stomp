@@ -207,14 +207,17 @@ class BluetoothManager:
     # ----- verbs, called from the queue's worker thread -----
 
     def set_enabled(self, enabled: bool) -> Optional[str]:
+        if not enabled:
+            # Drop the connection before the daemon goes away, so nothing is
+            # left holding object paths that stop existing.
+            self.client.stop()
         err = ops.enable_service() if enabled else ops.disable_service()
         if err is not None:
+            logging.error("Bluetooth %s failed: %s", "enable" if enabled else "disable", err)
             return err
         self._enabled = enabled
-        if enabled:
-            self.client.start(on_change=self.request_refresh)
-            if self.client.available:
-                self.client.call(ops.power_on(self.client))
+        if enabled and self.client.start(on_change=self.request_refresh):
+            self.client.call(ops.power_on(self.client))
         self.request_refresh()
         return None
 
