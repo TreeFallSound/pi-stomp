@@ -107,6 +107,8 @@ def mock_handler():
     # the Wired Connection row in every wifi-menu snapshot. Pin it off here;
     # tests that exercise the ethernet flow can override per-test.
     handler.ethernet_manager = None
+    handler.bluetooth_manager = None
+    handler.bluetooth_status = {}
     return handler
 
 

@@ -18,8 +18,9 @@ import os
 import threading
 from typing import Callable, Optional
 
+from common.command_queue import CommandQueue
+
 from . import ops
-from .commands import CommandQueue
 from .nmcli import nmcli, parse_kv_lines
 from .types import SavedConnection, ScannedNetwork, WifiStatus
 

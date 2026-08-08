@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Callable, NotRequired, Optional, Protocol, Typ
 from common.fonts import font_path
 
 import common.util as util
+from modalapi.bluetooth import BluetoothManager, BtStatus
 from modalapi.ethernet import EthernetManager
 from uilib.pygame_init import font as _make_font
 from modalapi.wifi import (
@@ -48,7 +49,7 @@ from uilib import (
     get_line_height,
 )
 from uilib.glyphs import PillGlyph, SignalBarsGlyph, EthernetCableGlyph
-from uilib.menu import Menu, MenuItem, label_key
+from uilib.menu import FooterButton, Menu, MenuItem, label_key
 from uilib.rich_text import IconSeg, Segment, Spacer, TextSeg
 
 if TYPE_CHECKING:
@@ -61,6 +62,8 @@ class _WifiHost(Protocol):
     wifi_manager: WifiManager
     wifi_status: Optional[WifiStatus]
     ethernet_manager: Optional[EthernetManager]
+    bluetooth_manager: Optional[BluetoothManager]
+    bluetooth_status: Optional[BtStatus]
 
 
 ACTIVE_GLYPH = "\u2714"  # ✔
@@ -266,12 +269,12 @@ class WifiMenu:
         wifi_status = self._wifi_status
         hotspot_active = bool(util.DICT_GET(wifi_status, "hotspot_active"))
         supported = util.DICT_GET(wifi_status, "wifi_supported") is not False
-        active_name = util.DICT_GET(wifi_status, "connection")
         rows, _ = self._current_rows()
-        title = self._title(wifi_status, active_name)
         items = self._build_items(rows, hotspot_active, supported)
         self._root_sig = _rows_sig(rows)
-        self._root_menu = self.lcd.draw_selection_menu(items, title, dismiss_option=True, default_item=default_label)
+        self._root_menu = self.lcd.draw_selection_menu(
+            items, self.TITLE, default_item=default_label, footer=self._footer()
+        )
 
     def _render_nearby_menu(self, default_label: Optional[str] = None) -> None:
         _, nearby = self._current_rows()
@@ -378,13 +381,7 @@ class WifiMenu:
         items.append((hotspot_label, self.toggle_hotspot, None))
         return items
 
-    def _title(self, wifi_status: WifiStatus, active_name: Optional[str]) -> str:
-        if util.DICT_GET(wifi_status, "hotspot_active"):
-            return "WiFi " + SEP + " Hotspot"
-        if active_name:
-            ssid = util.DICT_GET(wifi_status, "ssid") or active_name
-            return "WiFi %s %s" % (SEP, ssid)
-        return "WiFi " + SEP + " Disconnected"
+    TITLE = "Wi-Fi and Devices"
 
     def _row_segments(self, row: Row) -> list[Segment]:
         label = row.get("display_name") or row["ssid"]
@@ -466,6 +463,24 @@ class WifiMenu:
 
     def _open_ethernet_menu(self, _: object = None) -> None:
         self.lcd.ethernet_menu.open()
+
+    def _footer(self) -> list[FooterButton]:
+        """Close, plus Bluetooth when the board has a radio. Pi 3/4 give the BT
+        UART to DIN MIDI, so there is no adapter and no mention of it anywhere."""
+        buttons: list[FooterButton] = [("Close", self._close)]
+        bt = self._host.bluetooth_manager
+        if bt is not None and bt.supported:
+            count = len((self._host.bluetooth_status or {}).get("connected") or [])
+            label = "Bluetooth (%d)..." % count if count else "Bluetooth..."
+            buttons.append((label, self._open_bluetooth_menu))
+        return buttons
+
+    def _close(self) -> None:
+        if self._root_menu is not None:
+            self._pstack.pop_panel(self._root_menu)
+
+    def _open_bluetooth_menu(self) -> None:
+        self.lcd.bluetooth_menu.open()
 
     def _open_nearby_menu(self, _: object = None) -> None:
         self._render_nearby_menu()

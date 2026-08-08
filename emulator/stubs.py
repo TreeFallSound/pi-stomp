@@ -17,6 +17,7 @@
 
 VirtualAudiocard      — in-memory audiocard; no ALSA/hardware access.
 StubWifiManager       — in-memory wifi; satisfies Mod/Modhandler's wifi_manager.
+StubBluetoothManager  — in-memory bluetooth; no D-Bus, no bluez, no threads.
 StubEthernetManager   — pinned-up ethernet stub; no sysfs / systemctl / threads.
 StubRelay             — no-op relay; satisfies the Relay interface without GPIO.
 """
@@ -25,10 +26,12 @@ import threading
 import time
 from typing import Callable, Optional
 
+from modalapi.bluetooth import BtDevice, BtStatus, DeviceKind, KnownDevice
+from modalapi.bluetooth.manager import BluetoothManager
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
 from modalapi.wifi import SavedConnection, ScannedNetwork, WifiStatus
-from modalapi.wifi.commands import CommandQueue
+from common.command_queue import CommandQueue
 from modalapi.wifi.manager import WifiManager
 from pistomp.audiocard import Audiocard
 import pistomp.relay
@@ -251,6 +254,166 @@ class StubWifiManager(WifiManager):
             self._active = None
             self._refresh_status()
         return None
+
+
+class StubBluetoothManager(BluetoothManager):
+    """In-memory bluetooth manager; no D-Bus connection and no bluez.
+
+    Devices only become visible once discovery is running, mirroring the real
+    thing: bluez publishes unpaired LE objects during a scan and purges them
+    the moment it stops. 'Stubborn Speaker' is a tripwire — pairing it always
+    fails, so the menu's error path is reachable in the emulator."""
+
+    FAILING_NAME = "Stubborn Speaker"
+
+    _NEARBY: list[BtDevice] = [
+        BtDevice(
+            path="/org/bluez/hci0/dev_D4_06_0F_EE_16_83",
+            address="D4:06:0F:EE:16:83",
+            name="EV-1-WL",
+            kind=DeviceKind.MIDI,
+            paired=False,
+            connected=False,
+            trusted=False,
+            rssi=-52,
+        ),
+        BtDevice(
+            path="/org/bluez/hci0/dev_C8_3B_44_10_02_9A",
+            address="C8:3B:44:10:02:9A",
+            name="R400 Presenter",
+            kind=DeviceKind.INPUT,
+            paired=False,
+            connected=False,
+            trusted=False,
+            rssi=-71,
+        ),
+        BtDevice(
+            path="/org/bluez/hci0/dev_11_22_33_44_55_66",
+            address="11:22:33:44:55:66",
+            name=FAILING_NAME,
+            kind=DeviceKind.MIDI,
+            paired=False,
+            connected=False,
+            trusted=False,
+            rssi=-88,
+        ),
+    ]
+
+    def __init__(self, on_status_change: Optional[Callable[[BtStatus], None]] = None) -> None:
+        self.lock = threading.Lock()
+        self.settings = None
+        self.on_status_change = on_status_change
+        self.last_status: BtStatus = {}
+        self.changed: bool = True
+        self._enabled: bool = True
+        self._capable: bool = True
+        self._discovering: bool = False
+        self._known: list[KnownDevice] = []
+        self._devices: dict[str, BtDevice] = {}
+        self.queue: CommandQueue = CommandQueue(self)
+
+    # ----- overrides of the real manager's bluez-backed surface -----
+
+    @property
+    def supported(self) -> bool:
+        return True
+
+    @property
+    def capable(self) -> bool:
+        return self._capable
+
+    def status(self) -> BtStatus:
+        return BtStatus(
+            supported=True,
+            capable=self._capable,
+            enabled=self._enabled,
+            powered=self._enabled,
+            discovering=self._discovering,
+            connected=[d["name"] for d in self._devices.values() if d["connected"]],
+        )
+
+    def request_refresh(self) -> None:
+        with self.lock:
+            self.changed = True
+
+    def shutdown(self) -> None:
+        try:
+            self.queue.shutdown()
+        except Exception:
+            pass
+
+    def devices(self) -> list[BtDevice]:
+        return list(self._devices.values())
+
+    def known_devices(self) -> list[KnownDevice]:
+        return list(self._known)
+
+    def remember(self, device: BtDevice) -> None:
+        self._known = [k for k in self._known if k["address"] != device["address"]]
+        self._known.append(
+            KnownDevice(
+                address=device["address"],
+                name=device["name"],
+                kind=device["kind"].value,
+                last_connected=int(time.time()),
+            )
+        )
+
+    def forget(self, address: str, name: str) -> None:
+        self._known = [k for k in self._known if k["address"] != address]
+
+    def set_enabled(self, enabled: bool) -> Optional[str]:
+        self._enabled = enabled
+        if not enabled:
+            self._devices.clear()
+            self._discovering = False
+        self.request_refresh()
+        return None
+
+    def install_support(self) -> Optional[str]:
+        self._capable = True
+        self.request_refresh()
+        return None
+
+    def start_discovery(self) -> None:
+        self._discovering = True
+        for device in self._NEARBY:
+            self._devices.setdefault(device["address"], device.copy())
+        self.request_refresh()
+
+    def stop_discovery(self) -> None:
+        self._discovering = False
+        # Unpaired objects do not survive the end of a scan.
+        self._devices = {a: d for a, d in self._devices.items() if d["paired"]}
+        self.request_refresh()
+
+    def pair(self, device: BtDevice) -> None:
+        if device["name"] == self.FAILING_NAME:
+            raise RuntimeError("org.bluez.Error.AuthenticationFailed: stub refuses to pair")
+        live = self._devices.setdefault(device["address"], device.copy())
+        live["paired"] = True
+        live["trusted"] = True
+        live["connected"] = True
+        self.remember(live)
+        self.request_refresh()
+
+    def connect(self, device: BtDevice) -> None:
+        live = self._devices.setdefault(device["address"], device.copy())
+        live["connected"] = True
+        self.remember(live)
+        self.request_refresh()
+
+    def disconnect(self, device: BtDevice) -> None:
+        live = self._devices.get(device["address"])
+        if live is not None:
+            live["connected"] = False
+            live["paired"] = False  # the EV-1-WL's non-bonding behaviour
+        self.request_refresh()
+
+    def remove(self, device: BtDevice) -> None:
+        self._devices.pop(device["address"], None)
+        self.forget(device["address"], device["name"])
+        self.request_refresh()
 
 
 class StubEthernetManager(EthernetManager):

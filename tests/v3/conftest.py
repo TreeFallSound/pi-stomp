@@ -11,6 +11,7 @@ import yaml
 
 import common.token as Token
 from emulator.controls import MockAnalogControl
+from modalapi.bluetooth import BtDevice, DeviceKind, KnownDevice
 from modalapi.wifi import SavedConnection, ScannedNetwork
 from tests.conftest import FakeWebSocketBridge
 from tests.integration.conftest import _v3_stack
@@ -340,6 +341,75 @@ def wifi_state(v3_system):
             "connection": active,
         }
         v3_system.handler.wifi_status = status
+
+    return _set
+
+
+def make_bt_device(
+    name="EV-1-WL",
+    address="D4:06:0F:EE:16:83",
+    kind=DeviceKind.MIDI,
+    paired=False,
+    connected=False,
+    rssi=-52,
+) -> BtDevice:
+    return BtDevice(
+        path="/org/bluez/hci0/dev_" + address.replace(":", "_"),
+        address=address,
+        name=name,
+        kind=kind,
+        paired=paired,
+        connected=connected,
+        trusted=paired,
+        rssi=rssi,
+    )
+
+
+def make_bt_known(name="EV-1-WL", address="D4:06:0F:EE:16:83", kind=DeviceKind.MIDI) -> KnownDevice:
+    return KnownDevice(address=address, name=name, kind=kind.value, last_connected=1)
+
+
+@pytest.fixture
+def bluetooth_state(v3_system):
+    """Configure bluetooth_manager and bluetooth_status in one call.
+
+    Installs the same inline CommandQueue shim wifi_state uses: submit/
+    submit_scan run the command synchronously and invoke the callback
+    immediately, so no worker thread runs under pytest."""
+
+    def _set(devices=(), known=(), enabled=True, capable=True, supported=True, deferred=None):
+        mgr = v3_system.handler.bluetooth_manager
+        mgr.supported = supported
+        mgr.capable = capable
+        mgr.devices.return_value = list(devices)
+        mgr.known_devices.return_value = list(known)
+
+        def _run_inline(cmd, on_done):
+            if deferred is not None:
+                # Multi-frame sagas: the caller fires these by hand, a frame apart.
+                deferred.append((cmd, on_done))
+                return True
+            try:
+                result = cmd.run(mgr)
+            except Exception as e:
+                result = e
+            on_done(result)
+            return True
+
+        mgr.queue.submit.side_effect = _run_inline
+        mgr.queue.submit_scan.side_effect = _run_inline
+        mgr.queue.pending_op_count.return_value = 0
+
+        status = {
+            "supported": supported,
+            "capable": capable,
+            "enabled": enabled,
+            "powered": enabled,
+            "discovering": False,
+            "connected": [d["name"] for d in devices if d["connected"]],
+        }
+        v3_system.handler.bluetooth_status = status
+        return mgr
 
     return _set
 

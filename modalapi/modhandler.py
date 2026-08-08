@@ -64,6 +64,7 @@ from blend.input_controller import InputController
 import modalapi.pedalboard as Pedalboard
 from modalapi.pedalboard import BPM_SYMBOL, BPB_SYMBOL, ROLLING_SYMBOL
 import modalapi.wifi as Wifi
+import modalapi.bluetooth as Bluetooth
 
 # Importing the plugins package runs every plugin module's register() — this is
 # the explicit, deterministic load of the customization registry. lookup is then
@@ -171,6 +172,7 @@ class Modhandler(Handler):
         self._encoder_fallback: dict[str, int] = {}
 
         self.wifi_status: Wifi.WifiStatus = {}
+        self.bluetooth_status: Bluetooth.BtStatus = {}
         self.eq_status = {}
         self.SystemState = "unknown"
         self.throttled = "unknown"
@@ -212,6 +214,9 @@ class Modhandler(Handler):
         self._sync_setter = SyncModeSetter(self.root_uri, self._rest_post)
 
         self.wifi_manager = Wifi.WifiManager(on_status_change=self._on_wifi_status_change)
+        self.bluetooth_manager = Bluetooth.BluetoothManager(
+            settings=self.settings, on_status_change=self._on_bluetooth_status_change
+        )
         self.ethernet_manager = EthernetManager()
         self.jack_mute = JackMute()
 
@@ -603,6 +608,11 @@ class Modhandler(Handler):
         if self._lcd is not None and self.lcd.wifi_menu is not None:
             self.lcd.wifi_menu.tick()
 
+    def poll_bluetooth(self):
+        self.bluetooth_manager.poll()
+        if self._lcd is not None and self.lcd.bluetooth_menu is not None:
+            self.lcd.bluetooth_menu.tick()
+
     def poll_ethernet(self):
         if self._lcd is None:
             return
@@ -623,6 +633,15 @@ class Modhandler(Handler):
             self.lcd.update_wifi(status)
             if self.lcd.wifi_menu is not None:
                 self.lcd.wifi_menu.notify_status_change()
+
+    def _on_bluetooth_status_change(self, status):
+        self.bluetooth_status = status
+        if self._lcd is not None:
+            # The wifi root menu carries the Bluetooth row, so it repaints too.
+            if self.lcd.wifi_menu is not None:
+                self.lcd.wifi_menu.notify_status_change()
+            if self.lcd.bluetooth_menu is not None:
+                self.lcd.bluetooth_menu.notify_status_change()
 
     def poll_system_info(self):
         # Get the system state from the systemd service
