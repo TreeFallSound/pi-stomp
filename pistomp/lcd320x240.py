@@ -214,7 +214,8 @@ class Lcd:
         self.footswitch_menu: FootswitchMenu = FootswitchMenu(self)
         self.footswitch_panel = FootswitchBarPanel(
             box=Box.xywh(0, self.display_height - self.footswitch_height, self.display_width, self.footswitch_height),
-            on_longpress=self.footswitch_menu.open,
+            on_press=self.footswitch_menu.open,
+            subtitle="Footswitch Bindings",
             shroud_alpha=255,
             gradient_start=0,
             gradient_pos=0.2,

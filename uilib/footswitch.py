@@ -258,23 +258,23 @@ class FootswitchBarPanel(ShroudedPanel):
     """The footswitch strip, selectable as one whole widget (never per-switch:
     the individual FootswitchWidget children are never added to any sel_list).
 
-    LONG_CLICK delegates to ``on_longpress`` — this panel holds no opinion on
-    what that opens."""
+    CLICK and LONG_CLICK both delegate to ``on_press`` — this panel holds no
+    opinion on what that opens."""
 
     def __init__(
         self,
         box: Box,
-        on_longpress: Callable[[], None] | None = None,
+        on_press: Callable[[], None] | None = None,
         **kwargs,
     ):
         super(FootswitchBarPanel, self).__init__(box=box, **kwargs)
-        self.on_longpress = on_longpress
+        self.on_press = on_press
 
     def sel_children(self):
         return [self]
 
     def input_event(self, event: InputEvent) -> bool:
-        if event == InputEvent.LONG_CLICK and self.on_longpress is not None:
-            self.on_longpress()
+        if event in (InputEvent.CLICK, InputEvent.LONG_CLICK) and self.on_press is not None:
+            self.on_press()
             return True
         return False
