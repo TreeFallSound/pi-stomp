@@ -27,6 +27,7 @@ from common.contexts import BindingDecl, ControlClass, EventKind, MidiCcEffect, 
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, Type
 from modalapi.plugin import Plugin
 from ui.ethernet_menu import EthernetMenu
+from ui.footswitch_menu import FootswitchMenu
 from ui.wifi_menu import WifiMenu
 from common.color import accent_color_for, TILE_DEFAULT_COLOR
 import pistomp.switchstate as switchstate
@@ -38,6 +39,7 @@ from uilib import (
     Box,
     Config,
     ContainerWidget,
+    FootswitchBarPanel,
     FootswitchWidget,
     get_text_size,
     Icon,
@@ -50,7 +52,6 @@ from uilib import (
     PanelStack,
     Parameterdialog,
     ScrollingText,
-    ShroudedPanel,
     TextWidget,
 )
 from uilib.glyphs.badge import BadgeGlyph
@@ -171,6 +172,7 @@ class Lcd:
         self.plugin_label_length = 7
         self.footswitch_height = 36
         self.footswitch_width = 80
+        self.grid_top = 78
         # space between footswitch icons where index is the footswitch count
         #                                0    1    2    3    4   5   6   7
         self.footswitch_pitch_options = [120, 120, 120, 128, 80, 65, 65, 65]
@@ -209,8 +211,12 @@ class Lcd:
         )
         self.main_panel_pushed = False
         self._is_pedalboard_load = False
-        self.footswitch_panel = ShroudedPanel(
+        self.footswitch_menu: FootswitchMenu = FootswitchMenu(self)
+        self.footswitch_panel = FootswitchBarPanel(
             box=Box.xywh(0, self.display_height - self.footswitch_height, self.display_width, self.footswitch_height),
+            expanded_height=self.display_height - self.grid_top - GridPanel.rows_height(3),
+            on_longpress=self.footswitch_menu.open,
+            on_resize=self._on_footswitch_bar_resize,
             shroud_alpha=255,
             gradient_start=0,
             gradient_pos=0.2,
@@ -246,12 +252,11 @@ class Lcd:
         self.draw_analog_assignments(self.current.analog_controllers)
         self.draw_plugins()
         self.draw_footswitches()
+        # Re-append every call so it stays the last nav stop even when a
+        # plugin/knob is added to main_panel.sel_list after it below.
         if self.footswitch_panel in self.main_panel.sel_list:
             self.main_panel.sel_list.remove(self.footswitch_panel)
         self.main_panel.add_sel_widget(self.footswitch_panel)
-        if self.footswitch_panel.sel_ref is not None:
-            self.footswitch_panel.sel_ref.set_selected(False)
-        self.footswitch_panel.sel_ref = None
         if self.w_subtitle is None:
             # Created last so it composites on top of the toolbar icons. Not
             # selectable; updated from the current selection in _poll_updates.
@@ -626,13 +631,13 @@ class Lcd:
             self.w_plugins.append(tile)
             return tile
 
-        # Grid area: below title (y=78) to bottom of LCD (y=240).
+        # Grid area: below the title to the bottom of the LCD.
         # footswitch_panel is pushed on top of pstack and renders over this.
         self.grid_panel = GridPanel(
             layout,
             tile_factory,
-            box=Box.xywh(0, 78, self.display_width, self.display_height - 78),
-            bottom_inset=self.footswitch_height,
+            box=Box.xywh(0, self.grid_top, self.display_width, self.display_height - self.grid_top),
+            bottom_inset=int(self.footswitch_panel.box.height),
             parent=self.main_panel,
         )
         self.main_panel.add_sel_widget(self.grid_panel)
@@ -640,6 +645,10 @@ class Lcd:
         # Repaint the grid's backing surface with the final tile colors before main_panel blits it
         self.grid_panel.refresh()
         self.main_panel.refresh()
+
+    def _on_footswitch_bar_resize(self, height: int) -> None:
+        if self.grid_panel is not None:
+            self.grid_panel.set_bottom_inset(height)
 
     def plugin_event(self, event, widget, plugin):
         panel_cls = plugin.panel_cls
@@ -895,7 +904,6 @@ class Lcd:
                 object=fs,
             )
             self.w_footswitches.append(p)
-            # self.footswitch_panel.add_sel_widget(p)  # TODO: re-enable footswitch selection
         self.footswitch_panel.refresh()
 
     def update_footswitch(self, footswitch):

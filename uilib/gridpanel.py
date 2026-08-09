@@ -84,6 +84,10 @@ class GridPanel(ContainerWidget):
     # ------------------------------------------------------------------ #
 
     @staticmethod
+    def rows_height(n_rows: int) -> int:
+        return n_rows * (TILE_H + ROW_GAP) - ROW_GAP if n_rows > 0 else 0
+
+    @staticmethod
     def cell_xy(layer: int, row: int) -> tuple[int, int]:
         return ((TILE_W + CHANNEL) * layer, (TILE_H + ROW_GAP) * row)
 
@@ -166,6 +170,24 @@ class GridPanel(ContainerWidget):
     def _viewport_size(self) -> tuple[int, int]:
         w, h = super()._viewport_size()
         return w, h - self.bottom_inset
+
+    def _scroll_delta(self, box: Box, movex: int, movey: int, orig_box: Box):
+        # Minimum movement that brings the tile fully in: no page-snap, and no
+        # reset-to-top when the tile happens to sit in the first row.
+        return movex, movey
+
+    def set_bottom_inset(self, inset: int) -> None:
+        """Reserve `inset` px at the bottom for whatever overlays the grid, and
+        pull the scroll offset back if the taller viewport now overshoots the
+        last row."""
+        if inset == self.bottom_inset:
+            return
+        self.bottom_inset = inset
+        _, vh = self._viewport_size()
+        max_off = max(0, int(self._content_height or 0) - int(vh))
+        ox, oy = self.offset
+        if oy > max_off:
+            self.scroll((ox, max_off))
 
     # ------------------------------------------------------------------ #
     # Routing render pass.

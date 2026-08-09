@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
 import pygame
@@ -24,8 +25,9 @@ from uilib.box import Box
 from uilib.config import Color, Config
 from uilib.glyphs import CircleGlyph, RingGlyph
 from uilib.glyphs.tint import tint_mask
-from uilib.misc import get_text_size
+from uilib.misc import InputEvent, get_text_size
 from uilib.paint import PaintContext
+from uilib.panel import ShroudedPanel
 from uilib.widget import Widget
 
 if TYPE_CHECKING:
@@ -250,3 +252,56 @@ class FootswitchWidget(Widget):
 
     def toggle(self, is_bypassed: bool) -> None:
         self.is_bypassed = is_bypassed
+
+
+class FootswitchBarPanel(ShroudedPanel):
+    """The footswitch strip, selectable as one whole widget (never per-switch:
+    the individual FootswitchWidget children are never added to any sel_list).
+
+    CLICK toggles between the collapsed box and a taller "expanded" one, both
+    bottom-anchored so growth overlaps whatever sits above it in the stack.
+    LONG_CLICK delegates to ``on_longpress`` — this panel holds no opinion on
+    what that opens."""
+
+    def __init__(
+        self,
+        box: Box,
+        expanded_height: int,
+        on_longpress: Callable[[], None] | None = None,
+        on_resize: Callable[[int], None] | None = None,
+        **kwargs,
+    ):
+        super(FootswitchBarPanel, self).__init__(box=box, **kwargs)
+        self._collapsed_box = box.copy()
+        self._expanded_height = expanded_height
+        self.expanded = False
+        self.on_longpress = on_longpress
+        self.on_resize = on_resize
+
+    def sel_children(self):
+        return [self]
+
+    def input_event(self, event: InputEvent) -> bool:
+        if event == InputEvent.CLICK:
+            self.toggle_expanded()
+            return True
+        if event == InputEvent.LONG_CLICK and self.on_longpress is not None:
+            self.on_longpress()
+            return True
+        return False
+
+    def toggle_expanded(self) -> None:
+        old_box = self.box.copy()
+        self.expanded = not self.expanded
+        cb = self._collapsed_box
+        h = self._expanded_height if self.expanded else cb.height
+        self.box = Box.xywh(cb.x0, cb.y1 - h, cb.width, h)
+        self._setup()
+        if self.on_resize is not None:
+            self.on_resize(int(h))
+        self.refresh()
+        # Shrinking vacates pixels no panel above owns any more; only the stack
+        # can recompose them from the panels underneath.
+        stack = self._get_stack()
+        if stack is not None:
+            stack.propagate_dirty(old_box.union(self.box))
