@@ -25,7 +25,7 @@ _BG = (255, 255, 255)
 _FG = (48, 48, 48)
 _QR_COLOUR = (0, 0, 0)
 _LIGHT = (120, 120, 120)
-QR_TEXT = "sastraxi.github.io/pistomp-manual/"
+QR_TEXT = "treefallsound.github.io/pistomp-manual/"
 
 
 def _make_qr_surface() -> pygame.Surface:
