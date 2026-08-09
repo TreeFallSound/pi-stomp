@@ -59,8 +59,9 @@ def test_footswitch_bar_selection_and_menu(v3_system: SystemFixture):
         nav_step(handler, 1)
     assert bar.selected
 
-    # LONG_CLICK opens the bindings menu: default_config_pistomptre.yml rows,
-    # no pedalboard config.yml on this fixture's (fake-path) bundle, so no divider.
+    # LONG_CLICK opens the bindings menu: default_config_pistomptre.yml rows.
+    # Every switch carries a two-name longpress there, so each also chords into
+    # a pedalboard step.
     nav_click(handler, long=True)
     menu_panel = lcd.footswitch_menu._panel
     assert menu_panel is not None
@@ -71,8 +72,10 @@ def test_footswitch_bar_selection_and_menu(v3_system: SystemFixture):
         "B" + TextWidget.SPLIT_SEP + "Snapshot +",
         "C" + TextWidget.SPLIT_SEP + "Tuner",
         "D" + TextWidget.SPLIT_SEP + "Tap Tempo",
+        "A+B" + TextWidget.SPLIT_SEP + f"Pedalboard {MINUS}",
+        "C+D" + TextWidget.SPLIT_SEP + "Pedalboard +",
     ]
-    assert menu_panel.divider_y is None  # pyright: ignore[reportAttributeAccessIssue]
+    assert menu_panel.divider_y is not None  # pyright: ignore[reportAttributeAccessIssue]
 
     nav_click(handler)  # Back
     assert lcd.footswitch_menu._panel is None
@@ -128,5 +131,6 @@ def test_footswitch_menu_pedalboard_rows_and_divider(v3_system: SystemFixture, t
         "C" + TextWidget.SPLIT_SEP + "Tuner",
         "D" + TextWidget.SPLIT_SEP + "Tap Tempo",
         "A+B" + TextWidget.SPLIT_SEP + "Toggle Bypass",
+        "C+D" + TextWidget.SPLIT_SEP + "Pedalboard +",
     ]
     assert menu_panel.divider_y is not None  # pyright: ignore[reportAttributeAccessIssue]

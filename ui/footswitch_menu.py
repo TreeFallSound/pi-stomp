@@ -56,6 +56,8 @@ MINUS = "−"
 _ACTION_LABELS = {
     "next_snapshot": "Snapshot +",
     "previous_snapshot": f"Snapshot {MINUS}",
+    "next_pedalboard": "Pedalboard +",
+    "previous_pedalboard": f"Pedalboard {MINUS}",
     "toggle_bypass": "Toggle Bypass",
     "toggle_tap_tempo_enable": "Tap Tempo",
     "toggle_tuner_enable": "Tuner",

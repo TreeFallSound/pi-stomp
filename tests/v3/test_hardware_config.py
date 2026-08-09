@@ -192,4 +192,6 @@ def test_longpress_enum_covers_every_handler_callback(v3_system: SystemFixture):
             "longpress"
         ]["oneOf"][0]["enum"]
     )
-    assert set(v3_system.handler.callbacks) == enum
+    # set_mod_tap_tempo shares the callback map but is reachable only via the
+    # `tap_tempo:` key, which passes a BPM no longpress can supply.
+    assert set(v3_system.handler.callbacks) - {"set_mod_tap_tempo"} == enum
