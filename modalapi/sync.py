@@ -15,7 +15,7 @@
 
 """Ableton Link / MIDI clock sync source — the device-side counterpart to
 `ableton-link.md`. The transport WebSocket message carries a `syncMode`
-label ("Internal" / "link" / "midi_clock_slave"); this module owns the
+label ("none" / "link" / "midi_clock_slave"); this module owns the
 canonical enum, the wire↔enum normalization, and the off-UI-thread POST
 that asks mod-ui to switch source.
 
@@ -43,12 +43,12 @@ if TYPE_CHECKING:
 class SyncMode(Enum):
     """The clock source owning tempo, as mod-ui sees it.
 
-    The wire labels are mod-ui's (`TRANSPORT_SOURCE_*` in `mod/profile.py`);
-    we keep the enum names independent of that vocabulary so the device code
-    doesn't grow a dependency on mod-ui's Python layer.
+    The wire labels are mod-ui's `Host.transport_sync` strings — the same
+    tokens its `set_sync_mode/` route accepts. Internal clock is `"none"`,
+    not "Internal"; the enum names stay independent of that vocabulary.
     """
 
-    INTERNAL = "Internal"
+    INTERNAL = "none"
     LINK = "link"
     MIDI_CLOCK_SLAVE = "midi_clock_slave"
 
