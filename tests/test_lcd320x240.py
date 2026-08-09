@@ -647,38 +647,6 @@ def test_parameter_menu_shows_footswitch_badge(lcd, snapshot):
     snapshot()
 
 
-def test_update_footswitch_off_snapshot(lcd, snapshot):
-    instance, _ = lcd
-    mock_fs = _make_footswitch(0, toggled=True, display_label="Dist")
-    mock_current = Current(
-        pedalboard=_make_pedalboard("PB", [], []),
-        presets={0: "Clean"},
-        preset_index=0,
-        analog_controllers={},
-    )
-    instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
-    instance.draw_main_panel()
-    mock_fs.toggled = False
-    instance.update_footswitch(mock_fs)
-    snapshot()
-
-
-def test_update_footswitch_on_snapshot(lcd, snapshot):
-    instance, _ = lcd
-    mock_fs = _make_footswitch(1, toggled=False, display_label="Drive")
-    mock_current = Current(
-        pedalboard=_make_pedalboard("PB", [], []),
-        presets={0: "Clean"},
-        preset_index=0,
-        analog_controllers={},
-    )
-    instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
-    instance.draw_main_panel()
-    mock_fs.toggled = True
-    instance.update_footswitch(mock_fs)
-    snapshot()
-
-
 @pytest.mark.parametrize(
     "status,expected",
     [

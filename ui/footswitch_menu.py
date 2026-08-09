@@ -31,9 +31,11 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 import common.token as Token
-from uilib import Box, Dialog, TextWidget, WidgetAlign
+from plugins.chrome import BTN_GAP, BTN_H
+from uilib import Box, Config, Dialog, TextWidget, WidgetAlign, get_text_size
 from uilib.paint import PaintContext
 from uilib.pygame_init import font as _make_font
+from uilib.text import Button
 
 if TYPE_CHECKING:
     from pistomp.lcd320x240 import Lcd
@@ -44,16 +46,18 @@ WIDTH = 220
 LINE_H = 18
 ROW_PAD = 4
 DIVIDER_H = 8
-BTN_H = 24
+
+# U+2212: the ASCII hyphen is half the width of "+" and reads as a dash, not
+# an operator, next to it.
+MINUS = "−"
 
 # Only the string/list longpress enum (pistomp/config.py schema); the mapping
 # form (midi_CC/preset/pedalboard) is handled separately by _label_for_mapping.
 _ACTION_LABELS = {
     "next_snapshot": "Snapshot +",
-    "previous_snapshot": "Snapshot -",
+    "previous_snapshot": f"Snapshot {MINUS}",
     "toggle_bypass": "Toggle Bypass",
-    "set_mod_tap_tempo": "Tap Tempo",
-    "toggle_tap_tempo_enable": "Tap Tempo On/Off",
+    "toggle_tap_tempo_enable": "Tap Tempo",
     "toggle_tuner_enable": "Tuner",
 }
 
@@ -65,15 +69,16 @@ def _label_for_action(name: str) -> str:
 def _label_for_mapping(action: dict[str, Any]) -> str:
     if Token.MIDI_CC in action:
         return f"MIDI CC {action[Token.MIDI_CC]}"
+    # config.yml says "preset"; MOD and the rest of the UI say "snapshot".
     if Token.PRESET in action:
         value = action[Token.PRESET]
         if value == Token.UP:
-            return "Preset +"
+            return "Snapshot +"
         if value == Token.DOWN:
-            return "Preset -"
-        return f"Preset {value}"
+            return f"Snapshot {MINUS}"
+        return f"Snapshot {value}"
     value = action["pedalboard"]
-    return "Pedalboard +" if value == Token.UP else "Pedalboard -"
+    return "Pedalboard +" if value == Token.UP else f"Pedalboard {MINUS}"
 
 
 def _rows_from_entries(entries: list[dict[str, Any]], id_to_letter: dict[int, str]) -> list[tuple[str, str]]:
@@ -160,7 +165,7 @@ class FootswitchMenu:
         num_rows = len(single_rows) + len(chord_rows)
         height = min(220, 2 * ROW_PAD + LINE_H * num_rows + (DIVIDER_H if show_divider else 0) + BTN_H + 12)
 
-        d = _BindingsDialog(width=WIDTH, height=height, title="Footswitch Bindings", auto_destroy=True)
+        d = _BindingsDialog(width=WIDTH, height=height, title="Longpress Bindings", auto_destroy=True)
         font = _make_font(_FONTS_DIR / "DejaVuSans.ttf", 14)
 
         y = ROW_PAD
@@ -190,15 +195,17 @@ class FootswitchMenu:
             )
             y += LINE_H
 
-        back_btn = TextWidget(
-            box=Box.xywh(8, height - BTN_H - 6, 0, 0),
+        btn_font = Config().get_font("small")
+        _, btn_text_h = get_text_size("Back", btn_font)
+        btn_w = (WIDTH - 4 * BTN_GAP) // 3
+        back_btn = Button(
+            box=Box.xywh((WIDTH - btn_w) // 2, height - BTN_H - 6, btn_w, BTN_H),
             text="Back",
+            font=btn_font,
+            v_margin=max(0, (BTN_H - btn_text_h) // 2),
+            outline_radius=4,
             parent=d,
-            outline=1,
-            sel_width=3,
-            outline_radius=5,
             action=self._on_back,
-            align=WidgetAlign.NONE,
             name="footswitch_menu_back_btn",
         )
         d.add_sel_widget(back_btn)

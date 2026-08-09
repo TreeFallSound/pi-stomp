@@ -214,9 +214,7 @@ class Lcd:
         self.footswitch_menu: FootswitchMenu = FootswitchMenu(self)
         self.footswitch_panel = FootswitchBarPanel(
             box=Box.xywh(0, self.display_height - self.footswitch_height, self.display_width, self.footswitch_height),
-            expanded_height=self.display_height - self.grid_top - GridPanel.rows_height(3),
             on_longpress=self.footswitch_menu.open,
-            on_resize=self._on_footswitch_bar_resize,
             shroud_alpha=255,
             gradient_start=0,
             gradient_pos=0.2,
@@ -646,10 +644,6 @@ class Lcd:
         self.grid_panel.refresh()
         self.main_panel.refresh()
 
-    def _on_footswitch_bar_resize(self, height: int) -> None:
-        if self.grid_panel is not None:
-            self.grid_panel.set_bottom_inset(height)
-
     def plugin_event(self, event, widget, plugin):
         panel_cls = plugin.panel_cls
         if event == InputEvent.CLICK:
@@ -878,7 +872,9 @@ class Lcd:
             if fs.preset_callback_arg is not None:
                 label = self.footswitch_label(fs, slot_w)
                 fs.set_display_label(label)
-                color = None
+                # Snapshots are bound, just not to a plugin — a colorless dot
+                # would drop the label to the near-black unbound tone.
+                color = FootswitchWidget.DEFAULT_COLOR
                 action = None
                 active = self.current is not None and self.current.preset_index == fs.preset_callback_arg
                 fs.toggled = active
@@ -898,7 +894,7 @@ class Lcd:
                 color,
                 not fs.toggled,
                 small_font=self.tiny_font,
-                taptempo=getattr(fs, "taptempo", None),
+                taptempo=fs.taptempo,
                 parent=self.footswitch_panel,
                 action=action,
                 object=fs,
@@ -915,6 +911,7 @@ class Lcd:
                     active = self.current is not None and self.current.preset_index == footswitch.preset_callback_arg
                     footswitch.toggled = active
                     footswitch.set_led(active)
+                    wfs.color = FootswitchWidget.DEFAULT_COLOR
                 elif footswitch.parameter is not None:
                     # Binding may be new (e.g. MIDI learn) — reflect label + color.
                     footswitch.set_display_label(self.footswitch_label(footswitch, slot_w))

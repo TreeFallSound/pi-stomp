@@ -45,7 +45,7 @@ class TapTempoProtocol(Protocol):
 DOT_RADIUS = 6
 DOT_TOP = 4
 DOT_DIAMETER = 2 * DOT_RADIUS
-LABEL_TOP = DOT_TOP + DOT_DIAMETER + 2  # 18
+LABEL_TOP = DOT_TOP + DOT_DIAMETER + 1  # 17
 
 # Letter badge: same size and y position as a bound dot.
 BADGE_RADIUS = DOT_RADIUS
@@ -258,50 +258,23 @@ class FootswitchBarPanel(ShroudedPanel):
     """The footswitch strip, selectable as one whole widget (never per-switch:
     the individual FootswitchWidget children are never added to any sel_list).
 
-    CLICK toggles between the collapsed box and a taller "expanded" one, both
-    bottom-anchored so growth overlaps whatever sits above it in the stack.
     LONG_CLICK delegates to ``on_longpress`` — this panel holds no opinion on
     what that opens."""
 
     def __init__(
         self,
         box: Box,
-        expanded_height: int,
         on_longpress: Callable[[], None] | None = None,
-        on_resize: Callable[[int], None] | None = None,
         **kwargs,
     ):
         super(FootswitchBarPanel, self).__init__(box=box, **kwargs)
-        self._collapsed_box = box.copy()
-        self._expanded_height = expanded_height
-        self.expanded = False
         self.on_longpress = on_longpress
-        self.on_resize = on_resize
 
     def sel_children(self):
         return [self]
 
     def input_event(self, event: InputEvent) -> bool:
-        if event == InputEvent.CLICK:
-            self.toggle_expanded()
-            return True
         if event == InputEvent.LONG_CLICK and self.on_longpress is not None:
             self.on_longpress()
             return True
         return False
-
-    def toggle_expanded(self) -> None:
-        old_box = self.box.copy()
-        self.expanded = not self.expanded
-        cb = self._collapsed_box
-        h = self._expanded_height if self.expanded else cb.height
-        self.box = Box.xywh(cb.x0, cb.y1 - h, cb.width, h)
-        self._setup()
-        if self.on_resize is not None:
-            self.on_resize(int(h))
-        self.refresh()
-        # Shrinking vacates pixels no panel above owns any more; only the stack
-        # can recompose them from the panels underneath.
-        stack = self._get_stack()
-        if stack is not None:
-            stack.propagate_dirty(old_box.union(self.box))
