@@ -1,7 +1,7 @@
 """Longpress chords end to end, using the config from the bug report.
 
 Four footswitches, each carrying a solo action plus a shared pedalboard-change
-chord. Presses are simulated by driving the AnalogSwitch state the real
+chord. Presses are simulated by driving the AdcSwitch state the real
 detector maintains, then dispatching the longpress the way the detector does.
 """
 
@@ -54,7 +54,7 @@ def _release(fs, handler):
 
 
 def _mature(fs):
-    """Deliver the longpress the way AnalogSwitch.refresh does — state first,
+    """Deliver the longpress the way AdcSwitch.refresh does — state first,
     then the callback."""
     fs.adc_switch.state = LONGPRESSED
     fs._on_switch(LONGPRESSED, timestamp=1000.0)

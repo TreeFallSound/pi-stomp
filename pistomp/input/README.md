@@ -4,7 +4,7 @@ Every hardware input — footswitch, encoder, knob, expression pedal — flows t
 
 ## Controllers are sources, sinks are actors
 
-A `Controller` (`controller.py`) owns one raw detector — an `Encoder`, `GpioSwitch`, `AnalogSwitch`, or ADC channel — and a `sink: InputSink`. On each 10ms tick `poll_hw()` reads the detector, packages what physically happened into an event, and calls `self.sink.handle(event)`. The event reports a **completed physical action, not an instruction** — a pot that reached ADC value N, an encoder that turned +3 detents.
+A `Controller` (`controller.py`) reads one piece of hardware and holds a `sink: InputSink`. Footswitches and encoders own a separate raw detector — an `Encoder`, `GpioSwitch`, or `AdcSwitch`; knobs and expression pedals inherit `AnalogControl` and read their ADC channel directly. On each 10ms tick `poll_hw()` reads the hardware, packages what physically happened into an event, and calls `self.sink.handle(event)`. The event reports a **completed physical action, not an instruction** — a pot that reached ADC value N, an encoder that turned +3 detents.
 
 **A controller may own state that is intrinsically its own** — a pot's ADC reading, an encoder's detent count and timing — **but never a copy of a value that belongs to something else** (a parameter, blend's sweep position, a menu selection). That is the owner's to hold and the owner's to integrate. So a pot reports an absolute `midi_value` (its reading *is* its own fact), but an encoder reports only a **delta**. The one value an encoder does own is the unbound-CC fallback (below) — it has no owner, so it keeps its own accumulator.
 

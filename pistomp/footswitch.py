@@ -21,7 +21,7 @@ from typing_extensions import override
 
 import common.token as Token
 import pistomp.controller as controller
-import pistomp.analogswitch as analogswitch
+import pistomp.adcswitch as adcswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
 from pistomp.input.event import SwitchEvent, SwitchEventKind
@@ -71,7 +71,7 @@ class Footswitch(controller.StatefulController):
 
         self.adc_switch = None
         if adc_input is not None:
-            self.adc_switch = analogswitch.AnalogSwitch(
+            self.adc_switch = adcswitch.AdcSwitch(
                 spi, adc_input, self._on_switch, longpress_callback=self._on_switch
             )
 

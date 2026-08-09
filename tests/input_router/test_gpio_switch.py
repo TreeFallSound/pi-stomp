@@ -1,7 +1,7 @@
 """GpioSwitch press detection and hold state.
 
 Covers the state machine chord resolution reads through Footswitch.press_state,
-and the callback dispatch it shares with AnalogSwitch. gpiozero is a MagicMock
+and the callback dispatch it shares with AdcSwitch. gpiozero is a MagicMock
 under test, so the Button is replaced with a fake whose is_pressed we drive.
 """
 

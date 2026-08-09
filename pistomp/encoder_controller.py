@@ -21,7 +21,7 @@ from typing import Optional
 
 import common.util as util
 import pistomp.controller as controller
-import pistomp.analogswitch as analogswitch
+import pistomp.adcswitch as adcswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
 from pistomp.encoder import Encoder
@@ -54,7 +54,7 @@ class EncoderController(controller.Controller):
     fallback accumulator belongs to the handler (the emitter), not here.
 
     Button: if sw_pin is provided, owns a GpioSwitch that emits SwitchEvent
-    via self.sink. If sw_adc_chan is provided, owns an AnalogSwitch instead.
+    via self.sink. If sw_adc_chan is provided, owns an AdcSwitch instead.
     Longpress is stored as a string callback name resolved by the handler at
     dispatch time.
     """
@@ -92,7 +92,7 @@ class EncoderController(controller.Controller):
         self._last_direction: int = 0
 
         # Absorbed button (GPIO or ADC)
-        self._button: Optional[gpioswitch.GpioSwitch | analogswitch.AnalogSwitch] = None
+        self._button: Optional[gpioswitch.GpioSwitch | adcswitch.AdcSwitch] = None
         self.longpress: Optional[str] = longpress  # string name; resolved at dispatch
         if sw_pin is not None:
             self._button = gpioswitch.GpioSwitch(
@@ -101,7 +101,7 @@ class EncoderController(controller.Controller):
                 longpress_callback=self._on_button_longpress,
             )
         elif sw_adc_chan is not None:
-            self._button = analogswitch.AnalogSwitch(
+            self._button = adcswitch.AdcSwitch(
                 spi,
                 sw_adc_chan,
                 callback=self._on_button,
