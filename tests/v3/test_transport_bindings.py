@@ -576,6 +576,49 @@ def test_transport_dialog_commit_never_param_sets(v3_system: SystemFixture, make
     assert not any("param_set" in m and ":bpb" in m for m in v3_system.ws_bridge.sent)
 
 
+def test_encoder_rolling_turn_still_emits_midi_cc(v3_system: SystemFixture, make_plugin):
+    """The :bpm carve-out is by symbol, so :rolling keeps the CC sink like :bpb."""
+    from unittest.mock import MagicMock
+    from pistomp.input.event import EncoderEvent
+
+    handler = v3_system.handler
+    hw = v3_system.hw
+    assert handler.current is not None
+
+    handler.current.pedalboard.plugins = [make_plugin("noise", bypassed=False)]
+    enc1 = next(e for e in hw.encoders if e.id == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+
+    # Mock before binding: the CC sink captures its emitter when the encoder binds.
+    handler._emit_midi = MagicMock()
+    tp = _attach_transport_plugin(handler, rolling_cc={"channel": int(channel), "control": int(cc)})
+    handler._emit_midi.reset_mock()
+
+    assert enc1.parameter is tp.parameters[ROLLING_SYMBOL]
+    handler._handle_encoder(EncoderEvent(controller=enc1, rotations=1, multiplier=1.0))
+
+    handler._emit_midi.assert_called_once()
+
+
+def test_audio_parameter_commit_publishes_nothing_upstream(v3_system: SystemFixture):
+    """An audio param has no instance_id and no mod-host counterpart: its sink is
+    the local ALSA write, so a commit must leave neither a param_set nor a CC."""
+    from unittest.mock import MagicMock
+
+    handler = v3_system.handler
+    param = handler._create_audio_parameter("Input Gain", handler.audiocard.CAPTURE_VOLUME, -19.75, 12)
+    assert param.instance_id is None
+
+    handler._emit_midi = MagicMock()
+    v3_system.ws_bridge.sent.clear()
+
+    handler.parameter_value_commit(param, -6.0)
+
+    assert param.value == -6.0
+    assert not any("param_set" in m for m in v3_system.ws_bridge.sent)
+    handler._emit_midi.assert_not_called()
+
+
 def test_encoder_bpm_turn_parameter_dialog_snapshot(v3_system: SystemFixture, make_plugin, snapshot):
     """Turning a BPM-bound encoder 1 detent notch displays the parameter dialog on the LCD at 121 BPM."""
     from pistomp.input.event import EncoderEvent
