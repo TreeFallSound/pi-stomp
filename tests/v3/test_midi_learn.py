@@ -481,9 +481,9 @@ def test_v3_midi_learn_updated_binding_range_on_same_parameter(v3_system: System
     assert plugin.controllers.count(enc1) == 1
 
 
-def test_v3_midi_unlearn_preserves_sub_range(v3_system: SystemFixture, make_plugin, make_parameter):
-    """Unmapping (-1:-1) must not reset the parameter's bound sub-range to the
-    full 0..1 default that the unmap frame carries."""
+def test_v3_midi_unlearn_restores_declared_range(v3_system: SystemFixture, make_plugin, make_parameter):
+    """Unmapping (-1:-1) restores the parameter's declared LV2 range rather than
+    keeping the narrowed sub-range or applying the 0..1 unmap frame default."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -504,7 +504,39 @@ def test_v3_midi_unlearn_preserves_sub_range(v3_system: SystemFixture, make_plug
     ws_bridge.inject("midi_map /graph/noise gain -1 -1 0.0 1.0")
     handler.poll_ws_messages()
     assert gain.binding is None
-    assert (gain.minimum, gain.maximum) == (0.1, 0.9)
+    assert (gain.minimum, gain.maximum) == (gain.declared_minimum, gain.declared_maximum)
+
+
+def test_v3_midi_learn_free_cc_preserves_sub_range(v3_system: SystemFixture, make_plugin, make_parameter):
+    """A midi_map naming a CC with no physical pi-stomp control (an external/free
+    MIDI CC) must still apply its sub-range — the guard keys off the -1:-1 unmap
+    sentinel, not controller presence, so a real external device's extents are shown."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current
+
+    used = set(hw.controllers)
+    binding = next(
+        "%d:%d" % (ch, cc)
+        for ch in range(1, 16)
+        for cc in range(0, 127)
+        if "%d:%d" % (ch, cc) not in used
+    )
+    channel, cc = binding.split(":")
+
+    gain = make_parameter("Gain", "noise", value=0.5)
+    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    handler.current.pedalboard.plugins = [plugin]
+
+    ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.0 0.5")
+    handler.poll_ws_messages()
+
+    # No physical control to wire, so the binding is not adopted...
+    assert gain.binding is None
+    # ...but the external sub-range is preserved, not clobbered by 0..1 or dropped.
+    assert (gain.minimum, gain.maximum) == (0.0, 0.5)
 
 
 def test_v3_midi_learn_moving_footswitch_binding_clears_old_lcd_display(v3_system: SystemFixture, make_plugin):

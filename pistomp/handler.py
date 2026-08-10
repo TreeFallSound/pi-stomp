@@ -224,9 +224,12 @@ class Handler(InputSink):
         controller = self.hardware.controllers.get(binding)
         # The range can change without the binding (re-address the same CC to a
         # different sub-range), so apply it before the binding-unchanged bail.
-        # Never on unmap: -1:-1 names no controller and must not reset the range.
-        if binding_range is not None and controller is not None:
+        # On unmap (binding "-1:-1" or "-1"), restore the plugin's declared LV2 range.
+        is_unmapped = binding in ("-1:-1", "-1")
+        if binding_range is not None and not is_unmapped:
             param.set_binding_range(binding_range)
+        elif is_unmapped:
+            param.clear_binding_range()
         if param.binding == binding:
             return
 
