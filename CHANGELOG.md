@@ -8,11 +8,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 - Welcome screen on startup
 - Custom UI for MOD Mixer plugins (mono + stereo)
+- Custom UI for CALF 5-band EQ
 - Redesigned Audio & MIDI settings menu with graphical EQ
 - New longpress actions for footswitches: emit MIDI CC, select snapshot, pedalboard up/down
 - v2 hardware: correct SPI clock detection for Pi 3 (no longer assumes Pi 4/5)
 - v2 hardware: parameter editing now uses the same quantized step grid as v3
 - WiFi: optimistic menu — acts on selection immediately
+- Transport (tempo) parameters can be bound to controls, with high-precision BPM over WebSocket
 
 ### Changed
 - System IP addresses now shown in System Info
@@ -25,6 +27,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Performance: WebSocket reconnects immediately on close instead of polling
 - Performance: startup no longer stalls on dpkg version check
 - Performance: MIDI/control updates coalesced (less CPU)
+- MIDI unlearning: hardware controls can be unbound from a parameter
+- Parameter tapers and displayed ranges now match MOD-UI (e.g. logarithmic)
+- Global EQ now accounts for the current sample rate
 
 ### Fixed
 - WiFi: fixed WPA3 support
@@ -34,6 +39,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Fix parameter dialog autoclose and system menu expand-git
 - Fix non-idempotent plugin tile renders and dirty corner invalidation
 - Only scan once on root wifi menu
+- Fix tap tempo when bound to a footswitch
+- Params could be MIDI-learned while the external MIDI port was unavailable
 
 ## [v3.2.0] - 2026-07-05
 ### Added
