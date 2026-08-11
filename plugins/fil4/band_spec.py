@@ -7,25 +7,25 @@ from common.parameter import Symbol
 
 BAND_SPECS: tuple[BandSpec, ...] = (
     BandSpec("HP", "hp", Symbol("HighPass"), Symbol("HPfreq"), Symbol("HPQ"), None, None,
-             20.0, 1250.0, 0.0, 1.4, color=(255, 110, 110)),
+             20.0, 1250.0, 0.0, 1.4, color=(255, 110, 110), q_units="q"),
     BandSpec("LS", "shelf", Symbol("LSsec"), Symbol("LSfreq"), Symbol("LSq"), Symbol("LSgain"), "low",
-             25.0, 400.0, 0.0625, 4.0, color=(255, 180, 80)),
+             25.0, 400.0, 0.0625, 4.0, color=(255, 180, 80), q_units="x42_shelf_slope"),
     BandSpec("B1", "peak", Symbol("sec1"), Symbol("freq1"), Symbol("q1"), Symbol("gain1"), None,
              20.0, 2000.0, 0.0625, 4.0, color=(255, 230, 80),
-             filter_topology="regalia_mitra", q_is_bw_oct=True),
+             filter_topology="regalia_mitra", q_units="bw_oct"),
     BandSpec("B2", "peak", Symbol("sec2"), Symbol("freq2"), Symbol("q2"), Symbol("gain2"), None,
              40.0, 4000.0, 0.0625, 4.0, color=(130, 220, 110),
-             filter_topology="regalia_mitra", q_is_bw_oct=True),
+             filter_topology="regalia_mitra", q_units="bw_oct"),
     BandSpec("B3", "peak", Symbol("sec3"), Symbol("freq3"), Symbol("q3"), Symbol("gain3"), None,
              100.0, 10000.0, 0.0625, 4.0, color=(110, 200, 230),
-             filter_topology="regalia_mitra", q_is_bw_oct=True),
+             filter_topology="regalia_mitra", q_units="bw_oct"),
     BandSpec("B4", "peak", Symbol("sec4"), Symbol("freq4"), Symbol("q4"), Symbol("gain4"), None,
              200.0, 20000.0, 0.0625, 4.0, color=(140, 150, 240),
-             filter_topology="regalia_mitra", q_is_bw_oct=True),
+             filter_topology="regalia_mitra", q_units="bw_oct"),
     BandSpec("HS", "shelf", Symbol("HSsec"), Symbol("HSfreq"), Symbol("HSq"), Symbol("HSgain"), "high",
-             1000.0, 16000.0, 0.0625, 4.0, color=(210, 130, 230)),
+             1000.0, 16000.0, 0.0625, 4.0, color=(210, 130, 230), q_units="x42_shelf_slope"),
     BandSpec("LP", "lp", Symbol("LowPass"), Symbol("LPfreq"), Symbol("LPQ"), None, None,
-             500.0, 20000.0, 0.0, 1.4, color=(240, 140, 180)),
+             500.0, 20000.0, 0.0, 1.4, color=(240, 140, 180), q_units="q"),
 )
 
 PLUGIN_ENABLE_SYM = Symbol("enable")

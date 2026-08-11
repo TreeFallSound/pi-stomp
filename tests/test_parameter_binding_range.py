@@ -61,6 +61,52 @@ def test_set_binding_range_preserves_identity():
     assert id(p) == before
 
 
+def test_clear_binding_range_restores_declared_range():
+    """Calling clear_binding_range resets minimum and maximum to declared_minimum and declared_maximum."""
+    p = Parameter(_port(30.0, 800.0), 100.0, binding="0:70", binding_range=(100.0, 400.0))
+    assert (p.minimum, p.maximum) == (100.0, 400.0)
+    p.clear_binding_range()
+    assert (p.minimum, p.maximum) == (30.0, 800.0)
+
+
+def test_binding_range_notifies_subscribers_and_clamps_value():
+    """set_binding_range and clear_binding_range notify observers and clamp value if out of bounds."""
+    p = Parameter(_port(0.0, 1.0), 0.9, binding="0:70", binding_range=(0.0, 1.0))
+    notifications = []
+    p.subscribe(lambda param: notifications.append(param.value))
+
+    # Narrow range past current value (0.9 -> 0.5 max)
+    p.set_binding_range((0.0, 0.5))
+    assert p.value == 0.5
+    assert len(notifications) == 1
+
+    # Clear binding range back to 0.0 .. 1.0
+    p.clear_binding_range()
+    assert (p.minimum, p.maximum) == (0.0, 1.0)
+    assert p.value == 0.5  # Remains at 0.5 when restored
+    assert len(notifications) == 2
+
+
+def test_set_binding_range_is_idempotent():
+    """A connect-dump replay re-sends the same range; equality guard suppresses it."""
+    p = Parameter(_port(0.0, 1.0), 0.5, binding="0:70", binding_range=(0.0, 0.5))
+    notifications = []
+    p.subscribe(lambda param: notifications.append(param.value))
+    p.set_binding_range((0.0, 0.5))
+    assert len(notifications) == 0
+
+
+def test_clear_binding_range_is_idempotent():
+    """A replayed unmap (-1:-1) after the range is already restored is a no-op."""
+    p = Parameter(_port(30.0, 800.0), 400.0, binding="0:70", binding_range=(100.0, 400.0))
+    notifications = []
+    p.subscribe(lambda param: notifications.append(param.value))
+    p.clear_binding_range()
+    assert len(notifications) == 1
+    p.clear_binding_range()
+    assert len(notifications) == 1
+
+
 def test_step_grid_sweeps_only_the_sub_range():
     """The encoder grid's endpoints follow the sub-range, so a full spin can no
     longer reach the plugin's declared maximum."""

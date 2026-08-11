@@ -134,16 +134,16 @@ class Parameter:
         self.hidden: bool = is_hidden_port(plugin_info)
 
         ranges = plugin_info.get("ranges") or Ranges()
-        declared_minimum = float(ranges.get("minimum", 0.0))
-        declared_maximum = float(ranges.get("maximum", 1.0))
+        self.declared_minimum: float = float(ranges.get("minimum", 0.0))
+        self.declared_maximum: float = float(ranges.get("maximum", 1.0))
         # minimum/maximum are the *effective* extents: the plugin's declared LV2
         # range, unless a MIDI-CC binding carries a custom sub-range
         self.minimum: float
         self.maximum: float
-        self.minimum, self.maximum = binding_range or (declared_minimum, declared_maximum)
+        self.minimum, self.maximum = binding_range or (self.declared_minimum, self.declared_maximum)
         # mod-ui normalises the TTL and always emits all three ranges; the
         # fallbacks only serve the params we synthesise (bypass, volume, VU).
-        self.default: float = float(ranges.get("default", declared_minimum))
+        self.default: float = float(ranges.get("default", self.declared_minimum))
 
         # Reactive value. Writes go through reconcile/preview/commit, never a raw
         # setter — the verb names the provenance (see those methods). _confirmed
@@ -226,8 +226,21 @@ class Parameter:
             observe(self)
 
     def set_binding_range(self, binding_range: tuple[float, float]) -> None:
-        """Set the effective extents from a MIDI-CC (sub-)range."""
-        self.minimum, self.maximum = binding_range
+        """Set the effective extents from a MIDI-CC (sub-)range and notify observers."""
+        if (self.minimum, self.maximum) != binding_range:
+            self.minimum, self.maximum = binding_range
+            self._value = max(self.minimum, min(self._value, self.maximum))
+            for observe in self._observers:
+                observe(self)
+
+    def clear_binding_range(self) -> None:
+        """Restore effective extents to the plugin's declared LV2 range and notify observers."""
+        if (self.minimum, self.maximum) != (self.declared_minimum, self.declared_maximum):
+            self.minimum = self.declared_minimum
+            self.maximum = self.declared_maximum
+            self._value = max(self.minimum, min(self._value, self.maximum))
+            for observe in self._observers:
+                observe(self)
 
     def subscribe(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
         """Register *cb* to fire on every changed-value write. Returns its own
