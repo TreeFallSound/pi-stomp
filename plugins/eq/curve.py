@@ -18,6 +18,8 @@ from plugins.eq.filters import (
     FREQ_MIN_HZ,
     FREQ_MAX_HZ,
     GRAPH_W,
+    as_bw_oct,
+    as_q,
     rbj_highpass,
     rbj_lowpass,
     rbj_lowshelf,
@@ -25,6 +27,12 @@ from plugins.eq.filters import (
     rbj_peaking,
     regalia_mitra_peaking,
 )
+
+# Bands with no width port still have to be drawn at *some* width. These are
+# the values that shipped before q_units existed; nothing on the device can
+# move them.
+PORTLESS_SHELF_Q = 0.2129 + 1.0 / 2.25
+PORTLESS_PEAK_BW_OCT = 1.0
 
 # ── per-band parameter snapshot ──────────────────────────────────────────────
 
@@ -56,13 +64,15 @@ def _stage_db(band: BandSpec, p: BandParams) -> np.ndarray:
     """Magnitude response in dB for one stage at GRAPH_FREQS."""
     f = max(min(p.freq, FS * 0.49), 1.0)
     if band.kind == "peak":
+        bw = PORTLESS_PEAK_BW_OCT if band.q_units is None else as_bw_oct(band.q_units, p.q)
         if band.filter_topology == "regalia_mitra":
-            return regalia_mitra_peaking(f, p.q, p.gain_db)
-        return rbj_peaking(f, p.q, p.gain_db)
+            return regalia_mitra_peaking(f, bw, p.gain_db)
+        return rbj_peaking(f, bw, p.gain_db)
     if band.kind == "shelf":
+        q = PORTLESS_SHELF_Q if band.q_units is None else as_q(band.q_units, p.q)
         if band.shelf_side == "low":
-            return rbj_lowshelf(f, p.q, p.gain_db)
-        return rbj_highshelf(f, p.q, p.gain_db)
+            return rbj_lowshelf(f, q, p.gain_db)
+        return rbj_highshelf(f, q, p.gain_db)
     if band.kind == "hp":
         return rbj_highpass(f, max(p.q, 0.5))
     if band.kind == "lp":
