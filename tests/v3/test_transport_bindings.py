@@ -127,7 +127,7 @@ def test_transport_message_reconciles_without_echo(v3_system: SystemFixture):
     ws_bridge.send_bpm = MagicMock(return_value=True)
 
     # Inject incoming WS TransportMessage from mod-ui: transport {rolling} {bpb} {bpm} {syncMode}
-    ws_bridge.inject("transport 1 4.0 155.0 Internal")
+    ws_bridge.inject("transport 1 4.0 155.0 none")
     handler.poll_ws_messages()
 
     tp = handler.current.pedalboard.transport_plugin
@@ -259,7 +259,7 @@ def test_transport_message_updates_pseudo_plugin(v3_system: SystemFixture):
     assert handler.current is not None
     _attach_transport_plugin(handler)
 
-    ws_bridge.inject("transport 1 7.0 130.0 Internal")
+    ws_bridge.inject("transport 1 7.0 130.0 none")
     handler.poll_ws_messages()
 
     tp = handler.current.pedalboard.transport_plugin

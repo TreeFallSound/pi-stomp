@@ -215,6 +215,15 @@ class TestAudioMidiPanelBehaviour:
         urls = [c.args[0] for c in audio_midi_system.mock_post.call_args_list]
         assert any("set_sync_mode/link" in u for u in urls), urls
 
+    def test_set_sync_mode_internal_posts_none(self, audio_midi_system: SystemFixture):
+        # mod-ui's route accepts "none" for the internal clock; "Internal" is rejected.
+        handler = audio_midi_system.handler
+        _open_panel(audio_midi_system)
+        handler.set_sync_mode(SyncMode.INTERNAL)
+        handler._sync_setter.join(timeout=2.0)
+        urls = [c.args[0] for c in audio_midi_system.mock_post.call_args_list]
+        assert any(u.endswith("set_sync_mode/none") for u in urls), urls
+
     def test_no_bypass_button(self, audio_midi_system: SystemFixture):
         panel = _open_panel(audio_midi_system)
         assert panel._btn_bypass is None
