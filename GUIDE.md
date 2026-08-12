@@ -6,6 +6,8 @@ params, and paints a 320x240 LCD. A 10ms polling loop drives everything.
 
 Architecture reference: `docs/architecture.md`. Subsystem detail:
 `pistomp/input/README.md` (input dispatch), `uilib/README.md` (paint system).
+Wire protocol: `../pistomp-manual/src/developers/websocket-bridge.md` (message table,
+bypass paths); `../pistomp-manual/src/plugins/choosing-pedals/build.md` (REST add/connect/save).
 **Read the code before trusting any doc, including this one.**
 
 ## Agent behaviour
@@ -109,6 +111,8 @@ uv-managed venv. Don't try to pip-install the system ones.
   A footswitch-bound plugin is the opposite: `toggle_plugin_bypass` routes through the
   footswitch press path, which sends MIDI CC → mod-host → feedback echo, and that echo
   reconciles it. The asymmetry is deliberate, not a bug to "fix."
+
+- **Send form and echo form differ.** We send `param_set /graph/{id}/{sym} {v}`; both broadcast paths come back as `param_set /graph/{id} {sym} {v:%f}`
 
 - **Never extract `lv2plugins.tar.gz` whole.** It's huge. Pull single files with
   `tar --to-stdout`. Prefer inspecting the live device anyway.
