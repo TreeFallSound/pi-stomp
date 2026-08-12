@@ -160,10 +160,10 @@ def test_restore_only_offers_drives_with_a_backup(modhandler_system: SystemFixtu
     assert jobs[0].argv[-2] == os.path.join(dirs[1], handler.backup_file)
 
 
-def test_restore_success_defers_restart_until_ok_pressed(modhandler_system: SystemFixture):
-    """A successful restore must not restart anything until the user presses OK — the restart
-    cascades (jack -> mod-host -> mod-ui -> pi-stomp), so firing it immediately would tear down
-    the process before the user ever sees the confirmation dialog."""
+def test_restore_defers_restart_until_the_button_is_pressed(modhandler_system: SystemFixture):
+    """A successful restore must not restart anything on its own — the restart cascades
+    (jack -> mod-host -> mod-ui -> pi-stomp), so firing it the moment unzip exits would tear
+    the process down under the user. The button press is the consent; there is no dialog."""
     handler = modhandler_system.handler
     with (
         fake_jobs() as jobs,
@@ -176,16 +176,55 @@ def test_restore_success_defers_restart_until_ok_pressed(modhandler_system: Syst
 
         jobs[0].finish(JobState.DONE)
         panel.tick()
-        mock_dialog.assert_not_called()
         mock_restart.assert_not_called()
+        assert panel._btn.text == "Restart to continue"
 
         panel._on_button()
-        assert "OK" in mock_dialog.call_args[0][0]
-
-        on_dismiss = mock_dialog.call_args.kwargs["on_dismiss"]
-        on_dismiss()
 
     mock_restart.assert_called_once_with(None)
+    mock_dialog.assert_not_called()
+
+
+def test_failed_restore_offers_close_and_never_restarts(modhandler_system: SystemFixture):
+    """A restore that failed leaves data/ half-written; restarting into that is worse than
+    staying put, so the terminal button must not invite it."""
+    handler = modhandler_system.handler
+    with (
+        fake_jobs() as jobs,
+        patch.object(handler, "system_menu_restart_sound") as mock_restart,
+    ):
+        handler._do_restore_data("/media/MYSTICK/backups")
+        panel = handler.lcd.pstack.find_panel_type(ArchiveProgressPanel)
+        assert panel is not None
+
+        jobs[0].finish(JobState.FAILED, error="unzip: cannot find zipfile directory")
+        panel.tick()
+        assert panel._btn.text == "Close"
+
+        panel._on_button()
+
+    mock_restart.assert_not_called()
+
+
+def test_backup_completion_shows_no_dialog(modhandler_system: SystemFixture):
+    """Backup reports success in the panel itself — no popup to dismiss afterwards."""
+    handler = modhandler_system.handler
+    with (
+        patch.object(handler, "check_usb", return_value=["/media/MYSTICK/backups"]),
+        fake_jobs() as jobs,
+        patch.object(handler.lcd, "draw_message_dialog") as mock_dialog,
+    ):
+        handler.user_backup_data(None)
+        panel = handler.lcd.pstack.find_panel_type(ArchiveProgressPanel)
+        assert panel is not None
+
+        jobs[0].finish(JobState.DONE)
+        panel.tick()
+        assert panel._btn.text == "Close"
+        panel._on_button()
+
+    mock_dialog.assert_not_called()
+    assert handler.lcd.pstack.find_panel_type(ArchiveProgressPanel) is None
 
 
 def test_restore_with_no_backups_shows_no_usb_dialog(modhandler_system: SystemFixture):

@@ -40,10 +40,12 @@ from uilib.misc import get_text_size
 from uilib.progress_bar import STEEL_LABELS, STEEL_STOPS, ProgressBarWidget
 from uilib.text import Button
 
+from pistomp.input.event import ControllerEvent
+
 from modalapi.archive import ArchiveJob, JobState
 
 _W, _H = 320, 240
-_BTN_W, _BTN_H, _BTN_GAP = 92, 28, 6
+_BTN_W, _BTN_H, _BTN_GAP, _BTN_PAD = 92, 28, 6, 14
 _BTN_Y = _H - _BTN_H - _BTN_GAP
 _BAR_Y = 72
 _BAR_H = 88
@@ -75,7 +77,15 @@ def _ellipsize(text: str, font, max_w: int) -> str:
 
 class ArchiveProgressPanel(Panel):
     def __init__(
-        self, *, title: str, noun: str, subtitle: str, job: ArchiveJob, on_dismiss, cancellable: bool
+        self,
+        *,
+        title: str,
+        noun: str,
+        subtitle: str,
+        job: ArchiveJob,
+        on_dismiss,
+        cancellable: bool,
+        done_label: str = "Close",
     ) -> None:
         super().__init__(
             box=Box.xywh(0, 0, _W, _H),
@@ -89,6 +99,7 @@ class ArchiveProgressPanel(Panel):
         self._job = job
         self._on_dismiss = on_dismiss
         self._cancellable = cancellable
+        self._done_label = done_label
         self._noun = noun
         self._started = time.monotonic()
         self._last_state = JobState.RUNNING
@@ -118,8 +129,10 @@ class ArchiveProgressPanel(Panel):
         self._status_lbl = Label(_MARGIN, _STATUS_Y, small, parent=self)
         self._status_lbl.set_text(f"0MB / {_mb(job.total_bytes)}", _DIM)
 
+        labels = ["Close", done_label] + (["Cancel"] if cancellable else [])
+        btn_w = max(_BTN_W, max(get_text_size(t, font)[0] for t in labels) + 2 * _BTN_PAD)
         self._btn = Button(
-            box=Box.xywh(_W - _BTN_W - _BTN_GAP, _BTN_Y, _BTN_W, _BTN_H),
+            box=Box.xywh((_W - btn_w) // 2, _BTN_Y, btn_w, _BTN_H),
             text="Cancel" if cancellable else "",
             font=font,
             outline_radius=4,
@@ -129,6 +142,17 @@ class ArchiveProgressPanel(Panel):
         self._btn.visible = cancellable
         if cancellable:
             self.add_sel_widget(self._btn)
+
+    def on_event(self, event: ControllerEvent) -> bool:
+        # Panel.handle resolves NAV before consulting on_event, so the axiom holds:
+        # everything reaching here is a footswitch/knob, and a bypass toggle or board
+        # change while unzip rewrites data/ would race the restore. Swallow until done.
+        return self._job.state is JobState.RUNNING
+
+    def _open_editor_for_selection(self) -> bool:
+        # NAV click with nothing selected (restore, mid-run): the click was aimed at
+        # this panel's empty selection, not at the board hidden behind it.
+        return self._job.state is JobState.RUNNING
 
     @property
     def job_state(self) -> JobState:
@@ -154,7 +178,7 @@ class ArchiveProgressPanel(Panel):
             self._title_lbl.set_text(f"{self._noun} failed", _ERR)
             self._status_lbl.set_text(self._job.error.splitlines()[-1][:44] if self._job.error else "", _ERR)
 
-        self._btn.set_text("Close")
+        self._btn.set_text(self._done_label if state is JobState.DONE else "Close")
         if not self._btn.visible:
             self._btn.visible = True
             self.add_sel_widget(self._btn)

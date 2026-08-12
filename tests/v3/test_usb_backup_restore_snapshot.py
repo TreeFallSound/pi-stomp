@@ -3,6 +3,10 @@ with two USB sticks mounted so the selection menu actually appears."""
 
 from unittest.mock import patch
 
+import time
+
+from pistomp.input.event import SwitchEvent, SwitchEventKind
+from tests.v3.nav_helpers import nav_click, nav_encoder
 from uilib.misc import InputEvent
 
 from modalapi.archive import JobState
@@ -186,3 +190,76 @@ def test_v3_restore_skips_menu_when_only_one_drive_has_a_backup(v3_system: Syste
         _tick(handler)
 
     snapshot()
+
+
+def test_v3_restore_offers_no_way_out_while_running(v3_system: SystemFixture):
+    """A running restore is deliberately undismissable — unzip is overwriting data/ in
+    place and a half-restored tree cannot be undone, so there is no button to press."""
+    handler = v3_system.handler
+    _setup_main_panel(v3_system)
+
+    with (
+        patch.object(handler, "check_usb", return_value=[_TWO_DRIVES[0]]),
+        patch("os.path.exists", return_value=True),
+        fake_jobs(),
+    ):
+        handler.user_restore_data(None)
+        panel = handler.lcd.pstack.find_panel_type(ArchiveProgressPanel)
+        assert panel is not None
+
+        assert panel.sel_ref is None
+        assert not panel._btn.visible
+        nav_click(handler)
+
+        assert handler.lcd.pstack.find_panel_type(ArchiveProgressPanel) is panel
+
+
+def test_v3_running_job_swallows_footswitches(v3_system: SystemFixture):
+    """The old blocking implementation froze the UI thread, so nothing could act mid-run.
+    Now that the job is off-thread the panel must swallow input itself — a footswitch
+    reaching the cascade would toggle a bypass (mod-ui writes data/) during the restore."""
+    handler = v3_system.handler
+    _setup_main_panel(v3_system)
+
+    with (
+        patch.object(handler, "check_usb", return_value=[_TWO_DRIVES[0]]),
+        patch("os.path.exists", return_value=True),
+        fake_jobs() as jobs,
+    ):
+        handler.user_restore_data(None)
+        fs = SwitchEvent(controller=v3_system.hw.footswitches[0], kind=SwitchEventKind.PRESS, timestamp=time.monotonic())
+        nav = SwitchEvent(controller=nav_encoder(handler), kind=SwitchEventKind.PRESS, timestamp=time.monotonic())
+
+        assert handler.lcd.handle(fs) is True
+        assert handler.lcd.handle(nav) is True
+
+        # Once finished the panel stops hoarding input.
+        jobs[0].finish(JobState.DONE)
+        _tick(handler)
+        assert handler.lcd.handle(fs) is False
+
+
+def test_v3_restore_button_is_nav_reachable_once_finished(v3_system: SystemFixture):
+    """When the job ends the button must be both visible and *selected* — it is the panel's
+    only selectable, so if add_sel_widget did not auto-select it the user would be trapped."""
+    handler = v3_system.handler
+    _setup_main_panel(v3_system)
+
+    with (
+        patch.object(handler, "check_usb", return_value=[_TWO_DRIVES[0]]),
+        patch("os.path.exists", return_value=True),
+        patch.object(handler, "system_menu_restart_sound") as mock_restart,
+        fake_jobs() as jobs,
+    ):
+        handler.user_restore_data(None)
+        panel = handler.lcd.pstack.find_panel_type(ArchiveProgressPanel)
+        assert panel is not None
+
+        jobs[0].finish(JobState.DONE)
+        _tick(handler)
+
+        assert panel.sel_ref is panel._btn
+        nav_click(handler)
+
+    mock_restart.assert_called_once_with(None)
+    assert handler.lcd.pstack.find_panel_type(ArchiveProgressPanel) is None

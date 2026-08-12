@@ -1689,6 +1689,7 @@ class Modhandler(Handler):
                 job=job,
                 on_dismiss=lambda: self._dismiss_restore_panel(on_success),
                 cancellable=False,
+                done_label="Restart to continue",
             )
         )
 
@@ -1711,9 +1712,7 @@ class Modhandler(Handler):
             return
         if on_success is not None:
             on_success()
-        self.lcd.draw_message_dialog(
-            "Restore complete. Press OK to restart.", "Info", on_dismiss=lambda: self.system_menu_restart_sound(None)
-        )
+        self.system_menu_restart_sound(None)
 
     def system_menu_save_current_pb(self, _arg: None):
         if self._current is None:

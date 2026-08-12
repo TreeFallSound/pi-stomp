@@ -84,6 +84,7 @@ def test_restore_success(v3_system: SystemFixture, snapshot):
     with (
         patch.object(handler, "check_usb", return_value=["/media/USB/backups"]),
         patch("os.path.exists", return_value=True),
+        patch.object(handler, "system_menu_restart_sound") as mock_restart,
         fake_jobs() as jobs,
     ):
         nav_step(handler, 1)
@@ -99,6 +100,7 @@ def test_restore_success(v3_system: SystemFixture, snapshot):
         handler.poll_lcd_updates()
         panel._on_button()
         handler.poll_lcd_updates()
+        mock_restart.assert_called_once_with(None)
 
     snapshot("restore_success")
 
