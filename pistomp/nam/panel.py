@@ -45,6 +45,7 @@ from uilib.glyphs.badge import BadgeGlyph
 from uilib.label import Label
 from uilib.misc import TextHAlign, get_text_bbox, get_text_size
 from uilib.paint import PaintContext
+from uilib.progress_bar import ProgressBarWidget, fmt_time
 from uilib.pygame_init import font as _make_font
 from uilib.text import Button, TextWidget
 from uilib.widget import Widget
@@ -114,14 +115,6 @@ _METER_IN_Y = _METER_OUT_Y + _METER_H + 2  # 180
 # ── Colour palette ────────────────────────────────────────────────────────────
 
 # Progress bar colour stops (position 0.0–1.0 along bar width)
-_BAR_STOPS: list[tuple[float, tuple[int, int, int]]] = [
-    (0.00, (0, 200, 75)),
-    (0.35, (120, 215, 0)),
-    (0.65, (230, 148, 0)),
-    (1.00, (215, 55, 10)),
-]
-_BAR_DIM = 0.13  # brightness of unfilled segments
-
 # Status LED
 _LED_IDLE = (70, 70, 78)
 _LED_CAPTURING = (0, 200, 80)
@@ -156,11 +149,6 @@ _HEADER_NAME_FG = (100, 100, 110)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-
-def _fmt_time(seconds: float) -> str:
-    s = max(0, int(seconds))
-    return f"{s // 60}:{s % 60:02d}"
 
 
 def _centred_x(text: str, font, width: int) -> int:
@@ -198,104 +186,6 @@ class KnobWidget(ArcDialWidget):
 
     def symbol_for(self, role: ParamRole) -> str | None:
         return self.symbol
-
-
-class ProgressBarWidget(Widget):
-    """Segmented colour-gradient progress bar with elapsed/remaining time labels."""
-
-    _MARGIN = 12  # left/right inset
-    _BAR_Y = 30  # top of bar within widget
-    _BAR_H = 30  # bar height
-    _LABEL_GAP = 10  # gap between bar bottom and label top
-    _N_SEGS = 40  # number of colour segments
-    _SEG_GAP = 2  # gap between segments in pixels
-
-    def __init__(self, box: Box, total_seconds: float, font, caption_font, parent: Widget) -> None:
-        super().__init__(box=box, bkgnd_color=(0, 0, 0), parent=parent)
-        self._total = total_seconds
-        self._progress = 0.0
-        self._frozen = False
-        self._elapsed = 0.0
-        self._remaining = total_seconds
-        self._font = font
-        self._caption_font = caption_font
-        inner_w = box.width - 2 * self._MARGIN
-        self._seg_w = max(1, (inner_w - (self._N_SEGS - 1) * self._SEG_GAP) // self._N_SEGS)
-
-    def set_progress(self, progress: float) -> None:
-        if self._frozen:
-            return
-        p = max(0.0, min(1.0, progress))
-        old_filled = int(self._progress * self._N_SEGS)
-        self._progress = p
-        self._elapsed = p * self._total
-        self._remaining = self._total - self._elapsed
-        if int(p * self._N_SEGS) != old_filled:
-            self.refresh()
-
-    def freeze(self) -> None:
-        self._frozen = True
-
-    def set_done(self) -> None:
-        self._progress = 1.0
-        self._elapsed = self._total
-        self._remaining = 0.0
-        self._frozen = True
-
-    def reset(self) -> None:
-        self._progress = 0.0
-        self._elapsed = 0.0
-        self._remaining = self._total
-        self._frozen = False
-
-    def advance_rotation(self, dt: float) -> None:
-        pass
-
-    @staticmethod
-    def _color_at(t: float) -> tuple[int, int, int]:
-        stops = _BAR_STOPS
-        if t <= stops[0][0]:
-            return stops[0][1]
-        if t >= stops[-1][0]:
-            return stops[-1][1]
-        for i in range(len(stops) - 1):
-            t0, c0 = stops[i]
-            t1, c1 = stops[i + 1]
-            if t0 <= t <= t1:
-                f = (t - t0) / (t1 - t0)
-                return (
-                    int(c0[0] + f * (c1[0] - c0[0])),
-                    int(c0[1] + f * (c1[1] - c0[1])),
-                    int(c0[2] + f * (c1[2] - c0[2])),
-                )
-        return stops[-1][1]
-
-    def _draw(self, ctx: PaintContext) -> None:
-        n = self._N_SEGS
-        filled = int(self._progress * n)
-        sw = self._seg_w
-        bx = self._MARGIN
-        by = self._BAR_Y
-        ctx.fill((0, 0, 0))
-
-        for i in range(n):
-            t = i / (n - 1) if n > 1 else 0.0
-            r, g, b = self._color_at(t)
-            if i < filled:
-                color: tuple[int, int, int] = (r, g, b)
-            else:
-                color = (int(r * _BAR_DIM), int(g * _BAR_DIM), int(b * _BAR_DIM))
-            ctx.draw_rectangle(Box.xywh(bx + i * (sw + self._SEG_GAP), by, sw, self._BAR_H), fill=color)
-
-        label_y = by + self._BAR_H + self._LABEL_GAP
-        right_x = ctx.width - self._MARGIN
-
-        elapsed_str = _fmt_time(self._elapsed)
-        ctx.draw_text((bx, label_y), elapsed_str, fill=(130, 118, 80), font=self._font)
-
-        remaining_str = f"−{_fmt_time(self._remaining)}"
-        rw, _ = get_text_size(remaining_str, self._font)
-        ctx.draw_text((right_x - rw, label_y), remaining_str, fill=(205, 180, 110), font=self._font)
 
 
 class LevelMeter(Widget):
@@ -505,7 +395,7 @@ class NamCapturePanel(Panel):
         )
         self._btn_start = Button(
             box=Box.xywh(_BTN_X_ACTION, _BTN_Y, _BTN_W, _BTN_H),
-            text=f"Start ({_fmt_time(self._duration)})",
+            text=f"Start ({fmt_time(self._duration)})",
             font=font,
             outline_radius=4,
             parent=self,
