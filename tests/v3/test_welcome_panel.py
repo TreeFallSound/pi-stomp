@@ -105,3 +105,34 @@ def test_restore_success(v3_system: SystemFixture, snapshot):
     snapshot("restore_success")
 
     assert handler.lcd.pstack.find_panel_type(WelcomePanel) is None
+
+
+def test_restore_failure_keeps_welcome_and_never_restarts(v3_system: SystemFixture):
+    """A failed restore from the welcome screen must leave the user where they started:
+    welcome still up, WELCOME_SEEN unset so it reappears, and no restart into a
+    half-written data/."""
+    handler = v3_system.handler
+
+    _open_welcome(v3_system)
+
+    with (
+        patch.object(handler, "check_usb", return_value=["/media/USB/backups"]),
+        patch("os.path.exists", return_value=True),
+        patch.object(handler, "system_menu_restart_sound") as mock_restart,
+        fake_jobs() as jobs,
+    ):
+        nav_step(handler, 1)
+        nav_click(handler)
+        handler.poll_lcd_updates()
+
+        panel = handler.lcd.pstack.find_panel_type(ArchiveProgressPanel)
+        assert panel is not None
+        jobs[0].finish(JobState.FAILED, error="unzip: cannot find zipfile directory")
+        handler.poll_lcd_updates()
+        panel._on_button()
+        handler.poll_lcd_updates()
+
+    mock_restart.assert_not_called()
+    assert handler.lcd.pstack.find_panel_type(WelcomePanel) is not None
+    calls = handler.settings.set_setting.call_args_list  # pyright: ignore[reportAttributeAccessIssue]
+    assert Token.WELCOME_SEEN not in [c.args[0] for c in calls]
