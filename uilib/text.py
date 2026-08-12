@@ -443,6 +443,16 @@ class Button(TextWidget):
         self.sel_width = self._get_arg(kwargs, "sel_width", 2)
         super(Button, self).__init__(**kwargs)
 
+    @override
+    def _get_margins(self):
+        # TextWidget top-aligns at v_margin, which leaves a fixed-height button's
+        # label riding high. Centre in the leftover space unless told otherwise.
+        h_margin, v_margin = super()._get_margins()
+        if self.v_margin is None and self.box is not None and self.box.height > 0:
+            _, th = self._get_text_size()
+            v_margin = max(v_margin, int((self.box.height - self.outline - th) // 2))
+        return (h_margin, v_margin)
+
 
 class PluginTile(TextWidget):
     """TextWidget for plugin grid tiles.

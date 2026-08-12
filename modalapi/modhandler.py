@@ -18,6 +18,7 @@ from pistomp.audiocard import Audiocard
 from modalapi.sync import SyncMode, SyncModeSetter
 
 import bisect
+import datetime
 import json
 import logging
 import os
@@ -1603,6 +1604,29 @@ class Modhandler(Handler):
             value /= 1000
         return f"{value:.1f}GB"
 
+    def _drive_detail(self, backup_dir: str) -> str:
+        """Drive name plus free space — the thing that decides whether a backup fits."""
+        mount = os.path.dirname(backup_dir)
+        name = os.path.basename(mount)
+        try:
+            usage = shutil.disk_usage(mount)
+        except OSError:
+            return name
+        return f"{name} · {self._human_size(usage.free)} free of {self._human_size(usage.total)}"
+
+    def _archive_detail(self, backup_dir: str) -> str:
+        """Drive name plus the archive's size and age — restore overwrites data/,
+        so which vintage is about to land matters more than free space."""
+        mount = os.path.dirname(backup_dir)
+        name = os.path.basename(mount)
+        path = os.path.join(backup_dir, self.backup_file)
+        try:
+            st = os.stat(path)
+        except OSError:
+            return name
+        when = datetime.datetime.fromtimestamp(st.st_mtime).strftime("%d %b %H:%M")
+        return f"{name} · {self._human_size(st.st_size)} from {when}"
+
     def _drive_label(self, backup_dir: str) -> str:
         mount = os.path.dirname(backup_dir)
         try:
@@ -1627,17 +1651,22 @@ class Modhandler(Handler):
         self._choose_usb_drive(self.check_usb(), self._do_backup_data)
 
     def _do_backup_data(self, backup_dir: str):
-        self.lcd.draw_info_message("Backing up, please wait...", refresh=True)
+        from modalapi.archive import ArchiveJob
+        from ui.archive_panel import ArchiveProgressPanel
+
         logging.info("Data backup...")
         cmd = os.path.join(self.homedir, "util", "data-backup.sh")
-        try:
-            subprocess.check_output([cmd, os.path.join(backup_dir, self.backup_file), self.data_dir])
-            self.lcd.draw_message_dialog("Backup complete", "Info")
-            logging.info("Backup complete")
-        except subprocess.CalledProcessError as e:
-            logging.error("user_backup_data:" + str(e.output))
-        finally:
-            self.lcd.draw_info_message("", refresh=True)
+        job = ArchiveJob.backup(cmd, os.path.join(backup_dir, self.backup_file), self.data_dir)
+        self.lcd.pstack.push_panel(
+            ArchiveProgressPanel(
+                title="Backing up",
+                noun="Backup",
+                subtitle=self._drive_detail(backup_dir),
+                job=job,
+                on_dismiss=self._dismiss_archive_panel,
+                cancellable=True,
+            )
+        )
 
     def user_restore_data(self, arg, on_success=None):
         # Only offer drives that actually hold a backup — no point asking the
@@ -1646,24 +1675,45 @@ class Modhandler(Handler):
         self._choose_usb_drive(restorable, lambda d: self._do_restore_data(d, on_success=on_success))
 
     def _do_restore_data(self, backup_dir: str, on_success=None):
-        self.lcd.draw_info_message("Restoring, please wait...", refresh=True)
+        from modalapi.archive import ArchiveJob
+        from ui.archive_panel import ArchiveProgressPanel
+
         logging.info("Restoring data backup...")
         cmd = os.path.join(self.homedir, "util", "data-restore.sh")
-        try:
-            subprocess.check_output(
-                ["sudo", "-u", self.username, cmd, os.path.join(backup_dir, self.backup_file), self.data_dir]
+        job = ArchiveJob.restore(cmd, self.username, os.path.join(backup_dir, self.backup_file), self.data_dir)
+        self.lcd.pstack.push_panel(
+            ArchiveProgressPanel(
+                title="Restoring",
+                noun="Restore",
+                subtitle=self._archive_detail(backup_dir),
+                job=job,
+                on_dismiss=lambda: self._dismiss_restore_panel(on_success),
+                cancellable=False,
             )
-            logging.info("Restore complete")
-            if on_success is not None:
-                on_success()
-            self.lcd.draw_message_dialog(
-                "Restore complete. Press OK to restart.", "Info", on_dismiss=lambda: self.system_menu_restart_sound(None)
-            )
-        except subprocess.CalledProcessError as e:
-            self.lcd.draw_message_dialog(e.output.decode("utf-8"))
-            logging.error("user_restore_data: " + e.output.decode("utf-8"))
-        finally:
-            self.lcd.draw_info_message("", refresh=True)
+        )
+
+    def _dismiss_archive_panel(self) -> None:
+        from ui.archive_panel import ArchiveProgressPanel
+
+        panel = self.lcd.pstack.find_panel_type(ArchiveProgressPanel)
+        if panel is not None:
+            self.lcd.pstack.pop_panel(panel)
+        self.lcd.draw_main_panel()
+
+    def _dismiss_restore_panel(self, on_success=None) -> None:
+        from modalapi.archive import JobState
+        from ui.archive_panel import ArchiveProgressPanel
+
+        panel = self.lcd.pstack.find_panel_type(ArchiveProgressPanel)
+        restored = panel is not None and panel.job_state is JobState.DONE
+        self._dismiss_archive_panel()
+        if not restored:
+            return
+        if on_success is not None:
+            on_success()
+        self.lcd.draw_message_dialog(
+            "Restore complete. Press OK to restart.", "Info", on_dismiss=lambda: self.system_menu_restart_sound(None)
+        )
 
     def system_menu_save_current_pb(self, _arg: None):
         if self._current is None:

@@ -3,7 +3,10 @@
 import os
 from unittest.mock import patch
 
+from modalapi.archive import JobState
+from tests.archive_fake import fake_jobs
 from tests.types import SystemFixture
+from ui.archive_panel import ArchiveProgressPanel
 
 
 def test_system_menu_shutdown(modhandler_system: SystemFixture):
@@ -95,19 +98,18 @@ def test_check_usb_ignores_unmounted_media_dirs(modhandler_system: SystemFixture
         assert handler.check_usb() == []
 
 
-def test_backup_with_usb_runs_script(modhandler_system: SystemFixture):
-    """user_backup_data() invokes data-backup.sh with the discovered mount's backups dir."""
+def test_backup_with_usb_starts_job_behind_progress_panel(modhandler_system: SystemFixture):
+    """user_backup_data() starts the job against the discovered mount and shows progress
+    rather than blocking the UI thread until zip finishes."""
     handler = modhandler_system.handler
     with (
         patch.object(handler, "check_usb", return_value=["/media/MYSTICK/backups"]),
-        patch("subprocess.check_output") as mock_backup,
-        patch.object(handler.lcd, "draw_message_dialog") as mock_dialog,
+        fake_jobs() as jobs,
     ):
         handler.user_backup_data(None)
 
-    args = mock_backup.call_args[0][0]
-    assert args[1] == os.path.join("/media/MYSTICK/backups", handler.backup_file)
-    mock_dialog.assert_called_once_with("Backup complete", "Info")
+    assert jobs[0].argv[1] == os.path.join("/media/MYSTICK/backups", handler.backup_file)
+    assert handler.lcd.pstack.find_panel_type(ArchiveProgressPanel) is not None
 
 
 class _FakeUsage:
@@ -122,12 +124,12 @@ def test_backup_with_multiple_usb_shows_selection_menu(modhandler_system: System
     with (
         patch.object(handler, "check_usb", return_value=dirs),
         patch("shutil.disk_usage", return_value=_FakeUsage(32_000_000_000)),
-        patch("subprocess.check_output") as mock_backup,
+        fake_jobs() as jobs,
         patch.object(handler.lcd, "draw_selection_menu") as mock_menu,
     ):
         handler.user_backup_data(None)
 
-    mock_backup.assert_not_called()
+    assert jobs == []
     mock_menu.assert_called_once()
     args, kwargs = mock_menu.call_args
     assert args[1] == "Choose USB drive"
@@ -136,9 +138,9 @@ def test_backup_with_multiple_usb_shows_selection_menu(modhandler_system: System
 
     # Picking the second item runs the backup against that stick's dir.
     _label, callback, arg = items[1]
-    with patch("subprocess.check_output") as mock_backup, patch.object(handler.lcd, "draw_message_dialog"):
+    with fake_jobs() as jobs:
         callback(arg)
-    assert mock_backup.call_args[0][0][1] == os.path.join(dirs[1], handler.backup_file)
+    assert jobs[0].argv[1] == os.path.join(dirs[1], handler.backup_file)
 
 
 def test_restore_only_offers_drives_with_a_backup(modhandler_system: SystemFixture):
@@ -148,15 +150,14 @@ def test_restore_only_offers_drives_with_a_backup(modhandler_system: SystemFixtu
     with (
         patch.object(handler, "check_usb", return_value=dirs),
         patch("os.path.exists", side_effect=lambda p: p == os.path.join(dirs[1], handler.backup_file)),
-        patch("subprocess.check_output") as mock_restore,
+        fake_jobs() as jobs,
         patch.object(handler.lcd, "draw_selection_menu") as mock_menu,
         patch.object(handler, "system_menu_restart_sound"),
-        patch.object(handler.lcd, "draw_message_dialog"),
     ):
         handler.user_restore_data(None)
 
     mock_menu.assert_not_called()
-    assert mock_restore.call_args[0][0][-2] == os.path.join(dirs[1], handler.backup_file)
+    assert jobs[0].argv[-2] == os.path.join(dirs[1], handler.backup_file)
 
 
 def test_restore_success_defers_restart_until_ok_pressed(modhandler_system: SystemFixture):
@@ -165,13 +166,20 @@ def test_restore_success_defers_restart_until_ok_pressed(modhandler_system: Syst
     the process before the user ever sees the confirmation dialog."""
     handler = modhandler_system.handler
     with (
-        patch("subprocess.check_output", return_value=b""),
+        fake_jobs() as jobs,
         patch.object(handler.lcd, "draw_message_dialog") as mock_dialog,
         patch.object(handler, "system_menu_restart_sound") as mock_restart,
     ):
         handler._do_restore_data("/media/MYSTICK/backups")
+        panel = handler.lcd.pstack.find_panel_type(ArchiveProgressPanel)
+        assert panel is not None
 
+        jobs[0].finish(JobState.DONE)
+        panel.tick()
+        mock_dialog.assert_not_called()
         mock_restart.assert_not_called()
+
+        panel._on_button()
         assert "OK" in mock_dialog.call_args[0][0]
 
         on_dismiss = mock_dialog.call_args.kwargs["on_dismiss"]
@@ -193,3 +201,42 @@ def test_restore_with_no_backups_shows_no_usb_dialog(modhandler_system: SystemFi
 
     mock_dialog.assert_called_once()
     assert "USB" in mock_dialog.call_args[0][0]
+
+
+def test_drive_detail_reports_free_space(modhandler_system: SystemFixture):
+    """The backup subtitle names the drive and how much room is left on it."""
+    handler = modhandler_system.handler
+
+    class _Usage:
+        total = 58_000_000_000
+        free = 57_000_000_000
+
+    with patch("shutil.disk_usage", return_value=_Usage()):
+        assert handler._drive_detail("/media/STAGE_LEFT/backups") == "STAGE_LEFT · 57.0GB free of 58.0GB"
+
+
+def test_drive_detail_falls_back_to_name_when_unreadable(modhandler_system: SystemFixture):
+    """A stick yanked between menu and panel must not take the panel down with it."""
+    handler = modhandler_system.handler
+    with patch("shutil.disk_usage", side_effect=OSError):
+        assert handler._drive_detail("/media/GONE/backups") == "GONE"
+
+
+def test_archive_detail_reports_size_and_age(modhandler_system: SystemFixture):
+    """Restore overwrites data/, so the subtitle says which vintage is about to land."""
+    handler = modhandler_system.handler
+
+    class _Stat:
+        st_size = 344_307_247
+        st_mtime = 1_754_942_700.0  # 2025-08-11 18:45 local
+
+    with patch("os.stat", return_value=_Stat()):
+        detail = handler._archive_detail("/media/STAGE_LEFT/backups")
+
+    assert detail.startswith("STAGE_LEFT · 344.3MB from ")
+
+
+def test_archive_detail_falls_back_to_name_when_missing(modhandler_system: SystemFixture):
+    handler = modhandler_system.handler
+    with patch("os.stat", side_effect=OSError):
+        assert handler._archive_detail("/media/GONE/backups") == "GONE"

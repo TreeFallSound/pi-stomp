@@ -5,14 +5,18 @@ from unittest.mock import patch
 
 from uilib.misc import InputEvent
 
+from modalapi.archive import JobState
+from tests.archive_fake import fake_jobs
 from tests.types import SystemFixture
+from ui.archive_panel import ArchiveProgressPanel
 
 _TWO_DRIVES = ["/media/STAGE_LEFT/backups", "/media/STAGE_RIGHT/backups"]
 
 
 class _FakeUsage:
-    def __init__(self, total: int):
+    def __init__(self, total: int, free: int = 31_000_000_000):
         self.total = total
+        self.free = free
 
 
 def _setup_main_panel(v3_system: SystemFixture):
@@ -33,6 +37,11 @@ def _navigate_to_drive(handler, backup_dir: str):
             menu.sel_widget(widget)
             return
     raise AssertionError(f"no menu item for {backup_dir}")
+
+
+def _tick(handler):
+    """Drive one UI poll so the progress panel picks up the job's state."""
+    handler.lcd.poll_updates()
 
 
 def _click_selected(handler):
@@ -69,10 +78,58 @@ def test_v3_backup_completes_after_drive_chosen(v3_system: SystemFixture, snapsh
     _navigate_to_drive(handler, _TWO_DRIVES[1])
     snapshot("selection")
 
-    with patch("subprocess.check_output", return_value=b""):
+    with fake_jobs() as jobs, patch("shutil.disk_usage", return_value=_FakeUsage(58_000_000_000, 57_000_000_000)):
         _click_selected(handler)
+        _tick(handler)
+        snapshot("in_progress")
 
-    snapshot("complete")
+        jobs[0].advance(0.62, "user-files/NAM Models/Boost Pedal Pack/FORTIN GRIND.nam")
+        _tick(handler)
+        snapshot("partway")
+
+        jobs[0].finish(JobState.DONE)
+        _tick(handler)
+        snapshot("complete")
+
+
+def test_v3_backup_cancel_leaves_previous_archive(v3_system: SystemFixture, snapshot):
+    """Cancel is offered while a backup runs; the panel then reports the old archive is intact."""
+    handler = v3_system.handler
+    _setup_main_panel(v3_system)
+
+    with (
+        patch.object(handler, "check_usb", return_value=[_TWO_DRIVES[0]]),
+        patch("shutil.disk_usage", return_value=_FakeUsage(58_000_000_000, 57_000_000_000)),
+        fake_jobs() as jobs,
+    ):
+        handler.user_backup_data(None)
+        panel = handler.lcd.pstack.find_panel_type(ArchiveProgressPanel)
+        assert panel is not None
+
+        jobs[0].advance(0.4, "user-files/NAM Models/DDE - Life Droner (NoCab).nam")
+        _tick(handler)
+        panel._on_button()
+        _tick(handler)
+
+    assert jobs[0].cancelled
+    snapshot("cancelled")
+
+
+def test_v3_backup_failure_shows_error(v3_system: SystemFixture, snapshot):
+    """A failed backup surfaces the script's last output line instead of dying silently."""
+    handler = v3_system.handler
+    _setup_main_panel(v3_system)
+
+    with (
+        patch.object(handler, "check_usb", return_value=[_TWO_DRIVES[0]]),
+        patch("shutil.disk_usage", return_value=_FakeUsage(58_000_000_000, 57_000_000_000)),
+        fake_jobs() as jobs,
+    ):
+        handler.user_backup_data(None)
+        jobs[0].finish(JobState.FAILED, error="zip I/O error: No space left on device")
+        _tick(handler)
+
+    snapshot("failed")
 
 
 def test_v3_restore_shows_usb_drive_selection_menu(v3_system: SystemFixture, snapshot):
@@ -104,10 +161,14 @@ def test_v3_restore_completes_after_drive_chosen(v3_system: SystemFixture, snaps
     _navigate_to_drive(handler, _TWO_DRIVES[1])
     snapshot("selection")
 
-    with patch("subprocess.check_output", return_value=b""), patch("os.system"):
+    with fake_jobs() as jobs, patch("os.system"):
         _click_selected(handler)
+        _tick(handler)
+        snapshot("in_progress")
 
-    snapshot("complete")
+        jobs[0].finish(JobState.DONE)
+        _tick(handler)
+        snapshot("complete")
 
 
 def test_v3_restore_skips_menu_when_only_one_drive_has_a_backup(v3_system: SystemFixture, snapshot):
@@ -118,9 +179,10 @@ def test_v3_restore_skips_menu_when_only_one_drive_has_a_backup(v3_system: Syste
     with (
         patch.object(handler, "check_usb", return_value=_TWO_DRIVES),
         patch("os.path.exists", side_effect=lambda p: p.startswith(_TWO_DRIVES[1])),
-        patch("subprocess.check_output", return_value=b""),
+        fake_jobs(),
         patch("os.system"),
     ):
         handler.user_restore_data(None)
+        _tick(handler)
 
     snapshot()

@@ -10,7 +10,10 @@ To regenerate snapshots after intentional UI changes:
 from unittest.mock import patch
 
 import common.token as Token
+from modalapi.archive import JobState
+from tests.archive_fake import fake_jobs
 from tests.types import SystemFixture
+from ui.archive_panel import ArchiveProgressPanel
 from tests.v3.nav_helpers import nav_step, nav_click
 from ui.welcome import WelcomePanel
 
@@ -72,7 +75,8 @@ def test_setup_noop(v3_system: SystemFixture, snapshot):
 
 
 def test_restore_success(v3_system: SystemFixture, snapshot):
-    """Restore calls load_settings before set_setting and pops welcome."""
+    """Restore calls load_settings before set_setting and pops welcome — but only once the
+    user closes the progress panel, since the restore now runs off the UI thread."""
     handler = v3_system.handler
 
     _open_welcome(v3_system)
@@ -80,10 +84,20 @@ def test_restore_success(v3_system: SystemFixture, snapshot):
     with (
         patch.object(handler, "check_usb", return_value=["/media/USB/backups"]),
         patch("os.path.exists", return_value=True),
-        patch("subprocess.check_output", return_value=b""),
+        fake_jobs() as jobs,
     ):
         nav_step(handler, 1)
         nav_click(handler)
+        handler.poll_lcd_updates()
+
+        # Welcome survives behind the progress panel until the restore finishes.
+        assert handler.lcd.pstack.find_panel_type(WelcomePanel) is not None
+
+        panel = handler.lcd.pstack.find_panel_type(ArchiveProgressPanel)
+        assert panel is not None
+        jobs[0].finish(JobState.DONE)
+        handler.poll_lcd_updates()
+        panel._on_button()
         handler.poll_lcd_updates()
 
     snapshot("restore_success")
