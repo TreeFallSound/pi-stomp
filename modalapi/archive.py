@@ -44,7 +44,7 @@ class JobState(enum.Enum):
 
 
 class ArchiveJob:
-    """Runs one archiving subprocess off the UI thread. Poll progress()/state
+    """Runs one archiving subprocess off of the UI thread. Poll progress()/state
     from the main thread; nothing here touches the LCD."""
 
     def __init__(self, argv: list[str], weights: dict[str, int], entry_re: re.Pattern[str]) -> None:
