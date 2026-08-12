@@ -377,7 +377,7 @@ reads the ADC and sends current position on pedalboard load.
 - `pistomp/footswitch.py`, `footswitch_chords.py` — Footswitch Controller + chord resolver
 - `pistomp/encoder.py`, `encoder_controller.py` — Quadrature decoder + Controller wrapper
 - `pistomp/analogmidicontrol.py` — ADC → MIDI CC with endpoint clamping
-- `pistomp/gpioswitch.py`, `analogswitch.py` — Raw GPIO/ADC button detectors
+- `pistomp/gpioswitch.py`, `adcswitch.py` — Raw GPIO/ADC button detectors
 - `modalapi/external_midi.py` — External MIDI port routing
 
 **Blend**

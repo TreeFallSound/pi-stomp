@@ -30,6 +30,8 @@ after completing the understanding task:
 4. Fill in less-important details once the user's choices predict them; i.e. the design space has been fully constrained. This is where you help accelerate human developers.
 5. Implement the code or write a markdown plan with implementation tree and the same minimal, direct, expert, and warm tone. There is absolutely no need to be glib or try to entertain, unless you absolutely can't resist adding flair.
 
+Do not journal in the codebase. We don't need a record of things we've done; the code speaks for itself.
+
 ## Rules
 
 - **pyright zero.** No new errors, ever.

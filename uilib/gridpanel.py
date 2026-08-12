@@ -167,6 +167,11 @@ class GridPanel(ContainerWidget):
         w, h = super()._viewport_size()
         return w, h - self.bottom_inset
 
+    def _scroll_delta(self, box: Box, movex: int, movey: int, orig_box: Box):
+        # Minimum movement that brings the tile fully in: no page-snap, and no
+        # reset-to-top when the tile happens to sit in the first row.
+        return movex, movey
+
     # ------------------------------------------------------------------ #
     # Routing render pass.
     # ------------------------------------------------------------------ #

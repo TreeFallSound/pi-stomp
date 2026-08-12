@@ -20,7 +20,7 @@ import pistomp.analogcontrol as analogcontrol
 import pistomp.switchstate as switchstate
 
 
-class AnalogSwitch(analogcontrol.AnalogControl):
+class AdcSwitch(analogcontrol.AnalogControl):
     """Raw ADC press detector (10-bit via MCP3008 SPI).
 
     Hardware paths:
@@ -42,7 +42,7 @@ class AnalogSwitch(analogcontrol.AnalogControl):
 
     def __init__(self, spi, adc_channel, callback, longpress_callback=None):
         # Tolerance is not used for switch detection (binary pressed/released)
-        super(AnalogSwitch, self).__init__(spi, adc_channel, tolerance=0)
+        super(AdcSwitch, self).__init__(spi, adc_channel, tolerance=0)
         self.callback = callback
         self.longpress_callback = longpress_callback
         self.state = switchstate.Value.RELEASED
