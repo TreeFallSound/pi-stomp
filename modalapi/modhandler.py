@@ -475,7 +475,7 @@ class Modhandler(Handler):
                 self._fire_row(winner, SwitchEvent(controller=fs, kind=kind, timestamp=timestamp))
                 return True
             # No LONGPRESS row — chord longpress (the exception, stays as code)
-            self.chord_helper.observe(fs, timestamp)
+            self._fire_longpress_groups(fs)
             return True
 
         # Short press
@@ -592,7 +592,7 @@ class Modhandler(Handler):
     def poll_controls(self):
         if self.hardware:
             self.hardware.poll_controls()
-        self._tick_chords()
+        self.chord_helper.poll()
 
     def poll_indicators(self):
         if self.hardware:

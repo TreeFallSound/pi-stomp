@@ -324,6 +324,13 @@ class ShroudedPanel(Panel):
 
         ctx = PaintContext(self.surface, cbox, frame=self.box.norm())
         child.do_draw(ctx, cbox)
+        # A slot spans the panel's full height, so it repaints over whatever
+        # do_draw normally lays down after its children. Re-apply that, clipped
+        # to the slot.
+        with ctx.painting(self.box.norm()) as pctx:
+            self._draw_outline(pctx)
+            self._draw_selection(pctx)
+            self._draw_badge(pctx)
         self.propagate_dirty(cbox)
 
 

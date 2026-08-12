@@ -86,13 +86,17 @@ schema = {
                 "oneOf": [
                   {
                     "type": "string",
-                    "enum": ["next_snapshot", "previous_snapshot", "toggle_bypass", "set_mod_tap_tempo", "toggle_tap_tempo_enable", "toggle_tuner_enable"]
+                    "enum": ["next_snapshot", "previous_snapshot", "toggle_bypass",
+                             "toggle_tap_tempo_enable", "toggle_tuner_enable", "next_pedalboard",
+                             "previous_pedalboard"]
                   },
                   {
                     "type": "array",
                     "items": {
                       "type": "string",
-                      "enum": ["next_snapshot", "previous_snapshot", "toggle_bypass", "set_mod_tap_tempo", "toggle_tap_tempo_enable", "toggle_tuner_enable"]
+                      "enum": ["next_snapshot", "previous_snapshot", "toggle_bypass",
+                             "toggle_tap_tempo_enable", "toggle_tuner_enable", "next_pedalboard",
+                             "previous_pedalboard"]
                     }
                   },
                   {
