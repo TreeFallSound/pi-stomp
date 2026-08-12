@@ -8,31 +8,17 @@ Architecture reference: `docs/architecture.md`. Subsystem detail:
 `pistomp/input/README.md` (input dispatch), `uilib/README.md` (paint system).
 **Read the code before trusting any doc, including this one.**
 
-## Agent personality
+## Agent behaviour
 
-> THESE RULES ARE MANDATORY FOR LLM-BASED AGENTS TO FOLLOW
+As the user, I expect you to lead with suggestions and uncover facts; I own the architecture and judgment.
 
-Concise and direct above all else. You must think through, before each
-response, the *length* of response that is warranted given the request.
-You are, of course, an expert, but correct the user on things that are
-not germane is unacceptable: you must avoid doing this. As such, it is
-extremely important that you understand what the user is asking for,
-upfront, as a tiny minigame that we often don't play before you get to
-the meat of your research, strategizing, iplementation, verification,
-and summarization cycle.
+1. **Suggest, with justification** — prior art, real hardware/ecosystem examples, ways this lets players express themselves. A suggestion I can reject beats an implementation I have to unwind.
+2. **When the design space is open, hand it back as a question.** Decompose it into its principal axes and ask with the multi-select tool, not as prose options. *Open* means more than one defensible architecture, or a choice that's expensive to reverse. A bug fix or an already-constrained detail is not open — just do it.
+3. **I own the scaffolding.** Once my choices constrain the space, fill in the rest. That's where you accelerate me.
 
-Suggestions are what we're looking for: your primary jobs are two-fold,
-after completing the understanding task:
+Don't correct me on things that aren't germane, especially when you're only guessing I don't understand. Do tell me when I'm wrong about the thing at hand.
 
-1. Offer suggestions with justification: real-world examples, a solution to a novel problem that has been posed / is being explored in the pi-Stomp ecosystem, ways to help users express themselves creatively.
-2. Discover the research space in the same way and then perform research
-3. Help design the architecture, but leave the main scaffolding to the user. A great way to help the user through this is to figure out the principal components of the design space and pose suggestions as a multi-part question asked to the user using the appopriate tool call. The user can use "something else" / "chat about this" if you are off-the-mark enough that steering is required.
-4. Fill in less-important details once the user's choices predict them; i.e. the design space has been fully constrained. This is where you help accelerate human developers.
-5. Implement the code or write a markdown plan with implementation tree and the same minimal, direct, expert, and warm tone. There is absolutely no need to be glib or try to entertain, unless you absolutely can't resist adding flair.
-
-Do not journal in the codebase. We don't need a record of things we've done; the code speaks for itself.
-
-## Rules
+### Rules
 
 - **pyright zero.** No new errors, ever.
 - **No broad `# pyright: ignore`.** A blanket ignore is a bug you haven't found yet.
@@ -40,14 +26,16 @@ Do not journal in the codebase. We don't need a record of things we've done; the
 - **Dependencies form a DAG.** No cycles between modules.
 - **MOD-UI is the single writer** of bypass and parameter state. We emit, paint
   optimistically, and reconcile against its echo. Never treat local state as truth.
+- **No comments explaining course corrections.**
+- **Production python files must always have AGPL headers.**
 - **NAV is unhijackable.** Rotate/click/longpress on the NAV control always operates on
   the current selection. No panel or binding may consume a raw NAV event, and no
   `declare_bindings()` row may name `cls=NAV` — it's the one axiom the precedence
   resolver doesn't apply to. Enforced by the base `Panel`, not convention.
 
-## Writing code here
+### Writing code here
 
-Match the file you're editing — its naming, its idiom, its comment density.
+Match the file you're editing — its naming, its purpose, its comment density, docstrings or no (ask: is this an API or something internal)?
 
 **Comments are short clauses, and rare.** Write one only to state a constraint the code
 cannot show: a hardware quirk, a protocol asymmetry, a why-not-the-obvious-thing. Never
@@ -66,14 +54,13 @@ observability cruft. If a comment explains *what*, delete it and fix the name in
 
 Same for prose: answer the question, skip the preamble.
 
-A panel's input handling is declared, not written. Override `declare_bindings()` to
-return a tuple of `BindingDecl`s (`common/contexts.py`) — the precedence resolver picks
-the winner and it's also what badges render from. The same table is the sole *dynamic*
-dispatch authority — pedalboard externals and mid-session MIDI-learn are rows, not
-side-channels (nav stays the axiom above it; volume routes by type). Reach for `on_event` only when a
-panel is a genuine state machine, not a binding set (NAM's capture flow is the one
-example); a new panel written as an `on_event` `if` chain is a regression. See
-`pistomp/input/README.md` for the shape.
+A panel's input handling is declared via `declare_bindings()` to
+return a tuple of `BindingDecl`s (`common/contexts.py`) — the precedence
+resolver picks the winner and it's also what badges render from. The same table 
+is the sole *dynamic* dispatch authority — pedalboard externals and mid-session 
+MIDI-learn are rows, not side-channels (nav stays the axiom above it; volume 
+routes by type). Reach for `on_event` only when a panel is a genuine state
+machine, not a binding set (NAM's capture flow is one such example).
 
 ## Commands
 
@@ -87,7 +74,7 @@ ssh pistomp@pistomp.local "ps-restart"                          # restart servic
 ssh pistomp@pistomp.local "journalctl -u mod-ala-pi-stomp -f"   # live logs
 ```
 
-Deploy by `scp` to the device or `./deploy.sh`; source lives at
+Deploy by `scp` + `ps-restart` on the device or by `./deploy.sh`; source lives at
 `/home/pistomp/pi-stomp/`. Shipping a release requires a version bump in the
 *separate* `pi-gen-pistomp` repo — see `docs/architecture.md`.
 
@@ -129,11 +116,6 @@ uv-managed venv. Don't try to pip-install the system ones.
 - **Blocking subprocess calls (nmcli, systemctl) must not run on the UI thread.** They
   stall the 10ms loop. Use a worker thread and poll-drain the result.
 
-- **A widget badge only paints if its container calls `_draw_badge`.** `Widget.do_draw`
-  calls it automatically, but `ContainerWidget` subclasses with their own paint path
-  (virtual refresh, non-virtual refresh, dirty-rect rebuild) must call it explicitly in
-  each one.
-
 ## Tests
 
 The `snapshot` fixture asserts the rendered LCD matches a baseline PNG.
@@ -145,5 +127,4 @@ def test_my_flow(v3_system, snapshot):
     snapshot("label")    # same name again → asserts the screen returned to that state
 ```
 
-On a snapshot mismatch: **fix real failures first.** Only then `--snapshot-update`, and
-say what you expect to change before regenerating.
+On a snapshot mismatch: **fix real failures first.** When only snapshot differences remain, run `--snapshot-update` to populate the working copy, then show me the changed files as soon as they regenerate and what you expect them to look like. You can lean on me to tell you if anything's wrong.
