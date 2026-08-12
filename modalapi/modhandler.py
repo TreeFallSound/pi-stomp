@@ -1712,7 +1712,7 @@ class Modhandler(Handler):
             return
         if on_success is not None:
             on_success()
-        self.system_menu_restart_sound(None)
+        self.restart_ui_stack()
 
     def system_menu_save_current_pb(self, _arg: None):
         if self._current is None:
@@ -1745,6 +1745,17 @@ class Modhandler(Handler):
     def system_menu_reload(self, arg):
         logging.info("Exiting main process, systemctl should restart if enabled")
         sys.exit(0)
+
+    def restart_ui_stack(self) -> None:
+        logging.info("Restarting mod-ui + deps")
+        try:
+            subprocess.Popen(
+                ["sudo", "systemctl", "--no-block", "restart", "mod-ui"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError as e:
+            logging.error("restart_ui_stack: %s", e)
 
     def system_menu_restart_sound(self, arg):
         self.lcd.splash_show()

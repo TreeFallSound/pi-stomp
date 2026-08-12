@@ -248,7 +248,7 @@ def test_v3_restore_button_is_nav_reachable_once_finished(v3_system: SystemFixtu
     with (
         patch.object(handler, "check_usb", return_value=[_TWO_DRIVES[0]]),
         patch("os.path.exists", return_value=True),
-        patch.object(handler, "system_menu_restart_sound") as mock_restart,
+        patch.object(handler, "restart_ui_stack") as mock_restart,
         fake_jobs() as jobs,
     ):
         handler.user_restore_data(None)
@@ -261,5 +261,5 @@ def test_v3_restore_button_is_nav_reachable_once_finished(v3_system: SystemFixtu
         assert panel.sel_ref is panel._btn
         nav_click(handler)
 
-    mock_restart.assert_called_once_with(None)
+    mock_restart.assert_called_once_with()
     assert handler.lcd.pstack.find_panel_type(ArchiveProgressPanel) is None

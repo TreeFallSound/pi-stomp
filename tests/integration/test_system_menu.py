@@ -152,7 +152,7 @@ def test_restore_only_offers_drives_with_a_backup(modhandler_system: SystemFixtu
         patch("os.path.exists", side_effect=lambda p: p == os.path.join(dirs[1], handler.backup_file)),
         fake_jobs() as jobs,
         patch.object(handler.lcd, "draw_selection_menu") as mock_menu,
-        patch.object(handler, "system_menu_restart_sound"),
+        patch.object(handler, "restart_ui_stack"),
     ):
         handler.user_restore_data(None)
 
@@ -168,7 +168,7 @@ def test_restore_defers_restart_until_the_button_is_pressed(modhandler_system: S
     with (
         fake_jobs() as jobs,
         patch.object(handler.lcd, "draw_message_dialog") as mock_dialog,
-        patch.object(handler, "system_menu_restart_sound") as mock_restart,
+        patch.object(handler, "restart_ui_stack") as mock_restart,
     ):
         handler._do_restore_data("/media/MYSTICK/backups")
         panel = handler.lcd.pstack.find_panel_type(ArchiveProgressPanel)
@@ -181,7 +181,7 @@ def test_restore_defers_restart_until_the_button_is_pressed(modhandler_system: S
 
         panel._on_button()
 
-    mock_restart.assert_called_once_with(None)
+    mock_restart.assert_called_once_with()
     mock_dialog.assert_not_called()
 
 
@@ -191,7 +191,7 @@ def test_failed_restore_offers_close_and_never_restarts(modhandler_system: Syste
     handler = modhandler_system.handler
     with (
         fake_jobs() as jobs,
-        patch.object(handler, "system_menu_restart_sound") as mock_restart,
+        patch.object(handler, "restart_ui_stack") as mock_restart,
     ):
         handler._do_restore_data("/media/MYSTICK/backups")
         panel = handler.lcd.pstack.find_panel_type(ArchiveProgressPanel)
@@ -279,3 +279,15 @@ def test_archive_detail_falls_back_to_name_when_missing(modhandler_system: Syste
     handler = modhandler_system.handler
     with patch("os.stat", side_effect=OSError):
         assert handler._archive_detail("/media/GONE/backups") == "GONE"
+
+
+def test_restart_ui_stack_is_non_blocking_and_skips_jack(modhandler_system: SystemFixture):
+    """Restoring data/ invalidates what mod-ui and pi-stomp cache, not the audio engine.
+    Restarting jack would drag six other units down with it, and os.system would block the
+    10ms loop while waiting on the restart that kills this very process."""
+    handler = modhandler_system.handler
+    with patch("subprocess.Popen") as mock_popen:
+        handler.restart_ui_stack()
+
+    argv = mock_popen.call_args[0][0]
+    assert argv == ["sudo", "systemctl", "--no-block", "restart", "mod-ui"]
