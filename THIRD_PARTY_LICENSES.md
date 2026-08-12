@@ -551,6 +551,13 @@ Python packages installed in the runtime environment, extracted via `pip-license
 | String machine chorus | 0.0 | http://spdx.org/licenses/GPL-2.0-or-later |
 | String machine stereo chorus | 0.0 | http://spdx.org/licenses/GPL-2.0-or-later |
 
+### Jim Auge (Mondomatic)
+| Plugin | Version | License |
+|--------|---------|---------|
+| DeArmondo610 | 1.2 | ISC |
+| Dimension IV | 1.0 | ISC |
+| Echomatica | 2.1 | ISC |
+
 ### Lkjb
 
 | Plugin | Version | License |
@@ -818,6 +825,12 @@ Python packages installed in the runtime environment, extracted via `pip-license
 |--------|---------|---------|
 | batteur | 1.0 | https://spdx.org/licenses/ISC |
 
+### pilal
+
+| Plugin | Version | License |
+|--------|---------|---------|
+| Dirty Talk | 4.0 | ISC
+
 ### Pjotr Lasschuit
 
 | Plugin | Version | License |
@@ -881,6 +894,25 @@ Python packages installed in the runtime environment, extracted via `pip-license
 | floaty | 2.0 | LGPL3 |
 | mud | 2.0 | LGPL3 |
 | paranoia | 2.0 | LGPL3 |
+
+### rpowell5064
+
+| Plugin | Version | License |
+|--------|---------|---------|
+| Hex Chain - Amp | 2.51 | GPL v3 |
+| Hex Chain - Cabinet | 1.45 | GPL v3 |
+| Hex Chain - Compressor | 2.30 | GPL v3 |
+| Hex Chain - Delay | 1.29 | GPL v3 |
+| Hex Chain - Drive | 1.38 | GPL v3 |
+| Hex Chain - Fuzz | 1.32 | GPL v3 |
+| Hex Forge | 1.175 | GPL v3 |
+| Hex Chain - Input Trim | 2.30 | GPL v3 |
+| Hex Chain - Modulation | 1.34 | GPL v3 |
+| Hex Chain - Nail | 1.25 | GPL v3 |
+| Hex Chain - Noise Gate | 1.27 | GPL v3 |
+| Hex Chain - Octave | 1.26 | GPL v3 |
+| Hex Chain - Reverb | 1.32 | GPL v3 |
+| Hex Chain - Wah | 1.25 | GPL v3 |
 
 ### Resonant DSP
 
@@ -949,6 +981,12 @@ Python packages installed in the runtime environment, extracted via `pip-license
 | the infamous mindi | 0.1 | GPL-2.0 |
 | the infamous power cut | 0.1 | GPL-2.0 |
 | the infamous stuck | 0.1 | GPL-2.0 |
+
+### Stefan Doerr
+
+| Plugin | Version | License |
+|--------|---------|---------|
+| Boreas | 1.0 | ISC |
 
 ### Steve Harris
 
