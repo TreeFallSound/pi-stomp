@@ -27,7 +27,7 @@ fi
 # Restore
 backup=$(realpath "$1")
 pushd "$target_dir" > /dev/null || exit 2
-unzip -o -u "$backup"
+unzip -o "$backup"
 rc=$?
 popd > /dev/null
 exit $rc
