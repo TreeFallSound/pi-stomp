@@ -4,6 +4,11 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [v3.3.1] - 2026-08-14
+### Fixed
+- Pedalboards list no longer shows deleted pedalboards after they are removed from MOD-UI
+- Fixed a race condition where Restore would re-write `last.json`, triggering a crash when the pedalboard it refers to does not yet exist when it is re-scanned
+
 ## [v3.3.0] - 2026-08-14
 ### Added
 - Welcome screen on startup
