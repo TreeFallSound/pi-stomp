@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Global EQ now accounts for the current sample rate
 
 ### Fixed
+- Fix parameter rollback on MIDI CC and ALSA local sinks by reconciling confirmed state upon successful emission
 - WiFi: fixed WPA3 support
 - Fix footswitch ↔ plugin param binding updates in menus
 - Fix inverted Q factor in x42 EQ panel

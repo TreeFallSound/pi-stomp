@@ -1237,11 +1237,13 @@ class Modhandler(Handler):
     def _publish_audio(self, param: Parameter) -> bool:
         """ A local ALSA write. No remote echo, so the send always lands."""
         self.audio_parameter_commit(param.symbol, param.value)
+        param.reconcile(param.value)
         return True
 
     def _publish_cc(self, controller: EncoderController, param: Parameter) -> bool:
         """Publish the parameter (to MOD-UI or anything else) via MIDI CC."""
         self._emit_midi(controller, controller.to_midi(param.value))
+        param.reconcile(param.value)
         return True
 
     def _publish_plugin_param(self, param: Parameter) -> bool:
