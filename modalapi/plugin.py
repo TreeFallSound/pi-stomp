@@ -1,27 +1,30 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have not received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from common.color import RectBorder
-from common.parameter import Parameter
+from common.parameter import BYPASS_SYMBOL, Parameter, Symbol, json_default
 from modalapi.plugin_customization import PluginCustomization, PluginExtraData
 from pistomp.controller import Controller
 
@@ -38,7 +41,7 @@ class Plugin:
     def __init__(
         self,
         instance_id: str,
-        parameters: dict[str, Parameter],
+        parameters: dict[Symbol, Parameter],
         info: dict | None,
         category: str | None = None,
         uri: str | None = None,
@@ -52,7 +55,7 @@ class Plugin:
         self.instance_number: int | None = instance_number
         self.info: dict | None = info
         self.name: str = (info or {}).get("name") or self.instance_id
-        self.parameters: dict[str, Parameter] = parameters
+        self.parameters: dict[Symbol, Parameter] = parameters
         self.canvas_x: float = 0.0
         self.canvas_y: float = 0.0
         self.bypass_indicator_xy: tuple[Point, Point] = ((0, 0), (0, 0))
@@ -61,7 +64,7 @@ class Plugin:
         self.has_footswitch: bool = False
         self.category: str | None = category
         self.uri: str | None = uri
-        self.pedalboard_snapshot: dict[str, float] = {}
+        self.pedalboard_snapshot: dict[Symbol, float] = {}
         # Generic mirror of this plugin's subscribed lv2:OutputPort values (see
         # `monitored_output_symbols`). Populated from WS `output_set` messages;
         # consumed by the LED driver's LedSpec lookups. No footswitch involved.
@@ -130,34 +133,46 @@ class Plugin:
     def intercept_shortpress(self) -> bool:
         return self.customization.intercept_shortpress
 
+    @property
+    def visible_parameters(self) -> dict[Symbol, Parameter]:
+        """Parameters a UI may paint. The hidden ones stay in `parameters` —
+        they still take MIDI bindings, snapshot, and reconcile against mod-ui."""
+        hidden = self.customization.hidden_params
+        return {s: p for s, p in self.parameters.items() if not p.hidden and s not in hidden}
+
     def is_bypassed(self) -> bool:
-        param = self.parameters.get(":bypass")
+        param = self.parameters.get(BYPASS_SYMBOL)
         if param is not None:
             return bool(param.value)
         return True
 
     def toggle_bypass(self) -> float:
-        param = self.parameters.get(":bypass")
+        param = self.parameters.get(BYPASS_SYMBOL)
         if param is None:
             return 0.0
         new_value = 0.0 if param.value else 1.0
-        param.value = new_value
+        param.preview(new_value)
         return new_value
 
-    def set_param_value(self, symbol: str, value: float) -> None:
-        """Cache a param's value and mirror it onto any control bound to it, so
-        a footswitch's LED/keycap (or a knob/encoder's cached position) tracks
-        mod-ui's live value. set_value is polymorphic per control type."""
+    def set_param_value(self, symbol: Symbol, value: float) -> None:
+        """Reconcile a param to mod-ui's value. Any bound stateful controller
+        (a footswitch keycap) resyncs through its own subscription, so this
+        doesn't reach for controllers."""
         param = self.parameters.get(symbol)
-        if param is None:
-            return
-        param.value = value
-        for c in self.controllers:
-            if c.parameter is param:
-                c.set_value(value)
+        if param is not None:
+            param.reconcile(value)
 
     def set_bypass(self, bypass: bool) -> None:
-        self.set_param_value(":bypass", 1.0 if bypass else 0.0)
+        self.set_param_value(BYPASS_SYMBOL, 1.0 if bypass else 0.0)
+
+    def subscribe(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
+        """Fan *cb* out over every parameter. Returns a single unsubscriber that
+        tears down all per-param subscriptions, so a panel subscribes once."""
+        unsubs = [p.subscribe(cb) for p in self.parameters.values()]
+        def _unsub() -> None:
+            for u in unsubs:
+                u()
+        return _unsub
 
     def to_json(self) -> str:
-        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
+        return json.dumps(self, default=json_default, sort_keys=True, indent=4)

@@ -10,7 +10,6 @@ To regenerate snapshots after intentional UI changes:
 
 from __future__ import annotations
 
-import pistomp.switchstate as switchstate
 from modalapi.parameter import Parameter
 from modalapi.plugin import Plugin
 from pistomp.controller import Controller
@@ -18,6 +17,8 @@ from pistomp.input.event import EncoderEvent
 from plugins.tap_reverb import TAP_REVERB_URI
 from plugins.tap_reverb.panel import TapReverbPanel
 from tests.types import SystemFixture
+from tests.v3.nav_helpers import nav_click
+from common.parameter import BYPASS_SYMBOL, PortInfo, Symbol
 
 # ── mode labels (43 values from the plugin TTL) ─────────────────────────────
 
@@ -89,8 +90,9 @@ def _param(
     default: float,
     instance_id: str = "reverb",
     enum_values: list | None = None,
+    unit: str | None = None,
 ) -> Parameter:
-    info: dict = {
+    info: PortInfo = {
         "shortName": symbol,
         "symbol": symbol,
         "ranges": {"minimum": minimum, "maximum": maximum, "default": default},
@@ -98,22 +100,24 @@ def _param(
     if enum_values is not None:
         info["properties"] = ["enumeration"]
         info["scalePoints"] = enum_values
+    if unit is not None:
+        info["units"] = {"symbol": unit}
     return Parameter(info, value, None, instance_id)
 
 
 def make_tap_reverb_plugin(instance_id: str = "reverb") -> Plugin:
     """Build a Plugin instance mirroring TAP Reverberator's port layout."""
-    params: dict[str, Parameter] = {
-        ":bypass": Parameter(
+    params: dict[Symbol, Parameter] = {
+        BYPASS_SYMBOL: Parameter(
             {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1, "default": 0}},
             False,
             None,
             instance_id,
         ),
-        "decay": _param("decay", 2800.0, 0.0, 10000.0, 2800.0, instance_id),
-        "drylevel": _param("drylevel", -4.0, -70.0, 10.0, -4.0, instance_id),
-        "wetlevel": _param("wetlevel", -12.0, -70.0, 10.0, -12.0, instance_id),
-        "mode": _param("mode", 0.0, 0.0, 42.0, 0.0, instance_id, enum_values=_MODE_SCALEPOINTS),
+        Symbol("decay"): _param(Symbol("decay"), 2800.0, 0.0, 10000.0, 2800.0, instance_id, unit="ms"),
+        Symbol("drylevel"): _param(Symbol("drylevel"), -4.0, -70.0, 10.0, -4.0, instance_id, unit="dB"),
+        Symbol("wetlevel"): _param(Symbol("wetlevel"), -12.0, -70.0, 10.0, -12.0, instance_id, unit="dB"),
+        Symbol("mode"): _param(Symbol("mode"), 0.0, 0.0, 42.0, 0.0, instance_id, enum_values=_MODE_SCALEPOINTS),
     }
     plugin = Plugin(instance_id, params, {}, "Reverb", uri=TAP_REVERB_URI)
     plugin.has_footswitch = False
@@ -148,19 +152,17 @@ def tweak(handler, idx: int, rotations: int) -> bool:
     event = EncoderEvent(
         controller=_FakeEnc(idx),
         rotations=rotations,
-        new_value=0.0,
-        new_midi_value=0,
     )
     return handler.handle(event)
 
 
 def short_press(handler) -> None:
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
 
 
 def long_press(handler) -> None:
-    handler.universal_encoder_sw(switchstate.Value.LONGPRESSED)
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler, long=True)
+    nav_click(handler)
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +206,7 @@ def test_tap_reverb_nav_cycles_values(v3_system: SystemFixture, nav_handler, sna
 
 
 def test_tap_reverb_tweak1_edits_focused(v3_system: SystemFixture, nav_handler, snapshot):
-    """Nav to Wet, Tweak1 increases wetlevel by 8 * 0.8 = 6.4 dB."""
+    """Nav to Wet, Tweak1 increases wetlevel on the shared ParameterSteps grid."""
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
@@ -213,7 +215,6 @@ def test_tap_reverb_tweak1_edits_focused(v3_system: SystemFixture, nav_handler, 
     handler.poll_lcd_updates()
     snapshot("wet_focused")
 
-    # Tweak1: +8 detents → +6.4 dB → -12 + 6.4 = -5.6 dB
     for _ in range(8):
         tweak(handler, 1, 1)
     handler.poll_lcd_updates()
@@ -221,7 +222,7 @@ def test_tap_reverb_tweak1_edits_focused(v3_system: SystemFixture, nav_handler, 
 
     sent = v3_system.ws_bridge.sent_values_for(plugin.instance_id, "wetlevel")
     assert len(sent) > 0
-    assert abs(sent[-1] - (-5.6)) < 0.01
+    assert abs(sent[-1] - (-7.008)) < 0.01
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +258,6 @@ def test_tap_reverb_tweak3_edits_decay(v3_system: SystemFixture, nav_handler, sn
     # Mode is already focused at open — no nav needed
     handler.poll_lcd_updates()
 
-    # Tweak3: +5 detents → +500 ms → 2800 + 500 = 3300 ms
     for _ in range(5):
         tweak(handler, 3, 1)
     handler.poll_lcd_updates()
@@ -265,7 +265,7 @@ def test_tap_reverb_tweak3_edits_decay(v3_system: SystemFixture, nav_handler, sn
 
     sent = v3_system.ws_bridge.sent_values_for(plugin.instance_id, "decay")
     assert len(sent) > 0
-    assert abs(sent[-1] - 3300.0) < 0.01
+    assert abs(sent[-1] - 3228.35) < 0.01
 
 
 # ---------------------------------------------------------------------------
@@ -293,12 +293,12 @@ def test_tap_reverb_tweak1_edits_mode_when_focused(v3_system: SystemFixture, nav
 
 
 # ---------------------------------------------------------------------------
-# Saga 7 — CLICK resets value to lv2:default
+# Saga 7 — LONGPRESS resets value to lv2:default
 # ---------------------------------------------------------------------------
 
 
 def test_tap_reverb_click_resets_to_default(v3_system: SystemFixture, nav_handler, snapshot):
-    """Edit Decay, click it → resets to lv2:default (2800 ms)."""
+    """Edit Decay, longpress it → resets to lv2:default (2800 ms)."""
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
@@ -309,8 +309,8 @@ def test_tap_reverb_click_resets_to_default(v3_system: SystemFixture, nav_handle
     handler.poll_lcd_updates()
     snapshot("decay_edited")
 
-    # Click → reset to default
-    short_press(handler)
+    # Longpress → reset to default
+    nav_click(handler, long=True)
     handler.poll_lcd_updates()
     snapshot("decay_reset")
 
@@ -434,8 +434,6 @@ def test_tap_reverb_tweak3_edits_decay_on_chrome(v3_system: SystemFixture, nav_h
         event = EncoderEvent(
             controller=_FakeEnc(enc_id),
             rotations=1,
-            new_value=0.0,
-            new_midi_value=0,
         )
         return handler.lcd.handle(event)
 

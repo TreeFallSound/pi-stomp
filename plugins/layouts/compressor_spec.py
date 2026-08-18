@@ -1,12 +1,30 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from common.parameter import Symbol
 
 
 @dataclass(frozen=True)
 class ArcSpec:
-    symbol: str
+    symbol: Symbol
     label: str
     color: tuple[int, int, int]
     display_fn: Callable[[float], str]
@@ -14,10 +32,10 @@ class ArcSpec:
 
 @dataclass(frozen=True)
 class CompressorSpec:
-    thr_sym: str
-    rat_sym: str
-    mak_sym: str
-    kn_sym: str | None = None
+    thr_sym: Symbol
+    rat_sym: Symbol
+    mak_sym: Symbol
+    kn_sym: Symbol | None = None
     in_audio_sym: str = "lv2_audio_in_1"
     out_audio_sym: str = "lv2_audio_out_1"
 

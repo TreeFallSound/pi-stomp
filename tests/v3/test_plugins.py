@@ -11,7 +11,8 @@ import pytest
 import pistomp.switchstate as switchstate
 from pistomp.encoder_controller import EncoderController as Encoder
 from pistomp.footswitch import Footswitch
-from common.parameter import Parameter
+from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
+from common.parameter_steps import ParameterSteps
 from modalapi.plugin import Plugin
 import common.token as Token
 from tests.types import SystemFixture
@@ -19,6 +20,7 @@ from modalapi.connections import Connection, Endpoint, EndpointKind
 from plugins.customization import lookup
 from plugins.nam import NAM_URIS
 from uilib.text import TextWidget
+from tests.v3.nav_helpers import nav_click
 
 
 # ---------------------------------------------------------------------------
@@ -35,13 +37,13 @@ def test_v3_bind_footswitch_to_plugin(v3_system: SystemFixture, make_plugin):
     binding_key = next(k for k, v in hw.controllers.items() if v is fs0)
 
     plugin = make_plugin("fuzz")
-    plugin.parameters[":bypass"].binding = binding_key
+    plugin.parameters[BYPASS_SYMBOL].binding = binding_key
 
     assert handler.current
     handler.current.pedalboard.plugins = [plugin]
     handler.bind_current_pedalboard()
 
-    assert fs0.parameter is plugin.parameters[":bypass"]
+    assert fs0.parameter is plugin.parameters[BYPASS_SYMBOL]
     assert plugin.has_footswitch is True
     assert plugin in [p for p in handler.current.pedalboard.plugins if p.has_footswitch]
 
@@ -60,7 +62,7 @@ def test_v3_bind_encoder_midi_to_plugin(v3_system: SystemFixture, make_plugin):
     binding_key = next(k for k, v in hw.controllers.items() if v is enc)
 
     plugin = make_plugin("wah")
-    plugin.parameters[":bypass"].binding = binding_key
+    plugin.parameters[BYPASS_SYMBOL].binding = binding_key
 
     assert handler.current
     handler.current.pedalboard.plugins = [plugin]
@@ -93,14 +95,14 @@ def test_v3_bind_does_not_reorder_footswitch_plugins(v3_system: SystemFixture, m
     fs_key = next(k for k, v in hw.controllers.items() if isinstance(v, Footswitch))
 
     fuzz = make_plugin("fuzz")  # footswitch-controlled, placed first
-    fuzz.parameters[":bypass"].binding = fs_key
+    fuzz.parameters[BYPASS_SYMBOL].binding = fs_key
     reverb = make_plugin("reverb")  # no controller binding
 
     assert handler.current
     handler.current.pedalboard.plugins = [fuzz, reverb]
     handler.bind_current_pedalboard()
 
-    assert hw.controllers[fs_key].parameter is fuzz.parameters[":bypass"]
+    assert hw.controllers[fs_key].parameter is fuzz.parameters[BYPASS_SYMBOL]
     assert fuzz.has_footswitch is True
     titles = [p.instance_id for p in handler.current.pedalboard.plugins]
     assert titles == ["fuzz", "reverb"], "v3 must not reorder footswitch plugins"
@@ -127,10 +129,10 @@ def test_v3_toggle_plugin_bypass_via_footswitch_sends_midi_cc(v3_system: SystemF
     assert fs.midi_CC is not None, "test requires a footswitch with a midi_CC binding"
 
     plugin = make_plugin("fuzz")
-    handler._bind_controller_to_param(plugin, plugin.parameters[":bypass"], fs)
+    handler._bind_controller_to_param(plugin, plugin.parameters[BYPASS_SYMBOL], fs)
     handler.current.pedalboard.plugins = [plugin]
 
-    handler.toggle_plugin_bypass(None, plugin)
+    handler.toggle_plugin_bypass(plugin)
 
     hw.midiout.send_message.assert_called_once()
     sent_cc = hw.midiout.send_message.call_args[0][0]
@@ -158,8 +160,7 @@ def test_v3_toggle_plugin_bypass_no_footswitch_sends_websocket(v3_system: System
     handler.lcd.draw_main_panel()
     snapshot("active")
 
-    widget = next(w for w in handler.lcd.w_plugins if w.object is plugin)
-    handler.toggle_plugin_bypass(widget, plugin)
+    handler.toggle_plugin_bypass(plugin)
 
     # State and LCD update immediately — no echo needed.
     assert ws_bridge.sent_values_for("fuzz", ":bypass") == [1.0]
@@ -201,7 +202,7 @@ def test_v3_nam_plugin_uses_tri_color_tile(v3_system: SystemFixture, make_plugin
     assert widget.bkgnd_color == nam_customization.tile_active_color, "active NAM body must be yellow"
     snapshot("active")
 
-    handler.toggle_plugin_bypass(widget, plugin)
+    handler.toggle_plugin_bypass(plugin)
     assert widget.bkgnd_color == handler.lcd.background, "bypassed NAM body must be black"
     assert widget.fgnd_color == handler.lcd.foreground, "bypassed text must be white"
     snapshot("bypassed")
@@ -248,12 +249,12 @@ def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_p
     assert handler.current
 
     plugin = make_plugin("fuzz")
-    handler._bind_controller_to_param(plugin, plugin.parameters[":bypass"], hw.footswitches[0])
+    handler._bind_controller_to_param(plugin, plugin.parameters[BYPASS_SYMBOL], hw.footswitches[0])
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
 
-    handler.toggle_plugin_bypass(None, plugin)
+    handler.toggle_plugin_bypass(plugin)
 
     assert not any("pi_stomp_set" in u for u in get_urls(mock_post))
     assert hw.footswitches[0].toggled is False  # bypass intent, echo not yet received
@@ -271,7 +272,7 @@ def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_p
     assert plugin.is_bypassed() is True
     assert hw.footswitches[0].toggled is False  # bypassed state
 
-    handler.toggle_plugin_bypass(None, plugin)
+    handler.toggle_plugin_bypass(plugin)
 
     sent_ccs = [c.args[0][2] for c in v3_system.hw.midiout.send_message.call_args_list]
     assert sent_ccs[-1] == 127  # bypass→active: toggled goes False→True, CC value = 127
@@ -294,7 +295,7 @@ def test_v3_bound_footswitch_emits_absolute_values_without_display(v3_system: Sy
     hw.midiout.send_message.reset_mock()
 
     plugin = make_plugin("fuzz")
-    fs.parameter = plugin.parameters[":bypass"]
+    fs.parameter = plugin.parameters[BYPASS_SYMBOL]
     assert not fs.drives_display
 
     for _ in range(3):
@@ -350,9 +351,9 @@ def test_v3_parameter_edit(v3_system: SystemFixture, nav_handler, make_parameter
     from modalapi.plugin import Plugin
     from modalapi.parameter import Parameter
 
-    bypass_info = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
+    bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
     bp = Parameter(bypass_info, False, None, "delay")
-    plugin = Plugin("delay", {"gain": gain_param, ":bypass": bp}, {}, "Delay")
+    plugin = Plugin("delay", {Symbol("gain"): gain_param, BYPASS_SYMBOL: bp}, {}, "Delay")
 
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
@@ -363,10 +364,10 @@ def test_v3_parameter_edit(v3_system: SystemFixture, nav_handler, make_parameter
     nav_handler(1)
     nav_handler(1)
 
-    handler.universal_encoder_sw(switchstate.Value.LONGPRESSED)
+    nav_click(handler, long=True)
     snapshot("param_menu")
 
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
     snapshot("param_dialog")
 
     nav_handler(1)
@@ -374,7 +375,7 @@ def test_v3_parameter_edit(v3_system: SystemFixture, nav_handler, make_parameter
     nav_handler(1)
     snapshot("param_tweaked")
 
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
     handler.poll_lcd_updates()
     snapshot("param_closed")
 
@@ -393,12 +394,12 @@ def test_v3_tweak_encoder_refresh(v3_system: SystemFixture, make_parameter, snap
     enc.bind_to_parameter(param)
 
     # The first rotation is always at 1x (no prior detent timing), so 8 detents
-    # deterministically advance exactly 8 steps on the encoder's quantized grid.
-    start_step = enc.current_step
+    # deterministically advance exactly 8 steps on the shared quantized grid.
+    # The encoder reports the delta; the handler integrates it onto the param.
+    expected = ParameterSteps.for_parameter(param).move(8)
     enc.refresh(8)
 
-    assert enc.current_step == start_step + 8
-    assert param.value == pytest.approx(enc.step_values[start_step + 8])
+    assert param.value == pytest.approx(expected)
     snapshot()
 
 
@@ -490,8 +491,7 @@ def test_v3_bypass_echo_is_idempotent(v3_system: SystemFixture, make_plugin, sna
     handler.lcd.draw_main_panel()
     snapshot("active")
 
-    widget = next(w for w in handler.lcd.w_plugins if w.object is plugin)
-    handler.toggle_plugin_bypass(widget, plugin)
+    handler.toggle_plugin_bypass(plugin)
     # State and LCD update immediately (Path B: no echo arrives for WS-initiated bypass).
     assert plugin.is_bypassed()
     snapshot("bypassed")
@@ -739,7 +739,7 @@ def test_v3_websocket_bypass_event_matches_canonical_id(v3_system):
         None,
         "fuzz",
     )
-    plugin.parameters[":bypass"] = bypass_param
+    plugin.parameters[BYPASS_SYMBOL] = bypass_param
     handler.current.pedalboard.plugins = [plugin]
 
     ws_bridge = v3_system.ws_bridge
@@ -774,8 +774,8 @@ def test_v3_footswitch_states_snapshot(v3_system: SystemFixture, make_plugin, sn
     fs3 = hw.footswitches[3]
     binding0 = next(k for k, v in hw.controllers.items() if v is fs0)
     binding1 = next(k for k, v in hw.controllers.items() if v is fs1)
-    on_plugin.parameters[":bypass"].binding = binding0
-    off_plugin.parameters[":bypass"].binding = binding1
+    on_plugin.parameters[BYPASS_SYMBOL].binding = binding0
+    off_plugin.parameters[BYPASS_SYMBOL].binding = binding1
 
     # fs2 unbound but already toggled on (e.g. tap-tempo enabled); fs3 unbound off.
     fs2.toggled = True
@@ -827,7 +827,7 @@ def test_v3_pedalboard_switch_multi_fs_same_plugin_show_bound_off_color(
 
     # --- "Beths": only fs0 bound to :bypass ---
     beths = make_plugin("beths", category="Distortion", bypassed=False)
-    beths.parameters[":bypass"].binding = binding0
+    beths.parameters[BYPASS_SYMBOL].binding = binding0
 
     handler.current.pedalboard.plugins = [beths]
     handler.bind_current_pedalboard()
@@ -889,7 +889,7 @@ def test_v3_websocket_bypass_event_with_multiword_id(v3_system):
         None,
         "Cabinet",
     )
-    plugin.parameters[":bypass"] = bypass_param
+    plugin.parameters[BYPASS_SYMBOL] = bypass_param
     handler.current.pedalboard.plugins = [plugin]
 
     ws_bridge = v3_system.ws_bridge
@@ -897,3 +897,105 @@ def test_v3_websocket_bypass_event_with_multiword_id(v3_system):
     handler.poll_modui_changes()
 
     assert plugin.is_bypassed()
+
+
+# ---------------------------------------------------------------------------
+# patch_set -> extra_data
+# ---------------------------------------------------------------------------
+
+_NAM_URI = "http://github.com/mikeoliphant/neural-amp-modeler-lv2"
+_NAM_MODEL = f"{_NAM_URI}#model"
+
+
+def test_v3_live_patch_set_names_nam_tile(v3_system: SystemFixture, make_plugin):
+    """A mid-session model change renames the tile without a board reload."""
+    handler = v3_system.handler
+    nam = make_plugin("nam", category="Simulator", uri=_NAM_URI)
+    assert handler.current
+    handler.current.pedalboard.plugins = [nam]
+    generic = nam.display_name
+
+    v3_system.ws_bridge.inject(f"patch_set /graph/nam 1 {_NAM_MODEL} p /models/Marshall JCM800.nam")
+    handler.poll_ws_messages()
+
+    assert nam.display_name == "Marshall JCM800"
+    assert nam.display_name != generic
+    assert nam.subtitle == "NAM: Marshall JCM800.nam"
+
+
+def test_v3_patch_set_ignores_unowned_property(v3_system: SystemFixture, make_plugin):
+    handler = v3_system.handler
+    nam = make_plugin("nam", category="Simulator", uri=_NAM_URI)
+    assert handler.current
+    handler.current.pedalboard.plugins = [nam]
+
+    v3_system.ws_bridge.inject(f"patch_set /graph/nam 1 {_NAM_URI}#unrelated s whatever")
+    handler.poll_ws_messages()
+
+    assert nam.customization.extra_data is None
+
+
+def test_v3_patch_set_for_unknown_instance_is_harmless(v3_system: SystemFixture, make_plugin):
+    """Dump frames can name instances that aren't on the board — must not raise."""
+    handler = v3_system.handler
+    nam = make_plugin("nam", category="Simulator", uri=_NAM_URI)
+    assert handler.current
+    handler.current.pedalboard.plugins = [nam]
+
+    v3_system.ws_bridge.inject(f"patch_set /graph/ghost 1 {_NAM_MODEL} p /models/Ghost.nam")
+    handler.poll_ws_messages()
+
+    assert nam.customization.extra_data is None
+
+
+def test_v3_dump_patch_set_same_tick_applies_to_new_board(v3_system: SystemFixture, make_plugin):
+    """Same-tick race, patch_set flavour: the dump drains before last.json reload
+    switches the board, so the model must be buffered and flushed into the new one."""
+    handler = v3_system.handler
+
+    nam = make_plugin("nam", category="Simulator", uri=_NAM_URI)
+    new_pb = handler.pedalboards["/path/to/new.pedalboard"]
+    new_pb.plugins = [nam]
+    handler.reload_pedalboard = lambda bundle: new_pb
+
+    ws_bridge = v3_system.ws_bridge
+    ws_bridge.inject("loading_start 0")
+    ws_bridge.inject(f"add nam {_NAM_URI} 0.0 0.0 0 1 1")
+    ws_bridge.inject(f"patch_set /graph/nam 1 {_NAM_MODEL} p /models/Marshall JCM800.nam")
+    ws_bridge.inject("loading_end 0")
+
+    last_json = Path(handler.data_dir) / "last.json"
+    last_json.write_text(json.dumps({"pedalboard": "/path/to/new.pedalboard"}))
+    os.utime(last_json, (9999, 9999))
+
+    handler.poll_modui_changes()
+
+    assert handler.current
+    assert handler.current.pedalboard.bundle == "/path/to/new.pedalboard"
+    assert nam.display_name == "Marshall JCM800"
+    assert not handler._pending_dump_patch
+
+
+def test_v3_loading_start_discards_previous_boards_patches(v3_system: SystemFixture, make_plugin):
+    """A patch buffered for board A must not land on board B."""
+    handler = v3_system.handler
+
+    nam = make_plugin("nam", category="Simulator", uri=_NAM_URI)
+    new_pb = handler.pedalboards["/path/to/new.pedalboard"]
+    new_pb.plugins = [nam]
+    handler.reload_pedalboard = lambda bundle: new_pb
+
+    ws_bridge = v3_system.ws_bridge
+    ws_bridge.inject(f"patch_set /graph/nam 1 {_NAM_MODEL} p /models/Stale.nam")
+    ws_bridge.inject("loading_start 0")
+    ws_bridge.inject(f"add nam {_NAM_URI} 0.0 0.0 0 1 1")
+    ws_bridge.inject("loading_end 0")
+
+    last_json = Path(handler.data_dir) / "last.json"
+    last_json.write_text(json.dumps({"pedalboard": "/path/to/new.pedalboard"}))
+    os.utime(last_json, (9999, 9999))
+
+    handler.poll_modui_changes()
+
+    assert nam.customization.extra_data is None
+    assert nam.display_name != "Stale"

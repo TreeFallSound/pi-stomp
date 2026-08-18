@@ -1,25 +1,40 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Windowed plugin panel: a centered ``Dialog``-styled card.
 
 Shares the regular menu's title strip and outline, plus the Back/Bypass/Reset
 row used by ``FullscreenPluginPanel``. ``self.content_box`` is the body area
 between them where ``build_widgets()`` places widgets.
+
+Built on ``plugins.modal_dialog.ModalDialog`` (the shared ``__init__``
+choreography + ``footer_buttons()`` hook); this subclass supplies the
+plugin-specific three-button footer.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 from modalapi.plugin import Plugin
-from pistomp.handler import Handler
-from plugins.base import PluginPanel, TState
-from plugins.chrome import BTN_GAP, BTN_H, MIN_CHROME_WIDTH, build_bottom_row
-from uilib.box import Box
-from uilib.config import Config
-from uilib.dialog import Dialog
-from uilib.misc import get_text_size
+from plugins.chrome import build_bottom_row
+from plugins.modal_dialog import ModalDialog, TState
+from uilib.text import Button
 
 
-class PluginWindow(PluginPanel[TState], Dialog):
+class PluginWindow(ModalDialog[TState]):
     """Centered rounded-card plugin UI, visually aligned with the menus.
 
     The title strip sits above the body as a ``DialogDecorator``, so ``WIN_H``
@@ -28,46 +43,15 @@ class PluginWindow(PluginPanel[TState], Dialog):
     ``WIN_H``; ``_window_size()`` to size to content.
     """
 
+    plugin: Plugin  # narrowing: PluginWindow is always a Plugin panel
+
     WIN_W: int = 304
     WIN_H: int = 208
 
-    _CONTENT_PAD = 2  # top/bottom breathing room around content_box
-
-    @classmethod
-    def _chrome_overhead(cls) -> tuple[int, int]:
-        """(top, bottom) pixels the chrome consumes inside the panel body."""
-        return (cls._CONTENT_PAD, BTN_H + BTN_GAP * 2 + cls._CONTENT_PAD)
-
-    def _window_size(self) -> tuple[int, int]:
-        return (self.WIN_W, self.WIN_H)
-
-    def __init__(
-        self,
-        *,
-        plugin: Plugin,
-        handler: Handler,
-        on_dismiss: Callable[[], None],
-    ) -> None:
-        self._init_plugin_state(plugin, handler, on_dismiss)
-
-        w, h = self._window_size()
-        w = max(w, MIN_CHROME_WIDTH)
-        self._win_w, self._win_h = w, h
-
-        cfg = Config()
-        self._title_font = cfg.get_font("default_title")
-        self._btn_font = cfg.get_font("small")
-
-        Dialog.__init__(
-            self, width=w, height=h, title=plugin.display_name, title_font=self._title_font, auto_destroy=True
-        )
-
-        btn_y = h - BTN_H - BTN_GAP
-        _, btn_text_h = get_text_size("Bypass", self._btn_font)
-        btn_v_margin = max(0, (BTN_H - btn_text_h) // 2)
-        self._btn_back, self._btn_bypass, self._btn_reset = build_bottom_row(
-            panel=self,
-            width=w,
+    def footer_buttons(self, btn_y: int, btn_v_margin: int) -> tuple[Button, ...]:
+        return build_bottom_row(
+            parent=self,
+            width=self._win_w,
             bottom_y=btn_y,
             font=self._btn_font,
             v_margin=btn_v_margin,
@@ -75,13 +59,3 @@ class PluginWindow(PluginPanel[TState], Dialog):
             on_bypass=lambda *_: self._on_toggle_bypass(),
             on_reset=lambda *_: self._on_reset(),
         )
-
-        pad = self._CONTENT_PAD
-        self.content_box = Box.xywh(0, pad, w, btn_y - BTN_GAP - 2 * pad)
-
-        self.build_widgets()
-        self.add_sel_widget(self._btn_back)
-        self.add_sel_widget(self._btn_bypass)
-        self.add_sel_widget(self._btn_reset)
-
-        self._refresh_bypass_style()

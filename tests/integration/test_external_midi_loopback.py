@@ -17,20 +17,19 @@ from pistomp.handler import Handler
 from pistomp.hardware import Hardware
 from pistomp.encoder_controller import EncoderController
 from pistomp.analogmidicontrol import AnalogMidiControl
-from pistomp.input.event import AnalogEvent, EncoderEvent, SwitchEvent
+from pistomp.input.event import AnalogEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 import pistomp.switchstate as switchstate
 
 
 class _FakeHardware(Hardware):
     """Minimal hardware stub: just enough for _emit_midi to resolve routing."""
 
-    def __init__(self, port_name: str, mgr: ExternalMidiManager):
+    def __init__(self, port_name: str):
         # Hardware.__init__ takes (default_config, handler, midiout, refresh_callback);
         # skip it — this fake doesn't need a config or real handler/refresh.
         self._port_name = port_name
         self.midiout = MagicMock()
         self.external_routing: dict = {}
-        self.external_midi = mgr
 
     def external_port_name(self, controller: Controller) -> str | None:
         info = self.external_routing.get(controller)
@@ -44,20 +43,27 @@ class _FakeHardware(Hardware):
     def init_relays(self): pass
     def cleanup(self): pass
     def test(self): pass
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc): return None
+    def add_encoder(self, id, type, longpress_callback, midi_channel, midi_cc): return None
 
 
 class _LoopbackHandler(Handler):
-    """Minimal InputSink that routes events → _emit_midi → ExternalMidiManager.
+    """Minimal InputSink that routes events → _emit_midi → ExternalMidiManager."""
 
-    Uses the real _handle_footswitch from pistomp.handler.Handler so the
-    footswitch path exercises production code.
-    """
-
-    def __init__(self, hw: _FakeHardware):
+    def __init__(self, hw: _FakeHardware, mgr: ExternalMidiManager):
         super().__init__()
         self.hardware = hw
-        # chord_helper is set by Handler.__init__; we leave it as-is.
+        self.external_midi = mgr
+        self.encoder_fallback = 64
+
+    def _emit_midi(self, controller, midi_value: int) -> None:
+        if controller.midi_CC is None:
+            return
+        cc = [controller.midi_channel | CONTROL_CHANGE, controller.midi_CC, int(midi_value)]
+        port_name = self.hardware.external_port_name(controller)
+        if port_name is not None:
+            if self.external_midi.send_raw(port_name, cc):
+                return
+        self.hardware.midiout.send_message(cc)
 
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
         pass
@@ -67,9 +73,21 @@ class _LoopbackHandler(Handler):
 
     def handle(self, event) -> bool:
         if isinstance(event, SwitchEvent) and isinstance(event.controller, Footswitch):
-            return self._handle_footswitch(event.controller, event.kind, event.timestamp)
+            fs = event.controller
+            if event.kind == SwitchEventKind.PRESS and fs.midi_CC is not None:
+                fs.toggled = not fs.toggled
+                fs.set_led(fs.toggled)
+                self._emit_midi(fs, 127 if fs.toggled else 0)
+            return True
         if isinstance(event, EncoderEvent):
-            self._emit_midi(event.controller, event.new_midi_value)
+            enc = event.controller
+            assert isinstance(enc, EncoderController)
+            if enc.parameter is not None:
+                value = enc.bar_midi_value()
+            else:
+                self.encoder_fallback = max(0, min(127, self.encoder_fallback + event.rotations))
+                value = self.encoder_fallback
+            self._emit_midi(enc, value)
             return True
         if isinstance(event, AnalogEvent):
             self._emit_midi(event.controller, event.midi_value)
@@ -198,8 +216,8 @@ class TestControlRoutesToRealPort:
         mgr = _manager_for(port_name)
         mgr.open_port(port_name)
 
-        hw = _FakeHardware(port_name, mgr)
-        handler = _LoopbackHandler(hw)
+        hw = _FakeHardware(port_name)
+        handler = _LoopbackHandler(hw, mgr)
 
         fs = Footswitch(id=0, led_pin=None, pixel=None, midi_CC=75,
                         midi_channel=0xB0, refresh_callback=lambda **kw: None)
@@ -216,15 +234,15 @@ class TestControlRoutesToRealPort:
         mgr = _manager_for(port_name)
         mgr.open_port(port_name)
 
-        hw = _FakeHardware(port_name, mgr)
-        handler = _LoopbackHandler(hw)
+        hw = _FakeHardware(port_name)
+        handler = _LoopbackHandler(hw, mgr)
 
         enc = EncoderController(d_pin=None, clk_pin=None, midi_channel=0xB0, midi_CC=7)
         hw.external_routing[enc] = RoutingInfo.external(port_name)
         enc.sink = handler
 
         enc.refresh(1)
-        expected_value = enc.midi_value
+        expected_value = handler.encoder_fallback
 
         assert _wait_for(lambda: received == [[0xB0 | CONTROL_CHANGE, 7, expected_value]])
         mgr.close()
@@ -234,8 +252,8 @@ class TestControlRoutesToRealPort:
         mgr = _manager_for(port_name)
         mgr.open_port(port_name)
 
-        hw = _FakeHardware(port_name, mgr)
-        handler = _LoopbackHandler(hw)
+        hw = _FakeHardware(port_name)
+        handler = _LoopbackHandler(hw, mgr)
 
         spi = MagicMock()
         spi.readChannel.return_value = 512

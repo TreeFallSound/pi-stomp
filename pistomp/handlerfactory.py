@@ -1,22 +1,23 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import common.token as Token
 import common.util as Util
 
-import modalapi.mod as Mod
 import modalapi.modhandler as Modhandler
 
 class Handlerfactory:
@@ -34,13 +35,6 @@ class Handlerfactory:
         if not hw:
             return None
         version = Util.DICT_GET(hw, Token.VERSION)
-        if version is None or (version < 2.0):
-            handler = Mod.Mod(audiocard, cwd)
-        elif (version >= 2.0) and (version < 3.0):
-            handler = Modhandler.Modhandler(audiocard, cwd)
-        elif (version >= 3.0) and (version < 4.0):
-            handler = Modhandler.Modhandler(audiocard, cwd)
-        else:
+        if version is None or version < 2.0 or version >= 4.0:
             return None
-
-        return handler
+        return Modhandler.Modhandler(audiocard, cwd)

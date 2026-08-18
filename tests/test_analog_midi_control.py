@@ -9,6 +9,7 @@ breaking expression-pedal blend. This guards against that regression.
 from unittest.mock import MagicMock
 
 from pistomp.analogmidicontrol import AnalogMidiControl
+from pistomp.input.analog_connection import AnalogConnectionMonitor, AnalogConnectionState
 from pistomp.input.event import AnalogEvent
 
 
@@ -25,6 +26,11 @@ def _make_control(spi, *, midi_CC=75, midi_channel=14, last_read=0):
     sink = MagicMock()
     control.sink = sink
     control.last_read = last_read
+    # Prime the connection monitor to AWAKE by feeding it 16 stable
+    # connected-at-rest readings. This simulates a plugged-in pedal.
+    for _ in range(AnalogConnectionMonitor.WINDOW):
+        control._connection.observe(last_read)
+    assert control._connection.state is AnalogConnectionState.AWAKE
     return control, sink
 
 

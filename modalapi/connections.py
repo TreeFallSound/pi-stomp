@@ -1,7 +1,24 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Connection domain model for parsed pedalboard graphs.
 
-Pure logic — no lilv dependency — so it stays unit-testable. The lilv arc
-walk that feeds into `build_connection` lives in `modalapi.pedalboard`.
+Pure logic, so it stays unit-testable. What feeds `build_connection` — mod-ui's
+pedalboard/info arc list — lives in `modalapi.pedalboard`.
 """
 
 from __future__ import annotations
@@ -11,8 +28,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Iterable, Optional
 
-import common.token as Token
-import common.util as util
 
 
 HW_PORT_PREFIXES = ("capture_", "playback_", "serial_midi_", "midi_")
@@ -91,11 +106,11 @@ def resolve_port_idx(
     if plugin_info is None:
         return 0
     try:
-        ports = plugin_info[Token.PORTS]["audio"]["input" if is_input else "output"]
+        ports = plugin_info["ports"]["audio"]["input" if is_input else "output"]
     except (KeyError, TypeError):
         return 0
     for i, p in enumerate(ports):
-        if util.DICT_GET(p, Token.SYMBOL) == port_symbol:
+        if p.get("symbol") == port_symbol:
             return i
     return 0
 
@@ -106,7 +121,7 @@ def build_connection(
     bundlepath: str,
     instance_to_info: dict[str, Optional[dict]],
 ) -> Connection:
-    """Pure builder used by both the lilv arc walk and unit tests."""
+    """Pure builder used by both the pedalboard/info arc list and unit tests."""
     src_id, src_sym = split_port_uri(tail_uri, bundlepath)
     dst_id, dst_sym = split_port_uri(head_uri, bundlepath)
     src_kind = classify_endpoint(src_id)
@@ -129,10 +144,11 @@ def build_connection(
 def audio_connections(connections: Iterable[Connection]) -> list[Connection]:
     """Audio-only connections (drop midi/HW ports), in a canonical order.
 
-    lilv enumerates ingen:arc objects in a hash-randomised order, so the raw
-    connection list varies run-to-run. The layout pipeline (dummy numbering,
-    barycentric row tie-breaks) is order-sensitive, so we sort to a stable key
-    here — the single chokepoint every layout consumer funnels through.
+    Arc order is not guaranteed (mod-ui walks ingen:arc objects in a
+    hash-randomised order), so the raw connection list varies run-to-run. The
+    layout pipeline (dummy numbering, barycentric row tie-breaks) is
+    order-sensitive, so we sort to a stable key here — the single chokepoint
+    every layout consumer funnels through.
     """
     audio = {EndpointKind.PLUGIN, EndpointKind.SOURCE, EndpointKind.SINK}
     return sorted(

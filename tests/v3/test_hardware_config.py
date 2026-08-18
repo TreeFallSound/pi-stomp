@@ -179,3 +179,19 @@ def test_encoder_unmentioned_keeps_default(v3_system: SystemFixture):
     hw.reinit(_cfg(encoders=[{"id": 2, "longpress": "toggle_bypass"}]))
 
     assert _enc(hw, 1).longpress == "previous_snapshot"
+
+
+def test_longpress_enum_covers_every_handler_callback(v3_system: SystemFixture):
+    """The schema enum and the handler's callback map must not drift — a name
+    the handler answers to but the schema rejects logs a config error on load
+    and silently drops the group at registration."""
+    from pistomp.config import schema
+
+    enum = set(
+        schema["properties"]["hardware"]["properties"]["footswitches"]["items"]["properties"][
+            "longpress"
+        ]["oneOf"][0]["enum"]
+    )
+    # set_mod_tap_tempo shares the callback map but is reachable only via the
+    # `tap_tempo:` key, which passes a BPM no longpress can supply.
+    assert set(v3_system.handler.callbacks) - {"set_mod_tap_tempo"} == enum

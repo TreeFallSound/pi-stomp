@@ -1,7 +1,26 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 from __future__ import annotations
 
+from common.param_roles import ParamRole
+from common.parameter import Symbol
 from uilib.box import Box
-from uilib.glyphs.arc_dial import ArcDialWidget, DialFormatter
+from uilib.arc_dial import ArcDialWidget, DialFormatter
 from uilib.misc import InputEvent
 from uilib.widget import Widget
 
@@ -17,7 +36,7 @@ class ArcKnobWidget(ArcDialWidget):
         self,
         *,
         box: Box,
-        symbol: str,
+        symbol: Symbol,
         label: str,
         color: tuple[int, int, int],
         minimum: float,
@@ -25,6 +44,7 @@ class ArcKnobWidget(ArcDialWidget):
         formatter: DialFormatter,
         panel,
         parent: Widget | None = None,
+        radius: int = _RING_RADIUS,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -35,15 +55,18 @@ class ArcKnobWidget(ArcDialWidget):
             color=color,
             formatter=formatter,
             parent=parent if parent is not None else panel,
-            radius=_RING_RADIUS,
+            radius=radius,
             label_fg=_LABEL_FG,
             **kwargs,
         )
         self.symbol = symbol
         self._panel = panel
 
+    def symbol_for(self, role: ParamRole) -> Symbol | None:
+        return self.symbol
+
     def input_event(self, event) -> bool:
-        if event == InputEvent.CLICK:
+        if event == InputEvent.LONG_CLICK:
             self._panel._reset_to_default(self.symbol)
             return True
         return False

@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import time
@@ -18,6 +20,7 @@ from math import log
 
 from typing import Optional, TYPE_CHECKING
 from typing_extensions import override
+from collections.abc import Callable
 import pygame
 
 from uilib.pygame_init import font as _make_font
@@ -25,10 +28,18 @@ from uilib.box import Box
 from uilib.widget import Widget
 from uilib.panel import RoundedPanel
 from uilib.misc import InputEvent, TextHAlign, get_text_size, trace
-from uilib.config import Config
-from common.color import ColorRGB, RectBorder
 
+if TYPE_CHECKING:
+    from common.parameter import Parameter
+    from modalapi.plugin import Plugin
+
+from common.parameter import BYPASS_SYMBOL
+from uilib.config import Config
+from common.color import ColorRGB, RectBorder, tile_color_for
+
+from uilib.paint import ColorLike
 from uilib.glyphs import RoundedRectGlyph
+from uilib.glyphs.badge import BadgeGlyph
 from uilib.radius import Radius
 
 from common.fonts import font_path
@@ -218,7 +229,8 @@ class TextWidget(Widget):
     font: "pygame._freetype.Font"
 
     def __init__(
-        self, box, text="", font=None, edit_message=None, h_margin=None, v_margin=None, text_halign=None, **kwargs
+        self, box, text="", font=None, edit_message=None, h_margin=None, v_margin=None, text_halign=None,
+        badge: "BadgeGlyph | None" = None, badge_gap: int = 3, **kwargs
     ):
         self.text = text
         if font is None:
@@ -228,18 +240,27 @@ class TextWidget(Widget):
         self.h_margin = h_margin
         self.v_margin = v_margin
         self.text_halign = text_halign
-        self.font_metrics = None  # legacy field, pygame.freetype encodes size in get_rect
         self.text_size_valid = False
+        self._text_cache: Optional[pygame.Surface] = None
+        self._text_cache_key: tuple | None = None
+        self.badge_gap = badge_gap
         super(TextWidget, self).__init__(box, **kwargs)
+        # Badge glyph (see uilib/README.md's Badges section): anchored to the left of
+        # the rendered text, wherever that lands — the text's own position
+        # (left/centre/right aligned) never moves to make room for it. Uses
+        # the base `Widget._badge`/`set_badge()`; only `_draw_badge` below is
+        # overridden, for placement.
+        if badge is not None:
+            self.set_badge(badge)
 
     def _get_text_size(self):
         if not self.text_size_valid:
             lines = self.text.split("\n")
             if len(lines) == 1:
-                self.text_w, self.text_h = get_text_size(self.text, self.font, self.font_metrics)
+                self.text_w, self.text_h = get_text_size(self.text, self.font)
             else:
                 _, line_h = get_text_size("", self.font)
-                self.text_w = max(get_text_size(line, self.font, self.font_metrics)[0] for line in lines)
+                self.text_w = max(get_text_size(line, self.font)[0] for line in lines)
                 self.text_h = line_h * len(lines)
             self.text_size_valid = True
         return (self.text_w, self.text_h)
@@ -284,11 +305,21 @@ class TextWidget(Widget):
         trace(self, "resulting box=", self.box)
         super(TextWidget, self)._adjust_box()
 
+    def _clear_text_cache(self) -> None:
+        self._text_cache = None
+        self._text_cache_key = None
+
+    def set_foreground(self, color) -> None:
+        self.fgnd_color = color
+        self._clear_text_cache()
+        self._invalidate_self()
+
     def set_text(self, text):
         if self.text == text:
             return
         self.text = text
         self.text_size_valid = False
+        self._clear_text_cache()
         self.refresh()
 
     def set_edit_message(self, message):
@@ -296,9 +327,33 @@ class TextWidget(Widget):
 
     def set_font(self, font):
         self.font = font
-        self.font_metrics = None
         self.text_size_valid = False
+        self._clear_text_cache()
         self.refresh()
+
+    def _draw_badge(self, ctx) -> None:
+        """Override of `Widget._draw_badge`: blit the badge glyph immediately
+        left of the first line's rendered text position (left/centre/right,
+        matching the text's own alignment), with `badge_gap` px of padding.
+        The text itself is drawn elsewhere and never moves to accommodate
+        this."""
+        if self._badge is None:
+            return
+        h_margin, _ = self._get_margins()
+        hroom = ctx.width - h_margin - self.outline
+        line = self.text.split("\n")[0]
+        tw, _ = get_text_size(line, self.font)
+        if self.text_halign == TextHAlign.LEFT:
+            hoffset = 0
+        elif self.text_halign == TextHAlign.RIGHT:
+            hoffset = hroom - tw
+        else:
+            hoffset = int((hroom - tw) / 2)
+        text_x = h_margin + hoffset
+        bx = text_x - self.badge_gap - self._badge.width
+        by = (ctx.height - self._badge.height) // 2
+        ox, oy = ctx._f().topleft
+        ctx.surface.blit(self._badge.render(), (bx + ox, by + oy))
 
     @override
     def _draw(self, ctx):
@@ -309,19 +364,33 @@ class TextWidget(Widget):
         if hroom < 0 or vroom < 0:
             return
 
+        # Build cache key from all parameters that affect rendered output.
+        cache_key = (self.text, self.fgnd_color, id(self.font), hroom, vroom, self.text_halign)
+        if self._text_cache is not None and self._text_cache_key == cache_key:
+            assert self._text_cache is not None
+            ctx.paste(self._text_cache, (h_margin, v_margin))
+            return
+
+        # Render into a transparent surface sized to the content area.
+        surf = pygame.Surface((max(1, hroom), max(1, vroom)), pygame.SRCALPHA)
+        surf.fill((0, 0, 0, 0))
+
         if self.SPLIT_SEP in self.text:
             parts = self.text.split(self.SPLIT_SEP)
             if len(parts) == 2:
                 left, right = parts
                 lw, _ = get_text_size(left, self.font)
                 rw, _ = get_text_size(right, self.font)
-                ctx.draw_text((h_margin, v_margin), left, fill=self.fgnd_color, font=self.font)
-                ctx.draw_text((ctx.width - h_margin - rw, v_margin), right, fill=self.fgnd_color, font=self.font)
+                self._render_line_to(surf, (0, 0), left, self.fgnd_color)
+                self._render_line_to(surf, (hroom - rw, 0), right, self.fgnd_color)
+                self._text_cache = surf
+                self._text_cache_key = cache_key
+                ctx.paste(surf, (h_margin, v_margin))
                 return
 
         lines = self.text.split("\n")
         _, line_h = get_text_size("", self.font)
-        y = v_margin
+        y = 0
         for line in lines:
             tw, _ = get_text_size(line, self.font)
             if tw > hroom:
@@ -332,10 +401,29 @@ class TextWidget(Widget):
                 hoffset = hroom - tw
             else:
                 hoffset = int((hroom - tw) / 2)
-            ctx.draw_text((h_margin + hoffset, y), line, fill=self.fgnd_color, font=self.font)
+            self._render_line_to(surf, (hoffset, y), line, self.fgnd_color)
             y += line_h
-            if y >= v_margin + vroom:
+            if y >= vroom:
                 break
+
+        self._text_cache = surf
+        self._text_cache_key = cache_key
+        ctx.paste(surf, (h_margin, v_margin))
+
+    def _render_line_to(self, surf: pygame.Surface, pos: tuple[int, int], text: str, color: "ColorLike") -> None:
+        """Render a single line of text onto *surf* at *pos* using the widget's font."""
+        if not text:
+            return
+        c = color
+        if isinstance(c, (list, tuple)) and len(c) == 3:
+            c = tuple(c) + (255,)
+        asc = int(self.font.get_sized_ascender())
+        prev = self.font.origin
+        self.font.origin = True
+        try:
+            self.font.render_to(surf, (pos[0], pos[1] + asc), text, fgcolor=c)
+        finally:
+            self.font.origin = prev
 
     def tick(self):
         """Override in subclasses for animation."""
@@ -356,6 +444,16 @@ class Button(TextWidget):
         self.outline = self._get_arg(kwargs, "outline", 1)
         self.sel_width = self._get_arg(kwargs, "sel_width", 2)
         super(Button, self).__init__(**kwargs)
+
+    @override
+    def _get_margins(self):
+        # TextWidget top-aligns at v_margin, which leaves a fixed-height button's
+        # label riding high. Centre in the leftover space unless told otherwise.
+        h_margin, v_margin = super()._get_margins()
+        if self.v_margin is None and self.box is not None and self.box.height > 0:
+            _, th = self._get_text_size()
+            v_margin = max(v_margin, int((self.box.height - self.outline - th) // 2))
+        return (h_margin, v_margin)
 
 
 class PluginTile(TextWidget):
@@ -380,10 +478,41 @@ class PluginTile(TextWidget):
     widget must fully, opaquely cover its own rect.
     """
 
-    def __init__(self, *, border: RectBorder | None = None, backdrop: tuple[int, int, int] = (0, 0, 0), **kwargs):
+    def __init__(self, *, plugin: "Plugin", border: RectBorder | None = None, backdrop: tuple[int, int, int] = (0, 0, 0), foreground: tuple[int, int, int] = (255, 255, 255), **kwargs):
         self._custom_border = border
         self._backdrop = backdrop
-        super().__init__(**kwargs)
+        self._foreground = foreground
+        self._plugin: "Plugin" = plugin
+        self._bypass_unsub: Callable[[], None] | None = None
+        super().__init__(object=plugin, **kwargs)
+        self._apply_bypass_colors()
+        bp = plugin.parameters.get(BYPASS_SYMBOL)
+        if bp is not None:
+            self._bypass_unsub = bp.subscribe(self._on_bypass_changed)
+
+    def _apply_bypass_colors(self) -> None:
+        plugin = self._plugin
+        if plugin.is_bypassed():
+            self.set_outline(1, tile_color_for(plugin.category))
+            self.set_background(self._backdrop)
+            self.set_foreground(self._foreground)
+        else:
+            self.set_outline(0, None)
+            if plugin.tile_active_color is not None:
+                self.set_background(plugin.tile_active_color)
+            else:
+                self.set_background(tile_color_for(plugin.category))
+            self.set_foreground(self._backdrop)
+
+    def _on_bypass_changed(self, _param: "Parameter") -> None:
+        self._apply_bypass_colors()
+        self.refresh()
+
+    def destroy(self) -> None:
+        if self._bypass_unsub is not None:
+            self._bypass_unsub()
+            self._bypass_unsub = None
+        super().destroy()
 
     def _get_border(self) -> RectBorder:
         if self._custom_border is not None:
@@ -527,6 +656,11 @@ class ScrollingText(TextWidget):
         self.scroll_offset = 0
         self._anchor_time = None
         self._last_tick_time = None
+
+    @override
+    def set_foreground(self, color) -> None:
+        self._clear_cache_and_restart()
+        super().set_foreground(color)
 
     @override
     def set_text(self, text: str) -> None:

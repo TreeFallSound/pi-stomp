@@ -1,7 +1,24 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Frequency-response magnitude (dB) for parametric EQ filter chains.
 
-All math is vectorised numpy. No scipy, no FFT — we evaluate
-|H(e^jω)| = |B(z)/A(z)| at z = exp(-jω) analytically at each graph frequency.
+Delegates actual filter magnitude computation to ``filters.py``; this module
+owns the ``CurveCache`` and coordinate-mapping helpers.
 """
 
 from __future__ import annotations
@@ -13,17 +30,26 @@ from dataclasses import dataclass
 import numpy as np
 
 from plugins.eq.band_spec import BandSpec
+from plugins.eq.filters import (
+    FS,
+    FREQ_MIN_HZ,
+    FREQ_MAX_HZ,
+    GRAPH_W,
+    as_bw_oct,
+    as_q,
+    rbj_highpass,
+    rbj_lowpass,
+    rbj_lowshelf,
+    rbj_highshelf,
+    rbj_peaking,
+    regalia_mitra_peaking,
+)
 
-# ── constants ────────────────────────────────────────────────────────────────
-
-FS = 48000.0
-GRAPH_W = 320
-FREQ_MIN_HZ = 20.0
-FREQ_MAX_HZ = 20000.0
-
-# log-spaced graph frequencies, one per pixel column
-GRAPH_FREQS: np.ndarray = np.logspace(np.log10(FREQ_MIN_HZ), np.log10(FREQ_MAX_HZ), GRAPH_W)
-
+# Bands with no width port still have to be drawn at *some* width. These are
+# the values that shipped before q_units existed; nothing on the device can
+# move them.
+PORTLESS_SHELF_Q = 0.2129 + 1.0 / 2.25
+PORTLESS_PEAK_BW_OCT = 1.0
 
 # ── per-band parameter snapshot ──────────────────────────────────────────────
 
@@ -48,98 +74,6 @@ class EqState:
     bands: dict[str, BandParams]  # keyed by BandSpec.name
 
 
-# ── biquad evaluator ─────────────────────────────────────────────────────────
-
-
-def _biquad_mag_db(b0: float, b1: float, b2: float, a1: float, a2: float) -> np.ndarray:
-    """Return |H(e^jω)| in dB at GRAPH_FREQS for a normalised biquad (a0 = 1)."""
-    w = 2.0 * np.pi * GRAPH_FREQS / FS
-    z1 = np.exp(-1j * w)
-    z2 = z1 * z1
-    num = b0 + b1 * z1 + b2 * z2
-    den = 1.0 + a1 * z1 + a2 * z2
-    return 20.0 * np.log10(np.abs(num / den) + 1e-12)
-
-
-# ── RBJ biquad coefficient helpers ───────────────────────────────────────────
-
-
-def _rbj_peaking(f0: float, q: float, gain_db: float) -> tuple[float, float, float, float, float]:
-    A = 10.0 ** (gain_db / 40.0)
-    w0 = 2.0 * math.pi * f0 / FS
-    cosw0 = math.cos(w0)
-    q_rbj = 1.0 / max(q, 1e-4)
-    alpha = math.sin(w0) / (2.0 * q_rbj)
-    a0 = 1.0 + alpha / A
-    b0 = (1.0 + alpha * A) / a0
-    b1 = (-2.0 * cosw0) / a0
-    b2 = (1.0 - alpha * A) / a0
-    a1 = (-2.0 * cosw0) / a0
-    a2 = (1.0 - alpha / A) / a0
-    return b0, b1, b2, a1, a2
-
-
-
-def _rbj_lowshelf(f0: float, q: float, gain_db: float) -> tuple[float, float, float, float, float]:
-    A = 10.0 ** (gain_db / 40.0)
-    w0 = 2.0 * math.pi * f0 / FS
-    cosw0 = math.cos(w0)
-    sinw0 = math.sin(w0)
-    q_eff = 0.2129 + q / 2.25
-    alpha = sinw0 / (2.0 * max(q_eff, 1e-4))
-    two_sqrtA_alpha = 2.0 * math.sqrt(A) * alpha
-    a0 = (A + 1.0) + (A - 1.0) * cosw0 + two_sqrtA_alpha
-    b0 = (A * ((A + 1.0) - (A - 1.0) * cosw0 + two_sqrtA_alpha)) / a0
-    b1 = (2.0 * A * ((A - 1.0) - (A + 1.0) * cosw0)) / a0
-    b2 = (A * ((A + 1.0) - (A - 1.0) * cosw0 - two_sqrtA_alpha)) / a0
-    a1 = (-2.0 * ((A - 1.0) + (A + 1.0) * cosw0)) / a0
-    a2 = ((A + 1.0) + (A - 1.0) * cosw0 - two_sqrtA_alpha) / a0
-    return b0, b1, b2, a1, a2
-
-
-def _rbj_highshelf(f0: float, q: float, gain_db: float) -> tuple[float, float, float, float, float]:
-    A = 10.0 ** (gain_db / 40.0)
-    w0 = 2.0 * math.pi * f0 / FS
-    cosw0 = math.cos(w0)
-    sinw0 = math.sin(w0)
-    q_eff = 0.2129 + q / 2.25
-    alpha = sinw0 / (2.0 * max(q_eff, 1e-4))
-    two_sqrtA_alpha = 2.0 * math.sqrt(A) * alpha
-    a0 = (A + 1.0) - (A - 1.0) * cosw0 + two_sqrtA_alpha
-    b0 = (A * ((A + 1.0) + (A - 1.0) * cosw0 + two_sqrtA_alpha)) / a0
-    b1 = (-2.0 * A * ((A - 1.0) + (A + 1.0) * cosw0)) / a0
-    b2 = (A * ((A + 1.0) + (A - 1.0) * cosw0 - two_sqrtA_alpha)) / a0
-    a1 = (2.0 * ((A - 1.0) - (A + 1.0) * cosw0)) / a0
-    a2 = ((A + 1.0) - (A - 1.0) * cosw0 - two_sqrtA_alpha) / a0
-    return b0, b1, b2, a1, a2
-
-
-def _rbj_highpass(f0: float, q: float) -> tuple[float, float, float, float, float]:
-    w0 = 2.0 * math.pi * f0 / FS
-    cosw0 = math.cos(w0)
-    alpha = math.sin(w0) / (2.0 * max(q, 1e-4))
-    a0 = 1.0 + alpha
-    b0 = (1.0 + cosw0) / 2.0 / a0
-    b1 = -(1.0 + cosw0) / a0
-    b2 = (1.0 + cosw0) / 2.0 / a0
-    a1 = (-2.0 * cosw0) / a0
-    a2 = (1.0 - alpha) / a0
-    return b0, b1, b2, a1, a2
-
-
-def _rbj_lowpass(f0: float, q: float) -> tuple[float, float, float, float, float]:
-    w0 = 2.0 * math.pi * f0 / FS
-    cosw0 = math.cos(w0)
-    alpha = math.sin(w0) / (2.0 * max(q, 1e-4))
-    a0 = 1.0 + alpha
-    b0 = (1.0 - cosw0) / 2.0 / a0
-    b1 = (1.0 - cosw0) / a0
-    b2 = (1.0 - cosw0) / 2.0 / a0
-    a1 = (-2.0 * cosw0) / a0
-    a2 = (1.0 - alpha) / a0
-    return b0, b1, b2, a1, a2
-
-
 # ── per-stage magnitude (dB) ─────────────────────────────────────────────────
 
 
@@ -147,16 +81,19 @@ def _stage_db(band: BandSpec, p: BandParams) -> np.ndarray:
     """Magnitude response in dB for one stage at GRAPH_FREQS."""
     f = max(min(p.freq, FS * 0.49), 1.0)
     if band.kind == "peak":
-        return _biquad_mag_db(*_rbj_peaking(f, p.q, p.gain_db))
+        bw = PORTLESS_PEAK_BW_OCT if band.q_units is None else as_bw_oct(band.q_units, p.q)
+        if band.filter_topology == "regalia_mitra":
+            return regalia_mitra_peaking(f, bw, p.gain_db)
+        return rbj_peaking(f, bw, p.gain_db)
     if band.kind == "shelf":
+        q = PORTLESS_SHELF_Q if band.q_units is None else as_q(band.q_units, p.q)
         if band.shelf_side == "low":
-            return _biquad_mag_db(*_rbj_lowshelf(f, p.q, p.gain_db))
-        return _biquad_mag_db(*_rbj_highshelf(f, p.q, p.gain_db))
+            return rbj_lowshelf(f, q, p.gain_db)
+        return rbj_highshelf(f, q, p.gain_db)
     if band.kind == "hp":
-        return _biquad_mag_db(*_rbj_highpass(f, max(p.q, 0.5)))
+        return rbj_highpass(f, max(p.q, 0.5))
     if band.kind == "lp":
-        single = _biquad_mag_db(*_rbj_lowpass(f, max(p.q, 0.5)))
-        return single * 2.0
+        return rbj_lowpass(f, max(p.q, 0.5)) * 2.0
     raise ValueError(f"unknown band kind {band.kind!r}")
 
 

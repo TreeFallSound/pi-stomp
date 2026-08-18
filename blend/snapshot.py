@@ -1,23 +1,25 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 """Snapshot file operations for blend mode."""
 
 import json
 import logging
-import requests as req
+import pistomp.httpclient as req
 from pathlib import Path
 
 from blend.types import (
@@ -27,6 +29,7 @@ from blend.types import (
     SnapshotStateDict,
     SnapshotsJson,
 )
+from common.parameter import BYPASS_SYMBOL
 
 
 class SnapshotManager:
@@ -77,7 +80,7 @@ class SnapshotManager:
         for instance_id, plugin_data in snapshot_data.items():
             params = dict(plugin_data.get("ports", {}))
             # :bypass = 1.0 means bypassed, 0.0 means active (see plugin.py:49)
-            params[":bypass"] = 1.0 if plugin_data.get("bypassed", False) else 0.0
+            params[BYPASS_SYMBOL] = 1.0 if plugin_data.get("bypassed", False) else 0.0
             state[instance_id] = params
 
         logging.debug(f"Parsed snapshot {snapshot_index}: {len(state)} plugins")

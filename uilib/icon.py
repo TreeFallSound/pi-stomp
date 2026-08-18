@@ -1,23 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import pygame
 
+from collections.abc import Callable
+from typing import TYPE_CHECKING
+
 from uilib.box import Box
 from uilib.glyphs import ExpressionPedalGlyph, KnobGlyph
+from uilib.glyphs.tint import tint_mask
 from uilib.text import TextWidget
+
+if TYPE_CHECKING:
+    from common.parameter import Parameter
 
 
 class Icon(TextWidget):
@@ -36,10 +45,22 @@ class Icon(TextWidget):
         self.bar_height = bar_height
         self._glyph = None  # set by add_knob/add_pedal
         self.progress = None  # value 0.0-1.0 for the meter fill
+        self._label_unsub: Callable[[], None] | None = None
 
         super(Icon, self).__init__(box, text=text, **kwargs)
 
         self.text_color = text_color if text_color is not None else self.fgnd_color
+
+    def bind_label(self, param: "Parameter", label_fn: Callable[["Parameter"], str]) -> None:
+        """Subscribe the icon's text to a live-value label (transport's
+        ♩=120, Playing/Stopped). Unsubscribed in destroy()."""
+        self._label_unsub = param.subscribe(lambda _: self.set_text(label_fn(param)))
+
+    def destroy(self) -> None:
+        if self._label_unsub is not None:
+            self._label_unsub()
+            self._label_unsub = None
+        super().destroy()
 
     def add_knob(self):
         self._glyph = KnobGlyph(self.height)
@@ -74,15 +95,7 @@ class Icon(TextWidget):
             ox, oy = ctx._f().topleft
             # Vertically center the square glyph in the widget height.
             gy = loc[1] + (ctx.height - mask.get_height()) // 2
-            # Tint the white mask into the fgnd colour: blit a solid colour
-            # fill onto a copy of the mask using BLEND_RGBA_MULT, then blit
-            # the tinted copy onto the target. A plain MULT against the mask
-            # in-place would corrupt the cached surface.
-            tinted = mask.copy()
-            color_surf = pygame.Surface(mask.get_size(), pygame.SRCALPHA)
-            color_surf.fill(self.fgnd_color)
-            tinted.blit(color_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-            ctx.surface.blit(tinted, (loc[0] + ox, gy + oy))
+            ctx.surface.blit(tint_mask(mask, self.fgnd_color), (loc[0] + ox, gy + oy))
 
         text_x = loc[0] + self.height + h_margin
         text_y = loc[1]

@@ -32,11 +32,16 @@ def test_midi_port_and_external_midi_accepted():
         "hardware": {
             "version": 3.0,
             "midi": {"channel": 14},
-            "footswitches": [{"id": 0, "midi_CC": 60, "midi_port": "Source Audio C4 Synth"}],
-            "analog_controllers": [
-                {"adc_input": 5, "id": 0, "midi_CC": 75, "midi_port": "HX Stomp", "type": "EXPRESSION"}
+            "footswitches": [
+                {"id": 0, "midi_CC": 60, "midi_port": "Source Audio C4 Synth", "midi_channel": 0}
             ],
-            "encoders": [{"id": 1, "midi_CC": 70, "midi_port": "Source Audio C4 Synth"}],
+            "analog_controllers": [
+                {"adc_input": 5, "id": 0, "midi_CC": 75, "midi_port": "HX Stomp", "midi_channel": 0,
+                 "type": "EXPRESSION"}
+            ],
+            "encoders": [
+                {"id": 1, "midi_CC": 70, "midi_port": "Source Audio C4 Synth", "midi_channel": 0}
+            ],
             "external_midi": {
                 "enabled": True,
                 "send_delay_ms": 10,
@@ -55,65 +60,84 @@ def test_non_string_midi_port_rejected():
         "hardware": {
             "version": 3.0,
             "midi": {"channel": 14},
-            "encoders": [{"id": 1, "midi_port": 5}],
+            "encoders": [{"id": 1, "midi_port": 5, "midi_channel": 0}],
         }
     }
     with pytest.raises(exceptions.ValidationError):
         validate(instance=cfg, schema=schema)
 
 
-def test_longpress_group_name_accepted():
+@pytest.mark.parametrize("section,entry", [
+    ("footswitches", {"id": 0, "midi_CC": 60, "midi_port": "Source Audio C4 Synth"}),
+    ("analog_controllers", {"adc_input": 5, "id": 0, "midi_CC": 75, "midi_port": "HX Stomp"}),
+    ("encoders", {"id": 1, "midi_CC": 70, "midi_port": "Source Audio C4 Synth"}),
+])
+def test_midi_port_without_midi_channel_rejected(section, entry):
     cfg = {
         "hardware": {
             "version": 3.0,
             "midi": {"channel": 14},
-            "footswitches": [{"id": 0, "longpress": "toggle_bypass"}],
-        }
-    }
-    validate(instance=cfg, schema=schema)
-
-
-def test_longpress_group_name_list_accepted():
-    cfg = {
-        "hardware": {
-            "version": 3.0,
-            "midi": {"channel": 14},
-            "footswitches": [{"id": 0, "longpress": ["next_snapshot", "toggle_bypass"]}],
-        }
-    }
-    validate(instance=cfg, schema=schema)
-
-
-def test_longpress_midi_cc_object_accepted():
-    cfg = {
-        "hardware": {
-            "version": 3.0,
-            "midi": {"channel": 14},
-            "footswitches": [{"id": 0, "longpress": {"midi_CC": 65}}],
-        }
-    }
-    validate(instance=cfg, schema=schema)
-
-
-def test_longpress_unknown_group_name_rejected():
-    cfg = {
-        "hardware": {
-            "version": 3.0,
-            "midi": {"channel": 14},
-            "footswitches": [{"id": 0, "longpress": "not_a_real_group"}],
+            section: [entry],
         }
     }
     with pytest.raises(exceptions.ValidationError):
         validate(instance=cfg, schema=schema)
 
 
-def test_longpress_object_without_midi_cc_rejected():
+@pytest.mark.parametrize("section,entry", [
+    ("footswitches", {"id": 0, "adc_input": 0, "midi_CC": 60}),
+    ("analog_controllers", {"adc_input": 5, "id": 0, "midi_CC": 75}),
+    ("encoders", {"id": 1, "midi_CC": 70}),
+])
+def test_midi_channel_not_required_without_midi_port(section, entry):
+    """midi_channel is only required alongside midi_port; the common no-external-routing case must stay untouched."""
     cfg = {
         "hardware": {
             "version": 3.0,
             "midi": {"channel": 14},
-            "footswitches": [{"id": 0, "longpress": {}}],
+            section: [entry],
         }
     }
+    validate(instance=cfg, schema=schema)
+
+
+# ---------------------------------------------------------------------------
+# Mapping-form longpress (PLAN.md)
+# ---------------------------------------------------------------------------
+
+
+def _fs_cfg(longpress):
+    return {
+        "hardware": {
+            "version": 3.0,
+            "midi": {"channel": 14},
+            "footswitches": [{"id": 0, "midi_CC": 60, "longpress": longpress}],
+        }
+    }
+
+
+@pytest.mark.parametrize("longpress", [
+    {"midi_CC": 64},
+    {"preset": "UP"},
+    {"preset": 2},
+    {"pedalboard": "DOWN"},
+    "next_snapshot",
+    ["next_snapshot", "toggle_bypass"],
+    "toggle_tuner_enable",
+    "next_pedalboard",
+    "previous_pedalboard",
+    ["previous_snapshot", "previous_pedalboard"],
+])
+def test_longpress_mapping_form_valid(longpress):
+    validate(instance=_fs_cfg(longpress), schema=schema)
+
+
+@pytest.mark.parametrize("longpress", [
+    {"midi_CC": "foo"},
+    {"midi_CC": 64, "preset": "UP"},   # mutually exclusive
+    {"pedalboard": "SIDEWAYS"},
+    {"bogus": 1},
+])
+def test_longpress_mapping_form_invalid(longpress):
     with pytest.raises(exceptions.ValidationError):
-        validate(instance=cfg, schema=schema)
+        validate(instance=_fs_cfg(longpress), schema=schema)

@@ -1,8 +1,37 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextRef,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    ParamEffect,
+    SelectionEditEffect,
+)
+from common.parameter import Symbol
+from modalapi.plugin import Plugin
 from pistomp.compmeter.client import GrMeterClient
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.layouts.arc_column import ArcColumnWidget, ArcSelectable
@@ -11,7 +40,6 @@ from plugins.layouts.gr_bar import GrBarWidget
 from plugins.layouts.reticule_graph import ReticuleGraphWidget
 from uilib.box import Box
 from uilib.config import Config
-from uilib.misc import step_for_param
 
 
 @dataclass(frozen=True)
@@ -33,12 +61,13 @@ _GRAPH_Y0 = _GR_BAR_Y + _GR_BAR_H + 4
 
 
 class CompressorPanel(FullscreenPluginPanel[CompressorState]):
-    SPEC: CompressorSpec = CompressorSpec(thr_sym="thr", rat_sym="rat", mak_sym="mak", kn_sym="kn")
+    SPEC: CompressorSpec = CompressorSpec(thr_sym=Symbol("thr"), rat_sym=Symbol("rat"), mak_sym=Symbol("mak"), kn_sym=Symbol("kn"))
+    plugin: Plugin  # narrowing: CompressorPanel is always a Plugin panel
 
     def snapshot_state(self) -> CompressorState:
-        def _v(sym: str | None, default: float) -> float:
+        def _v(sym: Symbol | None, default: float) -> float:
             p = self.plugin.parameters.get(sym) if sym is not None else None
-            return float(p.value) if p is not None and p.value is not None else default
+            return float(p.value) if p is not None else default
 
         spec = self.SPEC
         return CompressorState(
@@ -87,38 +116,46 @@ class CompressorPanel(FullscreenPluginPanel[CompressorState]):
             self._selectables.append(sel)
             self.add_sel_widget(sel)
 
-        self._last_bypassed = self.plugin.is_bypassed()
         self._refresh_bypass_style()
         self.sel_widget(self._selectables[0])
 
         self._meter: GrMeterClient | None = None
 
-    def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:
-        if encoder_id not in (1, 2, 3) or rotations == 0:
-            return True
-        if encoder_id == 2:
-            self._edit_symbol(self.SPEC.thr_sym, rotations)
-        elif encoder_id == 3:
-            self._edit_symbol(self.SPEC.rat_sym, rotations)
-        else:
-            sel = self.sel_ref
-            if isinstance(sel, ArcSelectable):
-                self._edit_symbol(sel.symbol, rotations)
-        return True
+    def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        panel_ctx = ContextRef(kind=ContextKind.PANEL, name="compressor")
+        # enc3 is chassis-labeled Tweak3/Volume; rat stays bound there as a
+        # deliberate, explicit override (see ContextLayer.add in common/contexts.py).
+        volume_ctx = ContextRef(kind=ContextKind.PANEL, name="compressor", override_volume=True)
+        return (
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=1),
+                event_kind=EventKind.ROTATE,
+                effects=(SelectionEditEffect(),),
+                context=panel_ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=2),
+                event_kind=EventKind.ROTATE,
+                effects=(ParamEffect(plugin=self.plugin, symbol=self.SPEC.thr_sym),),
+                context=panel_ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.VOLUME, id=3),
+                event_kind=EventKind.ROTATE,
+                effects=(ParamEffect(plugin=self.plugin, symbol=self.SPEC.rat_sym),),
+                context=volume_ctx,
+            ),
+        )
 
-    def _edit_symbol(self, symbol: str, rotations: int) -> None:
-        p = self.plugin.parameters.get(symbol)
-        if p is None or p.value is None:
-            return
-        new_val = max(p.minimum, min(p.maximum, float(p.value) + rotations * step_for_param(p)))
-        if new_val == p.value:
-            return
-        self.set_param(symbol, new_val)
+    def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool:
+        if not super().edit_symbol(symbol, rotations, multiplier):
+            return False
         self._column.sync_symbol(symbol)
         state = self.snapshot_state()
         self._graph.set_state(state.thr, state.rat, state.kn, state.mak)
+        return True
 
-    def _reset_symbol(self, symbol: str) -> None:
+    def _reset_symbol(self, symbol: Symbol) -> None:
         snap = self.plugin.pedalboard_snapshot
         if symbol not in snap or self._is_symbol_locked(self.plugin.instance_id, symbol):
             return
@@ -127,7 +164,7 @@ class CompressorPanel(FullscreenPluginPanel[CompressorState]):
         state = self.snapshot_state()
         self._graph.set_state(state.thr, state.rat, state.kn, state.mak)
 
-    def set_param(self, symbol: str, value: float) -> None:
+    def set_param(self, symbol: Symbol, value: float) -> None:
         super().set_param(symbol, value)
         if symbol == self.SPEC.mak_sym and self._meter is not None:
             self._meter.set_makeup(value)
@@ -138,10 +175,6 @@ class CompressorPanel(FullscreenPluginPanel[CompressorState]):
         self._column.set_active_arc(idx)
 
     def tick(self) -> None:
-        bypassed = self.plugin.is_bypassed()
-        if bypassed != self._last_bypassed:
-            self._last_bypassed = bypassed
-            self._refresh_bypass_style()
         if self._meter is None:
             self._start_meter()
         if self._meter is not None:

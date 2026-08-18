@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from typing import TYPE_CHECKING, Optional, Protocol, cast
@@ -297,6 +299,10 @@ class EthernetMenu:
             new_label = "Unmute MOD"
         if self._mute_btn is not None:
             self._mute_btn.set_text(new_label)
+        # Refresh the Audio & MIDI toolbar tile so the muted state surfaces
+        # even when the user muted via the Ethernet menu rather than the
+        # Audio & MIDI menu.
+        self.lcd.update_audio_midi_tile()
 
     def _on_back(self, _event: object = None, _widget: object = None) -> None:
         if self._panel is not None:

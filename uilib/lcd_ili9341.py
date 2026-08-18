@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import pygame
@@ -18,7 +20,6 @@ import pygame
 from uilib.panel import LcdBase, Box
 from uilib.spi_timing import actual_spi_hz
 from uilib.spi_timing import transfer_ms as spi_transfer_ms
-from uilib import profiling
 import logging
 import threading
 import os
@@ -53,9 +54,7 @@ class LcdIli9341(LcdBase):
         self.requested_baudrate = baudrate
         self.baudrate = actual_spi_hz(baudrate)
         if self.baudrate != baudrate:
-            logging.info(
-                "SPI %.2f MHz requested, %.2f MHz actual", baudrate / 1e6, self.baudrate / 1e6
-            )
+            logging.info("SPI %.2f MHz requested, %.2f MHz actual", baudrate / 1e6, self.baudrate / 1e6)
 
         self.lock = threading.Lock()
 
@@ -208,7 +207,6 @@ class LcdIli9341(LcdBase):
             pixels_bytes = staged[:sh, :sw].byteswap().tobytes()
             del staged  # unlock the surface
 
-            with profiling.measure("lcd.update:_block(SPI)"):
-                self.disp._block(x1, y1, x1 + sw - 1, y1 + sh - 1, pixels_bytes)
+            self.disp._block(x1, y1, x1 + sw - 1, y1 + sh - 1, pixels_bytes)
         finally:
             self.lock.release()

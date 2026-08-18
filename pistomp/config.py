@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
@@ -24,15 +26,6 @@ from jsonschema import exceptions
 data_dir = '/home/pistomp/data/config'
 
 DEFAULT_CONFIG_FILE = "default_config.yml"
-
-LONGPRESS_GROUP_NAMES = [
-    "next_snapshot",
-    "previous_snapshot",
-    "toggle_bypass",
-    "set_mod_tap_tempo",
-    "toggle_tap_tempo_enable",
-    "toggle_tuner_enable",
-]
 
 schema = {
   "$schema": "http://json-schema.org/draft-04/schema#",
@@ -95,25 +88,34 @@ schema = {
                 "oneOf": [
                   {
                     "type": "string",
-                    "enum": LONGPRESS_GROUP_NAMES
+                    "enum": ["next_snapshot", "previous_snapshot", "toggle_bypass",
+                             "toggle_tap_tempo_enable", "toggle_tuner_enable", "next_pedalboard",
+                             "previous_pedalboard"]
                   },
                   {
                     "type": "array",
                     "items": {
                       "type": "string",
-                      "enum": LONGPRESS_GROUP_NAMES
+                      "enum": ["next_snapshot", "previous_snapshot", "toggle_bypass",
+                             "toggle_tap_tempo_enable", "toggle_tuner_enable", "next_pedalboard",
+                             "previous_pedalboard"]
                     }
                   },
                   {
                     "type": "object",
-                    "description": "Send this CC (value 127) on longpress instead of resolving a named longpress group.",
+                    "additionalProperties": False,
+                    "minProperties": 1,
+                    "maxProperties": 1,
                     "properties": {
-                      "midi_CC": {
-                        "type": "integer"
-                      }
-                    },
-                    "required": ["midi_CC"],
-                    "additionalProperties": False
+                      "midi_CC": {"type": "integer", "minimum": 0, "maximum": 127},
+                      "preset": {
+                        "oneOf": [
+                          {"type": "integer"},
+                          {"type": "string", "enum": ["UP", "DOWN"]}
+                        ]
+                      },
+                      "pedalboard": {"type": "string", "enum": ["UP", "DOWN"]}
+                    }
                   }
                 ]
               },
@@ -123,6 +125,12 @@ schema = {
               "midi_port": {
                 "type": "string",
                 "description": "Send MIDI to this external port instead of the virtual MIDI Through port; falls back to virtual if the device is unavailable (must match a port in external_midi)"
+              },
+              "midi_channel": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 15,
+                "description": "Override MIDI channel for this footswitch; required when midi_port is set, since external devices rarely share the hardware default channel"
               },
               "preset": {
                 "oneOf": [
@@ -141,7 +149,10 @@ schema = {
             },
             "required": [
               "id",
-            ]
+            ],
+            "dependencies": {
+              "midi_port": ["midi_channel"]
+            }
           }
         },
         "analog_controllers": {
@@ -163,6 +174,12 @@ schema = {
                 "type": "string",
                 "description": "Send MIDI to this external port instead of the virtual MIDI Through port; falls back to virtual if the device is unavailable (must match a port in external_midi)"
               },
+              "midi_channel": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 15,
+                "description": "Override MIDI channel for this controller; required when midi_port is set, since external devices rarely share the hardware default channel"
+              },
               "threshold": {
                 "type": "integer",
                 "minimum": 0,
@@ -178,7 +195,10 @@ schema = {
             "required": [
               "adc_input",
               "midi_CC"
-            ]
+            ],
+            "dependencies": {
+              "midi_port": ["midi_channel"]
+            }
           }
         },
         "encoders": {
@@ -201,7 +221,7 @@ schema = {
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 15,
-                "description": "Override MIDI channel for this encoder (0-15); useful when the external device is on a different channel than the hardware default"
+                "description": "Override MIDI channel for this encoder; required when midi_port is set, since external devices rarely share the hardware default channel"
               },
               "type": {
                 "enum": ["KNOB", "VOLUME"]
@@ -212,7 +232,10 @@ schema = {
             },
             "required": [
               "id"
-            ]
+            ],
+            "dependencies": {
+              "midi_port": ["midi_channel"]
+            }
           }
         },
         "external_midi": {

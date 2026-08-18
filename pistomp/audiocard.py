@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
@@ -18,29 +20,40 @@ import mmap
 import os
 import re
 import subprocess
+import time
+
+from pistomp.alsa_pcm import read_hw_params
 
 
 class Audiocard:
+    """Base card: an amixer/alsactl wrapper over one ALSA card."""
 
-    def __init__(self, cwd):
+    # `alsactl store` costs ~39 ms and every setter runs on the 10 ms UI thread,
+    # so persisting is debounced to this long after the last write. Callers ask
+    # for persistence; poll_store() decides when it happens.
+    STORE_IDLE_S: float = 1.0
+
+    cwd: str
+    card_index: int = 0
+    config_file: str = "/var/lib/alsa/asound.state"  # global config used by alsamixer, etc.
+    initial_config_file: str | None = None  # use this if common config_file loading fails
+    initial_config_name: str | None = None
+    bypass: bool = False
+    _store_at: float | None = None
+
+    # Superset of Alsa control names for all cards (None == not supported).
+    # Override in subclass with the actual name.
+    CAPTURE_VOLUME: str | None = None
+    DAC_EQ: str | None = None
+    EQ_1: str | None = None
+    EQ_2: str | None = None
+    EQ_3: str | None = None
+    EQ_4: str | None = None
+    EQ_5: str | None = None
+    MASTER: str | None = None
+
+    def __init__(self, cwd: str) -> None:
         self.cwd = cwd
-        self.card_index = 0
-        self.config_file = '/var/lib/alsa/asound.state'  # global config used by alsamixer, etc.
-        self.initial_config_file = None  # use this if common config_file loading fails
-        self.initial_config_name = None
-        self.card_index = 0
-        self.bypass = False
-
-        # Superset of Alsa parameters for all cards (None == not supported)
-        # Override in subclass with actual name
-        self.CAPTURE_VOLUME = None
-        self.DAC_EQ = None
-        self.EQ_1 = None
-        self.EQ_2 = None
-        self.EQ_3 = None
-        self.EQ_4 = None
-        self.EQ_5 = None
-        self.MASTER = None
 
     def restore(self):
         # If the global config_file either doesn't exist, doesn't contain the name of our audiocard, or fails restore,
@@ -51,13 +64,13 @@ class Audiocard:
         for fname in conf_files:
             if os.access(fname, os.R_OK) is True:
                 try:
-                    looking_for = bytes(("state.%s" % self.initial_config_name), 'utf-8')
+                    looking_for = bytes(("state.%s" % self.initial_config_name), "utf-8")
                     f = open(fname)
                     with f as text:
                         s = mmap.mmap(text.fileno(), 0, access=mmap.ACCESS_READ)
                         if s.find(looking_for) != -1:
                             logging.info("restoring audio card settings from: %s" % fname)
-                            subprocess.run(['/usr/sbin/alsactl', '-f', fname, '--no-lock', '--no-ucm', 'restore'])
+                            subprocess.run(["/usr/sbin/alsactl", "-f", fname, "--no-lock", "--no-ucm", "restore"])
                             f.close()
                             # If the file loaded was not the global, then save it so it will be next time
                             if fname is not self.config_file:
@@ -68,14 +81,33 @@ class Audiocard:
                     logging.error("Failed trying to restore audio card settings from: %s" % fname)
 
     def store(self):
-        # This will fail when the top level program is not run as root
-        # Unfortunate that setting changes will not be persisted between boots, but not worth getting the mess of
-        # dealing with file permissions or sync issues when settings are changed via another program (eg. aslamixer)
+        # /var/lib/alsa/asound.state is root:root; this process runs as the
+        # unprivileged pistomp user, so alsactl needs sudo to lock and write it.
         try:
-            subprocess.run(['/usr/sbin/alsactl', '-f', self.config_file, 'store'], stderr=subprocess.DEVNULL)
+            subprocess.run(["sudo", "/usr/sbin/alsactl", "-f", self.config_file, "store"], stderr=subprocess.DEVNULL)
             logging.info("audio card settings saved to: %s" % self.config_file)
         except Exception:
             logging.error("Failed trying to store audio card settings to: %s" % self.config_file)
+
+    def poll_store(self) -> None:
+        """Run a pending persist once it has settled. Drive from the main loop."""
+        if self._store_at is not None and time.monotonic() >= self._store_at:
+            self.flush_store()
+
+    def flush_store(self) -> None:
+        """Persist now if anything is pending. Call before shutdown."""
+        if self._store_at is None:
+            return
+        self._store_at = None
+        self.store()
+
+    def get_sample_rate(self) -> int:
+        # Raises rather than returning None: we Requires=jack.service, so jackd
+        # holds the PCM open whenever we run and a missing rate is a broken invariant
+        rate = read_hw_params(self.card_index).get("rate")
+        if rate is None:
+            raise RuntimeError("no PCM rate for card %d; is jackd holding it?" % self.card_index)
+        return int(rate)
 
     def _amixer_sget(self, param_name):
         cmd = "amixer -c %d -- sget '%s'" % (self.card_index, param_name)
@@ -87,9 +119,9 @@ class Audiocard:
         return output.decode()
 
     def _amixer_sset(self, param_name, value, store):
-        # when store is False settings will not be persisted between sessions unless an explicit call
-        # to store() is made
-        # setting to False is good when you want to set a bunch of things, then store
+        # store=False means the setting is transient and must not survive a
+        # reboot (mute), not merely that persisting is deferred — every store
+        # is deferred now.
         cmd = "amixer -c %d -q -- sset '%s' '%s'" % (self.card_index, param_name, value)
         try:
             subprocess.check_output(cmd, shell=True)
@@ -97,7 +129,7 @@ class Audiocard:
             logging.error("Failed trying to set audio card parameter")
             return False
         if store:
-            self.store()
+            self._store_at = time.monotonic() + self.STORE_IDLE_S
         return True
 
     def get_bypass_left(self) -> bool:
@@ -124,7 +156,7 @@ class Audiocard:
         if param_name is None:
             return float(0)
         s = self._amixer_sget(param_name)
-        pattern = r': (.*)(\d+) \[(\d+%)\] \[(-?\d+\.\d+)dB\]'
+        pattern = r": (.*)(\d+) \[(\d+%)\] \[(-?\d+\.\d+)dB\]"
         matches = re.search(pattern, s)
         if matches:
             return round(float(matches.group(4)), 1)
@@ -135,7 +167,7 @@ class Audiocard:
         if param_name is None:
             return False
         s = self._amixer_sget(param_name)
-        pattern = r': (.*) \[(on|off)\]'
+        pattern = r": (.*) \[(on|off)\]"
         matches = re.search(pattern, s)
         if matches:
             return bool("on" == matches.group(2))
@@ -163,4 +195,3 @@ class Audiocard:
     def set_enum_parameter(self, param_name, value, store=True):
         # value expected to be a string (specifically one of the enum choices for the parameter)
         return self._amixer_sset(param_name, str(value), store)
-

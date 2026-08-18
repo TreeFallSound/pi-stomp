@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
@@ -27,12 +29,8 @@ T = TypeVar("T")
 
 
 class Command(ABC, Generic[T]):
-    """A unit of serialized work. Subclasses carry their args as fields.
-
-    `run(wm)` does the blocking work on a worker thread. `key()` is the dedup
-    identity — if a command with the same key is already pending or in-flight,
-    a fresh submission is silently dropped.
-    """
+    """A unit of serialized work. Deduped by key() — if a command with the
+    same key is pending or in-flight, a fresh submission is dropped."""
 
     @abstractmethod
     def run(self, wm: Any) -> T: ...
@@ -119,6 +117,8 @@ class ToggleHotspotCmd(Command[Optional[bytes]]):
 
 @dataclass
 class ScanCmd(Command[list]):
+    """Trigger a fresh scan and return the results. Blocks for seconds."""
+
     def run(self, wm: "WifiManager") -> list:
         return wm.scan_networks()
 
@@ -130,13 +130,8 @@ _SHUTDOWN_SENTINEL = object()
 
 
 class CommandQueue:
-    """Serialized executor over a WifiManager. Drains submitted Commands on a
-    single daemon worker; delivers results on the main thread via poll().
-
-    Dedupes by Command.key(): a submission whose key matches a queued or
-    in-flight item is silently dropped. State-changing submissions bump
-    pending_op_count; scan submissions do not.
-    """
+    """Serialized executor over a WifiManager. Worker thread runs Commands;
+    results are delivered on the main thread via poll(). Dedupes by key()."""
 
     def __init__(self, wm: "WifiManager") -> None:
         self._wm = wm
@@ -180,6 +175,12 @@ class CommandQueue:
                 self._pending_keys.discard(cmd.key())
                 if bumps_pending:
                     self._pending_op_count -= 1
+            if bumps_pending:
+                # Nudge the poller for fresh status — don't wait out the 5s tick.
+                try:
+                    self._wm.request_refresh()
+                except Exception:
+                    logging.exception("Status refresh request failed")
             self._result_queue.put((on_done, result))
 
     def poll(self) -> None:

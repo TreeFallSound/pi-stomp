@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from pathlib import Path
@@ -21,8 +23,8 @@ DEFAULT_COLOR: tuple[int, int, int] = (255, 255, 255)
 
 # Re-export glyphs for convenience
 from common.color import RectBorder
-from uilib.glyphs.arc_dial import ArcDialWidget, DialFormatter, DialVariant, paint_arc_dial
 from uilib.glyphs.arc_ring import ArcRingGlyph
+from uilib.glyphs.badge import BadgeGlyph
 from uilib.glyphs.circle import CircleGlyph, RingGlyph
 from uilib.glyphs.ethernet_cable import EthernetCableGlyph
 from uilib.glyphs.expression_pedal import ExpressionPedalGlyph
@@ -37,11 +39,9 @@ from uilib.glyphs.spinner import SpinnerGlyph
 __all__ = [
     "DEFAULT_COLOR",
     "FONTS_DIR",
-    "ArcDialWidget",
-    "RectBorder",
     "ArcRingGlyph",
-    "DialFormatter",
-    "DialVariant",
+    "RectBorder",
+    "BadgeGlyph",
     "CircleGlyph",
     "EthernetCableGlyph",
     "ExpressionPedalGlyph",
@@ -53,7 +53,6 @@ __all__ = [
     "RoundedRectGlyph",
     "SignalBarsGlyph",
     "SpinnerGlyph",
-    "paint_arc_dial",
     "render_rounded_fill",
     "render_rounded_mask",
     "render_rounded_outline",

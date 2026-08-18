@@ -22,7 +22,7 @@ def test_wifi_menu_navigation(v3_system, wifi_state, nav_lcd, snapshot):
     snapshot("initial_menu")
 
     # Act: Enter nearby submenu
-    instance.pstack.input_event(InputEvent.CLICK)
+    instance.pstack.current.input_event(InputEvent.CLICK)
 
     # Act: Navigate down to NetB
     nav_lcd(1)
@@ -31,7 +31,7 @@ def test_wifi_menu_navigation(v3_system, wifi_state, nav_lcd, snapshot):
     snapshot("navigated_down")
 
     # Act: Select NetB → password dialog
-    instance.pstack.input_event(InputEvent.CLICK)
+    instance.pstack.current.input_event(InputEvent.CLICK)
 
     # Assert password dialog
     snapshot("password_dialog")

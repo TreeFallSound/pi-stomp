@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
@@ -20,6 +22,8 @@ import threading
 import time
 from functools import cached_property
 from typing import Optional
+
+from pistomp.alsa_pcm import read_hw_params
 
 # Contract with the JackBridge service: truncate-on-start, atomic-rewrite of a
 # bounded list (entries older than 15 min are dropped on each append). The UI
@@ -87,8 +91,11 @@ class EthernetManager:
         active = self._probe_service_active() if carrier else False
         ipv4 = self._probe_ipv4() if carrier else None
         if active:
-            sample_rate = self._probe_jack_int("jack_samplerate")
-            period = self._probe_jack_int("jack_bufsize")
+            # One /proc read for both — jack_samplerate/jack_bufsize each fork
+            # and join the RT graph to learn what hw_params already states.
+            params = read_hw_params()
+            sample_rate = int(params["rate"]) if "rate" in params else None
+            period = int(params["period_size"]) if "period_size" in params else None
             xruns = self._probe_xrun_buckets()
         else:
             sample_rate = period = None
@@ -137,15 +144,6 @@ class EthernetManager:
                 if i + 1 < len(parts):
                     return parts[i + 1]
         return None
-
-    @staticmethod
-    def _probe_jack_int(cmd: str) -> Optional[int]:
-        try:
-            out = subprocess.check_output([cmd], timeout=2).decode().strip()
-            return int(out.split()[0]) if out else None
-        except Exception as e:
-            logging.debug("%s failed: %s", cmd, e)
-            return None
 
     @staticmethod
     def _probe_xrun_buckets() -> tuple[int, int, int]:

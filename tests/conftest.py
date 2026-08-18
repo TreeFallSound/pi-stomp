@@ -22,6 +22,7 @@ _pg_init()
 import pygame
 
 from uilib.panel import LcdBase
+from common.parameter import BYPASS_SYMBOL, PortInfo
 
 PROJECT_ROOT = Path(__file__).parent.parent
 _TESTS_DIR = Path(__file__).parent
@@ -40,7 +41,6 @@ _PI_MODULES = [
     "gpiozero",
     "neopixel",
     "spidev",
-    "lilv",
     "matplotlib",
     "adafruit_mcp3xxx",
     "adafruit_mcp3xxx.analog_in",
@@ -251,9 +251,9 @@ def make_plugin():
     def _make(instance_id, category="Distortion", bypassed=False, has_footswitch=False, parameters=None, uri=None):
         if parameters is None:
             parameters = {}
-        bypass_info = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
+        bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
         bypass_param = Parameter(bypass_info, bypassed, None, instance_id)
-        parameters[":bypass"] = bypass_param
+        parameters[BYPASS_SYMBOL] = bypass_param
         # Fixture acts as the composition root: resolve customization by URI,
         # mirroring how the handler injects it in production.
         p = Plugin(instance_id, parameters, {}, category, uri=uri, customization=lookup(uri))
@@ -268,7 +268,7 @@ def make_parameter():
     from modalapi.parameter import Parameter
 
     def _make(name, instance_id, value=0.5, minimum=0.0, maximum=1.0):
-        info = {"shortName": name, "symbol": name.lower(), "ranges": {"minimum": minimum, "maximum": maximum}}
+        info: PortInfo = {"shortName": name, "symbol": name.lower(), "ranges": {"minimum": minimum, "maximum": maximum}}
         return Parameter(info, value, None, instance_id)
 
     return _make

@@ -1,38 +1,42 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
-
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from rtmidi.midiconstants import CONTROL_CHANGE
-
 from pistomp.analogmidicontrol import AnalogMidiControl
+from pistomp.controller import Controller
 from pistomp.current import Current
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
 from pistomp.footswitch_chords import FootswitchChords
-from pistomp.input.event import ControllerEvent, SwitchEventKind
+from pistomp.input.event import ControllerEvent
 from pistomp.input.sink import InputSink
-from pistomp.tuner.source import TunerSourceFactory
+from common.parameter import Symbol
 
 if TYPE_CHECKING:
+    from common.parameter import Parameter
+    from modalapi.plugin import Plugin
     from modalapi.websocket_bridge import AsyncWebSocketBridge
     from pistomp.hardware import Hardware
+    from pistomp.tuner.source import TunerSourceFactory
 
 
 class Handler(InputSink):
@@ -92,6 +96,26 @@ class Handler(InputSink):
     def add_lcd(self, lcd):
         raise NotImplementedError()
 
+    def open_parameter_dialog(self, parameter: "Parameter") -> None:
+        """NAV CLICK on a selection resolving to a single symbol: open the
+        same user-dismissable editor the generic plugin-parameter-menu uses.
+        The dialog writes `parameter.value`, so a panel open underneath it
+        repaints through its own subscription — no resync hook needed."""
+        raise NotImplementedError()
+
+    def open_parameter_submenu(self, plugin: "Plugin", rows: tuple[tuple[str, Symbol], ...], title: str) -> None:
+        """NAV CLICK on a compound selection (e.g. an EQ band's gain/freq/Q):
+        open a submenu over just these symbols, each row opening the same
+        per-parameter dialog as open_parameter_dialog."""
+        raise NotImplementedError()
+
+    def open_audio_parameter_dialog(
+        self, parameter: "Parameter", commit_callback: Callable[[str, float], None]
+    ) -> None:
+        """Same as open_parameter_dialog, for a synthetic audio-card
+        parameter (no backing LV2 plugin, e.g. NAM's capture gain/volume)."""
+        raise NotImplementedError()
+
     def add_hardware(self, hardware):
         raise NotImplementedError()
 
@@ -130,83 +154,18 @@ class Handler(InputSink):
     def bottom_encoder_sw(self, value):
         raise NotImplementedError()
 
-    def universal_encoder_select(self, direction):
-        raise NotImplementedError()
-
-    def universal_encoder_sw(self, value):
-        raise NotImplementedError()
-
     def handle(self, event: ControllerEvent) -> bool:
         raise NotImplementedError()
 
-    # ── Footswitch dispatch (shared by v1/v3) ────────────────────────────
-
-    def _handle_footswitch(self, fs: "Footswitch", kind: SwitchEventKind, timestamp: float) -> bool:
-        """Resolve a footswitch SwitchEvent. Mirrors the old Footswitch.pressed()
-        behavior exactly, but as the sole arbiter on the handler side."""
-        if kind == SwitchEventKind.LONGPRESS:
-            if fs.relay_list:
-                # Relay footswitch: longpress toggles the relay immediately and
-                # never enters chord resolution.
-                new_toggled = not fs.toggled
-                fs.toggled = new_toggled
-                fs.toggle_relays(new_toggled)
-                fs.set_led(new_toggled)
-                self.update_lcd_fs(bypass_change=True)
-            elif fs.longpress_midi_CC is not None:
-                # Momentary trigger CC, distinct from the short-press binding
-                # (e.g. a plugin's "reset" port learned to this CC).
-                self._emit_midi(fs, 127, cc=fs.longpress_midi_CC)
-            else:
-                self.chord_helper.observe(fs, timestamp)
-            return True
-
-        # Short press
-        if fs.taptempo and fs.taptempo.is_enabled():
-            fs.taptempo.stamp(timestamp)
-            return True
-        if fs.preset_callback is not None:
-            if fs.preset_callback_arg is not None:
-                fs.preset_callback(fs.preset_callback_arg)
-            else:
-                fs.preset_callback()
-            return True
-        if fs.midi_CC is not None:
-            if fs.parameter is not None and fs.parameter.is_momentary:
-                self._emit_midi(fs, 127)
-            else:
-                fs.toggled = not fs.toggled
-                fs.set_led(fs.toggled)
-                self._emit_midi(fs, 127 if fs.toggled else 0)
-        if fs.parameter is not None:
-            fs.parameter.value = not fs.toggled  # FIXME: assumes mapped parameter is :bypass
-        self.update_lcd_fs(footswitch=fs)
-        return True
-
-    def _tick_chords(self) -> None:
-        """Resolve pending footswitch chords/singletons. Call once per poll cycle."""
-        for name in self.chord_helper.tick():
+    def _fire_longpress_groups(self, fs) -> None:
+        """Resolve a matured footswitch longpress and run what it named."""
+        for name in self.chord_helper.observe(fs):
             cb = self.get_callback(name)
             if cb:
                 cb()
 
-    def _emit_midi(self, controller, midi_value: int, cc: int | None = None) -> None:
-        """Send a CC via this controller's binding, or an explicit override CC
-        (e.g. a footswitch's longpress trigger, distinct from its short-press
-        binding). Tries the controller's routed external port; falls back to
-        the virtual MIDI Through port."""
-        cc_num = cc if cc is not None else controller.midi_CC
-        if cc_num is None:
-            return
-        message = [controller.midi_channel | CONTROL_CHANGE, cc_num, int(midi_value)]
-        port_name = self.hardware.external_port_name(controller)
-        if port_name is not None and self.hardware.external_midi is not None:
-            try:
-                if self.hardware.external_midi.send_raw(port_name, message):
-                    return
-            except Exception as e:
-                logging.warning("External CC send failed on %s: %s", port_name, e)
-        self.hardware.midiout.send_message(message)
+    def _emit_midi(self, controller, midi_value: int) -> None:
+        raise NotImplementedError()
 
     def cleanup(self):
         raise NotImplementedError()
@@ -236,17 +195,17 @@ class Handler(InputSink):
         raise NotImplementedError()
 
     def poll_ethernet(self):
-        # v1/v2 handlers don't run the Ethernet/JackBridge integration.
+        # No-op fallback; Modhandler runs the Ethernet/JackBridge integration.
         pass
 
     def set_tuner_source_factory(self, factory: "TunerSourceFactory") -> None:
         pass
 
     def set_tuner_source_spec(self, spec: str) -> None:
-        # No-op for handlers without a tuner (v1/generic); Modhandler overrides.
+        # No-op fallback for handlers without a tuner; Modhandler overrides.
         pass
 
-    def is_symbol_locked(self, instance_id: str, symbol: str) -> bool:
+    def is_symbol_locked(self, instance_id: str, symbol: Symbol) -> bool:
         return False
 
     def show_fullscreen_panel(self, plugin, panel_cls) -> None:
@@ -255,37 +214,76 @@ class Handler(InputSink):
     def hide_fullscreen_panel(self) -> None:
         pass
 
-    #
-    # MIDI binding (shared by v1/v3 handlers)
-    #
-    def _apply_midi_binding(self, instance, symbol, binding):
-        # A MIDI mapping was learned in mod-ui. Update the matching parameter's
-        # binding and wire its hardware controller so the LCD reflects it without
-        # a pedalboard reload. Idempotent: replayed connect-dump maps are no-ops.
+    def _apply_midi_binding(
+        self, instance: str, symbol: Symbol, binding: str, binding_range: tuple[float, float] | None = None
+    ) -> None:
+        # A MIDI mapping was learned or cleared in mod-ui. Update the matching
+        # parameter's binding and wire/unwire its hardware controller so the LCD
+        # reflects it without a pedalboard reload. Idempotent: replayed connect-dump
+        # maps are no-ops.
         if self._current is None:
             return
-        plugin = next((p for p in self.current.pedalboard.plugins if p is not None and p.instance_id == instance), None)
+        plugin = self.current.pedalboard.find_plugin(instance)
         if plugin is None or plugin.parameters is None:
             return
         param = plugin.parameters.get(symbol)
-        if param is None or param.binding == binding:
+        if param is None:
             return
         controller = self.hardware.controllers.get(binding)
-        if controller is None:
+        # The range can change without the binding (re-address the same CC to a
+        # different sub-range), so apply it before the binding-unchanged bail.
+        # On unmap (binding "-1:-1" or "-1"), restore the plugin's declared LV2 range.
+        is_unmapped = binding in ("-1:-1", "-1")
+        if binding_range is not None and not is_unmapped:
+            param.set_binding_range(binding_range)
+        elif is_unmapped:
+            param.clear_binding_range()
+        if param.binding == binding:
             return
+
+        old_binding = param.binding
+        old_controller = self.hardware.controllers.get(old_binding) if old_binding is not None else None
+
+        if old_controller is not None and old_binding != binding:
+            old_controller.unbind_from_parameter()
+            if old_controller in plugin.controllers:
+                plugin.controllers.remove(old_controller)
+            if isinstance(old_controller, Footswitch):
+                plugin.has_footswitch = any(isinstance(c, Footswitch) for c in plugin.controllers)
+            elif isinstance(old_controller, (AnalogMidiControl, EncoderController)):
+                key = "%s:%s" % (plugin.instance_id, param.name)
+                self.current.analog_controllers.pop(key, None)
+            # Redraw the displaced controller now or a footswitch stays stale-green
+            # on the LCD until the next board load (update_footswitch is single-widget).
+            self._redraw_after_binding(old_controller, isinstance(old_controller, Footswitch))
+
+        if controller is None:
+            param.binding = None
+            self._add_learned_binding_row(plugin, param, None, old_binding)
+            return
+
+        # Externally-routed controls aren't bound to plugin parameters; board
+        # load ignores such bindings (_bind_plugin_parameters) and the live
+        # learn must agree, or the control's MidiCcEffect row shadows the
+        # learned row and commits emit raw values out the external port.
+        if self.hardware.is_external(controller):
+            logging.warning(
+                f"MIDI learn for {instance}:{param.name} names external controller "
+                f"{binding} (routed to {self.hardware.external_port_name(controller)}) - ignoring"
+            )
+            return
+
         param.binding = binding
         is_footswitch = self._bind_controller_to_param(plugin, param, controller)
+        self._add_learned_binding_row(plugin, param, controller, old_binding)
         self._redraw_after_binding(controller, is_footswitch)
         if is_footswitch:
             self._on_footswitch_binding_changed()
 
-    def _bind_controller_to_param(self, plugin, param, controller) -> bool:
+    def _bind_controller_to_param(self, plugin: "Plugin", param: "Parameter", controller: Controller) -> bool:
         # Wire a hardware controller to a plugin parameter. Returns True if the
         # controller is a footswitch (so callers can track footswitch plugins).
-        # TODO possibly use a setter instead of accessing var directly
-        # What if multiple params could map to the same controller?
-        controller.parameter = param  # pyright: ignore[reportAttributeAccessIssue]
-        controller.set_value(param.value)
+        controller.bind_to_parameter(param)
         if controller not in plugin.controllers:
             plugin.controllers.append(controller)
         if isinstance(controller, Footswitch):
@@ -303,10 +301,18 @@ class Handler(InputSink):
     def _on_footswitch_binding_changed(self) -> None:
         """Hook fired after a live MIDI-learn binds a footswitch to a plugin.
         Subclasses with output_set subscriptions (Modhandler) override to
-        recompute the WS interesting-set. Base no-op for v1 (Mod)."""
+        recompute the WS interesting-set."""
         return
 
-    def _redraw_after_binding(self, controller, is_footswitch):
+    def _redraw_after_binding(self, controller: Controller | None, is_footswitch: bool) -> None:
         # Refresh the LCD after a learned binding. Subclasses redraw at their
         # own granularity.
         raise NotImplementedError()
+
+    def _add_learned_binding_row(
+        self, plugin: "Plugin", param: "Parameter", controller: Controller | None, old_binding: str | None
+    ) -> None:
+        # Add a table row for a live-learned binding so dispatch and badges
+        # reflect it without a pedalboard reload. MOD subclasses override;
+        # non-MOD hosts never receive midi_map.
+        pass

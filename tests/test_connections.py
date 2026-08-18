@@ -1,7 +1,7 @@
 """Unit tests for the pure connection-parsing logic in modalapi.pedalboard.
 
-The lilv-dependent arc walk is not tested here (lilv is mocked in the test
-env); we test the URI/port resolution that the walk feeds into.
+Fetching the arcs from mod-ui is not tested here; we test the URI/port
+resolution that the arc list feeds into.
 """
 
 from modalapi.connections import (

@@ -12,6 +12,10 @@ from unittest.mock import patch, mock_open
 import pytest
 
 from modalapi.ethernet.manager import EthernetManager
+from pistomp.alsa_pcm import read_hw_params
+
+# _refresh calls read_hw_params through the manager's namespace.
+_HW = "modalapi.ethernet.manager.read_hw_params"
 
 
 @pytest.fixture
@@ -73,7 +77,7 @@ def test_refresh_flips_changed_on_state_transition(em: EthernetManager):
         patch.object(EthernetManager, "_probe_carrier", return_value=True),
         patch.object(EthernetManager, "_probe_service_active", return_value=True),
         patch.object(EthernetManager, "_probe_ipv4", return_value="10.0.0.5/24"),
-        patch.object(EthernetManager, "_probe_jack_int", return_value=48000),
+        patch(_HW, return_value={"rate": "48000", "period_size": "64"}),
         patch.object(EthernetManager, "_probe_xrun_buckets", return_value=(0, 0, 0)),
     ):
         em._refresh()
@@ -101,7 +105,7 @@ def test_refresh_skips_systemctl_and_jack_when_carrier_down(em: EthernetManager)
         patch.object(EthernetManager, "_probe_carrier", return_value=False),
         patch.object(EthernetManager, "_probe_service_active") as mock_active,
         patch.object(EthernetManager, "_probe_ipv4") as mock_ipv4,
-        patch.object(EthernetManager, "_probe_jack_int") as mock_jack,
+        patch(_HW) as mock_jack,
         patch.object(EthernetManager, "_probe_xrun_buckets") as mock_xrun,
     ):
         em._refresh()
@@ -120,12 +124,12 @@ def test_refresh_caches_values_for_ui_thread(em):
         patch.object(EthernetManager, "_probe_carrier", return_value=True),
         patch.object(EthernetManager, "_probe_service_active", return_value=True),
         patch.object(EthernetManager, "_probe_ipv4", return_value="169.254.1.2/16"),
-        patch.object(EthernetManager, "_probe_jack_int", side_effect=[48000, 128]),
+        patch(_HW, return_value={"rate": "48000", "period_size": "64"}),
         patch.object(EthernetManager, "_probe_xrun_buckets", return_value=(1, 2, 3)),
     ):
         em._refresh()
     assert em.read_ipv4() == "169.254.1.2/16"
-    assert em.read_jack_settings() == (48000, 128)
+    assert em.read_jack_settings() == (48000, 64)
     assert em.read_xrun_buckets() == (1, 2, 3)
 
 
@@ -148,22 +152,36 @@ def test_probe_ipv4_returns_none_on_command_error(em: EthernetManager):
         assert em._probe_ipv4() is None
 
 
-# ---------- _probe_jack_int ----------
+# ---------- read_hw_params ----------
+
+_HW_PARAMS = (
+    "access: MMAP_INTERLEAVED\n"
+    "format: S32_LE\n"
+    "subformat: STD\n"
+    "channels: 2\n"
+    "rate: 48000 (48000/1)\n"
+    "period_size: 64\n"
+    "buffer_size: 128\n"
+)
 
 
-def test_probe_jack_int_parses_value():
-    with patch("subprocess.check_output", return_value=b"48000\n"):
-        assert EthernetManager._probe_jack_int("jack_samplerate") == 48000
+def test_read_hw_params_takes_first_token_of_each_value():
+    with patch("builtins.open", mock_open(read_data=_HW_PARAMS)):
+        params = read_hw_params()
+    assert params["rate"] == "48000"  # not "48000 (48000/1)"
+    assert params["period_size"] == "64"
+    assert params["channels"] == "2"
 
 
-def test_probe_jack_int_returns_none_when_jack_down():
-    with patch("subprocess.check_output", side_effect=FileNotFoundError()):
-        assert EthernetManager._probe_jack_int("jack_samplerate") is None
+def test_read_hw_params_empty_when_pcm_closed():
+    # The file exists but reads "closed" when nothing holds the device.
+    with patch("builtins.open", mock_open(read_data="closed\n")):
+        assert read_hw_params() == {}
 
 
-def test_probe_jack_int_handles_empty_output():
-    with patch("subprocess.check_output", return_value=b""):
-        assert EthernetManager._probe_jack_int("jack_samplerate") is None
+def test_read_hw_params_empty_off_device():
+    with patch("builtins.open", side_effect=FileNotFoundError()):
+        assert read_hw_params() == {}
 
 
 # ---------- _probe_xrun_buckets ----------

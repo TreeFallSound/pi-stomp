@@ -6,9 +6,21 @@ params, and paints a 320x240 LCD. A 10ms polling loop drives everything.
 
 Architecture reference: `docs/architecture.md`. Subsystem detail:
 `pistomp/input/README.md` (input dispatch), `uilib/README.md` (paint system).
+Wire protocol: `../pistomp-manual/src/developers/websocket-bridge.md` (message table,
+bypass paths); `../pistomp-manual/src/plugins/choosing-pedals/build.md` (REST add/connect/save).
 **Read the code before trusting any doc, including this one.**
 
-## Rules
+## Agent behaviour
+
+As the user, I expect you to lead with suggestions and uncover facts; I own the architecture and judgment.
+
+1. **Suggest, with justification** — prior art, real hardware/ecosystem examples, ways this lets players express themselves. A suggestion I can reject beats an implementation I have to unwind.
+2. **When the design space is open, hand it back as a question.** Decompose it into its principal axes and ask with the multi-select tool, not as prose options. *Open* means more than one defensible architecture, or a choice that's expensive to reverse. A bug fix or an already-constrained detail is not open — just do it.
+3. **I own the scaffolding.** Once my choices constrain the space, fill in the rest. That's where you accelerate me.
+
+Don't correct me on things that aren't germane, especially when you're only guessing I don't understand. Do tell me when I'm wrong about the thing at hand.
+
+### Rules
 
 - **pyright zero.** No new errors, ever.
 - **No broad `# pyright: ignore`.** A blanket ignore is a bug you haven't found yet.
@@ -16,10 +28,16 @@ Architecture reference: `docs/architecture.md`. Subsystem detail:
 - **Dependencies form a DAG.** No cycles between modules.
 - **MOD-UI is the single writer** of bypass and parameter state. We emit, paint
   optimistically, and reconcile against its echo. Never treat local state as truth.
+- **No comments explaining course corrections.**
+- **Production python files must always have AGPL headers.**
+- **NAV is unhijackable.** Rotate/click/longpress on the NAV control always operates on
+  the current selection. No panel or binding may consume a raw NAV event, and no
+  `declare_bindings()` row may name `cls=NAV` — it's the one axiom the precedence
+  resolver doesn't apply to. Enforced by the base `Panel`, not convention.
 
-## Writing code here
+### Writing code here
 
-Match the file you're editing — its naming, its idiom, its comment density.
+Match the file you're editing — its naming, its purpose, its comment density, docstrings or no (ask: is this an API or something internal)?
 
 **Comments are short clauses, and rare.** Write one only to state a constraint the code
 cannot show: a hardware quirk, a protocol asymmetry, a why-not-the-obvious-thing. Never
@@ -38,6 +56,14 @@ observability cruft. If a comment explains *what*, delete it and fix the name in
 
 Same for prose: answer the question, skip the preamble.
 
+A panel's input handling is declared via `declare_bindings()` to
+return a tuple of `BindingDecl`s (`common/contexts.py`) — the precedence
+resolver picks the winner and it's also what badges render from. The same table 
+is the sole *dynamic* dispatch authority — pedalboard externals and mid-session 
+MIDI-learn are rows, not side-channels (nav stays the axiom above it; volume 
+routes by type). Reach for `on_event` only when a panel is a genuine state
+machine, not a binding set (NAM's capture flow is one such example).
+
 ## Commands
 
 ```bash
@@ -50,7 +76,7 @@ ssh pistomp@pistomp.local "ps-restart"                          # restart servic
 ssh pistomp@pistomp.local "journalctl -u mod-ala-pi-stomp -f"   # live logs
 ```
 
-Deploy by `scp` to the device or `./deploy.sh`; source lives at
+Deploy by `scp` + `ps-restart` on the device or by `./deploy.sh`; source lives at
 `/home/pistomp/pi-stomp/`. Shipping a release requires a version bump in the
 *separate* `pi-gen-pistomp` repo — see `docs/architecture.md`.
 
@@ -58,8 +84,6 @@ The system python provides base packages (`python3-lilv`); PyPI deps live in a
 uv-managed venv. Don't try to pip-install the system ones.
 
 ## Traps
-
-Things that cost hours if you don't know them. None are derivable from reading the code.
 
 - **Never create a bare `pygame.Surface((w, h))`.** It inherits the display format —
   opaque RGB when headless (device/tests) but ARGB under a real window driver (the
@@ -81,10 +105,14 @@ Things that cost hours if you don't know them. None are derivable from reading t
   and connect dumps rebroadcast unconditionally. Reselecting a *board* is a full
   resync. Reselecting a *snapshot* is not.
 
-- **A UI bypass gets no echo.** mod-ui skips the origin socket, and mod-host emits no
-  `param_set` for bypasses it received from mod-ui. Footswitch bypasses *do* echo
-  (they arrive as MIDI). So the UI path must update local state itself — this
-  asymmetry is deliberate, not a bug to "fix."
+- **A UI bypass of a footswitch-less plugin gets no echo.** mod-ui skips the origin
+  socket, and mod-host emits no `param_set` for bypasses it received from mod-ui. So
+  that path must update local state itself (`toggle_plugin_bypass`'s optimistic write).
+  A footswitch-bound plugin is the opposite: `toggle_plugin_bypass` routes through the
+  footswitch press path, which sends MIDI CC → mod-host → feedback echo, and that echo
+  reconciles it. The asymmetry is deliberate, not a bug to "fix."
+
+- **Send form and echo form differ.** We send `param_set /graph/{id}/{sym} {v}`; both broadcast paths come back as `param_set /graph/{id} {sym} {v:%f}`
 
 - **Never extract `lv2plugins.tar.gz` whole.** It's huge. Pull single files with
   `tar --to-stdout`. Prefer inspecting the live device anyway.
@@ -103,5 +131,4 @@ def test_my_flow(v3_system, snapshot):
     snapshot("label")    # same name again → asserts the screen returned to that state
 ```
 
-On a snapshot mismatch: **fix real failures first.** Only then `--snapshot-update`, and
-say what you expect to change before regenerating.
+On a snapshot mismatch: **fix real failures first.** When only snapshot differences remain, run `--snapshot-update` to populate the working copy, then show me the changed files as soon as they regenerate and what you expect them to look like. You can lean on me to tell you if anything's wrong.

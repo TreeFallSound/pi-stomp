@@ -10,7 +10,6 @@ To regenerate snapshots after intentional UI changes:
 
 from __future__ import annotations
 
-import pistomp.switchstate as switchstate
 from modalapi.parameter import Parameter
 from modalapi.plugin import Plugin
 from pistomp.controller import Controller
@@ -18,6 +17,8 @@ from pistomp.input.event import EncoderEvent
 from plugins.gx_cabinet import GX_CABINET_URI
 from plugins.gx_cabinet.panel import GxCabinetPanel
 from tests.types import SystemFixture
+from tests.v3.nav_helpers import nav_click
+from common.parameter import BYPASS_SYMBOL, PortInfo, Symbol
 
 # ── cab model labels (19 values from the plugin TTL) ────────────────────────
 
@@ -60,8 +61,9 @@ def _param(
     default: float,
     instance_id: str = "cabinet",
     enum_values: list | None = None,
+    unit: str | None = None,
 ) -> Parameter:
-    info: dict = {
+    info: PortInfo = {
         "shortName": symbol,
         "symbol": symbol,
         "ranges": {"minimum": minimum, "maximum": maximum, "default": default},
@@ -69,22 +71,24 @@ def _param(
     if enum_values is not None:
         info["properties"] = ["enumeration"]
         info["scalePoints"] = enum_values
+    if unit is not None:
+        info["units"] = {"symbol": unit}
     return Parameter(info, value, None, instance_id)
 
 
 def make_gx_cabinet_plugin(instance_id: str = "cabinet") -> Plugin:
     """Build a Plugin instance mirroring GxCabinet's port layout."""
-    params: dict[str, Parameter] = {
-        ":bypass": Parameter(
+    params: dict[Symbol, Parameter] = {
+        BYPASS_SYMBOL: Parameter(
             {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1, "default": 0}},
             False,
             None,
             instance_id,
         ),
-        "CLevel": _param("CLevel", 1.0, 0.5, 5.0, 1.0, instance_id),
-        "CBass": _param("CBass", 0.0, -10.0, 10.0, 0.0, instance_id),
-        "CTreble": _param("CTreble", 0.0, -10.0, 10.0, 0.0, instance_id),
-        "c_model": _param("c_model", 0.0, 0.0, 18.0, 0.0, instance_id, enum_values=_MODEL_SCALEPOINTS),
+        Symbol("CLevel"): _param(Symbol("CLevel"), 1.0, 0.5, 5.0, 1.0, instance_id, unit="×"),
+        Symbol("CBass"): _param(Symbol("CBass"), 0.0, -10.0, 10.0, 0.0, instance_id, unit="dB"),
+        Symbol("CTreble"): _param(Symbol("CTreble"), 0.0, -10.0, 10.0, 0.0, instance_id, unit="dB"),
+        Symbol("c_model"): _param(Symbol("c_model"), 0.0, 0.0, 18.0, 0.0, instance_id, enum_values=_MODEL_SCALEPOINTS),
     }
     plugin = Plugin(instance_id, params, {}, "GxCabinet", uri=GX_CABINET_URI)
     plugin.has_footswitch = False
@@ -119,14 +123,16 @@ def tweak(handler, idx: int, rotations: int) -> bool:
     event = EncoderEvent(
         controller=_FakeEnc(idx),
         rotations=rotations,
-        new_value=0.0,
-        new_midi_value=0,
     )
     return handler.handle(event)
 
 
 def short_press(handler) -> None:
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
+
+
+def long_press(handler) -> None:
+    nav_click(handler, long=True)
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +176,7 @@ def test_gx_cabinet_nav_cycles_values(v3_system: SystemFixture, nav_handler, sna
 
 
 def test_gx_cabinet_tweak1_edits_focused(v3_system: SystemFixture, nav_handler, snapshot):
-    """Nav to Treble, Tweak1 increases treble by 8 * 0.4 = 3.2."""
+    """Nav to Treble, Tweak1 increases treble on the shared ParameterSteps grid."""
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
@@ -186,7 +192,7 @@ def test_gx_cabinet_tweak1_edits_focused(v3_system: SystemFixture, nav_handler, 
 
     sent = v3_system.ws_bridge.sent_values_for(plugin.instance_id, "CTreble")
     assert len(sent) > 0
-    assert abs(sent[-1] - 3.2) < 0.01
+    assert abs(sent[-1] - 1.181) < 0.01
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +225,6 @@ def test_gx_cabinet_tweak3_edits_level(v3_system: SystemFixture, snapshot):
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
-    # Tweak3: +5 detents * 0.05 => 1.0 + 0.25 = 1.25
     for _ in range(5):
         tweak(handler, 3, 1)
     handler.poll_lcd_updates()
@@ -227,16 +232,16 @@ def test_gx_cabinet_tweak3_edits_level(v3_system: SystemFixture, snapshot):
 
     sent = v3_system.ws_bridge.sent_values_for(plugin.instance_id, "CLevel")
     assert len(sent) > 0
-    assert abs(sent[-1] - 1.25) < 0.01
+    assert abs(sent[-1] - 1.173) < 0.01
 
 
 # ---------------------------------------------------------------------------
-# Saga 6 — CLICK resets value to lv2:default
+# Saga 6 — LONGPRESS resets value to lv2:default
 # ---------------------------------------------------------------------------
 
 
 def test_gx_cabinet_click_resets_to_default(v3_system: SystemFixture, nav_handler, snapshot):
-    """Edit Bass, click it -> resets to lv2:default (0.0)."""
+    """Edit Bass, longpress it -> resets to lv2:default (0.0)."""
     handler = v3_system.handler
     plugin = open_panel(v3_system)
 
@@ -247,7 +252,7 @@ def test_gx_cabinet_click_resets_to_default(v3_system: SystemFixture, nav_handle
     handler.poll_lcd_updates()
     snapshot("bass_edited")
 
-    short_press(handler)
+    long_press(handler)
     handler.poll_lcd_updates()
     snapshot("bass_reset")
 

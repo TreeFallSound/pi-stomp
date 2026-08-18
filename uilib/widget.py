@@ -1,31 +1,35 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, Tuple
 
-from uilib import profiling
 from uilib.box import Box
 from uilib.config import Color
 from uilib.misc import InputEvent, WidgetAlign, trace
 from uilib.paint import ColorLike, PaintContext
 from uilib.radius import Radius
 
+from common.color import SELECT_COLOR
+
 if TYPE_CHECKING:
     from uilib.container import ContainerWidget
+    from uilib.glyphs.badge import BadgeGlyph
     from uilib.panel import PanelStack
 
 # This is the root of all evil: the Widget class, parent of all things
@@ -87,7 +91,7 @@ class Widget:
     INH_ATTRS = {
         "bkgnd_color": (0, 0, 0),
         "fgnd_color": (255, 255, 255),
-        "sel_color": (255, 255, 0),
+        "sel_color": SELECT_COLOR,
         "sel_width": 2,
         "sel_radius": None,
     }
@@ -117,7 +121,7 @@ class Widget:
     # surfaces) need the alpha channel.
     bkgnd_color: ColorLike = (0, 0, 0)
     fgnd_color: ColorLike = (255, 255, 255)
-    sel_color: ColorLike = (255, 255, 0)
+    sel_color: ColorLike = SELECT_COLOR
     sel_width: int = 2
     sel_radius: int | None = None
 
@@ -159,6 +163,7 @@ class Widget:
         self.selectable = False
         self._painted = False
         self._dirty = False
+        self._badge: BadgeGlyph | None = None
 
         # Non-inherited attributes
         self.label = self._get_arg(kwargs, "label", None)
@@ -492,8 +497,7 @@ class Widget:
             return
         assert container.surface is not None
         ctx = PaintContext(container.surface, clip, frame=frame)
-        with profiling.measure("widget.do_draw"):
-            self.do_draw(ctx, frame)
+        self.do_draw(ctx, frame)
         self._painted = True
         self._dirty = False
         container.propagate_dirty(clip)
@@ -528,6 +532,7 @@ class Widget:
                     c.do_draw(pctx, c.box.offset(child_origin))
             self._draw_outline(pctx)
             self._draw_selection(pctx)
+            self._draw_badge(pctx)
 
     def _draw_erase(self, ctx: PaintContext):
         erase = ctx.dirty_bounds
@@ -567,6 +572,36 @@ class Widget:
 
     def _draw(self, ctx: PaintContext):
         pass
+
+    # ── input-context badge (R4) ────────────────────────────────────────────
+    #
+    # `do_draw` always calls `_draw_badge` once, right after `_draw`/outline/
+    # selection — this is the *only* badge call site in the framework. Any
+    # widget can host a fixed encoder-binding marker (docs/r4-badge-
+    # surfaces.md §5) without knowing about panels or the binding table —
+    # the panel just calls set_badge() on whichever widget the binding is
+    # permanently attached to. Default placement is centred on the left edge;
+    # widgets with more specific geometry (e.g. ArcDialWidget, which knows
+    # where its own label sits; TextWidget, which anchors to the rendered
+    # text) override `_draw_badge` for a better spot instead of adding a
+    # second call site — that duplication is what caused a real double-paint
+    # bug once already. A widget that legitimately needs more than one badge
+    # at a time (e.g. parametric EQ's readout: gain/freq/Q are three
+    # simultaneously-live bindings) stores its own glyph(s) under its own
+    # field name and overrides `_draw_badge` to paint them all, leaving this
+    # base `_badge`/`set_badge()` untouched and inert on that class.
+
+    def set_badge(self, badge: BadgeGlyph | None) -> None:
+        if badge == self._badge:
+            return
+        self._badge = badge
+        self.refresh()
+
+    def _draw_badge(self, ctx: PaintContext) -> None:
+        if self._badge is None:
+            return
+        by = (ctx.height - self._badge.height) // 2
+        ctx.paste(self._badge.render(), (2, by))
 
     def sel_children(self):
         """Selection-tree expansion. Default: only self.

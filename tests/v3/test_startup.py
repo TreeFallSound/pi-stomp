@@ -3,6 +3,7 @@
 import pistomp.switchstate as switchstate
 import common.token as Token
 from pistomp.encoder_controller import EncoderController
+from tests.v3.nav_helpers import nav_click
 
 
 def test_v3_startup_snapshot(v3_system, snapshot):
@@ -14,7 +15,7 @@ def test_v3_startup_snapshot(v3_system, snapshot):
 def test_v3_nav_to_system_menu(v3_system, snapshot):
     """Wrench is initially selected; clicking encoder opens the system menu."""
     handler = v3_system.handler
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
     snapshot()
 
 

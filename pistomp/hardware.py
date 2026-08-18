@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
@@ -19,7 +21,7 @@ import sys
 
 import common.token as Token
 import common.util as Util
-from common.parameter import Parameter, TTL_PROPERTIES, TTL_INTEGER
+from common.parameter import Parameter, PortInfo, Symbol, TTL_INTEGER
 import pistomp.analogmidicontrol as AnalogMidiControl
 import pistomp.encoder_controller as EncoderController
 import pistomp.footswitch as Footswitch
@@ -158,7 +160,7 @@ class Hardware(ABC):
 
         # Register final longpress-group membership with the chord resolver.
         for fs in self.footswitches:
-            self.handler.chord_helper.register(fs.longpress_groups)
+            self.handler.chord_helper.register(fs)
 
     @abstractmethod
     def init_analog_controls(self):
@@ -306,7 +308,7 @@ class Hardware(ABC):
                           (adc_input, midi_channel, midi_cc))
 
     @abstractmethod
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc) -> EncoderController.EncoderController | None:
+    def add_encoder(self, id, type, longpress_callback, midi_channel, midi_cc) -> EncoderController.EncoderController | None:
         # This should be implemented by hardware subclasses that support tweak encoders (Tre at least)
         ...
 
@@ -333,7 +335,7 @@ class Hardware(ABC):
 
             # midi_port routing is applied later in __apply_midi_routing (external_midi is None here)
             try:
-                control = self.add_encoder(id, type, None, longpress_callback, midi_channel, midi_cc)
+                control = self.add_encoder(id, type, longpress_callback, midi_channel, midi_cc)
                 # FIXME: add_encoder returns None for emulator v1/v2 stubs that don't
                 # implement config-driven encoders, forcing the return type to be optional.
                 if control is not None:
@@ -358,19 +360,15 @@ class Hardware(ABC):
             pass
         return chan
 
-    def create_external_parameter(self, controller, port_name, midi_channel, midi_cc):
+    def create_external_parameter(self, port_name, midi_channel, midi_cc, initial_value: int = 0):
         name = f"{port_name}:{midi_cc}"
-        info = {
-            Token.NAME: name,
-            Token.SYMBOL: f"external_{port_name}_{midi_cc}",
-            Token.RANGES: {
-                Token.MINIMUM: 0,
-                Token.MAXIMUM: 127
-            },
-            TTL_PROPERTIES: [TTL_INTEGER]
-        }
-        val = getattr(controller, 'midi_value', 0)
-        return Parameter(info, val, f"{midi_channel}:{midi_cc}", EXTERNAL_INSTANCE_ID)
+        info = PortInfo(
+            name=name,
+            symbol=Symbol(f"external_{port_name}_{midi_cc}"),
+            ranges={"minimum": 0, "maximum": 127},
+            properties=[TTL_INTEGER],
+        )
+        return Parameter(info, initial_value, f"{midi_channel}:{midi_cc}", EXTERNAL_INSTANCE_ID)
 
     def __validate_midi_port(self, port_name):
         if self.external_midi is None:
@@ -380,7 +378,7 @@ class Hardware(ABC):
 
     def __resolve_midiout(self, cfg_entry) -> tuple[MidiOut, RoutingInfo]:
         """Return (midiout, routing): always the virtual MidiOut; routing tells _emit_midi where to go."""
-        midi_port = Util.DICT_GET(cfg_entry, "midi_port")
+        midi_port = Util.DICT_GET(cfg_entry, Token.MIDI_PORT)
         if midi_port:
             midi_port = self.__validate_midi_port(midi_port)
         if not midi_port or self.external_midi is None:
@@ -404,9 +402,14 @@ class Hardware(ABC):
                 midi_cc = Util.DICT_GET(entry, Token.MIDI_CC)
                 if midi_cc is not None and hasattr(ctrl, 'midi_CC'):
                     ctrl.midi_CC = midi_cc
-                midi_channel = Util.DICT_GET(entry, "midi_channel")
-                if midi_channel is not None and hasattr(ctrl, 'midi_channel'):
-                    ctrl.midi_channel = midi_channel
+            midi_port = Util.DICT_GET(entry, Token.MIDI_PORT)
+            midi_channel = Util.DICT_GET(entry, Token.MIDI_CHANNEL)
+            if midi_port and midi_channel is None:
+                logging.error("Config file error: %s id=%s sets midi_port '%s' without midi_channel; "
+                               "external devices rarely share the hardware default channel" %
+                               (section, ctrl_id, midi_port))
+            if midi_channel is not None:
+                ctrl.midi_channel = midi_channel
             _, routing = self.__resolve_midiout(entry)
             if routing.destination == RoutingDestination.EXTERNAL:
                 self.external_routing[ctrl] = routing
@@ -474,8 +477,14 @@ class Hardware(ABC):
                 if Token.BYPASS in f:
                     # TODO no more right or left
                     if f[Token.BYPASS] == Token.LEFT_RIGHT or f[Token.BYPASS] == Token.LEFT:
-                        fs.add_relay(self.relay)
-                        fs.set_display_label("byps")
+                        if self.relay is not None:
+                            fs.add_relay(self.relay)
+                            fs.set_display_label("byps")
+                        else:
+                            logging.warning(
+                                "Footswitch %d bypass config ignored — no relay hardware (v3)",
+                                idx,
+                            )
 
                 # Midi
                 if Token.MIDI_CC in f:
@@ -488,18 +497,20 @@ class Hardware(ABC):
                         key = format("%d:%d" % (self.midi_channel, fs.midi_CC))
                         self.controllers[key] = fs   # TODO problem if this creates a new element?
 
-                # Preset Control
+                # Clearing midi_CC drops the fs from hw.controllers, so an
+                # unrelated plugin's MIDI-learned :bypass can't bind onto it;
+                # dispatch_key falls back to "fs:<id>" and the rows still resolve.
                 if Token.PRESET in f:
                     self.__clear_footswitch_midi_cc(fs)
                     preset_value = f[Token.PRESET]
                     if preset_value == Token.UP:
-                        fs.add_preset(callback=self.handler.preset_incr_and_change)
+                        fs.add_preset(direction="UP")
                         fs.set_display_label("Pre+")
                     elif preset_value == Token.DOWN:
-                        fs.add_preset(callback=self.handler.preset_decr_and_change)
+                        fs.add_preset(direction="DOWN")
                         fs.set_display_label("Pre-")
                     elif isinstance(preset_value, int):
-                        fs.add_preset(callback=self.handler.preset_set_and_change, callback_arg=preset_value)
+                        fs.add_preset(direction=str(preset_value), callback_arg=preset_value)
                         fs.set_display_label(str(preset_value))
 
                 # Suppress (per-pedalboard disable without removing the object)
@@ -512,9 +523,9 @@ class Hardware(ABC):
                 if Token.COLOR in f:
                     fs.set_lcd_color(f[Token.COLOR])
 
-                # Longpress: a group name, a list of group names, or {midi_CC: N}
-                if Token.LONGPRESS in f:
-                    fs.set_longpress(Util.DICT_GET(f, Token.LONGPRESS))
+                # Longpress and longpress groups
+                if Token.LONGPRESS in f:  # Can be a list or a single (string)
+                    fs.set_longpress_groups(Util.DICT_GET(f, Token.LONGPRESS))
 
             idx += 1
 

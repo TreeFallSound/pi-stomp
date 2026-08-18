@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 # Configure logging BEFORE any imports to ensure it takes effect
@@ -40,11 +42,10 @@ from modalapi.pedalboard_monitor import write_last_json
 from pistomp.audiocard import Audiocard
 import pistomp.audiocardfactory as Audiocardfactory
 import pistomp.config as config
-import pistomp.generichost as Generichost
 import pistomp.handlerfactory as Handlerfactory
 import pistomp.hardwarefactory as Hardwarefactory
 
-EMULATOR_HOSTS = ("emulator_v1", "emulator_v2", "emulator_v3")
+EMULATOR_HOSTS = ("emulator_v2", "emulator_v3")
 
 
 def main():
@@ -65,7 +66,7 @@ def main():
         nargs="+",
         help="Plugin host to use. Example --host mod'",
         default=["mod"],
-        choices=["mod", "mod1", "generic", "emulator_v1", "emulator_v2", "emulator_v3"],
+        choices=["mod", "emulator_v2", "emulator_v3"],
     )
     parser.add_argument(
         "--tuner-source",
@@ -144,7 +145,7 @@ def main():
         hw = factory.create(cfg, handler, midiout)
         handler.add_hardware(hw)
 
-        # Load all pedalboard info from the lilv ttl file
+        # Load all pedalboard info (titles/bundles; graphs hydrate on selection)
         handler.load_banks()
         handler.load_pedalboards()
 
@@ -173,21 +174,14 @@ def main():
         # Load system info.  This can take a few seconds
         handler.system_info_load()
 
-    elif args.host[0] == "generic":
-        # No specific plugin host specified, so use a generic handler
-        # Encoders and LCD not mapped without specific purpose
-        # Just initialize the control hardware (footswitches, analog controls, etc.) for use as MIDI controls
-        handler = Generichost.Generichost(homedir=cwd)
-        factory = Hardwarefactory.Hardwarefactory()
-        hw = factory.create(cfg, handler, midiout)
-        handler.add_hardware(hw)
-
     elif is_emulator:
         from emulator.bootstrap import bootstrap_emulator
 
         handler, midiout = bootstrap_emulator(args.host[0], cwd)
 
     assert handler is not None
+
+    handler.maybe_show_welcome()
 
     if not is_emulator and args.tuner_source:
         handler.set_tuner_source_spec(args.tuner_source)
@@ -214,6 +208,7 @@ def main():
         while True:
             handler.poll_controls()
             handler.poll_ws_messages()  # drain inbound WS every tick for instant bypass/snapshot indicators
+            handler.audiocard.poll_store()  # debounced alsactl store; see Audiocard.STORE_IDLE_S
 
             # For less frequent events
             period += 1
@@ -244,6 +239,7 @@ def main():
         logging.info("keyboard interrupt")
     finally:
         logging.info("Exit.")
+        handler.audiocard.flush_store()  # a debounced store must not die with the loop
         if midiout:
             midiout.close_port()
         handler.cleanup()
