@@ -31,6 +31,7 @@ import threading
 from typing import Optional
 
 import websockets
+import websockets.exceptions  # lazy __getattr__ aliases the API, not the submodules
 import uvloop
 from common.parameter import Symbol
 
