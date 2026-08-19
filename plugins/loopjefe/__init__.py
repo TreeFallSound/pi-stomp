@@ -42,7 +42,7 @@ _STATE_COLORS: dict[int, tuple[int, int, int]] = {
 # Short enough for a 320px/4 footswitch slot; the TTL scalePoints spell them
 # out in full ("Record Arm", "Overdub Close").
 _STATE_LABELS: dict[int, str] = {
-    _STATE_EMPTY: "——",
+    _STATE_EMPTY: "\u00b7",
     1: "Arm",
     2: "Rec",
     3: "Close",
