@@ -26,6 +26,8 @@ from __future__ import annotations
 from enum import Enum, auto
 from typing import TYPE_CHECKING
 
+from common.loop_progress import LoopFill, LoopProgress
+
 if TYPE_CHECKING:
     from modalapi.plugin_customization import LedSpec
 
@@ -60,3 +62,29 @@ def state_label(spec: LedSpec, output_values: dict[str, float]) -> str | None:
     if spec.labels is None:
         return None
     return spec.labels.get(int(output_values.get(spec.state_symbol, 0)))
+
+
+def loop_progress(spec: LedSpec, output_values: dict[str, float], bar_phase: float) -> LoopProgress | None:
+    """Where the plugin is through its loop, or None if it has no loop to be
+    through. `bar_phase` interpolates within the current bar — the plugin only
+    publishes a bar index, and a per-sample position port would be a monitored
+    output changing every process cycle."""
+    if spec.bars_symbol is None or spec.downbeat_symbol is None:
+        return None
+    color, _style = render_led_spec(spec, output_values)
+    if color is None:
+        return None
+
+    state = int(output_values.get(spec.state_symbol, 0))
+    bars = int(output_values.get(spec.bars_symbol, 0))
+    measure = int(output_values.get(spec.downbeat_symbol, 0))
+
+    # Past the length it declared (an overdub that outgrew the head loop) is
+    # the same situation as a take still recording: a position, no denominator.
+    if state in spec.chase_states or (bars > 0 and measure >= bars):
+        return LoopProgress(LoopFill.CHASE, color, 0, bar_phase)
+    if bars <= 0:
+        return None
+    if state in spec.steady_states:
+        return LoopProgress(LoopFill.STATIC, color, bars)
+    return LoopProgress(LoopFill.FILL, color, bars, (measure + bar_phase) / bars)

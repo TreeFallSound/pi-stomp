@@ -7,9 +7,11 @@ come from the plugin's LedSpec, which is also what colors the physical LED, so
 the LCD and the hardware never disagree.
 """
 
+from common.loop_progress import LoopFill, LoopProgress
 from common.parameter import Symbol, Type
 from modalapi.plugin import Plugin
 from plugins import lookup
+from pistomp.beatsync import TickState
 from plugins.loopjefe import LOOPJEFE_URIS
 from tests.types import SystemFixture
 
@@ -89,3 +91,83 @@ def test_state_view_repaints_on_output_set(v3_system: SystemFixture, make_parame
     v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 state 7.0")  # Overdub
     handler.poll_ws_messages()
     snapshot("overdub-from-output-set")
+
+
+def _beat(handler, bar_phase: float) -> None:
+    """Drive one LED tick with a synthetic transport phase. The LCD reads the
+    phase from the handler's last tick rather than the grid, so this is the
+    only way in."""
+    handler._drive_footswitch_leds(
+        TickState(
+            is_anchored=True,
+            is_flashing=False,
+            is_bar_start=False,
+            bpm=120.0,
+            bpb=4.0,
+            beat_phase=0.0,
+            bar_phase=bar_phase,
+        )
+    )
+
+
+def test_progress_border_fills_by_bar_and_beat(v3_system: SystemFixture, make_parameter, snapshot):
+    """A 4-bar loop playing bar 3, half a bar in, fills 5/8 of the perimeter --
+    with a notch at each bar boundary. Loop 2 is stopped: full ring, no fill."""
+    handler = v3_system.handler
+    lcd = handler.lcd
+    plugins = [_loopjefe(make_parameter, "loopjefe_1"), _loopjefe(make_parameter, "loopjefe_2")]
+    _bind(v3_system, plugins)
+
+    lcd.link_data(handler.pedalboard_list, handler.current, v3_system.hw.footswitches)
+    lcd.draw_main_panel()
+
+    for inst, state in (("loopjefe_1", 4.0), ("loopjefe_2", 5.0)):  # Playback, Stopped
+        v3_system.ws_bridge.inject(f"output_set /graph/{inst} state {state}")
+        v3_system.ws_bridge.inject(f"output_set /graph/{inst} loop_bars 4.0")
+    v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 measure_number 2.0")
+    handler.poll_ws_messages()
+
+    _beat(handler, 0.5)
+    lcd.update_footswitches()
+    snapshot("play-bar3-beat3")
+
+
+def test_progress_border_chases_while_recording(v3_system: SystemFixture, make_parameter, snapshot):
+    """The first take has no length to be a fraction of, so the border sweeps a
+    head instead of filling. Loop 2 is empty: no border at all."""
+    handler = v3_system.handler
+    lcd = handler.lcd
+    plugins = [_loopjefe(make_parameter, "loopjefe_1"), _loopjefe(make_parameter, "loopjefe_2")]
+    _bind(v3_system, plugins)
+
+    lcd.link_data(handler.pedalboard_list, handler.current, v3_system.hw.footswitches)
+    lcd.draw_main_panel()
+
+    v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 state 2.0")  # Recording
+    handler.poll_ws_messages()
+
+    _beat(handler, 0.25)
+    lcd.update_footswitches()
+    snapshot("recording-chase")
+
+
+def test_overdub_past_declared_length_chases(v3_system: SystemFixture, make_parameter):
+    """An overdub that outruns the head loop's bar count has no denominator
+    left, so it degrades to the chaser rather than filling past 100%."""
+    handler = v3_system.handler
+    plugins = [_loopjefe(make_parameter, "loopjefe_1")]
+    _bind(v3_system, plugins)
+
+    v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 state 7.0")  # Overdub
+    v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 loop_bars 4.0")
+    v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 measure_number 2.0")
+    handler.poll_ws_messages()
+    _beat(handler, 0.0)
+
+    fs = v3_system.hw.footswitches[0]
+    assert handler.footswitch_loop_progress(fs) == LoopProgress(LoopFill.FILL, (255, 140, 0), 4, 0.5)
+
+    v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 measure_number 4.0")
+    handler.poll_ws_messages()
+    _beat(handler, 0.0)
+    assert handler.footswitch_loop_progress(fs) == LoopProgress(LoopFill.CHASE, (255, 140, 0), 0, 0.0)

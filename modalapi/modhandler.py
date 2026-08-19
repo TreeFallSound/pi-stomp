@@ -76,7 +76,8 @@ from plugins.base import PluginPanel
 from plugins.customization import lookup as plugin_lookup
 from plugins.customization import patch_extra_data
 import modalapi.external_midi as ExternalMidi
-from modalapi.led_render import LedDisplayStyle, render_led_spec
+from common.loop_progress import LoopProgress
+from modalapi.led_render import LedDisplayStyle, loop_progress, render_led_spec
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
 from pistomp.lcd320x240 import Lcd
@@ -272,6 +273,7 @@ class Modhandler(Handler):
         self.chord_helper = FootswitchChords()
 
         self.beat_grid = BeatGrid()
+        self._last_beat: TickState | None = None
         self._taptempo_fs_cache: Footswitch | None = None
         # First raw-CC longpress sends 127; alternates thereafter.
         self._longpress_cc_state: dict[LongpressCcKey, bool] = {}
@@ -638,6 +640,9 @@ class Modhandler(Handler):
             return
         if beat is None:
             beat = self.beat_grid.tick(_now_us())
+        # The LCD reads the phase from here rather than ticking the grid
+        # itself; a second tick() would swallow the beat-crossing edge.
+        self._last_beat = beat
         taptempo_fs = self._taptempo_footswitch()
         for fs in self.hardware.footswitches:
             if fs is taptempo_fs:
@@ -684,6 +689,17 @@ class Modhandler(Handler):
             return None, LedDisplayStyle.SOLID
         color = accent_color_for(fs.category) if fs.category is not None else (255, 255, 255)
         return color, LedDisplayStyle.SOLID
+
+    def footswitch_loop_progress(self, fs: Footswitch) -> LoopProgress | None:
+        """Loop position for a switch bound to a plugin that publishes one."""
+        plugin = self._bound_plugin(fs)
+        if plugin is None:
+            return None
+        spec = plugin.customization.led_spec
+        if spec is None:
+            return None
+        beat = self._last_beat
+        return loop_progress(spec, plugin.output_values, beat.bar_phase if beat is not None else 0.0)
 
     def _bound_plugin(self, fs: Footswitch):
         if fs.parameter is None or self._current is None:

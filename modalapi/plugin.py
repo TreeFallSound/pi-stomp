@@ -88,6 +88,8 @@ class Plugin:
         symbols = [spec.state_symbol]
         if spec.downbeat_symbol is not None:
             symbols.append(spec.downbeat_symbol)
+        if spec.bars_symbol is not None:
+            symbols.append(spec.bars_symbol)
         return tuple(symbols)
 
     def set_output_value(self, symbol: str, value: float) -> None:

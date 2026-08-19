@@ -23,9 +23,11 @@ from typing import TYPE_CHECKING, Protocol
 
 import pygame
 
+from common.loop_progress import LoopFill, LoopProgress
 from uilib.box import Box
 from uilib.config import Color, Config
 from uilib.glyphs import CircleGlyph, RingGlyph
+from uilib.glyphs.perimeter_progress import PerimeterProgressGlyph
 from uilib.glyphs.tint import tint_mask
 from uilib.misc import InputEvent, get_text_size
 from uilib.paint import PaintContext
@@ -60,6 +62,16 @@ SMALL_FONT_THRESHOLD = 60
 
 # Title white — same (255,255,255) used for pedalboard/snapshot titles.
 TITLE_WHITE: Color = (255, 255, 255)
+
+# Loop progress border: inset 1px all round, same radius/weight as the tap
+# border so the two views read as the same frame.
+PROGRESS_INSET = 1
+PROGRESS_RADIUS = 5
+PROGRESS_THICKNESS = 2.0
+PROGRESS_GAP = 3.0  # notch between bars, px of arclength
+CHASE_SPAN = 0.18  # turns of perimeter the indeterminate head covers
+# The unfilled track, as a fraction of the state colour.
+TRACK_DIM = 0.28
 
 
 class FootswitchWidget(Widget):
@@ -100,7 +112,9 @@ class FootswitchWidget(Widget):
     is_bypassed: bool
     taptempo: TapTempoProtocol | None
     state_label: str | None
+    progress_fn: Callable[[], LoopProgress | None] | None
     _pulse_on: bool
+    _progress: LoopProgress | None
 
     def __init__(
         self,
@@ -111,6 +125,7 @@ class FootswitchWidget(Widget):
         small_font: pygame._freetype.Font | None = None,
         taptempo: TapTempoProtocol | None = None,
         state_label: str | None = None,
+        progress_fn: Callable[[], LoopProgress | None] | None = None,
         **kwargs,
     ):
         self._init_attrs(Widget.INH_ATTRS, kwargs)
@@ -123,7 +138,10 @@ class FootswitchWidget(Widget):
         self.is_bypassed = is_bypassed
         self.taptempo = taptempo
         self.state_label = state_label
+        self.progress_fn = progress_fn
         self._pulse_on = True
+        self._progress = None
+        self._progress_key: tuple[int, int, int] | None = None
 
     def _tap_active(self) -> bool:
         return self.taptempo is not None and self.taptempo.is_enabled()
@@ -193,6 +211,7 @@ class FootswitchWidget(Widget):
         """Two-line view for a switch whose plugin publishes a state: name on
         top, state below in the state's own color. No dot — the coloured state
         word is the indicator, and 36px holds two lines or a dot, not both."""
+        self._draw_progress(ctx, w, ctx.height)
         font = self._slot_font()
 
         name = self._fit(self.label or "", w - 2, font)
@@ -257,10 +276,72 @@ class FootswitchWidget(Widget):
         else:
             super().refresh(box)
 
+
+    def _progress_glyph(self, w: int, h: int) -> PerimeterProgressGlyph:
+        return PerimeterProgressGlyph(
+            w - 2 * PROGRESS_INSET, h - 2 * PROGRESS_INSET, PROGRESS_RADIUS, PROGRESS_THICKNESS
+        )
+
+    def _draw_progress(self, ctx: PaintContext, w: int, h: int) -> None:
+        """The loop's position around the slot's border: one arc per bar, the
+        elapsed part in the state colour over a dim track of the same hue."""
+        progress = self._progress
+        if progress is None or w <= 2 * PROGRESS_RADIUS or h <= 2 * PROGRESS_RADIUS:
+            return
+
+        glyph = self._progress_glyph(w, h)
+        ox, oy = ctx._f().topleft
+        at = (PROGRESS_INSET + ox, PROGRESS_INSET + oy)
+        r, g, b = progress.color
+        dim: Color = (int(r * TRACK_DIM), int(g * TRACK_DIM), int(b * TRACK_DIM))
+
+        if progress.mode is LoopFill.STATIC:
+            ctx.surface.blit(tint_mask(glyph.render(0.0, 1.0, progress.segments, PROGRESS_GAP), dim), at)
+            return
+
+        if progress.mode is LoopFill.CHASE:
+            head = glyph.render(progress.position, progress.position + CHASE_SPAN)
+            ctx.surface.blit(tint_mask(head, progress.color), at)
+            return
+
+        ctx.surface.blit(tint_mask(glyph.render(0.0, 1.0, progress.segments, PROGRESS_GAP), dim), at)
+        filled = glyph.render(0.0, progress.position, progress.segments, PROGRESS_GAP)
+        ctx.surface.blit(tint_mask(filled, progress.color), at)
+
+    def poll_progress(self) -> bool:
+        """Re-read the loop position; True when the drawn result would differ.
+
+        Quantised to whole perimeter pixels — the position advances
+        continuously but the border can only move a pixel at a time, and each
+        step costs a slot repaint."""
+        if self.progress_fn is None:
+            return False
+        progress = self.progress_fn()
+        if progress is None:
+            changed = self._progress is not None
+            self._progress, self._progress_key = None, None
+            return changed
+
+        box = self.box
+        w = box.width if box is not None else 0
+        h = box.height if box is not None else 0
+        if w <= 2 * PROGRESS_RADIUS or h <= 2 * PROGRESS_RADIUS:
+            return False
+        steps = self._progress_glyph(w, h).perimeter
+        key = (progress.mode.value, progress.segments, int(progress.position * steps))
+
+        self._progress = progress
+        if key == self._progress_key:
+            return False
+        self._progress_key = key
+        return True
+
     def tick(self) -> None:
         """Blink the tap border at tempo, phase-locked to the last tap."""
         taptempo = self.taptempo
         if taptempo is None or not taptempo.is_enabled():
+            if self.poll_progress():
+                self.refresh()
             return
         bpm = taptempo.get_bpm()
         if not bpm:

@@ -881,6 +881,12 @@ class Lcd:
         color, _style = render_led_spec(spec, plugin.output_values)
         return plugin.display_name, label, color
 
+    def _progress_fn(self, footswitch, state_label: str | None):
+        """Only the state view has a border to draw the loop position on."""
+        if state_label is None or self.handler is None:
+            return None
+        return functools.partial(self.handler.footswitch_loop_progress, footswitch)
+
     def draw_footswitches(self):
         # One slot-ordered pass over the physical switches, so selection order is
         # the stable physical order regardless of plugin/pedalboard ordering.
@@ -926,10 +932,12 @@ class Lcd:
                 small_font=self.tiny_font,
                 taptempo=fs.taptempo,
                 state_label=state,
+                progress_fn=self._progress_fn(fs, state),
                 parent=self.footswitch_panel,
                 action=action,
                 object=fs,
             )
+            p.poll_progress()
             self.w_footswitches.append(p)
         self.footswitch_panel.refresh()
 
@@ -944,6 +952,7 @@ class Lcd:
                     footswitch.set_led(active)
                     wfs.color = FootswitchWidget.DEFAULT_COLOR
                     wfs.state_label = None
+                    wfs.progress_fn = None
                 elif footswitch.parameter is not None:
                     # Binding may be new (e.g. MIDI learn) — reflect label + color.
                     name, state, state_color = self._footswitch_state(footswitch)
@@ -954,13 +963,16 @@ class Lcd:
                         footswitch.set_display_label(self.footswitch_label(footswitch, slot_w))
                         wfs.color = accent_color_for(footswitch.category)
                     wfs.state_label = state
+                    wfs.progress_fn = self._progress_fn(footswitch, state)
                     wfs.action = self.footswitch_event
                 else:
                     wfs.color = None
                     wfs.action = None
                     wfs.state_label = None
+                    wfs.progress_fn = None
                 wfs.toggle(not footswitch.toggled)
                 wfs.label = footswitch.get_display_label() or ""
+                wfs.poll_progress()
                 wfs.refresh()
                 break
 

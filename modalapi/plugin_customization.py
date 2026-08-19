@@ -59,6 +59,11 @@ class LedSpec:
       downbeat" — brightens the color by `downbeat_tint` per channel.
     off_states / steady_states: state values that render as off, or as a
       steady (non-pulsing) color even when `pulse` is True.
+    bars_symbol: an output port carrying the loop's length in bars — the
+      denominator `downbeat_symbol` counts against, so the pair yields a
+      position around the footswitch's progress border. 0 means unknown.
+    chase_states: state values that have no length to be a fraction of (a
+      take still being recorded) but should still show motion.
     labels: state values to short display names for the LCD. The port is an
       lv2:OutputPort, so its scalePoints never reach us as a Parameter —
       they have to be declared here alongside the colors.
@@ -72,6 +77,8 @@ class LedSpec:
     steady_states: frozenset[int] = frozenset()
     downbeat_symbol: str | None = None
     downbeat_tint: int = 60
+    bars_symbol: str | None = None
+    chase_states: frozenset[int] = frozenset()
 
 
 @dataclass(frozen=True)

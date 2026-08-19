@@ -24,6 +24,8 @@ LOOPJEFE_URIS = (
 
 # LoopJefePlugin state values (../loopjefe-lv2/src/types.h)
 _STATE_EMPTY = 0
+_STATE_RECORDING = 2
+_STATE_RECORD_CLOSE = 3
 _STATE_STOPPED = 5
 
 _STATE_COLORS: dict[int, tuple[int, int, int]] = {
@@ -60,6 +62,11 @@ _LOOPJEFE_LED_SPEC = LedSpec(
     steady_states=frozenset({_STATE_STOPPED}),
     downbeat_symbol="measure_number",
     downbeat_tint=60,
+    bars_symbol="loop_bars",
+    # The initial take has no length yet to be a fraction of, so the progress
+    # border sweeps instead of filling. Record Arm is excluded: nothing is
+    # being captured, so nothing should move.
+    chase_states=frozenset({_STATE_RECORDING, _STATE_RECORD_CLOSE}),
 )
 
 def _track_name(plugin: "Plugin") -> str | None:

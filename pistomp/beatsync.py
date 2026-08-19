@@ -36,6 +36,7 @@ class TickState:
     bpm: float
     bpb: float
     beat_phase: float = 0.0  # normalized [0, 1) within the current beat
+    bar_phase: float = 0.0  # normalized [0, 1) within the current bar
 
 
 class BeatGrid:
@@ -108,6 +109,7 @@ class BeatGrid:
         pos = self._anchor_pos + delta_us * self._bpm / 60_000_000.0
         current_beat_idx = int(pos // 1)
         beat_phase = pos - current_beat_idx  # fractional part [0, 1)
+        bar_phase = (pos % self._bpb) / self._bpb
 
         if current_beat_idx > self._last_beat_idx:
             self._last_beat_idx = current_beat_idx
@@ -124,4 +126,5 @@ class BeatGrid:
             bpm=self._bpm,
             bpb=self._bpb,
             beat_phase=beat_phase,
+            bar_phase=bar_phase,
         )
