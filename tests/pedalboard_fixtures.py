@@ -60,6 +60,11 @@ class MockPlugin:
         return None
 
     @property
+    def customization(self):
+        from modalapi.plugin_customization import PluginCustomization
+        return PluginCustomization()
+
+    @property
     def panel_cls(self):
         return None
 

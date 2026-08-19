@@ -106,6 +106,8 @@ class PluginCustomization:
     tile_border: RectBorder | None = None
     extra_data: PluginExtraData | None = None
     led_spec: LedSpec | None = None
+    # Replace the plugin name text with the LoopIconGlyph racetrack icon.
+    loop_icon: bool = False
 
     # Per-symbol edit-math classification, supplementing the LV2 port's
     #  Symbols absent here are ParamRole.GENERIC.

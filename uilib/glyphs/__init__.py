@@ -30,6 +30,7 @@ from uilib.glyphs.ethernet_cable import EthernetCableGlyph
 from uilib.glyphs.expression_pedal import ExpressionPedalGlyph
 from uilib.glyphs.keycap_corner import KeycapCornerGlyph
 from uilib.glyphs.knob import KnobGlyph
+from uilib.glyphs.loop_icon import LoopIconGlyph
 from uilib.glyphs.outline import render_rounded_fill, render_rounded_outline
 from uilib.glyphs.pill import PillGlyph
 from uilib.glyphs.rounded_rect import RoundedRectGlyph, render_rounded_mask
@@ -50,7 +51,7 @@ __all__ = [
     "PillGlyph",
     "RectBorder",
     "RingGlyph",
-    "RoundedRectGlyph",
+    "LoopIconGlyph",
     "SignalBarsGlyph",
     "SpinnerGlyph",
     "render_rounded_fill",

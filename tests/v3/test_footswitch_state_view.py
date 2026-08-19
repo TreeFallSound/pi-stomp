@@ -71,8 +71,8 @@ def test_state_view_falls_back_when_plugin_has_no_led_spec(v3_system: SystemFixt
     plugin = Plugin("/Reverb", {Symbol("gain"): param}, {}, "Reverb")
     handler.current.pedalboard.plugins = [plugin]
 
-    name, state, color = handler.lcd._footswitch_state(v3_system.hw.footswitches[0])
-    assert (name, state, color) == (None, None, None)
+    name, state, color, loop_icon = handler.lcd._footswitch_state(v3_system.hw.footswitches[0])
+    assert (name, state, color, loop_icon) == (None, None, None, False)
 
 
 def test_state_view_repaints_on_output_set(v3_system: SystemFixture, make_parameter, snapshot):

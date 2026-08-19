@@ -26,7 +26,7 @@ import pygame
 from common.loop_progress import LoopFill, LoopProgress
 from uilib.box import Box
 from uilib.config import Color, Config
-from uilib.glyphs import CircleGlyph, RingGlyph
+from uilib.glyphs import CircleGlyph, LoopIconGlyph, RingGlyph
 from uilib.glyphs.perimeter_progress import PerimeterProgressGlyph
 from uilib.glyphs.tint import tint_mask
 from uilib.misc import InputEvent, get_text_size
@@ -114,6 +114,7 @@ class FootswitchWidget(Widget):
     taptempo: TapTempoProtocol | None
     state_label: str | None
     progress_fn: Callable[[], LoopProgress | None] | None
+    loop_icon: bool
     _pulse_on: bool
     _progress: LoopProgress | None
 
@@ -127,6 +128,7 @@ class FootswitchWidget(Widget):
         taptempo: TapTempoProtocol | None = None,
         state_label: str | None = None,
         progress_fn: Callable[[], LoopProgress | None] | None = None,
+        loop_icon: bool = False,
         **kwargs,
     ):
         self._init_attrs(Widget.INH_ATTRS, kwargs)
@@ -140,6 +142,7 @@ class FootswitchWidget(Widget):
         self.taptempo = taptempo
         self.state_label = state_label
         self.progress_fn = progress_fn
+        self.loop_icon = loop_icon
         self._pulse_on = True
         self._progress = None
         self._progress_key: tuple[int, int, int, int] | None = None
@@ -215,14 +218,36 @@ class FootswitchWidget(Widget):
         self._draw_progress(ctx, w, ctx.height)
         font = self._slot_font()
 
-        name = self._fit(self.label or "", w - 2, font)
-        nw, _ = get_text_size(name, font)
-        ctx.draw_text(((w - nw) // 2, self._STATE_Y_NAME), name, fill=self.BOUND_OFF_LABEL, font=font)
+        if self.loop_icon:
+            self._draw_loop_name(ctx, w, font)
+        else:
+            name = self._fit(self.label or "", w - 2, font)
+            nw, _ = get_text_size(name, font)
+            ctx.draw_text(((w - nw) // 2, self._STATE_Y_NAME), name, fill=self.BOUND_OFF_LABEL, font=font)
 
         state = self._fit(self.state_label or "", w - 2, font)
         sw, _ = get_text_size(state, font)
         fill = self.color if self.color is not None else self.BOUND_OFF_LABEL
         ctx.draw_text(((w - sw) // 2, self._STATE_Y_STATE), state, fill=fill, font=font)
+
+    def _draw_loop_name(self, ctx: PaintContext, w: int, font: "pygame._freetype.Font") -> None:
+        """Render the racetrack glyph + track number instead of 'Loop N' text."""
+        import re
+        label = self.label or ""
+        m = re.search(r"\d+$", label)
+        num_str = m.group() if m else ""
+        glyph = LoopIconGlyph()   # 48×14 default; module-level cache makes this free
+        gap = 4
+        nw, _ = get_text_size(num_str, font) if num_str else (0, 0)
+        total_w = glyph.width + (gap + nw if num_str else 0)
+        gx = (w - total_w) // 2
+        # Vertically centre the 14px glyph in the 15px name row (y=2..16).
+        gy = self._STATE_Y_NAME + (15 - glyph.height) // 2 + 3
+        ox, oy = ctx._f().topleft
+        ctx.surface.blit(tint_mask(glyph.render(), self.BOUND_OFF_LABEL), (gx + ox, gy + oy))
+        if num_str:
+            ctx.draw_text((gx + glyph.width + gap, self._STATE_Y_NAME), num_str,
+                          fill=self.BOUND_OFF_LABEL, font=font)
 
     def _draw_dot_and_label(self, ctx: PaintContext, w: int, is_on: bool) -> None:
         """Small dot on top, label centered below."""
