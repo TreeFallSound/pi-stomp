@@ -93,7 +93,7 @@ def test_state_view_repaints_on_output_set(v3_system: SystemFixture, make_parame
     snapshot("overdub-from-output-set")
 
 
-def _beat(handler, bar_phase: float) -> None:
+def _beat(handler, bar_phase: float, beat_phase: float = 0.0, is_bar_start: bool = False) -> None:
     """Drive one LED tick with a synthetic transport phase. The LCD reads the
     phase from the handler's last tick rather than the grid, so this is the
     only way in."""
@@ -101,10 +101,10 @@ def _beat(handler, bar_phase: float) -> None:
         TickState(
             is_anchored=True,
             is_flashing=False,
-            is_bar_start=False,
+            is_bar_start=is_bar_start,
             bpm=120.0,
             bpb=4.0,
-            beat_phase=0.0,
+            beat_phase=beat_phase,
             bar_phase=bar_phase,
         )
     )
@@ -171,3 +171,48 @@ def test_overdub_past_declared_length_chases(v3_system: SystemFixture, make_para
     handler.poll_ws_messages()
     _beat(handler, 0.0)
     assert handler.footswitch_loop_progress(fs) == LoopProgress(LoopFill.CHASE, (255, 140, 0), 0, 0.0)
+
+
+def test_progress_border_pulses_with_the_beat(v3_system: SystemFixture, make_parameter):
+    """The border carries the same envelope as the physical LED -- full on the
+    downbeat, decaying across the beat -- so the slot and its switch never
+    pulse out of step. Only the states the spec says pulse are affected."""
+    handler = v3_system.handler
+    plugins = [_loopjefe(make_parameter, "loopjefe_1")]
+    _bind(v3_system, plugins)
+    fs = v3_system.hw.footswitches[0]
+
+    v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 state 4.0")  # Playback
+    v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 loop_bars 4.0")
+    handler.poll_ws_messages()
+
+    _beat(handler, 0.0, beat_phase=0.0, is_bar_start=True)
+    downbeat = handler.footswitch_loop_progress(fs)
+    _beat(handler, 0.2, beat_phase=0.8)
+    late = handler.footswitch_loop_progress(fs)
+    assert downbeat is not None and late is not None
+    assert downbeat.pulse == 1.0
+    assert late.pulse < downbeat.pulse
+
+    v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 state 5.0")  # Stopped: steady
+    handler.poll_ws_messages()
+    _beat(handler, 0.2, beat_phase=0.8)
+    stopped = handler.footswitch_loop_progress(fs)
+    assert stopped is not None and stopped.pulse == 1.0
+
+
+def test_progress_border_is_steady_without_transport(v3_system: SystemFixture, make_parameter):
+    """No beat_sync, no envelope -- an unanchored grid must not leave the
+    border stuck at whatever brightness the last phase happened to be."""
+    handler = v3_system.handler
+    plugins = [_loopjefe(make_parameter, "loopjefe_1")]
+    _bind(v3_system, plugins)
+
+    v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 state 4.0")
+    v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 loop_bars 4.0")
+    handler.poll_ws_messages()
+    handler.beat_grid.clear()
+    handler._drive_footswitch_leds()
+
+    progress = handler.footswitch_loop_progress(v3_system.hw.footswitches[0])
+    assert progress is not None and progress.pulse == 1.0

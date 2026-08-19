@@ -6,7 +6,8 @@ The taptempo footswitch's LED flashes from whichever beat source is active:
   - Taptempo only (no beat_sync, but taptempo enabled with bpm): the LED
     blinks from taptempo.anchor + bpm — on for the first ~100ms of each
     beat period, off otherwise.
-  - Taptempo disabled: the footswitch behaves as a default toggle.
+  - Taptempo disabled: the footswitch behaves as a default toggle — no
+    metronome flash, whether or not the transport is anchored.
 
 The gpiozero hardware blink() is gone — the 10ms driver tick computes on/off
 from the taptempo phase, same as it does for the transport-anchored case.
@@ -33,13 +34,20 @@ def _mock_fs(fs):
     fs.led = MagicMock()
 
 
+def _enable_tap(fs):
+    assert fs.taptempo is not None
+    fs.taptempo.enable(True)
+
+
 class TestTransportAnchored:
-    """When beat_grid is anchored (beat_sync received), the taptempo footswitch
-    flashes beat-synced from the transport — same as the old _drive_metronome."""
+    """When beat_grid is anchored (beat_sync received) and tap tempo mode is on,
+    the taptempo footswitch flashes beat-synced from the transport — same as the
+    old _drive_metronome."""
 
     def test_flashing_beat_shows_beat_color(self, v3_system: SystemFixture):
         fs = _find_taptempo_fs(v3_system)
         _mock_fs(fs)
+        _enable_tap(fs)
         beat = TickState(is_anchored=True, is_flashing=True, is_bar_start=False,
                          bpm=120.0, bpb=4.0, beat_phase=0.0)
         v3_system.handler._drive_footswitch_leds(beat)
@@ -51,6 +59,7 @@ class TestTransportAnchored:
     def test_flashing_bar_start_shows_downbeat_color(self, v3_system: SystemFixture):
         fs = _find_taptempo_fs(v3_system)
         _mock_fs(fs)
+        _enable_tap(fs)
         beat = TickState(is_anchored=True, is_flashing=True, is_bar_start=True,
                          bpm=120.0, bpb=4.0, beat_phase=0.0)
         v3_system.handler._drive_footswitch_leds(beat)
@@ -59,6 +68,7 @@ class TestTransportAnchored:
     def test_not_flashing_turns_off(self, v3_system: SystemFixture):
         fs = _find_taptempo_fs(v3_system)
         _mock_fs(fs)
+        _enable_tap(fs)
         beat = TickState(is_anchored=True, is_flashing=False, is_bar_start=False,
                          bpm=120.0, bpb=4.0, beat_phase=0.5)
         v3_system.handler._drive_footswitch_leds(beat)
@@ -153,3 +163,17 @@ class TestTaptempoBlink:
             )
         assert fs.led is not None
         fs.led.blink.assert_not_called()  # type: ignore[unionAttr]
+
+def test_anchored_transport_does_not_flash_when_disabled(v3_system: SystemFixture):
+    """Transport anchored but tap tempo mode off → no metronome flash; the
+    switch renders from its own binding like any other."""
+    fs = _find_taptempo_fs(v3_system)
+    _mock_fs(fs)
+    assert fs.taptempo is not None
+    fs.taptempo.enable(False)
+    fs.toggled = True
+    v3_system.handler._drive_footswitch_leds(
+        TickState(is_anchored=True, is_flashing=False, is_bar_start=False,
+                  bpm=120.0, bpb=4.0, beat_phase=0.5)
+    )
+    fs.pixel.set_enable.assert_called_once_with(True)  # the flash would have blanked it

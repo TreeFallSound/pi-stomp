@@ -77,7 +77,7 @@ from plugins.customization import lookup as plugin_lookup
 from plugins.customization import patch_extra_data
 import modalapi.external_midi as ExternalMidi
 from common.loop_progress import LoopProgress
-from modalapi.led_render import LedDisplayStyle, loop_progress, render_led_spec
+from modalapi.led_render import LedDisplayStyle, loop_progress, metronome_brightness, render_led_spec
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
 from pistomp.lcd320x240 import Lcd
@@ -654,18 +654,20 @@ class Modhandler(Handler):
     def _render_taptempo(
         self, fs: Footswitch, beat: TickState
     ) -> tuple[tuple[int, int, int] | None, LedDisplayStyle]:
-        """Built-in renderer for the taptempo footswitch: flashes from whichever
-        beat source is active — transport-anchored beat grid, or
-        taptempo.anchor + bpm blink when unanchored — else falls back to the
-        default per-footswitch renderer."""
+        """Built-in renderer for the taptempo footswitch: while tap tempo mode is
+        enabled, flashes from whichever beat source is active — transport-anchored
+        beat grid, or taptempo.anchor + bpm blink when unanchored — else falls
+        back to the default per-footswitch renderer."""
+        if fs.taptempo is None or not fs.taptempo.is_enabled():
+            return self._render_footswitch(fs, beat)
         if beat.is_anchored:
             if beat.is_flashing:
                 return (_METRONOME_DOWNBEAT_RGB if beat.is_bar_start else _METRONOME_BEAT_RGB), LedDisplayStyle.SOLID
             return None, LedDisplayStyle.SOLID
-        # Unanchored: if taptempo is enabled with a bpm, blink from the taptempo
+        # Unanchored: with a bpm, blink from the taptempo
         # phase (on for the first ~100ms of each beat period). This replaces the
         # old gpiozero hardware blink() with a 10ms-driver-computed on/off.
-        if fs.taptempo is not None and fs.taptempo.is_enabled() and fs.taptempo.get_bpm() > 0:
+        if fs.taptempo.get_bpm() > 0:
             now_s = _now_us() / 1_000_000.0
             period = 60.0 / fs.taptempo.get_bpm()
             elapsed = now_s - fs.taptempo.anchor
@@ -673,7 +675,7 @@ class Modhandler(Handler):
             if phase_in_beat < 0.1:  # 100ms on-window
                 return _METRONOME_BEAT_RGB, LedDisplayStyle.SOLID
             return None, LedDisplayStyle.SOLID
-        # Taptempo disabled or no bpm yet: fall through to the default renderer.
+        # No bpm yet: fall through to the default renderer.
         return self._render_footswitch(fs, beat)
 
     def _render_footswitch(
@@ -699,7 +701,14 @@ class Modhandler(Handler):
         if spec is None:
             return None
         beat = self._last_beat
-        return loop_progress(spec, plugin.output_values, beat.bar_phase if beat is not None else 0.0)
+        if beat is None or not beat.is_anchored:
+            return loop_progress(spec, plugin.output_values, 0.0)
+        return loop_progress(
+            spec,
+            plugin.output_values,
+            beat.bar_phase,
+            metronome_brightness(beat.beat_phase, beat.is_bar_start),
+        )
 
     def _bound_plugin(self, fs: Footswitch):
         if fs.parameter is None or self._current is None:
@@ -721,7 +730,7 @@ class Modhandler(Handler):
         anchored; everything else (including taptempo's already-final on/off
         frames) is written as-is."""
         if color is not None and style == LedDisplayStyle.METRONOME and beat.is_anchored:
-            brightness = 1.0 if beat.is_bar_start else 1.0 - (beat.beat_phase * 0.7)
+            brightness = metronome_brightness(beat.beat_phase, beat.is_bar_start)
             color = (int(color[0] * brightness), int(color[1] * brightness), int(color[2] * brightness))
         if color is None:
             if fs.pixel is not None:

@@ -70,6 +70,7 @@ PROGRESS_RADIUS = 5
 PROGRESS_THICKNESS = 2.0
 PROGRESS_GAP = 3.0  # notch between bars, px of arclength
 CHASE_SPAN = 0.18  # turns of perimeter the indeterminate head covers
+PULSE_STEPS = 8  # brightness quantisation; each step past this is a slot repaint
 # The unfilled track, as a fraction of the state colour.
 TRACK_DIM = 0.28
 
@@ -141,7 +142,7 @@ class FootswitchWidget(Widget):
         self.progress_fn = progress_fn
         self._pulse_on = True
         self._progress = None
-        self._progress_key: tuple[int, int, int] | None = None
+        self._progress_key: tuple[int, int, int, int] | None = None
 
     def _tap_active(self) -> bool:
         return self.taptempo is not None and self.taptempo.is_enabled()
@@ -293,6 +294,9 @@ class FootswitchWidget(Widget):
         ox, oy = ctx._f().topleft
         at = (PROGRESS_INSET + ox, PROGRESS_INSET + oy)
         r, g, b = progress.color
+        # Only the lit part carries the beat envelope -- a track that breathed
+        # with it would read as the whole slot flickering.
+        lit: Color = (int(r * progress.pulse), int(g * progress.pulse), int(b * progress.pulse))
         dim: Color = (int(r * TRACK_DIM), int(g * TRACK_DIM), int(b * TRACK_DIM))
 
         if progress.mode is LoopFill.STATIC:
@@ -301,12 +305,12 @@ class FootswitchWidget(Widget):
 
         if progress.mode is LoopFill.CHASE:
             head = glyph.render(progress.position, progress.position + CHASE_SPAN)
-            ctx.surface.blit(tint_mask(head, progress.color), at)
+            ctx.surface.blit(tint_mask(head, lit), at)
             return
 
         ctx.surface.blit(tint_mask(glyph.render(0.0, 1.0, progress.segments, PROGRESS_GAP), dim), at)
         filled = glyph.render(0.0, progress.position, progress.segments, PROGRESS_GAP)
-        ctx.surface.blit(tint_mask(filled, progress.color), at)
+        ctx.surface.blit(tint_mask(filled, lit), at)
 
     def poll_progress(self) -> bool:
         """Re-read the loop position; True when the drawn result would differ.
@@ -328,7 +332,12 @@ class FootswitchWidget(Widget):
         if w <= 2 * PROGRESS_RADIUS or h <= 2 * PROGRESS_RADIUS:
             return False
         steps = self._progress_glyph(w, h).perimeter
-        key = (progress.mode.value, progress.segments, int(progress.position * steps))
+        key = (
+            progress.mode.value,
+            progress.segments,
+            int(progress.position * steps),
+            int(progress.pulse * PULSE_STEPS),
+        )
 
         self._progress = progress
         if key == self._progress_key:

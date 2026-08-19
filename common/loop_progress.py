@@ -40,3 +40,4 @@ class LoopProgress:
     color: tuple[int, int, int]
     segments: int  # bars in the loop; 0 when the length isn't known yet
     position: float = 0.0  # turns, [0, 1)
+    pulse: float = 1.0  # brightness of the lit part; the beat envelope, 1.0 when free-running
