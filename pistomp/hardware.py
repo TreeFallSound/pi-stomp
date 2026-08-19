@@ -350,8 +350,8 @@ class Hardware(ABC):
                 self.controllers[key] = control
                 logging.debug("Created Encoder: %d, Midi Chan: %d, CC: %d" % (id, midi_channel, midi_cc))
 
-    def get_real_midi_channel(self, cfg):
-        chan = 0
+    def get_real_midi_channel(self, cfg, default: int = 0):
+        chan = default
         try:
             val = cfg[Token.HARDWARE][Token.MIDI][Token.CHANNEL]
             # LAME bug in Mod detects MIDI channel as one higher than sent (7 sent, seen by mod as 8) so compensate here
@@ -425,10 +425,15 @@ class Hardware(ABC):
         self.__route_section(cfg, Token.FOOTSWITCHES, self.footswitches, set_cc=False)
 
     def __init_midi_default(self):
-        self.__init_midi(self.cfg)
+        self.__init_midi(self.cfg, default=0)
 
-    def __init_midi(self, cfg):
-        self.midi_channel = self.get_real_midi_channel(cfg)
+    def __init_midi(self, cfg, default: int | None = None):
+        # A pedalboard overlay declaring no channel keeps the one already in
+        # force. Falling back to 0 there would re-key every controller under
+        # "0:<cc>" while the parameter bindings still say "<chan>:<cc>", and the
+        # switch would silently stop dispatching.
+        fallback = self.midi_channel if default is None else default
+        self.midi_channel = self.get_real_midi_channel(cfg, default=fallback)
         # TODO could iterate thru all objects here instead of handling in __init_footswitches
         for ac in self.analog_controls:
             if isinstance(ac, AnalogMidiControl.AnalogMidiControl):

@@ -389,3 +389,54 @@ def test_notify_before_worker_starts_is_a_noop():
     bridge = _make_bridge()
     bridge.send_parameter("a", Symbol("x"), 1.0)
     assert bridge.get_queue_depth() == 1
+
+
+def test_output_set_before_subscription_is_replayed():
+    """mod-ui dumps every monitored port on connect, which lands before the
+    board binds and the subscriptions are known. Dropping those frames outright
+    left the first paint stale until the plugin next moved -- a looper already
+    in Playback rendered as "Empty" indefinitely."""
+    worker = _make_worker()
+    worker.running = True
+    ws = _FakeWs(["output_set /graph/loopjefe_1 state 4.0"])
+
+    asyncio.run(worker._receive_messages(ws))
+    assert worker.received_queue.empty()  # nothing subscribed yet
+
+    worker.set_interesting_outputs(frozenset({"loopjefe_1/state"}))
+
+    msgs = []
+    while not worker.received_queue.empty():
+        msgs.append(worker.received_queue.get_nowait())
+    assert msgs == ["output_set /graph/loopjefe_1 state 4.0"]
+
+
+def test_replayed_output_set_is_the_latest_value():
+    """Only the newest value per port is held; the dump can carry several."""
+    worker = _make_worker()
+    worker.running = True
+    ws = _FakeWs([
+        "output_set /graph/loopjefe_1 state 1.0",
+        "output_set /graph/loopjefe_1 state 4.0",
+    ])
+
+    asyncio.run(worker._receive_messages(ws))
+    worker.set_interesting_outputs(frozenset({"loopjefe_1/state"}))
+
+    msgs = []
+    while not worker.received_queue.empty():
+        msgs.append(worker.received_queue.get_nowait())
+    assert msgs == ["output_set /graph/loopjefe_1 state 4.0"]
+
+
+def test_unsubscribed_output_set_is_never_replayed():
+    """A port nothing subscribes to stays out of the queue entirely."""
+    worker = _make_worker()
+    worker.running = True
+    ws = _FakeWs(["output_set /graph/Amp meter 0.9"])
+
+    asyncio.run(worker._receive_messages(ws))
+    worker.set_interesting_outputs(frozenset({"loopjefe_1/state"}))
+
+    assert worker.received_queue.empty()
+    assert worker.messages_received == 0

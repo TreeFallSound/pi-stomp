@@ -27,6 +27,7 @@ import common.token as Token
 import common.util as util
 from common.contexts import BindingDecl, ControlClass, EventKind, MidiCcEffect, ParamEffect, ShadowState
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, Type
+from modalapi.led_render import render_led_spec, state_label
 from modalapi.plugin import Plugin
 from ui.ethernet_menu import EthernetMenu
 from ui.footswitch_menu import FootswitchMenu
@@ -860,6 +861,26 @@ class Lcd:
             name = param.instance_id
         return self.shorten_name(name, width)
 
+    def _footswitch_state(self, footswitch):
+        """(name, state_label, color) for a switch bound to a plugin that
+        publishes a state via its LedSpec, else (None, None, None). The name is
+        the plugin's, not the bound port's — the port is a trigger ("Advance"),
+        which says nothing about which loop this is."""
+        param = footswitch.parameter
+        if param is None or self.current is None:
+            return None, None, None
+        plugin = self.current.pedalboard.find_plugin(param.instance_id)
+        if plugin is None:
+            return None, None, None
+        spec = plugin.customization.led_spec
+        if spec is None:
+            return None, None, None
+        label = state_label(spec, plugin.output_values)
+        if label is None:
+            return None, None, None
+        color, _style = render_led_spec(spec, plugin.output_values)
+        return plugin.display_name, label, color
+
     def draw_footswitches(self):
         # One slot-ordered pass over the physical switches, so selection order is
         # the stable physical order regardless of plugin/pedalboard ordering.
@@ -872,6 +893,7 @@ class Lcd:
         slot_w = pitch
         for fs in sorted(self.footswitches, key=lambda f: f.id):
             x = pitch * fs.id
+            state = None
             if fs.preset_callback_arg is not None:
                 label = self.footswitch_label(fs, slot_w)
                 fs.set_display_label(label)
@@ -883,9 +905,14 @@ class Lcd:
                 fs.toggled = active
                 fs.set_led(active)  # a press never touches toggled for preset switches
             elif fs.parameter is not None:
-                label = self.footswitch_label(fs, slot_w)
+                name, state, state_color = self._footswitch_state(fs)
+                if state is not None:
+                    label = name
+                    color = state_color
+                else:
+                    label = self.footswitch_label(fs, slot_w)
+                    color = accent_color_for(fs.category)
                 fs.set_display_label(label)
-                color = accent_color_for(fs.category)
                 action = self.footswitch_event
             else:
                 label = fs.get_display_label() or ""
@@ -898,6 +925,7 @@ class Lcd:
                 not fs.toggled,
                 small_font=self.tiny_font,
                 taptempo=fs.taptempo,
+                state_label=state,
                 parent=self.footswitch_panel,
                 action=action,
                 object=fs,
@@ -915,14 +943,22 @@ class Lcd:
                     footswitch.toggled = active
                     footswitch.set_led(active)
                     wfs.color = FootswitchWidget.DEFAULT_COLOR
+                    wfs.state_label = None
                 elif footswitch.parameter is not None:
                     # Binding may be new (e.g. MIDI learn) — reflect label + color.
-                    footswitch.set_display_label(self.footswitch_label(footswitch, slot_w))
-                    wfs.color = accent_color_for(footswitch.category)
+                    name, state, state_color = self._footswitch_state(footswitch)
+                    if state is not None:
+                        footswitch.set_display_label(name)
+                        wfs.color = state_color
+                    else:
+                        footswitch.set_display_label(self.footswitch_label(footswitch, slot_w))
+                        wfs.color = accent_color_for(footswitch.category)
+                    wfs.state_label = state
                     wfs.action = self.footswitch_event
                 else:
                     wfs.color = None
                     wfs.action = None
+                    wfs.state_label = None
                 wfs.toggle(not footswitch.toggled)
                 wfs.label = footswitch.get_display_label() or ""
                 wfs.refresh()

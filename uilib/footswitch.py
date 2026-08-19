@@ -88,6 +88,10 @@ class FootswitchWidget(Widget):
     _TAP_Y_LABEL = 2  # "TAP" header (14pt Bold)
     _TAP_Y_BPM = 17  # BPM digits (16pt Bold)
 
+    # Two-line state view, same rhythm as the tap view.
+    _STATE_Y_NAME = 2
+    _STATE_Y_STATE = 17
+
     font: pygame._freetype.Font
     small_font: pygame._freetype.Font | None
     label: str | None
@@ -95,6 +99,7 @@ class FootswitchWidget(Widget):
     num: int | None
     is_bypassed: bool
     taptempo: TapTempoProtocol | None
+    state_label: str | None
     _pulse_on: bool
 
     def __init__(
@@ -105,6 +110,7 @@ class FootswitchWidget(Widget):
         is_bypassed: bool,
         small_font: pygame._freetype.Font | None = None,
         taptempo: TapTempoProtocol | None = None,
+        state_label: str | None = None,
         **kwargs,
     ):
         self._init_attrs(Widget.INH_ATTRS, kwargs)
@@ -116,6 +122,7 @@ class FootswitchWidget(Widget):
         self.num = None
         self.is_bypassed = is_bypassed
         self.taptempo = taptempo
+        self.state_label = state_label
         self._pulse_on = True
 
     def _tap_active(self) -> bool:
@@ -154,7 +161,9 @@ class FootswitchWidget(Widget):
         is_on = not self.is_bypassed
         has_label = bool(self.label)
 
-        if has_label:
+        if self.state_label is not None:
+            self._draw_state(ctx, w)
+        elif has_label:
             self._draw_dot_and_label(ctx, w, is_on)
         else:
             self._draw_letter_badge(ctx, w, is_on)
@@ -179,6 +188,21 @@ class FootswitchWidget(Widget):
         if bpm_font is not None:
             dw, _ = get_text_size(digits, bpm_font)
             ctx.draw_text(((w - dw) // 2, self._TAP_Y_BPM), digits, fill=self.TAP_BPM_COLOR, font=bpm_font)
+
+    def _draw_state(self, ctx: PaintContext, w: int) -> None:
+        """Two-line view for a switch whose plugin publishes a state: name on
+        top, state below in the state's own color. No dot — the coloured state
+        word is the indicator, and 36px holds two lines or a dot, not both."""
+        font = self._slot_font()
+
+        name = self._fit(self.label or "", w - 2, font)
+        nw, _ = get_text_size(name, font)
+        ctx.draw_text(((w - nw) // 2, self._STATE_Y_NAME), name, fill=self.BOUND_OFF_LABEL, font=font)
+
+        state = self._fit(self.state_label or "", w - 2, font)
+        sw, _ = get_text_size(state, font)
+        fill = self.color if self.color is not None else self.BOUND_OFF_LABEL
+        ctx.draw_text(((w - sw) // 2, self._STATE_Y_STATE), state, fill=fill, font=font)
 
     def _draw_dot_and_label(self, ctx: PaintContext, w: int, is_on: bool) -> None:
         """Small dot on top, label centered below."""

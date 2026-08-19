@@ -195,3 +195,39 @@ def test_longpress_enum_covers_every_handler_callback(v3_system: SystemFixture):
     # set_mod_tap_tempo shares the callback map but is reachable only via the
     # `tap_tempo:` key, which passes a BPM no longpress can supply.
     assert set(v3_system.handler.callbacks) - {"set_mod_tap_tempo"} == enum
+
+
+# ---------------------------------------------------------------------------
+# MIDI channel — the overlay must not clobber it
+# ---------------------------------------------------------------------------
+
+def test_overlay_without_midi_block_keeps_channel(v3_system: SystemFixture):
+    """A pedalboard config that says nothing about MIDI leaves the channel alone.
+
+    Resetting it re-keys every controller under "0:<cc>" while the parameter
+    bindings still read "<chan>:<cc>", so the switch stops dispatching and its
+    longpress goes out on the wrong channel.
+    """
+    hw = v3_system.hw
+    channel = hw.midi_channel
+    fs = hw.footswitches[0]
+    key = fs.dispatch_key
+
+    hw.reinit(_cfg(footswitches=[{"id": 0, "midi_CC": fs.midi_CC}]))
+
+    assert hw.midi_channel == channel
+    assert hw.footswitches[0].midi_channel == channel
+    assert hw.footswitches[0].dispatch_key == key
+    assert hw.controllers[key] is hw.footswitches[0]
+
+
+def test_overlay_may_still_override_midi_channel(v3_system: SystemFixture):
+    """An overlay that does declare a channel still wins (1-based in config)."""
+    hw = v3_system.hw
+
+    cfg = _cfg(footswitches=[{"id": 0, "midi_CC": 60}])
+    cfg[Token.HARDWARE][Token.MIDI] = {Token.CHANNEL: 5}
+    hw.reinit(cfg)
+
+    assert hw.midi_channel == 4
+    assert hw.footswitches[0].dispatch_key == "4:60"

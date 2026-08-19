@@ -52,3 +52,11 @@ def render_led_spec(
         )
     style = LedDisplayStyle.METRONOME if (spec.pulse and state not in spec.steady_states) else LedDisplayStyle.SOLID
     return base, style
+
+
+def state_label(spec: LedSpec, output_values: dict[str, float]) -> str | None:
+    """Short display name for the current state, or None when the plugin
+    declares no `labels`. Same lookup as `render_led_spec`, for the LCD."""
+    if spec.labels is None:
+        return None
+    return spec.labels.get(int(output_values.get(spec.state_symbol, 0)))

@@ -1020,7 +1020,10 @@ class Modhandler(Handler):
             if self._current is not None:
                 for plugin in self.current.pedalboard.plugins:
                     if plugin.instance_id == msg.instance:
+                        changed = plugin.output_values.get(msg.symbol) != msg.value
                         plugin.set_output_value(msg.symbol, msg.value)
+                        if changed:
+                            self._repaint_state_switches(plugin, msg.symbol)
                         break
 
         elif isinstance(msg, ParamSetMessage):
@@ -1584,6 +1587,17 @@ class Modhandler(Handler):
             value = plugin.toggle_bypass()
             if not self._is_pedalboard_loading:
                 self.ws_bridge.send_parameter(plugin.instance_id, BYPASS_SYMBOL, value)
+
+    def _repaint_state_switches(self, plugin, symbol: str) -> None:
+        """The plugin moved its LedSpec state; the switches bound to it render
+        that word, so they need repainting. Only the state port qualifies —
+        the downbeat port ticks every bar and only the LED driver reads it."""
+        spec = plugin.customization.led_spec
+        if spec is None or symbol != spec.state_symbol:
+            return
+        for controller in plugin.controllers:
+            if isinstance(controller, Footswitch):
+                self.update_lcd_fs(footswitch=controller)
 
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
         self.lcd.update_footswitch(footswitch)

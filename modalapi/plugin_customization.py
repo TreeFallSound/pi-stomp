@@ -59,10 +59,14 @@ class LedSpec:
       downbeat" — brightens the color by `downbeat_tint` per channel.
     off_states / steady_states: state values that render as off, or as a
       steady (non-pulsing) color even when `pulse` is True.
+    labels: state values to short display names for the LCD. The port is an
+      lv2:OutputPort, so its scalePoints never reach us as a Parameter —
+      they have to be declared here alongside the colors.
     """
 
     state_symbol: str
     colors: dict[int, tuple[int, int, int]]
+    labels: dict[int, str] | None = None
     pulse: bool = False
     off_states: frozenset[int] = frozenset()
     steady_states: frozenset[int] = frozenset()

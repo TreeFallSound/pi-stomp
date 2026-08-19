@@ -8,8 +8,14 @@ Momentary press semantics come for free from `advance`/`reset` being
 
 from __future__ import annotations
 
+import re
+from typing import TYPE_CHECKING
+
 from modalapi.plugin_customization import LedSpec, PluginCustomization
 from plugins.customization import register
+
+if TYPE_CHECKING:
+    from modalapi.plugin import Plugin
 
 LOOPJEFE_URIS = (
     "http://treefallsound.com/plugins/loopjefe",
@@ -31,9 +37,24 @@ _STATE_COLORS: dict[int, tuple[int, int, int]] = {
     8: (0, 80, 255),    # Overdub Close
 }
 
+# Short enough for a 320px/4 footswitch slot; the TTL scalePoints spell them
+# out in full ("Record Arm", "Overdub Close").
+_STATE_LABELS: dict[int, str] = {
+    _STATE_EMPTY: "Empty",
+    1: "Arm",
+    2: "Rec",
+    3: "Close",
+    4: "Play",
+    _STATE_STOPPED: "Stop",
+    6: "Arm",
+    7: "Dub",
+    8: "Close",
+}
+
 _LOOPJEFE_LED_SPEC = LedSpec(
     state_symbol="state",
     colors=_STATE_COLORS,
+    labels=_STATE_LABELS,
     pulse=True,
     off_states=frozenset({_STATE_EMPTY}),
     steady_states=frozenset({_STATE_STOPPED}),
@@ -41,10 +62,18 @@ _LOOPJEFE_LED_SPEC = LedSpec(
     downbeat_tint=60,
 )
 
+def _track_name(plugin: "Plugin") -> str | None:
+    """"Loop 2", not "LoopJefe" — every track is the same plugin, so the
+    instance number is the only thing that tells two switches apart."""
+    match = re.search(r"(\d+)$", plugin.instance_id)
+    return f"Loop {match.group(1)}" if match else None
+
+
 register(
     *LOOPJEFE_URIS,
     customization=PluginCustomization(
         display_name="LoopJefe",
+        display_name_fn=_track_name,
         led_spec=_LOOPJEFE_LED_SPEC,
     ),
 )
