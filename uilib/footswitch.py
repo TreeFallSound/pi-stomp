@@ -63,14 +63,14 @@ SMALL_FONT_THRESHOLD = 60
 # Title white — same (255,255,255) used for pedalboard/snapshot titles.
 TITLE_WHITE: Color = (255, 255, 255)
 
-# Loop progress border: inset 1px all round, same radius/weight as the tap
-# border so the two views read as the same frame.
+# Loop progress border: inset 1px all round, same weight as the tap border.
 PROGRESS_INSET = 1
 PROGRESS_RADIUS = 5
 PROGRESS_THICKNESS = 2.0
 PROGRESS_GAP = 3.0  # notch between bars, px of arclength
 CHASE_SPAN = 0.18  # turns of perimeter the indeterminate head covers
 PULSE_STEPS = 8  # brightness quantisation; each step past this is a slot repaint
+TAP_FLASH_SECONDS = 0.05
 # The unfilled track, as a fraction of the state colour.
 TRACK_DIM = 0.28
 
@@ -104,6 +104,7 @@ class FootswitchWidget(Widget):
     # Two-line state view, same rhythm as the tap view.
     _STATE_Y_NAME = 2
     _STATE_Y_STATE = 17
+    _STATE_FONT_SIZE = 13
 
     font: pygame._freetype.Font
     small_font: pygame._freetype.Font | None
@@ -212,31 +213,37 @@ class FootswitchWidget(Widget):
             ctx.draw_text(((w - dw) // 2, self._TAP_Y_BPM), digits, fill=self.TAP_BPM_COLOR, font=bpm_font)
 
     def _draw_state(self, ctx: PaintContext, w: int) -> None:
-        """Two-line view for a switch whose plugin publishes a state: name on
-        top, state below in the state's own color. No dot — the coloured state
-        word is the indicator, and 36px holds two lines or a dot, not both."""
+        """Two-line view for a switch whose plugin publishes a state."""
         self._draw_progress(ctx, w, ctx.height)
-        font = self._slot_font()
+        name_font = self._slot_font()
+        state_font = Config().get_font("footswitch_badge")
 
         if self.loop_icon:
-            self._draw_loop_name(ctx, w, font)
+            self._draw_loop_name(ctx, w, name_font)
         else:
-            name = self._fit(self.label or "", w - 2, font)
-            nw, _ = get_text_size(name, font)
-            ctx.draw_text(((w - nw) // 2, self._STATE_Y_NAME), name, fill=self.BOUND_OFF_LABEL, font=font)
+            name = self._fit(self.label or "", w - 2, name_font)
+            nw, _ = get_text_size(name, name_font)
+            ctx.draw_text(((w - nw) // 2, self._STATE_Y_NAME), name, fill=self.BOUND_OFF_LABEL, font=name_font)
 
-        state = self._fit(self.state_label or "", w - 2, font)
-        sw, _ = get_text_size(state, font)
+        state = self._fit((self.state_label or "").upper(), w - 2, state_font)
+        sw, _ = get_text_size(state, state_font, self._STATE_FONT_SIZE)
         fill = self.color if self.color is not None else self.BOUND_OFF_LABEL
-        ctx.draw_text(((w - sw) // 2, self._STATE_Y_STATE), state, fill=fill, font=font)
+        ctx.draw_text(
+            ((w - sw) // 2, self._STATE_Y_STATE + 1),
+            state,
+            fill=fill,
+            font=state_font,
+            size=self._STATE_FONT_SIZE,
+        )
 
     def _draw_loop_name(self, ctx: PaintContext, w: int, font: "pygame._freetype.Font") -> None:
         """Render the racetrack glyph + track number instead of 'Loop N' text."""
         import re
+
         label = self.label or ""
         m = re.search(r"\d+$", label)
         num_str = m.group() if m else ""
-        glyph = LoopIconGlyph()   # 48×14 default; module-level cache makes this free
+        glyph = LoopIconGlyph()  # 48×14 default; module-level cache makes this free
         gap = 4
         nw, _ = get_text_size(num_str, font) if num_str else (0, 0)
         total_w = glyph.width + (gap + nw if num_str else 0)
@@ -246,8 +253,7 @@ class FootswitchWidget(Widget):
         ox, oy = ctx._f().topleft
         ctx.surface.blit(tint_mask(glyph.render(), self.BOUND_OFF_LABEL), (gx + ox, gy + oy))
         if num_str:
-            ctx.draw_text((gx + glyph.width + gap, self._STATE_Y_NAME), num_str,
-                          fill=self.BOUND_OFF_LABEL, font=font)
+            ctx.draw_text((gx + glyph.width + gap, self._STATE_Y_NAME), num_str, fill=self.BOUND_OFF_LABEL, font=font)
 
     def _draw_dot_and_label(self, ctx: PaintContext, w: int, is_on: bool) -> None:
         """Small dot on top, label centered below."""
@@ -301,7 +307,6 @@ class FootswitchWidget(Widget):
                 self.parent.refresh()
         else:
             super().refresh(box)
-
 
     def _progress_glyph(self, w: int, h: int) -> PerimeterProgressGlyph:
         return PerimeterProgressGlyph(
@@ -386,7 +391,7 @@ class FootswitchWidget(Widget):
             return
         period = 60.0 / bpm
         phase = (time.monotonic() - taptempo.anchor) % period
-        on = phase < period / 4
+        on = phase < TAP_FLASH_SECONDS
         if on != self._pulse_on:
             self._pulse_on = on
             self.refresh()

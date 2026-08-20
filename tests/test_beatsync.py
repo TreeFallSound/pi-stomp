@@ -79,6 +79,17 @@ class TestFlash:
         state = g.tick(now_us=1_000_000 + 500_000 + FLASH_US)
         assert state.is_flashing is False
 
+    def test_late_tick_uses_source_boundary_for_flash_cutoff(self):
+        g = BeatGrid()
+        boundary = 1_000_000 + 500_000
+        g.on_anchor(_anchor(t_us=1_000_000, bpm=120.0, bpb=4.0))
+
+        state = g.tick(now_us=boundary + 20_000)
+        assert state.is_flashing is True
+
+        state = g.tick(now_us=boundary + FLASH_US)
+        assert state.is_flashing is False
+
     def test_bar_start_marked_on_downbeat(self):
         g = BeatGrid()
         g.on_anchor(_anchor(t_us=1_000_000, bpm=120.0, bpb=4.0))
@@ -189,8 +200,8 @@ class TestTickState:
 
 
 class TestBeatPhase:
-    """beat_phase is the normalized [0, 1) within-beat position the
-    footswitch-LED driver uses to scale brightness."""
+    """beat_phase remains the normalized [0, 1) within-beat position used
+    for loop position; flash brightness is driven by is_flashing."""
 
     def test_phase_zero_at_beat_boundary(self):
         g = BeatGrid()

@@ -40,32 +40,38 @@ class TestRegistration:
 
 
 class TestStateColorAndStyle:
-    @pytest.mark.parametrize("state,expected_color", [
-        (0, None),              # Empty -> off
-        (1, (0, 80, 255)),      # Record Arm -> blue
-        (2, (255, 0, 0)),       # Recording -> red
-        (3, (0, 80, 255)),      # Record Close -> blue
-        (4, (0, 255, 0)),       # Playback -> green
-        (5, (80, 80, 80)),      # Stopped -> steady grey
-        (6, (0, 80, 255)),      # Overdub Arm -> blue
-        (7, (255, 140, 0)),     # Overdub -> orange
-        (8, (0, 80, 255)),      # Overdub Close -> blue
-    ])
+    @pytest.mark.parametrize(
+        "state,expected_color",
+        [
+            (0, None),  # Empty -> off
+            (1, (0, 80, 255)),  # Record Arm -> blue
+            (2, (255, 0, 0)),  # Recording -> red
+            (3, (0, 80, 255)),  # Record Close -> blue
+            (4, (0, 255, 0)),  # Playback -> green
+            (5, (80, 80, 80)),  # Stopped -> steady grey
+            (6, (0, 80, 255)),  # Overdub Arm -> blue
+            (7, (255, 140, 0)),  # Overdub -> orange
+            (8, (0, 80, 255)),  # Overdub Close -> blue
+        ],
+    )
     def test_state_color_with_nonzero_measure(self, state, expected_color):
         color, _style = render_led_spec(_spec(), {"state": float(state), "measure_number": 1.0})
         assert color == expected_color
 
-    @pytest.mark.parametrize("state,expected_style", [
-        (0, LedDisplayStyle.SOLID),       # Empty -> off, solid
-        (5, LedDisplayStyle.SOLID),       # Stopped -> steady grey
-        (1, LedDisplayStyle.METRONOME),   # active -> pulse
-        (2, LedDisplayStyle.METRONOME),
-        (3, LedDisplayStyle.METRONOME),
-        (4, LedDisplayStyle.METRONOME),
-        (6, LedDisplayStyle.METRONOME),
-        (7, LedDisplayStyle.METRONOME),
-        (8, LedDisplayStyle.METRONOME),
-    ])
+    @pytest.mark.parametrize(
+        "state,expected_style",
+        [
+            (0, LedDisplayStyle.SOLID),  # Empty -> off, solid
+            (5, LedDisplayStyle.SOLID),  # Stopped -> steady grey
+            (1, LedDisplayStyle.METRONOME),  # active -> pulse
+            (2, LedDisplayStyle.METRONOME),
+            (3, LedDisplayStyle.METRONOME),
+            (4, LedDisplayStyle.METRONOME),
+            (6, LedDisplayStyle.METRONOME),
+            (7, LedDisplayStyle.METRONOME),
+            (8, LedDisplayStyle.METRONOME),
+        ],
+    )
     def test_state_style(self, state, expected_style):
         _color, style = render_led_spec(_spec(), {"state": float(state), "measure_number": 1.0})
         assert style == expected_style

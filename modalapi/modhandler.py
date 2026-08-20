@@ -116,7 +116,7 @@ from pistomp.encoder_controller import (
 )
 from pistomp.footswitch import Footswitch
 from pistomp.footswitch_chords import FootswitchChords
-from pistomp.beatsync import BeatGrid, TickState
+from pistomp.beatsync import FLASH_US, BeatGrid, TickState
 from pistomp.input.event import (
     AnalogEvent,
     ControllerEvent,
@@ -305,9 +305,7 @@ class Modhandler(Handler):
             resp = self._rest_get(url)
             if resp is not None and resp.status_code == 200:
                 return resp
-            logging.info(
-                "mod-ui not ready, retrying (%d/%d) in %ss...", attempt, len(STARTUP_REST_BACKOFF_S), delay
-            )
+            logging.info("mod-ui not ready, retrying (%d/%d) in %ss...", attempt, len(STARTUP_REST_BACKOFF_S), delay)
             time.sleep(delay)
         return self._rest_get(url)
 
@@ -471,9 +469,7 @@ class Modhandler(Handler):
             # ControllerManager._bind_encoder_longpress.
             if event.kind == SwitchEventKind.LONGPRESS and controller.midi_CC is not None:
                 key = f"{controller.midi_channel}:{controller.midi_CC}"
-                winner = self.effective_table.resolve(
-                    ControlRef(cls=ControlClass.ANALOG, id=key), EventKind.LONGPRESS
-                )
+                winner = self.effective_table.resolve(ControlRef(cls=ControlClass.ANALOG, id=key), EventKind.LONGPRESS)
                 if winner is not None:
                     self._fire_row(winner, event)
             return True
@@ -488,9 +484,7 @@ class Modhandler(Handler):
         Handler._handle_footswitch imperative if-chain."""
         if kind == SwitchEventKind.LONGPRESS:
             key = fs.dispatch_key
-            winner = self.effective_table.resolve(
-                ControlRef(cls=ControlClass.FOOTSWITCH, id=key), EventKind.LONGPRESS
-            )
+            winner = self.effective_table.resolve(ControlRef(cls=ControlClass.FOOTSWITCH, id=key), EventKind.LONGPRESS)
             if winner is not None:
                 self._fire_row(winner, SwitchEvent(controller=fs, kind=kind, timestamp=timestamp))
                 return True
@@ -500,9 +494,7 @@ class Modhandler(Handler):
 
         # Short press
         key = fs.dispatch_key
-        winner = self.effective_table.resolve(
-            ControlRef(cls=ControlClass.FOOTSWITCH, id=key), EventKind.PRESS
-        )
+        winner = self.effective_table.resolve(ControlRef(cls=ControlClass.FOOTSWITCH, id=key), EventKind.PRESS)
         if winner is not None:
             self._fire_row(winner, SwitchEvent(controller=fs, kind=kind, timestamp=timestamp))
             return True
@@ -651,9 +643,7 @@ class Modhandler(Handler):
                 color, style = self._render_footswitch(fs, beat)
             self._write_led(fs, color, style, beat)
 
-    def _render_taptempo(
-        self, fs: Footswitch, beat: TickState
-    ) -> tuple[tuple[int, int, int] | None, LedDisplayStyle]:
+    def _render_taptempo(self, fs: Footswitch, beat: TickState) -> tuple[tuple[int, int, int] | None, LedDisplayStyle]:
         """Built-in renderer for the taptempo footswitch: while tap tempo mode is
         enabled, flashes from whichever beat source is active — transport-anchored
         beat grid, or taptempo.anchor + bpm blink when unanchored — else falls
@@ -665,21 +655,22 @@ class Modhandler(Handler):
                 return (_METRONOME_DOWNBEAT_RGB if beat.is_bar_start else _METRONOME_BEAT_RGB), LedDisplayStyle.SOLID
             return None, LedDisplayStyle.SOLID
         # Unanchored: with a bpm, blink from the taptempo
-        # phase (on for the first ~100ms of each beat period). This replaces the
-        # old gpiozero hardware blink() with a 10ms-driver-computed on/off.
+        # phase (on for the fixed metronome window of each beat period).
         if fs.taptempo.get_bpm() > 0:
             now_s = _now_us() / 1_000_000.0
             period = 60.0 / fs.taptempo.get_bpm()
             elapsed = now_s - fs.taptempo.anchor
             phase_in_beat = elapsed % period
-            if phase_in_beat < 0.1:  # 100ms on-window
+            if phase_in_beat < FLASH_US / 1_000_000.0:
                 return _METRONOME_BEAT_RGB, LedDisplayStyle.SOLID
             return None, LedDisplayStyle.SOLID
         # No bpm yet: fall through to the default renderer.
         return self._render_footswitch(fs, beat)
 
     def _render_footswitch(
-        self, fs: Footswitch, beat: TickState  # noqa: ARG002 - kept for renderer signature symmetry
+        self,
+        fs: Footswitch,
+        beat: TickState,  # noqa: ARG002 - kept for renderer signature symmetry
     ) -> tuple[tuple[int, int, int] | None, LedDisplayStyle]:
         """Default per-footswitch renderer: a plugin's declarative LedSpec (read
         from its generically-mirrored output_values) if bound and available,
@@ -707,7 +698,7 @@ class Modhandler(Handler):
             spec,
             plugin.output_values,
             beat.bar_phase,
-            metronome_brightness(beat.beat_phase, beat.is_bar_start),
+            metronome_brightness(beat.is_flashing),
         )
 
     def _bound_plugin(self, fs: Footswitch):
@@ -725,13 +716,10 @@ class Modhandler(Handler):
         style: LedDisplayStyle,
         beat: TickState,
     ) -> None:
-        """The one writer for fs.pixel/fs.led. Applies the metronome brightness
-        envelope uniformly for any METRONOME-style frame while transport is
-        anchored; everything else (including taptempo's already-final on/off
-        frames) is written as-is."""
+        """Write one rendered frame to both physical LED outputs."""
         if color is not None and style == LedDisplayStyle.METRONOME and beat.is_anchored:
-            brightness = metronome_brightness(beat.beat_phase, beat.is_bar_start)
-            color = (int(color[0] * brightness), int(color[1] * brightness), int(color[2] * brightness))
+            if not beat.is_flashing:
+                color = None
         if color is None:
             if fs.pixel is not None:
                 fs.pixel.set_enable(False)
@@ -1410,7 +1398,7 @@ class Modhandler(Handler):
         return self.set_mod_tap_tempo(param.value)
 
     def _publish_audio(self, param: Parameter) -> bool:
-        """ A local ALSA write. No remote echo, so the send always lands."""
+        """A local ALSA write. No remote echo, so the send always lands."""
         self.audio_parameter_commit(param.symbol, param.value)
         return True
 
@@ -1720,6 +1708,7 @@ class Modhandler(Handler):
         if self.settings.get_setting(Token.WELCOME_SEEN):
             return
         from ui.welcome import WelcomePanel
+
         self.lcd.pstack.push_panel(WelcomePanel(self))
 
     def get_software_version(self) -> str:

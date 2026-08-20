@@ -68,19 +68,23 @@ _TEXT_PAD = 8
 
 
 @lru_cache(maxsize=512)
-def _text_surface(text: str, font: "pygame._freetype.Font", color: Tuple[int, int, int, int]) -> pygame.Surface:
-    """Cached RGBA surface of `text`, pen origin at (_TEXT_PAD, _TEXT_PAD + ascender)."""
+def _text_surface(
+    text: str, font: "pygame._freetype.Font", color: Tuple[int, int, int, int], size: int = 0
+) -> pygame.Surface:
+    """Cached RGBA surface of a text run, with optional font size override."""
     from uilib.misc import get_text_size  # local: uilib.misc imports uilib.paint
 
-    asc = int(font.get_sized_ascender())
-    desc = abs(int(font.get_sized_descender()))
-    tw, _ = get_text_size(text, font)
+    asc = int(font.get_sized_ascender(size))
+    desc = abs(int(font.get_sized_descender(size)))
+    tw, _ = get_text_size(text, font, size)
     surf = pygame.Surface((tw + 2 * _TEXT_PAD, asc + desc + 2 * _TEXT_PAD), pygame.SRCALPHA)
     surf.fill((0, 0, 0, 0))
     prev_origin = font.origin
     font.origin = True
     try:
-        font.render_to(surf, (_TEXT_PAD, _TEXT_PAD + asc), text, fgcolor=pygame.Color(*color))
+        font.render_to(
+            surf, (_TEXT_PAD, _TEXT_PAD + asc), text, fgcolor=pygame.Color(*color), size=size  # pyright: ignore[reportCallIssue]
+        )
     finally:
         font.origin = prev_origin
     return surf
@@ -229,39 +233,28 @@ class PaintContext:
         fill: Optional[ColorLike] = None,
         font: Optional["pygame._freetype.Font"] = None,  # pyright: ignore[reportAttributeAccessIssue]
         anchor: Optional[str] = None,
+        size: int = 0,
     ) -> None:
         """Draw text using a pygame._freetype Font.
 
         Default anchor matches PIL's `la` (left, ascender): `pos` is the
-        top-left of the line box (ascender line), not of the visible glyph
-        bbox. This keeps text vertical alignment consistent regardless of
-        which characters appear (with/without ascenders or descenders).
-        Also supports anchor='mm' (middle/middle of the glyph bbox).
+        top-left of the line box, not of the visible glyph. `size` overrides
+        the font's registered size without mutating the shared font.
         """
         if not text or font is None or fill is None:
             return
         color = _color(fill)
         x, y = self._abs_xy(pos)
-        asc = int(font.get_sized_ascender())
+        asc = int(font.get_sized_ascender(size))
         if anchor == "mm":
-            # PIL anchor='mm' centers on (PIL.getbbox(text).w / 2, (asc+desc)/2).
-            # uilib.misc.get_text_size matches PIL getbbox semantics. Use int()
-            # (floor for positive operands) — not round() — because PIL's BASIC
-            # layout effectively floors the fractional pen position; Python's
-            # banker's rounding on .5 boundaries (e.g. 51.5 → 52) would push
-            # the glyph one pixel right of PIL.
             from uilib.misc import get_text_size
 
-            desc = abs(int(font.get_sized_descender()))
-            tw, _ = get_text_size(text, font)
+            desc = abs(int(font.get_sized_descender(size)))
+            tw, _ = get_text_size(text, font, size)
             base_dst = (int(x - tw / 2), int(y - (asc + desc) / 2))
         else:
             base_dst = (int(x), int(y))
-        # Blit a cached glyph run rather than rasterizing per draw: text is
-        # re-drawn on every widget refresh, so freetype rasterization otherwise
-        # dominates the hot paths (meters, readouts, axis labels). The blit
-        # honors surface.set_clip, which font.render_to does not.
-        surf = _text_surface(text, font, (color.r, color.g, color.b, color.a))
+        surf = _text_surface(text, font, (color.r, color.g, color.b, color.a), size)
         self.surface.blit(surf, (base_dst[0] - _TEXT_PAD, base_dst[1] - _TEXT_PAD))
 
     def draw_arc_aa(self, cx: int, cy: int, r: int, clip: Box, color: ColorLike) -> None:

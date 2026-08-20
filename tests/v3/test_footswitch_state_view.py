@@ -10,8 +10,9 @@ the LCD and the hardware never disagree.
 from common.loop_progress import LoopFill, LoopProgress
 from common.parameter import Symbol, Type
 from modalapi.plugin import Plugin
+from modalapi.ws_protocol import BeatSyncMessage
 from plugins import lookup
-from pistomp.beatsync import TickState
+from pistomp.beatsync import FLASH_US, TickState
 from plugins.loopjefe import LOOPJEFE_URIS
 from tests.types import SystemFixture
 
@@ -93,14 +94,18 @@ def test_state_view_repaints_on_output_set(v3_system: SystemFixture, make_parame
     snapshot("overdub-from-output-set")
 
 
-def _beat(handler, bar_phase: float, beat_phase: float = 0.0, is_bar_start: bool = False) -> None:
-    """Drive one LED tick with a synthetic transport phase. The LCD reads the
-    phase from the handler's last tick rather than the grid, so this is the
-    only way in."""
+def _beat(
+    handler,
+    bar_phase: float,
+    beat_phase: float = 0.0,
+    is_bar_start: bool = False,
+    is_flashing: bool = True,
+) -> None:
+    """Drive one LED tick with a synthetic transport state."""
     handler._drive_footswitch_leds(
         TickState(
             is_anchored=True,
-            is_flashing=False,
+            is_flashing=is_flashing,
             is_bar_start=is_bar_start,
             bpm=120.0,
             bpb=4.0,
@@ -127,7 +132,7 @@ def test_progress_border_fills_by_bar_and_beat(v3_system: SystemFixture, make_pa
     v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 measure_number 2.0")
     handler.poll_ws_messages()
 
-    _beat(handler, 0.5)
+    _beat(handler, 0.5, is_flashing=True)
     lcd.update_footswitches()
     snapshot("play-bar3-beat3")
 
@@ -146,9 +151,44 @@ def test_progress_border_chases_while_recording(v3_system: SystemFixture, make_p
     v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 state 2.0")  # Recording
     handler.poll_ws_messages()
 
-    _beat(handler, 0.25)
+    _beat(handler, 0.25, is_flashing=True)
     lcd.update_footswitches()
     snapshot("recording-chase")
+
+
+def test_progress_border_snapshots_at_integer_beat_syncs(v3_system: SystemFixture, make_parameter, snapshot):
+    """Capture each integer beat from the transport's synchronized clock."""
+    handler = v3_system.handler
+    lcd = handler.lcd
+    _bind(v3_system, [_loopjefe(make_parameter, "loopjefe_1")])
+
+    lcd.link_data(handler.pedalboard_list, handler.current, v3_system.hw.footswitches)
+    lcd.draw_main_panel()
+    v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 state 4.0")  # Playback
+    v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 loop_bars 4.0")
+    v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 measure_number 2.0")
+    handler.poll_ws_messages()
+
+    anchor_us = 1_000_000
+    beat_period_us = 500_000
+    for beat_in_bar in range(4):
+        source_us = anchor_us + beat_in_bar * beat_period_us
+        v3_system.ws_bridge.inject(f"beat_sync {source_us} 120.0 4 {beat_in_bar}.0")
+        handler.poll_ws_messages()
+        state = handler.beat_grid.tick(source_us)
+        assert state.beat_phase == 0.0
+        assert state.bar_phase == beat_in_bar / 4.0
+        assert state.is_flashing is True
+        handler._drive_footswitch_leds(state)
+        lcd.update_footswitches()
+        snapshot(f"transport-beat-{beat_in_bar}-on")
+
+    cutoff = anchor_us + 3 * beat_period_us + FLASH_US
+    state = handler.beat_grid.tick(cutoff)
+    assert state.is_flashing is False
+    handler._drive_footswitch_leds(state)
+    lcd.update_footswitches()
+    snapshot("transport-beat-3-off-50000us")
 
 
 def test_overdub_past_declared_length_chases(v3_system: SystemFixture, make_parameter):
@@ -174,9 +214,7 @@ def test_overdub_past_declared_length_chases(v3_system: SystemFixture, make_para
 
 
 def test_progress_border_pulses_with_the_beat(v3_system: SystemFixture, make_parameter):
-    """The border carries the same envelope as the physical LED -- full on the
-    downbeat, decaying across the beat -- so the slot and its switch never
-    pulse out of step. Only the states the spec says pulse are affected."""
+    """The border and physical LED share the binary transport flash state."""
     handler = v3_system.handler
     plugins = [_loopjefe(make_parameter, "loopjefe_1")]
     _bind(v3_system, plugins)
@@ -186,13 +224,13 @@ def test_progress_border_pulses_with_the_beat(v3_system: SystemFixture, make_par
     v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 loop_bars 4.0")
     handler.poll_ws_messages()
 
-    _beat(handler, 0.0, beat_phase=0.0, is_bar_start=True)
-    downbeat = handler.footswitch_loop_progress(fs)
-    _beat(handler, 0.2, beat_phase=0.8)
-    late = handler.footswitch_loop_progress(fs)
-    assert downbeat is not None and late is not None
-    assert downbeat.pulse == 1.0
-    assert late.pulse < downbeat.pulse
+    _beat(handler, 0.0, beat_phase=0.0, is_bar_start=True, is_flashing=True)
+    during = handler.footswitch_loop_progress(fs)
+    _beat(handler, 0.2, beat_phase=0.8, is_flashing=False)
+    outside = handler.footswitch_loop_progress(fs)
+    assert during is not None and outside is not None
+    assert during.pulse == 1.0
+    assert outside.pulse == 0.0
 
     v3_system.ws_bridge.inject("output_set /graph/loopjefe_1 state 5.0")  # Stopped: steady
     handler.poll_ws_messages()
@@ -202,8 +240,7 @@ def test_progress_border_pulses_with_the_beat(v3_system: SystemFixture, make_par
 
 
 def test_progress_border_is_steady_without_transport(v3_system: SystemFixture, make_parameter):
-    """No beat_sync, no envelope -- an unanchored grid must not leave the
-    border stuck at whatever brightness the last phase happened to be."""
+    """Without transport, the border remains at its steady brightness."""
     handler = v3_system.handler
     plugins = [_loopjefe(make_parameter, "loopjefe_1")]
     _bind(v3_system, plugins)

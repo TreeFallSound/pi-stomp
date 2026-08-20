@@ -4,8 +4,8 @@ The taptempo footswitch's LED flashes from whichever beat source is active:
   - Transport anchored (beat_sync received): beat_grid drives the flash,
     white on downbeat, grey on beat.
   - Taptempo only (no beat_sync, but taptempo enabled with bpm): the LED
-    blinks from taptempo.anchor + bpm — on for the first ~100ms of each
-    beat period, off otherwise.
+    blinks from taptempo.anchor + bpm — on for the first 50ms of each beat
+    period, off otherwise.
   - Taptempo disabled: the footswitch behaves as a default toggle — no
     metronome flash, whether or not the transport is anchored.
 
@@ -48,8 +48,7 @@ class TestTransportAnchored:
         fs = _find_taptempo_fs(v3_system)
         _mock_fs(fs)
         _enable_tap(fs)
-        beat = TickState(is_anchored=True, is_flashing=True, is_bar_start=False,
-                         bpm=120.0, bpb=4.0, beat_phase=0.0)
+        beat = TickState(is_anchored=True, is_flashing=True, is_bar_start=False, bpm=120.0, bpb=4.0, beat_phase=0.0)
         v3_system.handler._drive_footswitch_leds(beat)
         fs.pixel.set_color.assert_called_once_with(_METRONOME_BEAT_RGB)
         fs.pixel.set_enable.assert_called_once_with(True)
@@ -60,8 +59,7 @@ class TestTransportAnchored:
         fs = _find_taptempo_fs(v3_system)
         _mock_fs(fs)
         _enable_tap(fs)
-        beat = TickState(is_anchored=True, is_flashing=True, is_bar_start=True,
-                         bpm=120.0, bpb=4.0, beat_phase=0.0)
+        beat = TickState(is_anchored=True, is_flashing=True, is_bar_start=True, bpm=120.0, bpb=4.0, beat_phase=0.0)
         v3_system.handler._drive_footswitch_leds(beat)
         fs.pixel.set_color.assert_called_once_with(_METRONOME_DOWNBEAT_RGB)
 
@@ -69,8 +67,7 @@ class TestTransportAnchored:
         fs = _find_taptempo_fs(v3_system)
         _mock_fs(fs)
         _enable_tap(fs)
-        beat = TickState(is_anchored=True, is_flashing=False, is_bar_start=False,
-                         bpm=120.0, bpb=4.0, beat_phase=0.5)
+        beat = TickState(is_anchored=True, is_flashing=False, is_bar_start=False, bpm=120.0, bpb=4.0, beat_phase=0.5)
         v3_system.handler._drive_footswitch_leds(beat)
         fs.pixel.set_enable.assert_called_once_with(False)
         assert fs.led is not None
@@ -87,14 +84,13 @@ class TestTaptempoBlink:
         _mock_fs(fs)
         assert fs.taptempo is not None
         fs.taptempo.enable(True)
-        fs.taptempo.set_bpm(120.0)  # 120bpm → 500ms period, 100ms on-window
+        fs.taptempo.set_bpm(120.0)  # 120bpm → 500ms period, 50ms on-window
         fs.taptempo.anchor = 1000.0  # last tap at t=1000.0
 
-        # Now=1000.05 → 50ms into the beat → within the 100ms on-window → ON
-        with patch("modalapi.modhandler._now_us", return_value=int(1000.05 * 1_000_000)):
+        # Now=1000.025 → 25ms into the beat → within the 50ms on-window → ON
+        with patch("modalapi.modhandler._now_us", return_value=int(1000.025 * 1_000_000)):
             v3_system.handler._drive_footswitch_leds(
-                TickState(is_anchored=False, is_flashing=False, is_bar_start=False,
-                          bpm=120.0, bpb=4.0, beat_phase=0.0)
+                TickState(is_anchored=False, is_flashing=False, is_bar_start=False, bpm=120.0, bpb=4.0, beat_phase=0.0)
             )
         fs.pixel.set_enable.assert_called_once_with(True)
         assert fs.led is not None
@@ -104,15 +100,13 @@ class TestTaptempoBlink:
         fs = _find_taptempo_fs(v3_system)
         _mock_fs(fs)
         assert fs.taptempo is not None
-        fs.taptempo.enable(True)
-        fs.taptempo.set_bpm(120.0)  # 500ms period, 100ms on-window
+        fs.taptempo.set_bpm(120.0)  # 500ms period, 50ms on-window
         fs.taptempo.anchor = 1000.0
 
-        # Now=1000.3 → 300ms into the beat → past the 100ms on-window → OFF
+        # Now=1000.3 → 300ms into the beat → past the 50ms on-window → OFF
         with patch("modalapi.modhandler._now_us", return_value=int(1000.3 * 1_000_000)):
             v3_system.handler._drive_footswitch_leds(
-                TickState(is_anchored=False, is_flashing=False, is_bar_start=False,
-                          bpm=120.0, bpb=4.0, beat_phase=0.0)
+                TickState(is_anchored=False, is_flashing=False, is_bar_start=False, bpm=120.0, bpb=4.0, beat_phase=0.0)
             )
         fs.pixel.set_enable.assert_called_once_with(False)
         assert fs.led is not None
@@ -126,8 +120,7 @@ class TestTaptempoBlink:
         fs.taptempo.enable(True)
         fs.taptempo.set_bpm(0.0)
         v3_system.handler._drive_footswitch_leds(
-            TickState(is_anchored=False, is_flashing=False, is_bar_start=False,
-                      bpm=0.0, bpb=4.0, beat_phase=0.0)
+            TickState(is_anchored=False, is_flashing=False, is_bar_start=False, bpm=0.0, bpb=4.0, beat_phase=0.0)
         )
         # No blink — the default behavior takes over (off when not toggled)
         fs.pixel.set_enable.assert_called_once_with(False)
@@ -141,8 +134,7 @@ class TestTaptempoBlink:
         fs.taptempo.enable(False)
         fs.toggled = True
         v3_system.handler._drive_footswitch_leds(
-            TickState(is_anchored=False, is_flashing=False, is_bar_start=False,
-                      bpm=0.0, bpb=4.0, beat_phase=0.0)
+            TickState(is_anchored=False, is_flashing=False, is_bar_start=False, bpm=0.0, bpb=4.0, beat_phase=0.0)
         )
         # Default behavior: toggled=True → pixel on with category color
         fs.pixel.set_enable.assert_called_once_with(True)
@@ -158,11 +150,11 @@ class TestTaptempoBlink:
         fs.taptempo.anchor = 1000.0
         with patch("modalapi.modhandler._now_us", return_value=int(1000.05 * 1_000_000)):
             v3_system.handler._drive_footswitch_leds(
-                TickState(is_anchored=False, is_flashing=False, is_bar_start=False,
-                          bpm=120.0, bpb=4.0, beat_phase=0.0)
+                TickState(is_anchored=False, is_flashing=False, is_bar_start=False, bpm=120.0, bpb=4.0, beat_phase=0.0)
             )
         assert fs.led is not None
         fs.led.blink.assert_not_called()  # type: ignore[unionAttr]
+
 
 def test_anchored_transport_does_not_flash_when_disabled(v3_system: SystemFixture):
     """Transport anchored but tap tempo mode off → no metronome flash; the
@@ -173,7 +165,6 @@ def test_anchored_transport_does_not_flash_when_disabled(v3_system: SystemFixtur
     fs.taptempo.enable(False)
     fs.toggled = True
     v3_system.handler._drive_footswitch_leds(
-        TickState(is_anchored=True, is_flashing=False, is_bar_start=False,
-                  bpm=120.0, bpb=4.0, beat_phase=0.5)
+        TickState(is_anchored=True, is_flashing=False, is_bar_start=False, bpm=120.0, bpb=4.0, beat_phase=0.5)
     )
     fs.pixel.set_enable.assert_called_once_with(True)  # the flash would have blanked it

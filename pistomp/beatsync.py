@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from modalapi.ws_protocol import BeatSyncMessage
 
 
-FLASH_US = 80_000
+FLASH_US = 50_000
 STALE_AFTER_US = 5_000_000
 # A clock sample landing within this many beats of a boundary is treated as
 # the crossing itself (arms the flash/bar-start immediately) rather than
@@ -113,12 +113,11 @@ class BeatGrid:
 
         if current_beat_idx > self._last_beat_idx:
             self._last_beat_idx = current_beat_idx
-            self._flash_end_us = now_us + FLASH_US
+            beat_boundary_us = self._anchor_t_us + int((current_beat_idx - self._anchor_pos) * 60_000_000.0 / self._bpm)
+            self._flash_end_us = beat_boundary_us + FLASH_US
             self._last_crossing_was_bar_start = (current_beat_idx % bpb_int) == 0
 
-        is_flashing = (
-            self._flash_end_us is not None and now_us < self._flash_end_us
-        )
+        is_flashing = self._flash_end_us is not None and now_us < self._flash_end_us
         return TickState(
             is_anchored=True,
             is_flashing=is_flashing,

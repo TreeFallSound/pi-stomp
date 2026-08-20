@@ -16,9 +16,8 @@
 """Generic, data-driven footswitch-LED rendering.
 
 Pure function of (LedSpec, plugin.output_values) -> (color, style). No
-footswitch, beat, or plugin-instance coupling — the per-tick brightness
-envelope (pulse phase, downbeat emphasis) is applied uniformly by the
-handler's single LED-writing helper, not here.
+footswitch, beat, or plugin-instance coupling — the handler applies the binary
+metronome state uniformly to the physical LED and loop perimeter.
 """
 
 from __future__ import annotations
@@ -30,9 +29,6 @@ from common.loop_progress import LoopFill, LoopProgress
 
 if TYPE_CHECKING:
     from modalapi.plugin_customization import LedSpec
-
-
-_BEAT_DECAY = 0.7
 
 
 class LedDisplayStyle(Enum):
@@ -59,13 +55,9 @@ def render_led_spec(
     return base, style
 
 
-def metronome_brightness(beat_phase: float, is_bar_start: bool) -> float:
-    """The per-beat brightness envelope: full on the downbeat, decaying across
-    the beat. Shared by the physical LED and the LCD's progress border so a
-    slot and its switch never pulse out of step."""
-    if is_bar_start:
-        return 1.0
-    return 1.0 - beat_phase * _BEAT_DECAY
+def metronome_brightness(is_flashing: bool) -> float:
+    """Binary brightness shared by physical LEDs and the loop perimeter."""
+    return 1.0 if is_flashing else 0.0
 
 
 def state_label(spec: LedSpec, output_values: dict[str, float]) -> str | None:
@@ -85,8 +77,8 @@ def loop_progress(
     """Where the plugin is through its loop, or None if it has no loop to be
     through. `bar_phase` interpolates within the current bar — the plugin only
     publishes a bar index, and a per-sample position port would be a monitored
-    output changing every process cycle. `beat_brightness` is the envelope from
-    `metronome_brightness`, applied only to the states the spec says pulse."""
+    output changing every process cycle. `beat_brightness` is 1.0 during the
+    fixed metronome window and 0.0 otherwise, applied only to pulsing states."""
     if spec.bars_symbol is None or spec.downbeat_symbol is None:
         return None
     color, style = render_led_spec(spec, output_values)

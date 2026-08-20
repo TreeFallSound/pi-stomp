@@ -5,10 +5,9 @@ latency between a state change and the LED reflecting it. Both fs.pixel and
 fs.led are written from the same (color, style) frame in the same driver call
 — no separate set_led path.
 
-Covers:
   - SOLID: shows the frame's color steadily (or off when color is None).
-  - METRONOME: scales brightness by beat_phase (bright at 0, dim toward 1).
-  - Unanchored METRONOME: steady color (no pulse).
+  - METRONOME: is fully on during the transport flash window and off otherwise.
+  - Unanchored METRONOME: steady color (no transport pulse).
   - Off: color is None -> pixel disabled, GPIO LED off.
   - Press renders in the same tick (poll_controls, not poll_indicators).
   - set_led is a pure state update -- no hardware writes.
@@ -27,8 +26,9 @@ from pistomp.footswitch import Footswitch
 from tests.types import SystemFixture
 
 
-def _beat(beat_phase: float = 0.0, *, is_anchored: bool = True,
-          is_bar_start: bool = False, is_flashing: bool | None = None) -> TickState:
+def _beat(
+    beat_phase: float = 0.0, *, is_anchored: bool = True, is_bar_start: bool = False, is_flashing: bool | None = None
+) -> TickState:
     if is_flashing is None:
         is_flashing = is_bar_start
     return TickState(
@@ -82,30 +82,27 @@ class TestSolidStyle:
 
 
 class TestMetronomeStyle:
-    def test_metronome_bright_at_phase_zero(self, v3_system: SystemFixture):
+    def test_metronome_on_during_flash_window(self, v3_system: SystemFixture):
         fs = _fs_with_frame(v3_system, (100, 100, 100), LedDisplayStyle.METRONOME)
-        _drive(v3_system.handler, _beat(beat_phase=0.0))
-        # phase 0 → brightness 1.0 → unscaled color
+        _drive(v3_system.handler, _beat(beat_phase=0.9, is_flashing=True))
         fs.pixel.set_color.assert_called_once_with((100, 100, 100))
+        fs.pixel.set_enable.assert_called_once_with(True)
 
-    def test_metronome_dim_near_phase_one(self, v3_system: SystemFixture):
+    def test_metronome_off_after_flash_window(self, v3_system: SystemFixture):
         fs = _fs_with_frame(v3_system, (100, 100, 100), LedDisplayStyle.METRONOME)
-        _drive(v3_system.handler, _beat(beat_phase=0.9))
-        scaled = fs.pixel.set_color.call_args.args[0]
-        # phase 0.9 → brightness 1.0 - 0.9*0.7 = 0.37 → 100*0.37 = 37
-        assert scaled == (37, 37, 37)
-        assert all(c < 100 for c in scaled)
+        _drive(v3_system.handler, _beat(beat_phase=0.0, is_flashing=False))
+        fs.pixel.set_enable.assert_called_once_with(False)
+        assert fs.led is not None
+        fs.led.off.assert_called_once()  # type: ignore[unionAttr]
 
-    def test_metronome_brightest_on_bar_start(self, v3_system: SystemFixture):
+    def test_metronome_bar_start_uses_downbeat_color(self, v3_system: SystemFixture):
         fs = _fs_with_frame(v3_system, (100, 100, 100), LedDisplayStyle.METRONOME)
-        _drive(v3_system.handler, _beat(beat_phase=0.5, is_bar_start=True))
-        # bar start forces brightness 1.0 even though phase is mid-beat
+        _drive(v3_system.handler, _beat(beat_phase=0.5, is_bar_start=True, is_flashing=True))
         fs.pixel.set_color.assert_called_once_with((100, 100, 100))
 
     def test_metronome_unanchored_shows_steady_color(self, v3_system: SystemFixture):
         fs = _fs_with_frame(v3_system, (100, 100, 100), LedDisplayStyle.METRONOME)
         _drive(v3_system.handler, _beat(beat_phase=0.9, is_anchored=False))
-        # No pulse when unanchored — full color
         fs.pixel.set_color.assert_called_once_with((100, 100, 100))
 
 
