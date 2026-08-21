@@ -98,7 +98,7 @@ class Effect:
 class ParamEffect(Effect):
     plugin: object  # PluginRef, resolved at pedalboard load
     symbol: Union[Symbol, type[SelectionSymbol]]
-    commit: bool = True  # WebSocket send_parameter on fire
+    commit: bool = True  # Declared: WebSocket send on fire. Dispatch does not read it. A no-op today.
     mirror: bool = True  # reconcile from inbound param_set echo
 
 

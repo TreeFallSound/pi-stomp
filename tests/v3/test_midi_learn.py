@@ -421,6 +421,44 @@ class TestMidiLearnBindsMomentaryAndOutputs:
             "reset is pprops:trigger — every longpress must emit 127, not toggle 127/0"
         )
 
+    def test_longpress_toggle_target_flips_through_reactive_layer(
+        self, v3_system: SystemFixture, make_parameter
+    ):
+        """A longpress raw-CC resolving to a loaded *non*-trigger param toggles
+        it through the reactive layer: each longpress flips the param and emits
+        its bound CC as an alternating 127/0 edge — no local _longpress_cc_state,
+        so the toggle tracks the param's real value."""
+        from rtmidi.midiconstants import CONTROL_CHANGE
+        from pistomp.input.event import SwitchEvent, SwitchEventKind
+
+        handler = v3_system.handler
+        hw = v3_system.hw
+        assert handler.current
+
+        fs0 = hw.footswitches[0]
+        toggle_cc = 64
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        solo = make_parameter("solo", "loopjefe", value=0.0)  # non-trigger toggle
+        solo.binding = f"{fs0.midi_channel}:{toggle_cc}"
+        plugin.parameters[Symbol("solo")] = solo
+        handler.current.pedalboard.plugins = [plugin]
+
+        fs0.longpress_action = {"midi_CC": toggle_cc}
+        handler.bind_current_pedalboard()
+
+        hw.midiout.send_message.reset_mock()
+        event = SwitchEvent(controller=fs0, kind=SwitchEventKind.LONGPRESS, timestamp=1.0)
+        for _ in range(2):
+            handler.handle(event)
+
+        sent = [c.args[0][2] for c in hw.midiout.send_message.call_args_list]
+        assert sent == [127, 0], "a loaded toggle target alternates 127/0 on its bound CC"
+        assert all(
+            c.args[0][:2] == [fs0.midi_channel | CONTROL_CHANGE, toggle_cc]
+            for c in hw.midiout.send_message.call_args_list
+        )
+        assert solo.value == 0.0, "two flips return the param to rest"
+
     def test_update_interesting_outputs_derives_from_plugin_led_spec(
         self, v3_system: SystemFixture, make_parameter
     ):

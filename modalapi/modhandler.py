@@ -584,13 +584,21 @@ class Modhandler(Handler):
                         fs.set_led(new_toggled)
                         self.update_lcd_fs(bypass_change=True)
                 case RawMidiCcEffect(channel=ch, cc=cc):
-                    if self._raw_cc_targets_momentary(ch, cc):
-                        # Longpress mapped to a pprops:trigger port (loopjefe
-                        # reset): a rising-edge one-shot, 127 on every press —
-                        # mirroring the short-press momentary path, no 127/0
-                        # toggle. mod-ui's echo reconciles the learned plugin.
-                        self._emit_raw_cc(ch, cc, 127)
+                    param = self._param_bound_to_cc(ch, cc)
+                    sink = functools.partial(self._publish_raw_cc, ch, cc)
+                    if param is not None and param.is_momentary:
+                        # Trigger target (loopjefe reset): one-shot edge on the
+                        # param's own bound CC. Resolved at fire time, so a live
+                        # re-learn needs no longpress-row patch.
+                        param.pulse(sink)
+                    elif param is not None:
+                        # Loaded toggle target: flip through the reactive layer.
+                        lo = param.minimum if param.minimum is not None else 0.0
+                        hi = param.maximum if param.maximum is not None else 1.0
+                        edge = lo if param.value >= (lo + hi) / 2 else hi
+                        param.commit(edge, sink)
                     else:
+                        # Orphan CC (no loaded param): local 127/0 toggle.
                         key = LongpressCcKey(channel=ch, cc=cc)
                         on = self._longpress_cc_state[key] = not self._longpress_cc_state.get(key, False)
                         self._emit_raw_cc(ch, cc, 127 if on else 0)
@@ -606,21 +614,28 @@ class Modhandler(Handler):
         controller.midi_CC guard; virtual out only."""
         self.hardware.midiout.send_message([channel | CONTROL_CHANGE, cc, int(value)])
 
-    def _raw_cc_targets_momentary(self, channel: int, cc: int) -> bool:
-        """True when a loaded plugin parameter is MIDI-bound to (channel, cc)
-        and is a momentary pprops:trigger port. Longpress raw-CC actions default
-        to a 127/0 toggle, but a trigger target (e.g. loopjefe reset) needs a
-        one-shot rising edge, mirroring the short-press momentary path."""
+    def _param_bound_to_cc(self, channel: int, cc: int) -> Parameter | None:
+        """The loaded plugin parameter MIDI-bound to (channel, cc), or None for
+        an orphan CC. Resolved at fire time so a live re-learn is reflected with
+        no longpress-row patch — the CC is a free reference, not a controller."""
         if self._current is None:
-            return False
+            return None
         binding = f"{channel}:{cc}"
         for plugin in self.current.pedalboard.plugins:
             if plugin.parameters is None:
                 continue
             for param in plugin.parameters.values():
-                if param.binding == binding and param.is_momentary:
-                    return True
-        return False
+                if param.binding == binding:
+                    return param
+        return None
+
+    def _publish_raw_cc(self, channel: int, cc: int, param: Parameter) -> bool:
+        """Emit a resolved param's binary CC on its own (channel, cc): the "on"
+        edge (max) sends 127, rest 0, with no owning controller. pulse and commit
+        ride this so a longpress reaches mod-host on the param's bound CC."""
+        hi = param.maximum if param.maximum is not None else 1.0
+        self._emit_raw_cc(channel, cc, 127 if param.value >= hi else 0)
+        return True
 
     def _emit_midi(self, controller, midi_value: int) -> None:
         """Send a CC. Tries the external port if routed; falls back to virtual."""
