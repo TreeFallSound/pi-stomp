@@ -198,6 +198,7 @@ class Modhandler(Handler):
         # Backup
         self.backup_file = "pistomp_backup.zip"
         self.data_dir = data_dir
+        self._restoring = False
 
         # Banks
         self.banks_file = os.path.join(self.data_dir, "banks.json")
@@ -970,6 +971,11 @@ class Modhandler(Handler):
         # reads next_pedalboard_preset_index this tick. No-op if already drained.
         self.poll_ws_messages()
 
+        # unzip rewrites last.json/banks.json/snapshots.json
+        # don't poll again until we restart the service
+        if self._restoring:
+            return
+
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
             self._is_pedalboard_loading = True
@@ -980,6 +986,15 @@ class Modhandler(Handler):
 
                 if mod_bundle not in self.pedalboards:
                     self.load_pedalboards()
+                if mod_bundle not in self.pedalboards:
+                    # MOD-UI owns this relationship; if its own list still lacks
+                    # the bundle we have nothing to load and no business picking
+                    # a substitute mid-session. Keep the board we have.
+                    logging.warning("last.json names a pedalboard MOD-UI does not list: %s", mod_bundle)
+                    self._is_pedalboard_loading = False
+                    self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
+                    self.lcd.draw_main_panel()
+                    return
 
                 pb = self.reload_pedalboard(mod_bundle)
                 self.set_current_pedalboard(pb)
@@ -1053,6 +1068,8 @@ class Modhandler(Handler):
             sys.exit()
 
         pbs = json.loads(resp.text)
+        self.pedalboards = {}
+        self.pedalboard_list = []
         for pb in pbs:
             bundle = pb[Token.BUNDLE]
             title = pb[Token.TITLE]
@@ -1683,6 +1700,7 @@ class Modhandler(Handler):
         logging.info("Restoring data backup...")
         cmd = os.path.join(self.homedir, "util", "data-restore.sh")
         job = ArchiveJob.restore(cmd, self.username, os.path.join(backup_dir, self.backup_file), self.data_dir)
+        self._restoring = True
         self.lcd.pstack.push_panel(
             ArchiveProgressPanel(
                 title="Restoring",
