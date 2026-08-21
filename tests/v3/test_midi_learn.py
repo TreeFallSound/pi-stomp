@@ -14,6 +14,26 @@ LOG_PORT: PortInfo = {
 }
 
 
+def test_trigger_uri_property_is_momentary():
+    """Raw LV2 property URIs still identify LoopJefe trigger ports."""
+    parameter = Parameter(
+        {
+            "symbol": "advance",
+            "shortName": "Advance",
+            "ranges": {"minimum": 0.0, "maximum": 1.0},
+            "properties": [
+                "http://lv2plug.in/ns/lv2core#integer",
+                "http://lv2plug.in/ns/ext/port-props#trigger",
+            ],
+        },
+        0.0,
+        "0:60",
+        "loopjefe_1",
+    )
+
+    assert parameter.is_momentary is True
+
+
 def _binding_for(hw, controller):
     """The 'channel:cc' key under which a controller is registered."""
     return next(k for k, v in hw.controllers.items() if v is controller)
@@ -308,20 +328,28 @@ def test_v3_midi_learn_unknown_instance_is_ignored(v3_system: SystemFixture, mak
     assert plugin.has_footswitch is False
 
 
-def _make_loopjefe_plugin_with_advance(make_parameter, instance_id="loopjefe"):
-    """Build a loopjefe plugin with an `advance` trigger parameter, using the
-    real registered loopjefe customization (plugins/__init__.py imports
-    plugins.loopjefe, which registers its LedSpec)."""
-    from common.parameter import Symbol, Type
+def _make_loopjefe_plugin_with_advance(_make_parameter, instance_id="loopjefe"):
+    """Build LoopJefe from the same LV2 trigger metadata mod-ui returns."""
     from modalapi.plugin import Plugin
     from plugins import lookup
     from plugins.loopjefe import LOOPJEFE_URIS
 
-    advance = make_parameter("advance", instance_id, value=0.0)
-    advance.type = Type.TRIGGER  # pprops:trigger in loopjefe.ttl
+    advance = Parameter(
+        {
+            "symbol": "advance",
+            "shortName": "Advance",
+            "ranges": {"minimum": 0.0, "maximum": 1.0},
+            "properties": [
+                "http://lv2plug.in/ns/lv2core#integer",
+                "http://lv2plug.in/ns/ext/port-props#trigger",
+            ],
+        },
+        0.0,
+        None,
+        instance_id,
+    )
     uri = LOOPJEFE_URIS[0]
-    return Plugin(instance_id, {Symbol("advance"): advance}, {}, "Looper",
-                  uri=uri, customization=lookup(uri))
+    return Plugin(instance_id, {Symbol("advance"): advance}, {}, "Looper", uri=uri, customization=lookup(uri))
 
 
 class TestMidiLearnBindsMomentaryAndOutputs:

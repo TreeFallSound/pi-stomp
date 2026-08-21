@@ -111,6 +111,14 @@ def is_hidden_port(plugin_info: PortInfo) -> bool:
     return plugin_info.get("designation", "") in HIDDEN_DESIGNATIONS
 
 
+def _has_property(properties: list[str], name: str) -> bool:
+    """Match MOD-UI's short property names and raw LV2 URIs."""
+    return any(
+        property_name == name or property_name.rsplit("#", 1)[-1].rsplit("/", 1)[-1] == name
+        for property_name in properties
+    )
+
+
 class Type(Enum):
     DEFAULT = 0  # No explicitly defined type (eg. linear float)
     ENUMERATION = 1
@@ -173,20 +181,20 @@ class Parameter:
 
         properties = plugin_info.get("properties") or []
         if len(properties) > 0:
-            if TTL_LOGARITHMIC in properties:
+            if _has_property(properties, TTL_LOGARITHMIC):
                 self.is_logarithmic = True
-            if TTL_TRIGGER in properties:
+            if _has_property(properties, TTL_TRIGGER):
                 self.type = Type.TRIGGER
-            elif TTL_ENUMERATION in properties:
+            elif _has_property(properties, TTL_ENUMERATION):
                 self.enum_values = plugin_info.get("scalePoints") or []
                 self.type = Type.ENUMERATION
-            elif TTL_INTEGER in properties:
+            elif _has_property(properties, TTL_INTEGER):
                 self.type = Type.INTEGER
-            elif TTL_LOGARITHMIC in properties:
+            elif _has_property(properties, TTL_LOGARITHMIC):
                 self.type = Type.LOGARITHMIC
-            elif TTL_TAPTEMPO in properties:
+            elif _has_property(properties, TTL_TAPTEMPO):
                 self.type = Type.TAPTEMPO
-            elif TTL_TOGGLED in properties:
+            elif _has_property(properties, TTL_TOGGLED):
                 self.type = Type.TOGGLED
 
     @property
