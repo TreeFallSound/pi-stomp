@@ -135,12 +135,29 @@ from pathlib import Path
 STARTUP_REST_BACKOFF_S = (0.25, 0.25, 0.5, 1.0, 2.0)
 
 
-def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
+def _remove_binding_row(
+    layer: ContextLayer,
+    binding_id: str,
+    instance_id: str | None = None,
+    symbol: Symbol | None = None,
+) -> None:
     # Drop any PEDALBOARD-layer row whose control.id matches a learned binding
     # that's being replaced. Scans all event_kind buckets since a re-learn could
-    # cross controller classes (footswitch ↔ encoder).
-    for (cls, event_kind), rows in list(layer.rows.items()):
-        layer.rows[(cls, event_kind)] = [d for d in rows if d.control.id != binding_id]
+    # cross controller classes (footswitch ↔ encoder). When the param being
+    # rebound is known, keep rows at the same CC that target a *different*
+    # plugin/param, so two instances sharing one CC never evict each other.
+    def _keep(d: BindingDecl) -> bool:
+        if d.control.id != binding_id:
+            return True
+        if instance_id is not None and symbol is not None:
+            eff = d.effects[0] if d.effects else None
+            if isinstance(eff, ParamEffect) and (
+                getattr(eff.plugin, "instance_id", None) != instance_id or eff.symbol != symbol
+            ):
+                return True
+        return False
+
+    layer.remove(lambda d: not _keep(d))
 
 
 class LongpressCcKey(namedtuple("LongpressCcKey", ["channel", "cc"])):
@@ -535,21 +552,30 @@ class Modhandler(Handler):
                         if controller.parameter is not None:
                             controller.parameter.preview(controller.value_for(controller.toggled))
                         self.update_lcd_fs(footswitch=controller)
-                case ParamEffect():
-                    # Footswitch PRESS with a bound plugin param. "on" polarity
-                    # differs by param: :bypass "on" is not-bypassed (0), a plain
-                    # toggle "on" is the max end — value_for encodes both, the
-                    # inverse of Footswitch.set_value. The MIDI CC carries the
-                    # change to mod-host.
+                case ParamEffect(plugin=eff_plugin, symbol=eff_symbol):
+                    # Resolve the param from the row's own effect, not
+                    # fs.parameter, so two instances sharing a CC stay distinct.
                     if fs is not None:
-                        new_toggled = not fs.toggled
-                        fs.toggled = new_toggled
-                        fs.set_led(new_toggled)
-                        if fs.midi_CC is not None:
-                            self._emit_midi(fs, 127 if new_toggled else 0)
-                        if fs.parameter is not None:
-                            fs.parameter.preview(fs.value_for(new_toggled))
-                        self.update_lcd_fs(footswitch=fs)
+                        params = getattr(eff_plugin, "parameters", None)
+                        param = params.get(eff_symbol) if params else None
+                        if param is not None and param.is_momentary:
+                            # pprops:trigger (advance): one-shot edge, not a
+                            # toggle — the plugin self-clears the port.
+                            param.pulse(self._sink_for(param, fs))
+                            self.update_lcd_fs(footswitch=fs)
+                        else:
+                            # Absolute toggle (:bypass, plain toggled params): "on"
+                            # polarity differs by param — value_for encodes both,
+                            # the inverse of Footswitch.set_value. The MIDI CC
+                            # carries the change to mod-host.
+                            new_toggled = not fs.toggled
+                            fs.toggled = new_toggled
+                            fs.set_led(new_toggled)
+                            if fs.midi_CC is not None:
+                                self._emit_midi(fs, 127 if new_toggled else 0)
+                            if param is not None:
+                                param.preview(fs.value_for(new_toggled))
+                            self.update_lcd_fs(footswitch=fs)
                 case RelayEffect():
                     if fs is not None:
                         new_toggled = not fs.toggled
@@ -558,9 +584,16 @@ class Modhandler(Handler):
                         fs.set_led(new_toggled)
                         self.update_lcd_fs(bypass_change=True)
                 case RawMidiCcEffect(channel=ch, cc=cc):
-                    key = LongpressCcKey(channel=ch, cc=cc)
-                    on = self._longpress_cc_state[key] = not self._longpress_cc_state.get(key, False)
-                    self._emit_raw_cc(ch, cc, 127 if on else 0)
+                    if self._raw_cc_targets_momentary(ch, cc):
+                        # Longpress mapped to a pprops:trigger port (loopjefe
+                        # reset): a rising-edge one-shot, 127 on every press —
+                        # mirroring the short-press momentary path, no 127/0
+                        # toggle. mod-ui's echo reconciles the learned plugin.
+                        self._emit_raw_cc(ch, cc, 127)
+                    else:
+                        key = LongpressCcKey(channel=ch, cc=cc)
+                        on = self._longpress_cc_state[key] = not self._longpress_cc_state.get(key, False)
+                        self._emit_raw_cc(ch, cc, 127 if on else 0)
                 case PedalboardEffect(direction=direction):
                     if direction == "DOWN":
                         self.previous_pedalboard()
@@ -572,6 +605,22 @@ class Modhandler(Handler):
         """Send a CC with no owning controller, bypassing _emit_midi's
         controller.midi_CC guard; virtual out only."""
         self.hardware.midiout.send_message([channel | CONTROL_CHANGE, cc, int(value)])
+
+    def _raw_cc_targets_momentary(self, channel: int, cc: int) -> bool:
+        """True when a loaded plugin parameter is MIDI-bound to (channel, cc)
+        and is a momentary pprops:trigger port. Longpress raw-CC actions default
+        to a 127/0 toggle, but a trigger target (e.g. loopjefe reset) needs a
+        one-shot rising edge, mirroring the short-press momentary path."""
+        if self._current is None:
+            return False
+        binding = f"{channel}:{cc}"
+        for plugin in self.current.pedalboard.plugins:
+            if plugin.parameters is None:
+                continue
+            for param in plugin.parameters.values():
+                if param.binding == binding and param.is_momentary:
+                    return True
+        return False
 
     def _emit_midi(self, controller, midi_value: int) -> None:
         """Send a CC. Tries the external port if routed; falls back to virtual."""
@@ -1389,6 +1438,10 @@ class Modhandler(Handler):
             enc = enc if isinstance(enc, EncoderController) else None
         if enc is not None and enc.midi_CC is not None:
             return functools.partial(self._publish_cc, enc)
+        if isinstance(controller, Footswitch) and controller.midi_CC is not None:
+            # A footswitch rides its own CC (pulse for a trigger, toggle
+            # otherwise), not the param_set an unheld param takes.
+            return functools.partial(self._publish_fs_cc, controller)
         if param.instance_id in (ExternalMidi.EXTERNAL_INSTANCE_ID, Pedalboard.TRANSPORT_INSTANCE_ID):
             return None
         return self._publish_plugin_param
@@ -1405,6 +1458,16 @@ class Modhandler(Handler):
     def _publish_cc(self, controller: EncoderController, param: Parameter) -> bool:
         """Publish the parameter (to MOD-UI or anything else) via MIDI CC."""
         self._emit_midi(controller, controller.to_midi(param.value))
+        return True
+
+    def _publish_fs_cc(self, fs: Footswitch, param: Parameter) -> bool:
+        """Emit a footswitch-bound param as its binary CC: the "on" edge (max)
+        sends 127, rest 0. A trigger pulse holds max for the send, so it fires
+        one 127 then self-clears."""
+        if fs.midi_CC is None:
+            return False
+        hi = param.maximum if param.maximum is not None else 1.0
+        self._emit_midi(fs, 127 if param.value >= hi else 0)
         return True
 
     def _publish_plugin_param(self, param: Parameter) -> bool:
@@ -1424,11 +1487,19 @@ class Modhandler(Handler):
     ) -> None:
         layer = self._controller_manager.effective_table.layers[0]
         if old_binding is not None:
-            _remove_binding_row(layer, old_binding)
+            _remove_binding_row(layer, old_binding, plugin.instance_id, param.symbol)
         if controller is None:
             return
         if isinstance(controller, Footswitch):
             cls, event_kind = ControlClass.FOOTSWITCH, EventKind.PRESS
+            # Drop the bare CC-toggle PRESS row _bind_footswitch_actions added
+            # at this key; inserted first, it would shadow this ParamEffect.
+            assert param.binding is not None
+            layer.remove(
+                lambda d: d.control.id == param.binding
+                and bool(d.effects)
+                and isinstance(d.effects[0], MidiCcEffect)
+            )
         else:
             cls, event_kind = ControlClass.ANALOG, EventKind.ROTATE
         assert param.binding is not None

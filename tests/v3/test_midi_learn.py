@@ -354,6 +354,73 @@ class TestMidiLearnBindsMomentaryAndOutputs:
             "port type, with zero loopjefe-specific input code"
         )
 
+    def test_momentary_press_emits_one_shot_127_every_press(
+        self, v3_system: SystemFixture, make_parameter
+    ):
+        """A pprops:trigger port fires on a rising edge only (loopjefe self-
+        clears the port). So every short-press must emit a fresh 127 — never
+        the 127/0 alternation a latching toggle produces, which would make the
+        looper advance on only every other press."""
+        from rtmidi.midiconstants import CONTROL_CHANGE
+        from pistomp.input.event import SwitchEvent, SwitchEventKind
+
+        handler = v3_system.handler
+        hw = v3_system.hw
+        ws_bridge = v3_system.ws_bridge
+        assert handler.current
+
+        fs0 = hw.footswitches[0]
+        channel, cc = _binding_for(hw, fs0).split(":")
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        handler.current.pedalboard.plugins = [plugin]
+        ws_bridge.inject(f"midi_map /graph/loopjefe advance {channel} {cc} 0.0 1.0")
+        handler.poll_ws_messages()
+
+        hw.midiout.send_message.reset_mock()
+        for _ in range(3):
+            handler.handle(SwitchEvent(controller=fs0, kind=SwitchEventKind.PRESS, timestamp=1.0))
+
+        sent = [c.args[0][2] for c in hw.midiout.send_message.call_args_list]
+        assert sent == [127, 127, 127], "momentary trigger must one-shot 127, not toggle 127/0"
+        assert all(c.args[0][1] == int(cc) for c in hw.midiout.send_message.call_args_list)
+        assert fs0.toggled is False, "a trigger has no on/off state to latch"
+
+    def test_momentary_longpress_reset_emits_one_shot_127(
+        self, v3_system: SystemFixture, make_parameter
+    ):
+        """A longpress raw-CC mapped to a pprops:trigger port (loopjefe reset)
+        is a one-shot too: every longpress emits 127, not the 127/0 toggle the
+        raw-CC path uses for ordinary (non-trigger) targets."""
+        from rtmidi.midiconstants import CONTROL_CHANGE
+        from common.parameter import Type
+        from pistomp.input.event import SwitchEvent, SwitchEventKind
+
+        handler = v3_system.handler
+        hw = v3_system.hw
+        assert handler.current
+
+        fs0 = hw.footswitches[0]
+        reset_cc = 64
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        reset = make_parameter("reset", "loopjefe", value=0.0)
+        reset.type = Type.TRIGGER  # pprops:trigger in loopjefe.ttl
+        reset.binding = f"{fs0.midi_channel}:{reset_cc}"  # pedalboard-learned CC
+        plugin.parameters[Symbol("reset")] = reset
+        handler.current.pedalboard.plugins = [plugin]
+
+        fs0.longpress_action = {"midi_CC": reset_cc}
+        handler.bind_current_pedalboard()
+
+        hw.midiout.send_message.reset_mock()
+        event = SwitchEvent(controller=fs0, kind=SwitchEventKind.LONGPRESS, timestamp=1.0)
+        for _ in range(3):
+            handler.handle(event)
+
+        expected = [fs0.midi_channel | CONTROL_CHANGE, reset_cc, 127]
+        assert all(c.args[0] == expected for c in hw.midiout.send_message.call_args_list), (
+            "reset is pprops:trigger — every longpress must emit 127, not toggle 127/0"
+        )
+
     def test_update_interesting_outputs_derives_from_plugin_led_spec(
         self, v3_system: SystemFixture, make_parameter
     ):

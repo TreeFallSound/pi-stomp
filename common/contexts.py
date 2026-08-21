@@ -212,6 +212,12 @@ class ContextLayer:
         key = (decl.control.cls, decl.event_kind)
         self.rows.setdefault(key, []).append(decl)
 
+    def remove(self, should_drop: Callable[[BindingDecl], bool]) -> None:
+        """Drop every row for which *should_drop* is true, across all buckets —
+        the mutation counterpart to add(), so callers never touch `rows`."""
+        for key, rows in list(self.rows.items()):
+            self.rows[key] = [d for d in rows if not should_drop(d)]
+
 
 # Per-class chain: which ContextKinds are consulted, top (highest precedence)
 # to bottom, for a given ControlClass. NAV is intentionally absent — it is an

@@ -226,6 +226,16 @@ class Parameter:
             return
         self._notify_settled()
 
+    def pulse(self, sink: ParamSink | None) -> None:
+        """A self-clearing trigger edge (pprops:trigger): drive to the "on" edge,
+        publish it once through *sink*, then clear to rest — persists no value
+        and never reverts, so each press is a fresh rising edge."""
+        self._set(self.maximum)
+        if sink is not None:
+            sink(self)
+        self._set(self.minimum)
+        self._notify_settled()
+
     def _set(self, value: float) -> None:
         if value == self._value:
             return
