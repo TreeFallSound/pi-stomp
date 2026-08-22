@@ -47,6 +47,71 @@ MidiCC = Annotated[int, Meta(ge=0, le=127)]
 MidiChannel = Annotated[int, Meta(ge=0, le=15)]
 FileMidiChannel = Annotated[int, Meta(ge=1, le=16)]
 
+
+FootswitchDisable = Annotated[
+    bool | None | UnsetType, Meta(description="Disable this footswitch entirely or per-pedalboard (disabled=True)")
+]
+
+FootswitchMidiPort = Annotated[
+    str | None | UnsetType,
+    Meta(
+        description=(
+            "Send MIDI to this external port instead of the virtual MIDI Through port; "
+            "falls back to virtual if the device is unavailable (must match a port in external_midi)"
+        )
+    ),
+]
+
+FootswitchMidiChannel = Annotated[
+    MidiChannel | None | UnsetType,
+    Meta(
+        description=(
+            "Override MIDI channel for this footswitch; required when midi_port is set, "
+            "since external devices rarely share the hardware default channel"
+        )
+    ),
+]
+
+AnalogMidiPort = Annotated[
+    str | None | UnsetType,
+    Meta(
+        description=(
+            "Send MIDI to this external port instead of the virtual MIDI Through port; "
+            "falls back to virtual if the device is unavailable (must match a port in external_midi)"
+        )
+    ),
+]
+
+AnalogMidiChannel = Annotated[
+    MidiChannel | None | UnsetType,
+    Meta(
+        description=(
+            "Override MIDI channel for this controller; required when midi_port is set, "
+            "since external devices rarely share the hardware default channel"
+        )
+    ),
+]
+
+EncoderMidiPort = Annotated[
+    str | None | UnsetType,
+    Meta(
+        description=(
+            "Send MIDI to this external port instead of the virtual MIDI Through port; "
+            "falls back to virtual if the device is unavailable (must be the device name)"
+        )
+    ),
+]
+
+EncoderMidiChannel = Annotated[
+    MidiChannel | None | UnsetType,
+    Meta(
+        description=(
+            "Override MIDI channel for this encoder; required when midi_port is set, "
+            "since external devices rarely share the hardware default channel"
+        )
+    ),
+]
+
 NoneToken = Literal["None"]
 Step = Literal["UP", "DOWN"]
 BypassMode = Literal["LEFT", "RIGHT", "LEFT_RIGHT"]
@@ -96,13 +161,13 @@ class FootswitchEntry(Struct, frozen=True, forbid_unknown_fields=True):
     ledstrip_position: int | None | UnsetType = UNSET
     tap_tempo: TapTempoAction | None | UnsetType = UNSET
     midi_CC: MidiCC | NoneToken | None | UnsetType = UNSET
-    midi_channel: MidiChannel | None | UnsetType = UNSET
-    midi_port: str | None | UnsetType = UNSET
+    midi_channel: FootswitchMidiChannel = UNSET
+    midi_port: FootswitchMidiPort = UNSET
     longpress: Longpress | None | UnsetType = UNSET
     preset: int | Step | None | UnsetType = UNSET
     bypass: BypassMode | None | UnsetType = UNSET
     color: str | None | UnsetType = UNSET
-    disable: bool | None | UnsetType = UNSET
+    disable: FootswitchDisable = UNSET
 
     def __post_init__(self) -> None:
         _check_routing(self.midi_port, self.midi_channel)
@@ -112,8 +177,8 @@ class EncoderEntry(Struct, frozen=True, forbid_unknown_fields=True):
     id: int
     type: EncoderType | None | UnsetType = UNSET
     midi_CC: MidiCC | NoneToken | None | UnsetType = UNSET
-    midi_channel: MidiChannel | None | UnsetType = UNSET
-    midi_port: str | None | UnsetType = UNSET
+    midi_channel: EncoderMidiChannel = UNSET
+    midi_port: EncoderMidiPort = UNSET
     longpress: str | None | UnsetType = UNSET
     disable: bool | None | UnsetType = UNSET
 
@@ -128,8 +193,8 @@ class AnalogEntry(Struct, frozen=True, forbid_unknown_fields=True):
     threshold: Annotated[int, Meta(ge=0, le=127)] | None | UnsetType = UNSET
     autosync: bool | None | UnsetType = UNSET
     midi_CC: MidiCC | NoneToken | None | UnsetType = UNSET
-    midi_channel: MidiChannel | None | UnsetType = UNSET
-    midi_port: str | None | UnsetType = UNSET
+    midi_channel: AnalogMidiChannel = UNSET
+    midi_port: AnalogMidiPort = UNSET
     disable: bool | None | UnsetType = UNSET
 
     def __post_init__(self) -> None:
@@ -220,9 +285,7 @@ def _hardware(doc: ConfigDocument | None) -> HardwareSection | UnsetType:
     return doc.hardware if doc is not None else UNSET
 
 
-def _merged_external_midi(
-    base: HardwareSection | UnsetType, over: HardwareSection | UnsetType
-) -> ExternalMidiSection:
+def _merged_external_midi(base: HardwareSection | UnsetType, over: HardwareSection | UnsetType) -> ExternalMidiSection:
     if over is not UNSET and over.external_midi is None:
         return ExternalMidiSection()
     sections = [s.external_midi for s in (base, over) if s is not UNSET]
