@@ -3,6 +3,7 @@
 import pistomp.config as config
 from pistomp.config.adapt_v1 import adapt
 from pistomp.config.schema_v1 import merge
+from pistomp.controller import ControlType
 from tests.types import SystemFixture
 from common.parameter import Parameter, PortInfo, Symbol
 
@@ -66,6 +67,19 @@ def test_pedalboard_that_clears_the_section_restores_the_base(v3_system: SystemF
     assert "previous_snapshot" in hw.footswitches[0].longpress_groups
     assert hw.footswitches[0].lcd_color is None
     assert hw.footswitches[0].midi_CC is not None
+
+
+def test_nav_encoder_takes_no_config(v3_system: SystemFixture):
+    """`id` is a screen position, so a config entry can name the same number as
+    the NAV encoder. NAV is excluded by type, not by id."""
+    hw = v3_system.hw
+    nav = next(e for e in hw.encoders if e.type is ControlType.NAV)
+    nav.id = 1
+
+    hw.reinit(adapt(merge(hw.default_cfg)))
+
+    assert nav.type is ControlType.NAV
+    assert nav.midi_CC is None
 
 
 def test_footswitch_unmentioned_keeps_default_longpress(v3_system: SystemFixture):

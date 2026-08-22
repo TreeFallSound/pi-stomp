@@ -70,6 +70,13 @@ def test_entry_without_id_rejected():
         _parse({"hardware": {"footswitches": [{"midi_CC": 60}]}})
 
 
+def test_encoder_id_zero_rejected():
+    """Encoder 0 is the NAV encoder. No config may bind it."""
+    with pytest.raises(ConfigError):
+        _parse({"hardware": {"encoders": [{"id": 0, "midi_CC": 70}]}})
+    _parse({"hardware": {"encoders": [{"id": 1, "midi_CC": 70}]}})
+
+
 def test_midi_cc_out_of_range_rejected():
     with pytest.raises(ConfigError):
         _parse({"hardware": {"footswitches": [{"id": 0, "midi_CC": 200}]}})

@@ -174,7 +174,7 @@ class FootswitchEntry(Struct, frozen=True, forbid_unknown_fields=True):
 
 
 class EncoderEntry(Struct, frozen=True, forbid_unknown_fields=True):
-    id: int
+    id: Annotated[int, Meta(ge=1, description="Encoder id. 0 is the NAV encoder, which no config can bind")]
     type: EncoderType | None | UnsetType = UNSET
     midi_CC: MidiCC | NoneToken | None | UnsetType = UNSET
     midi_channel: EncoderMidiChannel = UNSET

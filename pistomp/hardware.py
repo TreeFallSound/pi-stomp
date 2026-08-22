@@ -31,7 +31,7 @@ import pistomp.taptempo as taptempo
 from abc import ABC, abstractmethod
 from modalapi.external_midi import ExternalMidiManager, EXTERNAL_INSTANCE_ID
 from pistomp.input.sink import InputSink
-from pistomp.controller import Controller, RoutingInfo
+from pistomp.controller import ControlType, Controller, RoutingInfo
 from pistomp.config.model import (
     AnalogBinding,
     EncoderBinding,
@@ -58,8 +58,6 @@ class Hardware(ABC):
         self.default_cfg: ConfigDocument = default_config
         self.config = config.resolve(default_config)
         self.base_config = self.config
-        self.version = self.config.version
-        self.midi_channel = self.config.midi_channel
 
         # Standard hardware objects (not required to exist)
         self.relay: Relay.Relay | None = None
@@ -76,6 +74,14 @@ class Hardware(ABC):
         # Rebuilt every reinit. Identity-keyed; controllers are stable across
         # reinit (mutated in place).
         self.external_routing: dict[Controller, RoutingInfo] = {}
+
+    @property
+    def version(self) -> float:
+        return self.config.version
+
+    @property
+    def midi_channel(self) -> int:
+        return self.config.midi_channel
 
     def register_sink(self, sink: InputSink) -> None:
         """Assign `sink` as the default dispatch target for every controller
@@ -146,7 +152,6 @@ class Hardware(ABC):
 
     def reinit(self, config: PedalboardConfig) -> None:
         self.config = config
-        self.midi_channel = config.midi_channel
         self.external_routing.clear()
         self.controllers.clear()
         self.handler.chord_helper.rebuild(self.handler.callbacks)
@@ -163,6 +168,8 @@ class Hardware(ABC):
             self.handler.chord_helper.register(fs)
 
         for enc in self.encoders:
+            if enc.type is ControlType.NAV:
+                continue  # NAV takes no config; its id is a screen position
             binding = self.__binding(config.encoder, self.base_config.encoder, enc.id)
             if binding is not None:
                 self.__apply_encoder(enc, binding)

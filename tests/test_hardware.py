@@ -23,7 +23,7 @@ class _Ctl:
 
 
 class _StubHardware(Hardware):
-    """Concrete subclass so object.__new__ works (Hardware is abstract)."""
+    """Concrete subclass; the hardware init hooks do nothing."""
 
     def init_analog_controls(self): ...
     def init_encoders(self): ...
@@ -65,19 +65,16 @@ def routed_hw(monkeypatch):
     mock_out.get_ports.return_value = ["My MIDI Device"]
     monkeypatch.setattr("modalapi.external_midi.rtmidi.MidiOut", lambda *a, **k: mock_out)
 
-    hw = object.__new__(_StubHardware)
-    hw.midiout = MagicMock(name="virtual")
+    hw = _StubHardware(
+        parse(DEFAULT_CFG, "<test>"), handler=MagicMock(), midiout=MagicMock(name="virtual"),
+        refresh_callback=lambda **k: None,
+    )
     hw.external_midi = ExternalMidiManager()
     hw.external_midi.update_config({"enabled": True})
-    hw.handler = MagicMock()
-    hw.relay = None
 
     hw.encoders = [EncoderController(d_pin=None, clk_pin=None, midi_CC=70, midi_channel=13, id=1)]
     hw.analog_controls = [AnalogMidiControl(None, 0, 16, 75, 13, ControlType.KNOB, id=2)]
     hw.footswitches = [Footswitch(0, None, None, 60, 13, refresh_callback=lambda **k: None)]
-    hw.controllers = {}
-    hw.external_routing = {}
-    hw.base_config = _resolved()
     return hw
 
 
