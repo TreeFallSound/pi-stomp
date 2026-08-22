@@ -162,4 +162,4 @@ def test_explicit_null_clears_overlay_sections():
     assert effective.analog_controls == ()
     assert effective.external_midi.get("enabled") is False
     assert effective.external_midi.get("messages") == {}
-    assert effective.blend_snapshots == []
+    assert effective.blend_snapshots == ()

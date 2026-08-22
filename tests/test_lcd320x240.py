@@ -29,7 +29,7 @@ from pistomp.footswitch import Footswitch
 from pistomp.lcd320x240 import Lcd
 from pistomp.taptempo import TapTempo
 import common.token as Token
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from uilib.misc import InputEvent
 from modalapi.connections import Connection, Endpoint, EndpointKind
 from modalapi.pedalboard import Pedalboard

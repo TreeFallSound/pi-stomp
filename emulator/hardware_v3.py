@@ -21,7 +21,7 @@ Matches pi-Stomp Tre (Pistomptre): one nav encoder, two tweak encoders,
 one volume encoder, four footswitches, expression pedal.
 """
 
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 
 from emulator.hardware_base import EmulatorHardwareBase
 from emulator.controls import MockEncoder, MockEncoderMidi

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from modalapi.external_midi import ExternalMidiManager
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encoder_controller import EncoderController
@@ -77,6 +77,7 @@ def routed_hw(monkeypatch):
     hw.footswitches = [Footswitch(0, None, None, 60, 13, refresh_callback=lambda **k: None)]
     hw.controllers = {}
     hw.external_routing = {}
+    hw.base_config = _resolved()
     return hw
 
 

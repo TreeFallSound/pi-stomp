@@ -99,7 +99,7 @@ from modalapi.ws_protocol import (
 )
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 import pistomp.config as config
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from modalapi.version_check import DpkgDriftCheck
 
 from pistomp.controller_manager import ControllerManager
@@ -1178,7 +1178,7 @@ class Modhandler(Handler):
             snapshot_indices = SnapshotManager.sync_blend_snapshots(bundle_path, blend_configs, self.root_uri)
 
             # Create and prepare BlendMode instances for each blend snapshot
-            from blend import BlendMode
+            from blend.manager import BlendMode
 
             for blend_cfg in blend_configs:
                 snapshot_name = blend_cfg.get("name")
@@ -1256,9 +1256,6 @@ class Modhandler(Handler):
         if self._is_pedalboard_loading or self.ws_bridge is None or param.instance_id is None:
             return False
         return self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
-
-    def _track_controller_binding(self, controller: Controller, plugin: Plugin) -> None:
-        self._controller_manager.track_binding(controller, plugin)
 
     def _rebind_pedalboard(self) -> None:
         self._controller_manager.bind(self._current)

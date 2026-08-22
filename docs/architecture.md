@@ -142,8 +142,10 @@ Per-pedalboard config ({bundle}/config.yml)
 
 `Hardware.reinit(PedalboardConfig)` applies the resolved config: MIDI routing,
 footswitch profiles, encoder type/longpress, external MIDI. It does not merge layers.
-`ControllerManager.bind(current)` creates a `PedalboardActivation` that owns all
-controller–parameter subscriptions for the board; `current.close()` tears them down.
+A control that the resolved config does not name falls back to its base-config
+binding, so no state of the pedalboard before it can survive.
+`ControllerManager.bind(current)` builds the controller–parameter subscriptions onto
+the `Current`, which owns them; `current.close()` releases them.
 
 ### Config package layers
 
@@ -413,9 +415,8 @@ reads the ADC and sends current position on pedalboard load.
 **Config & State**
 - `pistomp/config/schema_v1.py` — Parse and validate YAML; defines the file-format struct types
 - `pistomp/config/adapt_v1.py` — Convert file-format types to model types; apply built-in defaults
-- `pistomp/config/model.py` — Frozen domain types the application reads (`ControlType`, `LongpressAction`, `FootswitchBinding`, etc.)
+- `pistomp/config/model.py` — Frozen domain types the application reads (`LongpressAction`, `FootswitchBinding`, etc.)
 - `pistomp/config/__init__.py` — `resolve()` entry point; `load_cfg_from_file()`
-- `pistomp/pedalboard_activation.py` — Board-scoped controller subscriptions and routing entries; owns its own teardown
 - `pistomp/settings.py` — Persistent YAML key-value store
 
 **Display**

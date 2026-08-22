@@ -24,7 +24,7 @@ from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Optional
 from common.fonts import font_path
 import common.token as Token
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 import common.util as util
 from common.contexts import BindingDecl, ControlClass, EventKind, MidiCcEffect, ParamEffect, ShadowState
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, Type

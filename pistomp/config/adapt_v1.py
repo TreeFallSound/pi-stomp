@@ -70,8 +70,10 @@ def _midi_cc(value: int | str | None | UnsetType) -> int | None:
 def _longpress(value: v1.Longpress | None | UnsetType) -> LongpressSpec | None:
     if value is UNSET or value is None:
         return None
-    if not isinstance(value, v1.LongpressMapping):
-        return value  # str or list[str]
+    if isinstance(value, str):
+        return (value,)  # one action name; a chord is a list
+    if isinstance(value, list):
+        return tuple(value)
     if value.midi_CC is not UNSET:
         return LongpressMidiCC(cc=value.midi_CC)
     if value.preset is not UNSET and value.preset is not None:
@@ -150,7 +152,7 @@ def adapt(document: v1.MergedDocument) -> PedalboardConfig:
         version=_value(document.version, 0.0),
         midi_channel=midi_channel,
         external_midi=_external_midi(document.external_midi),
-        blend_snapshots=document.blend_snapshots,
+        blend_snapshots=tuple(document.blend_snapshots),
         footswitches=tuple(_footswitch(e, midi_channel) for e in document.footswitches),
         encoders=tuple(_encoder(e, midi_channel) for e in document.encoders),
         analog_controls=tuple(_analog_control(e, midi_channel) for e in document.analog_controllers),

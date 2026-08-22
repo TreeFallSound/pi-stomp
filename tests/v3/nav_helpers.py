@@ -4,7 +4,7 @@ shims so tests exercise the same ``handler.handle`` cascade the device uses."""
 
 import time
 
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from pistomp.input.event import EncoderEvent, SwitchEvent, SwitchEventKind
 
 

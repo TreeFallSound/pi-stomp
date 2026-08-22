@@ -24,25 +24,18 @@ from one schema version, so a new file format changes the adapter only.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TypeAlias
 
 from blend.types import BlendSnapshotConfig
 from modalapi.external_midi import ExternalMidiConfig
+from pistomp.controller import ControlType
 
 
 class PresetStep(StrEnum):
     UP = "UP"
     DOWN = "DOWN"
-
-
-class ControlType(StrEnum):
-    KNOB = "KNOB"
-    EXPRESSION = "EXPRESSION"
-    VOLUME = "VOLUME"
-    NAV = "nav"
 
 
 PresetAction: TypeAlias = PresetStep | int
@@ -53,15 +46,8 @@ PresetAction: TypeAlias = PresetStep | int
 MINUS = "−"
 
 
-class LongpressAction:
-    """Base for mapping-form longpress — exactly one variant instantiated."""
-
-    def label(self) -> str:
-        raise RuntimeError(f"Unknown LongpressAction class: {type(self)!r}")
-
-
 @dataclass(frozen=True)
-class LongpressMidiCC(LongpressAction):
+class LongpressMidiCC:
     cc: int
 
     def label(self) -> str:
@@ -69,7 +55,7 @@ class LongpressMidiCC(LongpressAction):
 
 
 @dataclass(frozen=True)
-class LongpressPreset(LongpressAction):
+class LongpressPreset:
     preset: PresetAction
 
     def label(self) -> str:
@@ -83,13 +69,16 @@ class LongpressPreset(LongpressAction):
 
 
 @dataclass(frozen=True)
-class LongpressBoard(LongpressAction):
+class LongpressBoard:
     direction: str
 
     def label(self) -> str:
         return "Pedalboard +" if self.direction == PresetStep.UP else f"Pedalboard {MINUS}"
 
-LongpressSpec: TypeAlias = str | Sequence[str] | LongpressAction
+
+# The mapping form of longpress. The chord form is a tuple of action names.
+LongpressAction: TypeAlias = LongpressMidiCC | LongpressPreset | LongpressBoard
+LongpressSpec: TypeAlias = tuple[str, ...] | LongpressAction
 
 
 @dataclass(frozen=True)
@@ -140,7 +129,7 @@ class PedalboardConfig:
     version: float
     midi_channel: int
     external_midi: ExternalMidiConfig
-    blend_snapshots: list[BlendSnapshotConfig]
+    blend_snapshots: tuple[BlendSnapshotConfig, ...]
     footswitches: tuple[FootswitchBinding, ...]
     encoders: tuple[EncoderBinding, ...]
     analog_controls: tuple[AnalogBinding, ...]

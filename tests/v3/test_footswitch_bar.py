@@ -38,6 +38,15 @@ def test_rows_from_bindings_chords_and_solo():
     ]
 
 
+def test_rows_from_bindings_multi_action_longpress():
+    """The adapter turns both file spellings — one name, or a list — into a tuple."""
+    entries = [{"id": 0, "longpress": ["toggle_bypass", "toggle_tuner_enable"]}, {"id": 1, "longpress": "toggle_bypass"}]
+    assert _rows_from_bindings(_bindings(entries), {0: "A", 1: "B"}) == [
+        ("A", "Tuner"),
+        ("A+B", "Toggle Bypass"),
+    ]
+
+
 def test_rows_from_bindings_skips_entries_without_longpress():
     id_to_letter = {0: "A", 1: "B"}
     entries = [{"id": 0, "midi_CC": 60}, {"id": 1, "longpress": "next_snapshot"}]

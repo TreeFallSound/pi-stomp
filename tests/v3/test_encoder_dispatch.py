@@ -18,7 +18,7 @@ seam (``lcd.handle`` consuming ids 1-3) is pinned by ``test_graphic_eq_panel``.
 from typing import cast
 from unittest.mock import MagicMock
 
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from common.contexts import (
     BindingDecl,
     ContextKind,

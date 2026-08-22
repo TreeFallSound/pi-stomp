@@ -23,7 +23,7 @@
 #
 # A new version with different controls should have a new separate subclass
 
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 import pistomp.encoder_controller as EncoderController
 import pistomp.hardware as hardware
 import pistomp.relay as Relay

@@ -50,76 +50,42 @@ from pistomp.config.model import (
 from common.parameter import Parameter, PortInfo, Symbol, TTL_INTEGER
 from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 from pistomp.analogmidicontrol import AnalogMidiControl
-from pistomp.controller import AnalogDisplayInfo, Controller
+from pistomp.controller import AnalogDisplayInfo
 from pistomp.current import Current
 from pistomp.encoder_controller import ENCODER_FALLBACK_DEFAULT, EncoderController
 from pistomp.footswitch import Footswitch
-from pistomp.pedalboard_activation import PedalboardActivation
 
 if TYPE_CHECKING:
     from pistomp.hardware import Hardware
 
 
 class ControllerManager:
-    """
-    Manages controller/parameter bindings on the current pedalboard,
-    overlaying per-pedalboard config on top of the base.
-    """
+    """Build the runtime bindings of the active pedalboard: the per-pedalboard
+    config over the base config."""
 
     def __init__(self, hardware: "Hardware"):
         self._hw = hardware
-        self._activation: PedalboardActivation | None = None
         self.effective_table = ContextStack(layers=[])
 
     def bind(self, current: Current | None) -> None:
         """Create the runtime associations for the active pedalboard."""
+        self.effective_table = ContextStack(layers=[])
         if current is None:
-            self.close()
             return
 
-        if current.activation is not None:
-            current.activation.close()
-        self.close()
-        activation = PedalboardActivation(current.pedalboard, self._hw.config)
-        self._activation = activation
-        current.activation = activation
-        current.analog_controllers = {}
-        pedalboard_layer = ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD))
+        current.close()
+        layer = ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD))
 
         if current.pedalboard:
-            self._bind_plugin_parameters(current, pedalboard_layer)
+            self._bind_plugin_parameters(current, layer)
             self._bind_volume_encoders(current)
 
-        self._bind_external_controllers(current, pedalboard_layer)
-        self._bind_encoder_longpress(pedalboard_layer)
-        self._bind_footswitch_actions(pedalboard_layer)
-        self.effective_table = ContextStack(layers=[pedalboard_layer])
-        activation.effective_table = self.effective_table
+        self._bind_external_controllers(current, layer)
+        self._bind_encoder_longpress(layer)
+        self._bind_footswitch_actions(layer)
+        self.effective_table = ContextStack(layers=[layer])
 
-    def close(self) -> None:
-        if self._activation is not None:
-            self._activation.close()
-            self._activation = None
-        self.effective_table = ContextStack(layers=[])
-
-    def track_binding(self, controller: Controller, plugin: object | None = None) -> None:
-        """Track a live binding created after the initial board activation."""
-        if self._activation is None:
-            return
-        if plugin is None:
-            self._activation.track_controller(controller)
-        else:
-            self._activation.track_plugin_binding(plugin, controller)
-
-    def _bind_controller(self, controller: Controller, parameter: Parameter) -> None:
-        assert self._activation is not None
-        self._activation.bind(controller, parameter)
-
-    def _attach_controller(self, controller: Controller, parameter: Parameter) -> None:
-        assert self._activation is not None
-        self._activation.attach(controller, parameter)
-
-    def _bind_plugin_parameters(self, current, pedalboard_layer: ContextLayer) -> None:
+    def _bind_plugin_parameters(self, current: Current, pedalboard_layer: ContextLayer) -> None:
         """Bind controllers referenced by plugin parameters."""
         # The transport pseudo-plugin carries :bpm/:bpb/:rolling; it's not in
         # pedalboard.plugins (the effect-graph render) but its bindings route
@@ -155,9 +121,9 @@ class ControllerManager:
                     )
                     continue
 
-                self._bind_controller(controller, param)
+                current.bind(controller, param)
                 plugin.controllers.append(controller)
-                self.track_binding(controller, plugin)
+                current.track_plugin_binding(plugin, controller)
 
                 if isinstance(controller, Footswitch):
                     plugin.has_footswitch = True
@@ -189,14 +155,14 @@ class ControllerManager:
                     )
                 )
 
-    def _bind_volume_encoders(self, current) -> None:
+    def _bind_volume_encoders(self, current: Current) -> None:
         """Surface VOLUME-type encoders in the assignment display (v3 only in
         practice — v1 has no VOLUME-typed encoder)."""
         for e in self._hw.encoders:
             if e.type == ControlType.VOLUME:
                 current.analog_controllers[ControlType.VOLUME] = e.get_display_info()
 
-    def _bind_external_controllers(self, current, pedalboard_layer: ContextLayer) -> None:
+    def _bind_external_controllers(self, current: Current, pedalboard_layer: ContextLayer) -> None:
         """Externally-routed controllers: bind a synthetic parameter and show
         them under an "External" category."""
         for controller in self._hw.controllers.values():
@@ -207,7 +173,7 @@ class ControllerManager:
 
             if controller.parameter is None:
                 if isinstance(controller, AnalogMidiControl):
-                    self._attach_controller(
+                    current.attach(
                         controller,
                         self._hw.create_external_parameter(
                             port_name, controller.midi_channel, controller.midi_CC, controller.midi_value
@@ -220,7 +186,7 @@ class ControllerManager:
                         ranges={"minimum": 0, "maximum": 127},
                         properties=[TTL_INTEGER],
                     )
-                    self._bind_controller(
+                    current.bind(
                         controller,
                         Parameter(ext_info, ENCODER_FALLBACK_DEFAULT, key, EXTERNAL_INSTANCE_ID),
                     )
@@ -317,7 +283,8 @@ class ControllerManager:
                 )
 
             binding = self._hw.config.footswitch(fs.id) if fs.id is not None else None
-            lp = binding.longpress if binding is not None and isinstance(binding.longpress, LongpressAction) else None
+            spec = binding.longpress if binding is not None else None
+            lp = None if spec is None or isinstance(spec, tuple) else spec
             if lp is not None:
                 pedalboard_layer.add(
                     BindingDecl(
@@ -387,5 +354,3 @@ class ControllerManager:
                 return (PresetEffect(direction=str(lp.preset)),)
             case LongpressBoard():
                 return (PedalboardEffect(direction=lp.direction),)
-            case _:
-                raise RuntimeError(f"Unknown LongpressAction class: {type(lp)!r}")

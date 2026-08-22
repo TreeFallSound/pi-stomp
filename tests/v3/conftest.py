@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 import common.token as Token
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from emulator.controls import MockAnalogControl
 from modalapi.wifi import SavedConnection, ScannedNetwork
 from tests.conftest import FakeWebSocketBridge

@@ -15,27 +15,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Config loading: file format, adapter, and the model the application reads."""
+"""Config loading: the file format, the adapter, and the model.
+
+Import the model types from `pistomp.config.model`. This module holds the
+entry points that read a file.
+"""
 
 from pathlib import Path
+
 from pistomp.config.adapt_v1 import adapt
-from pistomp.config.model import (
-    AnalogBinding,
-    ControlType,
-    EncoderBinding,
-    FootswitchBinding,
-    LongpressAction,
-    LongpressBoard,
-    LongpressMidiCC,
-    LongpressPreset,
-    PedalboardConfig,
-    PresetStep,
-)
+from pistomp.config.model import PedalboardConfig
 from pistomp.config.schema_v1 import (
-    DEFAULT_CONFIG_FILE,
     ConfigDocument,
     ConfigError,
-    data_dir,
     hardware_version,
     json_schema,
     load_cfg_from_file,
@@ -46,20 +38,8 @@ from pistomp.config.schema_v1 import (
 )
 
 __all__ = [
-    "AnalogBinding",
     "ConfigDocument",
     "ConfigError",
-    "ControlType",
-    "DEFAULT_CONFIG_FILE",
-    "EncoderBinding",
-    "FootswitchBinding",
-    "LongpressAction",
-    "LongpressBoard",
-    "LongpressMidiCC",
-    "LongpressPreset",
-    "PedalboardConfig",
-    "PresetStep",
-    "data_dir",
     "hardware_version",
     "json_schema",
     "load_cfg_from_file",

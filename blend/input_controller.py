@@ -18,7 +18,7 @@
 import logging
 from bisect import bisect_right
 
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from blend.easing import EasingFunc
 from blend.parameter_setter import ParameterSetter
 from blend.stop import BlendStop

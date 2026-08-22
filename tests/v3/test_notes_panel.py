@@ -14,7 +14,7 @@ from plugins.customization import lookup
 from plugins.notes import NOTES_URI
 from plugins.notes.panel import NotesData, NotesPanel
 from tests.types import SystemFixture
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from tests.v3.nav_helpers import nav_click
 from common.parameter import BYPASS_SYMBOL, PortInfo, Symbol
 

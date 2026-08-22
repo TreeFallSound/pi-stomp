@@ -19,14 +19,23 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import TYPE_CHECKING, TypedDict
 
 from common.parameter import Parameter
-from pistomp.config.model import ControlType
 
 if TYPE_CHECKING:
     from pistomp.input.sink import InputSink
+
+
+class ControlType(StrEnum):
+    """What a control does. Only KNOB, EXPRESSION and VOLUME come from a config
+    file; NAV is a fixed property of the hardware."""
+
+    KNOB = "KNOB"
+    EXPRESSION = "EXPRESSION"
+    VOLUME = "VOLUME"
+    NAV = "nav"
 
 
 class RoutingDestination(Enum):

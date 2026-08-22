@@ -18,7 +18,7 @@
 import logging
 
 import pistomp.analogVU as AnalogVU
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 import common.util as Util
 import pistomp.encoder_controller as EncoderController
 import pistomp.hardware as hardware

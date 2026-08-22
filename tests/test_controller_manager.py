@@ -3,7 +3,7 @@
 from typing import cast
 from unittest.mock import MagicMock
 
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from common.contexts import ControlClass, EventKind, MidiCcEffect, ShadowState
 from common.parameter import Parameter, PortInfo, Symbol
 from modalapi.plugin import Plugin
@@ -11,8 +11,6 @@ from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.controller import Controller
 from pistomp.controller_manager import ControllerManager
 from pistomp.current import Current
-
-from pistomp.pedalboard_activation import PedalboardActivation
 
 
 def _make_current() -> Current:
@@ -40,9 +38,7 @@ def test_bind_preserves_volume_binding_clears_others():
     vol = _Ctl(ControlType.VOLUME)
     knob = _Ctl(ControlType.KNOB)
     current = _make_current()
-    old_activation = PedalboardActivation(current.pedalboard, MagicMock())
-    old_activation.track_controller(cast(Controller, knob))
-    current.activation = old_activation
+    current.track(cast(Controller, knob))
     hw = MagicMock()
     hw.controllers = {"0:7": vol, "0:8": knob}
     hw.encoders = []

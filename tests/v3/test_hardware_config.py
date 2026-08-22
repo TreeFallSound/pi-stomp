@@ -54,6 +54,20 @@ def test_footswitch_longpress_reset_to_default(v3_system: SystemFixture):
     assert "toggle_bypass" not in hw.footswitches[0].longpress_groups
 
 
+def test_pedalboard_that_clears_the_section_restores_the_base(v3_system: SystemFixture):
+    """`footswitches: null` drops every entry from the merged document. The
+    control must go back to the base config, not keep the pedalboard before it."""
+    hw = v3_system.hw
+    hw.reinit(_cfg(hw, footswitches=[{"id": 0, "longpress": "toggle_bypass", "color": "red"}]))
+
+    overlay = config.parse({"hardware": {"footswitches": None}}, "<test>")
+    hw.reinit(adapt(merge(hw.default_cfg, overlay)))
+
+    assert "previous_snapshot" in hw.footswitches[0].longpress_groups
+    assert hw.footswitches[0].lcd_color is None
+    assert hw.footswitches[0].midi_CC is not None
+
+
 def test_footswitch_unmentioned_keeps_default_longpress(v3_system: SystemFixture):
     hw = v3_system.hw
     hw.reinit(_cfg(hw, footswitches=[{"id": 0, "preset": 2}]))
@@ -115,9 +129,7 @@ def test_footswitch_state_cleared_on_reinit(v3_system: SystemFixture):
     fs.toggled = True
     fs.set_display_label("Reverb")
     fs.set_category("Delay")
-    activation = v3_system.handler.current.activation
-    assert activation is not None
-    activation.attach(fs, hw.create_external_parameter("probe", 0, 1))
+    v3_system.handler.current.attach(fs, hw.create_external_parameter("probe", 0, 1))
     v3_system.handler.current.close()
 
     hw.reinit(_cfg(hw, footswitches=[{"id": 0, "preset": 1}]))
@@ -301,9 +313,7 @@ def test_reinit_unsubscribes_old_parameter(v3_system: SystemFixture):
         "0:60",
         "OldPlugin",
     )
-    activation = v3_system.handler.current.activation
-    assert activation is not None
-    activation.bind(fs, old_param)
+    v3_system.handler.current.bind(fs, old_param)
 
     v3_system.handler.current.close()
     hw.reinit(_cfg(hw, footswitches=[{"id": 0, "preset": 1}]))

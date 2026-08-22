@@ -20,6 +20,7 @@
 import json
 import logging
 import pistomp.httpclient as req
+from collections.abc import Sequence
 from pathlib import Path
 
 from blend.types import (
@@ -89,7 +90,7 @@ class SnapshotManager:
     @staticmethod
     def sync_blend_snapshots(
         bundle_path: Path,
-        blend_configs: list[BlendSnapshotConfig] | None,
+        blend_configs: Sequence[BlendSnapshotConfig] | None,
         root_uri: str,
     ) -> dict[str, int]:
         """Ensure each configured blend snapshot exists as an empty entry.

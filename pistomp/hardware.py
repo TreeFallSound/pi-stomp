@@ -18,6 +18,8 @@
 import logging
 import os
 import sys
+from collections.abc import Callable
+from typing import TypeVar
 
 from common.parameter import Parameter, PortInfo, Symbol, TTL_INTEGER
 import pistomp.analogmidicontrol as AnalogMidiControl
@@ -34,12 +36,13 @@ from pistomp.config.model import (
     AnalogBinding,
     EncoderBinding,
     FootswitchBinding,
-    LongpressAction,
     PedalboardConfig,
     PresetStep,
 )
 from pistomp.config.schema_v1 import ConfigDocument
 import pistomp.relay as Relay
+
+_Binding = TypeVar("_Binding", FootswitchBinding, EncoderBinding, AnalogBinding)
 
 
 class Hardware(ABC):
@@ -54,6 +57,7 @@ class Hardware(ABC):
 
         self.default_cfg: ConfigDocument = default_config
         self.config = config.resolve(default_config)
+        self.base_config = self.config
         self.version = self.config.version
         self.midi_channel = self.config.midi_channel
 
@@ -150,21 +154,32 @@ class Hardware(ABC):
         if self.external_midi is not None:
             self.external_midi.set_config(config.external_midi)
 
+        # Apply a binding to every control that the base config creates, or the
+        # control keeps the state of the pedalboard before it.
         for fs in self.footswitches:
-            binding = config.footswitch(fs.id) if fs.id is not None else None
+            binding = self.__binding(config.footswitch, self.base_config.footswitch, fs.id)
             if binding is not None:
                 self.__apply_footswitch(fs, binding)
             self.handler.chord_helper.register(fs)
 
         for enc in self.encoders:
-            binding = config.encoder(enc.id) if enc.id is not None else None
+            binding = self.__binding(config.encoder, self.base_config.encoder, enc.id)
             if binding is not None:
                 self.__apply_encoder(enc, binding)
 
         for ac in self.analog_controls:
-            binding = config.analog_control(ac.id) if ac.id is not None else None
+            binding = self.__binding(config.analog_control, self.base_config.analog_control, ac.id)
             if binding is not None:
                 self.__apply_analog_control(ac, binding)
+
+    @staticmethod
+    def __binding(
+        current: Callable[[int], _Binding | None], base: Callable[[int], _Binding | None], control_id: int | None
+    ) -> _Binding | None:
+        if control_id is None:
+            return None
+        binding = current(control_id)
+        return binding if binding is not None else base(control_id)
 
     @abstractmethod
     def init_analog_controls(self): ...
@@ -333,12 +348,7 @@ class Hardware(ABC):
         fs.add_preset(direction=None, callback_arg=None)
         fs.set_lcd_color(binding.color)
         spec = binding.longpress
-        if spec is None or isinstance(spec, LongpressAction):
-            fs.longpress_groups = []
-        elif isinstance(spec, str):
-            fs.longpress_groups = spec.split()
-        else:
-            fs.longpress_groups = list(spec)  # Sequence[str]
+        fs.longpress_groups = list(spec) if isinstance(spec, tuple) else []
         fs.set_midi_channel(binding.midi_channel)
         fs.set_midi_CC(binding.midi_CC)
 

@@ -21,11 +21,7 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from pistomp.analogmidicontrol import AnalogMidiControl
-from pistomp.controller import Controller
 from pistomp.current import Current
-from pistomp.encoder_controller import EncoderController
-from pistomp.footswitch import Footswitch
 from pistomp.footswitch_chords import FootswitchChords
 from pistomp.input.event import ControllerEvent
 from pistomp.input.sink import InputSink
@@ -255,30 +251,8 @@ class Handler(InputSink):
         self._rebind_pedalboard()
 
     def _rebind_pedalboard(self) -> None:
-        # Re-derive the board's associations and rows after a learned binding
-        # changed. Subclasses that own an activation override.
+        """Build the board's associations and rows again. A handler that owns an
+        activation must override this."""
         raise NotImplementedError()
 
-    def _bind_controller_to_param(self, plugin: "Plugin", param: "Parameter", controller: Controller) -> bool:
-        # Wire a hardware controller to a plugin parameter. Returns True if the
-        # controller is a footswitch (so callers can track footswitch plugins).
-        controller.bind_to_parameter(param)
-        if controller not in plugin.controllers:
-            plugin.controllers.append(controller)
-        self._track_controller_binding(controller, plugin)
-        if isinstance(controller, Footswitch):
-            # TODO sort this list so selection orders correctly (sort on midi_CC?)
-            plugin.has_footswitch = True
-            controller.set_category(plugin.category)
-            return True
-        elif isinstance(controller, (AnalogMidiControl, EncoderController)):
-            key = "%s:%s" % (plugin.instance_id, param.name)
-            display_info = controller.get_display_info()
-            display_info["category"] = plugin.category
-            self.current.analog_controllers[key] = display_info
-        return False
-
-    def _track_controller_binding(self, controller: Controller, plugin: "Plugin") -> None:
-        """Hook for handlers that own a pedalboard activation."""
-        return None
 

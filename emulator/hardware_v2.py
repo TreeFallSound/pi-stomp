@@ -21,7 +21,7 @@ Matches pi-Stomp Core (Pistompcore): one nav encoder with press, three
 footswitches, one pot, one expression pedal, no relay interaction.
 """
 
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from emulator.hardware_base import EmulatorHardwareBase
 from emulator.controls import MockEncoder
 

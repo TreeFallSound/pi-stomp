@@ -30,7 +30,7 @@ from uilib.widget import Widget
 from uilib.misc import InputEvent, trace
 from uilib.paint import PaintContext, _pg_rect
 
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from common.contexts import BindingDecl
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.input.sink import InputSink

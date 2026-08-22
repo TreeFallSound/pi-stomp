@@ -14,7 +14,7 @@ from pistomp.footswitch import Footswitch
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from common.parameter_steps import ParameterSteps
 from modalapi.plugin import Plugin
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from pistomp.config.adapt_v1 import adapt
 from pistomp.config.schema_v1 import merge
 from tests.types import SystemFixture
@@ -22,6 +22,7 @@ from modalapi.connections import Connection, Endpoint, EndpointKind
 from plugins.customization import lookup
 from plugins.nam import NAM_URIS
 from uilib.text import TextWidget
+from tests.v3.bind_helpers import bind_bypass
 from tests.v3.nav_helpers import nav_click
 
 
@@ -131,8 +132,7 @@ def test_v3_toggle_plugin_bypass_via_footswitch_sends_midi_cc(v3_system: SystemF
     assert fs.midi_CC is not None, "test requires a footswitch with a midi_CC binding"
 
     plugin = make_plugin("fuzz")
-    handler._bind_controller_to_param(plugin, plugin.parameters[BYPASS_SYMBOL], fs)
-    handler.current.pedalboard.plugins = [plugin]
+    bind_bypass(v3_system, plugin, fs)
 
     handler.toggle_plugin_bypass(plugin)
 
@@ -251,8 +251,7 @@ def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_p
     assert handler.current
 
     plugin = make_plugin("fuzz")
-    handler._bind_controller_to_param(plugin, plugin.parameters[BYPASS_SYMBOL], hw.footswitches[0])
-    handler.current.pedalboard.plugins = [plugin]
+    bind_bypass(v3_system, plugin, hw.footswitches[0])
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
 

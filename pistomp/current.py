@@ -15,25 +15,57 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from pistomp.controller import AnalogControllers
+from common.parameter import Parameter
 from modalapi.pedalboard import Pedalboard
-from pistomp.pedalboard_activation import PedalboardActivation
+from modalapi.plugin import Plugin
+from pistomp.controller import AnalogControllers, Controller
+from pistomp.footswitch import Footswitch
+
 
 @dataclass
 class Current:
-    """Mutable per-pedalboard state for the active ("current") pedalboard."""
+    """The active pedalboard, and the runtime associations that it owns.
+
+    `close` releases the associations. The code that binds must close.
+    """
 
     pedalboard: Pedalboard
     presets: dict[int, str] = field(default_factory=dict)
     preset_index: int = 0  # Assumes pedalboard loads at snapshot 0 (default behavior)
     analog_controllers: AnalogControllers = field(default_factory=dict)
-    activation: PedalboardActivation | None = None
+    _controllers: list[Controller] = field(default_factory=list)
+    _plugin_bindings: list[tuple[Plugin, Controller]] = field(default_factory=list)
+
+    def bind(self, controller: Controller, parameter: Parameter) -> None:
+        controller.bind_to_parameter(parameter)
+        self.track(controller)
+
+    def attach(self, controller: Controller, parameter: Parameter) -> None:
+        controller.parameter = parameter
+        self.track(controller)
+
+    def track(self, controller: Controller) -> None:
+        if controller not in self._controllers:
+            self._controllers.append(controller)
+
+    def track_plugin_binding(self, plugin: Plugin, controller: Controller) -> None:
+        self.track(controller)
+        binding = (plugin, controller)
+        if binding not in self._plugin_bindings:
+            self._plugin_bindings.append(binding)
 
     def close(self) -> None:
-        if self.activation is not None:
-            self.activation.close()
-            self.activation = None
+        for plugin, controller in reversed(self._plugin_bindings):
+            if controller in plugin.controllers:
+                plugin.controllers.remove(controller)
+            plugin.has_footswitch = any(isinstance(c, Footswitch) for c in plugin.controllers)
+        for controller in reversed(self._controllers):
+            controller.unbind_from_parameter()
+        self._plugin_bindings.clear()
+        self._controllers.clear()
+        self.analog_controllers = {}

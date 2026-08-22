@@ -26,7 +26,7 @@ import pistomp.controller as controller
 import pistomp.adcswitch as adcswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from pistomp.encoder import Encoder
 from pistomp.input.event import EncoderEvent, SwitchEvent, SwitchEventKind
 

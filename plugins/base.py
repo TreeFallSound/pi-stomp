@@ -63,7 +63,7 @@ from common.param_source import BypassSource, ParamSource
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
 from common.parameter_steps import ParameterSteps, effective_multiplier
 from modalapi.plugin import Plugin
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from pistomp.input.dispatch import MultiSelectable, Selectable, fire, resolve_local
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.handler import Handler

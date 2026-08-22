@@ -1,7 +1,7 @@
 """Startup, basic navigation, and footswitch press — smoke tests for the full stack."""
 
 import pistomp.switchstate as switchstate
-from pistomp.config.model import ControlType
+from pistomp.controller import ControlType
 from pistomp.encoder_controller import EncoderController
 from tests.v3.nav_helpers import nav_click
 

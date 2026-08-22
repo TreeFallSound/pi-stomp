@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING, Sequence
 
 from pistomp.config.model import (
     FootswitchBinding,
-    LongpressAction,
     MINUS,
 )
 from plugins.chrome import BTN_GAP, BTN_H
@@ -41,7 +40,7 @@ LINE_H = 18
 ROW_PAD = 4
 DIVIDER_H = 8
 
-# Only the string/list longpress enum; the mapping form calls .label() directly.
+# Chord-form action names. The mapping form makes its own label.
 _ACTION_LABELS = {
     "next_snapshot": "Snapshot +",
     "previous_snapshot": f"Snapshot {MINUS}",
@@ -65,18 +64,13 @@ def _rows_from_bindings(bindings: Sequence[FootswitchBinding], id_to_letter: dic
         longpress = binding.longpress
         if longpress is None:
             continue
-        match longpress:
-            case LongpressAction():
-                groups.setdefault(binding.id, []).append(binding.id)
-                labels[binding.id] = longpress.label()
-            case str():
-                for name in longpress.split():
-                    groups.setdefault(name, []).append(binding.id)
-                    labels[name] = _label_for_action(name)
-            case _:
-                for name in longpress:
-                    groups.setdefault(name, []).append(binding.id)
-                    labels[name] = _label_for_action(name)
+        if isinstance(longpress, tuple):
+            for name in longpress:
+                groups.setdefault(name, []).append(binding.id)
+                labels[name] = _label_for_action(name)
+        else:
+            groups.setdefault(binding.id, []).append(binding.id)
+            labels[binding.id] = longpress.label()
 
     rows = []
     for key, ids in groups.items():
