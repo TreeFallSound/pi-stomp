@@ -866,3 +866,56 @@ def test_v3_midi_learn_moving_footswitch_binding_clears_old_lcd_display(v3_syste
     assert w0.action is None
     w1 = next(w for w in lcd.w_footswitches if w.object is fs1)
     assert w1.color is not None
+
+
+def test_v3_two_plugins_sharing_one_cc_both_keep_their_rows(v3_system: SystemFixture, make_plugin):
+    """Two plugins mapped to one footswitch's CC (a ganged stomp) each keep a
+    row. Learning the second must not evict the first: unmapping either one in
+    MOD-UI has to leave the other still driving the switch, not a dead switch.
+
+    Which of the two a press acts on is graph order, asserted here only to pin
+    the choice as deterministic.
+    """
+    import pistomp.switchstate as switchstate
+
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current and handler.lcd
+
+    fs0 = hw.footswitches[0]
+    binding_id = _binding_for(hw, fs0)
+    channel, cc = binding_id.split(":")
+
+    def param_rows():
+        rows = handler.effective_table.layers[0].rows.get((ControlClass.FOOTSWITCH, EventKind.PRESS), [])
+        return [r for r in rows if r.control.id == binding_id and any(isinstance(e, ParamEffect) for e in r.effects)]
+
+    delay = make_plugin("delay", bypassed=False, has_footswitch=False)
+    reverb = make_plugin("reverb", bypassed=False, has_footswitch=False)
+    handler.current.pedalboard.plugins = [delay, reverb]
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    ws_bridge.inject(f"midi_map /graph/delay :bypass {channel} {cc} 0.0 1.0")
+    handler.poll_ws_messages()
+    ws_bridge.inject(f"midi_map /graph/reverb :bypass {channel} {cc} 0.0 1.0")
+    handler.poll_ws_messages()
+
+    bound = [e.plugin for r in param_rows() for e in r.effects if isinstance(e, ParamEffect)]
+    assert delay in bound and reverb in bound, "learning the second mapping evicted the first"
+
+    fs0._on_switch(switchstate.Value.RELEASED)
+    assert delay.parameters[BYPASS_SYMBOL].value == 1
+    assert reverb.parameters[BYPASS_SYMBOL].value == 0.0
+
+    # Drop the first mapping in MOD-UI; the switch must fall to the survivor.
+    ws_bridge.inject("midi_map /graph/delay :bypass -1 -1 0.0 1.0")
+    handler.poll_ws_messages()
+
+    survivors = [e.plugin for r in param_rows() for e in r.effects if isinstance(e, ParamEffect)]
+    assert survivors == [reverb]
+
+    fs0._on_switch(switchstate.Value.RELEASED)
+    assert reverb.parameters[BYPASS_SYMBOL].value == 1, "unmapping one plugin left the switch dead"
