@@ -36,6 +36,7 @@ from pistomp.config.model import (
     AnalogBinding,
     EncoderBinding,
     FootswitchBinding,
+    LongpressAction,
     PedalboardConfig,
     PresetStep,
 )
@@ -130,6 +131,12 @@ class Hardware(ABC):
                     control.send_current_value()
                 except Exception as e:
                     logging.warning(f"Failed to sync analog control {control.midi_CC}: {e}")
+
+    def longpress_action(self, fs: Footswitch.Footswitch) -> LongpressAction | None:
+        """The mapping form of longpress, which has no home on the footswitch."""
+        binding = self.config.footswitch(fs.id) if fs.id is not None else None
+        spec = binding.longpress if binding is not None else None
+        return None if spec is None or isinstance(spec, tuple) else spec
 
     def is_external(self, controller: Controller) -> bool:
         return controller in self.external_routing

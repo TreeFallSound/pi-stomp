@@ -282,9 +282,7 @@ class ControllerManager:
                     )
                 )
 
-            binding = self._hw.config.footswitch(fs.id) if fs.id is not None else None
-            spec = binding.longpress if binding is not None else None
-            lp = None if spec is None or isinstance(spec, tuple) else spec
+            lp = self._hw.longpress_action(fs)
             if lp is not None:
                 pedalboard_layer.add(
                     BindingDecl(
