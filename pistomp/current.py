@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 from pistomp.controller import AnalogControllers
 from modalapi.pedalboard import Pedalboard
-
+from pistomp.pedalboard_activation import PedalboardActivation
 
 @dataclass
 class Current:
@@ -31,3 +31,9 @@ class Current:
     presets: dict[int, str] = field(default_factory=dict)
     preset_index: int = 0  # Assumes pedalboard loads at snapshot 0 (default behavior)
     analog_controllers: AnalogControllers = field(default_factory=dict)
+    activation: PedalboardActivation | None = None
+
+    def close(self) -> None:
+        if self.activation is not None:
+            self.activation.close()
+            self.activation = None

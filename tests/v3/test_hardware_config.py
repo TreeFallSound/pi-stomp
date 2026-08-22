@@ -1,27 +1,24 @@
-"""Per-pedalboard hardware config overlay — reinit correctness tests.
-
-Green tests document existing behaviour.
-Red tests (encoder_switch_map, encoder longpress, footswitch disable) are
-written first and are expected to fail until the corresponding fixes land.
-"""
+"""Per-pedalboard hardware config overlay — reinit correctness tests."""
 
 import pistomp.config as config
 from pistomp.config.adapt_v1 import adapt
 from pistomp.config.schema_v1 import merge
 from tests.types import SystemFixture
+from common.parameter import Parameter, PortInfo, Symbol
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-
-def _cfg(hw, footswitches=None, encoders=None) -> config.PedalboardConfig:
+def _cfg(hw, footswitches=None, encoders=None, analog_controls=None) -> config.PedalboardConfig:
     """Resolve a pedalboard overlay against the fixture's default_config.yml."""
     section: dict = {}
     if footswitches is not None:
         section["footswitches"] = footswitches
     if encoders is not None:
         section["encoders"] = encoders
+    if analog_controls is not None:
+        section["analog_controllers"] = analog_controls
     overlay = config.parse({"hardware": section}, "<test>")
     return adapt(merge(hw.default_cfg, overlay))
 
@@ -118,7 +115,10 @@ def test_footswitch_state_cleared_on_reinit(v3_system: SystemFixture):
     fs.toggled = True
     fs.set_display_label("Reverb")
     fs.set_category("Delay")
-    fs.parameter = hw.create_external_parameter("probe", 0, 1)
+    activation = v3_system.handler.current.activation
+    assert activation is not None
+    activation.attach(fs, hw.create_external_parameter("probe", 0, 1))
+    v3_system.handler.current.close()
 
     hw.reinit(_cfg(hw, footswitches=[{"id": 0, "preset": 1}]))
 
@@ -290,3 +290,47 @@ def test_longpress_names_cover_every_handler_callback(v3_system: SystemFixture):
     # set_mod_tap_tempo shares the callback map but is reachable only via the
     # `tap_tempo:` key, which passes a BPM no longpress can supply.
     assert set(v3_system.handler.callbacks) - {"set_mod_tap_tempo"} == set(get_args(LongpressName))
+
+
+def test_reinit_unsubscribes_old_parameter(v3_system: SystemFixture):
+    hw = v3_system.hw
+    fs = hw.footswitches[0]
+    old_param = Parameter(
+        PortInfo(name="Bypass", symbol=Symbol("bypass"), ranges={"minimum": 0.0, "maximum": 1.0}),
+        0.0,
+        "0:60",
+        "OldPlugin",
+    )
+    activation = v3_system.handler.current.activation
+    assert activation is not None
+    activation.bind(fs, old_param)
+
+    v3_system.handler.current.close()
+    hw.reinit(_cfg(hw, footswitches=[{"id": 0, "preset": 1}]))
+    fs.toggled = True
+    old_param.reconcile(1.0)
+
+    assert fs.parameter is None
+    assert fs.toggled is True
+
+
+def test_encoder_disable_removes_controller(v3_system: SystemFixture):
+    hw = v3_system.hw
+    enc = _enc(hw, 1)
+
+    hw.reinit(_cfg(hw, encoders=[{"id": 1, "disable": True}]))
+
+    assert all(controller is not enc for controller in hw.controllers.values())
+
+
+
+
+def test_encoder_type_transition_rebinds_volume(v3_system: SystemFixture):
+    hw = v3_system.hw
+    enc = _enc(hw, 1)
+
+    hw.reinit(_cfg(hw, encoders=[{"id": 1, "type": "VOLUME"}]))
+    v3_system.handler.bind_volume_encoder()
+
+    assert enc.type == "VOLUME"
+    assert enc.parameter is v3_system.handler.volume_parameter

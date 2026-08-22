@@ -26,6 +26,7 @@ import pistomp.controller as controller
 import pistomp.adcswitch as adcswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
+from pistomp.config.model import ControlType
 from pistomp.encoder import Encoder
 from pistomp.input.event import EncoderEvent, SwitchEvent, SwitchEventKind
 
@@ -77,7 +78,7 @@ class EncoderController(controller.Controller):
         *,
         midi_channel: int = 0,
         midi_CC: Optional[int] = None,
-        type: Optional[str] = None,
+        type: ControlType | None = None,
         id: Optional[int] = None,
         sw_pin: Optional[int] = None,
         sw_adc_chan: Optional[int] = None,

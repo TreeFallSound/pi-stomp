@@ -18,7 +18,7 @@
 import logging
 from bisect import bisect_right
 
-import common.token as Token
+from pistomp.config.model import ControlType
 from blend.easing import EasingFunc
 from blend.parameter_setter import ParameterSetter
 from blend.stop import BlendStop
@@ -60,7 +60,7 @@ class InputController:
 
     def attach_to_input(self, control: BlendInputProtocol) -> None:
         """Store reference to the blend input controller."""
-        if getattr(control, "type", None) == Token.VOLUME:
+        if control.type == ControlType.VOLUME:
             raise ValueError(f"Input {control.id} is a VOLUME controller and cannot be used for blend mode")
         self.controlled_input = control
         logging.info(f"Attached blend mode to {type(control).__name__} {control.id}")

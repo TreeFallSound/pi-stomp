@@ -4,20 +4,22 @@ menu (ui/footswitch_menu.py).
 
 from __future__ import annotations
 
+import msgspec
 import yaml
 
 from uilib.footswitch import FootswitchBarPanel
 from uilib.text import TextWidget
 import pistomp.config as config
 from pistomp.config.adapt_v1 import _footswitch
+from pistomp.config.model import MINUS, LongpressBoard, LongpressMidiCC, LongpressPreset, PresetStep
 from pistomp.config.schema_v1 import FootswitchEntry
-from ui.footswitch_menu import MINUS, _label_for_mapping, _partition_rows, _rows_from_bindings
+from ui.footswitch_menu import _partition_rows, _rows_from_bindings
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click, nav_step
 
 
 def _bindings(entries):
-    return [_footswitch(FootswitchEntry(**e), midi_channel=0) for e in entries]
+    return [_footswitch(msgspec.convert(e, FootswitchEntry), midi_channel=0) for e in entries]
 
 
 def test_rows_from_bindings_chords_and_solo():
@@ -42,12 +44,12 @@ def test_rows_from_bindings_skips_entries_without_longpress():
     assert _rows_from_bindings(_bindings(entries), id_to_letter) == [("B", "Snapshot +")]
 
 
-def test_label_for_mapping_preset_and_midi():
-    assert _label_for_mapping({"midi_CC": 64}) == "MIDI CC 64"
-    assert _label_for_mapping({"preset": "UP"}) == "Snapshot +"
-    assert _label_for_mapping({"preset": "DOWN"}) == f"Snapshot {MINUS}"
-    assert _label_for_mapping({"preset": 2}) == "Snapshot 2"
-    assert _label_for_mapping({"pedalboard": "UP"}) == "Pedalboard +"
+def test_label_method_on_longpress_actions():
+    assert LongpressMidiCC(cc=64).label() == "MIDI CC 64"
+    assert LongpressPreset(preset=PresetStep.UP).label() == "Snapshot +"
+    assert LongpressPreset(preset=PresetStep.DOWN).label() == f"Snapshot {MINUS}"
+    assert LongpressPreset(preset=2).label() == "Snapshot 2"
+    assert LongpressBoard(direction="UP").label() == "Pedalboard +"
 
 
 def _row_texts(dialog) -> list[str]:

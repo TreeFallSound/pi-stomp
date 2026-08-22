@@ -182,13 +182,13 @@ class TestAudioMidiPanelBehaviour:
     def test_tweak2_edits_input_gain(self, audio_midi_system: SystemFixture):
         from pistomp.encoder_controller import EncoderController
         from pistomp.input.event import EncoderEvent
-        import common.token as Token
+        from pistomp.config.model import ControlType
 
         handler = audio_midi_system.handler
         _open_panel(audio_midi_system)
         enc = MagicMock(spec=EncoderController)
         enc.id = 2
-        enc.type = Token.KNOB
+        enc.type = ControlType.KNOB
         enc.midi_CC = None
         ev = EncoderEvent(controller=enc, rotations=2)
         handler.handle(ev)

@@ -27,7 +27,6 @@ from typing import TypeVar
 
 from msgspec import UNSET, UnsetType
 
-from common.contexts import LongpressActionConfig
 from modalapi.external_midi import ExternalMidiConfig
 from pistomp.config import schema_v1 as v1
 from pistomp.config.model import (
@@ -35,6 +34,9 @@ from pistomp.config.model import (
     ControlType,
     EncoderBinding,
     FootswitchBinding,
+    LongpressBoard,
+    LongpressMidiCC,
+    LongpressPreset,
     LongpressSpec,
     PedalboardConfig,
     PresetAction,
@@ -69,15 +71,13 @@ def _longpress(value: v1.Longpress | None | UnsetType) -> LongpressSpec | None:
     if value is UNSET or value is None:
         return None
     if not isinstance(value, v1.LongpressMapping):
-        return value
-    action: LongpressActionConfig = {}
+        return value  # str or list[str]
     if value.midi_CC is not UNSET:
-        action["midi_CC"] = value.midi_CC
-    if value.preset is not UNSET:
-        action["preset"] = value.preset
-    if value.pedalboard is not UNSET:
-        action["pedalboard"] = value.pedalboard
-    return action
+        return LongpressMidiCC(cc=value.midi_CC)
+    if value.preset is not UNSET and value.preset is not None:
+        p = value.preset
+        return LongpressPreset(preset=PresetStep(p) if isinstance(p, str) else p)
+    return LongpressBoard(direction=str(value.pedalboard))
 
 
 def _preset(value: int | str | None | UnsetType) -> PresetAction | None:

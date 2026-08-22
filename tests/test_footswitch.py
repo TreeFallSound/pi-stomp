@@ -41,24 +41,6 @@ def _make_footswitch(**kwargs):
     yield fs, sink
 
 
-class TestLongpressGroups:
-    def test_set_longpress_groups_stores_list(self):
-        with _make_footswitch() as (fs, _sink):
-            fs.set_longpress_groups(["next_snapshot"])
-            assert fs.longpress_groups == ["next_snapshot"]
-
-    def test_set_longpress_groups_accepts_space_separated_string(self):
-        with _make_footswitch() as (fs, _sink):
-            fs.set_longpress_groups("next_snapshot toggle_bypass")
-            assert fs.longpress_groups == ["next_snapshot", "toggle_bypass"]
-
-    def test_set_longpress_groups_none_clears(self):
-        with _make_footswitch() as (fs, _sink):
-            fs.set_longpress_groups(["toggle_bypass"])
-            fs.set_longpress_groups(None)
-            assert fs.longpress_groups == []
-
-
 class TestOnSwitch:
     def test_short_press_dispatches_press_event(self):
         with _make_footswitch() as (fs, sink):

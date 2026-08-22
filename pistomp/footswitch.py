@@ -25,10 +25,6 @@ import pistomp.adcswitch as adcswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
 from pistomp.input.event import SwitchEvent, SwitchEventKind
-from collections.abc import Sequence
-
-from common.contexts import LongpressActionConfig
-from pistomp.config.model import LongpressSpec
 from common.parameter import BYPASS_SYMBOL
 
 
@@ -59,8 +55,6 @@ class Footswitch(controller.StatefulController):
         self.category = None
         self.pixel = pixel
         self.longpress_groups: list[str] = []
-        # Mapping-form longpress; exclusive with the chord form.
-        self.longpress_action: LongpressActionConfig | None = None
         self.disabled = False
         self.taptempo = taptempo
 
@@ -194,16 +188,6 @@ class Footswitch(controller.StatefulController):
 
     def set_lcd_color(self, color):
         self.lcd_color = color
-
-    def set_longpress_groups(self, groups: LongpressSpec | None) -> None:
-        self.longpress_groups = []
-        self.longpress_action = None
-        if isinstance(groups, str):
-            self.longpress_groups = groups.split()
-        elif isinstance(groups, Sequence):
-            self.longpress_groups = list(groups)
-        elif groups is not None:
-            self.longpress_action = groups
 
     def poll(self):
         if self.disabled:

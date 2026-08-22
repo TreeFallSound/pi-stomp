@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import common.token as Token
+from pistomp.config.model import ControlType
 from modalapi.external_midi import ExternalMidiManager
 from pistomp.analogmidicontrol import AnalogMidiControl
 from pistomp.encoder_controller import EncoderController
@@ -73,7 +73,7 @@ def routed_hw(monkeypatch):
     hw.relay = None
 
     hw.encoders = [EncoderController(d_pin=None, clk_pin=None, midi_CC=70, midi_channel=13, id=1)]
-    hw.analog_controls = [AnalogMidiControl(None, 0, 16, 75, 13, Token.KNOB, id=2)]
+    hw.analog_controls = [AnalogMidiControl(None, 0, 16, 75, 13, ControlType.KNOB, id=2)]
     hw.footswitches = [Footswitch(0, None, None, 60, 13, refresh_callback=lambda **k: None)]
     hw.controllers = {}
     hw.external_routing = {}
@@ -166,3 +166,12 @@ class TestApplyMidiRouting:
         }
         routed_hw.reinit(adapt(merge(parse(default, "<test>"))))
         assert routed_hw.is_external(routed_hw.footswitches[0])
+
+
+def test_analog_disable_removes_controller(routed_hw):
+    analog = routed_hw.analog_controls[0]
+    cfg = {"hardware": {"analog_controllers": [{"id": 2, "disable": True}]}}
+
+    _route(routed_hw, cfg)
+
+    assert all(controller is not analog for controller in routed_hw.controllers.values())

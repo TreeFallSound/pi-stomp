@@ -30,7 +30,6 @@ from enum import StrEnum
 from typing import TypeAlias
 
 from blend.types import BlendSnapshotConfig
-from common.contexts import LongpressActionConfig
 from modalapi.external_midi import ExternalMidiConfig
 
 
@@ -43,10 +42,54 @@ class ControlType(StrEnum):
     KNOB = "KNOB"
     EXPRESSION = "EXPRESSION"
     VOLUME = "VOLUME"
+    NAV = "nav"
 
 
 PresetAction: TypeAlias = PresetStep | int
-LongpressSpec: TypeAlias = str | Sequence[str] | LongpressActionConfig
+
+
+# U+2212: the ASCII hyphen is half the width of "+" and reads as a dash, not
+# an operator, next to it.
+MINUS = "−"
+
+
+class LongpressAction:
+    """Base for mapping-form longpress — exactly one variant instantiated."""
+
+    def label(self) -> str:
+        raise RuntimeError(f"Unknown LongpressAction class: {type(self)!r}")
+
+
+@dataclass(frozen=True)
+class LongpressMidiCC(LongpressAction):
+    cc: int
+
+    def label(self) -> str:
+        return f"MIDI CC {self.cc}"
+
+
+@dataclass(frozen=True)
+class LongpressPreset(LongpressAction):
+    preset: PresetAction
+
+    def label(self) -> str:
+        match self.preset:
+            case PresetStep.UP:
+                return "Snapshot +"
+            case PresetStep.DOWN:
+                return f"Snapshot {MINUS}"
+            case _:
+                return f"Snapshot {self.preset}"
+
+
+@dataclass(frozen=True)
+class LongpressBoard(LongpressAction):
+    direction: str
+
+    def label(self) -> str:
+        return "Pedalboard +" if self.direction == PresetStep.UP else f"Pedalboard {MINUS}"
+
+LongpressSpec: TypeAlias = str | Sequence[str] | LongpressAction
 
 
 @dataclass(frozen=True)

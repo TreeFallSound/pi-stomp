@@ -277,6 +277,7 @@ class Handler(InputSink):
         controller.bind_to_parameter(param)
         if controller not in plugin.controllers:
             plugin.controllers.append(controller)
+        self._track_controller_binding(controller, plugin)
         if isinstance(controller, Footswitch):
             # TODO sort this list so selection orders correctly (sort on midi_CC?)
             plugin.has_footswitch = True
@@ -288,6 +289,10 @@ class Handler(InputSink):
             display_info["category"] = plugin.category
             self.current.analog_controllers[key] = display_info
         return False
+
+    def _track_controller_binding(self, controller: Controller, plugin: "Plugin") -> None:
+        """Hook for handlers that own a pedalboard activation."""
+        return None
 
     def _redraw_after_binding(self, controller: Controller | None, is_footswitch: bool) -> None:
         # Refresh the LCD after a learned binding. Subclasses redraw at their

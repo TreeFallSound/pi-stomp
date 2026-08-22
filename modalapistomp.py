@@ -20,7 +20,6 @@
 # Configure logging BEFORE any imports to ensure it takes effect
 import logging
 import sys
-from typing import Any
 import shutil
 
 # Set up logging with format that works well with systemd journal

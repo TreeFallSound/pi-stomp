@@ -23,7 +23,7 @@
 #
 # A new version with different controls should have a new separate subclass
 
-import common.token as Token
+from pistomp.config.model import ControlType
 import pistomp.encoder_controller as EncoderController
 import pistomp.hardware as hardware
 import pistomp.relay as Relay
@@ -80,7 +80,7 @@ class Pistompcore(hardware.Hardware):
         top_enc = EncoderController.EncoderController(
             TOP_ENC_PIN_D,
             TOP_ENC_PIN_CLK,
-            type=Token.NAV,
+            type=ControlType.NAV,
             sw_pin=1,
         )
         self.encoders.append(top_enc)

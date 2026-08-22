@@ -18,7 +18,7 @@ seam (``lcd.handle`` consuming ids 1-3) is pinned by ``test_graphic_eq_panel``.
 from typing import cast
 from unittest.mock import MagicMock
 
-import common.token as Token
+from pistomp.config.model import ControlType
 from common.contexts import (
     BindingDecl,
     ContextKind,
@@ -63,13 +63,13 @@ def test_v3_encoder_id_type_mapping(v3_system: SystemFixture):
     hw = v3_system.hw
     by_id = {getattr(e, "id", None): e for e in hw.encoders}
 
-    assert by_id[1].type == Token.KNOB
+    assert by_id[1].type == ControlType.KNOB
     assert by_id[1].midi_CC == 70
-    assert by_id[2].type == Token.KNOB
+    assert by_id[2].type == ControlType.KNOB
     assert by_id[2].midi_CC == 71
-    assert by_id[3].type == Token.VOLUME
+    assert by_id[3].type == ControlType.VOLUME
 
-    nav = next(e for e in hw.encoders if e.type == Token.NAV)
+    nav = next(e for e in hw.encoders if e.type == ControlType.NAV)
     assert nav.id is None
 
 

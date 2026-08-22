@@ -34,6 +34,7 @@ from pistomp.config.model import (
     AnalogBinding,
     EncoderBinding,
     FootswitchBinding,
+    LongpressAction,
     PedalboardConfig,
     PresetStep,
 )
@@ -101,18 +102,20 @@ class Hardware(ABC):
     def poll_controls(self):
         # This is intended to be called periodically from main working loop to poll the instantiated controls
         for c in self.analog_controls:
-            c.refresh()
+            if not c.disabled:
+                c.refresh()
         for e in self.encoders:
+            if e.disabled:
+                continue
             e.read_rotary()
-            if hasattr(e, "poll"):
-                e.poll()
+            e.poll()
         for s in self.footswitches:
             s.poll()
 
     def sync_analog_controls(self):
         """Send current values of analog controls with autosync enabled via MIDI."""
         for control in self.analog_controls:
-            if isinstance(control, AnalogMidiControl.AnalogMidiControl) and control.autosync:
+            if isinstance(control, AnalogMidiControl.AnalogMidiControl) and not control.disabled and control.autosync:
                 try:
                     control.send_current_value()
                 except Exception as e:
@@ -309,8 +312,9 @@ class Hardware(ABC):
         return port_name
 
     def register_controller(self, control: Controller) -> None:
-        if control.midi_CC is not None:
-            self.controllers["%d:%d" % (control.midi_channel, control.midi_CC)] = control
+        if control.disabled or control.midi_CC is None:
+            return
+        self.controllers["%d:%d" % (control.midi_channel, control.midi_CC)] = control
 
     def __route(self, control: Controller, midi_port: str | None) -> None:
         port = self.__validate_midi_port(midi_port) if midi_port else None
@@ -323,13 +327,18 @@ class Hardware(ABC):
     def __apply_footswitch(self, fs: Footswitch.Footswitch, binding: FootswitchBinding) -> None:
         fs.toggled = False
         fs.disabled = binding.disable
-        fs.parameter = None
         fs.set_display_label(None)
         fs.set_category(None)
         fs.clear_relays()
         fs.add_preset(direction=None, callback_arg=None)
         fs.set_lcd_color(binding.color)
-        fs.set_longpress_groups(binding.longpress)
+        spec = binding.longpress
+        if spec is None or isinstance(spec, LongpressAction):
+            fs.longpress_groups = []
+        elif isinstance(spec, str):
+            fs.longpress_groups = spec.split()
+        else:
+            fs.longpress_groups = list(spec)  # Sequence[str]
         fs.set_midi_channel(binding.midi_channel)
         fs.set_midi_CC(binding.midi_CC)
 
@@ -353,6 +362,8 @@ class Hardware(ABC):
         self.__route(fs, binding.midi_port)
 
     def __apply_encoder(self, enc: Controller, binding: EncoderBinding) -> None:
+        enc.type = binding.type
+        enc.disabled = binding.disable
         enc.midi_channel = binding.midi_channel
         enc.midi_CC = binding.midi_CC
         if isinstance(enc, EncoderController.EncoderController):
@@ -361,6 +372,7 @@ class Hardware(ABC):
         self.__route(enc, binding.midi_port)
 
     def __apply_analog_control(self, control: Controller, binding: AnalogBinding) -> None:
+        control.disabled = binding.disable
         control.midi_channel = binding.midi_channel
         control.midi_CC = binding.midi_CC
         if isinstance(control, AnalogMidiControl.AnalogMidiControl):

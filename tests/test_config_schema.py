@@ -128,3 +128,38 @@ def test_longpress_form_valid(longpress):
 def test_longpress_form_invalid(longpress):
     with pytest.raises(ConfigError):
         _parse(_fs_cfg(longpress))
+
+
+def test_explicit_null_clears_overlay_sections():
+    from pistomp.config.adapt_v1 import adapt
+    from pistomp.config.schema_v1 import merge
+
+    base = _parse({
+        "hardware": {
+            "version": 3.0,
+            "midi": {"channel": 14},
+            "footswitches": [{"id": 0, "adc_input": 0, "midi_CC": 60}],
+            "encoders": [{"id": 1, "midi_CC": 70}],
+            "analog_controllers": [{"id": 2, "adc_input": 0, "midi_CC": 75}],
+            "external_midi": {"enabled": True, "messages": {"dev": [[0xC0, 1]]}},
+        },
+        "blend_snapshots": [{"name": "Blend", "input_id": 0, "stops": [0, 1]}],
+    })
+    overlay = _parse({
+        "hardware": {
+            "footswitches": None,
+            "encoders": None,
+            "analog_controllers": None,
+            "external_midi": None,
+        },
+        "blend_snapshots": None,
+    })
+
+    effective = adapt(merge(base, overlay))
+
+    assert effective.footswitches == ()
+    assert effective.encoders == ()
+    assert effective.analog_controls == ()
+    assert effective.external_midi.get("enabled") is False
+    assert effective.external_midi.get("messages") == {}
+    assert effective.blend_snapshots == []

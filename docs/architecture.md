@@ -134,16 +134,30 @@ Two config layers merge at pedalboard load time:
 
 ```
 Default config (setup/config_templates/)
-  ↓ loaded at startup, creates hardware
 Per-pedalboard config ({bundle}/config.yml)
-  ↓ overlaid by hardware.reinit(cfg)
+  ↓ pistomp.config.resolve(default_cfg, bundle)
+    → merge() overlays the two YAML documents
+    → adapt() applies built-in defaults and converts to frozen model types
 ```
 
-`reinit()` starts from a copy of the default config, applies defaults (footswitches,
-encoders, MIDI), then overlays any pedalboard-specific overrides. Unspecified fields
-keep their defaults. Analog controls call `initialize()` after the overlay — if
-`autosync: true`, they read the ADC and emit their current position as a MIDI CC to
-prevent state mismatch.
+`Hardware.reinit(PedalboardConfig)` applies the resolved config: MIDI routing,
+footswitch profiles, encoder type/longpress, external MIDI. It does not merge layers.
+`ControllerManager.bind(current)` creates a `PedalboardActivation` that owns all
+controller–parameter subscriptions for the board; `current.close()` tears them down.
+
+### Config package layers
+
+`pistomp/config/` has three layers. Each is a pure function from one type to another.
+
+| Layer | File | Responsibility |
+|---|---|---|
+| File format | `schema_v1.py` | Parses and validates YAML. Knows only YAML structure. |
+| Adapter | `adapt_v1.py` | Converts file-format types to model types. Applies built-in defaults. |
+| Model | `model.py` | Frozen types that the application reads. Knows nothing about YAML. |
+
+Only `adapt_v1.py` changes when the file format changes. The model is stable.
+
+**Three-valued field semantics**: msgspec distinguishes `UNSET` (key absent from YAML) from `None` (explicit `null` in YAML) from a value. In `_merged_entries`, `None` means the pedalboard explicitly clears that section and the function returns `()`. `UNSET` means the pedalboard does not address that section and the function returns the base entries unchanged.
 
 Config files:
 - `/home/pistomp/data/config/default_config.yml` (written by firstboot from templates)
@@ -397,7 +411,11 @@ reads the ADC and sends current position on pedalboard load.
 - `modalapi/plugin.py` — Plugin representation
 
 **Config & State**
-- `pistomp/config.py` — Config loading/validation
+- `pistomp/config/schema_v1.py` — Parse and validate YAML; defines the file-format struct types
+- `pistomp/config/adapt_v1.py` — Convert file-format types to model types; apply built-in defaults
+- `pistomp/config/model.py` — Frozen domain types the application reads (`ControlType`, `LongpressAction`, `FootswitchBinding`, etc.)
+- `pistomp/config/__init__.py` — `resolve()` entry point; `load_cfg_from_file()`
+- `pistomp/pedalboard_activation.py` — Board-scoped controller subscriptions and routing entries; owns its own teardown
 - `pistomp/settings.py` — Persistent YAML key-value store
 
 **Display**

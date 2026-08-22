@@ -34,6 +34,9 @@ Don't correct me on things that aren't germane, especially when you're only gues
   the current selection. No panel or binding may consume a raw NAV event, and no
   `declare_bindings()` row may name `cls=NAV` — it's the one axiom the precedence
   resolver doesn't apply to. Enforced by the base `Panel`, not convention.
+- **Immutable at domain boundaries.** Data that crosses from config to application is a frozen dataclass. Do not mutate it.
+- **Lifecycle symmetry.** The code that creates an association must close it. Do not depend on a downstream sweep to clean up.
+- **Domain separation.** Config (`pistomp/config/`), hardware, and application are three separate domains. Hardware objects must not cache config state. Config types must not reference hardware objects.
 
 ### Writing code here
 

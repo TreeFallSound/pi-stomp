@@ -205,6 +205,8 @@ def _merged_entries(
 ) -> tuple[_E, ...]:
     base_list = pick(base_section) if base_section is not UNSET else UNSET
     over_list = pick(over_section) if over_section is not UNSET else UNSET
+    if over_list is None:
+        return ()
     base = _by_id(base_list, name)
     for control_id, entry in _by_id(over_list, name).items():
         if control_id not in base:
@@ -221,6 +223,8 @@ def _hardware(doc: ConfigDocument | None) -> HardwareSection | UnsetType:
 def _merged_external_midi(
     base: HardwareSection | UnsetType, over: HardwareSection | UnsetType
 ) -> ExternalMidiSection:
+    if over is not UNSET and over.external_midi is None:
+        return ExternalMidiSection()
     sections = [s.external_midi for s in (base, over) if s is not UNSET]
     merged = ExternalMidiSection()
     for section in sections:
@@ -241,7 +245,7 @@ def merge(default: ConfigDocument, pedalboard: ConfigDocument | None = None) -> 
     blend: list[BlendSnapshotConfig] | None | UnsetType = UNSET
     if pedalboard is not None:
         blend = pedalboard.blend_snapshots
-    if blend is UNSET or blend is None:
+    if blend is UNSET:
         blend = default.blend_snapshots
     if blend is UNSET or blend is None:
         blend = []

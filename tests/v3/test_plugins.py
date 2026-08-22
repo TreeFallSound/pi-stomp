@@ -14,7 +14,7 @@ from pistomp.footswitch import Footswitch
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from common.parameter_steps import ParameterSteps
 from modalapi.plugin import Plugin
-import common.token as Token
+from pistomp.config.model import ControlType
 from pistomp.config.adapt_v1 import adapt
 from pistomp.config.schema_v1 import merge
 from tests.types import SystemFixture
@@ -82,7 +82,7 @@ def test_v3_bind_volume_encoder_populates_analog_controllers(v3_system: SystemFi
 
     handler.bind_current_pedalboard()
 
-    assert Token.VOLUME in handler.current.analog_controllers
+    assert ControlType.VOLUME in handler.current.analog_controllers
 
 
 def test_v3_bind_does_not_reorder_footswitch_plugins(v3_system: SystemFixture, make_plugin):

@@ -29,6 +29,7 @@ from pistomp.footswitch import Footswitch
 from pistomp.lcd320x240 import Lcd
 from pistomp.taptempo import TapTempo
 import common.token as Token
+from pistomp.config.model import ControlType
 from uilib.misc import InputEvent
 from modalapi.connections import Connection, Endpoint, EndpointKind
 from modalapi.pedalboard import Pedalboard
@@ -158,7 +159,7 @@ def setup_main_ui(instance):
         presets={0: "Clean", 1: "Lead"},
         preset_index=0,
         analog_controllers={
-            "exp:pedal": {Token.ID: 0, Token.TYPE: Token.EXPRESSION},
+            "exp:pedal": {Token.ID: 0, Token.TYPE: ControlType.EXPRESSION},
         },
     )
     mock_footswitches = [_make_footswitch(i) for i in range(4)]
@@ -187,9 +188,9 @@ def test_analog_assignments_snapshot(lcd, snapshot):
         presets={0: "Clean"},
         preset_index=0,
         analog_controllers={
-            "exp:pedal": {Token.ID: 0, Token.TYPE: Token.EXPRESSION},
-            "gain:knob": {Token.ID: 1, Token.TYPE: Token.KNOB},
-            "vol:knob": {Token.ID: 2, Token.TYPE: Token.VOLUME},
+            "exp:pedal": {Token.ID: 0, Token.TYPE: ControlType.EXPRESSION},
+            "gain:knob": {Token.ID: 1, Token.TYPE: ControlType.KNOB},
+            "vol:knob": {Token.ID: 2, Token.TYPE: ControlType.VOLUME},
         },
     )
     instance.link_data(pedalboards=[mock_pedalboard], current=mock_current, footswitches=[])
@@ -373,7 +374,7 @@ def test_tweak_button_click_closes_parameter_dialog(lcd):
     assert d.parent is not None  # open
 
     knob = Controller(midi_channel=0, midi_CC=None)
-    knob.type = Token.KNOB
+    knob.type = ControlType.KNOB
     knob.id = 1
     instance.handle(SwitchEvent(controller=knob, kind=SwitchEventKind.PRESS, timestamp=0.0))
     assert d.parent is None  # closed by the tweak-button click
@@ -596,7 +597,7 @@ def test_parameter_dialog_shows_tweak_badge_for_external_param(lcd):
     }
     ext_param = Parameter(ext_info, 0, "0:71", EXTERNAL_INSTANCE_ID)
 
-    enc = EncoderController(d_pin=None, clk_pin=None, type=Token.KNOB, id=2, midi_channel=0, midi_CC=71)
+    enc = EncoderController(d_pin=None, clk_pin=None, type=ControlType.KNOB, id=2, midi_channel=0, midi_CC=71)
     enc.bind_to_parameter(ext_param)
     instance.handler.hardware.controllers = {"0:71": enc}
     instance.handler.effective_table = ContextStack(

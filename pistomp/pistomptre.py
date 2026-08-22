@@ -18,7 +18,7 @@
 import logging
 
 import pistomp.analogVU as AnalogVU
-import common.token as Token
+from pistomp.config.model import ControlType
 import common.util as Util
 import pistomp.encoder_controller as EncoderController
 import pistomp.hardware as hardware
@@ -101,10 +101,10 @@ class Pistomptre(hardware.Hardware):
         sw_pin = Util.DICT_GET(enc_pins, 'SW')
 
         # Volume encoders have no MIDI CC; tweak encoders are KNOB-typed.
-        if type == Token.VOLUME:
+        if type == ControlType.VOLUME:
             enc_type, enc_cc = type, None
         else:
-            enc_type, enc_cc = Token.KNOB, midi_cc
+            enc_type, enc_cc = ControlType.KNOB, midi_cc
 
         return EncoderController.EncoderController(
             d_pin=d_pin, clk_pin=clk_pin,
@@ -116,7 +116,7 @@ class Pistomptre(hardware.Hardware):
 
     def init_encoders(self):
         enc = EncoderController.EncoderController(
-            NAV_PIN_D, NAV_PIN_CLK, type=Token.NAV,
+            NAV_PIN_D, NAV_PIN_CLK, type=ControlType.NAV,
             sw_adc_chan=NAV_ADC_CHAN, spi=self.spi,
             max_drain=1,  # one detent per tick → visible selector scanning
         )

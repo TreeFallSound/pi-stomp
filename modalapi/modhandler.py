@@ -99,6 +99,7 @@ from modalapi.ws_protocol import (
 )
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 import pistomp.config as config
+from pistomp.config.model import ControlType
 from modalapi.version_check import DpkgDriftCheck
 
 from pistomp.controller_manager import ControllerManager
@@ -319,7 +320,7 @@ class Modhandler(Handler):
         if master is None:  # card exposes no master mixer control (e.g. hifiberry)
             return
         for enc in self.hardware.encoders:
-            if enc.type != Token.VOLUME or not isinstance(enc, EncoderController):
+            if enc.type != ControlType.VOLUME or not isinstance(enc, EncoderController):
                 continue
             value = self.audiocard.get_volume_parameter(master)
             info = PortInfo(
@@ -401,7 +402,7 @@ class Modhandler(Handler):
         # backing plugin parameter, just the audio card.
         delta = int(round(event.rotations * effective_multiplier(event.multiplier, c.parameter)))
 
-        if c.type == Token.VOLUME and c.parameter is not None:
+        if c.type == ControlType.VOLUME and c.parameter is not None:
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
             c.parameter.preview(new_value)
             self.audiocard.set_volume_parameter(self.audiocard.MASTER, new_value)
@@ -1125,6 +1126,9 @@ class Modhandler(Handler):
         if self._current is not None and self._current.analog_controllers:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
+        if self._current is not None:
+            self._current.close()
+
         # Delete previous "current"
         del self._current
 
@@ -1260,6 +1264,9 @@ class Modhandler(Handler):
         if self._is_pedalboard_loading or self.ws_bridge is None or param.instance_id is None:
             return False
         return self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
+
+    def _track_controller_binding(self, controller: Controller, plugin: Plugin) -> None:
+        self._controller_manager.track_binding(controller, plugin)
 
     def _redraw_after_binding(self, controller: Controller | None, is_footswitch: bool) -> None:
         if is_footswitch and controller is not None:

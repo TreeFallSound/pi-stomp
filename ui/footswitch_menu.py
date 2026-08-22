@@ -20,9 +20,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
-import common.token as Token
-from common.contexts import LongpressActionConfig
-from pistomp.config.model import FootswitchBinding
+from pistomp.config.model import (
+    FootswitchBinding,
+    LongpressAction,
+    MINUS,
+)
 from plugins.chrome import BTN_GAP, BTN_H
 from uilib import Box, Config, Dialog, TextWidget, WidgetAlign, get_text_size
 from uilib.paint import PaintContext
@@ -39,12 +41,7 @@ LINE_H = 18
 ROW_PAD = 4
 DIVIDER_H = 8
 
-# U+2212: the ASCII hyphen is half the width of "+" and reads as a dash, not
-# an operator, next to it.
-MINUS = "−"
-
-# Only the string/list longpress enum (pistomp/config.py schema); the mapping
-# form (midi_CC/preset/pedalboard) is handled separately by _label_for_mapping.
+# Only the string/list longpress enum; the mapping form calls .label() directly.
 _ACTION_LABELS = {
     "next_snapshot": "Snapshot +",
     "previous_snapshot": f"Snapshot {MINUS}",
@@ -59,22 +56,6 @@ _ACTION_LABELS = {
 def _label_for_action(name: str) -> str:
     return _ACTION_LABELS.get(name, name)
 
-
-def _label_for_mapping(action: LongpressActionConfig) -> str:
-    midi_cc = action.get("midi_CC")
-    if midi_cc is not None:
-        return f"MIDI CC {midi_cc}"
-    # config.yml says "preset"; MOD and the rest of the UI say "snapshot".
-    preset = action.get("preset")
-    if preset is not None:
-        if preset == Token.UP:
-            return "Snapshot +"
-        if preset == Token.DOWN:
-            return f"Snapshot {MINUS}"
-        return f"Snapshot {preset}"
-    return "Pedalboard +" if action.get("pedalboard") == Token.UP else f"Pedalboard {MINUS}"
-
-
 def _rows_from_bindings(bindings: Sequence[FootswitchBinding], id_to_letter: dict[int, str]) -> list[tuple[str, str]]:
     """(letters, label) rows: footswitches that share a longpress name chord
     together. A mapping-form longpress is always its own row."""
@@ -84,14 +65,18 @@ def _rows_from_bindings(bindings: Sequence[FootswitchBinding], id_to_letter: dic
         longpress = binding.longpress
         if longpress is None:
             continue
-        if isinstance(longpress, dict):
-            groups.setdefault(binding.id, []).append(binding.id)
-            labels[binding.id] = _label_for_mapping(longpress)
-        else:
-            names = longpress.split() if isinstance(longpress, str) else longpress
-            for name in names:
-                groups.setdefault(name, []).append(binding.id)
-                labels[name] = _label_for_action(name)
+        match longpress:
+            case LongpressAction():
+                groups.setdefault(binding.id, []).append(binding.id)
+                labels[binding.id] = longpress.label()
+            case str():
+                for name in longpress.split():
+                    groups.setdefault(name, []).append(binding.id)
+                    labels[name] = _label_for_action(name)
+            case _:
+                for name in longpress:
+                    groups.setdefault(name, []).append(binding.id)
+                    labels[name] = _label_for_action(name)
 
     rows = []
     for key, ids in groups.items():
