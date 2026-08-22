@@ -15,6 +15,8 @@ from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from common.parameter_steps import ParameterSteps
 from modalapi.plugin import Plugin
 import common.token as Token
+from pistomp.config.adapt_v1 import adapt
+from pistomp.config.schema_v1 import merge
 from tests.types import SystemFixture
 from modalapi.connections import Connection, Endpoint, EndpointKind
 from plugins.customization import lookup
@@ -854,7 +856,7 @@ def test_v3_pedalboard_switch_multi_fs_same_plugin_show_bound_off_color(
     )
 
     handler.current.pedalboard.plugins = [doom]
-    hw.reinit(None)
+    hw.reinit(adapt(merge(hw.default_cfg)))
     handler.bind_current_pedalboard()
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()

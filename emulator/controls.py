@@ -98,7 +98,6 @@ class MockFootswitch(footswitch.Footswitch):
         # led_pin=None, pixel=None, gpio_input=None, adc_input=None — no GPIO paths taken
         super().__init__(id, None, None, midi_CC, midi_channel, refresh_callback)
         self.type = None
-        self.cfg = {}
 
     def poll(self):
         pass
@@ -111,10 +110,10 @@ class MockFootswitch(footswitch.Footswitch):
 class MockAnalogControl(analogmidicontrol.AnalogMidiControl):
     """Expression pedal / knob with no SPI/ADC.  Value set externally."""
 
-    def __init__(self, midi_CC, midi_channel, control_type=None, id=None, cfg=None, midiout=None):
+    def __init__(self, midi_CC, midi_channel, control_type=None, id=None, midiout=None):
         super().__init__(spi=None, adc_channel=None, tolerance=0,
                          midi_CC=midi_CC, midi_channel=midi_channel,
-                         type=control_type, id=id, cfg=cfg)
+                         type=control_type, id=id)
         self.midiout = midiout
         self.value = 64
 

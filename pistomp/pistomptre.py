@@ -123,22 +123,19 @@ class Pistomptre(hardware.Hardware):
         self.encoders.append(enc)
 
         # Tweak encoders
-        cfg = self.default_cfg.copy()
-        self.create_encoders(cfg)
+        self.create_encoders(self.config)
 
     def init_relays(self):
         pass
 
     def init_analog_controls(self):
         # These are defined in the config file
-        cfg = self.default_cfg.copy()
         if len(self.analog_controls) == 0:
-            self.create_analog_controls(cfg)
+            self.create_analog_controls(self.config)
     def init_footswitches(self):
         # These are defined in the config file
-        cfg = self.default_cfg.copy()
         if len(self.footswitches) == 0:
-            self.create_footswitches(cfg)
+            self.create_footswitches(self.config)
 
     def init_vu(self):
         if self.ledstrip is None:

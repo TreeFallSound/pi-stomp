@@ -100,7 +100,7 @@ def main():
     handler = None
     midiout = None
 
-    cfg: dict[str, Any] | None = None
+    cfg: config.ConfigDocument | None = None
     audiocard: Audiocard | None = None
 
     is_emulator = args.host[0] in EMULATOR_HOSTS

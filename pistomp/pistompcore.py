@@ -91,14 +91,12 @@ class Pistompcore(hardware.Hardware):
         self.relay.init_state()
 
     def init_analog_controls(self):
-        cfg = self.default_cfg.copy()
         if len(self.analog_controls) == 0:
-            self.create_analog_controls(cfg)
+            self.create_analog_controls(self.config)
 
     def init_footswitches(self):
-        cfg = self.default_cfg.copy()
         if len(self.footswitches) == 0:
-            self.create_footswitches(cfg)
+            self.create_footswitches(self.config)
 
     def cleanup(self):
         pass

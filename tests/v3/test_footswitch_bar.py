@@ -8,20 +8,27 @@ import yaml
 
 from uilib.footswitch import FootswitchBarPanel
 from uilib.text import TextWidget
-from ui.footswitch_menu import MINUS, _label_for_mapping, _partition_rows, _rows_from_entries
+import pistomp.config as config
+from pistomp.config.adapt_v1 import _footswitch
+from pistomp.config.schema_v1 import FootswitchEntry
+from ui.footswitch_menu import MINUS, _label_for_mapping, _partition_rows, _rows_from_bindings
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click, nav_step
 
 
-def test_rows_from_entries_chords_and_solo():
+def _bindings(entries):
+    return [_footswitch(FootswitchEntry(**e), midi_channel=0) for e in entries]
+
+
+def test_rows_from_bindings_chords_and_solo():
     id_to_letter = {0: "A", 1: "B", 2: "C", 3: "D"}
     entries = [
         {"id": 0, "longpress": "toggle_bypass"},
-        {"id": 1, "longpress": "toggle_bypass"},  # chords with id 0 (shared name)
-        {"id": 2, "longpress": "toggle_tuner_enable"},  # solo
-        {"id": 3, "longpress": {"pedalboard": "DOWN"}},  # mapping-form: never chords
+        {"id": 1, "longpress": "toggle_bypass"},
+        {"id": 2, "longpress": "toggle_tuner_enable"},
+        {"id": 3, "longpress": {"pedalboard": "DOWN"}},
     ]
-    rows = _rows_from_entries(entries, id_to_letter)
+    rows = _rows_from_bindings(_bindings(entries), id_to_letter)
     assert rows == [
         ("A+B", "Toggle Bypass"),
         ("C", "Tuner"),
@@ -29,10 +36,10 @@ def test_rows_from_entries_chords_and_solo():
     ]
 
 
-def test_rows_from_entries_skips_entries_without_longpress():
+def test_rows_from_bindings_skips_entries_without_longpress():
     id_to_letter = {0: "A", 1: "B"}
     entries = [{"id": 0, "midi_CC": 60}, {"id": 1, "longpress": "next_snapshot"}]
-    assert _rows_from_entries(entries, id_to_letter) == [("B", "Snapshot +")]
+    assert _rows_from_bindings(_bindings(entries), id_to_letter) == [("B", "Snapshot +")]
 
 
 def test_label_for_mapping_preset_and_midi():
@@ -122,6 +129,7 @@ def test_footswitch_menu_pedalboard_rows_and_divider(v3_system: SystemFixture, t
         )
     )
     handler.current.pedalboard.bundle = str(bundle_dir)
+    handler.hardware.reinit(config.resolve(handler.hardware.default_cfg, bundle_dir))
 
     lcd.footswitch_menu.open()
     menu_panel = lcd.footswitch_menu._panel

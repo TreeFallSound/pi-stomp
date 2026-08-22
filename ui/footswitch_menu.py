@@ -15,24 +15,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Footswitch long-press bindings menu.
-
-A read-only list, opened by long-pressing the footswitch bar: single-switch
-longpress actions, a divider, then the chords. The pedalboard's own config.yml
-shadows default_config.yml per footswitch id, as Hardware.__init_footswitches
-does. Built directly on Dialog (like EthernetMenu/WifiMenu) rather than
-ModalDialog/PluginPanel — there's no Plugin or reactive parameter state behind
-a static config listing.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-import yaml
+from typing import TYPE_CHECKING, Sequence
 
 import common.token as Token
+from common.contexts import LongpressActionConfig
+from pistomp.config.model import FootswitchBinding
 from plugins.chrome import BTN_GAP, BTN_H
 from uilib import Box, Config, Dialog, TextWidget, WidgetAlign, get_text_size
 from uilib.paint import PaintContext
@@ -70,40 +60,37 @@ def _label_for_action(name: str) -> str:
     return _ACTION_LABELS.get(name, name)
 
 
-def _label_for_mapping(action: dict[str, Any]) -> str:
-    if Token.MIDI_CC in action:
-        return f"MIDI CC {action[Token.MIDI_CC]}"
+def _label_for_mapping(action: LongpressActionConfig) -> str:
+    midi_cc = action.get("midi_CC")
+    if midi_cc is not None:
+        return f"MIDI CC {midi_cc}"
     # config.yml says "preset"; MOD and the rest of the UI say "snapshot".
-    if Token.PRESET in action:
-        value = action[Token.PRESET]
-        if value == Token.UP:
+    preset = action.get("preset")
+    if preset is not None:
+        if preset == Token.UP:
             return "Snapshot +"
-        if value == Token.DOWN:
+        if preset == Token.DOWN:
             return f"Snapshot {MINUS}"
-        return f"Snapshot {value}"
-    value = action["pedalboard"]
-    return "Pedalboard +" if value == Token.UP else f"Pedalboard {MINUS}"
+        return f"Snapshot {preset}"
+    return "Pedalboard +" if action.get("pedalboard") == Token.UP else f"Pedalboard {MINUS}"
 
 
-def _rows_from_entries(entries: list[dict[str, Any]], id_to_letter: dict[int, str]) -> list[tuple[str, str]]:
-    """(letters, label) rows: footswitches sharing a string/list longpress
-    name chord together (FootswitchChords groups by name); a mapping-form
-    longpress is always its own row — it never joins a named group (see
-    Footswitch.set_longpress_groups)."""
+def _rows_from_bindings(bindings: Sequence[FootswitchBinding], id_to_letter: dict[int, str]) -> list[tuple[str, str]]:
+    """(letters, label) rows: footswitches that share a longpress name chord
+    together. A mapping-form longpress is always its own row."""
     groups: dict[object, list[int]] = {}
     labels: dict[object, str] = {}
-    for entry in entries:
-        longpress = entry.get(Token.LONGPRESS)
+    for binding in bindings:
+        longpress = binding.longpress
         if longpress is None:
             continue
-        fs_id = entry[Token.ID]
         if isinstance(longpress, dict):
-            groups.setdefault(fs_id, []).append(fs_id)
-            labels[fs_id] = _label_for_mapping(longpress)
+            groups.setdefault(binding.id, []).append(binding.id)
+            labels[binding.id] = _label_for_mapping(longpress)
         else:
             names = longpress.split() if isinstance(longpress, str) else longpress
             for name in names:
-                groups.setdefault(name, []).append(fs_id)
+                groups.setdefault(name, []).append(binding.id)
                 labels[name] = _label_for_action(name)
 
     rows = []
@@ -121,20 +108,6 @@ def _partition_rows(rows: list[tuple[str, str]]) -> tuple[list[tuple[str, str]],
     return singles, chords
 
 
-def _pedalboard_footswitch_entries(bundle: str) -> tuple[list[dict[str, Any]], set[int]]:
-    """Raw footswitch entries from this pedalboard's own config.yml, and the
-    full set of ids it touches — including entries with no longpress: of
-    their own, since Hardware.__init_footswitches's clear_pedalboard_info()
-    wipes any *default* longpress for those ids too."""
-    config_file = Path(bundle) / "config.yml"
-    if not config_file.exists():
-        return [], set()
-    with open(config_file, "r") as f:
-        cfg = yaml.load(f, Loader=yaml.SafeLoader)
-    entries = ((cfg or {}).get(Token.HARDWARE) or {}).get(Token.FOOTSWITCHES) or []
-    return entries, {e[Token.ID] for e in entries}
-
-
 class _BindingsDialog(Dialog):
     divider_y: int | None = None
     divider_color = (70, 70, 70)
@@ -146,24 +119,16 @@ class _BindingsDialog(Dialog):
 
 
 class FootswitchMenu:
-    """Opened by long-pressing the footswitch bar. Mirrors EthernetMenu: a
-    single Dialog pushed onto the panel stack, dismissed by its own Back
-    button — content is rebuilt fresh on every open() rather than tracked
-    live, since it only depends on the pedalboard that's already current."""
+    """Shows the long-press bindings for all footswitches, grouped by name."""
 
     def __init__(self, lcd: "Lcd") -> None:
         self.lcd = lcd
         self._panel: Dialog | None = None
 
     def open(self) -> None:
-        hardware = self.lcd.handler.hardware
-        default_entries = hardware.default_cfg[Token.HARDWARE][Token.FOOTSWITCHES]
-        id_to_letter = {e[Token.ID]: chr(ord("A") + e[Token.ID]) for e in default_entries}
-
-        bundle = self.lcd.handler.current.pedalboard.bundle
-        pb_entries, pb_ids = _pedalboard_footswitch_entries(bundle)
-        merged = [e for e in default_entries if e[Token.ID] not in pb_ids] + pb_entries
-        single_rows, chord_rows = _partition_rows(_rows_from_entries(merged, id_to_letter))
+        bindings = self.lcd.handler.hardware.config.footswitches
+        id_to_letter = {b.id: chr(ord("A") + b.id) for b in bindings}
+        single_rows, chord_rows = _partition_rows(_rows_from_bindings(bindings, id_to_letter))
 
         show_divider = bool(single_rows) and bool(chord_rows)
         num_rows = len(single_rows) + len(chord_rows)

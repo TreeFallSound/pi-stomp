@@ -51,7 +51,7 @@ def test_bind_preserves_volume_binding_clears_others():
 
 
 def _external_analog(midi_cc=75, midi_channel=0, ctrl_id=3):
-    return AnalogMidiControl(MagicMock(), 0, 16, midi_cc, midi_channel, Token.KNOB, id=ctrl_id, cfg={})
+    return AnalogMidiControl(MagicMock(), 0, 16, midi_cc, midi_channel, Token.KNOB, id=ctrl_id)
 
 
 def test_external_controller_bound_and_displayed():

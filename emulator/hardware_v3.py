@@ -45,8 +45,7 @@ class EmulatorHardwareV3(EmulatorHardwareBase):
         self.encoders.append(nav)
         self.nav_encoder = nav
 
-        cfg = self.default_cfg.copy()
-        self.create_encoders(cfg)
+        self.create_encoders(self.config)
 
     def add_encoder(self, id, type, longpress_callback, midi_channel, midi_cc):
         """Called by Hardware.create_encoders() for each encoder in config."""

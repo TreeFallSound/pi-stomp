@@ -15,7 +15,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing import Any
 
 import common.util as util
 import pistomp.analogcontrol as analogcontrol
@@ -31,7 +30,7 @@ def as_midi_value(adc_value: int):
 
 
 class AnalogMidiControl(analogcontrol.AnalogControl, controller.StatefulController):
-    def __init__(self, spi, adc_channel, tolerance, midi_CC, midi_channel, type, id=None, cfg=None, autosync=False):
+    def __init__(self, spi, adc_channel, tolerance, midi_CC, midi_channel, type, id=None, autosync=False):
         super(AnalogMidiControl, self).__init__(spi, adc_channel, tolerance)
         controller.Controller.__init__(self, midi_channel, midi_CC)
         self.autosync = autosync
@@ -41,7 +40,6 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.StatefulControll
         self.last_read = 0
         self.midi_value = 0
         self.value = None
-        self.cfg: dict[str, Any] = cfg or {}
         self._connection = AnalogConnectionMonitor()
 
     def set_midi_channel(self, midi_channel):

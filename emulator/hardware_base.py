@@ -23,8 +23,6 @@ optionally add_encoder for config-driven encoder creation).
 """
 
 import pistomp.hardware as hardware
-import common.token as Token
-import common.util as Util
 
 from emulator.controls import MockFootswitch, MockAnalogControl, MockEncoder
 from emulator.lcd_pygame import LcdPygame
@@ -60,43 +58,20 @@ class EmulatorHardwareBase(hardware.Hardware):
         )
 
     def init_footswitches(self):
-        cfg = self.default_cfg.copy()
-        cfg_fs = cfg.get(Token.HARDWARE, {}).get(Token.FOOTSWITCHES)
-        if not cfg_fs:
-            return
-
-        midi_channel = self.get_real_midi_channel(cfg)
-        for f in cfg_fs:
-            if Util.DICT_GET(f, Token.DISABLE):
+        for b in self.config.footswitches:
+            if b.disable:
                 continue
-            id_ = Util.DICT_GET(f, Token.ID)
-            midi_cc = Util.DICT_GET(f, Token.MIDI_CC)
-            fs = MockFootswitch(id_, midi_cc, midi_channel, self.refresh_callback)
+            fs = MockFootswitch(b.id, b.midi_CC, b.midi_channel, self.refresh_callback)
             self.footswitches.append(fs)
-            if midi_cc is not None:
-                key = "%d:%d" % (midi_channel, midi_cc)
-                self.controllers[key] = fs
+            self.register_controller(fs)
 
     def init_analog_controls(self):
-        cfg = self.default_cfg.copy()
-        hw_cfg = cfg.get(Token.HARDWARE, {}) if cfg else {}
-        cfg_c = hw_cfg.get(Token.ANALOG_CONTROLLERS)
-        if not cfg_c:
-            return
-
-        midi_channel = self.get_real_midi_channel(cfg)
-        for c in cfg_c:
-            if Util.DICT_GET(c, Token.DISABLE):
+        for b in self.config.analog_controls:
+            if b.disable or b.midi_CC is None:
                 continue
-            id_ = Util.DICT_GET(c, Token.ID)
-            midi_cc = Util.DICT_GET(c, Token.MIDI_CC)
-            control_type = Util.DICT_GET(c, Token.TYPE)
-            if midi_cc is None:
-                continue
-            ctrl = MockAnalogControl(midi_cc, midi_channel, control_type, id_, c)
+            ctrl = MockAnalogControl(b.midi_CC, b.midi_channel, b.type, b.id)
             self.analog_controls.append(ctrl)
-            key = "%d:%d" % (midi_channel, midi_cc)
-            self.controllers[key] = ctrl
+            self.register_controller(ctrl)
 
     def init_relays(self):
         self.relay = StubRelay()

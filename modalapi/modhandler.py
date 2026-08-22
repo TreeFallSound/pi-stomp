@@ -30,7 +30,6 @@ import pistomp.httpclient as req
 from pistomp.httpclient import Response
 import subprocess
 import sys
-import yaml
 from collections import namedtuple
 from collections.abc import Callable
 from dataclasses import replace
@@ -99,6 +98,7 @@ from modalapi.ws_protocol import (
     WebSocketMessage,
 )
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
+import pistomp.config as config
 from modalapi.version_check import DpkgDriftCheck
 
 from pistomp.controller_manager import ControllerManager
@@ -1152,13 +1152,8 @@ class Modhandler(Handler):
                         self._apply_patch(plugin, param_uri, value)
             self._pending_dump_patch.clear()
 
-        # Load Pedalboard specific config (overrides default set during initial hardware init)
-        config_file = Path(pedalboard.bundle) / "config.yml"
-        cfg = None
-        if config_file.exists():
-            with open(config_file.as_posix(), "r") as ymlfile:
-                cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
-        self.hardware.reinit(cfg)
+        pedalboard_config = config.resolve(self.hardware.default_cfg, pedalboard.bundle)
+        self.hardware.reinit(pedalboard_config)
 
         # Initialize the data and draw on LCD
         self.bind_current_pedalboard()
@@ -1180,7 +1175,7 @@ class Modhandler(Handler):
 
         # Prepare blend modes if configured (snapshot-based activation)
         try:
-            blend_configs = cfg.get("blend_snapshots", []) if cfg else []
+            blend_configs = pedalboard_config.blend_snapshots
             bundle_path = Path(self.current.pedalboard.bundle)
 
             # Sync all blend snapshots (create/recreate based on config)

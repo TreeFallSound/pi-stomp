@@ -29,6 +29,7 @@ dependencies = [
     "gpiozero>=2.0; sys_platform == 'linux'",
     "pygame-ce>=2.5.7",
     "qrcode>=8.0",
+    "msgspec>=0.21.1",
 ]
 
 [project.optional-dependencies]
