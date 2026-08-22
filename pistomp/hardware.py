@@ -18,25 +18,35 @@
 import logging
 import os
 import sys
+from collections.abc import Callable
+from typing import TypeVar
 
-import common.token as Token
-import common.util as Util
 from common.parameter import Parameter, PortInfo, Symbol, TTL_INTEGER
 import pistomp.analogmidicontrol as AnalogMidiControl
+import pistomp.config as config
 import pistomp.encoder_controller as EncoderController
 import pistomp.footswitch as Footswitch
 import pistomp.taptempo as taptempo
 
 from abc import ABC, abstractmethod
-from rtmidi import MidiOut
 from modalapi.external_midi import ExternalMidiManager, EXTERNAL_INSTANCE_ID
 from pistomp.input.sink import InputSink
-from pistomp.controller import Controller, RoutingInfo, RoutingDestination
+from pistomp.controller import ControlType, Controller, RoutingInfo
+from pistomp.config.model import (
+    AnalogBinding,
+    EncoderBinding,
+    FootswitchBinding,
+    LongpressAction,
+    PedalboardConfig,
+    PresetStep,
+)
+from pistomp.config.schema_v1 import ConfigDocument
 import pistomp.relay as Relay
+
+_Binding = TypeVar("_Binding", FootswitchBinding, EncoderBinding, AnalogBinding)
 
 
 class Hardware(ABC):
-
     def __init__(self, default_config, handler, midiout, refresh_callback):
         logging.info("Init hardware: " + type(self).__name__)
         self.handler = handler
@@ -46,11 +56,9 @@ class Hardware(ABC):
         self.test_pass = False
         self.test_sentinel = None
 
-        # From config file(s)
-        self.default_cfg = default_config
-        self.version = self.default_cfg[Token.HARDWARE][Token.VERSION]
-        self.cfg = None          # compound cfg (default with user/pedalboard specific cfg overlaid)
-        self.midi_channel = 0
+        self.default_cfg: ConfigDocument = default_config
+        self.config = config.resolve(default_config)
+        self.base_config = self.config
 
         # Standard hardware objects (not required to exist)
         self.relay: Relay.Relay | None = None
@@ -64,9 +72,17 @@ class Hardware(ABC):
         self.taptempo = taptempo.TapTempo(None)
         self.external_midi: ExternalMidiManager | None = None
         # control → destination; absent means internal (virtual/mod-host).
-        # Rebuilt every reinit in __apply_midi_routing. Identity-keyed; controllers
-        # are stable across reinit (mutated in place).
+        # Rebuilt every reinit. Identity-keyed; controllers are stable across
+        # reinit (mutated in place).
         self.external_routing: dict[Controller, RoutingInfo] = {}
+
+    @property
+    def version(self) -> float:
+        return self.config.version
+
+    @property
+    def midi_channel(self) -> int:
+        return self.config.midi_channel
 
     def register_sink(self, sink: InputSink) -> None:
         """Assign `sink` as the default dispatch target for every controller
@@ -89,6 +105,7 @@ class Hardware(ABC):
 
     def init_spi(self):
         import spidev
+
         self.spi = spidev.SpiDev()
         self.spi.open(0, 1)  # Bus 0, CE1
         self.spi.max_speed_hz = 1_000_000
@@ -96,22 +113,30 @@ class Hardware(ABC):
     def poll_controls(self):
         # This is intended to be called periodically from main working loop to poll the instantiated controls
         for c in self.analog_controls:
-            c.refresh()
+            if not c.disabled:
+                c.refresh()
         for e in self.encoders:
+            if e.disabled:
+                continue
             e.read_rotary()
-            if hasattr(e, "poll"):
-                e.poll()
+            e.poll()
         for s in self.footswitches:
             s.poll()
 
     def sync_analog_controls(self):
         """Send current values of analog controls with autosync enabled via MIDI."""
         for control in self.analog_controls:
-            if isinstance(control, AnalogMidiControl.AnalogMidiControl) and control.autosync:
+            if isinstance(control, AnalogMidiControl.AnalogMidiControl) and not control.disabled and control.autosync:
                 try:
                     control.send_current_value()
                 except Exception as e:
                     logging.warning(f"Failed to sync analog control {control.midi_CC}: {e}")
+
+    def longpress_action(self, fs: Footswitch.Footswitch) -> LongpressAction | None:
+        """The mapping form of longpress, which has no home on the footswitch."""
+        binding = self.config.footswitch(fs.id) if fs.id is not None else None
+        spec = binding.longpress if binding is not None else None
+        return None if spec is None or isinstance(spec, tuple) else spec
 
     def is_external(self, controller: Controller) -> bool:
         return controller in self.external_routing
@@ -132,59 +157,61 @@ class Hardware(ABC):
         for i in self.indicators:
             i.recalibrate_baseline(baseline)
 
-    def reinit(self, cfg):
-        # reinit hardware as specified by the new cfg context (after pedalboard change, etc.)
-        self.cfg = self.default_cfg.copy()
-        self.external_routing.clear()  # rebuilt by __route_section for this cfg overlay
-
-        self.__init_midi_default()
-
-        # Reset the handler's chord resolver for this pedalboard.
+    def reinit(self, config: PedalboardConfig) -> None:
+        self.config = config
+        self.external_routing.clear()
+        self.controllers.clear()
         self.handler.chord_helper.rebuild(self.handler.callbacks)
 
-        # Apply defaults
-        self.__init_footswitches(self.cfg)
-        self.__init_encoders(self.cfg)
+        if self.external_midi is not None:
+            self.external_midi.set_config(config.external_midi)
 
-        # External MIDI configuration
-        self.__init_external_midi(self.cfg)
-        self.__apply_midi_routing(self.cfg)
-
-        # Pedalboard specific config
-        if cfg is not None:
-            self.__init_midi(cfg)
-            self.__init_footswitches(cfg)
-            self.__init_external_midi(cfg)
-            self.__init_encoders(cfg)
-            self.__apply_midi_routing(cfg)
-
-        # Register final longpress-group membership with the chord resolver.
+        # Apply a binding to every control that the base config creates, or the
+        # control keeps the state of the pedalboard before it.
         for fs in self.footswitches:
+            binding = self.__binding(config.footswitch, self.base_config.footswitch, fs.id)
+            if binding is not None:
+                self.__apply_footswitch(fs, binding)
             self.handler.chord_helper.register(fs)
 
-    @abstractmethod
-    def init_analog_controls(self):
-        ...
+        for enc in self.encoders:
+            if enc.type is ControlType.NAV:
+                continue  # NAV takes no config; its id is a screen position
+            binding = self.__binding(config.encoder, self.base_config.encoder, enc.id)
+            if binding is not None:
+                self.__apply_encoder(enc, binding)
+
+        for ac in self.analog_controls:
+            binding = self.__binding(config.analog_control, self.base_config.analog_control, ac.id)
+            if binding is not None:
+                self.__apply_analog_control(ac, binding)
+
+    @staticmethod
+    def __binding(
+        current: Callable[[int], _Binding | None], base: Callable[[int], _Binding | None], control_id: int | None
+    ) -> _Binding | None:
+        if control_id is None:
+            return None
+        binding = current(control_id)
+        return binding if binding is not None else base(control_id)
 
     @abstractmethod
-    def init_encoders(self):
-        ...
+    def init_analog_controls(self): ...
 
     @abstractmethod
-    def init_footswitches(self):
-        ...
+    def init_encoders(self): ...
 
     @abstractmethod
-    def init_relays(self):
-        ...
+    def init_footswitches(self): ...
 
     @abstractmethod
-    def cleanup(self):
-        ...
+    def init_relays(self): ...
 
     @abstractmethod
-    def test(self):
-        ...
+    def cleanup(self): ...
+
+    @abstractmethod
+    def test(self): ...
 
     def run_test(self):
         # if test sentinel file exists execute hardware test
@@ -194,171 +221,108 @@ class Hardware(ABC):
             self.test_pass = False
             self.test()
 
-    def create_footswitches(self, cfg):
-        if cfg is None or (Token.HARDWARE not in cfg) or (Token.FOOTSWITCHES not in cfg[Token.HARDWARE]):
+    def create_footswitches(self, config: PedalboardConfig) -> None:
+        bindings = [b for b in config.footswitches if not b.disable]
+        if not bindings:
             return
 
-        cfg_fs = cfg[Token.HARDWARE][Token.FOOTSWITCHES]
-        if cfg_fs is None:
-            return
+        uses_ledstrip = self.ledstrip is not None and any(b.ledstrip_position is not None for b in bindings)
+        if uses_ledstrip:
+            assert self.ledstrip is not None
+            ledstrip_gpio = self.ledstrip.get_gpio()
+            if ledstrip_gpio in [b.gpio_output for b in bindings]:
+                logging.error(
+                    "Config file error. A gpio_output cannot use the GPIO of the ledstrip at ledstrip_position"
+                )
+                sys.exit()
 
-        # determine if an ledstrip is referenced, if so create an object
-        ledstrip_gpio = None
-        gpio_output_list = []
-        for f in cfg_fs:
-            if self.ledstrip is not None and Util.DICT_GET(f, Token.LEDSTRIP_POSITION) is not None:
-                ledstrip_gpio = self.ledstrip.get_gpio()
-            gpio_output_list.append(Util.DICT_GET(f, Token.GPIO_OUTPUT))
+        for b in bindings:
+            gpio_input = b.gpio_input
+            if self.debounce_map and b.debounce_input in self.debounce_map:
+                gpio_input = self.debounce_map[b.debounce_input]
 
-        # Must make sure a gpio_output is not specified on the PWM pin used for an ledstring
-        if ledstrip_gpio is not None and ledstrip_gpio in gpio_output_list:
-            logging.error("Config file error.  Cannot have %s on the same GPIO as used for an ledstring referenced by %s"
-                          % (Token.GPIO_OUTPUT, Token.LEDSTRIP_POSITION))
-            sys.exit()
-
-        midi_channel = self.get_real_midi_channel(cfg)
-        idx = 0
-        for f in cfg_fs:
-            if Util.DICT_GET(f, Token.DISABLE) is True:
+            if b.adc_input is None and gpio_input is None:
+                logging.error("Config file error. Footswitch %d has no adc_input, gpio_input or debounce_input", b.id)
                 continue
-
-            di = Util.DICT_GET(f, Token.DEBOUNCE_INPUT)
-            if self.debounce_map and di in self.debounce_map:
-                gpio_input = self.debounce_map[di]
-            else:
-                gpio_input = Util.DICT_GET(f, Token.GPIO_INPUT)
-
-            adc_input = Util.DICT_GET(f, Token.ADC_INPUT)
-            gpio_output = Util.DICT_GET(f, Token.GPIO_OUTPUT)
-            tap_tempo_callback = Util.DICT_GET(f, Token.TAP_TEMPO)
-            midi_cc = Util.DICT_GET(f, Token.MIDI_CC)
-            id = Util.DICT_GET(f, Token.ID)
-            led_position = Util.DICT_GET(f, Token.LEDSTRIP_POSITION)
 
             pixel = None
-            if self.ledstrip and led_position is not None:
-                pixel = self.ledstrip.add_pixel(id if id else idx, led_position)
+            if self.ledstrip is not None and b.ledstrip_position is not None:
+                pixel = self.ledstrip.add_pixel(b.id, b.ledstrip_position)
 
-            # Create the footswitch object
-            if adc_input is None and gpio_input is None:
-                 logging.error("Config file error.  Footswitch specified without %s or %s or %s" %
-                               (Token.DEBOUNCE_INPUT, Token.GPIO_INPUT, Token.ADC_INPUT))
-                 continue
+            switch_taptempo = None
+            if b.tap_tempo is not None:
+                switch_taptempo = self.taptempo
+                switch_taptempo.set_callback(self.handler.get_callback(b.tap_tempo))
 
-            taptempo = (self.taptempo if tap_tempo_callback else None)
-            if taptempo:
-                taptempo.set_callback(self.handler.get_callback(tap_tempo_callback))
-
-            fs: Footswitch.Footswitch | None = None
-            if adc_input is not None:
-                fs = Footswitch.Footswitch(id if id else idx, gpio_output, pixel, midi_cc, midi_channel,
-                                           refresh_callback=self.refresh_callback,
-                                           adc_input=adc_input, spi=self.spi,
-                                           taptempo = taptempo)
-                logging.debug("Created Footswitch on ADC input: %d, Midi Chan: %d, CC: %s" %
-                              (adc_input, midi_channel, midi_cc))
-            elif gpio_input is not None:
-                fs = Footswitch.Footswitch(id if id else idx, gpio_output, pixel, midi_cc, midi_channel,
-                                           refresh_callback=self.refresh_callback,
-                                           gpio_input=gpio_input,
-                                           taptempo = taptempo)
-                logging.debug("Created Footswitch on GPIO input: %d, Midi Chan: %d, CC: %s" %
-                              (gpio_input, midi_channel, midi_cc))
-
-            assert fs is not None, "No footswitch created for config: %s" % f
+            if b.adc_input is not None:
+                fs = Footswitch.Footswitch(
+                    b.id,
+                    b.gpio_output,
+                    pixel,
+                    b.midi_CC,
+                    b.midi_channel,
+                    refresh_callback=self.refresh_callback,
+                    adc_input=b.adc_input,
+                    spi=self.spi,
+                    taptempo=switch_taptempo,
+                )
+            else:
+                fs = Footswitch.Footswitch(
+                    b.id,
+                    b.gpio_output,
+                    pixel,
+                    b.midi_CC,
+                    b.midi_channel,
+                    refresh_callback=self.refresh_callback,
+                    gpio_input=gpio_input,
+                    taptempo=switch_taptempo,
+                )
+            logging.debug("Created Footswitch %d, Midi Chan: %d, CC: %s", b.id, b.midi_channel, b.midi_CC)
             self.footswitches.append(fs)
-            idx += 1
+            self.register_controller(fs)
 
-    def create_analog_controls(self, cfg):
-        if cfg is None or (Token.HARDWARE not in cfg) or (Token.ANALOG_CONTROLLERS not in cfg[Token.HARDWARE]):
-            return
-
-        midi_channel = self.get_real_midi_channel(cfg)
-        cfg_c = cfg[Token.HARDWARE][Token.ANALOG_CONTROLLERS]
-        if cfg_c is None:
-            return
-        for c in cfg_c:
-            if Util.DICT_GET(c, Token.DISABLE) is True:
+    def create_analog_controls(self, config: PedalboardConfig) -> None:
+        for b in config.analog_controls:
+            if b.disable:
+                continue
+            if b.adc_input is None:
+                logging.error("Config file error. Analog control %d has no adc_input", b.id)
+                continue
+            if b.midi_CC is None:
+                logging.error("Config file error. Analog control %d has no midi_CC", b.id)
                 continue
 
-            id = Util.DICT_GET(c, Token.ID)
-            adc_input = Util.DICT_GET(c, Token.ADC_INPUT)
-            midi_cc = Util.DICT_GET(c, Token.MIDI_CC)
-            threshold = Util.DICT_GET(c, Token.THRESHOLD)
-            control_type = Util.DICT_GET(c, Token.TYPE)
-            autosync = Util.DICT_GET(c, Token.AUTOSYNC)
-
-            if adc_input is None:
-                logging.error("Config file error.  Analog control specified without %s" % Token.ADC_INPUT)
-                continue
-            if midi_cc is None:
-                logging.error("Config file error.  Analog control specified without %s" % Token.MIDI_CC)
-                continue
-            if threshold is None:
-                threshold = 16  # Default, 1024 is full scale
-            if autosync is None:
-                autosync = False  # Default to False
-
-            control = AnalogMidiControl.AnalogMidiControl(self.spi, adc_input, threshold, midi_cc, midi_channel,
-                                                          control_type, id, c, autosync)
+            control = AnalogMidiControl.AnalogMidiControl(
+                self.spi, b.adc_input, b.threshold, b.midi_CC, b.midi_channel, b.type, b.id, b.autosync
+            )
             self.analog_controls.append(control)
-            key = format("%d:%d" % (midi_channel, midi_cc))
-            self.controllers[key] = control
-            logging.debug("Created AnalogMidiControl Input: %d, Midi Chan: %d, CC: %d" %
-                          (adc_input, midi_channel, midi_cc))
+            self.register_controller(control)
+            logging.debug(
+                "Created AnalogMidiControl Input: %d, Midi Chan: %d, CC: %d", b.adc_input, b.midi_channel, b.midi_CC
+            )
 
     @abstractmethod
-    def add_encoder(self, id, type, longpress_callback, midi_channel, midi_cc) -> EncoderController.EncoderController | None:
+    def add_encoder(
+        self, id, type, longpress_callback, midi_channel, midi_cc
+    ) -> EncoderController.EncoderController | None:
         # This should be implemented by hardware subclasses that support tweak encoders (Tre at least)
         ...
 
-    def create_encoders(self, cfg):
-        if cfg is None or (Token.HARDWARE not in cfg) or (Token.ENCODERS not in cfg[Token.HARDWARE]):
-            return
-
-        midi_channel = self.get_real_midi_channel(cfg)
-        cfg_c = cfg[Token.HARDWARE][Token.ENCODERS]
-        if cfg_c is None:
-            return
-        for c in cfg_c:
-            if Util.DICT_GET(c, Token.DISABLE) is True:
+    def create_encoders(self, config: PedalboardConfig) -> None:
+        for b in config.encoders:
+            if b.disable:
                 continue
-
-            id = Util.DICT_GET(c, Token.ID)
-            type = Util.DICT_GET(c, Token.TYPE)
-            midi_cc = Util.DICT_GET(c, Token.MIDI_CC)
-            longpress_callback = Util.DICT_GET(c, Token.LONGPRESS)
-
-            if id is None:
-                logging.error("Config file error.  Encoder specified without %s" % Token.ID)
-                continue
-
-            # midi_port routing is applied later in __apply_midi_routing (external_midi is None here)
             try:
-                control = self.add_encoder(id, type, longpress_callback, midi_channel, midi_cc)
-                # FIXME: add_encoder returns None for emulator v1/v2 stubs that don't
-                # implement config-driven encoders, forcing the return type to be optional.
-                if control is not None:
-                    self.encoders.append(control)
+                control = self.add_encoder(b.id, b.type, b.longpress, b.midi_channel, b.midi_CC)
             except Exception:
-                logging.exception("Failed to create encoder with config: %s" % c)
+                logging.exception("Failed to create encoder %d", b.id)
                 continue
-
-            if midi_cc is not None:
-                assert isinstance(control, EncoderController.EncoderController), "Encoder specified with MIDI CC must be an EncoderController"
-                key = format("%d:%d" % (midi_channel, midi_cc))
-                self.controllers[key] = control
-                logging.debug("Created Encoder: %d, Midi Chan: %d, CC: %d" % (id, midi_channel, midi_cc))
-
-    def get_real_midi_channel(self, cfg, default: int = 0):
-        chan = default
-        try:
-            val = cfg[Token.HARDWARE][Token.MIDI][Token.CHANNEL]
-            # LAME bug in Mod detects MIDI channel as one higher than sent (7 sent, seen by mod as 8) so compensate here
-            chan = val - 1 if val > 0 else 0
-        except KeyError:
-            pass
-        return chan
+            # FIXME: add_encoder returns None for emulator v1/v2 stubs that don't
+            # implement config-driven encoders, forcing the return type to be optional.
+            if control is not None:
+                self.encoders.append(control)
+                self.register_controller(control)
+                logging.debug("Created Encoder: %d, Midi Chan: %d, CC: %s", b.id, b.midi_channel, b.midi_CC)
 
     def create_external_parameter(self, port_name, midi_channel, midi_cc, initial_value: int = 0):
         name = f"{port_name}:{midi_cc}"
@@ -376,177 +340,66 @@ class Hardware(ABC):
             return None
         return port_name
 
-    def __resolve_midiout(self, cfg_entry) -> tuple[MidiOut, RoutingInfo]:
-        """Return (midiout, routing): always the virtual MidiOut; routing tells _emit_midi where to go."""
-        midi_port = Util.DICT_GET(cfg_entry, Token.MIDI_PORT)
-        if midi_port:
-            midi_port = self.__validate_midi_port(midi_port)
-        if not midi_port or self.external_midi is None:
-            return self.midiout, RoutingInfo.virtual()
-        self.external_midi.open_port(midi_port)  # eager: first poll-loop send must not enumerate
-        return self.midiout, RoutingInfo.external(midi_port)
-
-    def __route_section(self, cfg, section, controls, set_cc):
-        cfg_list = Util.DICT_GET(cfg[Token.HARDWARE], section)
-        if not cfg_list:
+    def register_controller(self, control: Controller) -> None:
+        if control.disabled or control.midi_CC is None:
             return
-        for entry in cfg_list:
-            ctrl_id = Util.DICT_GET(entry, Token.ID)
-            if ctrl_id is None:
-                continue
-            ctrl = next((c for c in controls if getattr(c, 'id', None) == ctrl_id), None)
-            if ctrl is None:
-                continue
-            # Footswitch midi_CC (incl. NONE removal) is owned by __init_footswitches; only encoders/analog here.
-            if set_cc:
-                midi_cc = Util.DICT_GET(entry, Token.MIDI_CC)
-                if midi_cc is not None and hasattr(ctrl, 'midi_CC'):
-                    ctrl.midi_CC = midi_cc
-            midi_port = Util.DICT_GET(entry, Token.MIDI_PORT)
-            midi_channel = Util.DICT_GET(entry, Token.MIDI_CHANNEL)
-            if midi_port and midi_channel is None:
-                logging.error("Config file error: %s id=%s sets midi_port '%s' without midi_channel; "
-                               "external devices rarely share the hardware default channel" %
-                               (section, ctrl_id, midi_port))
-            if midi_channel is not None:
-                ctrl.midi_channel = midi_channel
-            _, routing = self.__resolve_midiout(entry)
-            if routing.destination == RoutingDestination.EXTERNAL:
-                self.external_routing[ctrl] = routing
+        self.controllers["%d:%d" % (control.midi_channel, control.midi_CC)] = control
+
+    def __route(self, control: Controller, midi_port: str | None) -> None:
+        port = self.__validate_midi_port(midi_port) if midi_port else None
+        if port is None or self.external_midi is None:
+            self.external_routing.pop(control, None)
+            return
+        self.external_midi.open_port(port)
+        self.external_routing[control] = RoutingInfo.external(port)
+
+    def __apply_footswitch(self, fs: Footswitch.Footswitch, binding: FootswitchBinding) -> None:
+        fs.toggled = False
+        fs.disabled = binding.disable
+        fs.set_display_label(None)
+        fs.set_category(None)
+        fs.clear_relays()
+        fs.add_preset(direction=None, callback_arg=None)
+        fs.set_lcd_color(binding.color)
+        spec = binding.longpress
+        fs.longpress_groups = list(spec) if isinstance(spec, tuple) else []
+        fs.set_midi_channel(binding.midi_channel)
+        fs.set_midi_CC(binding.midi_CC)
+
+        if binding.uses_relay:
+            if self.relay is not None:
+                fs.add_relay(self.relay)
+                fs.set_display_label("byps")
             else:
-                self.external_routing.pop(ctrl, None)
+                logging.warning("Footswitch %s bypass config ignored, no relay hardware", binding.id)
 
-    def __apply_midi_routing(self, cfg):
-        """Route every control to its external port or the virtual port (default + pedalboard cfg)."""
-        if cfg is None or Token.HARDWARE not in cfg:
-            return
-        self.__route_section(cfg, Token.ENCODERS, self.encoders, set_cc=True)
-        self.__route_section(cfg, Token.ANALOG_CONTROLLERS, self.analog_controls, set_cc=True)
-        self.__route_section(cfg, Token.FOOTSWITCHES, self.footswitches, set_cc=False)
+        if binding.preset is not None:
+            fs.set_midi_CC(None)
+            if isinstance(binding.preset, PresetStep):
+                fs.add_preset(direction=binding.preset.value)
+                fs.set_display_label("Pre+" if binding.preset is PresetStep.UP else "Pre-")
+            else:
+                fs.add_preset(direction=str(binding.preset), callback_arg=binding.preset)
+                fs.set_display_label(str(binding.preset))
 
-    def __init_midi_default(self):
-        self.__init_midi(self.cfg, default=0)
+        self.register_controller(fs)
+        self.__route(fs, binding.midi_port)
 
-    def __init_midi(self, cfg, default: int | None = None):
-        # A pedalboard overlay declaring no channel keeps the one already in
-        # force. Falling back to 0 there would re-key every controller under
-        # "0:<cc>" while the parameter bindings still say "<chan>:<cc>", and the
-        # switch would silently stop dispatching.
-        fallback = self.midi_channel if default is None else default
-        self.midi_channel = self.get_real_midi_channel(cfg, default=fallback)
-        # TODO could iterate thru all objects here instead of handling in __init_footswitches
-        for ac in self.analog_controls:
-            if isinstance(ac, AnalogMidiControl.AnalogMidiControl):
-                ac.set_midi_channel(self.midi_channel)
+    def __apply_encoder(self, enc: Controller, binding: EncoderBinding) -> None:
+        enc.type = binding.type
+        enc.disabled = binding.disable
+        enc.midi_channel = binding.midi_channel
+        enc.midi_CC = binding.midi_CC
+        if isinstance(enc, EncoderController.EncoderController):
+            enc.set_longpress(binding.longpress)
+        self.register_controller(enc)
+        self.__route(enc, binding.midi_port)
 
-    def __init_external_midi(self, cfg):
-        """Initialize/update external MIDI config (called for both default and pedalboard)."""
-        if self.external_midi is None:
-            return
-        if cfg is None or Token.HARDWARE not in cfg:
-            return
-        ext_cfg = cfg[Token.HARDWARE].get("external_midi")
-        if ext_cfg:
-            self.external_midi.update_config(ext_cfg)
-
-    def __clear_footswitch_midi_cc(self, fs) -> None:
-        fs.set_midi_CC(None)
-        for k, v in self.controllers.items():
-            if v == fs:
-                self.controllers.pop(k)
-                break
-
-    def __init_footswitches(self, cfg):
-        if cfg is None or (Token.HARDWARE not in cfg) or (Token.FOOTSWITCHES not in cfg[Token.HARDWARE]):
-            return
-        cfg_fs = cfg[Token.HARDWARE][Token.FOOTSWITCHES]
-        idx = 0
-        fs = None
-        for fs in self.footswitches:
-            # See if a corresponding cfg entry exists.  if so, override
-            f = None
-            for f in cfg_fs:
-                if f[Token.ID] == idx:
-                    break
-                else:
-                    f = None
-
-            if f is not None:
-                # TODO reusing the footswitch object for multiple pedalboards is not ideal
-                # could easily have spillover from a previous pedalboard
-                # The mutable data should probably be stored in a separate object and destructed/constructed upon
-                # each pedalboard load
-                fs.clear_pedalboard_info()
-
-                # Bypass
-                if Token.BYPASS in f:
-                    # TODO no more right or left
-                    if f[Token.BYPASS] == Token.LEFT_RIGHT or f[Token.BYPASS] == Token.LEFT:
-                        if self.relay is not None:
-                            fs.add_relay(self.relay)
-                            fs.set_display_label("byps")
-                        else:
-                            logging.warning(
-                                "Footswitch %d bypass config ignored — no relay hardware (v3)",
-                                idx,
-                            )
-
-                # Midi
-                if Token.MIDI_CC in f:
-                    cc = f[Token.MIDI_CC]
-                    if cc == Token.NONE:
-                        self.__clear_footswitch_midi_cc(fs)
-                    else:
-                        fs.set_midi_channel(self.midi_channel)
-                        fs.set_midi_CC(cc)
-                        key = format("%d:%d" % (self.midi_channel, fs.midi_CC))
-                        self.controllers[key] = fs   # TODO problem if this creates a new element?
-
-                # Clearing midi_CC drops the fs from hw.controllers, so an
-                # unrelated plugin's MIDI-learned :bypass can't bind onto it;
-                # dispatch_key falls back to "fs:<id>" and the rows still resolve.
-                if Token.PRESET in f:
-                    self.__clear_footswitch_midi_cc(fs)
-                    preset_value = f[Token.PRESET]
-                    if preset_value == Token.UP:
-                        fs.add_preset(direction="UP")
-                        fs.set_display_label("Pre+")
-                    elif preset_value == Token.DOWN:
-                        fs.add_preset(direction="DOWN")
-                        fs.set_display_label("Pre-")
-                    elif isinstance(preset_value, int):
-                        fs.add_preset(direction=str(preset_value), callback_arg=preset_value)
-                        fs.set_display_label(str(preset_value))
-
-                # Suppress (per-pedalboard disable without removing the object)
-                if Util.DICT_GET(f, Token.DISABLE) is True:
-                    fs.disabled = True
-                    idx += 1
-                    continue
-
-                # LCD/LED attributes
-                if Token.COLOR in f:
-                    fs.set_lcd_color(f[Token.COLOR])
-
-                # Longpress and longpress groups
-                if Token.LONGPRESS in f:  # Can be a list or a single (string)
-                    fs.set_longpress_groups(Util.DICT_GET(f, Token.LONGPRESS))
-
-            idx += 1
-
-    def __init_encoders(self, cfg: dict | None) -> None:
-        if cfg is None or Token.HARDWARE not in cfg:
-            return
-        cfg_encs = Util.DICT_GET(cfg[Token.HARDWARE], Token.ENCODERS)
-        if not cfg_encs:
-            return
-        for enc_cfg in cfg_encs:
-            enc_id = Util.DICT_GET(enc_cfg, Token.ID)
-            if enc_id is None:
-                continue
-            enc = next((e for e in self.encoders if getattr(e, "id", None) == enc_id), None)
-            if enc is None or not hasattr(enc, "set_longpress"):
-                continue
-            if Token.LONGPRESS in enc_cfg:
-                lp_name = enc_cfg[Token.LONGPRESS]
-                enc.set_longpress(lp_name or None)
+    def __apply_analog_control(self, control: Controller, binding: AnalogBinding) -> None:
+        control.disabled = binding.disable
+        control.midi_channel = binding.midi_channel
+        control.midi_CC = binding.midi_CC
+        if isinstance(control, AnalogMidiControl.AnalogMidiControl):
+            control.autosync = binding.autosync
+        self.register_controller(control)
+        self.__route(control, binding.midi_port)

@@ -63,7 +63,7 @@ from common.param_source import BypassSource, ParamSource
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
 from common.parameter_steps import ParameterSteps, effective_multiplier
 from modalapi.plugin import Plugin
-import common.token as Token
+from pistomp.controller import ControlType
 from pistomp.input.dispatch import MultiSelectable, Selectable, fire, resolve_local
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.handler import Handler
@@ -183,7 +183,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
         # open the encoders belong to the panel, so swallow it.
         if (isinstance(event, SwitchEvent)
                 and event.kind is SwitchEventKind.LONGPRESS
-                and event.controller.type in (Token.KNOB, Token.VOLUME)):
+                and event.controller.type in (ControlType.KNOB, ControlType.VOLUME)):
             return True
         if not isinstance(event, EncoderEvent):
             return False

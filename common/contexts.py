@@ -15,24 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""What a control does is declared data, not per-panel `if` chains: a
-BindingDecl names a ControlRef + EventKind, a closed Effect union to fire,
-and the ContextRef (PANEL/BLEND/PEDALBOARD/SYSTEM) that owns it. NAV is the
-one axiom excluded from this entirely — see uilib/panel.py's Panel.handle.
-
-ContextStack.resolve walks a fixed per-ControlClass chain (_CHAINS below,
-highest precedence first) and returns the winning row for a (control,
-event_kind) pair, tagging every row it passed over ACTIVE/SHADOWED/ORPHANED
-(ShadowState) so a shadowed binding is visible rather than silently dead —
-this same resolved answer is what on-screen badges render from (never a
-widget's own guess). Consumers: pistomp/input/dispatch.py (per-panel
-resolve_local), pistomp/controller_manager.py (the PEDALBOARD layer),
-modalapi/modhandler.py (the BLEND layer). See pistomp/input/README.md for
-how the pieces fit together end to end."""
-
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Callable, TypedDict, Union
+from typing import Callable, Union
 
 from common.param_roles import ParamRole
 from common.parameter import Symbol
@@ -141,16 +126,6 @@ class RawMidiCcEffect(Effect):
     cc: int
 
 
-class LongpressActionConfig(TypedDict, total=False):
-    """Mapping-form `longpress:` config, exactly one key (enforced by the schema
-    in pistomp/config.py). Stays plain data — controller_manager builds the
-    Effect at bind time, when the footswitch's channel is resolved."""
-
-    midi_CC: int
-    preset: int | str  # "UP" | "DOWN" | <index>
-    pedalboard: str  # "UP" | "DOWN"
-
-
 @dataclass(frozen=True)
 class TapTempoEffect(Effect):
     pass
@@ -193,6 +168,8 @@ class BindingDecl:
 
 @dataclass
 class ContextLayer:
+    """Mappings of what physical controls do in a given context."""
+
     ref: ContextRef
     rows: dict[tuple[ControlClass, EventKind], list[BindingDecl]] = field(default_factory=dict)
 
@@ -232,6 +209,13 @@ _CHAINS: dict[ControlClass, tuple[ContextKind, ...]] = {
 
 @dataclass
 class ContextStack:
+    """
+    A stack of ContextLayers, bottom (PEDALBOARD) to top, representing
+    modals, panels, and other transient contexts. The stack is mutable; the layers
+    themselves are frozen once built. The topmost layer that has a row for a given
+    control is the one that wins.
+    """
+
     layers: list[ContextLayer]  # bottom (PEDALBOARD) -> top
 
     def layers_for(self, kind: ContextKind) -> list[ContextLayer]:

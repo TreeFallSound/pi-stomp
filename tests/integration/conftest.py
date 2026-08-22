@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
-import yaml
+from pistomp.config import load_cfg_from_file
 
 from tests.conftest import FakeWebSocketBridge
 from tests.types import CapturedLcd, SystemFixture
@@ -47,8 +47,7 @@ def _build_stack(
     singleton_attr = f"_{hw_class.__name__}__single"
     setattr(hw_class, singleton_attr, None)
 
-    with open(cfg_path) as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_cfg_from_file(cfg_path)
 
     fake_bridge = FakeWebSocketBridge()
 

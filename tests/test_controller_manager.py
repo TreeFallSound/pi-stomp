@@ -3,11 +3,12 @@
 from typing import cast
 from unittest.mock import MagicMock
 
-import common.token as Token
+from pistomp.controller import ControlType
 from common.contexts import ControlClass, EventKind, MidiCcEffect, ShadowState
 from common.parameter import Parameter, PortInfo, Symbol
 from modalapi.plugin import Plugin
 from pistomp.analogmidicontrol import AnalogMidiControl
+from pistomp.controller import Controller
 from pistomp.controller_manager import ControllerManager
 from pistomp.current import Current
 
@@ -34,16 +35,15 @@ class _Ctl:
 
 
 def test_bind_preserves_volume_binding_clears_others():
-    """Controller.type is a class-level default, so the volume guard is type-safe:
-    bind() clears every controller's parameter except the VOLUME control's."""
-    vol = _Ctl(Token.VOLUME)
-    knob = _Ctl(Token.KNOB)
+    vol = _Ctl(ControlType.VOLUME)
+    knob = _Ctl(ControlType.KNOB)
+    current = _make_current()
+    current.track(cast(Controller, knob))
     hw = MagicMock()
     hw.controllers = {"0:7": vol, "0:8": knob}
     hw.encoders = []
     hw.is_external.return_value = False
 
-    current = _make_current()
     ControllerManager(hw).bind(current)
 
     assert vol.parameter == "bound"
@@ -51,7 +51,7 @@ def test_bind_preserves_volume_binding_clears_others():
 
 
 def _external_analog(midi_cc=75, midi_channel=0, ctrl_id=3):
-    return AnalogMidiControl(MagicMock(), 0, 16, midi_cc, midi_channel, Token.KNOB, id=ctrl_id, cfg={})
+    return AnalogMidiControl(MagicMock(), 0, 16, midi_cc, midi_channel, ControlType.KNOB, id=ctrl_id)
 
 
 def test_external_controller_bound_and_displayed():

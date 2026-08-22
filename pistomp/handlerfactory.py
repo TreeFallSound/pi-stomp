@@ -15,8 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import common.token as Token
-import common.util as Util
+import pistomp.config as config
 
 import modalapi.modhandler as Modhandler
 
@@ -31,10 +30,7 @@ class Handlerfactory:
     def create(self, cfg, audiocard, cwd):
         # TODO handler could be independent of hardware (ie, have a software/ui version in the config, etc.)
         # to avoid supporting too many hardware/handler combos, we'll keep the handler locked to hardware versioning
-        hw = Util.DICT_GET(cfg, Token.HARDWARE)
-        if not hw:
-            return None
-        version = Util.DICT_GET(hw, Token.VERSION)
+        version = config.hardware_version(cfg)
         if version is None or version < 2.0 or version >= 4.0:
             return None
         return Modhandler.Modhandler(audiocard, cwd)

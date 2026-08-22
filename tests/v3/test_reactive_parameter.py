@@ -20,6 +20,7 @@ from modalapi.plugin import Plugin
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.window import PluginWindow
 from tests.types import SystemFixture
+from tests.v3.bind_helpers import bind_bypass
 from uilib.parameterdialog import Parameterdialog
 
 
@@ -475,10 +476,8 @@ def test_connect_dump_coalesces_apply_state(v3_system: SystemFixture, make_plugi
 
 def _bind_footswitch(v3_system: SystemFixture, plugin: Plugin):
     """Bind footswitch[0] to the plugin's :bypass, mirroring production setup."""
-    handler = v3_system.handler
-    hw = v3_system.hw
-    fs = hw.footswitches[0]
-    handler._bind_controller_to_param(plugin, plugin.parameters[BYPASS_SYMBOL], fs)
+    fs = v3_system.hw.footswitches[0]
+    bind_bypass(v3_system, plugin, fs)
     return fs
 
 

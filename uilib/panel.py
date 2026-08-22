@@ -30,7 +30,7 @@ from uilib.widget import Widget
 from uilib.misc import InputEvent, trace
 from uilib.paint import PaintContext, _pg_rect
 
-import common.token as Token
+from pistomp.controller import ControlType
 from common.contexts import BindingDecl
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.input.sink import InputSink
@@ -221,12 +221,12 @@ class Panel(ContainerWidget, InputSink):
 
     def handle(self, event: ControllerEvent) -> bool:
         match event:
-            case EncoderEvent() if event.controller.type == Token.NAV:
+            case EncoderEvent() if event.controller.type == ControlType.NAV:
                 d = event.rotations
                 if d == 0:
                     return True
                 return self.input_step(1 if d > 0 else -1, abs(d), event.multiplier)
-            case SwitchEvent() if event.controller.type == Token.NAV:
+            case SwitchEvent() if event.controller.type == ControlType.NAV:
                 click = InputEvent.LONG_CLICK if event.kind is SwitchEventKind.LONGPRESS else InputEvent.CLICK
                 return self.input_event(click)
         if self.on_event(event):
@@ -234,7 +234,7 @@ class Panel(ContainerWidget, InputSink):
         match event:
             case SwitchEvent() if (
                 event.kind is SwitchEventKind.PRESS
-                and event.controller.type in (Token.KNOB, Token.VOLUME)
+                and event.controller.type in (ControlType.KNOB, ControlType.VOLUME)
             ):
                 return self.input_event(InputEvent.CLICK)
         return False

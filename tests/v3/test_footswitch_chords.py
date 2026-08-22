@@ -37,7 +37,7 @@ def chords(v3_system: SystemFixture):
 
     handler.chord_helper.rebuild(handler.callbacks)
     for fs, groups in zip(v3_system.hw.footswitches, _CONFIG):
-        fs.set_longpress_groups(groups)
+        fs.longpress_groups = list(groups)
         handler.chord_helper.register(fs)
     return fired
 
