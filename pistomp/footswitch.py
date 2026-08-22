@@ -112,6 +112,7 @@ class Footswitch(controller.StatefulController):
         super().unbind_from_parameter()
         self.display_label = None
         self.set_category(None)
+        self.toggled = False
 
     @property
     def press_state(self) -> switchstate.Value:

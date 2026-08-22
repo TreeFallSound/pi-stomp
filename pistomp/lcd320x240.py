@@ -1344,7 +1344,7 @@ class Lcd:
 
         # Rebuild path: widget create/destroy above marks regions dirty, but
         # the LCD push only fires on a refresh. Called standalone from
-        # _redraw_after_binding (midi-learn of an encoder), where there's no
+        # _rebind_pedalboard (midi-learn of an encoder), where there's no
         # enclosing draw_main_panel to refresh for us.
         self.main_panel.refresh()
 

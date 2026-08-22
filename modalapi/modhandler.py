@@ -130,14 +130,6 @@ from pathlib import Path
 STARTUP_REST_BACKOFF_S = (0.25, 0.25, 0.5, 1.0, 2.0)
 
 
-def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
-    # Drop any PEDALBOARD-layer row whose control.id matches a learned binding
-    # that's being replaced. Scans all event_kind buckets since a re-learn could
-    # cross controller classes (footswitch ↔ encoder).
-    for (cls, event_kind), rows in list(layer.rows.items()):
-        layer.rows[(cls, event_kind)] = [d for d in rows if d.control.id != binding_id]
-
-
 class LongpressCcKey(namedtuple("LongpressCcKey", ["channel", "cc"])):
     """(channel, cc) identity for a raw-CC longpress row; tracks what value to
     send next. mod-ui's echo reconciles the learned plugin."""
@@ -1268,34 +1260,11 @@ class Modhandler(Handler):
     def _track_controller_binding(self, controller: Controller, plugin: Plugin) -> None:
         self._controller_manager.track_binding(controller, plugin)
 
-    def _redraw_after_binding(self, controller: Controller | None, is_footswitch: bool) -> None:
-        if is_footswitch and controller is not None:
-            # Footswitch: redraw just that one switch, not the whole board.
-            self.lcd.update_footswitch(controller)
-        else:
+    def _rebind_pedalboard(self) -> None:
+        self._controller_manager.bind(self._current)
+        self.lcd.draw_main_panel()
+        if self._current is not None:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)
-
-    def _add_learned_binding_row(
-        self, plugin: Plugin, param: Parameter, controller: Controller | None, old_binding: str | None
-    ) -> None:
-        layer = self._controller_manager.effective_table.layers[0]
-        if old_binding is not None:
-            _remove_binding_row(layer, old_binding)
-        if controller is None:
-            return
-        if isinstance(controller, Footswitch):
-            cls, event_kind = ControlClass.FOOTSWITCH, EventKind.PRESS
-        else:
-            cls, event_kind = ControlClass.ANALOG, EventKind.ROTATE
-        assert param.binding is not None
-        layer.add(
-            BindingDecl(
-                control=ControlRef(cls=cls, id=param.binding),
-                event_kind=event_kind,
-                effects=(ParamEffect(plugin=plugin, symbol=param.symbol),),
-                context=layer.ref,
-            )
-        )
 
     def pedalboard_change(self, pedalboard: Pedalboard.Pedalboard) -> None:
         logging.info("Pedalboard change")
