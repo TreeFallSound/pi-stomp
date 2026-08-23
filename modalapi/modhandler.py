@@ -684,29 +684,38 @@ class Modhandler(Handler):
                 color, style = self._render_footswitch(fs, beat)
             self._write_led(fs, color, style, beat)
 
-    def _render_taptempo(self, fs: Footswitch, beat: TickState) -> tuple[tuple[int, int, int] | None, LedDisplayStyle]:
-        """Built-in renderer for the taptempo footswitch: while tap tempo mode is
-        enabled, flashes from whichever beat source is active — transport-anchored
-        beat grid, or taptempo.anchor + bpm blink when unanchored — else falls
-        back to the default per-footswitch renderer."""
+    @staticmethod
+    def _taptempo_phase(fs: Footswitch, beat: TickState) -> tuple[bool, bool] | None:
+        """(lit, is_bar_start) for the taptempo flash, or None if there is no
+        tempo to flash to. The LEDs and the LCD border both read this, so one
+        phase drives both."""
         if fs.taptempo is None or not fs.taptempo.is_enabled():
-            return self._render_footswitch(fs, beat)
+            return None
         if beat.is_anchored:
-            if beat.is_flashing:
-                return (_METRONOME_DOWNBEAT_RGB if beat.is_bar_start else _METRONOME_BEAT_RGB), LedDisplayStyle.SOLID
+            return beat.is_flashing, beat.is_bar_start
+        bpm = fs.taptempo.get_bpm()
+        if bpm <= 0:
+            return None
+        period = 60.0 / bpm
+        return (_now_us() / 1_000_000.0 - fs.taptempo.anchor) % period < FLASH_US / 1_000_000.0, False
+
+    def _render_taptempo(self, fs: Footswitch, beat: TickState) -> tuple[tuple[int, int, int] | None, LedDisplayStyle]:
+        """Renderer for the taptempo footswitch. With no tempo, the default
+        per-footswitch renderer applies."""
+        phase = self._taptempo_phase(fs, beat)
+        if phase is None:
+            return self._render_footswitch(fs, beat)
+        lit, is_bar_start = phase
+        if not lit:
             return None, LedDisplayStyle.SOLID
-        # Unanchored: with a bpm, blink from the taptempo
-        # phase (on for the fixed metronome window of each beat period).
-        if fs.taptempo.get_bpm() > 0:
-            now_s = _now_us() / 1_000_000.0
-            period = 60.0 / fs.taptempo.get_bpm()
-            elapsed = now_s - fs.taptempo.anchor
-            phase_in_beat = elapsed % period
-            if phase_in_beat < FLASH_US / 1_000_000.0:
-                return _METRONOME_BEAT_RGB, LedDisplayStyle.SOLID
-            return None, LedDisplayStyle.SOLID
-        # No bpm yet: fall through to the default renderer.
-        return self._render_footswitch(fs, beat)
+        return (_METRONOME_DOWNBEAT_RGB if is_bar_start else _METRONOME_BEAT_RGB), LedDisplayStyle.SOLID
+
+    def footswitch_tap_flash(self, fs: Footswitch) -> bool:
+        """True when the LCD tap border is lit. Steady with no tempo."""
+        if self._last_beat is None:
+            return True
+        phase = self._taptempo_phase(fs, self._last_beat)
+        return phase is None or phase[0]
 
     def _render_footswitch(
         self,

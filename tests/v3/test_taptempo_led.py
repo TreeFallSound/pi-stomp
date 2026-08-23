@@ -168,3 +168,55 @@ def test_anchored_transport_does_not_flash_when_disabled(v3_system: SystemFixtur
         TickState(is_anchored=True, is_flashing=False, is_bar_start=False, bpm=120.0, bpb=4.0, beat_phase=0.5)
     )
     fs.pixel.set_enable.assert_called_once_with(True)  # the flash would have blanked it
+
+
+class TestLcdBorderSharesPhase:
+    """The LCD tap border reads the same phase the LEDs flash on. It must not
+    blink from taptempo.anchor while the transport is anchored."""
+
+    def test_anchored_border_follows_beat_grid(self, v3_system: SystemFixture):
+        fs = _find_taptempo_fs(v3_system)
+        _mock_fs(fs)
+        _enable_tap(fs)
+        assert fs.taptempo is not None
+        fs.taptempo.set_bpm(120.0)
+        fs.taptempo.anchor = 1000.0  # a tap phase out of step with the grid
+
+        with patch("modalapi.modhandler._now_us", return_value=int(1000.3 * 1_000_000)):
+            v3_system.handler._drive_footswitch_leds(
+                TickState(is_anchored=True, is_flashing=True, is_bar_start=False, bpm=120.0, bpb=4.0)
+            )
+            assert v3_system.handler.footswitch_tap_flash(fs) is True
+
+            v3_system.handler._drive_footswitch_leds(
+                TickState(is_anchored=True, is_flashing=False, is_bar_start=False, bpm=120.0, bpb=4.0, beat_phase=0.5)
+            )
+            assert v3_system.handler.footswitch_tap_flash(fs) is False
+
+    def test_unanchored_border_follows_taptempo(self, v3_system: SystemFixture):
+        fs = _find_taptempo_fs(v3_system)
+        _mock_fs(fs)
+        _enable_tap(fs)
+        assert fs.taptempo is not None
+        fs.taptempo.set_bpm(120.0)
+        fs.taptempo.anchor = 1000.0
+        unanchored = TickState(is_anchored=False, is_flashing=False, is_bar_start=False, bpm=120.0, bpb=4.0)
+
+        with patch("modalapi.modhandler._now_us", return_value=int(1000.025 * 1_000_000)):
+            v3_system.handler._drive_footswitch_leds(unanchored)
+            assert v3_system.handler.footswitch_tap_flash(fs) is True
+
+        with patch("modalapi.modhandler._now_us", return_value=int(1000.3 * 1_000_000)):
+            v3_system.handler._drive_footswitch_leds(unanchored)
+            assert v3_system.handler.footswitch_tap_flash(fs) is False
+
+    def test_no_tempo_yet_stays_lit(self, v3_system: SystemFixture):
+        fs = _find_taptempo_fs(v3_system)
+        _mock_fs(fs)
+        _enable_tap(fs)
+        assert fs.taptempo is not None
+        fs.taptempo.set_bpm(0.0)
+        v3_system.handler._drive_footswitch_leds(
+            TickState(is_anchored=False, is_flashing=False, is_bar_start=False, bpm=0.0, bpb=4.0)
+        )
+        assert v3_system.handler.footswitch_tap_flash(fs) is True

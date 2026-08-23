@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
@@ -39,8 +38,6 @@ if TYPE_CHECKING:
 
 
 class TapTempoProtocol(Protocol):
-    anchor: float
-
     def is_enabled(self) -> bool: ...
     def get_bpm(self) -> float: ...
 
@@ -70,7 +67,6 @@ PROGRESS_THICKNESS = 2.0
 PROGRESS_GAP = 3.0  # notch between bars, px of arclength
 CHASE_SPAN = 0.18  # turns of perimeter the indeterminate head covers
 PULSE_STEPS = 8  # brightness quantisation; each step past this is a slot repaint
-TAP_FLASH_SECONDS = 0.05
 # The unfilled track, as a fraction of the state colour.
 TRACK_DIM = 0.28
 
@@ -115,6 +111,7 @@ class FootswitchWidget(Widget):
     taptempo: TapTempoProtocol | None
     state_label: str | None
     progress_fn: Callable[[], LoopProgress | None] | None
+    tap_flash_fn: Callable[[], bool] | None
     loop_icon: bool
     _pulse_on: bool
     _progress: LoopProgress | None
@@ -129,6 +126,7 @@ class FootswitchWidget(Widget):
         taptempo: TapTempoProtocol | None = None,
         state_label: str | None = None,
         progress_fn: Callable[[], LoopProgress | None] | None = None,
+        tap_flash_fn: Callable[[], bool] | None = None,
         loop_icon: bool = False,
         **kwargs,
     ):
@@ -143,6 +141,7 @@ class FootswitchWidget(Widget):
         self.taptempo = taptempo
         self.state_label = state_label
         self.progress_fn = progress_fn
+        self.tap_flash_fn = tap_flash_fn
         self.loop_icon = loop_icon
         self._pulse_on = True
         self._progress = None
@@ -376,24 +375,13 @@ class FootswitchWidget(Widget):
         return True
 
     def tick(self) -> None:
-        """Blink the tap border at tempo, phase-locked to the last tap."""
-        taptempo = self.taptempo
-        if taptempo is None or not taptempo.is_enabled():
-            if self.poll_progress():
-                self.refresh()
-            return
-        bpm = taptempo.get_bpm()
-        if not bpm:
-            # No tempo yet — show steady amber
-            if not self._pulse_on:
-                self._pulse_on = True
-                self.refresh()
-            return
-        period = 60.0 / bpm
-        phase = (time.monotonic() - taptempo.anchor) % period
-        on = phase < TAP_FLASH_SECONDS
+        """Blink the tap border on the beat phase the LEDs flash on."""
+        changed = self.poll_progress()
+        on = self.tap_flash_fn() if self.tap_flash_fn is not None else True
         if on != self._pulse_on:
             self._pulse_on = on
+            changed = True
+        if changed:
             self.refresh()
 
     def toggle(self, is_bypassed: bool) -> None:

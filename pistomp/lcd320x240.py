@@ -895,6 +895,11 @@ class Lcd:
             return None
         return functools.partial(self.handler.footswitch_loop_progress, footswitch)
 
+    def _tap_flash_fn(self, footswitch):
+        if footswitch.taptempo is None or self.handler is None:
+            return None
+        return functools.partial(self.handler.footswitch_tap_flash, footswitch)
+
     def draw_footswitches(self):
         # One slot-ordered pass over the physical switches, so selection order is
         # the stable physical order regardless of plugin/pedalboard ordering.
@@ -943,6 +948,7 @@ class Lcd:
                 taptempo=fs.taptempo,
                 state_label=state,
                 progress_fn=self._progress_fn(fs, state),
+                tap_flash_fn=self._tap_flash_fn(fs),
                 loop_icon=loop_icon if state is not None else False,
                 parent=self.footswitch_panel,
                 action=action,
