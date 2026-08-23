@@ -632,6 +632,11 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
     def _refresh_bypass_style(self) -> None:
         pass  # no bypass button
 
+    def _reset_to_default(self, symbol: Symbol) -> None:
+        p = self.plugin.parameters.get(symbol)
+        if p is not None:
+            self.set_param(symbol, p.default)
+
     # ── footer actions ──────────────────────────────────────────────────────
 
     def _apply_mute_style(self) -> None:
