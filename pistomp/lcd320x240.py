@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import functools
@@ -27,8 +29,9 @@ from common.contexts import BindingDecl, ControlClass, EventKind, MidiCcEffect, 
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, Type
 from modalapi.plugin import Plugin
 from ui.ethernet_menu import EthernetMenu
+from ui.footswitch_menu import FootswitchMenu
 from ui.wifi_menu import WifiMenu
-import pistomp.category as Category
+from common.color import accent_color_for, TILE_DEFAULT_COLOR
 import pistomp.switchstate as switchstate
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
@@ -38,6 +41,7 @@ from uilib import (
     Box,
     Config,
     ContainerWidget,
+    FootswitchBarPanel,
     FootswitchWidget,
     get_text_size,
     Icon,
@@ -50,7 +54,6 @@ from uilib import (
     PanelStack,
     Parameterdialog,
     ScrollingText,
-    ShroudedPanel,
     TextWidget,
 )
 from uilib.glyphs.badge import BadgeGlyph
@@ -155,21 +158,6 @@ class Lcd:
         self.foreground = (255, 255, 255)
         self.color_splash_up = (70, 255, 70)
         self.color_splash_down = (255, 20, 20)
-        self.default_plugin_color = "Silver"
-        self.category_color_map = {
-            "Delay": "MediumVioletRed",
-            "Distortion": "Lime",
-            "Dynamics": "OrangeRed",
-            "Filter": (205, 133, 40),
-            "Generator": "Indigo",
-            "Midiutility": "Gray",
-            "Modulator": (50, 50, 255),
-            "Reverb": (20, 160, 255),
-            "Simulator": "SaddleBrown",
-            "Spacial": "Gray",
-            "Spectral": "Red",
-            "Utility": "Gray",
-        }
 
         # TODO get fonts from config.json
         self.title_font = _make_font(font_path("DejaVuSans-Bold.ttf"), 26)
@@ -186,6 +174,7 @@ class Lcd:
         self.plugin_label_length = 7
         self.footswitch_height = 36
         self.footswitch_width = 80
+        self.grid_top = 78
         # space between footswitch icons where index is the footswitch count
         #                                0    1    2    3    4   5   6   7
         self.footswitch_pitch_options = [120, 120, 120, 128, 80, 65, 65, 65]
@@ -205,7 +194,6 @@ class Lcd:
         self.w_colon = None
         self.w_preset = None
         self.w_plugins = []
-        self._plugin_unsubs: list[Callable[[], None]] = []
         self.grid_panel: Optional[GridPanel] = None
         self.w_footswitches = []
         self.w_controls = []
@@ -225,8 +213,11 @@ class Lcd:
         )
         self.main_panel_pushed = False
         self._is_pedalboard_load = False
-        self.footswitch_panel = ShroudedPanel(
+        self.footswitch_menu: FootswitchMenu = FootswitchMenu(self)
+        self.footswitch_panel = FootswitchBarPanel(
             box=Box.xywh(0, self.display_height - self.footswitch_height, self.display_width, self.footswitch_height),
+            on_press=self.footswitch_menu.open,
+            subtitle="Footswitch Bindings",
             shroud_alpha=255,
             gradient_start=0,
             gradient_pos=0.2,
@@ -262,12 +253,11 @@ class Lcd:
         self.draw_analog_assignments(self.current.analog_controllers)
         self.draw_plugins()
         self.draw_footswitches()
+        # Re-append every call so it stays the last nav stop even when a
+        # plugin/knob is added to main_panel.sel_list after it below.
         if self.footswitch_panel in self.main_panel.sel_list:
             self.main_panel.sel_list.remove(self.footswitch_panel)
         self.main_panel.add_sel_widget(self.footswitch_panel)
-        if self.footswitch_panel.sel_ref is not None:
-            self.footswitch_panel.sel_ref.set_selected(False)
-        self.footswitch_panel.sel_ref = None
         if self.w_subtitle is None:
             # Created last so it composites on top of the toolbar icons. Not
             # selectable; updated from the current selection in _poll_updates.
@@ -540,23 +530,16 @@ class Lcd:
 
     def draw_pedalboard_menu(self, event, widget):
         items = []
-        bank_pbs = util.DICT_GET(self.handler.get_banks(), self.handler.get_bank())
 
         def pedalboard_change(pb):
             assert self.handler
             self._is_pedalboard_load = True
             self.handler.pedalboard_change(pb)
 
-        if bank_pbs is None:
-            # No bank so display all pedalboards as they're stored (alphabetically)
-            for p in self.pedalboards:
-                items.append((p.title, pedalboard_change, p))
-        else:
-            # Bank is set so show only those in the bank and in the order defined by the bank
-            for b in bank_pbs:
-                for p in self.pedalboards:  # LAME ugly O(N2) search
-                    if p.title == b:
-                        items.append((p.title, pedalboard_change, p))
+        # None → no bank; show all pedalboards as stored (alphabetically).
+        pbs = self.handler.pedalboards_in_bank() or self.pedalboards
+        for p in pbs:
+            items.append((p.title, pedalboard_change, p))
 
         self.draw_selection_menu(
             items, "Pedalboards", auto_dismiss=True, dismiss_option=True, default_item=self.current.pedalboard.title
@@ -634,28 +617,28 @@ class Lcd:
             label = self.shorten_name(label, box.width)
             subtitle = plugin.subtitle or (f"{plugin.category}: {display_name}" if plugin.category else display_name)
             tile = PluginTile(
+                plugin=plugin,
                 box=box,
                 text=label,
                 outline_radius=5,
                 parent=parent,
                 action=self.plugin_event,
-                object=plugin,
                 subtitle=subtitle,
                 border=plugin.tile_border,
                 backdrop=self.background,
+                foreground=self.foreground,
             )
             tile.set_font(self.small_font)
-            self.color_plugin(tile, plugin)
             self.w_plugins.append(tile)
             return tile
 
-        # Grid area: below title (y=78) to bottom of LCD (y=240).
+        # Grid area: below the title to the bottom of the LCD.
         # footswitch_panel is pushed on top of pstack and renders over this.
         self.grid_panel = GridPanel(
             layout,
             tile_factory,
-            box=Box.xywh(0, 78, self.display_width, self.display_height - 78),
-            bottom_inset=self.footswitch_height,
+            box=Box.xywh(0, self.grid_top, self.display_width, self.display_height - self.grid_top),
+            bottom_inset=int(self.footswitch_panel.box.height),
             parent=self.main_panel,
         )
         self.main_panel.add_sel_widget(self.grid_panel)
@@ -663,20 +646,6 @@ class Lcd:
         # Repaint the grid's backing surface with the final tile colors before main_panel blits it
         self.grid_panel.refresh()
         self.main_panel.refresh()
-        self._subscribe_plugins()
-
-    def _subscribe_plugins(self) -> None:
-        self._unsubscribe_plugins()
-        for plugin in self.current.pedalboard.plugins:
-            bp = plugin.parameters.get(BYPASS_SYMBOL)
-            if bp is None:
-                continue
-            self._plugin_unsubs.append(bp.subscribe(lambda _, pl=plugin: self._refresh_plugin(pl)))
-
-    def _unsubscribe_plugins(self) -> None:
-        for u in self._plugin_unsubs:
-            u()
-        self._plugin_unsubs = []
 
     def plugin_event(self, event, widget, plugin):
         panel_cls = plugin.panel_cls
@@ -705,54 +674,6 @@ class Lcd:
             footswitch._on_switch(switchstate.Value.RELEASED, time.monotonic())
         elif event == InputEvent.LONG_CLICK:
             footswitch._on_switch(switchstate.Value.LONGPRESSED, time.monotonic())
-
-    def color_plugin(self, widget, plugin):
-        if plugin.is_bypassed():
-            widget.set_outline(1, self.get_plugin_color(plugin))
-            widget.set_background(self.background)
-            widget.set_foreground(self.foreground)
-        else:
-            # Active: body fill only, no outline. PluginTile's glyph
-            # treats outline_color=None as "no border". Custom borders
-            # (e.g. NAM tri-color) are passed via PluginCustomization.tile_border.
-            widget.set_outline(0, None)
-            if plugin.tile_active_color is not None:
-                widget.set_background(plugin.tile_active_color)
-            else:
-                widget.set_background(self.get_plugin_color(plugin))
-            widget.set_foreground(self.background)
-
-    def _refresh_plugin(self, plugin):
-        for w in self.w_plugins:
-            if w.object is plugin:
-                self.color_plugin(w, plugin)
-                w.refresh()
-                break
-
-    # Try to map color to a valid displayable color, if not use foreground
-    def valid_color(self, color):
-        if color is None:
-            return self.foreground
-        try:
-            c = pygame.Color(color)
-            return (c.r, c.g, c.b)
-        except (ValueError, TypeError):
-            logging.error("Cannot convert color name: %s" % color)
-            return self.foreground
-
-    # Get the color assigned to the plugin category
-    def get_category_color(self, category):
-        color = self.default_plugin_color
-        if category:
-            c = util.DICT_GET(self.category_color_map, category)
-            if c:
-                color = c if isinstance(c, tuple) else self.valid_color(c)
-        return color
-
-    def get_plugin_color(self, plugin):
-        if plugin.category:
-            return self.get_category_color(plugin.category)
-        return self.default_plugin_color
 
     #
     # Parameter Editing
@@ -868,7 +789,7 @@ class Lcd:
             return d
 
         # Create a new dialog
-        title = parameter.instance_id + ":" + parameter.name
+        title = parameter.instance_id + ":" + self._param_label(parameter)
         current_value = parameter.value
         if parameter.type == Type.ENUMERATION:
             items = []
@@ -931,8 +852,8 @@ class Lcd:
         if param is None:
             return None
         if param.symbol != BYPASS_SYMBOL:
-            return param.name
-        plugin = next((p for p in self.current.pedalboard.plugins if p.instance_id == param.instance_id), None)
+            return self._param_label(param)
+        plugin = self.current.pedalboard.find_plugin(param.instance_id) if self.current else None
         if plugin is not None:
             name = plugin.display_name
         else:
@@ -954,7 +875,9 @@ class Lcd:
             if fs.preset_callback_arg is not None:
                 label = self.footswitch_label(fs, slot_w)
                 fs.set_display_label(label)
-                color = None
+                # Snapshots are bound, just not to a plugin — a colorless dot
+                # would drop the label to the near-black unbound tone.
+                color = FootswitchWidget.DEFAULT_COLOR
                 action = None
                 active = self.current is not None and self.current.preset_index == fs.preset_callback_arg
                 fs.toggled = active
@@ -962,7 +885,7 @@ class Lcd:
             elif fs.parameter is not None:
                 label = self.footswitch_label(fs, slot_w)
                 fs.set_display_label(label)
-                color = Category.get_category_color(fs.category)
+                color = accent_color_for(fs.category)
                 action = self.footswitch_event
             else:
                 label = fs.get_display_label() or ""
@@ -974,13 +897,12 @@ class Lcd:
                 color,
                 not fs.toggled,
                 small_font=self.tiny_font,
-                taptempo=getattr(fs, "taptempo", None),
+                taptempo=fs.taptempo,
                 parent=self.footswitch_panel,
                 action=action,
                 object=fs,
             )
             self.w_footswitches.append(p)
-            # self.footswitch_panel.add_sel_widget(p)  # TODO: re-enable footswitch selection
         self.footswitch_panel.refresh()
 
     def update_footswitch(self, footswitch):
@@ -992,10 +914,15 @@ class Lcd:
                     active = self.current is not None and self.current.preset_index == footswitch.preset_callback_arg
                     footswitch.toggled = active
                     footswitch.set_led(active)
+                    wfs.color = FootswitchWidget.DEFAULT_COLOR
                 elif footswitch.parameter is not None:
                     # Binding may be new (e.g. MIDI learn) — reflect label + color.
                     footswitch.set_display_label(self.footswitch_label(footswitch, slot_w))
-                    wfs.color = Category.get_category_color(footswitch.category)
+                    wfs.color = accent_color_for(footswitch.category)
+                    wfs.action = self.footswitch_event
+                else:
+                    wfs.color = None
+                    wfs.action = None
                 wfs.toggle(not footswitch.toggled)
                 wfs.label = footswitch.get_display_label() or ""
                 wfs.refresh()
@@ -1064,14 +991,21 @@ class Lcd:
         self.pstack.push_panel(d)
 
     def draw_system_info_dialog(self, arg):
-        msg = "Software:{}\nBuild:{}\nSystemState:{}\nTemperature:{}\nThrottled:{}".format(
-            self.handler.get_software_version(),
-            self.handler.build_version,
-            self.handler.SystemState,
-            self.handler.temperature,
-            self.handler.throttled,
-        )
-        d = MessageDialog(self.pstack, msg, title="System Info", width=300, height=140)
+        lines = [
+            f"Software:{self.handler.get_software_version()}",
+            f"Build:{self.handler.build_version}",
+            f"SystemState:{self.handler.SystemState}",
+            f"Temperature:{self.handler.temperature}",
+            f"Throttled:{self.handler.throttled}",
+        ]
+        wifi_ip = self.handler.wifi_ip
+        if wifi_ip:
+            lines.append(f"WiFi:{wifi_ip}")
+        eth_ip = self.handler.ethernet_ip
+        if eth_ip:
+            lines.append(f"Ethernet:{eth_ip}")
+        msg = "\n".join(lines)
+        d = MessageDialog(self.pstack, msg, title="System Info", width=300, height=170)
         self.pstack.push_panel(d)
 
     def draw_bank_menu(self, event):
@@ -1106,7 +1040,7 @@ class Lcd:
             width=270,
             height=130,
             auto_destroy=True,
-            title=parameter.name,
+            title=self._param_label(parameter),
             timeout=PARAMETER_DIALOG_TIMEOUT,
             action=commit_callback,
             object=parameter.symbol,
@@ -1314,16 +1248,20 @@ class Lcd:
                 name = "none"
                 control_type = Token.EXPRESSION if i == 0 else Token.KNOB  # HACK cuz we don't know type of unmapped
                 subtitle = "Expression pedal (unassigned)" if control_type == Token.EXPRESSION else "Knob (unassigned)"
-                color = Category.get_category_color(None)
+                color = accent_color_for(None)
                 text_color = color
+                control_label_fn = None
+                control_param = None
             else:
                 # Mapped control or Volume
                 control_type = util.DICT_GET(v, Token.TYPE)
+                control_label_fn = None
+                control_param = None
                 if control_type == Token.VOLUME:
                     name = "volume"
                     subtitle = "Output volume"
                     control_type = Token.KNOB
-                    color = self.default_plugin_color
+                    color = TILE_DEFAULT_COLOR
                     text_color = color
                 else:
                     port_name = util.DICT_GET(v, "port_name")
@@ -1331,23 +1269,28 @@ class Lcd:
                         midi_cc = util.DICT_GET(v, "midi_cc")
                         subtitle = f"{port_name}:{midi_cc} (external MIDI)"
                         name = self.shorten_name(f"{port_name}:{midi_cc}", text_per_control)
-                        color = self.default_plugin_color
+                        color = TILE_DEFAULT_COLOR
                         text_color = (180, 180, 255)  # light blue = external routing
                     else:
                         subtitle = k.split(":")[1]
-                        name = self.shorten_name(subtitle, text_per_control)
+                        control_param = analog_control.parameter if analog_control is not None else None
+                        control_label_fn = self._control_label_fn(control_param)
+                        if control_label_fn is not None and control_param is not None:
+                            name = control_label_fn(control_param)
+                        else:
+                            name = self.shorten_name(subtitle, text_per_control)
                         color = util.DICT_GET(v, Token.COLOR)
                         if color is None:
                             category = util.DICT_GET(v, Token.CATEGORY)
-                            text_color = Category.get_category_color(category)
-                            color = self.default_plugin_color
+                            text_color = accent_color_for(category)
+                            color = TILE_DEFAULT_COLOR
                         else:
                             text_color = color
 
             blend_initial_progress = None
             if isinstance(icon_object, BlendMode):
-                text_color = self.default_plugin_color
-                color = self.default_plugin_color
+                text_color = TILE_DEFAULT_COLOR
+                color = TILE_DEFAULT_COLOR
                 # Initialize label and progress bar from the current input position.
                 ic = icon_object.input_controller
                 input_ctrl = ic.controlled_input if ic is not None else None
@@ -1361,6 +1304,7 @@ class Lcd:
                         name = snapshot_name
                         subtitle = f"Blend: {snapshot_name}"
 
+            w = None
             if control_type == Token.KNOB:
                 w = Icon(
                     box=Box.xywh(x, y, TILE_W, height_per_control),
@@ -1392,6 +1336,17 @@ class Lcd:
                     w.set_progress(blend_initial_progress)
                 self.w_controls.append(w)
 
+            # Live-value labels (transport's ♩=120, Playing/Stopped) track the
+            # param: the icon subscribes and re-renders its text on value echo.
+            if control_label_fn is not None and control_param is not None and w is not None:
+                w.bind_label(control_param, control_label_fn)
+
+        # Rebuild path: widget create/destroy above marks regions dirty, but
+        # the LCD push only fires on a refresh. Called standalone from
+        # _redraw_after_binding (midi-learn of an encoder), where there's no
+        # enclosing draw_main_panel to refresh for us.
+        self.main_panel.refresh()
+
     def draw_info_message(self, text, refresh=False):
         if self.w_info_msg is None:
             self.w_info_msg = TextWidget(
@@ -1422,3 +1377,16 @@ class Lcd:
                 break
             text = test
         return text
+
+    def _control_label_fn(self, param: Parameter | None) -> Callable[[Parameter], str] | None:
+        """Look up a parameter's plugin and return the plugin's control_label_fn, if any."""
+        if param is None or self.current is None:
+            return None
+        plugin = self.current.pedalboard.find_plugin(param.instance_id) if param.instance_id else None
+        if plugin is None:
+            return None
+        return plugin.customization.control_label_fn
+
+    def _param_label(self, param: Parameter) -> str:
+        fn = self._control_label_fn(param)
+        return fn(param) if fn is not None else param.name

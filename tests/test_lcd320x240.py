@@ -100,6 +100,9 @@ def mock_handler():
     handler.SystemState = "Running"
     handler.temperature = "45C"
     handler.throttled = "None"
+    handler.wifi_status = {}
+    handler.wifi_ip = None
+    handler.ethernet_ip = None
     # MagicMock would auto-truthify `ethernet_manager.carrier_up` and surface
     # the Wired Connection row in every wifi-menu snapshot. Pin it off here;
     # tests that exercise the ethernet flow can override per-test.
@@ -212,6 +215,46 @@ def test_system_menu_snapshot(lcd, snapshot):
 def test_system_info_dialog_snapshot(lcd, snapshot):
     """The System Info MessageDialog must show all 5 lines without clipping."""
     instance, _ = lcd
+    setup_main_ui(instance)
+    instance.draw_system_info_dialog(None)
+    snapshot()
+
+
+def test_system_info_dialog_no_network(lcd, snapshot):
+    """No IP lines shown when neither WiFi nor Ethernet is connected."""
+    instance, _ = lcd
+    instance.handler.wifi_ip = None
+    instance.handler.ethernet_ip = None
+    setup_main_ui(instance)
+    instance.draw_system_info_dialog(None)
+    snapshot()
+
+
+def test_system_info_dialog_wifi_ip(lcd, snapshot):
+    """WiFi IP shown when connected."""
+    instance, _ = lcd
+    instance.handler.wifi_ip = "192.168.2.152"
+    instance.handler.ethernet_ip = None
+    setup_main_ui(instance)
+    instance.draw_system_info_dialog(None)
+    snapshot()
+
+
+def test_system_info_dialog_ethernet_ip(lcd, snapshot):
+    """Ethernet IP shown when connected."""
+    instance, _ = lcd
+    instance.handler.wifi_ip = None
+    instance.handler.ethernet_ip = "192.168.2.100"
+    setup_main_ui(instance)
+    instance.draw_system_info_dialog(None)
+    snapshot()
+
+
+def test_system_info_dialog_both_ips(lcd, snapshot):
+    """Both IPs shown when both connected."""
+    instance, _ = lcd
+    instance.handler.wifi_ip = "192.168.2.152"
+    instance.handler.ethernet_ip = "192.168.2.100"
     setup_main_ui(instance)
     instance.draw_system_info_dialog(None)
     snapshot()
@@ -601,38 +644,6 @@ def test_parameter_menu_shows_footswitch_badge(lcd, snapshot):
     # Long-press opens ParameterWindow
     instance.main_panel.sel_widget(instance.w_plugins[0])
     instance.main_panel.input_event(InputEvent.LONG_CLICK)
-    snapshot()
-
-
-def test_update_footswitch_off_snapshot(lcd, snapshot):
-    instance, _ = lcd
-    mock_fs = _make_footswitch(0, toggled=True, display_label="Dist")
-    mock_current = Current(
-        pedalboard=_make_pedalboard("PB", [], []),
-        presets={0: "Clean"},
-        preset_index=0,
-        analog_controllers={},
-    )
-    instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
-    instance.draw_main_panel()
-    mock_fs.toggled = False
-    instance.update_footswitch(mock_fs)
-    snapshot()
-
-
-def test_update_footswitch_on_snapshot(lcd, snapshot):
-    instance, _ = lcd
-    mock_fs = _make_footswitch(1, toggled=False, display_label="Drive")
-    mock_current = Current(
-        pedalboard=_make_pedalboard("PB", [], []),
-        presets={0: "Clean"},
-        preset_index=0,
-        analog_controllers={},
-    )
-    instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
-    instance.draw_main_panel()
-    mock_fs.toggled = True
-    instance.update_footswitch(mock_fs)
     snapshot()
 
 

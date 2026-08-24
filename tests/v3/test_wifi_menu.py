@@ -106,7 +106,7 @@ def test_scan_is_paced_at_rescan_interval(v3_system, wifi_state):
     """tick() paces scans at RESCAN_INTERVAL_S; the CommandQueue dedupes if
     one is already in flight."""
     wifi_state(scanned=[make_scanned("Home", signal=80)], saved=[])
-    wm, _lcd = _open(v3_system)
+    wm, lcd = _open(v3_system)
 
     def _scan_cmds() -> list[str]:
         submit_scan = cast(MagicMock, wm._wifi_manager.queue.submit_scan)
@@ -114,13 +114,17 @@ def test_scan_is_paced_at_rescan_interval(v3_system, wifi_state):
 
     assert _scan_cmds() == ["ScanCmd"]  # open() kicks one immediately
 
+    # Pacing only applies on the nearby list; the root menu never repeats.
+    _click(lcd)  # enter "Nearby networks..."
+    assert _scan_cmds() == ["ScanCmd", "ScanCmd"]  # entering kicks one
+
     with patch("ui.wifi_menu.time.monotonic", return_value=wm._last_scan + 2.0):
         wm.tick()
-    assert _scan_cmds() == ["ScanCmd"]  # too soon — no new scan
+    assert _scan_cmds() == ["ScanCmd", "ScanCmd"]  # too soon — no new scan
 
     with patch("ui.wifi_menu.time.monotonic", return_value=wm._last_scan + RESCAN_INTERVAL_S):
         wm.tick()
-    assert _scan_cmds() == ["ScanCmd", "ScanCmd"]  # interval elapsed — new scan
+    assert _scan_cmds() == ["ScanCmd", "ScanCmd", "ScanCmd"]  # interval elapsed — new scan
 
 
 def test_nearby_empty_when_every_network_is_saved(v3_system, wifi_state, nav_lcd, snapshot):
@@ -613,15 +617,39 @@ def test_notify_status_change_leaves_error_dialog_open(v3_system, wifi_state, na
     )
 
 
-def test_tick_rescans_while_root_open(v3_system, wifi_state):
-    """tick() submits a scan when the wifi root menu is the top panel and the
-    rescan interval has elapsed."""
+def test_tick_does_not_rescan_while_root_open(v3_system, wifi_state):
+    """The root menu is a one-shot: open() scans once and tick() never repeats.
+
+    Each scan sweeps all 42 channels with the radio off-channel for ~3.5s,
+    stalling traffic without dropping the association. Only the nearby list,
+    where the user actually waits on results, repeats scans.
+    """
     wm_mock = v3_system.handler.wifi_manager
     wifi_state(scanned=[], saved=[make_saved("Home")], hotspot=False)
     wm, _lcd = _open(v3_system)
     scan_calls_after_open = wm_mock.scan_networks.call_count
 
-    # Immediately after open() — too soon, should skip.
+    # Immediately after open() — too soon regardless.
+    wm.tick()
+    assert wm_mock.scan_networks.call_count == scan_calls_after_open
+
+    # Interval elapsed, but root is on top — still must not scan.
+    with patch("ui.wifi_menu.time.monotonic", return_value=wm._last_scan + RESCAN_INTERVAL_S):
+        wm.tick()
+    assert wm_mock.scan_networks.call_count == scan_calls_after_open, "root menu must not repeat scans"
+
+
+def test_tick_rescans_while_nearby_open(v3_system, wifi_state):
+    """tick() submits a scan when the nearby list is the top panel and the
+    rescan interval has elapsed."""
+    wm_mock = v3_system.handler.wifi_manager
+    # An unsaved in-range network, so "Nearby networks..." exists and is item 0.
+    wifi_state(scanned=[make_scanned("Home", signal=80)], saved=[], hotspot=False)
+    wm, lcd = _open(v3_system)
+    _click(lcd)  # enter "Nearby networks..."
+    scan_calls_after_open = wm_mock.scan_networks.call_count
+
+    # Immediately after entering — too soon, should skip.
     wm.tick()
     assert wm_mock.scan_networks.call_count == scan_calls_after_open
 

@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import time
@@ -202,9 +204,12 @@ class WifiMenu:
         self._submit_scan()
 
     def tick(self) -> None:
-        """Handler poll hook (2s). Paces a fresh scan at RESCAN_INTERVAL_S."""
-        current = self._pstack.current
-        if current is not self._root_menu and current is not self._nearby_menu:
+        """
+        Handler poll hook (2s). Paces a fresh scan at RESCAN_INTERVAL_S.
+        Only the "Nearby networks" list repeats scans; the root menu gets
+        a single scan when opened.
+        """
+        if self._pstack.current is not self._nearby_menu:
             return
         now = time.monotonic()
         if now - self._last_scan >= RESCAN_INTERVAL_S:

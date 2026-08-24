@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Plugin panel registry and customization system.
 
 Each panel implementation registers itself against the LV2 URIs it handles.
@@ -42,6 +59,7 @@ import plugins.invadacompressor  # noqa: F401
 import plugins.tap_reverb  # noqa: F401
 import plugins.gx_cabinet  # noqa: F401
 import plugins.advanced_compressor  # noqa: F401
+import plugins.calf_eq5  # noqa: F401
 import plugins.calf_monocompressor  # noqa: F401
 import plugins.caps_compress  # noqa: F401
 import plugins.mda_dynamics  # noqa: F401
@@ -50,6 +68,7 @@ import plugins.pinned_params  # noqa: F401  # explicit pinned-param customizatio
 import plugins.mixer  # noqa: F401
 import plugins.layouts  # noqa: F401  # Layout components
 import plugins.redundant_ports  # noqa: F401  # curated hidden_params, no panels
+import plugins.transport  # noqa: F401  # /pedalboard :bpm/:bpb/:rolling labels
 
 __all__ = [
     "PluginCustomization",

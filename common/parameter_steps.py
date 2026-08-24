@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 """Quantized step grid for encoder-driven parameter edits.
@@ -23,6 +25,7 @@ by the same amount whichever control you turn.
 import bisect
 from typing import List
 
+import common.util as util
 from common.parameter import Parameter, Type
 
 # Steps for a continuous parameter. Matches the 0-127 MIDI CC range, so a full
@@ -89,20 +92,22 @@ def effective_multiplier(multiplier: float, parameter: Parameter | None) -> floa
 class ParameterSteps:
     """A tapered grid of reachable values, plus a cursor into it."""
 
-    def __init__(self, minimum: float, maximum: float, taper: float, num_steps: int):
+    def __init__(self, minimum: float, maximum: float, logarithmic: bool, num_steps: int):
         self.num_steps = num_steps
         self.index = 0
         self.values: List[float] = []
         if num_steps <= 1:
             self.values = [minimum]
             return
-        rng = maximum - minimum
-        for i in range(num_steps):
-            self.values.append(minimum + rng * ((i / (num_steps - 1)) ** taper))
+        # Geometric for log ports — the same curve mod-host decodes a CC with,
+        # so a 128-step grid lands on exactly the CC-expressible values.
+        self.values = [
+            util.from_normalized(i / (num_steps - 1), minimum, maximum, logarithmic) for i in range(num_steps)
+        ]
 
     @classmethod
     def for_parameter(cls, parameter: Parameter) -> "ParameterSteps":
-        steps = cls(parameter.minimum, parameter.maximum, parameter.get_taper(), resolution(parameter))
+        steps = cls(parameter.minimum, parameter.maximum, parameter.is_logarithmic, resolution(parameter))
         steps.set_value(parameter.value)
         return steps
 

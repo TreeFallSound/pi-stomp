@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from pistomp.handler import Handler
@@ -18,6 +20,7 @@ from pistomp.audiocard import Audiocard
 from modalapi.sync import SyncMode, SyncModeSetter
 
 import bisect
+import datetime
 import json
 import logging
 import os
@@ -28,7 +31,9 @@ from pistomp.httpclient import Response
 import subprocess
 import sys
 import yaml
+from collections import namedtuple
 from collections.abc import Callable
+from dataclasses import replace
 import functools
 from functools import cached_property
 from typing import cast, Any
@@ -48,15 +53,19 @@ from common.contexts import (
     EventKind,
     MidiCcEffect,
     ParamEffect,
+    PedalboardEffect,
     PresetEffect,
+    RawMidiCcEffect,
     RelayEffect,
     TapTempoEffect,
 )
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
+from common.param_source import ParamSink
 from common.parameter_steps import ParameterSteps, effective_multiplier
 from modalapi.plugin import Plugin
 from blend.input_controller import InputController
 import modalapi.pedalboard as Pedalboard
+from modalapi.pedalboard import BPM_SYMBOL, BPB_SYMBOL, ROLLING_SYMBOL
 import modalapi.wifi as Wifi
 
 # Importing the plugins package runs every plugin module's register() — this is
@@ -64,6 +73,7 @@ import modalapi.wifi as Wifi
 # injected into Pedalboard as its Customizer.
 from plugins.base import PluginPanel
 from plugins.customization import lookup as plugin_lookup
+from plugins.customization import patch_extra_data
 import modalapi.external_midi as ExternalMidi
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
@@ -80,6 +90,7 @@ from modalapi.ws_protocol import (
     PluginBypassMessage,
     TransportMessage,
     AddPluginMessage,
+    PatchSetMessage,
     RemovePluginMessage,
     ConnectMessage,
     DisconnectMessage,
@@ -113,6 +124,10 @@ from pistomp.tuner.engine import TunerBackend, TunerEngine
 from rtmidi.midiconstants import CONTROL_CHANGE
 from pathlib import Path
 
+# Front-loaded: mod-ui usually binds its port within ~300ms of us first asking, so the
+# common case costs one short sleep. Tail covers a slow LV2 scan. 4s total, 6 attempts.
+STARTUP_REST_BACKOFF_S = (0.25, 0.25, 0.5, 1.0, 2.0)
+
 
 def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
     # Drop any PEDALBOARD-layer row whose control.id matches a learned binding
@@ -120,6 +135,11 @@ def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
     # cross controller classes (footswitch ↔ encoder).
     for (cls, event_kind), rows in list(layer.rows.items()):
         layer.rows[(cls, event_kind)] = [d for d in rows if d.control.id != binding_id]
+
+
+class LongpressCcKey(namedtuple("LongpressCcKey", ["channel", "cc"])):
+    """(channel, cc) identity for a raw-CC longpress row; tracks what value to
+    send next. mod-ui's echo reconciles the learned plugin."""
 
 
 class Modhandler(Handler):
@@ -153,7 +173,7 @@ class Modhandler(Handler):
         # pedalboard loads and any encoder mapped to the same CC.
         self._encoder_fallback: dict[str, int] = {}
 
-        self.wifi_status = {}
+        self.wifi_status: Wifi.WifiStatus = {}
         self.eq_status = {}
         self.SystemState = "unknown"
         self.throttled = "unknown"
@@ -173,10 +193,12 @@ class Modhandler(Handler):
         # instance_id.  Applied after the new board loads when the dump and the
         # last.json reload land in the same poll tick.
         self._pending_dump_bypass: dict[str, bool] = {}
+        self._pending_dump_patch: dict[tuple[str, str], str] = {}
 
         # Backup
         self.backup_file = "pistomp_backup.zip"
         self.data_dir = data_dir
+        self._restoring = False
 
         # Banks
         self.banks_file = os.path.join(self.data_dir, "banks.json")
@@ -222,6 +244,8 @@ class Modhandler(Handler):
             "toggle_bypass": self.system_toggle_bypass,
             "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable,
             "toggle_tuner_enable": self.toggle_tuner_enable,
+            "next_pedalboard": self.next_pedalboard,
+            "previous_pedalboard": self.previous_pedalboard,
         }
 
         # External MIDI device synchronization
@@ -234,6 +258,9 @@ class Modhandler(Handler):
 
         # Footswitch longpress/chord resolver (rebuilt on pedalboard change)
         self.chord_helper = FootswitchChords()
+
+        # First raw-CC longpress sends 127; alternates thereafter.
+        self._longpress_cc_state: dict[LongpressCcKey, bool] = {}
 
     def cleanup(self):
         if self._tuner_muted:
@@ -254,6 +281,19 @@ class Modhandler(Handler):
         except Exception as e:
             logging.error("REST GET failed: %s %s" % (url, e))
             return None
+
+    def _rest_get_with_retry(self, url: str) -> Response | None:
+        """Poll a GET until mod-ui answers. Startup only — this blocks, so it must
+        never run once the 10ms loop is live."""
+        for attempt, delay in enumerate(STARTUP_REST_BACKOFF_S, start=1):
+            resp = self._rest_get(url)
+            if resp is not None and resp.status_code == 200:
+                return resp
+            logging.info(
+                "mod-ui not ready, retrying (%d/%d) in %ss...", attempt, len(STARTUP_REST_BACKOFF_S), delay
+            )
+            time.sleep(delay)
+        return self._rest_get(url)
 
     def _rest_post(self, url: str, *, json=None, data=None) -> Response | None:
         try:
@@ -363,7 +403,7 @@ class Modhandler(Handler):
 
         if c.type == Token.VOLUME and c.parameter is not None:
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
-            c.parameter.value = new_value
+            c.parameter.preview(new_value)
             self.audiocard.set_volume_parameter(self.audiocard.MASTER, new_value)
             d = self.lcd.draw_audio_parameter_dialog(c.parameter, self.audio_parameter_commit)
             if d is not None:
@@ -372,26 +412,23 @@ class Modhandler(Handler):
 
         # Resolve the binding row for badge shadow_state (side effect), even
         # though the effect type no longer branches the encoder-turn response.
-        # CC is the transport for a plugin-bound (MIDI-learned) encoder; mod-ui
-        # applies its mapping on receipt. The local param.value write drives
-        # reactive observers; the CC tail below is the sole transport to mod-host.
         if c.midi_CC is not None:
             self.effective_table.resolve(
                 ControlRef(cls=ControlClass.ANALOG, id=f"{c.midi_channel}:{c.midi_CC}"),
                 EventKind.ROTATE,
             )
         if c.parameter is not None:
+            # One transport per bound turn: the sink (CC to mod-host for a mapped
+            # encoder, the WebSocket for :bpm) owns the send.
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
-            c.parameter.value = new_value
+            c.parameter.commit(new_value, self._sink_for(c.parameter, c))
             self.lcd.display_parameter_value(c.parameter, new_value)
-            emit_value = c.bar_midi_value()
-        else:
-            emit_value = self._advance_encoder_fallback(c, delta)
+            return True
 
-        # Unconditional, and must stay that way: an unbound encoder has no row,
-        # and this emit is the only way mod-ui sees its CC to MIDI-learn it.
-        # Emission is hardware-level, below the table (see input/README.md).
-        self._emit_midi(c, emit_value)
+        # Unbound: no sink, no row. This fallback CC is the only way mod-ui sees
+        # the encoder to MIDI-learn it. Emission is hardware-level, below the
+        # table (see input/README.md).
+        self._emit_midi(c, self._advance_encoder_fallback(c, delta))
         return True
 
     def encoder_fallback(self, controller: EncoderController) -> int:
@@ -442,7 +479,7 @@ class Modhandler(Handler):
                 self._fire_row(winner, SwitchEvent(controller=fs, kind=kind, timestamp=timestamp))
                 return True
             # No LONGPRESS row — chord longpress (the exception, stays as code)
-            self.chord_helper.observe(fs, timestamp)
+            self._fire_longpress_groups(fs)
             return True
 
         # Short press
@@ -488,7 +525,7 @@ class Modhandler(Handler):
                             controller.set_led(controller.toggled)
                             self._emit_midi(controller, 127 if controller.toggled else 0)
                         if controller.parameter is not None:
-                            controller.parameter.value = controller.value_for(controller.toggled)
+                            controller.parameter.preview(controller.value_for(controller.toggled))
                         self.update_lcd_fs(footswitch=controller)
                 case ParamEffect():
                     # Footswitch PRESS with a bound plugin param. "on" polarity
@@ -503,7 +540,7 @@ class Modhandler(Handler):
                         if fs.midi_CC is not None:
                             self._emit_midi(fs, 127 if new_toggled else 0)
                         if fs.parameter is not None:
-                            fs.parameter.value = fs.value_for(new_toggled)
+                            fs.parameter.preview(fs.value_for(new_toggled))
                         self.update_lcd_fs(footswitch=fs)
                 case RelayEffect():
                     if fs is not None:
@@ -512,7 +549,21 @@ class Modhandler(Handler):
                         fs.toggle_relays(new_toggled)
                         fs.set_led(new_toggled)
                         self.update_lcd_fs(bypass_change=True)
+                case RawMidiCcEffect(channel=ch, cc=cc):
+                    key = LongpressCcKey(channel=ch, cc=cc)
+                    on = self._longpress_cc_state[key] = not self._longpress_cc_state.get(key, False)
+                    self._emit_raw_cc(ch, cc, 127 if on else 0)
+                case PedalboardEffect(direction=direction):
+                    if direction == "DOWN":
+                        self.previous_pedalboard()
+                    else:
+                        self.next_pedalboard()
         return decl.consume
+
+    def _emit_raw_cc(self, channel: int, cc: int, value: int) -> None:
+        """Send a CC with no owning controller, bypassing _emit_midi's
+        controller.midi_CC guard; virtual out only."""
+        self.hardware.midiout.send_message([channel | CONTROL_CHANGE, cc, int(value)])
 
     def _emit_midi(self, controller, midi_value: int) -> None:
         """Send a CC. Tries the external port if routed; falls back to virtual."""
@@ -545,7 +596,7 @@ class Modhandler(Handler):
     def poll_controls(self):
         if self.hardware:
             self.hardware.poll_controls()
-        self._tick_chords()
+        self.chord_helper.poll()
 
     def poll_indicators(self):
         if self.hardware:
@@ -708,6 +759,7 @@ class Modhandler(Handler):
         if isinstance(msg, LoadingStartMessage):
             self._is_pedalboard_loading = True
             self._pending_dump_bypass.clear()
+            self._pending_dump_patch.clear()
             cleared = self.ws_bridge.clear_queue()
             if cleared:
                 logging.debug(f"Cleared {cleared} stale outbound messages on loading_start")
@@ -820,6 +872,17 @@ class Modhandler(Handler):
             rolling_changed = msg.rolling != self.transport_rolling
             self.sync_mode = new_sync
             self.transport_rolling = msg.rolling
+            # Reflect the three transport values onto the pseudo-plugin so the
+            # labels track even when the change originates elsewhere (Link,
+            # MIDI slave, another HMI). :rolling's enum flips Playing/Stopped.
+            if self._current is not None:
+                # A remote reconcile: adopt mod-ui's values, publish nothing.
+                # set_param_value routes through reconcile, not commit, so :bpm's
+                # sink never fires back at the sender.
+                tp = self.current.pedalboard.transport_plugin
+                tp.set_param_value(ROLLING_SYMBOL, 1.0 if msg.rolling else 0.0)
+                tp.set_param_value(BPB_SYMBOL, msg.beats_per_bar)
+                tp.set_param_value(BPM_SYMBOL, msg.bpm)
             if self.hardware and self.hardware.taptempo:
                 self.hardware.taptempo.set_bpm(msg.bpm)
                 if self.hardware.taptempo.is_enabled():
@@ -839,14 +902,42 @@ class Modhandler(Handler):
             # change through its parameter subscription; no message arm needs to
             # know panels exist.
             if self._current is not None:
-                for plugin in self.current.pedalboard.plugins:
-                    if plugin.instance_id == msg.instance:
-                        plugin.set_param_value(msg.symbol, msg.value)
-                        break
+                plugin = self.current.pedalboard.find_plugin(msg.instance)
+                if plugin is not None:
+                    plugin.set_param_value(msg.symbol, msg.value)
 
         elif isinstance(msg, MidiMapMessage):
             # MIDI learn in mod-ui assigned a hardware control to a parameter.
-            self._apply_midi_binding(msg.instance, msg.symbol, msg.binding)
+            self._apply_midi_binding(msg.instance, msg.symbol, msg.binding, msg.binding_range)
+
+        elif isinstance(msg, PatchSetMessage):
+            self._handle_patch_set(msg)
+
+    @staticmethod
+    def _apply_patch(plugin: Plugin, param_uri: str, value: str) -> bool:
+        """Refresh one plugin's extra_data. False if nothing owns this property
+        or the value is unchanged."""
+        extra = patch_extra_data(plugin.uri, param_uri, value)
+        if extra is None or extra == plugin.customization.extra_data:
+            return False
+        plugin.customization = replace(plugin.customization, extra_data=extra)
+        return True
+
+    def _handle_patch_set(self, msg: PatchSetMessage) -> None:
+        """A plugin's writable property changed. This is the only source of extra
+        data for a freshly added plugin — it has no effect-N bundle on disk until
+        the board is saved."""
+        # Buffer for the connect-dump race, same as bypass: the dump can drain
+        # before last.json reload sets current.
+        self._pending_dump_patch[(msg.instance, msg.param_uri)] = msg.value
+        if self._current is None:
+            return
+        plugin = next(
+            (p for p in self.current.pedalboard.plugins if p.instance_id == msg.instance),
+            None,
+        )
+        if plugin is not None and self._apply_patch(plugin, msg.param_uri, msg.value):
+            self.lcd.draw_main_panel()
 
     def _handle_dynamic_plugin_add(self, msg: AddPluginMessage) -> None:
         """Handle an `add` WS message for a plugin not yet in the pedalboard model."""
@@ -880,6 +971,11 @@ class Modhandler(Handler):
         # reads next_pedalboard_preset_index this tick. No-op if already drained.
         self.poll_ws_messages()
 
+        # unzip rewrites last.json/banks.json/snapshots.json
+        # don't poll again until we restart the service
+        if self._restoring:
+            return
+
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
             self._is_pedalboard_loading = True
@@ -890,6 +986,15 @@ class Modhandler(Handler):
 
                 if mod_bundle not in self.pedalboards:
                     self.load_pedalboards()
+                if mod_bundle not in self.pedalboards:
+                    # MOD-UI owns this relationship; if its own list still lacks
+                    # the bundle we have nothing to load and no business picking
+                    # a substitute mid-session. Keep the board we have.
+                    logging.warning("last.json names a pedalboard MOD-UI does not list: %s", mod_bundle)
+                    self._is_pedalboard_loading = False
+                    self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
+                    self.lcd.draw_main_panel()
+                    return
 
                 pb = self.reload_pedalboard(mod_bundle)
                 self.set_current_pedalboard(pb)
@@ -957,12 +1062,14 @@ class Modhandler(Handler):
     def load_pedalboards(self):
         url = self.root_uri + "pedalboard/list"
 
-        resp = self._rest_get(url)
+        resp = self._rest_get_with_retry(url)
         if resp is None or resp.status_code != 200:
             logging.error("Cannot connect to mod-host")
             sys.exit()
 
         pbs = json.loads(resp.text)
+        self.pedalboards = {}
+        self.pedalboard_list = []
         for pb in pbs:
             bundle = pb[Token.BUNDLE]
             title = pb[Token.TITLE]
@@ -1035,6 +1142,15 @@ class Modhandler(Handler):
                 if plugin.instance_id in self._pending_dump_bypass:
                     plugin.set_bypass(self._pending_dump_bypass[plugin.instance_id])
             self._pending_dump_bypass.clear()
+
+        # Same race, same scoping: only instances present on the board being
+        # made current are applied; anything else is dropped with the buffer.
+        if self._pending_dump_patch:
+            for plugin in pedalboard.plugins:
+                for (instance, param_uri), value in self._pending_dump_patch.items():
+                    if instance == plugin.instance_id:
+                        self._apply_patch(plugin, param_uri, value)
+            self._pending_dump_patch.clear()
 
         # Load Pedalboard specific config (overrides default set during initial hardware init)
         config_file = Path(pedalboard.bundle) / "config.yml"
@@ -1109,23 +1225,67 @@ class Modhandler(Handler):
         # any real time settings
         self._controller_manager.bind(self.current)
 
-    def _redraw_after_binding(self, controller: Controller, is_footswitch: bool) -> None:
-        if is_footswitch:
+    def _sink_for(self, param: Parameter, controller: Controller | None = None) -> ParamSink | None:
+        """The upstream channel a param's commit rides, by provenance. None is
+        display-only: reconciled from mod-ui, never sent back — bpb/rolling when
+        unmapped (mod-ui rejects param_set on them) and an external footswitch
+        (its press path owns the CC). A param mapped to an encoder rides that
+        encoder's CC; :bpm is the exception — its range won't fit 7 bits, so it
+        keeps the WebSocket. Pass *controller* when the caller holds it (an
+        encoder turn); otherwise it's recovered from the binding."""
+        if param.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID and param.symbol == BPM_SYMBOL:
+            return self._publish_bpm
+        if param.instance_id is None:
+            return self._publish_audio
+        enc = controller if isinstance(controller, EncoderController) else None
+        if enc is None and param.binding is not None:
+            enc = self.hardware.controllers.get(param.binding)
+            enc = enc if isinstance(enc, EncoderController) else None
+        if enc is not None and enc.midi_CC is not None:
+            return functools.partial(self._publish_cc, enc)
+        if param.instance_id in (ExternalMidi.EXTERNAL_INSTANCE_ID, Pedalboard.TRANSPORT_INSTANCE_ID):
+            return None
+        return self._publish_plugin_param
+
+    def _publish_bpm(self, param: Parameter) -> bool:
+        """Publish the BPM to the transport."""
+        return self.set_mod_tap_tempo(param.value)
+
+    def _publish_audio(self, param: Parameter) -> bool:
+        """ A local ALSA write. No remote echo, so the send always lands."""
+        self.audio_parameter_commit(param.symbol, param.value)
+        return True
+
+    def _publish_cc(self, controller: EncoderController, param: Parameter) -> bool:
+        """Publish the parameter (to MOD-UI or anything else) via MIDI CC."""
+        self._emit_midi(controller, controller.to_midi(param.value))
+        return True
+
+    def _publish_plugin_param(self, param: Parameter) -> bool:
+        if self._is_pedalboard_loading or self.ws_bridge is None or param.instance_id is None:
+            return False
+        return self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
+
+    def _redraw_after_binding(self, controller: Controller | None, is_footswitch: bool) -> None:
+        if is_footswitch and controller is not None:
             # Footswitch: redraw just that one switch, not the whole board.
             self.lcd.update_footswitch(controller)
         else:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
     def _add_learned_binding_row(
-        self, plugin: Plugin, param: Parameter, controller: Controller, old_binding: str | None
+        self, plugin: Plugin, param: Parameter, controller: Controller | None, old_binding: str | None
     ) -> None:
         layer = self._controller_manager.effective_table.layers[0]
         if old_binding is not None:
             _remove_binding_row(layer, old_binding)
+        if controller is None:
+            return
         if isinstance(controller, Footswitch):
             cls, event_kind = ControlClass.FOOTSWITCH, EventKind.PRESS
         else:
             cls, event_kind = ControlClass.ANALOG, EventKind.ROTATE
+        assert param.binding is not None
         layer.add(
             BindingDecl(
                 control=ControlRef(cls=cls, id=param.binding),
@@ -1148,6 +1308,46 @@ class Modhandler(Handler):
         resp2 = self._rest_post(uri, data=data)
         if resp2 is None or resp2.status_code != 200:
             logging.error("Bad Rest request: %s %s" % (uri, data))
+
+    def pedalboards_in_bank(self) -> list[Pedalboard.Pedalboard] | None:
+        """Ordered Pedalboards for the current bank, or None if no bank is set
+        (caller falls back to pedalboard_list). Same O(N²) title→bundle lookup
+        the pedalboard menu does."""
+        bank_pbs = self.banks.get(self.current_bank) if self.current_bank else None
+        if bank_pbs is None:
+            return None
+        result = []
+        for title in bank_pbs:
+            for p in self.pedalboard_list:
+                if p.title == title:
+                    result.append(p)
+                    break
+        return result
+
+    def _next_pedalboard_index(self, incr: bool) -> int | None:
+        pbs = self.pedalboards_in_bank()
+        if pbs is None:
+            pbs = self.pedalboard_list
+        if not pbs:
+            return None
+        current = self.current.pedalboard
+        try:
+            idx = next(i for i, p in enumerate(pbs) if p.bundle == current.bundle)
+        except StopIteration:
+            return 0 if incr else len(pbs) - 1
+        return (idx + 1) % len(pbs) if incr else (idx - 1) % len(pbs)
+
+    def _pedalboard_nav(self, incr: bool) -> None:
+        pbs = self.pedalboards_in_bank() or self.pedalboard_list
+        idx = self._next_pedalboard_index(incr)
+        if idx is not None:
+            self.pedalboard_change(pbs[idx])
+
+    def next_pedalboard(self) -> None:
+        self._pedalboard_nav(True)
+
+    def previous_pedalboard(self) -> None:
+        self._pedalboard_nav(False)
 
     #
     # Preset Stuff
@@ -1271,40 +1471,22 @@ class Modhandler(Handler):
     #
     # Parameter Stuff
     #
-    def parameter_value_commit(self, param, value):
-        # Route plugin params through the plugin's mirror so a bound footswitch
-        # reconciles now, not only on the mod-host echo — the same set_value the
-        # ParamSetMessage arm runs. Audio/external params have no plugin mirror.
-        plugin = (
-            next((p for p in self.current.pedalboard.plugins if p.instance_id == param.instance_id), None)
-            if param.instance_id is not None and self._current is not None
-            else None
-        )
-        if plugin is not None:
-            plugin.set_param_value(param.symbol, value)
-        else:
-            param.value = value
+    def parameter_value_commit(self, param: Parameter, value: float) -> None:
+        # The sink owns the route (WebSocket param_set, transport-bpm, external
+        # CC, local ALSA write); commit repaints, publishes through it, settles.
+        param.commit(value, self._sink_for(param))
 
-        # Audio parameter (volume, EQ, etc.) - handled locally, no remote update needed
-        if param.instance_id is None:
-            self.audio_parameter_commit(param.symbol, value)
-            return
+    @property
+    def wifi_ip(self) -> str | None:
+        ip = self.wifi_status.get("ip4_address", "")
+        return ip.split("/")[0] if ip else None
 
-        # External MIDI parameters have no mod-host counterpart. The dialog's NAV
-        # path owns sending the CC that _handle_encoder would have sent for a turn;
-        # the binding table identifies which controller carries it.
-        if param.binding is not None:
-            winner = self.effective_table.resolve(
-                ControlRef(cls=ControlClass.ANALOG, id=param.binding), EventKind.ROTATE
-            )
-            if winner is not None and any(isinstance(e, MidiCcEffect) for e in winner.effects):
-                controller = self.hardware.controllers.get(param.binding)
-                if controller is not None:
-                    self._emit_midi(controller, int(value))
-                return
-
-        if not self._is_pedalboard_loading:
-            self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
+    @property
+    def ethernet_ip(self) -> str | None:
+        ip = self.ethernet_manager.read_ipv4()
+        if ip:
+            return ip.split("/")[0]
+        return None
 
     #
     # System Menu
@@ -1441,6 +1623,29 @@ class Modhandler(Handler):
             value /= 1000
         return f"{value:.1f}GB"
 
+    def _drive_detail(self, backup_dir: str) -> str:
+        """Drive name plus free space — the thing that decides whether a backup fits."""
+        mount = os.path.dirname(backup_dir)
+        name = os.path.basename(mount)
+        try:
+            usage = shutil.disk_usage(mount)
+        except OSError:
+            return name
+        return f"{name} · {self._human_size(usage.free)} free of {self._human_size(usage.total)}"
+
+    def _archive_detail(self, backup_dir: str) -> str:
+        """Drive name plus the archive's size and age — restore overwrites data/,
+        so which vintage is about to land matters more than free space."""
+        mount = os.path.dirname(backup_dir)
+        name = os.path.basename(mount)
+        path = os.path.join(backup_dir, self.backup_file)
+        try:
+            st = os.stat(path)
+        except OSError:
+            return name
+        when = datetime.datetime.fromtimestamp(st.st_mtime).strftime("%d %b %H:%M")
+        return f"{name} · {self._human_size(st.st_size)} from {when}"
+
     def _drive_label(self, backup_dir: str) -> str:
         mount = os.path.dirname(backup_dir)
         try:
@@ -1465,17 +1670,22 @@ class Modhandler(Handler):
         self._choose_usb_drive(self.check_usb(), self._do_backup_data)
 
     def _do_backup_data(self, backup_dir: str):
-        self.lcd.draw_info_message("Backing up, please wait...", refresh=True)
+        from modalapi.archive import ArchiveJob
+        from ui.archive_panel import ArchiveProgressPanel
+
         logging.info("Data backup...")
         cmd = os.path.join(self.homedir, "util", "data-backup.sh")
-        try:
-            subprocess.check_output([cmd, os.path.join(backup_dir, self.backup_file), self.data_dir])
-            self.lcd.draw_message_dialog("Backup complete", "Info")
-            logging.info("Backup complete")
-        except subprocess.CalledProcessError as e:
-            logging.error("user_backup_data:" + str(e.output))
-        finally:
-            self.lcd.draw_info_message("", refresh=True)
+        job = ArchiveJob.backup(cmd, os.path.join(backup_dir, self.backup_file), self.data_dir)
+        self.lcd.pstack.push_panel(
+            ArchiveProgressPanel(
+                title="Backing up",
+                noun="Backup",
+                subtitle=self._drive_detail(backup_dir),
+                job=job,
+                on_dismiss=self._dismiss_archive_panel,
+                cancellable=True,
+            )
+        )
 
     def user_restore_data(self, arg, on_success=None):
         # Only offer drives that actually hold a backup — no point asking the
@@ -1484,24 +1694,45 @@ class Modhandler(Handler):
         self._choose_usb_drive(restorable, lambda d: self._do_restore_data(d, on_success=on_success))
 
     def _do_restore_data(self, backup_dir: str, on_success=None):
-        self.lcd.draw_info_message("Restoring, please wait...", refresh=True)
+        from modalapi.archive import ArchiveJob
+        from ui.archive_panel import ArchiveProgressPanel
+
         logging.info("Restoring data backup...")
         cmd = os.path.join(self.homedir, "util", "data-restore.sh")
-        try:
-            subprocess.check_output(
-                ["sudo", "-u", self.username, cmd, os.path.join(backup_dir, self.backup_file), self.data_dir]
+        job = ArchiveJob.restore(cmd, self.username, os.path.join(backup_dir, self.backup_file), self.data_dir)
+        self._restoring = True
+        self.lcd.pstack.push_panel(
+            ArchiveProgressPanel(
+                title="Restoring",
+                noun="Restore",
+                subtitle=self._archive_detail(backup_dir),
+                job=job,
+                on_dismiss=lambda: self._dismiss_restore_panel(on_success),
+                cancellable=False,
+                done_label="Restart to continue",
             )
-            logging.info("Restore complete")
-            if on_success is not None:
-                on_success()
-            self.lcd.draw_message_dialog(
-                "Restore complete. Press OK to restart.", "Info", on_dismiss=lambda: self.system_menu_restart_sound(None)
-            )
-        except subprocess.CalledProcessError as e:
-            self.lcd.draw_message_dialog(e.output.decode("utf-8"))
-            logging.error("user_restore_data: " + e.output.decode("utf-8"))
-        finally:
-            self.lcd.draw_info_message("", refresh=True)
+        )
+
+    def _dismiss_archive_panel(self) -> None:
+        from ui.archive_panel import ArchiveProgressPanel
+
+        panel = self.lcd.pstack.find_panel_type(ArchiveProgressPanel)
+        if panel is not None:
+            self.lcd.pstack.pop_panel(panel)
+        self.lcd.draw_main_panel()
+
+    def _dismiss_restore_panel(self, on_success=None) -> None:
+        from modalapi.archive import JobState
+        from ui.archive_panel import ArchiveProgressPanel
+
+        panel = self.lcd.pstack.find_panel_type(ArchiveProgressPanel)
+        restored = panel is not None and panel.job_state is JobState.DONE
+        self._dismiss_archive_panel()
+        if not restored:
+            return
+        if on_success is not None:
+            on_success()
+        self.restart_ui_stack()
 
     def system_menu_save_current_pb(self, _arg: None):
         if self._current is None:
@@ -1534,6 +1765,17 @@ class Modhandler(Handler):
     def system_menu_reload(self, arg):
         logging.info("Exiting main process, systemctl should restart if enabled")
         sys.exit(0)
+
+    def restart_ui_stack(self) -> None:
+        logging.info("Restarting mod-ui + deps")
+        try:
+            subprocess.Popen(
+                ["sudo", "systemctl", "--no-block", "restart", "mod-ui"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError as e:
+            logging.error("restart_ui_stack: %s", e)
 
     def system_menu_restart_sound(self, arg):
         self.lcd.splash_show()
@@ -1647,9 +1889,16 @@ class Modhandler(Handler):
     def get_callback(self, callback_name):
         return util.DICT_GET(self.callbacks, callback_name)
 
-    def set_mod_tap_tempo(self, bpm):
-        if bpm is not None:
-            self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
+    def set_mod_tap_tempo(self, bpm: float | None) -> bool:
+        # WebSocket first: _rest_post blocks the 10ms loop, and an encoder spin
+        # calls this once per detent. POST only when backpressure refused the send.
+        # Returns whether the value left, so a failed send rolls the LCD back.
+        if bpm is None:
+            return False
+        if self.ws_bridge is not None and self.ws_bridge.send_bpm(bpm):
+            return True
+        resp = self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
+        return resp is not None and resp.ok
 
     def set_sync_mode(self, mode: SyncMode) -> None:
         """Optimistically switch the clock source; mod-ui's transport echo

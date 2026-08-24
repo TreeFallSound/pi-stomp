@@ -57,7 +57,7 @@ def test_value_continues_from_nav_change(v3_system: SystemFixture):
     assert param.value > 50.0
 
     # Nav encoder (simulated via direct write, as parameter_value_change does).
-    param.value = 90.0
+    param.preview(90.0)
 
     # One detent forward — continues from 90, not from the pre-nav position.
     enc.refresh(1)
@@ -70,7 +70,7 @@ def test_value_stays_near_nav_change_on_backward_turn(v3_system: SystemFixture):
     enc = _bound_tweak(v3_system, param)
 
     enc.refresh(5)
-    param.value = 80.0
+    param.preview(80.0)
     enc.refresh(-1)
 
     assert param.value > 60.0

@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from typing import Optional
 
 import common.util as util
 import pistomp.controller as controller
-import pistomp.analogswitch as analogswitch
+import pistomp.adcswitch as adcswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
 from pistomp.encoder import Encoder
@@ -54,7 +56,7 @@ class EncoderController(controller.Controller):
     fallback accumulator belongs to the handler (the emitter), not here.
 
     Button: if sw_pin is provided, owns a GpioSwitch that emits SwitchEvent
-    via self.sink. If sw_adc_chan is provided, owns an AnalogSwitch instead.
+    via self.sink. If sw_adc_chan is provided, owns an AdcSwitch instead.
     Longpress is stored as a string callback name resolved by the handler at
     dispatch time.
     """
@@ -92,7 +94,7 @@ class EncoderController(controller.Controller):
         self._last_direction: int = 0
 
         # Absorbed button (GPIO or ADC)
-        self._button: Optional[gpioswitch.GpioSwitch | analogswitch.AnalogSwitch] = None
+        self._button: Optional[gpioswitch.GpioSwitch | adcswitch.AdcSwitch] = None
         self.longpress: Optional[str] = longpress  # string name; resolved at dispatch
         if sw_pin is not None:
             self._button = gpioswitch.GpioSwitch(
@@ -101,7 +103,7 @@ class EncoderController(controller.Controller):
                 longpress_callback=self._on_button_longpress,
             )
         elif sw_adc_chan is not None:
-            self._button = analogswitch.AnalogSwitch(
+            self._button = adcswitch.AdcSwitch(
                 spi,
                 sw_adc_chan,
                 callback=self._on_button,
@@ -135,19 +137,25 @@ class EncoderController(controller.Controller):
 
     # ── Value ────────────────────────────────────────────────────────────
 
+    def to_midi(self, value: float) -> int:
+        """Convert a bound-parameter value to this control's 7-bit CC byte. The
+        MIDI mechanics (range, channel, routing) are the controller's, not the
+        param's — the param stays MIDI-agnostic."""
+        assert self.parameter is not None, "to_midi is bound-only; unbound lives on the handler"
+        # mod-host maps the CC back onto the port with the port's own taper, so a
+        # logarithmic port needs the geometric inverse
+        position = util.to_normalized(
+            value, self.parameter.minimum, self.parameter.maximum, self.parameter.is_logarithmic
+        )
+        midi_value = round(util.from_normalized(position, self.midi_min, self.midi_max))
+        return int(_clamp(midi_value, 0, 127))
+
     def bar_midi_value(self) -> int:
         """0-127 for the LCD bar and the MIDI-learn emit of a *bound* encoder,
         derived from the parameter (the owner). Unbound, the value lives on the
         handler — ask Modhandler.encoder_fallback."""
         assert self.parameter is not None, "bar_midi_value is bound-only; unbound lives on the handler"
-        midi_value = util.renormalize(
-            self.parameter.value,
-            self.parameter.minimum,
-            self.parameter.maximum,
-            self.midi_min,
-            self.midi_max,
-        )
-        return int(_clamp(midi_value, 0, 127))
+        return self.to_midi(self.parameter.value)
 
     def _compute_multiplier(self, rotations: int) -> float:
         now = time.monotonic()

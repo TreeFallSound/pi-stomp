@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
@@ -28,10 +30,14 @@ from common.contexts import (
     ContextStack,
     ControlClass,
     ControlRef,
+    Effect,
     EventKind,
+    LongpressActionConfig,
     MidiCcEffect,
     ParamEffect,
+    PedalboardEffect,
     PresetEffect,
+    RawMidiCcEffect,
     RelayEffect,
     ShadowState,
     TapTempoEffect,
@@ -96,7 +102,14 @@ class ControllerManager:
         """Bind controllers referenced by plugin parameters; return the plugins
         that gained a footswitch."""
         footswitch_plugins = []
-        for plugin in current.pedalboard.plugins:
+        # The transport pseudo-plugin carries :bpm/:bpb/:rolling; it's not in
+        # pedalboard.plugins (the effect-graph render) but its bindings route
+        # through the same machinery.
+        plugins = list(current.pedalboard.plugins)
+        tp = current.pedalboard.transport_plugin
+        if tp is not None:
+            plugins.append(tp)
+        for plugin in plugins:
             if plugin is None or plugin.parameters is None:
                 continue
             for param in plugin.parameters.values():
@@ -182,7 +195,7 @@ class ControllerManager:
             if controller.parameter is None:
                 if isinstance(controller, AnalogMidiControl):
                     controller.parameter = self._hw.create_external_parameter(
-                        controller, port_name, controller.midi_channel, controller.midi_CC
+                        port_name, controller.midi_channel, controller.midi_CC, controller.midi_value
                     )
                 else:
                     ext_info = PortInfo(
@@ -262,7 +275,11 @@ class ControllerManager:
         Relay longpress is independent of the short-press action: a relay
         footswitch has both a PRESS row (CC toggle or plugin :bypass) and a
         LONGPRESS row (RelayEffect). It's added for any footswitch with a
-        relay_list, regardless of its PRESS binding."""
+        relay_list, regardless of its PRESS binding.
+
+        Mapping-form longpress (`longpress: {midi_CC: 64}` etc., exclusive with
+        the chord string/list form) rows a single LONGPRESS decl. The relay row
+        is added first so it keeps precedence if both are present."""
         for fs in self._hw.footswitches:
             if self._hw.is_external(fs):
                 continue  # owned by _bind_external_controllers
@@ -278,6 +295,18 @@ class ControllerManager:
                         control=ControlRef(cls=ControlClass.FOOTSWITCH, id=key),
                         event_kind=EventKind.LONGPRESS,
                         effects=(RelayEffect(relays=("LEFT",)),),
+                        context=pedalboard_layer.ref,
+                    )
+                )
+
+            # Mapping-form longpress: dict config, parsed by Footswitch.
+            lp = fs.longpress_action
+            if lp is not None:
+                pedalboard_layer.add(
+                    BindingDecl(
+                        control=ControlRef(cls=ControlClass.FOOTSWITCH, id=key),
+                        event_kind=EventKind.LONGPRESS,
+                        effects=self._longpress_action_effects(lp, fs),
                         context=pedalboard_layer.ref,
                     )
                 )
@@ -331,3 +360,15 @@ class ControllerManager:
                         context=pedalboard_layer.ref,
                     )
                 )
+
+    @staticmethod
+    def _longpress_action_effects(lp: LongpressActionConfig, fs: Footswitch) -> tuple[Effect, ...]:
+        """Translate a mapping-form longpress dict into a single-effect tuple.
+        The schema guarantees exactly one key."""
+        if "midi_CC" in lp:
+            return (RawMidiCcEffect(channel=fs.midi_channel, cc=int(lp["midi_CC"])),)
+        if "preset" in lp:
+            return (PresetEffect(direction=str(lp["preset"])),)
+        if "pedalboard" in lp:
+            return (PedalboardEffect(direction=str(lp["pedalboard"])),)
+        return ()

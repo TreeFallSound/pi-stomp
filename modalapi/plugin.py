@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have not received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from typing import TYPE_CHECKING
 from common.color import RectBorder
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol, json_default
 from modalapi.plugin_customization import PluginCustomization, PluginExtraData
-from pistomp.controller import Controller, StatefulController
+from pistomp.controller import Controller
 
 if TYPE_CHECKING:
     from plugins.base import PluginPanel
@@ -129,24 +131,16 @@ class Plugin:
         if param is None:
             return 0.0
         new_value = 0.0 if param.value else 1.0
-        param.value = new_value
+        param.preview(new_value)
         return new_value
 
     def set_param_value(self, symbol: Symbol, value: float) -> None:
-        """Cache a param's value from mod-ui and mirror it onto any bound
-        footswitch. The mirror is unconditional (outside the idempotent setter)
-        because a MIDI-originated echo arrives at the same value we already
-        wrote optimistically — the setter skips it, but the footswitch keycap
-        still needs to update. See plan: the mod-ui MIDI echo asymmetry."""
+        """Reconcile a param to mod-ui's value. Any bound stateful controller
+        (a footswitch keycap) resyncs through its own subscription, so this
+        doesn't reach for controllers."""
         param = self.parameters.get(symbol)
-        if param is None:
-            return
-        param.value = value
-        for c in self.controllers:
-            # Only stateful controllers hold a presentation copy to sync (a
-            # footswitch keycap, a pot's reading). Encoders own no copy.
-            if c.parameter is param and isinstance(c, StatefulController):
-                c.set_value(value)
+        if param is not None:
+            param.reconcile(value)
 
     def set_bypass(self, bypass: bool) -> None:
         self.set_param_value(BYPASS_SYMBOL, 1.0 if bypass else 0.0)

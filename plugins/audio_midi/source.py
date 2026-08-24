@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Synthetic reactive param source for the Audio & MIDI menu.
 
 The Audio & MIDI menu edits the audiocard's global EQ (5 bands) and
@@ -106,7 +123,7 @@ class AudioMidiParamSource:
                 self._hardware.recalibrateVU_gain(value)
         p = self.parameters.get(symbol)
         if p is not None:
-            p.value = value
+            p.reconcile(value)
 
     def subscribe(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
         unsubs = [p.subscribe(cb) for p in self.parameters.values()]

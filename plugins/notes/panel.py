@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Full-screen text viewer for the Notes LV2 plugin."""
 
 from __future__ import annotations
@@ -19,7 +36,9 @@ from uilib.paint import PaintContext
 from uilib.text import TextWidget
 from uilib.widget import Widget
 
-_NOTES_RE = re.compile(r'<[^>]*notes#text>\s+"""(.*?)"""', re.DOTALL)
+_NOTES_URI = "http://open-music-kontrollers.ch/lv2/notes#text"
+# Turtle only long-quotes when the text needs it; a one-line note is plain-quoted.
+_NOTES_RE = re.compile(r'<[^>]*notes#text>\s+(?:"""(.*?)"""|"((?:[^"\\]|\\.)*)")', re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -29,9 +48,23 @@ class NotesData(PluginExtraData):
     text: str
 
 
+_TTL_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\"}
+
+
+def _unescape(s: str) -> str:
+    return re.sub(r"\\(.)", lambda m: _TTL_ESCAPES.get(m.group(1), m.group(1)), s)
+
+
 def _parse_notes(ttl: str) -> NotesData | None:
     m = _NOTES_RE.search(ttl)
-    return NotesData(text=m.group(1)) if m else None
+    if m is None:
+        return None
+    long_form, short_form = m.group(1), m.group(2)
+    return NotesData(text=long_form if long_form is not None else _unescape(short_form))
+
+
+def _patch_notes(param_uri: str, value: str) -> NotesData | None:
+    return NotesData(text=value) if param_uri == _NOTES_URI else None
 
 
 def _notes_text(plugin: Plugin) -> str:
@@ -194,4 +227,5 @@ register(
         tile_active_color=(214, 217, 111),
     ),
     extra_data_fn=_parse_notes,
+    patch_data_fn=_patch_notes,
 )

@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# pi-Stomp is distributed in the hope that it will be useful,
+# pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 """Reactive param-source protocol — the seam a `PluginPanel` core depends on.
@@ -35,11 +37,10 @@ omits the Bypass/Reset buttons (§4.2 of the doc). The bypass wiring on
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from common.parameter import Parameter, Symbol
 
 
@@ -75,3 +76,10 @@ class BypassSource(Protocol):
     def set_bypass(self, bypass: bool) -> None: ...
 
     pedalboard_snapshot: "dict[Symbol, float]"
+
+
+ParamSink = Callable[["Parameter"], bool]
+"""
+The sink for a committed parameter value (e.g. to mod-ui, MIDI out, the audio
+card). Returns False if it didn't send, which tells `commit` to revert the value.
+"""

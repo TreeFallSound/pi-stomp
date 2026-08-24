@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 """What a control does is declared data, not per-panel `if` chains: a
@@ -30,7 +32,7 @@ how the pieces fit together end to end."""
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Callable, Union
+from typing import Callable, TypedDict, Union
 
 from common.param_roles import ParamRole
 from common.parameter import Symbol
@@ -125,6 +127,28 @@ class RelayEffect(Effect):
 @dataclass(frozen=True)
 class PresetEffect(Effect):
     direction: str  # "UP" | "DOWN" | "<int>"
+
+
+@dataclass(frozen=True)
+class PedalboardEffect(Effect):
+    direction: str  # "UP" | "DOWN" — next/prev pedalboard within the current bank
+
+
+@dataclass(frozen=True)
+class RawMidiCcEffect(Effect):
+    # No owning controller; mod-ui's echo reconciles a MIDI-learned plugin.
+    channel: int  # 0-15
+    cc: int
+
+
+class LongpressActionConfig(TypedDict, total=False):
+    """Mapping-form `longpress:` config, exactly one key (enforced by the schema
+    in pistomp/config.py). Stays plain data — controller_manager builds the
+    Effect at bind time, when the footswitch's channel is resolved."""
+
+    midi_CC: int
+    preset: int | str  # "UP" | "DOWN" | <index>
+    pedalboard: str  # "UP" | "DOWN"
 
 
 @dataclass(frozen=True)

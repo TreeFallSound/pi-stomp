@@ -10,7 +10,7 @@ import common.token as Token
 from modalapi.pedalboard_monitor import write_last_json
 
 with patch("pistomp.settings.Settings.load_settings"), patch("pistomp.settings.Settings.set_setting"):
-    from modalapi.modhandler import Modhandler
+    from modalapi.modhandler import Modhandler, STARTUP_REST_BACKOFF_S
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -38,7 +38,6 @@ def test_modhandler_init_propagates_ws_bridge_construction_failure(tmp_path):
         patch("modalapi.pedalboard.Pedalboard.hydrate"),
         patch("modalapi.wifi.WifiManager"),
         patch("subprocess.check_output", return_value=b"SystemState=running"),
-
         patch("modalapi.modhandler.AsyncWebSocketBridge", side_effect=RuntimeError("bridge boom")),
     ):
         with pytest.raises(RuntimeError, match="bridge boom"):
@@ -61,14 +60,17 @@ def test_missing_last_json_recovery(tmp_path):
         patch("subprocess.check_output", return_value=b"SystemState=running"),
         patch("modalapi.modhandler.AsyncWebSocketBridge", return_value=MagicMock()),
     ):
+
         def get_side_effect(url, **kwargs):
             resp = MagicMock()
             resp.status_code = 200
             resp.text = (
-                json.dumps([
-                    {Token.TITLE: "First Rig", Token.BUNDLE: "/path/to/first.pedalboard"},
-                    {Token.TITLE: "Second Rig", Token.BUNDLE: "/path/to/second.pedalboard"},
-                ])
+                json.dumps(
+                    [
+                        {Token.TITLE: "First Rig", Token.BUNDLE: "/path/to/first.pedalboard"},
+                        {Token.TITLE: "Second Rig", Token.BUNDLE: "/path/to/second.pedalboard"},
+                    ]
+                )
                 if "pedalboard/list" in url
                 else json.dumps({"0": "Default"})
                 if "snapshot/list" in url
@@ -110,6 +112,88 @@ def test_missing_last_json_recovery(tmp_path):
         assert any("load_bundle" in u for u in post_urls)
 
 
+def _pedalboard_list_response():
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.text = json.dumps([{Token.TITLE: "First Rig", Token.BUNDLE: "/path/to/first.pedalboard"}])
+    return resp
+
+
+def test_load_pedalboards_waits_for_cold_mod_ui(tmp_path):
+    """mod-ui is 'started' before it binds its port; refusals must be retried, not fatal."""
+    _reset_modhandler_singleton()
+    data_dir = _data_dir(tmp_path)
+
+    with (
+        patch("pistomp.httpclient.get") as mock_get,
+        patch("pistomp.httpclient.post", return_value=MagicMock(status_code=200, text="{}")),
+        patch("pistomp.settings.Settings"),
+        patch("modalapi.pedalboard.Pedalboard.hydrate"),
+        patch("modalapi.wifi.WifiManager"),
+        patch("subprocess.check_output", return_value=b"SystemState=running"),
+        patch("modalapi.modhandler.AsyncWebSocketBridge", return_value=MagicMock()),
+        patch("modalapi.modhandler.time.sleep") as mock_sleep,
+    ):
+        mock_get.return_value = MagicMock(status_code=200, text="{}")
+        handler = Modhandler(MagicMock(), str(PROJECT_ROOT), data_dir=str(data_dir))
+
+        # Refused twice, then mod-ui finishes its LV2 scan and answers.
+        calls = {"n": 0}
+
+        def get_side_effect(url, **kwargs):
+            if "pedalboard/list" not in url:
+                return MagicMock(status_code=200, text="{}")
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise ConnectionRefusedError(111, "Connection refused")
+            return _pedalboard_list_response()
+
+        mock_get.side_effect = get_side_effect
+
+        handler.load_pedalboards()
+
+        assert calls["n"] == 3
+        assert [pb.bundle for pb in handler.pedalboard_list] == ["/path/to/first.pedalboard"]
+        # Front-loaded backoff: two refusals cost 0.5s, not 2s.
+        assert [c.args[0] for c in mock_sleep.call_args_list] == [0.25, 0.25]
+
+
+def test_load_pedalboards_still_exits_when_mod_ui_never_comes_up(tmp_path):
+    """The retry budget is bounded — a genuinely dead mod-ui must still fail fast."""
+    _reset_modhandler_singleton()
+    data_dir = _data_dir(tmp_path)
+
+    with (
+        patch("pistomp.httpclient.get") as mock_get,
+        patch("pistomp.httpclient.post", return_value=MagicMock(status_code=200, text="{}")),
+        patch("pistomp.settings.Settings"),
+        patch("modalapi.pedalboard.Pedalboard.hydrate"),
+        patch("modalapi.wifi.WifiManager"),
+        patch("subprocess.check_output", return_value=b"SystemState=running"),
+        patch("modalapi.modhandler.AsyncWebSocketBridge", return_value=MagicMock()),
+        patch("modalapi.modhandler.time.sleep") as mock_sleep,
+    ):
+        mock_get.return_value = MagicMock(status_code=200, text="{}")
+        handler = Modhandler(MagicMock(), str(PROJECT_ROOT), data_dir=str(data_dir))
+
+        attempts = {"n": 0}
+
+        def get_side_effect(url, **kwargs):
+            if "pedalboard/list" not in url:
+                return MagicMock(status_code=200, text="{}")
+            attempts["n"] += 1
+            raise ConnectionRefusedError(111, "Connection refused")
+
+        mock_get.side_effect = get_side_effect
+
+        with pytest.raises(SystemExit):
+            handler.load_pedalboards()
+
+        assert attempts["n"] == len(STARTUP_REST_BACKOFF_S) + 1
+        assert [c.args[0] for c in mock_sleep.call_args_list] == list(STARTUP_REST_BACKOFF_S)
+        assert sum(STARTUP_REST_BACKOFF_S) == 4.0
+
+
 def test_modhandler_init_propagates_ws_bridge_start_failure(tmp_path):
     _reset_modhandler_singleton()
     data_dir = _data_dir(tmp_path)
@@ -124,7 +208,6 @@ def test_modhandler_init_propagates_ws_bridge_start_failure(tmp_path):
         patch("modalapi.pedalboard.Pedalboard.hydrate"),
         patch("modalapi.wifi.WifiManager"),
         patch("subprocess.check_output", return_value=b"SystemState=running"),
-
         patch("modalapi.modhandler.AsyncWebSocketBridge", return_value=failing_bridge),
     ):
         with pytest.raises(RuntimeError, match="start boom"):

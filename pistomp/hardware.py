@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
@@ -158,7 +160,7 @@ class Hardware(ABC):
 
         # Register final longpress-group membership with the chord resolver.
         for fs in self.footswitches:
-            self.handler.chord_helper.register(fs.longpress_groups)
+            self.handler.chord_helper.register(fs)
 
     @abstractmethod
     def init_analog_controls(self):
@@ -358,7 +360,7 @@ class Hardware(ABC):
             pass
         return chan
 
-    def create_external_parameter(self, controller, port_name, midi_channel, midi_cc):
+    def create_external_parameter(self, port_name, midi_channel, midi_cc, initial_value: int = 0):
         name = f"{port_name}:{midi_cc}"
         info = PortInfo(
             name=name,
@@ -366,8 +368,7 @@ class Hardware(ABC):
             ranges={"minimum": 0, "maximum": 127},
             properties=[TTL_INTEGER],
         )
-        val = getattr(controller, 'midi_value', 0)
-        return Parameter(info, val, f"{midi_channel}:{midi_cc}", EXTERNAL_INSTANCE_ID)
+        return Parameter(info, initial_value, f"{midi_channel}:{midi_cc}", EXTERNAL_INSTANCE_ID)
 
     def __validate_midi_port(self, port_name):
         if self.external_midi is None:
@@ -496,7 +497,9 @@ class Hardware(ABC):
                         key = format("%d:%d" % (self.midi_channel, fs.midi_CC))
                         self.controllers[key] = fs   # TODO problem if this creates a new element?
 
-                # Preset Control
+                # Clearing midi_CC drops the fs from hw.controllers, so an
+                # unrelated plugin's MIDI-learned :bypass can't bind onto it;
+                # dispatch_key falls back to "fs:<id>" and the rows still resolve.
                 if Token.PRESET in f:
                     self.__clear_footswitch_midi_cc(fs)
                     preset_value = f[Token.PRESET]

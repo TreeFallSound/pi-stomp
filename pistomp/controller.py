@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
@@ -113,3 +115,8 @@ class StatefulController(Controller):
     def bind_to_parameter(self, parameter: Parameter) -> None:
         super().bind_to_parameter(parameter)
         self.set_value(parameter.value)
+        # The keycap mirrors settled values — a mod-ui echo or a menu/dialog
+        # commit — but not a bare preview: a local press updates its own toggle
+        # and LED, then waits for the echo to refresh. Neither write path needs
+        # to know the controller exists.
+        self._unsub_param = parameter.subscribe_settled(lambda p: self.set_value(p.value))

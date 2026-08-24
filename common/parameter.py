@@ -1,34 +1,39 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from enum import Enum
-from typing import NewType, NotRequired, TypedDict
+from typing import NewType, NotRequired, TypedDict, TYPE_CHECKING
 import json
 import common.util as util
 
+if TYPE_CHECKING:
+    from common.param_source import ParamSink
+
 # strings as they appear in TTL files
-TTL_ENUMERATION = 'enumeration'
-TTL_INTEGER     = 'integer'
-TTL_LOGARITHMIC = 'logarithmic'
-TTL_PROPERTIES  = 'properties'
-TTL_SCALEPOINTS = 'scalePoints'
-TTL_TAPTEMPO    = 'tapTempo'
-TTL_TOGGLED     = 'toggled'
+TTL_ENUMERATION = "enumeration"
+TTL_INTEGER = "integer"
+TTL_LOGARITHMIC = "logarithmic"
+TTL_PROPERTIES = "properties"
+TTL_SCALEPOINTS = "scalePoints"
+TTL_TAPTEMPO = "tapTempo"
+TTL_TOGGLED = "toggled"
 
 # Identifies a Parameter: the key of plugin.parameters, ParamEffect.symbol,
 # edit_symbol(). Usually an LV2 port symbol (":bypass", "gain"); also an ALSA
@@ -55,8 +60,22 @@ class ScalePoint(TypedDict):
     value: float
 
 
+class MidiCC(TypedDict):
+    """A port's MIDI-CC addressing, as mod-ui's pedalboard JSON and the
+    midi_map WS message report it. channel -1 is the "unmapped" sentinel;
+    hasRanges guards minimum/maximum for old bundles that predate the range
+    fields (utils.py PedalboardMidiControl)."""
+
+    channel: int
+    control: int
+    hasRanges: NotRequired[bool]
+    minimum: NotRequired[float]
+    maximum: NotRequired[float]
+
+
 class PortInfo(TypedDict):
     """One row of an LV2 plugin's control-input ports, as mod-ui reports it."""
+
     symbol: str
     name: NotRequired[str]
     shortName: NotRequired[str]
@@ -72,14 +91,16 @@ class PortInfo(TypedDict):
 # The `enabled` port especially: mod-host writes the *inverse* of the bypass value
 # into it (effects.c), so it isn't merely redundant with :bypass — it IS :bypass, and
 # exposing it hands the user a knob that silently desyncs bypass.
-HIDDEN_DESIGNATIONS = frozenset({
-    "http://lv2plug.in/ns/lv2core#enabled",
-    "http://lv2plug.in/ns/lv2core#freeWheeling",
-    "http://ardour.org/lv2/processing#enable",
-    "http://lv2plug.in/ns/ext/time#beatsPerBar",
-    "http://lv2plug.in/ns/ext/time#beatsPerMinute",
-    "http://lv2plug.in/ns/ext/time#speed",
-})
+HIDDEN_DESIGNATIONS = frozenset(
+    {
+        "http://lv2plug.in/ns/lv2core#enabled",
+        "http://lv2plug.in/ns/lv2core#freeWheeling",
+        "http://ardour.org/lv2/processing#enable",
+        "http://lv2plug.in/ns/ext/time#beatsPerBar",
+        "http://lv2plug.in/ns/ext/time#beatsPerMinute",
+        "http://lv2plug.in/ns/ext/time#speed",
+    }
+)
 
 
 def is_hidden_port(plugin_info: PortInfo) -> bool:
@@ -90,16 +111,23 @@ def is_hidden_port(plugin_info: PortInfo) -> bool:
 
 
 class Type(Enum):
-    DEFAULT = 0      # No explicitly defined type (eg. linear float)
+    DEFAULT = 0  # No explicitly defined type (eg. linear float)
     ENUMERATION = 1
     INTEGER = 2
     LOGARITHMIC = 3
     TAPTEMPO = 4
     TOGGLED = 5
 
-class Parameter:
 
-    def __init__(self, plugin_info: PortInfo, value: float, binding: str | None, instance_id: str | None = None):
+class Parameter:
+    def __init__(
+        self,
+        plugin_info: PortInfo,
+        value: float,
+        binding: str | None,
+        instance_id: str | None = None,
+        binding_range: tuple[float, float] | None = None,
+    ):
         symbol = plugin_info.get("symbol")
         if not symbol:
             raise ValueError(f"LV2 port has no symbol: {plugin_info!r}")
@@ -108,18 +136,25 @@ class Parameter:
         self.hidden: bool = is_hidden_port(plugin_info)
 
         ranges = plugin_info.get("ranges") or Ranges()
-        self.minimum: float = float(ranges.get("minimum", 0.0))
-        self.maximum: float = float(ranges.get("maximum", 1.0))
+        self.declared_minimum: float = float(ranges.get("minimum", 0.0))
+        self.declared_maximum: float = float(ranges.get("maximum", 1.0))
+        # minimum/maximum are the *effective* extents: the plugin's declared LV2
+        # range, unless a MIDI-CC binding carries a custom sub-range
+        self.minimum: float
+        self.maximum: float
+        self.minimum, self.maximum = binding_range or (self.declared_minimum, self.declared_maximum)
         # mod-ui normalises the TTL and always emits all three ranges; the
         # fallbacks only serve the params we synthesise (bypass, volume, VU).
-        self.default: float = float(ranges.get("default", self.minimum))
+        self.default: float = float(ranges.get("default", self.declared_minimum))
 
-        # Reactive value: a property setter that notifies observers. _observers
-        # must exist before the first assignment below, or the write fires into
-        # a missing list.
+        # Reactive value. Writes go through reconcile/preview/commit, never a raw
+        # setter — the verb names the provenance (see those methods). _confirmed
+        # is the last value the single writer (mod-ui) echoed back, and the value
+        # a failed commit rolls back to.
         self._observers: list[Callable[[Parameter], None]] = []
-        self._value: float = 0.0
-        self.value = float(value)
+        self._settled_observers: list[Callable[[Parameter], None]] = []
+        self._value: float = float(value)
+        self._confirmed: float = float(value)
         self.binding: str | None = binding
         self.instance_id: str | None = instance_id.lstrip("/") if instance_id else instance_id
         self.type = Type.DEFAULT
@@ -154,23 +189,87 @@ class Parameter:
     def value(self) -> float:
         return self._value
 
-    @value.setter
-    def value(self, v: float) -> None:
-        if v == self._value:
+    def reconcile(self, value: float) -> None:
+        """Adopt the single writer's value: repaint, mark confirmed, settle,
+        publish nothing. The settle fires even at an unchanged value — a mod-ui
+        echo confirming what we optimistically previewed still has to refresh a
+        keycap the preview left alone."""
+        self._confirmed = value
+        self._set(value)
+        self._notify_settled()
+
+    def preview(self, value: float) -> None:
+        """An optimistic local move not yet committed — a knob mid-turn whose CC
+        emit is the real send, a footswitch keycap already toggled by the press.
+        Repaints live observers; does not settle; publishes nothing."""
+        self._set(value)
+
+    def commit(self, value: float, sink: ParamSink | None) -> None:
+        """A finished local edit: repaint, publish through *sink*, then settle.
+        Rolls back to the last confirmed value (and does not settle) if the send
+        never leaves — otherwise the LCD would show a number mod-ui never took.
+        A `None` sink is display-only. Publishing is unconditional; preview and
+        reconcile share mechanics, so there is nothing to diff against here."""
+        self._set(value)
+        if sink is not None and not sink(self):
+            self._set(self._confirmed)
             return
-        self._value = v
+        self._notify_settled()
+
+    def _set(self, value: float) -> None:
+        if value == self._value:
+            return
+        self._value = value
         for observe in self._observers:
             observe(self)
+
+    def _notify_settled(self) -> None:
+        for observe in self._settled_observers:
+            observe(self)
+
+    def set_binding_range(self, binding_range: tuple[float, float]) -> None:
+        """Set the effective extents from a MIDI-CC (sub-)range and notify observers."""
+        if (self.minimum, self.maximum) != binding_range:
+            self.minimum, self.maximum = binding_range
+            self._value = max(self.minimum, min(self._value, self.maximum))
+            for observe in self._observers:
+                observe(self)
+
+    def clear_binding_range(self) -> None:
+        """Restore effective extents to the plugin's declared LV2 range and notify observers."""
+        if (self.minimum, self.maximum) != (self.declared_minimum, self.declared_maximum):
+            self.minimum = self.declared_minimum
+            self.maximum = self.declared_maximum
+            self._value = max(self.minimum, min(self._value, self.maximum))
+            for observe in self._observers:
+                observe(self)
 
     def subscribe(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
         """Register *cb* to fire on every changed-value write. Returns its own
         unsubscriber. An unchanged write (v == current) does not notify."""
         self._observers.append(cb)
+
         def _unsub() -> None:
             try:
                 self._observers.remove(cb)
             except ValueError:
                 pass
+
+        return _unsub
+
+    def subscribe_settled(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
+        """Register *cb* for settled values only — a reconcile or a committed
+        edit, never a bare preview — fired unconditionally, even when the value
+        is unchanged. Stateful presentation (a footswitch keycap) uses this so it
+        tracks confirmed state, not a mid-scrub. Returns its own unsubscriber."""
+        self._settled_observers.append(cb)
+
+        def _unsub() -> None:
+            try:
+                self._settled_observers.remove(cb)
+            except ValueError:
+                pass
+
         return _unsub
 
     def get_enum_value_list(self) -> list[tuple[str, float]]:
@@ -185,9 +284,6 @@ class Parameter:
         if self.type != Type.ENUMERATION or len(self.enum_values) < 2:
             return False
         return all(v["value"] == self.minimum + i for i, v in enumerate(self.enum_values))
-
-    def get_taper(self):
-        return 2 if self.is_logarithmic else 1
 
     def format_value(self, value) -> str:
         """The numeric text alone. Callers that lay value and unit out

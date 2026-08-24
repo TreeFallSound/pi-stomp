@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import json
@@ -21,15 +23,63 @@ import urllib.parse
 from typing import Optional
 
 
-from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, json_default
+from common.parameter import BYPASS_SYMBOL, TTL_INTEGER, MidiCC, Parameter, PortInfo, Symbol, json_default
 import modalapi.plugin as Plugin
 from modalapi.connections import Connection, build_connection
 from modalapi.plugin_customization import Customizer, default_customizer
 
 
+# mod-ui addresses pedalboard-level transport controls through a pseudo-instance
+# "/pedalboard" (id 9995) with virtual port symbols :bpm, :bpb, :rolling. We
+# mirror it as a synthetic Plugin so the binding/label machinery treats them
+# like effect params. Keep the bare id in sync with mod-ui's PEDALBOARD_INSTANCE.
+TRANSPORT_INSTANCE_ID = "pedalboard"
+
+BPM_SYMBOL = Symbol(":bpm")
+BPB_SYMBOL = Symbol(":bpb")
+ROLLING_SYMBOL = Symbol(":rolling")
+
+# mod-ui's defaults when the TTL carries no ranges (utils_lilv.cpp).
+_BPM_RANGE = (20.0, 280.0)
+_BPB_RANGE = (1.0, 16.0)
+
+
 def _bypass_info() -> PortInfo:
     # mod-ui reports bypass as a bool alongside the ports, not as a port row.
     return PortInfo(shortName="bypass", symbol=BYPASS_SYMBOL, ranges={"minimum": 0.0, "maximum": 1.0})
+
+
+def _transport_port_info(symbol: Symbol) -> PortInfo:
+    # The three virtual ports on mod-ui's /pedalboard pseudo-instance. :rolling
+    # is a toggle whose value names the state — render via the enum path so the
+    # footswitch label and parameter dialog read "Playing"/"Stopped".
+    if symbol == BPM_SYMBOL:
+        return PortInfo(
+            shortName="Tempo",
+            symbol=":bpm",
+            ranges={"minimum": _BPM_RANGE[0], "maximum": _BPM_RANGE[1]},
+            units={"symbol": "BPM", "label": "beats per minute"},
+            properties=[TTL_INTEGER],
+        )
+    if symbol == BPB_SYMBOL:
+        return PortInfo(
+            shortName="BPB",
+            symbol=":bpb",
+            ranges={"minimum": _BPB_RANGE[0], "maximum": _BPB_RANGE[1]},
+            properties=["integer"],
+        )
+    # :rolling — render via the enum path so its label names the state
+    # ("Playing"/"Stopped") rather than the generic On/Off a TOGGLED param shows.
+    return PortInfo(
+        shortName="Transport",
+        symbol=":rolling",
+        ranges={"minimum": 0.0, "maximum": 1.0},
+        properties=["enumeration"],
+        scalePoints=[
+            {"label": "Stopped", "value": 0.0},
+            {"label": "Playing", "value": 1.0},
+        ],
+    )
 
 
 def _control_inputs(plugin_info: dict | None) -> list[PortInfo] | None:
@@ -53,6 +103,9 @@ class Pedalboard:
         self.plugins = []
         self.connections: list[Connection] = []
         self.hydrated = False
+        # Synthetic /pedalboard pseudo-instance carrying :bpm/:bpb/:rolling.
+        # Excluded from self.plugins so the effect-graph render never paints it.
+        self.transport_plugin: Plugin.Plugin = self._build_transport_plugin(None)
 
     def get_plugin_data(self, uri):
         url = self.root_uri + "effect/get?uri=" + urllib.parse.quote(uri)
@@ -86,11 +139,21 @@ class Pedalboard:
         return json.loads(resp.text)
 
     @staticmethod
-    def _binding(cc: dict | None) -> Optional[str]:
+    def _binding(cc: MidiCC | None) -> Optional[str]:
         # channel -1 is mod-ui's "unmapped" sentinel (utils_lilv.cpp).
         if not cc or cc.get("channel", -1) < 0:
             return None
         return "%d:%d" % (cc["channel"], cc["control"])
+
+    @staticmethod
+    def _binding_range(cc: MidiCC | None) -> Optional[tuple[float, float]]:
+        # A MIDI-CC addressing's custom sub-range. hasRanges guards the format
+        # compat default (0..1); mirror mod-ui's max>min guard (host.py).
+        if not cc or cc.get("channel", -1) < 0 or not cc.get("hasRanges"):
+            return None
+        lo = float(cc.get("minimum", 0.0))
+        hi = float(cc.get("maximum", 1.0))
+        return (lo, hi) if hi > lo else None
 
     def hydrate(self, plugin_dict) -> None:
         """Populate plugins and connections from mod-ui. Idempotent."""
@@ -143,6 +206,7 @@ class Pedalboard:
                     float(port["value"]),
                     self._binding(port.get("midiCC")),
                     instance_id,
+                    binding_range=self._binding_range(port.get("midiCC")),
                 )
 
             n_int = pb_plugin.get("instanceNumber")
@@ -181,7 +245,62 @@ class Pedalboard:
                 sym: float(p.value) for sym, p in plugin.parameters.items()
             }
 
+        self.transport_plugin = self._build_transport_plugin(info.get("timeInfo"))
+
         self.hydrated = True
+
+    def _build_transport_plugin(self, time_info: dict | None) -> Plugin.Plugin:
+        """The /pedalboard pseudo-instance carrying :bpm/:bpb/:rolling. Built
+        from mod-ui's timeInfo block, or from mod-ui's own defaults when the
+        board carries none."""
+        # timeInfo's `available` mask says which ports mod-ui has *addressed*,
+        # not which exist — transport is global and all three are always
+        # settable. Built unconditionally so the type stays non-Optional; a
+        # board that never addressed them just has unbound parameters.
+        time_info = time_info or {}
+
+        parameters: dict[Symbol, Parameter] = {
+            BPB_SYMBOL: Parameter(
+                _transport_port_info(BPB_SYMBOL),
+                float(time_info.get("bpb", 4.0)),
+                self._binding(time_info.get("bpbCC")),
+                TRANSPORT_INSTANCE_ID,
+            ),
+            BPM_SYMBOL: Parameter(
+                _transport_port_info(BPM_SYMBOL),
+                float(time_info.get("bpm", 120.0)),
+                self._binding(time_info.get("bpmCC")),
+                TRANSPORT_INSTANCE_ID,
+            ),
+            ROLLING_SYMBOL: Parameter(
+                _transport_port_info(ROLLING_SYMBOL),
+                1.0 if time_info.get("rolling") else 0.0,
+                self._binding(time_info.get("rollingCC")),
+                TRANSPORT_INSTANCE_ID,
+            ),
+        }
+
+        # category drives footswitch color; "Utility" is the benign choice for
+        # transport — no LV2 category exists for it. uri=urn:mod:pedalboard so
+        # the customizer resolves the transport labeling hook.
+        return Plugin.Plugin(
+            TRANSPORT_INSTANCE_ID,
+            parameters,
+            None,
+            category="Utility",
+            uri="urn:mod:pedalboard",
+            customization=self._customizer("urn:mod:pedalboard"),
+        )
+
+    def find_plugin(self, instance_id: str) -> Plugin.Plugin | None:
+        """Lookup by bare instance id, including the transport pseudo-plugin.
+        Returns None for unknown instances."""
+        for p in self.plugins:
+            if p.instance_id == instance_id:
+                return p
+        if self.transport_plugin.instance_id == instance_id:
+            return self.transport_plugin
+        return None
 
     def _build_plugin(self, instance_id: str, uri: str, x: float, y: float, info: dict) -> Optional[Plugin.Plugin]:
         """Build a Plugin from REST metadata (no LILV). Used for dynamic adds.

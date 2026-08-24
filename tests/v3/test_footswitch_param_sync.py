@@ -66,7 +66,7 @@ def test_press_on_writes_param_to_max(v3_system: SystemFixture, make_plugin, mak
 def test_press_off_writes_param_to_min(v3_system: SystemFixture, make_plugin, make_parameter):
     handler, fs0, solo = _bind_solo_footswitch(v3_system, make_plugin, make_parameter)
     fs0.toggled = True
-    solo.value = solo.maximum
+    solo.reconcile(solo.maximum)
 
     event = SwitchEvent(controller=fs0, kind=SwitchEventKind.PRESS, timestamp=1000.0)
     assert handler.handle(event) is True

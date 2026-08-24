@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Dialog colour schemes derived from plugin category colours.
 
 ``scheme_for_category`` is the single entry point — used by ``PluginWindow``
@@ -7,7 +24,7 @@ pass ``None`` and get the fixed default look.
 
 from __future__ import annotations
 
-from pistomp.category import get_category_color
+from common.color import accent_color_for
 from uilib.dialog import DialogScheme
 from uilib.misc import shade_color
 
@@ -22,7 +39,7 @@ def scheme_for_category(category: str | None) -> DialogScheme | None:
     """
     if category is None:
         return None
-    accent = get_category_color(category)
+    accent = accent_color_for(category)
     return DialogScheme(
         title_fgnd=(255, 255, 255),
         title_bkgnd=shade_color(accent, 0.3),

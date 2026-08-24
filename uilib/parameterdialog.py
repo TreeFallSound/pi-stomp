@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from uilib.box import Box
@@ -30,6 +32,7 @@ from common.contexts import (
     EventKind,
     ParamEffect,
 )
+import common.util as util
 from common.parameter import Parameter, Symbol
 from common.parameter_steps import ParameterSteps, effective_multiplier
 from pistomp.input.dispatch import resolve_local, fire
@@ -43,11 +46,19 @@ import pygame
 import time
 
 
-# Bar geometry/colors are fixed constants so the
-# rendered bar surface depends only on taper and color
+# A wide-ratio log port's true curve is sub-pixel across the bottom decades,
+# and a fill you can't see reads as "knob at minimum" — squeeze the log
+# envelope to [MIN_BAR_PX, full]. Linear ramps already start visible; they
+# render exactly as they always have.
+MIN_BAR_PX = 3
+
+# Bar geometry/colors are fixed constants so the rendered bar surface depends
+# only on the taper shape and color. A log port's height curve depends only on
+# max/min (bar height = the value at sweep position p as a linear fraction of
+# the range, (r**p - 1)/(r - 1)); log_ratio None is the linear ramp.
 @lru_cache(maxsize=None)
 def _render_bar_surface(
-    taper: float,
+    log_ratio: float | None,
     num_points: int,
     bar_width: int,
     graph_x_offset: int,
@@ -57,7 +68,12 @@ def _render_bar_surface(
     color: tuple,
 ) -> pygame.Surface:
     x = np.linspace(1, num_points, num_points)
-    graph_points = num_points * ((x / len(x)) ** taper)
+    p = x / len(x)
+    if log_ratio is None:
+        graph_points = num_points * p
+    else:
+        shape = (log_ratio**p - 1.0) / (log_ratio - 1.0)
+        graph_points = MIN_BAR_PX + (num_points - MIN_BAR_PX) * shape
 
     surf = pygame.Surface((graph_width, graph_height), pygame.SRCALPHA)
     for idx in range(num_points):
@@ -113,7 +129,6 @@ class Parameterdialog(Dialog):
             self.reset_timeout()
 
         # "graph" are the y-scaled values, "actual" are the actual non-scaled values
-        self.taper = self.parameter.get_taper()  # Derive from parameter type
         self.num_actual = 256  # High resolution for better stepping
         self.num_points = 60
         self.bar_width = 4
@@ -153,9 +168,11 @@ class Parameterdialog(Dialog):
             self._unsub = None
 
     def _calc_graph_points(self, x, min, max):
-        # Calculate the y-values using a logarithmic function
-        points = min + (max - min) * ((x / len(x)) ** self.taper)
-        return points
+        # Same curve the step grid and the CC lattice use, so the bar the dial
+        # paints for a value matches where a detent puts it.
+        return np.array(
+            [util.from_normalized(p, min, max, self.parameter.is_logarithmic) for p in x / len(x)]
+        )
 
     def _draw_contents(self):
         if self.timeout is None:
@@ -238,8 +255,10 @@ class Parameterdialog(Dialog):
 
         if self.w_graph is None:
             self._graph_surface = pygame.Surface((self.graph_width, self.graph_height), pygame.SRCALPHA)
+            pmin, pmax = self.parameter.minimum, self.parameter.maximum
+            log_ratio = pmax / pmin if self.parameter.is_logarithmic and pmin > 0.0 and pmax > 0.0 else None
             args = (
-                self.taper,
+                log_ratio,
                 self.num_points,
                 self.bar_width,
                 self.GRAPH_X_OFFSET,
@@ -296,7 +315,7 @@ class Parameterdialog(Dialog):
     def update_value(self, new_value: float) -> None:
         """Update display with new value (controller already calculated it)."""
         self.reset_timeout()
-        self.parameter.value = new_value
+        self.parameter.preview(new_value)
 
     def parameter_value_change(self, direction, count: int = 1, multiplier: float = 1.0):
         self.reset_timeout()
@@ -311,7 +330,7 @@ class Parameterdialog(Dialog):
         if new_value == self.parameter.value:
             return
 
-        self.parameter.value = new_value
+        self.parameter.preview(new_value)
         if self.action is not None:
             self.action(self.object, new_value)
 

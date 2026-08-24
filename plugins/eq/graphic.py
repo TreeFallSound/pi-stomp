@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Graphic EQ panel — vertical bar visualization.
 
 ``GraphicEqPanel`` is the abstract base; subclasses provide band specs via
@@ -462,7 +479,7 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
         lv2 = self.plugin.parameters.get(symbol)
         if lv2 is None:
             return False
-        steps = ParameterSteps(band.gain_min, band.gain_max, lv2.get_taper(), resolution(lv2))
+        steps = ParameterSteps(band.gain_min, band.gain_max, lv2.is_logarithmic, resolution(lv2))
         steps.set_value(p.gain_db)
         delta = int(round(rotations * effective_multiplier(multiplier, lv2)))
         if delta == 0:

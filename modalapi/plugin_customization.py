@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Per-plugin-type customization type. The registry lives in `plugins.customization`."""
 
 from __future__ import annotations
@@ -11,6 +28,7 @@ from common.param_roles import ParamRole
 from common.parameter import Symbol
 
 if TYPE_CHECKING:
+    from common.parameter import Parameter
     from modalapi.plugin import Plugin
     from plugins.base import PluginPanel
 
@@ -63,9 +81,12 @@ class PluginCustomization:
     pinned_params: tuple[PinnedParam, ...] | None = None
 
     # Redundant ports the UI must never paint: author-rolled bypass/enable ports
-    # carrying no LV2 metadata to catch them by. `common.parameter.is_hidden_port`
+    # carrying no LV2 metadata to catch them. `common.parameter.is_hidden_port`
     # handles the ones that do.
     hidden_params: frozenset[Symbol] = frozenset()
+
+    # Live label for a bound control (knob/footswitch/dialog title).
+    control_label_fn: Callable[[Parameter], str] | None = field(default=None, compare=False, hash=False)
 
 
 class Customizer(Protocol):

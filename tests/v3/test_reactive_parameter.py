@@ -108,26 +108,93 @@ def _open_fullscreen(v3_system: SystemFixture, plugin: Plugin) -> _TrackedFullsc
 
 
 # ---------------------------------------------------------------------------
-# 1. Parameter.value setter notifies on change, skips on no-change
+# 1. reconcile notifies on change, skips on no-change
 # ---------------------------------------------------------------------------
 
 
-def test_param_value_setter_notifies_on_change_not_on_noop():
-    """Writing param.value from any site notifies; an unchanged write does not."""
+def test_reconcile_notifies_on_change_not_on_noop():
+    """A value write notifies observers; an unchanged write does not."""
     info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 1}}
     p = Parameter(info, 0.0, None, "inst")
     calls: list[Parameter] = []
     p.subscribe(lambda param: calls.append(param))
 
-    p.value = 1.0
+    p.reconcile(1.0)
     assert len(calls) == 1
     assert calls[0] is p
 
-    p.value = 1.0  # unchanged — no notification
+    p.reconcile(1.0)  # unchanged — no notification
     assert len(calls) == 1
 
-    p.value = 0.5
+    p.reconcile(0.5)
     assert len(calls) == 2
+
+
+def test_commit_publishes_and_holds_its_value():
+    """A committed edit publishes through the sink and keeps its value; only the
+    single writer's echo confirms it."""
+    info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 200}}
+    p = Parameter(info, 120.0, None, "inst")
+    sent: list[float] = []
+
+    def ok_sink(param: Parameter) -> bool:
+        sent.append(param.value)
+        return True
+
+    p.commit(150.0, ok_sink)
+
+    assert p.value == 150.0
+    assert sent == [150.0]
+
+
+def test_commit_rolls_back_when_publish_never_leaves():
+    """A send that doesn't leave reverts the value to the last confirmed one —
+    the LCD must never show a number the single writer didn't accept."""
+    info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 200}}
+    p = Parameter(info, 120.0, None, "inst")
+    seen: list[float] = []
+    p.subscribe(lambda param: seen.append(param.value))
+
+    p.commit(150.0, lambda param: False)
+
+    assert p.value == 120.0
+    assert seen == [150.0, 120.0]  # painted optimistically, then reverted
+
+
+def test_rollback_targets_the_last_reconciled_value_not_the_last_commit():
+    """Only a reconcile confirms. An unechoed commit followed by a failed one
+    reverts all the way to mod-ui's last word, not to the unconfirmed edit."""
+    info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 200}}
+    p = Parameter(info, 120.0, None, "inst")
+
+    p.commit(150.0, lambda param: True)  # sent, not yet echoed
+    p.commit(160.0, lambda param: False)  # never left
+    assert p.value == 120.0
+
+    p.reconcile(150.0)
+    p.commit(160.0, lambda param: False)
+    assert p.value == 150.0
+
+
+def test_settled_fires_on_reconcile_and_commit_not_preview():
+    """subscribe_settled fires for a reconcile (even unchanged) and a successful
+    commit, but never a bare preview — and not a rolled-back commit."""
+    info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 200}}
+    p = Parameter(info, 120.0, None, "inst")
+    settled: list[float] = []
+    p.subscribe_settled(lambda param: settled.append(param.value))
+
+    p.preview(130.0)
+    assert settled == []  # a scrub does not settle
+
+    p.reconcile(130.0)  # echo confirming the previewed value — unchanged
+    assert settled == [130.0]  # ...still settles, unconditionally
+
+    p.commit(140.0, lambda param: True)
+    assert settled == [130.0, 140.0]
+
+    p.commit(150.0, lambda param: False)
+    assert settled == [130.0, 140.0]  # rolled back — did not settle
 
 
 def test_subscribe_returns_unsubscriber():
@@ -137,11 +204,11 @@ def test_subscribe_returns_unsubscriber():
     calls: list[Parameter] = []
     unsub = p.subscribe(lambda param: calls.append(param))
 
-    p.value = 1.0
+    p.reconcile(1.0)
     assert len(calls) == 1
 
     unsub()
-    p.value = 0.0
+    p.reconcile(0.0)
     assert len(calls) == 1  # no more notifications after unsubscribe
 
 
@@ -151,12 +218,12 @@ def test_plugin_subscribe_fans_out_to_all_params(make_plugin):
     calls: list[Parameter] = []
     unsub = plugin.subscribe(lambda param: calls.append(param))
 
-    plugin.parameters[BYPASS_SYMBOL].value = 1.0
-    plugin.parameters[Symbol("gain")].value = 0.9
+    plugin.parameters[BYPASS_SYMBOL].reconcile(1.0)
+    plugin.parameters[Symbol("gain")].reconcile(0.9)
     assert len(calls) == 2
 
     unsub()
-    plugin.parameters[BYPASS_SYMBOL].value = 0.0
+    plugin.parameters[BYPASS_SYMBOL].reconcile(0.0)
     assert len(calls) == 2  # unsubscribed
 
 
@@ -164,6 +231,7 @@ def test_to_json_on_subscribed_plugin_does_not_crash(make_plugin):
     """A subscribed plugin has _observers (callables) in Parameter.__dict__;
     to_json must filter them out so json.dumps doesn't TypeError."""
     import json as _json
+
     plugin = _make_plugin_with_gain(make_plugin)
     unsub = plugin.subscribe(lambda _p: None)
     # Must not raise — _observers and _value are stripped, value re-injected.
@@ -243,8 +311,8 @@ def _grid_tile(v3_system: SystemFixture, plugin: Plugin):
 
 def test_external_bypass_message_repaints_grid_tile(v3_system: SystemFixture, make_plugin):
     """No panel open: an external bypass echo must still repaint the main-grid
-    tile (`_subscribe_plugins` -> `_refresh_plugin` -> `color_plugin`), not
-    just an open panel's Bypass button. Face-3 coverage without a panel."""
+    tile (PluginTile's bypass subscription fires _apply_bypass_colors + refresh),
+    not just an open panel's Bypass button. Face-3 coverage without a panel."""
     plugin = _install(v3_system, make_plugin, bypassed=False)
     tile = _grid_tile(v3_system, plugin)
     assert tile.outline == 0
@@ -474,7 +542,7 @@ def test_rapid_footswitch_with_panel_open_coalesces(v3_system: SystemFixture, ma
     #   press 1: bypassed=True  → echo :bypass 1.0
     #   press 2: bypassed=False → echo :bypass 0.0
     #   ... so the final echo value depends on N parity.
-    final_bypassed = (N % 2 == 1)
+    final_bypassed = N % 2 == 1
     echo_val = "1.0" if final_bypassed else "0.0"
     for _ in range(N):
         v3_system.ws_bridge.inject(f"param_set /graph/fuzz :bypass {echo_val}")
@@ -489,6 +557,7 @@ def test_rapid_footswitch_with_panel_open_coalesces(v3_system: SystemFixture, ma
     # (b) apply_count bounded by ticks, not 2N. We've ticked twice total;
     # the idempotent echoes at the final value should not have added dirty work.
     assert panel.apply_count <= 3  # initial drain + at most one echo-driven drain
+
 
 # ---------------------------------------------------------------------------
 # 11. An open Parameterdialog follows its parameter (tweak encoder, MOD-UI echo)
@@ -539,5 +608,5 @@ def test_dismissed_dialog_unsubscribes(v3_system: SystemFixture, make_plugin):
     dialog.pop()
     v3_system.handler.poll_lcd_updates()
 
-    gain.value = 0.75
+    gain.reconcile(0.75)
     assert dialog.last_param_value == 0.5  # never redrew after dismissal
