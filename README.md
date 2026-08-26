@@ -28,7 +28,7 @@ This repository includes:
   * sample pedalboards
 
 ## Installing
-For full installation instructions, see [this guide](https://www.treefallsound.com/wiki/doku.php?id=software_installation_3.x)
+For full installation instructions, see [this guide](https://treefallsound.github.io/pistomp-manual/building/software-install/)
 
 Those instructions start with a pre-built pi-Stomp image.  The supporting packages are pre-installed.
 This is the recommended method of installation for most users.
