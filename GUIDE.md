@@ -132,3 +132,19 @@ def test_my_flow(v3_system, snapshot):
 ```
 
 On a snapshot mismatch: **fix real failures first.** When only snapshot differences remain, run `--snapshot-update` to populate the working copy, then show me the changed files as soon as they regenerate and what you expect them to look like. You can lean on me to tell you if anything's wrong.
+
+## Create an LCD screen capture
+
+It's often useful to create screen capture of the current LCD for documentation, debugging, etc.
+
+On the pi-Stomp with all services running, execute the following:
+
+```bash
+uv run python ~/pi-stomp/util/record_lcd.py --still
+```
+That writes a date-stamped file named: ~/pistomp_capture_YYYYMMDD_HHMMSS.png
+
+To alternatively specify the filename:
+```bash
+uv run python ~/pi-stomp/util/record_lcd.py --still -o FILE-PATH
+```
