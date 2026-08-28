@@ -41,6 +41,7 @@ from pistomp.config.model import (
     PresetStep,
 )
 from pistomp.config.schema_v1 import ConfigDocument
+from pistomp.input_enable import InputEnable
 import pistomp.relay as Relay
 
 _Binding = TypeVar("_Binding", FootswitchBinding, EncoderBinding, AnalogBinding)
@@ -56,6 +57,7 @@ class Hardware(ABC):
         self.test_pass = False
         self.test_sentinel = None
 
+        self._input_enable: InputEnable | None = None
         self.default_cfg: ConfigDocument = default_config
         self.config = config.resolve(default_config)
         self.base_config = self.config
@@ -75,6 +77,14 @@ class Hardware(ABC):
         # Rebuilt every reinit. Identity-keyed; controllers are stable across
         # reinit (mutated in place).
         self.external_routing: dict[Controller, RoutingInfo] = {}
+
+    @property
+    def input_enable(self) -> InputEnable:
+        """The user's on/off choice per input. Built late: the handler owns the
+        settings file and is not complete when the hardware is constructed."""
+        if self._input_enable is None:
+            self._input_enable = InputEnable(self.handler.settings)
+        return self._input_enable
 
     @property
     def version(self) -> float:
@@ -131,6 +141,20 @@ class Hardware(ABC):
                     control.send_current_value()
                 except Exception as e:
                     logging.warning(f"Failed to sync analog control {control.midi_CC}: {e}")
+
+    def set_input_enabled(self, control: Controller, enabled: bool) -> None:
+        """Turn one analog input or encoder on or off, and remember the choice
+        across pedalboards. A control that the config disables never gets here:
+        it is not created at all."""
+        if control.id is None:
+            return
+        self.input_enable.set_enabled(control.id, enabled)
+        control.disabled = not enabled
+        if enabled and isinstance(control, AnalogMidiControl.AnalogMidiControl) and control.autosync:
+            try:
+                control.send_current_value()
+            except Exception:
+                logging.warning("Failed to sync analog control %s on enable", control.midi_CC)
 
     def longpress_action(self, fs: Footswitch.Footswitch) -> LongpressAction | None:
         """The mapping form of longpress, which has no home on the footswitch."""
@@ -295,6 +319,7 @@ class Hardware(ABC):
             control = AnalogMidiControl.AnalogMidiControl(
                 self.spi, b.adc_input, b.threshold, b.midi_CC, b.midi_channel, b.type, b.id, b.autosync
             )
+            control.disabled = not self.input_enable.is_enabled(b.id, b.type)
             self.analog_controls.append(control)
             self.register_controller(control)
             logging.debug(
@@ -320,6 +345,7 @@ class Hardware(ABC):
             # FIXME: add_encoder returns None for emulator v1/v2 stubs that don't
             # implement config-driven encoders, forcing the return type to be optional.
             if control is not None:
+                control.disabled = not self.input_enable.is_enabled(b.id, b.type)
                 self.encoders.append(control)
                 self.register_controller(control)
                 logging.debug("Created Encoder: %d, Midi Chan: %d, CC: %s", b.id, b.midi_channel, b.midi_CC)
@@ -387,7 +413,7 @@ class Hardware(ABC):
 
     def __apply_encoder(self, enc: Controller, binding: EncoderBinding) -> None:
         enc.type = binding.type
-        enc.disabled = binding.disable
+        enc.disabled = binding.disable or not self.input_enable.is_enabled(binding.id, binding.type)
         enc.midi_channel = binding.midi_channel
         enc.midi_CC = binding.midi_CC
         if isinstance(enc, EncoderController.EncoderController):
@@ -396,7 +422,7 @@ class Hardware(ABC):
         self.__route(enc, binding.midi_port)
 
     def __apply_analog_control(self, control: Controller, binding: AnalogBinding) -> None:
-        control.disabled = binding.disable
+        control.disabled = binding.disable or not self.input_enable.is_enabled(binding.id, binding.type)
         control.midi_channel = binding.midi_channel
         control.midi_CC = binding.midi_CC
         if isinstance(control, AnalogMidiControl.AnalogMidiControl):

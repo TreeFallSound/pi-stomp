@@ -29,6 +29,7 @@ import common.util as util
 from common.contexts import BindingDecl, ControlClass, EventKind, MidiCcEffect, ParamEffect, ShadowState
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, Type
 from modalapi.plugin import Plugin
+from ui.analog_menu import AnalogMenu
 from ui.ethernet_menu import EthernetMenu
 from ui.footswitch_menu import FootswitchMenu
 from ui.wifi_menu import WifiMenu
@@ -39,6 +40,7 @@ from pistomp.footswitch import Footswitch
 import pygame
 
 from uilib import (
+    AnalogBarPanel,
     Box,
     Config,
     ContainerWidget,
@@ -74,6 +76,12 @@ if TYPE_CHECKING:
 
 # Parameter dialog auto-dismiss timeout (seconds)
 PARAMETER_DIALOG_TIMEOUT = 1.0
+
+# The analog row sits in its own panel so it is one nav stop. The pad leaves
+# room for the selection border above and below the icons.
+ANALOG_ROW_TOP = 54
+ANALOG_ROW_PAD = 2
+ANALOG_OFF_COLOR = (90, 90, 90)
 
 # Subtitle auto-hide after no nav encoder movement (seconds)
 SUBTITLE_TIMEOUT = 1.3
@@ -225,6 +233,11 @@ class Lcd:
             no_dim=True,
             accepts_input=False,
         )
+        self.analog_menu: AnalogMenu = AnalogMenu(self)
+        # Built on the first draw, not here: the row overlaps the pedalboard
+        # and snapshot names, and a child paints in attach order, so it has to
+        # attach after them to own that band.
+        self.analog_panel: AnalogBarPanel | None = None
 
         self.pedalboards = {}
 
@@ -1211,12 +1224,20 @@ class Lcd:
         height_per_control = 19
         text_per_control = TILE_W - 16  # minus height of control icon
 
+        if self.analog_panel is None:
+            self.analog_panel = AnalogBarPanel(
+                box=Box.xywh(0, ANALOG_ROW_TOP, self.display_width, 2 * ANALOG_ROW_PAD + 19),
+                on_press=self.analog_menu.open,
+                subtitle="Analog Inputs",
+                parent=self.main_panel,
+            )
+
         # clean up previous control widgets
         for w in self.w_controls:
             w.destroy()
         self.w_controls = []
 
-        y = 56  # vertical position on screen
+        y = ANALOG_ROW_PAD  # vertical position inside the analog panel
         for i in range(0, num):
             x = i * pitch
             k = None
@@ -1288,6 +1309,12 @@ class Lcd:
                         else:
                             text_color = color
 
+            if analog_control is not None and analog_control.disabled:
+                name = "off"
+                subtitle = f"{subtitle} (off)"
+                color = ANALOG_OFF_COLOR
+                text_color = ANALOG_OFF_COLOR
+
             blend_initial_progress = None
             if isinstance(icon_object, BlendMode):
                 text_color = TILE_DEFAULT_COLOR
@@ -1311,7 +1338,7 @@ class Lcd:
                     box=Box.xywh(x, y, TILE_W, height_per_control),
                     text=name,
                     text_color=text_color,
-                    parent=self.main_panel,
+                    parent=self.analog_panel,
                     outline=0,
                     object=icon_object,
                     subtitle=subtitle,
@@ -1326,7 +1353,7 @@ class Lcd:
                     box=Box.xywh(x, y, TILE_W, height_per_control),
                     text=name,
                     text_color=text_color,
-                    parent=self.main_panel,
+                    parent=self.analog_panel,
                     outline=0,
                     object=icon_object,
                     subtitle=subtitle,
@@ -1342,11 +1369,19 @@ class Lcd:
             if control_label_fn is not None and control_param is not None and w is not None:
                 w.bind_label(control_param, control_label_fn)
 
+        self.main_panel.add_sel_widget(self.analog_panel)
+
         # Rebuild path: widget create/destroy above marks regions dirty, but
         # the LCD push only fires on a refresh. Called standalone from
         # _rebind_pedalboard (midi-learn of an encoder), where there's no
         # enclosing draw_main_panel to refresh for us.
+        self.analog_panel.refresh()
         self.main_panel.refresh()
+
+    def refresh_analog_row(self) -> None:
+        """Repaint the analog row after an input is turned on or off."""
+        if self.current is not None:
+            self.draw_analog_assignments(self.current.analog_controllers)
 
     def draw_info_message(self, text, refresh=False):
         if self.w_info_msg is None:

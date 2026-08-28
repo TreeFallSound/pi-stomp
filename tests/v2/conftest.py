@@ -9,8 +9,8 @@ from tests.v3.nav_helpers import nav_step
 
 
 @pytest.fixture
-def v2_system(fake_lcd, tmp_path) -> Generator[SystemFixture, None, None]:
-    yield from _v2_stack(fake_lcd, tmp_path)
+def v2_system(fake_lcd, tmp_path, input_enable_seed) -> Generator[SystemFixture, None, None]:
+    yield from _v2_stack(fake_lcd, tmp_path, input_enable_seed)
 
 
 @pytest.fixture

@@ -64,13 +64,17 @@ hardware:
   #                               Falls back to the virtual port only if the device is unavailable; must be the device name (e.g. 'Source Audio C4 Synth')
   # midi_channel: <integer>       Override MIDI channel for this control (0-15); required when midi_port is set
   # autosync: <true | false>      Whether to send current value on pedalboard load (optional, default: false)
+  # disable: <true | false>       Never create this control at all (optional, default: false)
   #
-  #analog_controllers:
-  #  - adc_input: 5
-  #    id: 0
-  #    type: EXPRESSION
-  #    midi_CC: 75
-  #    autosync: true
+  # An EXPRESSION control starts off, because an empty jack reads ADC noise. Turn
+  # it on from the analog row on the LCD; the choice is kept in settings.yml.
+  #
+  analog_controllers:
+  - adc_input: 5
+    id: 0
+    type: EXPRESSION
+    midi_CC: 75
+    autosync: true
 
   # encoders:
   # Each encoder definition is a list which starts with the id

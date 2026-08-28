@@ -355,6 +355,13 @@ full-range input despite ADC noise.
 Types: `KNOB` and `EXPRESSION` (config-driven). When `autosync: true`, `initialize()`
 reads the ADC and sends current position on pedalboard load.
 
+**On/off is a device fact, not a config fact** (`pistomp/input_enable.py`). An empty
+jack reads noise, so an `EXPRESSION` input is off until the user turns it on from the
+analog row on the LCD; every other control is on until turned off. The choice lives in
+`settings.yml`, which the software owns, and it masks `disabled` at both create time and
+`reinit`. `disable: true` in a config file is a different statement: that control is
+never created, and the menu cannot offer it.
+
 ### LCD System
 
 - **v1**: `pistomp/lcdgfx.py` — monochrome 128×64 display via gfxhat library. Direct

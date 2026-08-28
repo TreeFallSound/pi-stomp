@@ -15,8 +15,13 @@ from pistomp.config import load_cfg_from_file
 from tests.conftest import FakeWebSocketBridge
 from tests.types import CapturedLcd, SystemFixture
 import common.token as Token
+from pistomp.input_enable import SETTING as INPUT_ENABLE_SETTING
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+# A test rig has every input on, so an unbound one paints "none" and not "off".
+# Pass None for the shipped device default, where EXPRESSION starts off.
+DEFAULT_INPUT_ENABLE_SEED = {0: True}
 
 with patch("pistomp.settings.Settings.load_settings"), patch("pistomp.settings.Settings.set_setting"):
     from modalapi.modhandler import Modhandler
@@ -35,6 +40,7 @@ def _build_stack(
     fake_lcd: CapturedLcd,
     cfg_path: Path,
     tmp_path: Path,
+    input_enable_seed: dict[int, bool] | None = None,
 ) -> Generator[SystemFixture, None, None]:
     cwd = str(PROJECT_ROOT)
 
@@ -92,7 +98,10 @@ def _build_stack(
 
         mock_post.side_effect = post_side_effect
 
-        mock_settings_cls.return_value.get_setting.return_value = None
+        def get_setting(name):
+            return input_enable_seed if name == INPUT_ENABLE_SETTING else None
+
+        mock_settings_cls.return_value.get_setting.side_effect = get_setting
 
         mock_audiocard = MagicMock()
         mock_audiocard.get_volume_parameter.return_value = 0.0
@@ -100,7 +109,7 @@ def _build_stack(
         handler.software_version = "3.0.0"
         handler.recovery_available = False  # no pistomp-recovery in test env
         assert isinstance(handler.settings, MagicMock)
-        handler.settings.get_setting.return_value = None
+        handler.settings.get_setting.side_effect = get_setting
 
         midiout = MagicMock()
         hw = hw_class(cfg, handler, midiout, handler.update_lcd_fs)
@@ -131,14 +140,14 @@ def _build_stack(
 # ---------------------------------------------------------------------------
 
 
-def _v2_stack(fake_lcd, tmp_path) -> Generator[SystemFixture, None, None]:
+def _v2_stack(fake_lcd, tmp_path, input_enable_seed=DEFAULT_INPUT_ENABLE_SEED) -> Generator[SystemFixture, None, None]:
     cfg_path = PROJECT_ROOT / "setup" / "config_templates" / "default_config_pistompcore.yml"
-    yield from _build_stack(Pistompcore, fake_lcd, cfg_path, tmp_path)
+    yield from _build_stack(Pistompcore, fake_lcd, cfg_path, tmp_path, input_enable_seed)
 
 
-def _v3_stack(fake_lcd, tmp_path) -> Generator[SystemFixture, None, None]:
+def _v3_stack(fake_lcd, tmp_path, input_enable_seed=DEFAULT_INPUT_ENABLE_SEED) -> Generator[SystemFixture, None, None]:
     cfg_path = PROJECT_ROOT / "setup" / "config_templates" / "default_config_pistomptre.yml"
-    yield from _build_stack(Pistomptre, fake_lcd, cfg_path, tmp_path)
+    yield from _build_stack(Pistomptre, fake_lcd, cfg_path, tmp_path, input_enable_seed)
 
 
 _BUILDERS = {
@@ -153,6 +162,6 @@ _BUILDERS = {
 
 
 @pytest.fixture(params=["v2", "v3"])
-def modhandler_system(request, fake_lcd, tmp_path) -> Generator[SystemFixture, None, None]:
+def modhandler_system(request, fake_lcd, tmp_path, input_enable_seed) -> Generator[SystemFixture, None, None]:
     """Full Modhandler + hardware stack, parametrized across supported versions."""
-    yield from _BUILDERS[request.param](fake_lcd, tmp_path)
+    yield from _BUILDERS[request.param](fake_lcd, tmp_path, input_enable_seed)

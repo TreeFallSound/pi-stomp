@@ -804,6 +804,6 @@ def test_tall_parallel_scrolled_to_last(lcd, snapshot):
     tiles = instance.grid_panel.tile_order
     col0_x = tiles[0].box.x0
     col0_count = sum(1 for t in tiles if t.box.x0 == col0_x)
-    for _ in range(col0_count - 1 + 3):
+    for _ in range(col0_count - 1 + 4):
         instance.main_panel.sel_next()
     snapshot("scrolled_to_last")

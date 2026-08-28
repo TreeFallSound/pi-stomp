@@ -4,6 +4,11 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Added
+- Expression pedal can be turned on from the LCD. It no longer needs an SSH session and an edit to `default_config.yml`.
+- The analog row is now a nav stop. Click it to see every input with its resolved MIDI binding, and to turn one on or off. The choice is kept across pedalboards.
+
 ## [v3.3.1] - 2026-08-14
 ### Fixed
 - Pedalboards list no longer shows deleted pedalboards after they are removed from MOD-UI
