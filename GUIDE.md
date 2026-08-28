@@ -135,7 +135,7 @@ On a snapshot mismatch: **fix real failures first.** When only snapshot differen
 
 ## Create an LCD screen capture
 
-It's often useful to create screen capture of the current LCD for documentation, debugging, etc.
+It's often useful to a create screen capture of the current LCD for documentation, debugging, etc.
 
 On the pi-Stomp with all services running, execute the following:
 
