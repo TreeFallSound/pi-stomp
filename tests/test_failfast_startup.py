@@ -8,12 +8,19 @@ import pytest
 
 import common.token as Token
 from modalapi.pedalboard_monitor import write_last_json
+from pistomp.config import parse
 
 with patch("pistomp.settings.Settings.load_settings"), patch("pistomp.settings.Settings.set_setting"):
     from modalapi.modhandler import Modhandler, STARTUP_REST_BACKOFF_S
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
+
+
+def _mock_hardware():
+    hw = MagicMock()
+    hw.default_cfg = parse({}, "<test>")
+    return hw
 
 
 def _data_dir(tmp_path: Path) -> Path:
@@ -84,7 +91,7 @@ def test_missing_last_json_recovery(tmp_path):
         handler = Modhandler(MagicMock(), str(PROJECT_ROOT), data_dir=str(data_dir))
         handler.settings = MagicMock()
         handler.settings.get_setting.return_value = None
-        handler.add_hardware(MagicMock())
+        handler.add_hardware(_mock_hardware())
         handler.add_lcd(MagicMock())
         handler.load_pedalboards()
 

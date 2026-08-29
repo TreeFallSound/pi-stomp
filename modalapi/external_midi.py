@@ -58,6 +58,12 @@ class ExternalMidiManager:
         self.send_delay_ms: int = 10
         self._open_failures: dict[str, float] = {}
 
+    def set_config(self, cfg: ExternalMidiConfig) -> None:
+        """Replace the configuration. Messages of the previous pedalboard go away."""
+        self.enabled = cfg.get("enabled", False)
+        self.send_delay_ms = cfg.get("send_delay_ms", 10)
+        self.messages = dict(cfg.get("messages", {}))
+
     def update_config(self, cfg: ExternalMidiConfig | None) -> None:
         """Update configuration incrementally; only fields present are updated."""
         if cfg is None:

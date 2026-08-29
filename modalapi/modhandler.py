@@ -30,7 +30,6 @@ import pistomp.httpclient as req
 from pistomp.httpclient import Response
 import subprocess
 import sys
-import yaml
 from collections import namedtuple
 from collections.abc import Callable
 from dataclasses import replace
@@ -66,6 +65,7 @@ from modalapi.plugin import Plugin
 from blend.input_controller import InputController
 import modalapi.pedalboard as Pedalboard
 from modalapi.pedalboard import BPM_SYMBOL, BPB_SYMBOL, ROLLING_SYMBOL
+import modalapi.usb as usb
 import modalapi.wifi as Wifi
 
 # Importing the plugins package runs every plugin module's register() — this is
@@ -78,6 +78,7 @@ import modalapi.external_midi as ExternalMidi
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
 from pistomp.lcd320x240 import Lcd
+from uilib.menu import row_label
 from pistomp.hardware import Hardware
 import pistomp.settings as Settings
 from blend.snapshot import SnapshotManager
@@ -99,6 +100,8 @@ from modalapi.ws_protocol import (
     WebSocketMessage,
 )
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
+import pistomp.config as config
+from pistomp.controller import ControlType
 from modalapi.version_check import DpkgDriftCheck
 
 from pistomp.controller_manager import ControllerManager
@@ -127,14 +130,6 @@ from pathlib import Path
 # Front-loaded: mod-ui usually binds its port within ~300ms of us first asking, so the
 # common case costs one short sleep. Tail covers a slow LV2 scan. 4s total, 6 attempts.
 STARTUP_REST_BACKOFF_S = (0.25, 0.25, 0.5, 1.0, 2.0)
-
-
-def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
-    # Drop any PEDALBOARD-layer row whose control.id matches a learned binding
-    # that's being replaced. Scans all event_kind buckets since a re-learn could
-    # cross controller classes (footswitch ↔ encoder).
-    for (cls, event_kind), rows in list(layer.rows.items()):
-        layer.rows[(cls, event_kind)] = [d for d in rows if d.control.id != binding_id]
 
 
 class LongpressCcKey(namedtuple("LongpressCcKey", ["channel", "cc"])):
@@ -319,7 +314,7 @@ class Modhandler(Handler):
         if master is None:  # card exposes no master mixer control (e.g. hifiberry)
             return
         for enc in self.hardware.encoders:
-            if enc.type != Token.VOLUME or not isinstance(enc, EncoderController):
+            if enc.type != ControlType.VOLUME or not isinstance(enc, EncoderController):
                 continue
             value = self.audiocard.get_volume_parameter(master)
             info = PortInfo(
@@ -401,7 +396,7 @@ class Modhandler(Handler):
         # backing plugin parameter, just the audio card.
         delta = int(round(event.rotations * effective_multiplier(event.multiplier, c.parameter)))
 
-        if c.type == Token.VOLUME and c.parameter is not None:
+        if c.type == ControlType.VOLUME and c.parameter is not None:
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
             c.parameter.preview(new_value)
             self.audiocard.set_volume_parameter(self.audiocard.MASTER, new_value)
@@ -1125,6 +1120,9 @@ class Modhandler(Handler):
         if self._current is not None and self._current.analog_controllers:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
+        if self._current is not None:
+            self._current.close()
+
         # Delete previous "current"
         del self._current
 
@@ -1152,13 +1150,8 @@ class Modhandler(Handler):
                         self._apply_patch(plugin, param_uri, value)
             self._pending_dump_patch.clear()
 
-        # Load Pedalboard specific config (overrides default set during initial hardware init)
-        config_file = Path(pedalboard.bundle) / "config.yml"
-        cfg = None
-        if config_file.exists():
-            with open(config_file.as_posix(), "r") as ymlfile:
-                cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
-        self.hardware.reinit(cfg)
+        pedalboard_config = config.resolve(self.hardware.default_cfg, pedalboard.bundle)
+        self.hardware.reinit(pedalboard_config)
 
         # Initialize the data and draw on LCD
         self.bind_current_pedalboard()
@@ -1180,14 +1173,14 @@ class Modhandler(Handler):
 
         # Prepare blend modes if configured (snapshot-based activation)
         try:
-            blend_configs = cfg.get("blend_snapshots", []) if cfg else []
+            blend_configs = pedalboard_config.blend_snapshots
             bundle_path = Path(self.current.pedalboard.bundle)
 
             # Sync all blend snapshots (create/recreate based on config)
             snapshot_indices = SnapshotManager.sync_blend_snapshots(bundle_path, blend_configs, self.root_uri)
 
             # Create and prepare BlendMode instances for each blend snapshot
-            from blend import BlendMode
+            from blend.manager import BlendMode
 
             for blend_cfg in blend_configs:
                 snapshot_name = blend_cfg.get("name")
@@ -1266,34 +1259,11 @@ class Modhandler(Handler):
             return False
         return self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
-    def _redraw_after_binding(self, controller: Controller | None, is_footswitch: bool) -> None:
-        if is_footswitch and controller is not None:
-            # Footswitch: redraw just that one switch, not the whole board.
-            self.lcd.update_footswitch(controller)
-        else:
+    def _rebind_pedalboard(self) -> None:
+        self._controller_manager.bind(self._current)
+        self.lcd.draw_main_panel()
+        if self._current is not None:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)
-
-    def _add_learned_binding_row(
-        self, plugin: Plugin, param: Parameter, controller: Controller | None, old_binding: str | None
-    ) -> None:
-        layer = self._controller_manager.effective_table.layers[0]
-        if old_binding is not None:
-            _remove_binding_row(layer, old_binding)
-        if controller is None:
-            return
-        if isinstance(controller, Footswitch):
-            cls, event_kind = ControlClass.FOOTSWITCH, EventKind.PRESS
-        else:
-            cls, event_kind = ControlClass.ANALOG, EventKind.ROTATE
-        assert param.binding is not None
-        layer.add(
-            BindingDecl(
-                control=ControlRef(cls=cls, id=param.binding),
-                event_kind=event_kind,
-                effects=(ParamEffect(plugin=plugin, symbol=param.symbol),),
-                context=layer.ref,
-            )
-        )
 
     def pedalboard_change(self, pedalboard: Pedalboard.Pedalboard) -> None:
         logging.info("Pedalboard change")
@@ -1591,28 +1561,16 @@ class Modhandler(Handler):
         logging.info("Entering recovery mode")
         os.system("sudo systemctl --no-block start pistomp-recovery")
 
-    def _usb_media_mounts(self) -> list[str]:
-        # /media is populated solely by pi-gen-pistomp's pistomp-usb-mount udev
-        # script (one subdir per mounted USB partition, named by fs label or
-        # kernel device); anything mounted there is USB content storage.
-        media_root = "/media"
-        if not os.path.isdir(media_root):
-            return []
-        return [
-            os.path.join(media_root, name)
-            for name in sorted(os.listdir(media_root))
-            if os.path.ismount(os.path.join(media_root, name))
-        ]
+    def usb_drives(self) -> list[usb.UsbDrive]:
+        return usb.discover(self.backup_file)
 
-    def check_usb(self) -> list[str]:
-        # One backups dir per mounted stick, created if needed.
-        backup_dirs = []
-        for mount in self._usb_media_mounts():
-            backup_dir = os.path.join(mount, "backups")
-            if not os.path.exists(backup_dir):
-                os.mkdir(backup_dir)
-            backup_dirs.append(backup_dir)
-        return backup_dirs
+    @property
+    def usb_backup_available(self) -> bool:
+        return any(d.writable for d in self.usb_drives())
+
+    @property
+    def usb_restore_available(self) -> bool:
+        return any(d.archive for d in self.usb_drives())
 
     @staticmethod
     def _human_size(num_bytes: int) -> str:
@@ -1623,64 +1581,79 @@ class Modhandler(Handler):
             value /= 1000
         return f"{value:.1f}GB"
 
-    def _drive_detail(self, backup_dir: str) -> str:
+    def _drive_detail(self, drive: usb.UsbDrive) -> str:
         """Drive name plus free space — the thing that decides whether a backup fits."""
-        mount = os.path.dirname(backup_dir)
-        name = os.path.basename(mount)
         try:
-            usage = shutil.disk_usage(mount)
+            usage = shutil.disk_usage(drive.mount)
         except OSError:
-            return name
-        return f"{name} · {self._human_size(usage.free)} free of {self._human_size(usage.total)}"
+            return drive.name
+        return f"{drive.name} · {self._human_size(usage.free)} free of {self._human_size(usage.total)}"
 
-    def _archive_detail(self, backup_dir: str) -> str:
+    def _archive_detail(self, drive: usb.UsbDrive) -> str:
         """Drive name plus the archive's size and age — restore overwrites data/,
         so which vintage is about to land matters more than free space."""
-        mount = os.path.dirname(backup_dir)
-        name = os.path.basename(mount)
-        path = os.path.join(backup_dir, self.backup_file)
+        if drive.archive is None:
+            return drive.name
         try:
-            st = os.stat(path)
+            st = os.stat(drive.archive)
         except OSError:
-            return name
+            return drive.name
         when = datetime.datetime.fromtimestamp(st.st_mtime).strftime("%d %b %H:%M")
-        return f"{name} · {self._human_size(st.st_size)} from {when}"
+        return f"{drive.name} · {self._human_size(st.st_size)} from {when}"
 
-    def _drive_label(self, backup_dir: str) -> str:
-        mount = os.path.dirname(backup_dir)
+    def _drive_label(self, drive: usb.UsbDrive) -> str:
         try:
-            size = self._human_size(shutil.disk_usage(mount).total)
+            size = self._human_size(shutil.disk_usage(drive.mount).total)
         except OSError:
-            return os.path.basename(mount)
-        return f"{os.path.basename(mount)} ({size})"
+            return drive.name
+        return f"{drive.name} ({size})"
 
-    def _choose_usb_drive(self, backup_dirs: list[str], action):
-        # Runs action(backup_dir) directly for a single stick; with several,
-        # lets the user pick one from an LCD menu first.
-        if not backup_dirs:
-            logging.info("No USB device found")
-            self.lcd.draw_message_dialog("No USB device found")
-        elif len(backup_dirs) == 1:
-            action(backup_dirs[0])
+    def _choose_usb_drive(self, choices: list[tuple[usb.UsbDrive, str | None]], empty_message: str, action):
+        # `choices` pairs each drive with the reason it cannot be used, or None.
+        # An unusable drive stays in the menu, dim, with its reason. A drive the
+        # user cannot see is a drive the user thinks we did not detect.
+        usable = [drive for drive, reason in choices if reason is None]
+        if not usable:
+            logging.info(empty_message)
+            self.lcd.draw_message_dialog(empty_message)
+        elif len(usable) == 1:
+            action(usable[0])
         else:
-            items = [(self._drive_label(d), action, d) for d in backup_dirs]
+            items = [
+                (
+                    row_label(
+                        self._drive_label(drive) if reason is None else f"{drive.name} ({reason})",
+                        enabled=reason is None,
+                    ),
+                    action,
+                    drive,
+                )
+                for drive, reason in choices
+            ]
             self.lcd.draw_selection_menu(items, "Choose USB drive", auto_dismiss=True, dismiss_option=True)
 
     def user_backup_data(self, arg):
-        self._choose_usb_drive(self.check_usb(), self._do_backup_data)
+        choices = [(d, None if d.writable else "read-only") for d in self.usb_drives()]
+        self._choose_usb_drive(choices, "No writable USB drive", self._do_backup_data)
 
-    def _do_backup_data(self, backup_dir: str):
+    def _do_backup_data(self, drive: usb.UsbDrive):
         from modalapi.archive import ArchiveJob
         from ui.archive_panel import ArchiveProgressPanel
 
         logging.info("Data backup...")
+        try:
+            backup_dir = usb.ensure_backup_dir(drive)
+        except OSError as e:
+            logging.error(f"Cannot write to {drive.mount}: {e}")
+            self.lcd.draw_message_dialog(f"{drive.name} is not writable")
+            return
         cmd = os.path.join(self.homedir, "util", "data-backup.sh")
         job = ArchiveJob.backup(cmd, os.path.join(backup_dir, self.backup_file), self.data_dir)
         self.lcd.pstack.push_panel(
             ArchiveProgressPanel(
                 title="Backing up",
                 noun="Backup",
-                subtitle=self._drive_detail(backup_dir),
+                subtitle=self._drive_detail(drive),
                 job=job,
                 on_dismiss=self._dismiss_archive_panel,
                 cancellable=True,
@@ -1688,24 +1661,25 @@ class Modhandler(Handler):
         )
 
     def user_restore_data(self, arg, on_success=None):
-        # Only offer drives that actually hold a backup — no point asking the
-        # user to choose when just one (or none) does.
-        restorable = [d for d in self.check_usb() if os.path.exists(os.path.join(d, self.backup_file))]
-        self._choose_usb_drive(restorable, lambda d: self._do_restore_data(d, on_success=on_success))
+        choices = [(d, None if d.archive else "no backup") for d in self.usb_drives()]
+        self._choose_usb_drive(
+            choices, "No backup found on USB", lambda d: self._do_restore_data(d, on_success=on_success)
+        )
 
-    def _do_restore_data(self, backup_dir: str, on_success=None):
+    def _do_restore_data(self, drive: usb.UsbDrive, on_success=None):
         from modalapi.archive import ArchiveJob
         from ui.archive_panel import ArchiveProgressPanel
 
+        assert drive.archive is not None
         logging.info("Restoring data backup...")
         cmd = os.path.join(self.homedir, "util", "data-restore.sh")
-        job = ArchiveJob.restore(cmd, self.username, os.path.join(backup_dir, self.backup_file), self.data_dir)
+        job = ArchiveJob.restore(cmd, self.username, drive.archive, self.data_dir)
         self._restoring = True
         self.lcd.pstack.push_panel(
             ArchiveProgressPanel(
                 title="Restoring",
                 noun="Restore",
-                subtitle=self._archive_detail(backup_dir),
+                subtitle=self._archive_detail(drive),
                 job=job,
                 on_dismiss=lambda: self._dismiss_restore_panel(on_success),
                 cancellable=False,

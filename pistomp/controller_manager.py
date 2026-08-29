@@ -20,7 +20,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-import common.token as Token
 from common.contexts import (
     BindingDecl,
     CallbackEffect,
@@ -32,7 +31,6 @@ from common.contexts import (
     ControlRef,
     Effect,
     EventKind,
-    LongpressActionConfig,
     MidiCcEffect,
     ParamEffect,
     PedalboardEffect,
@@ -41,6 +39,13 @@ from common.contexts import (
     RelayEffect,
     ShadowState,
     TapTempoEffect,
+)
+from pistomp.config.model import (
+    ControlType,
+    LongpressAction,
+    LongpressBoard,
+    LongpressMidiCC,
+    LongpressPreset,
 )
 from common.parameter import Parameter, PortInfo, Symbol, TTL_INTEGER
 from modalapi.external_midi import EXTERNAL_INSTANCE_ID
@@ -55,53 +60,33 @@ if TYPE_CHECKING:
 
 
 class ControllerManager:
-    """
-    Manages controller/parameter bindings on the current pedalboard,
-    overlaying per-pedalboard config on top of the base.
-    The one genuine version difference is passed as a flag rather than subclassed:
+    """Build the runtime bindings of the active pedalboard: the per-pedalboard
+    config over the base config."""
 
-      reorder_footswitch_plugins  v1 moves footswitch-controlled plugins to the
-                                  tail of the chain; v3 leaves order untouched.
-    """
-
-    def __init__(self, hardware: "Hardware", *, reorder_footswitch_plugins: bool = False):
+    def __init__(self, hardware: "Hardware"):
         self._hw = hardware
-        self._reorder_footswitch_plugins = reorder_footswitch_plugins
-        # Effective table (common/contexts.py, pistomp/input/README.md): the
-        # PEDALBOARD layer of the resolved binding table, built alongside the
-        # legacy dict outputs below. ORPHANED rows record TTL bindings with
-        # no matching physical controller, which the legacy path drops
-        # silently.
         self.effective_table = ContextStack(layers=[])
 
     def bind(self, current: Current | None) -> None:
-        """Rebind all controllers for the active pedalboard state."""
+        """Create the runtime associations for the active pedalboard."""
+        self.effective_table = ContextStack(layers=[])
         if current is None:
             return
 
-        # Clear previous parameter bindings from all controllers except volume.
-        for controller in self._hw.controllers.values():
-            if controller.type != Token.VOLUME:
-                controller.unbind_from_parameter()
-
-        current.analog_controllers = {}
-        pedalboard_layer = ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD))
+        current.close()
+        layer = ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD))
 
         if current.pedalboard:
-            footswitch_plugins = self._bind_plugin_parameters(current, pedalboard_layer)
+            self._bind_plugin_parameters(current, layer)
             self._bind_volume_encoders(current)
-            if self._reorder_footswitch_plugins:
-                self._move_footswitch_plugins_to_end(current, footswitch_plugins)
 
-        self._bind_external_controllers(current, pedalboard_layer)
-        self._bind_encoder_longpress(pedalboard_layer)
-        self._bind_footswitch_actions(pedalboard_layer)
-        self.effective_table = ContextStack(layers=[pedalboard_layer])
+        self._bind_external_controllers(current, layer)
+        self._bind_encoder_longpress(layer)
+        self._bind_footswitch_actions(layer)
+        self.effective_table = ContextStack(layers=[layer])
 
-    def _bind_plugin_parameters(self, current, pedalboard_layer: ContextLayer) -> list:
-        """Bind controllers referenced by plugin parameters; return the plugins
-        that gained a footswitch."""
-        footswitch_plugins = []
+    def _bind_plugin_parameters(self, current: Current, pedalboard_layer: ContextLayer) -> None:
+        """Bind controllers referenced by plugin parameters."""
         # The transport pseudo-plugin carries :bpm/:bpb/:rolling; it's not in
         # pedalboard.plugins (the effect-graph render) but its bindings route
         # through the same machinery.
@@ -136,12 +121,12 @@ class ControllerManager:
                     )
                     continue
 
-                controller.bind_to_parameter(param)
+                current.bind(controller, param)
                 plugin.controllers.append(controller)
+                current.track_plugin_binding(plugin, controller)
 
                 if isinstance(controller, Footswitch):
                     plugin.has_footswitch = True
-                    footswitch_plugins.append(plugin)
                     controller.set_category(plugin.category)
                     event_kind = EventKind.PRESS
                     cls = ControlClass.FOOTSWITCH
@@ -169,21 +154,15 @@ class ControllerManager:
                         enabled_when=enabled_when,
                     )
                 )
-        return footswitch_plugins
 
-    def _bind_volume_encoders(self, current) -> None:
+    def _bind_volume_encoders(self, current: Current) -> None:
         """Surface VOLUME-type encoders in the assignment display (v3 only in
         practice — v1 has no VOLUME-typed encoder)."""
         for e in self._hw.encoders:
-            if e.type == Token.VOLUME:
-                current.analog_controllers[Token.VOLUME] = e.get_display_info()
+            if e.type == ControlType.VOLUME:
+                current.analog_controllers[ControlType.VOLUME] = e.get_display_info()
 
-    @staticmethod
-    def _move_footswitch_plugins_to_end(current, footswitch_plugins) -> None:
-        plugins = current.pedalboard.plugins
-        current.pedalboard.plugins = [p for p in plugins if p.has_footswitch is False] + footswitch_plugins
-
-    def _bind_external_controllers(self, current, pedalboard_layer: ContextLayer) -> None:
+    def _bind_external_controllers(self, current: Current, pedalboard_layer: ContextLayer) -> None:
         """Externally-routed controllers: bind a synthetic parameter and show
         them under an "External" category."""
         for controller in self._hw.controllers.values():
@@ -194,8 +173,11 @@ class ControllerManager:
 
             if controller.parameter is None:
                 if isinstance(controller, AnalogMidiControl):
-                    controller.parameter = self._hw.create_external_parameter(
-                        port_name, controller.midi_channel, controller.midi_CC, controller.midi_value
+                    current.attach(
+                        controller,
+                        self._hw.create_external_parameter(
+                            port_name, controller.midi_channel, controller.midi_CC, controller.midi_value
+                        ),
                     )
                 else:
                     ext_info = PortInfo(
@@ -204,8 +186,9 @@ class ControllerManager:
                         ranges={"minimum": 0, "maximum": 127},
                         properties=[TTL_INTEGER],
                     )
-                    controller.bind_to_parameter(
-                        Parameter(ext_info, ENCODER_FALLBACK_DEFAULT, key, EXTERNAL_INSTANCE_ID)
+                    current.bind(
+                        controller,
+                        Parameter(ext_info, ENCODER_FALLBACK_DEFAULT, key, EXTERNAL_INSTANCE_ID),
                     )
 
             pedalboard_layer.add(
@@ -299,8 +282,7 @@ class ControllerManager:
                     )
                 )
 
-            # Mapping-form longpress: dict config, parsed by Footswitch.
-            lp = fs.longpress_action
+            lp = self._hw.longpress_action(fs)
             if lp is not None:
                 pedalboard_layer.add(
                     BindingDecl(
@@ -362,13 +344,11 @@ class ControllerManager:
                 )
 
     @staticmethod
-    def _longpress_action_effects(lp: LongpressActionConfig, fs: Footswitch) -> tuple[Effect, ...]:
-        """Translate a mapping-form longpress dict into a single-effect tuple.
-        The schema guarantees exactly one key."""
-        if "midi_CC" in lp:
-            return (RawMidiCcEffect(channel=fs.midi_channel, cc=int(lp["midi_CC"])),)
-        if "preset" in lp:
-            return (PresetEffect(direction=str(lp["preset"])),)
-        if "pedalboard" in lp:
-            return (PedalboardEffect(direction=str(lp["pedalboard"])),)
-        return ()
+    def _longpress_action_effects(lp: LongpressAction, fs: Footswitch) -> tuple[Effect, ...]:
+        match lp:
+            case LongpressMidiCC():
+                return (RawMidiCcEffect(channel=fs.midi_channel, cc=lp.cc),)
+            case LongpressPreset():
+                return (PresetEffect(direction=str(lp.preset)),)
+            case LongpressBoard():
+                return (PedalboardEffect(direction=lp.direction),)

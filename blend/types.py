@@ -73,6 +73,7 @@ class BlendInputProtocol(Protocol):
     """Protocol for blend mode input sources (expression pedal or encoder)."""
 
     id: int
+    type: str | None
 
     def get_normalized_value(self) -> float: ...
 

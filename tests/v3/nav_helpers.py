@@ -4,13 +4,13 @@ shims so tests exercise the same ``handler.handle`` cascade the device uses."""
 
 import time
 
-import common.token as Token
+from pistomp.controller import ControlType
 from pistomp.input.event import EncoderEvent, SwitchEvent, SwitchEventKind
 
 
 def nav_encoder(handler):
     for e in handler.hardware.encoders:
-        if e.type == Token.NAV:
+        if e.type == ControlType.NAV:
             return e
     raise AssertionError("handler has no NAV encoder")
 
