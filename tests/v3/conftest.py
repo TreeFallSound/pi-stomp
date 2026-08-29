@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 import common.token as Token
+from pistomp.controller import ControlType
 from emulator.controls import MockAnalogControl
 from modalapi.bluetooth import BtDevice, DeviceKind, KnownDevice
 from modalapi.wifi import SavedConnection, ScannedNetwork
@@ -266,7 +267,7 @@ def blend_system_exp(
             midi_CC=75,
             midi_channel=0,
             midiout=None,
-            control_type=Token.EXPRESSION,
+            control_type=ControlType.EXPRESSION,
             id=0,
         )
         exp_pedal.last_read = 512

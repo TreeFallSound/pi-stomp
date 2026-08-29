@@ -15,8 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import common.token as Token
-import common.util as Util
+import pistomp.config as config
 
 import pistomp.pistompcore as Pistompcore
 import pistomp.pistomptre as Pistomptre
@@ -31,10 +30,7 @@ class Hardwarefactory:
         Hardwarefactory.__single = self
 
     def create(self, cfg, handler, midiout):
-        hw = Util.DICT_GET(cfg, Token.HARDWARE)
-        if not hw:
-            return None
-        version = Util.DICT_GET(hw, Token.VERSION)
+        version = config.hardware_version(cfg)
         if version is None:
             return None
         if (version >= 2.0) and (version < 3.0):

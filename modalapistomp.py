@@ -20,7 +20,6 @@
 # Configure logging BEFORE any imports to ensure it takes effect
 import logging
 import sys
-from typing import Any
 import shutil
 
 # Set up logging with format that works well with systemd journal
@@ -100,7 +99,7 @@ def main():
     handler = None
     midiout = None
 
-    cfg: dict[str, Any] | None = None
+    cfg: config.ConfigDocument | None = None
     audiocard: Audiocard | None = None
 
     is_emulator = args.host[0] in EMULATOR_HOSTS

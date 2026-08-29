@@ -18,7 +18,6 @@ classifiers = [
 
 dependencies = [
     "pyyaml>=6.0",
-    "jsonschema>=4.0",
     "JACK-Client>=0.5.5",
     "python-rtmidi>=1.4",
     "Pillow>=9.4",
@@ -30,6 +29,7 @@ dependencies = [
     "pygame-ce>=2.5.7",
     "qrcode>=8.0",
     "dbus-fast>=5.0",
+    "msgspec>=0.21.1",
 ]
 
 [project.optional-dependencies]
@@ -57,6 +57,7 @@ dev = [
     "pytest-cov>=7.0.0",
     "ruff>=0.1.0",
     "typing-extensions>=4.15.0",
+    "jsonschema>=4.0",
 ]
 
 [project.urls]

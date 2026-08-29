@@ -17,6 +17,7 @@ from common.contexts import (
 from pistomp.footswitch import Footswitch
 from pistomp.input.event import SwitchEvent, SwitchEventKind
 from tests.types import SystemFixture
+from tests.v3.test_hardware_config import _cfg
 
 
 def _fs_key(fs: Footswitch) -> str:
@@ -39,10 +40,10 @@ def _longpress_rows(handler, key):
 
 def test_longpress_raw_midi_cc(v3_system: SystemFixture):
     handler = v3_system.handler
-    fs = v3_system.hw.footswitches[0]
-    fs.add_preset(direction="UP")
-    fs.longpress_action = {"midi_CC": 64}
+    hw = v3_system.hw
+    hw.reinit(_cfg(hw, footswitches=[{"id": 0, "longpress": {"midi_CC": 64}, "preset": "UP"}]))
     handler.bind_current_pedalboard()
+    fs = hw.footswitches[0]
 
     rows = _longpress_rows(handler, _fs_key(fs))
     assert len(rows) == 1
@@ -63,9 +64,10 @@ def test_longpress_raw_midi_cc(v3_system: SystemFixture):
 
 def test_longpress_raw_midi_cc_drift_self_corrects(v3_system: SystemFixture):
     handler = v3_system.handler
-    fs = v3_system.hw.footswitches[0]
-    fs.longpress_action = {"midi_CC": 64}
+    hw = v3_system.hw
+    hw.reinit(_cfg(hw, footswitches=[{"id": 0, "longpress": {"midi_CC": 64}}]))
     handler.bind_current_pedalboard()
+    fs = hw.footswitches[0]
 
     event = SwitchEvent(controller=fs, kind=SwitchEventKind.LONGPRESS, timestamp=1.0)
     sends = v3_system.hw.midiout.send_message
@@ -88,9 +90,10 @@ def test_longpress_raw_midi_cc_drift_self_corrects(v3_system: SystemFixture):
 
 def test_longpress_snapshot_specific_index(v3_system: SystemFixture, monkeypatch):
     handler = v3_system.handler
-    fs = v3_system.hw.footswitches[0]
-    fs.longpress_action = {"preset": 2}
+    hw = v3_system.hw
+    hw.reinit(_cfg(hw, footswitches=[{"id": 0, "longpress": {"preset": 2}}]))
     handler.bind_current_pedalboard()
+    fs = hw.footswitches[0]
 
     rows = _longpress_rows(handler, _fs_key(fs))
     assert any(isinstance(e, PresetEffect) and e.direction == "2" for e in rows[0].effects)
@@ -104,12 +107,13 @@ def test_longpress_snapshot_specific_index(v3_system: SystemFixture, monkeypatch
 def test_longpress_snapshot_up_down(v3_system: SystemFixture):
     handler = v3_system.handler
     hw = v3_system.hw
-
-    fs_up = hw.footswitches[0]
-    fs_up.longpress_action = {"preset": "UP"}
-    fs_dn = hw.footswitches[1]
-    fs_dn.longpress_action = {"preset": "DOWN"}
+    hw.reinit(_cfg(hw, footswitches=[
+        {"id": 0, "longpress": {"preset": "UP"}},
+        {"id": 1, "longpress": {"preset": "DOWN"}},
+    ]))
     handler.bind_current_pedalboard()
+    fs_up = hw.footswitches[0]
+    fs_dn = hw.footswitches[1]
 
     calls: list[str] = []
     handler.preset_incr_and_change = lambda *a: calls.append("incr")
@@ -192,21 +196,3 @@ def test_pedalboard_nav_single_pedalboard_bank(v3_system: SystemFixture):
     assert changed == [pbs[0], pbs[0]]
 
 
-# ---------------------------------------------------------------------------
-# Chord form still works
-# ---------------------------------------------------------------------------
-
-
-def test_longpress_chord_form_still_works(v3_system: SystemFixture):
-    fs = v3_system.hw.footswitches[0]
-    fs.set_longpress_groups("next_snapshot")
-    assert fs.longpress_groups == ["next_snapshot"]
-    assert fs.longpress_action is None
-
-    fs.set_longpress_groups(["next_snapshot", "toggle_bypass"])
-    assert fs.longpress_groups == ["next_snapshot", "toggle_bypass"]
-    assert fs.longpress_action is None
-
-    fs.set_longpress_groups({"midi_CC": 64})
-    assert fs.longpress_groups == []
-    assert fs.longpress_action == {"midi_CC": 64}

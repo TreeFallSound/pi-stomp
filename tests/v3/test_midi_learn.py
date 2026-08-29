@@ -2,7 +2,7 @@
 plugin parameter live, so the LCD reflects it without a pedalboard reload."""
 
 import common.util as util
-from common.contexts import ControlClass, EventKind, ParamEffect
+from common.contexts import ControlClass, EventKind, MidiCcEffect, ParamEffect
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from tests.types import SystemFixture
 
@@ -446,6 +446,59 @@ def test_v3_midi_unlearn_footswitch_clears_binding(v3_system: SystemFixture, mak
     snapshot("unbound")
 
 
+def test_v3_midi_unlearn_restores_footswitch_default_action(v3_system: SystemFixture, make_plugin):
+    """A footswitch must still work after its mapping is removed in MOD-UI.
+
+    While plugin-bound it has a ParamEffect PRESS row and no default CC-toggle
+    row, so dropping the learned row on its own leaves it with no PRESS row at
+    all — pressing it does nothing, and its keycap stays lit at the plugin's
+    last reported value."""
+    import pistomp.switchstate as switchstate
+
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current and handler.lcd
+
+    fs0 = hw.footswitches[0]
+    assert fs0.midi_CC is not None
+    binding_id = _binding_for(hw, fs0)
+    channel, cc = binding_id.split(":")
+
+    def press_rows():
+        rows = handler.effective_table.layers[0].rows.get((ControlClass.FOOTSWITCH, EventKind.PRESS), [])
+        return [r for r in rows if r.control.id == binding_id]
+
+    plugin = make_plugin("noise", bypassed=False, has_footswitch=False)
+    handler.current.pedalboard.plugins = [plugin]
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    ws_bridge.inject(f"midi_map /graph/noise :bypass {channel} {cc} 0.0 1.0")
+    handler.poll_ws_messages()
+    bound = press_rows()
+    assert len(bound) == 1
+    assert any(isinstance(e, ParamEffect) for e in bound[0].effects)
+    assert fs0.toggled is True
+
+    ws_bridge.inject("midi_map /graph/noise :bypass -1 -1 0.0 1.0")
+    handler.poll_ws_messages()
+
+    # The default CC-toggle row is back, and the learned row is gone.
+    unbound = press_rows()
+    assert len(unbound) == 1
+    assert any(isinstance(e, MidiCcEffect) for e in unbound[0].effects)
+    assert not any(isinstance(e, ParamEffect) for e in unbound[0].effects)
+
+    # No echo reaches an unbound switch, so it must not stay lit.
+    assert fs0.toggled is False
+
+    # And it dispatches again.
+    fs0._on_switch(switchstate.Value.RELEASED)
+    assert fs0.toggled is True
+
+
 def test_v3_midi_learn_updated_binding_range_on_same_parameter(v3_system: SystemFixture, make_plugin, make_parameter):
     """Re-addressing an already bound parameter to a different sub-range on the same CC
     updates the parameter's binding range and endpoints without bailing early."""
@@ -581,7 +634,9 @@ def test_v3_midi_learn_moving_footswitch_binding_clears_old_lcd_display(v3_syste
     assert plugin.controllers.count(fs0) == 0
     assert plugin.controllers.count(fs1) == 1
 
-    # LCD: FS0 reverted to unbound grey; FS1 active
+    # LCD: FS0 reverted to unbound grey; FS1 active. Re-fetch — a re-derive
+    # rebuilds the footswitch widgets, so the earlier reference is detached.
+    w0 = next(w for w in lcd.w_footswitches if w.object is fs0)
     assert w0.color is None
     assert w0.action is None
     w1 = next(w for w in lcd.w_footswitches if w.object is fs1)

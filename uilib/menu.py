@@ -33,6 +33,7 @@ DEFAULT_WIDTH = 240
 FOOTER_GAP = 2
 FOOTER_H = 28
 
+
 @dataclass(frozen=True)
 class FooterButton:
     text: str
@@ -53,10 +54,26 @@ class BadgedLabel:
     char: str | None = None
 
 
-# A menu row label: a plain string, a badged string (see `BadgedLabel`), or a
-# sequence of `Segment`s (rendered as a `RichTextWidget` — emoji-style glyphs,
-# spacers for left/right alignment, etc.).
-Label = str | BadgedLabel | Sequence[Segment]
+@dataclass(frozen=True)
+class DisabledLabel:
+    """A row you can see but cannot select: it paints dim and NAV goes past it.
+    Put the reason in `text`, e.g. "LAUNCHKEY (read-only)"."""
+
+    text: str
+
+
+# A menu row label: a plain string, a badged string (see `BadgedLabel`), a
+# dimmed unselectable string (see `DisabledLabel`), or a sequence of `Segment`s
+# (rendered as a `RichTextWidget` — emoji-style glyphs, spacers for left/right
+# alignment, etc.).
+Label = str | BadgedLabel | DisabledLabel | Sequence[Segment]
+
+DISABLED_FG = (110, 110, 110)
+
+
+def row_label(text: str, *, enabled: bool) -> Label:
+    return text if enabled else DisabledLabel(text)
+
 
 # Action stored in slot 1 of a `MenuItem`. The menu framework never invokes
 # this directly — the per-item callable is decorative context that the
@@ -87,7 +104,7 @@ def label_key(label: Label) -> str:
     segment lists are rebuilt per render and never compare equal."""
     if isinstance(label, str):
         return label
-    if isinstance(label, BadgedLabel):
+    if isinstance(label, (BadgedLabel, DisabledLabel)):
         return label.text
     return "".join(s.text for s in label if isinstance(s, TextSeg))
 
@@ -101,12 +118,20 @@ class Menu(Dialog):
 
     `items` is a list of `MenuItem` tuples; the first element is the label.
     """
-    def __init__(self, items: list[MenuItem], font=None,
-                 width: int | None = None, max_height: int | None = None,
-                 text_halign: TextHAlign = TextHAlign.CENTRE,
-                 auto_dismiss: bool = True, dismiss_option: bool = False,
-                 default_item: str | None = None,
-                 footer: Sequence[FooterSlot] | None = None, **kwargs) -> None:
+
+    def __init__(
+        self,
+        items: list[MenuItem],
+        font=None,
+        width: int | None = None,
+        max_height: int | None = None,
+        text_halign: TextHAlign = TextHAlign.CENTRE,
+        auto_dismiss: bool = True,
+        dismiss_option: bool = False,
+        default_item: str | None = None,
+        footer: Sequence[FooterSlot] | None = None,
+        **kwargs,
+    ) -> None:
         self.max_height = max_height
         self.width = width
         self.items: list[MenuItem] = items
@@ -114,9 +139,9 @@ class Menu(Dialog):
         self.footer: list[FooterSlot] = list(footer) if footer else []
         if not any(self.footer) and (auto_dismiss is False or dismiss_option is True):
             # without auto_dismiss provide a back arrow to close menu
-            self.items.append(('\u2b05', self._dismiss, None))
+            self.items.append(("\u2b05", self._dismiss, None))
         if font is None:
-            font = Config().get_font('default')
+            font = Config().get_font("default")
         self.font = font
         self.item_h: int = 0
         self.text_halign = text_halign
@@ -144,8 +169,8 @@ class Menu(Dialog):
             return
         columns = sum(1 if slot is None else slot.span for slot in self.footer)
         col_w = (self.box.width - FOOTER_GAP * (columns + 1)) // columns
-        font = Config().get_font('small')
-        _, text_h = get_text_size('Close', font)
+        font = Config().get_font("small")
+        _, text_h = get_text_size("Close", font)
         v_margin = max(0, (FOOTER_H - text_h) // 2)
         col = 0
         for slot in self.footer:
@@ -171,24 +196,39 @@ class Menu(Dialog):
 
     def _make_row_widget(self, item: MenuItem, b: Box) -> TextWidget | RichTextWidget:
         t = _item_label(item)
-        if isinstance(t, (str, BadgedLabel)):
-            text = t.text if isinstance(t, BadgedLabel) else t
+        disabled = isinstance(t, DisabledLabel)
+        if isinstance(t, (str, BadgedLabel, DisabledLabel)):
+            text = t if isinstance(t, str) else t.text
             if _item_selected(item):
-                text = '\u2714 ' + text
+                text = "\u2714 " + text
             badge = BadgeGlyph(t.char) if isinstance(t, BadgedLabel) and t.char is not None else None
+            # A disabled row is not `selectable`, thus `_get_margins` drops the
+            # selection-rectangle inset and lifts the text. Pass the inset that the
+            # other rows compute, to keep one baseline down the menu.
+            inset = self.sel_width if disabled else None
             w: TextWidget | RichTextWidget = TextWidget(
-                box=b, text_halign=self.text_halign, font=self.font,
-                text=text, badge=badge, parent=self, action=self._item_action)
+                box=b,
+                text_halign=self.text_halign,
+                font=self.font,
+                text=text,
+                badge=badge,
+                parent=self,
+                action=self._item_action,
+                h_margin=inset,
+                v_margin=inset,
+                fgnd_color=DISABLED_FG if disabled else self.fgnd_color,
+            )
         else:
             # Rich rows ignore `selected` for now — the checkmark prefix
             # only makes sense on string labels.
-            w = RichTextWidget(box=b, segments=t, font=self.font,
-                               h_margin=5, v_margin=1,
-                               parent=self, action=self._item_action)
+            w = RichTextWidget(
+                box=b, segments=t, font=self.font, h_margin=5, v_margin=1, parent=self, action=self._item_action
+            )
         # Stash the source item on the widget for `_item_action` to recover.
-        setattr(w, 'data', item)
+        setattr(w, "data", item)
         self._row_items[w] = item
-        self.add_sel_widget(w)
+        if not disabled:
+            self.add_sel_widget(w)
         return w
 
     def selected_label(self) -> str | None:
@@ -237,12 +277,12 @@ class Menu(Dialog):
         # Row height = max across all items so a tall rich row (e.g. a glyph
         # bigger than the text line) doesn't get clipped. Strings measure via
         # get_text_size; rich rows measure each segment.
-        _, line_h = get_text_size('', self.font)
+        _, line_h = get_text_size("", self.font)
         item_h = line_h
         for i in self.items:
             t = _item_label(i)
-            if isinstance(t, (str, BadgedLabel)):
-                _, th = get_text_size(t.text if isinstance(t, BadgedLabel) else t, self.font)
+            if isinstance(t, (str, BadgedLabel, DisabledLabel)):
+                _, th = get_text_size(t if isinstance(t, str) else t.text, self.font)
                 th = th + v_margin * 2
             else:
                 # Rich rows: 1px top inset, no bottom padding.
@@ -260,5 +300,5 @@ class Menu(Dialog):
             self.virtual = True
             self._content_height = h
             h = mh
-        self.box = Box.xywh(0,0,w,h)
-        super(Menu,self)._adjust_box()
+        self.box = Box.xywh(0, 0, w, h)
+        super(Menu, self)._adjust_box()

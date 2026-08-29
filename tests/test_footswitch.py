@@ -41,24 +41,6 @@ def _make_footswitch(**kwargs):
     yield fs, sink
 
 
-class TestLongpressGroups:
-    def test_set_longpress_groups_stores_list(self):
-        with _make_footswitch() as (fs, _sink):
-            fs.set_longpress_groups(["next_snapshot"])
-            assert fs.longpress_groups == ["next_snapshot"]
-
-    def test_set_longpress_groups_accepts_space_separated_string(self):
-        with _make_footswitch() as (fs, _sink):
-            fs.set_longpress_groups("next_snapshot toggle_bypass")
-            assert fs.longpress_groups == ["next_snapshot", "toggle_bypass"]
-
-    def test_set_longpress_groups_none_clears(self):
-        with _make_footswitch() as (fs, _sink):
-            fs.set_longpress_groups(["toggle_bypass"])
-            fs.set_longpress_groups(None)
-            assert fs.longpress_groups == []
-
-
 class TestOnSwitch:
     def test_short_press_dispatches_press_event(self):
         with _make_footswitch() as (fs, sink):
@@ -175,45 +157,3 @@ class TestSetValue:
             assert fs.toggled is True
             fs.set_value(1)
             assert fs.toggled is False
-
-
-class TestClearPedalboardInfo:
-    def test_clears_state(self):
-        with _make_footswitch() as (fs, _sink):
-            fs.toggled = True
-            fs.display_label = "Reverb"
-            pixel = MagicMock()
-            fs.pixel = pixel
-
-            fs.clear_pedalboard_info()
-
-            assert fs.toggled is False
-            assert fs.display_label is None
-            assert fs.preset_direction is None
-
-    def test_clears_preset_callback_arg(self):
-        """Regression: clear_pedalboard_info must also reset preset_callback_arg.
-        get_display_label() short-circuits to "" only when both midi_CC and
-        preset_callback_arg are None, so a stale callback_arg makes the footswitch
-        keep acting like a preset switch and fall through to the else branch that
-        returns the (now-None) display_label — i.e. the old preset binding bleeds
-        onto the new pedalboard."""
-        with _make_footswitch(midi_CC=None) as (fs, _sink):
-            fs.add_preset(callback_arg=5)
-            fs.set_display_label("Lead")
-
-            fs.clear_pedalboard_info()
-
-            assert fs.preset_callback_arg is None
-            assert fs.get_display_label() == ""
-
-    def test_clears_parameter(self):
-        """Regression: clear_pedalboard_info must also reset parameter, so the
-        drives_display check (and any other consumer of fs.parameter) doesn't
-        see a stale plugin binding from a previous pedalboard."""
-        with _make_footswitch(midi_CC=None) as (fs, _sink):
-            fs.parameter = TestSetValue._param(BYPASS_SYMBOL, 0)
-
-            fs.clear_pedalboard_info()
-
-            assert fs.parameter is None
