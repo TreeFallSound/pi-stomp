@@ -23,7 +23,7 @@ duplicate-netadapter bug.
 
 `jackbridge-pi-status` supplies the data (pistomp-companion installs it).
 The helper only reads: systemd state, the jack_lsp graph, the IP route,
-and xrun counts. Like WifiManager, a background thread does all blocking
+xrun counts, and netadapter link restarts. Like WifiManager, a background thread does all blocking
 I/O and caches the result. The UI thread reads the cache through the
 read_* methods.
 """
@@ -58,8 +58,8 @@ def _int(s: Optional[str]) -> int:
 class EthernetManager:
     """Poll the Ethernet carrier and the JackBridge status on a background thread.
 
-    Read-only. `_changed` is set when the carrier or the service-active
-    state changes, so the handler poll loop can refresh the UI. Field
+    Read-only. `_changed` is set when the carrier, the service-active state
+    or the link-resyncing state changes, so the handler poll loop can refresh the UI. Field
     changes (IP, sample rate, xruns, port counts) appear on the next
     render without `_changed`.
     """
@@ -84,6 +84,8 @@ class EthernetManager:
         self._netadapters: int = 0
         self._ports_wired: int = 0
         self._route: str = ""
+        self._link_resyncing: bool = False
+        self._net_restarts: int = 0
         self._ipv4: Optional[str] = None
         self._sample_rate: Optional[int] = None
         self._period: Optional[int] = None
@@ -114,6 +116,8 @@ class EthernetManager:
         netadapters = _int(status.get("netadapters"))
         ports_wired = _int(status.get("ports_wired"))
         route = status.get("route", "") or ""
+        link_resyncing = status.get("link") == "resyncing"
+        net_restarts = _int(status.get("net_restarts"))
         xruns = (
             _int(status.get("xruns_1m")),
             _int(status.get("xruns_5m")),
@@ -131,13 +135,15 @@ class EthernetManager:
             sample_rate = period = None
 
         with self._lock:
-            if carrier != self.carrier_up or active != self.service_active:
+            if carrier != self.carrier_up or active != self.service_active or link_resyncing != self._link_resyncing:
                 self._changed = True
             self.carrier_up = carrier
             self.service_active = active
             self._netadapters = netadapters
             self._ports_wired = ports_wired
             self._route = route
+            self._link_resyncing = link_resyncing
+            self._net_restarts = net_restarts
             self._ipv4 = ipv4
             self._sample_rate = sample_rate
             self._period = period
@@ -208,6 +214,11 @@ class EthernetManager:
     def read_xrun_buckets(self) -> tuple[int, int, int]:
         with self._lock:
             return self._xruns
+
+    def read_link_health(self) -> tuple[bool, int]:
+        """(resyncing, restarts). Cached; read from the UI thread."""
+        with self._lock:
+            return self._link_resyncing, self._net_restarts
 
     def read_netadapter_health(self) -> tuple[int, int, str]:
         """(netadapters, ports_wired, route). Cached; read from the UI thread.

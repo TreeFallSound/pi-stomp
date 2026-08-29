@@ -20,15 +20,23 @@ from uilib.dialog import MessageDialog
 class FakeEthernetManager:
     """Mirrors the read-only EthernetManager surface used by EthernetMenu."""
 
-    def __init__(self, carrier_up=True, service_active=False,
-                 ipv4="169.254.125.193/16", jack=(48000, 128),
-                 xruns=(0, 0, 0), health=(1, 6, "eth0")):
+    def __init__(
+        self,
+        carrier_up=True,
+        service_active=False,
+        ipv4="169.254.125.193/16",
+        jack=(48000, 128),
+        xruns=(0, 0, 0),
+        health=(1, 6, "eth0"),
+        link=(False, 0),
+    ):
         self.carrier_up = carrier_up
         self.service_active = service_active
         self._ipv4 = ipv4
         self._jack = jack
         self._xruns = xruns
         self._health = health
+        self._link = link
 
     def read_ipv4(self) -> Optional[str]:
         return self._ipv4
@@ -41,6 +49,9 @@ class FakeEthernetManager:
 
     def read_netadapter_health(self):
         return self._health
+
+    def read_link_health(self):
+        return self._link
 
     def shutdown(self) -> None:
         pass
@@ -91,6 +102,16 @@ def test_ethernet_menu_duplicate_adapters_warning(ethernet_env, snapshot):
     lcd, em, _ = ethernet_env
     em.service_active = True
     em._health = (2, 6, "eth0")  # two netadapters contend for one stream
+    _open(lcd)
+    snapshot()
+
+
+def test_ethernet_menu_link_resyncing(ethernet_env, snapshot):
+    """netadapter is restarting its link — the port count is replaced by the
+    one row that reports it, plus the remedy."""
+    lcd, em, _ = ethernet_env
+    em.service_active = True
+    em._link = (True, 4)
     _open(lcd)
     snapshot()
 

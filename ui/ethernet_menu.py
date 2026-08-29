@@ -167,6 +167,7 @@ class EthernetMenu:
 
         active = self._manager.service_active
         n_adapters, n_wired, route = self._manager.read_netadapter_health()
+        resyncing, restarts = self._manager.read_link_health()
 
         d = Dialog(width=DIALOG_W, height=DIALOG_H, title="Ethernet Audio Interface", auto_destroy=True)
         font = _make_font(_FONTS_DIR / "DejaVuSans.ttf", 14)
@@ -180,7 +181,13 @@ class EthernetMenu:
             rows.append(("xruns 1m:", str(b1)))
             rows.append(("xruns 5m:", str(b5)))
             rows.append(("xruns 15m:", str(b15)))
-            rows.append(("Link ports:", f"{n_wired}/6 wired"))
+            if resyncing:
+                # The ports stay wired through a netadapter restart, so the
+                # port count (unfortunately) continues to read healthy
+                rows.append(("Link:", f"⚠ resyncing (x{restarts})"))
+                rows.append(("", "Restart JackBridge on Host"))
+            else:
+                rows.append(("Link ports:", f"{n_wired}/6 wired"))
             if n_adapters > 1:
                 rows.append(("Adapters:", f"⚠ {n_adapters} (duplicate)"))
             if not route or route.startswith("wl"):

@@ -67,6 +67,8 @@ def test_read_pi_status_parses_key_value_lines():
         "xruns_1m=0\n"
         "xruns_5m=2\n"
         "xruns_15m=5\n"
+        "link=resyncing\n"
+        "net_restarts=4\n"
         "a line with no equals sign\n"
     )
     with patch("subprocess.check_output", return_value=out):
@@ -76,7 +78,8 @@ def test_read_pi_status_parses_key_value_lines():
     assert s["ports_wired"] == "6"
     assert s["route"] == "eth0"
     assert s["xruns_15m"] == "5"
-    assert len(s) == 8  # the no-equals line is skipped
+    assert s["link"] == "resyncing"
+    assert len(s) == 10  # the no-equals line is skipped
 
 
 def test_read_pi_status_empty_on_missing_helper():
@@ -87,8 +90,17 @@ def test_read_pi_status_empty_on_missing_helper():
 # ---------- _refresh + drain_changed ----------
 
 
-def _pi_status(service="active", netadapters="1", ports_wired="6",
-               route="eth0", x1="0", x5="0", x15="0"):
+def _pi_status(
+    service="active",
+    netadapters="1",
+    ports_wired="6",
+    route="eth0",
+    x1="0",
+    x5="0",
+    x15="0",
+    link="up",
+    net_restarts="0",
+):
     return (
         f"service={service}\n"
         f"netadapters={netadapters}\n"
@@ -98,6 +110,8 @@ def _pi_status(service="active", netadapters="1", ports_wired="6",
         f"xruns_1m={x1}\n"
         f"xruns_5m={x5}\n"
         f"xruns_15m={x15}\n"
+        f"link={link}\n"
+        f"net_restarts={net_restarts}\n"
     )
 
 
@@ -147,10 +161,18 @@ def test_refresh_caches_values_for_ui_thread(em):
     with (
         patch.object(EthernetManager, "_probe_carrier", return_value=True),
         patch.object(EthernetManager, "_probe_ipv4", return_value="10.0.0.5/24"),
-        patch("subprocess.check_output", return_value=_pi_status(
-            service="active", netadapters="2", ports_wired="4", route="eth0",
-            x1="1", x5="2", x15="3",
-        )),
+        patch(
+            "subprocess.check_output",
+            return_value=_pi_status(
+                service="active",
+                netadapters="2",
+                ports_wired="4",
+                route="eth0",
+                x1="1",
+                x5="2",
+                x15="3",
+            ),
+        ),
         patch(_HW, return_value={"rate": "48000", "period_size": "64"}),
     ):
         em._refresh()
@@ -158,6 +180,37 @@ def test_refresh_caches_values_for_ui_thread(em):
     assert em.read_jack_settings() == (48000, 64)
     assert em.read_xrun_buckets() == (1, 2, 3)
     assert em.read_netadapter_health() == (2, 4, "eth0")
+    assert em.read_link_health() == (False, 0)
+
+
+def test_refresh_flips_changed_when_link_starts_resyncing(em: EthernetManager):
+    """netadapter restarts leave the graph, the ports and the xrun rate
+    healthy, so a link flip is its own state change or the screen keeps
+    the readout it had."""
+    em.carrier_up = True
+    em.service_active = True
+    with (
+        patch.object(EthernetManager, "_probe_carrier", return_value=True),
+        patch.object(EthernetManager, "_probe_ipv4", return_value="10.0.0.5/24"),
+        patch("subprocess.check_output", return_value=_pi_status(link="resyncing", net_restarts="4")),
+        patch(_HW, return_value={"rate": "48000", "period_size": "64"}),
+    ):
+        em._refresh()
+    assert em.read_link_health() == (True, 4)
+    assert em.drain_changed() is True
+
+
+def test_refresh_link_unknown_reads_as_not_resyncing(em: EthernetManager):
+    """`link=unknown` means the watcher has written nothing yet. That is not
+    evidence of a fault."""
+    with (
+        patch.object(EthernetManager, "_probe_carrier", return_value=True),
+        patch.object(EthernetManager, "_probe_ipv4", return_value="10.0.0.5/24"),
+        patch("subprocess.check_output", return_value=_pi_status(link="unknown")),
+        patch(_HW, return_value={"rate": "48000", "period_size": "64"}),
+    ):
+        em._refresh()
+    assert em.read_link_health() == (False, 0)
 
 
 # ---------- _probe_ipv4 ----------
