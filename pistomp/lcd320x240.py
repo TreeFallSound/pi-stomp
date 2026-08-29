@@ -57,6 +57,7 @@ from uilib import (
     TextWidget,
 )
 from uilib.glyphs.badge import BadgeGlyph
+from uilib.menu import row_label
 from uilib.gridpanel import GridPanel, TILE_W, CHANNEL
 from uilib.pygame_init import font as _make_font
 from uilib.lcd_ili9341 import LcdIli9341
@@ -973,8 +974,12 @@ class Lcd:
             ("Save current pedalboard", self.handler.system_menu_save_current_pb, None),
             ("Reload pedalboards", self.handler.system_menu_reload, None),
             ("Update sample pedalboards", self.update_sample_pedalboards, None),
-            ("Backup data", self.handler.user_backup_data, None),
-            ("Restore Backup data", self.handler.user_restore_data, None),
+            (row_label("Backup data", enabled=self.handler.usb_backup_available), self.handler.user_backup_data, None),
+            (
+                row_label("Restore Backup data", enabled=self.handler.usb_restore_available),
+                self.handler.user_restore_data,
+                None,
+            ),
         ]
         self.draw_selection_menu(items, "Pedalboard Management")
 
