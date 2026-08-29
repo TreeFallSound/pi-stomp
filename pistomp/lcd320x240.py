@@ -1155,6 +1155,8 @@ class Lcd:
         muted = jm is not None and jm.is_muted()
         if muted:
             state = "muted"
+        elif self.handler.metronome_enabled and self.handler.transport_rolling:
+            state = "metronome"
         elif self.handler.transport_rolling:
             state = "rolling"
         else:

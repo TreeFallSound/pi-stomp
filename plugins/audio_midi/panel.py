@@ -16,7 +16,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 """Audio & MIDI menu — the menu-idiom surface for the global EQ, input/output
-levels, clock source, and VU calibration.
+levels, clock source, and metronome.
 
 Composes the reactive ``PluginPanel`` core (via ``ModalDialog``) with a
 synthetic ``AudioMidiParamSource`` (no backing ``Plugin``) so the EQ bands
@@ -26,7 +26,7 @@ declared-bindings table.
 
 Layout (``DIMMED_WINDOW`` 304×208 body + title strip + Back footer):
 - Left column: the Equalizer on/off row, the 5-band EQ bar curve (compact,
-  sized to its box), then Clock Source and VU Calibration drill-in rows.
+  sized to its box), then Clock Source and Metronome drill-in rows.
   The rows follow the menu system's padding (line-height spacing,
   h_margin=5, v_margin=1) so they read as-of-a-piece with the other menus.
 - Right column: Input Gain + Output Volume arc dials (stacked).
@@ -35,10 +35,10 @@ No readout strip — this is a menu-idiom dialog, not a fullscreen panel;
 the arcs and the EQ bars carry their own value readouts inline.
 
 NAV reticule scans: Equalizer → Low → L-Mid → Mid → H-Mid → High → Clock
-Source → VU Cal → Input → Output → Back. Tweak1 edits the selection;
+Source → Metronome → Input → Output → Back. Tweak1 edits the selection;
 Tweak2 = Input Gain; Tweak3/Vol = Output Volume (per §6). Clock Source
-opens a radio submenu (Internal / Ableton Link / MIDI Clock Slave); VU Cal
-opens the existing VU calibration dialog. Switching the Equalizer off drops
+opens a radio submenu (Internal / Ableton Link / MIDI Clock Slave);
+Metronome toggles the click on/off. Switching the Equalizer off drops
 the bands out of the NAV cycle and dims them.
 """
 
@@ -274,9 +274,9 @@ class _CompactEqWidget(Widget):
 
 
 class _DiscreteRow(RichTextWidget):
-    """A drill-in row (Clock Source / VU Calibration). ``symbol_for`` returns
+    """A drill-in row (Clock Source / Metronome). ``symbol_for`` returns
     None so ``SelectionEditEffect`` no-ops on it — the row is NAV-click-only,
-    opening a submenu/dialog rather than editing a continuous value."""
+    opening a submenu or toggling a state rather than editing a continuous value."""
 
     def __init__(
         self, *, box: Box, segments: list[Segment], action: Callable[[InputEvent], bool], font, parent: Widget
@@ -332,7 +332,7 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
         return (
             _btn("Back", BTN_GAP, lambda *_: self._on_dismiss()),
             mute_btn,
-            _btn("Restart", BTN_GAP * 3 + btn_w * 2, lambda *_: self._on_restart()),
+            _btn("Adjust VU", BTN_GAP * 3 + btn_w * 2, lambda *_: self._on_vu_cal()),
         )
 
     def title_text(self) -> str:
@@ -344,7 +344,7 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
     def __init__(self, *, handler: "Modhandler", on_dismiss: Callable[[], None]) -> None:
         self._handler: Modhandler = handler
         self._sync_row: Optional[_DiscreteRow] = None
-        self._vu_row: Optional[_DiscreteRow] = None
+        self._metronome_row: Optional[_DiscreteRow] = None
         self._eq_row: Optional[_DiscreteRow] = None
         self._bar_widget: Optional[_CompactEqWidget] = None
         self._in_arc: Optional[ArcKnobWidget] = None
@@ -482,11 +482,10 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
             parent=self,
         )
         y += _ROW_H
-        vu_segs: list[Segment] = [TextSeg("VU Calibration"), Spacer()]
-        self._vu_row = _DiscreteRow(
+        self._metronome_row = _DiscreteRow(
             box=Box.xywh(cb.x0 + _ROWS_X, y, _ROWS_W, _ROW_H),
-            segments=vu_segs,
-            action=self._on_vu_row,
+            segments=self._metronome_row_segments(),
+            action=self._on_metronome_row,
             font=self._row_font,
             parent=self,
         )
@@ -506,8 +505,11 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
             IconSeg(PillGlyph(label, height=glyph_h, color=DEFAULT_COLOR)),
         ]
 
+    def _metronome_row_segments(self) -> list[Segment]:
+        return [TextSeg("Metronome"), Spacer(), IconSeg(_eq_badge(self._handler.metronome_enabled))]
+
     def _select_initial(self) -> None:
-        # NAV order: Equalizer → EQ bands (Low..High) → Clock Source → VU Cal
+        # NAV order: Equalizer → EQ bands (Low..High) → Clock Source → Metronome
         # → Input arc → Output arc → Back.
         if self._eq_row is not None and self._eq_supported:
             self.add_sel_widget(self._eq_row)
@@ -518,8 +520,8 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
                 self.add_sel_widget(sel)
         if self._sync_row is not None:
             self.add_sel_widget(self._sync_row)
-        if self._vu_row is not None:
-            self.add_sel_widget(self._vu_row)
+        if self._metronome_row is not None:
+            self.add_sel_widget(self._metronome_row)
         if self._in_arc is not None:
             self.add_sel_widget(self._in_arc)
         if self._out_arc is not None:
@@ -603,10 +605,13 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
         self._open_clock_source_submenu()
         return True
 
-    def _on_vu_row(self, event: InputEvent) -> bool:
+    def _on_metronome_row(self, event: InputEvent) -> bool:
         if event != InputEvent.CLICK:
             return False
-        self._handler.system_menu_vu_calibration(None)
+        self._handler.toggle_metronome_enable()
+        if self._metronome_row is not None:
+            self._metronome_row.segments = self._metronome_row_segments()
+            self._metronome_row.refresh()
         return True
 
     def _open_clock_source_submenu(self) -> None:
@@ -679,10 +684,8 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
         # open, but the next dismiss must show the post-toggle state.
         self._handler.lcd.update_audio_midi_tile()
 
-    def _on_restart(self) -> None:
-        # Mirrors handler.system_menu_restart_sound — restarts jack (which
-        # cascades to mod-host/mod-ui). The splash covers the teardown.
-        self._handler.system_menu_restart_sound(None)
+    def _on_vu_cal(self) -> None:
+        self._handler.system_menu_vu_calibration(None)
 
     def wants_fast_tick(self) -> bool:
         return True

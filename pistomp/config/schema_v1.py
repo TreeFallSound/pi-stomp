@@ -125,6 +125,7 @@ LongpressName = Literal[
     "toggle_bypass",
     "toggle_tap_tempo_enable",
     "toggle_tuner_enable",
+    "toggle_metronome_enable",
     "next_pedalboard",
     "previous_pedalboard",
 ]
