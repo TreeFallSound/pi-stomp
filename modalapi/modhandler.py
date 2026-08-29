@@ -279,6 +279,7 @@ class Modhandler(Handler):
         self.ws_bridge.stop()
         logging.info("WebSocket bridge stopped")
         self.ethernet_manager.shutdown()
+        self.bluetooth_manager.shutdown()
 
     def _rest_get(self, url: str) -> Response | None:
         try:

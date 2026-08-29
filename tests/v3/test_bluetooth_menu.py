@@ -64,14 +64,13 @@ def test_root_menu_when_off_offers_only_power_on(v3_system, bluetooth_state, sna
     snapshot("root_off")
 
 
-def test_incapable_image_offers_the_package_install(v3_system, bluetooth_state, snapshot):
-    """bluetoothd without -E registers no MIDI profile, so pairing would look
-    like it worked and produce no ALSA seq port. Say so instead."""
+def test_incapable_image_says_so_and_offers_nothing(v3_system, bluetooth_state, snapshot):
     bluetooth_state(capable=False)
     lcd = _open(v3_system)
-    menu = lcd.pstack.current
-    assert "Install Bluetooth support" in _labels(menu)
-    assert "Nearby devices..." not in _labels(menu)
+    labels = _labels(lcd.pstack.current)
+    assert "Please install pistomp-bluetooth" in labels
+    assert not any("Install" in label for label in labels)
+    assert "Nearby devices..." not in labels
     snapshot("root_needs_package")
 
 

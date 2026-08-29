@@ -258,7 +258,7 @@ class _FakeClient:
         coro.close()  # never awaited in this fake
         self._log.append(name)
 
-    def stop(self):
+    def stop(self, join=True):
         self._log.append("client.stop")
 
     def start(self, on_change=None):

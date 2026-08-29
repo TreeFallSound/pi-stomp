@@ -23,7 +23,6 @@ from modalapi.bluetooth import (
     DeviceKind,
     DisconnectCmd,
     ForgetCmd,
-    InstallSupportCmd,
     PairCmd,
     PowerCmd,
     StartDiscoveryCmd,
@@ -50,6 +49,9 @@ MENU_WIDTH = 288  # wider than the default; device names run long
 
 ACTIVE_GLYPH = "✔"
 SEP = "·"
+
+# bluetoothd without -E registers no BLE-MIDI profile
+NEEDS_UPDATE = ("Please install pistomp-bluetooth", "from Updates and Recovery")
 
 # BLE-MIDI peripherals only advertise while discoverable.
 EMPTY_NEARBY = ("No devices found.", "Put it in pairing mode.")
@@ -244,8 +246,7 @@ class BluetoothMenu:
     def _build_items(self, rows: list[BtRow]) -> list[MenuItem]:
         items: list[MenuItem] = []
         if not self._status.get("capable"):
-            items.append(("Needs a system update", None, None))
-            items.append(("Install Bluetooth support", self._install_support, None))
+            items.extend((line, None, None) for line in NEEDS_UPDATE)
             return items
         if not self._status.get("enabled"):
             items.append(("Turn Bluetooth on", self._toggle_power, None))
@@ -322,9 +323,6 @@ class BluetoothMenu:
     def _toggle_power(self, _: object = None) -> None:
         enable = not self._status.get("enabled")
         self._manager.queue.submit(PowerCmd(enable), self._on_op_done)
-
-    def _install_support(self, _: object = None) -> None:
-        self._manager.queue.submit(InstallSupportCmd(), self._on_op_done)
 
     def _open_nearby_menu(self, _: object = None) -> None:
         self._render_nearby_menu()

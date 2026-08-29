@@ -119,6 +119,7 @@ class CommandQueue:
         with self._lock:
             return self._pending_op_count
 
-    def shutdown(self) -> None:
+    def shutdown(self, join: bool = True) -> None:
         self._cmd_queue.put(_SHUTDOWN_SENTINEL)
-        self._worker.join(timeout=2.0)
+        if join:
+            self._worker.join(timeout=2.0)

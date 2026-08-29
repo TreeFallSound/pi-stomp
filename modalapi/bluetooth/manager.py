@@ -145,10 +145,10 @@ class BluetoothManager:
 
     def shutdown(self) -> None:
         try:
-            self.queue.shutdown()
+            self.queue.shutdown(join=False)
         except Exception:
             pass
-        self.client.stop()
+        self.client.stop(join=False)
 
     # ----- devices -----
 
@@ -236,13 +236,6 @@ class BluetoothManager:
                 logging.warning("Bluetooth rfkill block failed: %s", err)
         self.request_refresh()
         return None
-
-    def install_support(self) -> Optional[str]:
-        err = ops.install_support_package()
-        if err is None:
-            self._capable = ops.bluetoothd_is_capable()
-            self.request_refresh()
-        return err
 
     def start_discovery(self) -> None:
         if self.client.available:

@@ -26,7 +26,6 @@ from dbus_fast import DBusError, Variant
 
 from .bluez import BluezClient
 
-SUPPORT_PACKAGE = "pistomp-bluetooth"
 SERVICE = "bluetooth.service"
 
 _PAIR_TIMEOUT_S = 45.0
@@ -84,15 +83,6 @@ def enable_service() -> Optional[str]:
 
 def disable_service() -> Optional[str]:
     rc, out = _run(["systemctl", "disable", "--now", SERVICE], timeout=60, sudo=True)
-    return None if rc == 0 else out
-
-
-def install_support_package() -> Optional[str]:
-    """Fetch pistomp-bluetooth from the pistomp apt repo. Needs a network."""
-    rc, out = _run(["apt-get", "update"], timeout=180, sudo=True)
-    if rc != 0:
-        logging.warning("apt-get update failed: %s", out)
-    rc, out = _run(["apt-get", "install", "-y", SUPPORT_PACKAGE], timeout=300, sudo=True)
     return None if rc == 0 else out
 
 

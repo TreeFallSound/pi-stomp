@@ -39,6 +39,7 @@ devices (presenters, page-turners, keyboards, mice) usable as wireless footswitc
 | 3 | **Entry point: a row in the Network (WiFi) menu** | Same conditional-row idiom as "Wired Connection" → `EthernetMenu`. Toolbar stays at 4 tiles (it is full: 210/240/270/296 at 20px on a 320px screen). |
 | 4 | **No BT hardware → no row, no mention of Bluetooth anywhere** | Gated on `has_adapter()` (an `hci*` node in sysfs), not board model. Pi 3/4/5 all register one, so this is a fallback rather than the Pi 3/4 case. |
 | 5 | **Menu owns enable/disable**; no `pistomp.conf` write-back | `systemctl enable --now bluetooth` persists on its own (it writes a symlink), so the firstboot flag never needs rewriting. Avoids touching the boot partition at runtime. |
+| 5b | **The menu never installs anything** | The capability is one drop-in file (`pistomp-bluetooth`; `bluez` itself is already in the image), and shipping it is an OTA update's job — see `../pi-gen-pistomp`. An `apt-get install` from the audio process could upgrade `bluez` under a live `bluetoothd`, and blocks on the dpkg lock. Without the drop-in the menu says "Bluetooth needs a system update" and offers nothing. |
 | 6 | **Nearby list shows only MIDI and HID devices** | Everything else (phones, laptops, beacons, fitness trackers) is noise we can do nothing with. Predicate in §"Device filter". |
 | 7 | **Pair + trust + connect is one action** | The three-way distinction is bluez's model, not the user's. Trust-on-pair is also what makes reconnection work at all (see Context). |
 | 8 | **HID devices emit MIDI CC, and arrows/wheel synthesize NAV** | CC emission means mod-ui's existing MIDI-learn maps them like any footswitch — no new config surface, and it is what the MIDI-learn axiom in `pistomp/input/README.md` prescribes. NAV synthesis lets a cheap presenter drive the entire menu system. |
@@ -444,5 +445,6 @@ reproduced:
 7. Pair a presenter → `/dev/input/eventN` appears; its arrow keys scan the NAV
    reticule and its click activates; a mapped key emits its CC and is MIDI-learnable in
    mod-ui.
-8. Regression: on a Pi 3/4 image, the Network menu shows **no** Bluetooth row.
+8. Regression: on a board with no `hci*` node, the Network menu shows **no**
+   Bluetooth row and no mention of Bluetooth anywhere.
 ```

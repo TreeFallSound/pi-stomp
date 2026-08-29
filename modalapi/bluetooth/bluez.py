@@ -73,6 +73,7 @@ class BluezClient:
         self._bus: Optional[MessageBus] = None
         self._agent: Optional[PairingAgent] = None
         self._ready = threading.Event()
+        self._lifecycle = threading.Lock()
         self._started = False
         self._on_change: Optional[Callable[[], None]] = None
 
@@ -81,19 +82,20 @@ class BluezClient:
     def start(self, on_change: Optional[Callable[[], None]] = None) -> bool:
         """Bring up the loop thread and connect. Blocks until the first
         GetManagedObjects lands (or setup fails). Returns available()."""
-        if self._started:
+        with self._lifecycle:
+            if self._started:
+                return self.available
+            self._started = True
+            self._on_change = on_change
+            self._ready.clear()
+            self._thread = threading.Thread(target=self._run_loop, name="bluez", daemon=True)
+            self._thread.start()
+            self._ready.wait(timeout=_ADAPTER_WAIT_S + 5.0)
+            if not self.available:
+                # Retryable: the user can turn Bluetooth off and on again rather
+                # than being stuck until the process restarts.
+                self._started = False
             return self.available
-        self._started = True
-        self._on_change = on_change
-        self._ready.clear()
-        self._thread = threading.Thread(target=self._run_loop, name="bluez", daemon=True)
-        self._thread.start()
-        self._ready.wait(timeout=_ADAPTER_WAIT_S + 5.0)
-        if not self.available:
-            # Retryable: the user can turn Bluetooth off and on again rather
-            # than being stuck until the process restarts.
-            self._started = False
-        return self.available
 
     def _run_loop(self) -> None:
         loop = asyncio.new_event_loop()
@@ -162,6 +164,8 @@ class BluezClient:
         objects: dict[str, dict[str, dict[str, Any]]] = body[0]
         with self._lock:
             self._devices.clear()
+            self._adapter_path = None
+            self._adapter_props = {}
             for path, ifaces in objects.items():
                 if ADAPTER_IFACE in ifaces and self._adapter_path is None:
                     self._adapter_path = path
@@ -169,27 +173,27 @@ class BluezClient:
                 if DEVICE_IFACE in ifaces:
                     self._devices[path] = _unwrap(ifaces[DEVICE_IFACE])
 
-    def stop(self) -> None:
-        """Tear down completely so start() can bring up a fresh connection.
-
-        Stopping bluetoothd destroys every object it published, so a client
-        that keeps its adapter path across a restart will issue calls against
-        a path that no longer exists."""
-        loop = self._loop
-        if loop is not None:
-            loop.call_soon_threadsafe(loop.stop)
-            if self._thread is not None:
-                self._thread.join(timeout=2.0)
-        self._loop = None
-        self._thread = None
-        self._bus = None
-        self._agent = None
-        self._started = False
-        self._ready.clear()
-        with self._lock:
-            self._devices.clear()
-            self._adapter_props.clear()
-            self._adapter_path = None
+    def stop(self, join: bool = True) -> None:
+        """Tear down completely so start() can bring up a fresh connection."""
+        with self._lifecycle:
+            loop = self._loop
+            if loop is not None:
+                try:
+                    loop.call_soon_threadsafe(loop.stop)
+                except RuntimeError:
+                    pass  # already closed
+                if join and self._thread is not None:
+                    self._thread.join(timeout=2.0)
+            self._loop = None
+            self._thread = None
+            self._bus = None
+            self._agent = None
+            self._started = False
+            self._ready.clear()
+            with self._lock:
+                self._devices.clear()
+                self._adapter_props.clear()
+                self._adapter_path = None
 
     # ----- signals -----
 

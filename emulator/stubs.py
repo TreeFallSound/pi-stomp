@@ -373,11 +373,6 @@ class StubBluetoothManager(BluetoothManager):
         self.request_refresh()
         return None
 
-    def install_support(self) -> Optional[str]:
-        self._capable = True
-        self.request_refresh()
-        return None
-
     def start_discovery(self) -> None:
         self._discovering = True
         for device in self._NEARBY:

@@ -36,15 +36,6 @@ class PowerCmd(Command[Optional[str]]):
 
 
 @dataclass
-class InstallSupportCmd(Command[Optional[str]]):
-    def run(self, mgr: "BluetoothManager") -> Optional[str]:
-        return mgr.install_support()
-
-    def key(self) -> str:
-        return "install_support"
-
-
-@dataclass
 class StartDiscoveryCmd(Command[None]):
     """Opens discovery and returns — it does not block on results.
 
@@ -57,7 +48,7 @@ class StartDiscoveryCmd(Command[None]):
         mgr.start_discovery()
 
     def key(self) -> str:
-        return "discovery"
+        return "discovery:start"
 
 
 @dataclass
@@ -66,7 +57,7 @@ class StopDiscoveryCmd(Command[None]):
         mgr.stop_discovery()
 
     def key(self) -> str:
-        return "discovery"
+        return "discovery:stop"
 
 
 @dataclass

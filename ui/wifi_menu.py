@@ -467,8 +467,8 @@ class WifiMenu:
         self.lcd.ethernet_menu.open()
 
     def _footer(self) -> list[FooterSlot]:
-        """Close left, Bluetooth right, nothing between. Pi 3/4 give the BT UART
-        to DIN MIDI, so there is no adapter and no mention of it anywhere."""
+        """Close left, Bluetooth right, nothing between. A board with no adapter
+        gets no mention of Bluetooth anywhere."""
         bt = self._host.bluetooth_manager
         if bt is None or not bt.supported:
             return [None, FooterButton("Close", self._close), None]
