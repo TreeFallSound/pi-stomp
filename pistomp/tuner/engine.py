@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 import logging
 import math
 import threading
@@ -9,7 +26,6 @@ from typing import Protocol
 import numpy as np
 import numpy.typing as npt
 
-from uilib import profiling
 from pistomp.tuner.ringbuffer import RingBuffer
 from pistomp.tuner.source import AudioSource
 from pistomp.tuner.yin import YinDetector
@@ -136,8 +152,7 @@ class TunerEngine:
         if not self._ring.read_latest(self.FRAME_SIZE, self._frame):
             return
 
-        with profiling.measure("rms", bin_override="dsp"):
-            rms = float(np.sqrt(np.mean(self._frame**2)))
+        rms = float(np.sqrt(np.mean(self._frame**2)))
 
         if rms < self.SILENCE_RMS:
             self._freq_history.clear()
@@ -160,9 +175,8 @@ class TunerEngine:
             self._onset_holdoff -= 1
             return
 
-        with profiling.measure("detect_pitch(YIN)", bin_override="dsp"):
-            assert self._detector is not None
-            estimate = self._detector.detect(self._frame)
+        assert self._detector is not None
+        estimate = self._detector.detect(self._frame)
         if estimate is None:
             return
 

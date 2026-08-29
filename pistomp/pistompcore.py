@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 # This subclass defines hardware specific to pi-Stomp Core
@@ -21,7 +23,7 @@
 #
 # A new version with different controls should have a new separate subclass
 
-import common.token as Token
+from pistomp.controller import ControlType
 import pistomp.encoder_controller as EncoderController
 import pistomp.hardware as hardware
 import pistomp.relay as Relay
@@ -78,7 +80,7 @@ class Pistompcore(hardware.Hardware):
         top_enc = EncoderController.EncoderController(
             TOP_ENC_PIN_D,
             TOP_ENC_PIN_CLK,
-            type=Token.NAV,
+            type=ControlType.NAV,
             sw_pin=1,
         )
         self.encoders.append(top_enc)
@@ -89,14 +91,12 @@ class Pistompcore(hardware.Hardware):
         self.relay.init_state()
 
     def init_analog_controls(self):
-        cfg = self.default_cfg.copy()
         if len(self.analog_controls) == 0:
-            self.create_analog_controls(cfg)
+            self.create_analog_controls(self.config)
 
     def init_footswitches(self):
-        cfg = self.default_cfg.copy()
         if len(self.footswitches) == 0:
-            self.create_footswitches(cfg)
+            self.create_footswitches(self.config)
 
     def cleanup(self):
         pass
@@ -104,6 +104,6 @@ class Pistompcore(hardware.Hardware):
     def test(self):
         pass
 
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
+    def add_encoder(self, id, type, longpress_callback, midi_channel, midi_cc):
         # Pistompcore currently doesn't support configurable tweak encoders
         raise NotImplementedError("Pistompcore does not support add_encoder")

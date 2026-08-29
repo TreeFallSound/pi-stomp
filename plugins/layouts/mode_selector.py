@@ -1,12 +1,31 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 from __future__ import annotations
 
 from collections.abc import Callable
 
+from common.param_roles import ParamRole
 from common.parameter import Parameter
 from uilib.box import Box
 from uilib.config import Config
-from uilib.misc import InputEvent, get_text_size
+from uilib.misc import InputEvent, get_line_height, get_text_size
 from uilib.widget import Widget
+from common.parameter import Symbol
 
 _BAR_H = 3
 _BAR_Y_OFFSET = 6
@@ -19,14 +38,14 @@ _BAR_FILL = (255, 230, 80)
 
 
 class ModeSelectorWidget(Widget):
-    symbol: str = "mode"
+    symbol: Symbol = Symbol("mode")
 
     def __init__(
         self,
         box: Box,
         param: Parameter,
         handler,
-        set_param: Callable[[str, float], None],
+        set_param: Callable[[Symbol, float], None],
         on_change: Callable[[int], None] | None = None,
         **kwargs,
     ) -> None:
@@ -56,6 +75,9 @@ class ModeSelectorWidget(Widget):
     def max_index(self) -> int:
         return self._max
 
+    def symbol_for(self, role: ParamRole) -> Symbol | None:
+        return self.symbol
+
     def set_value(self, value: int) -> None:
         value = max(0, min(self._max, int(value)))
         if value == self._value and self._labels:
@@ -84,7 +106,7 @@ class ModeSelectorWidget(Widget):
         for label, value in self._param.get_enum_value_list():
             selected = value == current_value
             if selected:
-                default_item = f"\u2714 {label}"
+                default_item = label
             items.append((label, self._commit_value, value, selected))
         title = f"{self._param.instance_id}:{self._param.name}"
         lcd.draw_selection_menu(items, title, auto_dismiss=True, default_item=default_item)
@@ -92,6 +114,8 @@ class ModeSelectorWidget(Widget):
     def _commit_value(self, value: float) -> None:
         new_mode = int(value)
         self._set_param(self.symbol, float(new_mode))
+        # Optimistic: the write above already marked the panel dirty, so tick's
+        # apply_state would repaint within 10ms. Both keep the commit instant.
         self.set_value(new_mode)
         if self._on_change is not None:
             self._on_change(new_mode)
@@ -105,13 +129,15 @@ class ModeSelectorWidget(Widget):
         label = self._labels[self._value] if self._value < len(self._labels) else "?"
         text = f"\u2039  {label}  \u203a"
 
-        tw, th = get_text_size(text, self._font)
+        tw, _ = get_text_size(text, self._font)
         cx = ctx.width // 2
         ty = _TOP_PADDING
 
         ctx.draw_text((cx - tw // 2, ty), text, fill=_LABEL_FG, font=self._font)
 
-        bar_y = ty + th + _BAR_Y_OFFSET
+        # Fixed line height, not get_text_size()'s per-glyph descent overflow —
+        # else labels with descenders (e.g. "Voyager") push the bar out of frame.
+        bar_y = ty + get_line_height(self._font) + _BAR_Y_OFFSET
         bar_x0 = 4
         bar_x1 = ctx.width - 4
         bar_w = bar_x1 - bar_x0

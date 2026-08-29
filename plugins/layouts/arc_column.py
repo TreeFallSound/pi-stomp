@@ -1,26 +1,42 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 from __future__ import annotations
 
+from common.param_roles import ParamRole
 from common.parameter import Parameter
 from plugins.layouts.compressor_spec import ArcSpec, arc_centers_for
+from uilib.arc_dial import paint_arc_dial
 from uilib.box import Box
-from uilib.glyphs.arc_dial import paint_arc_dial
 from uilib.glyphs.arc_ring import ArcRingGlyph
 from uilib.misc import INACTIVE_SHADE, shade_color
 from uilib.widget import Widget
+from common.parameter import Symbol
 
 _ARC_RADIUS = 27
 _ARC_RING_HALF = 3.0
-_ARC_TIP = 3.0
 
 _BG = (0, 0, 0)
 _TEXT = (200, 224, 206)
 _LABEL = (150, 168, 156)
-_RETICULE = (255, 200, 90)
-_RETICULE_DIM = (150, 118, 58)
 
 
 class ArcSelectable(Widget):
-    def __init__(self, panel, index: int, symbol: str) -> None:
+    def __init__(self, panel, index: int, symbol: Symbol) -> None:
         super().__init__(box=Box.xywh(0, 0, 1, 1), parent=panel, visible=True)
         self._panel = panel
         self.index = index
@@ -34,12 +50,13 @@ class ArcSelectable(Widget):
         if event == InputEvent.LONG_CLICK:
             self._panel._reset_symbol(self.symbol)
             return True
-        if event == InputEvent.CLICK:
-            return True
         return False
 
     def scroll_into_view(self) -> bool:
         return False
+
+    def symbol_for(self, role: ParamRole) -> Symbol | None:
+        return self.symbol
 
     def _draw(self, ctx) -> None:
         pass
@@ -61,22 +78,27 @@ class ArcColumnWidget(Widget):
         self._centers = arc_centers_for(len(arcs))
         self._value_font = value_font
         self._label_font = label_font
-        self._ring = ArcRingGlyph(_ARC_RADIUS, ring_half=_ARC_RING_HALF, tip_radius=_ARC_TIP, flip_v=False)
+        self._ring = ArcRingGlyph(_ARC_RADIUS, ring_half=_ARC_RING_HALF, flip_v=False)
         self._selected: int | None = None
         self._bypassed = False
         self._values: list[float | None] = [None] * len(arcs)
         self.sync()
 
-    def _param(self, symbol: str) -> Parameter | None:
+    def _param(self, symbol: Symbol) -> Parameter | None:
         return self._owner.plugin.parameters.get(symbol)
 
     def sync(self) -> None:
+        changed = False
         for i, spec in enumerate(self._arcs):
             p = self._param(spec.symbol)
-            self._values[i] = p.value if p is not None else None
-        self.refresh()
+            v = p.value if p is not None else None
+            if v != self._values[i]:
+                self._values[i] = v
+                changed = True
+        if changed:
+            self.refresh()
 
-    def sync_symbol(self, symbol: str) -> None:
+    def sync_symbol(self, symbol: Symbol) -> None:
         for i, spec in enumerate(self._arcs):
             if spec.symbol == symbol:
                 p = self._param(symbol)
@@ -131,7 +153,7 @@ class ArcColumnWidget(Widget):
                 t=self._value_t(i),
                 filled_color=shade_color(spec.color, shade),
                 empty_color=shade_color((56, 56, 56), shade),
-                tip_color=shade_color((255, 255, 255), shade),
+                selected=(i == self._selected),
                 label=spec.label,
                 value=self._format(i),
                 unit="",
@@ -144,15 +166,3 @@ class ArcColumnWidget(Widget):
                 label_pos="bottom",
                 two_line=False,
             )
-            if i == self._selected:
-                self._draw_reticule(ctx, cx, cy, _RETICULE if not self._bypassed else _RETICULE_DIM)
-
-    def _draw_reticule(self, ctx, cx: int, cy: int, color: tuple[int, int, int]) -> None:
-        e = _ARC_RADIUS + 5
-        a = 6
-        for sx in (-1, 1):
-            for sy in (-1, 1):
-                x = cx + sx * e
-                y = cy + sy * e
-                ctx.draw_line([(x, y), (x - sx * a, y)], fill=color, width=1)
-                ctx.draw_line([(x, y), (x, y - sy * a)], fill=color, width=1)

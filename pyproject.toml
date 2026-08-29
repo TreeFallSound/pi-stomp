@@ -1,16 +1,16 @@
 [project]
 name = "pi-stomp"
-version = "3.0.0"
+version = "3.3.0"
 description = "DIY high definition, multi-effects stompbox platform for guitar, bass and keyboards"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "GPL-3.0-or-later" }
+license = { text = "AGPL-3.0-or-later" }
 authors = [{ name = "Randall Reichenbach" }, { name = "Micah van de Merwe" }]
 keywords = ["guitar", "effects", "pedal", "raspberry-pi", "audio", "lv2"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Topic :: Multimedia :: Sound/Audio",
@@ -18,10 +18,8 @@ classifiers = [
 
 dependencies = [
     "pyyaml>=6.0",
-    "jsonschema>=4.0",
     "JACK-Client>=0.5.5",
     "python-rtmidi>=1.4",
-    "requests>=2.28",
     "Pillow>=9.4",
     "numpy>=2.4",
     "pyalsaaudio>=0.9; sys_platform == 'linux'",
@@ -29,6 +27,8 @@ dependencies = [
     "uvloop>=0.19.0",
     "gpiozero>=2.0; sys_platform == 'linux'",
     "pygame-ce>=2.5.7",
+    "qrcode>=8.0",
+    "msgspec>=0.21.1",
 ]
 
 [project.optional-dependencies]
@@ -56,6 +56,7 @@ dev = [
     "pytest-cov>=7.0.0",
     "ruff>=0.1.0",
     "typing-extensions>=4.15.0",
+    "jsonschema>=4.0",
 ]
 
 [project.urls]

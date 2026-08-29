@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 """Software-only stand-ins for the physical controls on pi-Stomp.
@@ -96,7 +98,6 @@ class MockFootswitch(footswitch.Footswitch):
         # led_pin=None, pixel=None, gpio_input=None, adc_input=None — no GPIO paths taken
         super().__init__(id, None, None, midi_CC, midi_channel, refresh_callback)
         self.type = None
-        self.cfg = {}
 
     def poll(self):
         pass
@@ -109,10 +110,10 @@ class MockFootswitch(footswitch.Footswitch):
 class MockAnalogControl(analogmidicontrol.AnalogMidiControl):
     """Expression pedal / knob with no SPI/ADC.  Value set externally."""
 
-    def __init__(self, midi_CC, midi_channel, control_type=None, id=None, cfg=None, midiout=None):
+    def __init__(self, midi_CC, midi_channel, control_type=None, id=None, midiout=None):
         super().__init__(spi=None, adc_channel=None, tolerance=0,
                          midi_CC=midi_CC, midi_channel=midi_channel,
-                         type=control_type, id=id, cfg=cfg)
+                         type=control_type, id=id)
         self.midiout = midiout
         self.value = 64
 

@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 """WebSocket-based parameter setting for blend mode with MIDI de-duplication."""
@@ -18,6 +20,7 @@
 import logging
 
 from blend.types import ParameterKey, WebSocketBridgeProtocol
+from common.parameter import Symbol
 
 
 class ParameterSetter:
@@ -34,7 +37,7 @@ class ParameterSetter:
         self.bridge = bridge
         self.last_sent_midi_values: dict[ParameterKey, float] = {}
 
-    def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
+    def send_parameter(self, instance_id: str, symbol: Symbol, value: float) -> bool:
         """
         Send single parameter via WebSocket with de-duplication (non-blocking).
 

@@ -1,14 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 from __future__ import annotations
 
 from plugins.compressor_base import CompressorPanel, CompressorSpec
+from common.parameter import Symbol
 
 
 class AdvancedCompressorPanel(CompressorPanel):
     SPEC = CompressorSpec(
-        thr_sym="THRES",
-        rat_sym="RATIO",
-        mak_sym="MAKEUP",
-        kn_sym="KNEE",
+        thr_sym=Symbol("THRES"),
+        rat_sym=Symbol("RATIO"),
+        mak_sym=Symbol("MAKEUP"),
+        kn_sym=Symbol("KNEE"),
         in_audio_sym="Input_L",
         out_audio_sym="Output_L",
     )

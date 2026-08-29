@@ -81,6 +81,16 @@ LCD → blend mode → its own logic. That final stage is where an event becomes
 effect: emit a MIDI CC, send a WebSocket param, set audio-card volume, or drive UI
 navigation. There is no router class.
 
+*Which* effect a given control fires is declared data, resolved by precedence, not
+per-panel `if` chains: each control class (nav, volume, tweak encoder, pot/expression,
+footswitch) has a fixed chain of contexts consulted top-down (open panel → blend →
+pedalboard — nav is the one axiom, unbindable by any context), and the winning
+declaration is what fires. This covers encoder rotation, encoder longpress,
+and footswitch short-press; the one exception is footswitch chord longpress
+(a 400ms windowed state machine that can't express "maybe fire later" as a
+declaration, so it stays as code). This is also the single source badges render
+from, so a badge is never shown for a binding that isn't actually live.
+
 **Full design: `pistomp/input/README.md`.**
 
 ## MIDI Routing
@@ -124,16 +134,32 @@ Two config layers merge at pedalboard load time:
 
 ```
 Default config (setup/config_templates/)
-  ↓ loaded at startup, creates hardware
 Per-pedalboard config ({bundle}/config.yml)
-  ↓ overlaid by hardware.reinit(cfg)
+  ↓ pistomp.config.resolve(default_cfg, bundle)
+    → merge() overlays the two YAML documents
+    → adapt() applies built-in defaults and converts to frozen model types
 ```
 
-`reinit()` starts from a copy of the default config, applies defaults (footswitches,
-encoders, MIDI), then overlays any pedalboard-specific overrides. Unspecified fields
-keep their defaults. Analog controls call `initialize()` after the overlay — if
-`autosync: true`, they read the ADC and emit their current position as a MIDI CC to
-prevent state mismatch.
+`Hardware.reinit(PedalboardConfig)` applies the resolved config: MIDI routing,
+footswitch profiles, encoder type/longpress, external MIDI. It does not merge layers.
+A control that the resolved config does not name falls back to its base-config
+binding, so no state of the pedalboard before it can survive.
+`ControllerManager.bind(current)` builds the controller–parameter subscriptions onto
+the `Current`, which owns them; `current.close()` releases them.
+
+### Config package layers
+
+`pistomp/config/` has three layers. Each is a pure function from one type to another.
+
+| Layer | File | Responsibility |
+|---|---|---|
+| File format | `schema_v1.py` | Parses and validates YAML. Knows only YAML structure. |
+| Adapter | `adapt_v1.py` | Converts file-format types to model types. Applies built-in defaults. |
+| Model | `model.py` | Frozen types that the application reads. Knows nothing about YAML. |
+
+Only `adapt_v1.py` changes when the file format changes. The model is stable.
+
+**Three-valued field semantics**: msgspec distinguishes `UNSET` (key absent from YAML) from `None` (explicit `null` in YAML) from a value. In `_merged_entries`, `None` means the pedalboard explicitly clears that section and the function returns `()`. `UNSET` means the pedalboard does not address that section and the function returns the base entries unchanged.
 
 Config files:
 - `/home/pistomp/data/config/default_config.yml` (written by firstboot from templates)
@@ -172,10 +198,12 @@ MOD-UI stays authoritative for bypass/parameter state, but pi-Stomp updates its 
 indicators optimistically so the UI stays responsive; the inbound echo carries the
 absolute current value and reconciles if it ever differs.
 
-- **Footswitch**: `pressed()` flips local `toggled`, updates its LED immediately, and
-  sends an absolute MIDI CC. mod-host applies it and echoes `param_set` to all clients
-  (including us), where `plugin.set_param_value()` reconciles cached state and redraws
-  the LCD. Optimism matters because mod-host gates its feedback stream on the
+- **Footswitch**: the binding table resolves the press to a `ParamEffect` (plugin
+  :bypass), `PresetEffect`, `TapTempoEffect`, or `MidiCcEffect(toggle=True)` row;
+  `_fire_row` flips local `toggled`, updates the LED, and sends an absolute MIDI CC.
+  mod-host applies it and echoes `param_set` to all clients (including us), where
+  `plugin.set_param_value()` reconciles cached state and redraws the LCD. Optimism
+  matters because mod-host gates its feedback stream on the
   `data_finish`/`output_data_ready` handshake — a backgrounded mod-ui browser tab can
   delay that echo by seconds, which would otherwise lag the switch.
 - **Tap tempo**: Sends `transport-bpm` via WebSocket bridge.
@@ -220,6 +248,13 @@ snapshot entries in MOD, then `BlendMode.prepare()` pre-computes diff maps for e
 parameter between stops. During the 10ms polling loop, the active `BlendMode` reads
 its input controller and sends only parameters whose values have actually changed —
 MIDI-bound parameters are automatically excluded to prevent conflicts with CC control.
+
+Blend is also a `BLEND`-kind layer in the input-dispatch `ContextStack` (see Input
+Dispatch above): `Modhandler` rebuilds a `_blend_layer` after every activate/deactivate,
+keyed by the attached controller's `"{channel}:{CC}"` identity, holding a `BlendEffect`
+row. Because `VOLUME`/`TWEAK`/`ANALOG`'s chains all consult `BLEND` above `PEDALBOARD`,
+a blend-claimed control now correctly wins over — and visibly shadows, rather than
+silently kills — a co-located MIDI-learned pedalboard parameter.
 
 The blend system is in `blend/`.
 
@@ -270,8 +305,9 @@ MOD-UI writes /home/pistomp/data/last.json
 
 ```
 poll_controls()
-  → Footswitch emits SwitchEvent → handler._handle_footswitch()
-    → flip toggled, set LED                         # optimistic update
+  → Footswitch emits SwitchEvent → Modhandler._handle_footswitch()
+    → effective_table.resolve(FOOTSWITCH, key, PRESS) → ParamEffect row
+    → _fire_row(): flip toggled, set LED                  # optimistic update
     → emit absolute MIDI CC (127 if toggled else 0)
 
 mod-ui applies bypass, broadcasts via WebSocket
@@ -284,10 +320,13 @@ mod-ui applies bypass, broadcasts via WebSocket
 
 ### Footswitches (`pistomp/footswitch.py`)
 
-A footswitch is a Controller that emits a switch event; the handler decides what the
-press means — relay bypass, preset change, tap tempo, or the optimistic MIDI-CC
-toggle. Config overlay per pedalboard can change MIDI CC, relay binding, preset,
-color, and longpress groups.
+A footswitch is a Controller that emits a switch event; the binding table decides
+what the press means — plugin :bypass (`ParamEffect`), preset change (`PresetEffect`),
+tap tempo (`TapTempoEffect`), or MIDI-CC toggle (`MidiCcEffect`). `Modhandler.
+_handle_footswitch` resolves the table and fires via `_fire_row`; a longpress with no
+table row falls through to the chord resolver. Config overlay per pedalboard can change
+MIDI CC, relay binding, preset, color, and longpress groups. (v1's `Mod` uses the base
+`Handler._handle_footswitch` imperative chain — v1 rots in place.)
 
 **Longpress groups** let two footswitches held together fire a shared action
 (`next_snapshot`, `toggle_tuner_enable`, …) within a 400ms window. The resolver is
@@ -296,8 +335,15 @@ color, and longpress groups.
 ### Encoders (`pistomp/encoder.py`, `pistomp/encoder_controller.py`)
 
 `Encoder` is the raw quadrature decoder; `EncoderController` is the Controller
-wrapping it (quantizer, parameter, absorbed push-button). The handler routes each
-encoder by its type: navigation, audio-card volume, or a plugin parameter.
+wrapping it (quantizer, parameter, absorbed push-button). The handler routes nav and
+volume by type; every other rotation emits a MIDI CC via `_emit_midi()` — the sole
+transport to mod-host, which applies its MIDI-learn mapping on receipt. The binding
+table is still resolved (for badge shadow-state), but the effect type no longer
+branches the response: `ParamEffect` and `MidiCcEffect` are both paint-only for
+encoder turns. Local `parameter.value` is written so reactive observers repaint;
+`display_parameter_value` keeps the dialog alive. Encoder longpress resolves a
+`CallbackEffect` row (built from the encoder's configured longpress name) via the
+same table, fired by `Modhandler._fire_row`.
 
 ### Analog Controls (`pistomp/analogmidicontrol.py`)
 
@@ -315,7 +361,9 @@ reads the ADC and sends current position on pedalboard load.
   PIL/ImageDraw rendering into fixed zones. No handler reference.
 - **v2/v3**: `pistomp/lcd320x240.py` — color 320×240 display. Widget-based UI
   (`uilib/`, see its README for the paint system). Builder pattern constructs panels
-  from pedalboard data. Receives handler reference for UI action callbacks.
+  from pedalboard data. Receives handler reference for UI action callbacks. Widgets can
+  carry a small badge (①②③, footswitch letters) showing what control edits them, always
+  rendered from the effective binding table above — see `uilib/README.md`.
 
 ## Key Files
 
@@ -335,11 +383,17 @@ reads the ADC and sends current position on pedalboard load.
 
 **Input & Controls** (see `pistomp/input/README.md`)
 - `pistomp/input/` — Event dataclasses + `InputSink` protocol
+- `common/contexts.py` — Binding declaration schema (`ControlClass`, `Effect` union,
+  `BindingDecl`) + the precedence resolver (`ContextStack`)
+- `common/param_roles.py` — `ParamRole` vocabulary for selection-dependent edit step math
+- `pistomp/input/dispatch.py` — Panel-local binding resolution (`resolve_local`/`fire`)
 - `pistomp/controller.py`, `controller_manager.py` — Controller base + pedalboard binding
+  (also builds the pedalboard-level layer of the effective binding table: plugin
+  params, external CCs, encoder longpress, and footswitch short-press/relay actions)
 - `pistomp/footswitch.py`, `footswitch_chords.py` — Footswitch Controller + chord resolver
 - `pistomp/encoder.py`, `encoder_controller.py` — Quadrature decoder + Controller wrapper
 - `pistomp/analogmidicontrol.py` — ADC → MIDI CC with endpoint clamping
-- `pistomp/gpioswitch.py`, `analogswitch.py` — Raw GPIO/ADC button detectors
+- `pistomp/gpioswitch.py`, `adcswitch.py` — Raw GPIO/ADC button detectors
 - `modalapi/external_midi.py` — External MIDI port routing
 
 **Blend**
@@ -359,7 +413,10 @@ reads the ADC and sends current position on pedalboard load.
 - `modalapi/plugin.py` — Plugin representation
 
 **Config & State**
-- `pistomp/config.py` — Config loading/validation
+- `pistomp/config/schema_v1.py` — Parse and validate YAML; defines the file-format struct types
+- `pistomp/config/adapt_v1.py` — Convert file-format types to model types; apply built-in defaults
+- `pistomp/config/model.py` — Frozen domain types the application reads (`LongpressAction`, `FootswitchBinding`, etc.)
+- `pistomp/config/__init__.py` — `resolve()` entry point; `load_cfg_from_file()`
 - `pistomp/settings.py` — Persistent YAML key-value store
 
 **Display**

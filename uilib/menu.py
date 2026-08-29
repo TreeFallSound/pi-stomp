@@ -1,31 +1,62 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
 from uilib.box import Box
 from uilib.config import Config
 from uilib.dialog import Dialog
+from uilib.glyphs import BadgeGlyph
 from uilib.misc import InputEvent, TextHAlign, get_text_size, trace
-from uilib.rich_text import RichTextWidget, Segment
+from uilib.rich_text import RichTextWidget, Segment, TextSeg
 from uilib.text import TextWidget
 
-# A menu row label. Either a plain string (rendered as a `TextWidget`) or a
-# sequence of `Segment`s (rendered as a `RichTextWidget` — emoji-style glyphs,
-# spacers for left/right alignment, etc.).
-Label = str | Sequence[Segment]
+
+@dataclass(frozen=True)
+class BadgedLabel:
+    """A plain-text row label with a marker badge anchored to the left of the
+    (still centered) text — see `TextWidget.set_badge` and the Badges
+    section in `uilib/README.md`. `char` is None for an unbadged row."""
+
+    text: str
+    char: str | None = None
+
+
+@dataclass(frozen=True)
+class DisabledLabel:
+    """A row you can see but cannot select: it paints dim and NAV goes past it.
+    Put the reason in `text`, e.g. "LAUNCHKEY (read-only)"."""
+
+    text: str
+
+
+# A menu row label: a plain string, a badged string (see `BadgedLabel`), a
+# dimmed unselectable string (see `DisabledLabel`), or a sequence of `Segment`s
+# (rendered as a `RichTextWidget` — emoji-style glyphs, spacers for left/right
+# alignment, etc.).
+Label = str | BadgedLabel | DisabledLabel | Sequence[Segment]
+
+DISABLED_FG = (110, 110, 110)
+
+
+def row_label(text: str, *, enabled: bool) -> Label:
+    return text if enabled else DisabledLabel(text)
+
 
 # Action stored in slot 1 of a `MenuItem`. The menu framework never invokes
 # this directly — the per-item callable is decorative context that the
@@ -49,6 +80,16 @@ MenuItem = (
 
 def _item_label(i: MenuItem) -> Label:
     return i[0]
+
+
+def label_key(label: Label) -> str:
+    """Stable identity for a label. Rich labels reduce to their text; their
+    segment lists are rebuilt per render and never compare equal."""
+    if isinstance(label, str):
+        return label
+    if isinstance(label, (BadgedLabel, DisabledLabel)):
+        return label.text
+    return "".join(s.text for s in label if isinstance(s, TextSeg))
 
 
 def _item_selected(i: MenuItem) -> bool:
@@ -83,28 +124,41 @@ class Menu(Dialog):
         # Create item widgets
         h = 0
         for i in self.items:
-            t = _item_label(i)
-            b = Box.xywh(0, h, self.box.width, self.item_h)
-            if isinstance(t, str):
-                if _item_selected(i):
-                    t = '\u2714 ' + t
-                w: TextWidget | RichTextWidget = TextWidget(
-                    box=b, text_halign=self.text_halign, font=self.font,
-                    text=t, parent=self, action=self._item_action)
-            else:
-                # Rich rows ignore `selected` for now — the checkmark prefix
-                # only makes sense on string labels.
-                w = RichTextWidget(box=b, segments=t, font=self.font,
-                                   h_margin=5, v_margin=1,
-                                   parent=self, action=self._item_action)
-            # Stash the source item on the widget for `_item_action` to recover.
-            setattr(w, 'data', i)
-            self.add_sel_widget(w)
-            if t == self.default_item:
+            w = self._make_row_widget(i, Box.xywh(0, h, self.box.width, self.item_h))
+            if self.default_item is not None and label_key(_item_label(i)) == self.default_item:
                 self.sel_widget(w)
             h = h + self.item_h
 
         self.refresh()
+
+    def _make_row_widget(self, item: MenuItem, b: Box) -> TextWidget | RichTextWidget:
+        t = _item_label(item)
+        disabled = isinstance(t, DisabledLabel)
+        if isinstance(t, (str, BadgedLabel, DisabledLabel)):
+            text = t if isinstance(t, str) else t.text
+            if _item_selected(item):
+                text = '\u2714 ' + text
+            badge = BadgeGlyph(t.char) if isinstance(t, BadgedLabel) and t.char is not None else None
+            # A disabled row is not `selectable`, thus `_get_margins` drops the
+            # selection-rectangle inset and lifts the text. Pass the inset that the
+            # other rows compute, to keep one baseline down the menu.
+            inset = self.sel_width if disabled else None
+            w: TextWidget | RichTextWidget = TextWidget(
+                box=b, text_halign=self.text_halign, font=self.font,
+                text=text, badge=badge, parent=self, action=self._item_action,
+                h_margin=inset, v_margin=inset,
+                fgnd_color=DISABLED_FG if disabled else self.fgnd_color)
+        else:
+            # Rich rows ignore `selected` for now — the checkmark prefix
+            # only makes sense on string labels.
+            w = RichTextWidget(box=b, segments=t, font=self.font,
+                               h_margin=5, v_margin=1,
+                               parent=self, action=self._item_action)
+        # Stash the source item on the widget for `_item_action` to recover.
+        setattr(w, 'data', item)
+        if not disabled:
+            self.add_sel_widget(w)
+        return w
 
     def _scroll_delta(self, box: Box, movex: int, movey: int, orig_box: Box):
         # Vertical movement only, pixel-precise (no page-snap, no y0==0 reset)
@@ -150,8 +204,8 @@ class Menu(Dialog):
         item_h = line_h
         for i in self.items:
             t = _item_label(i)
-            if isinstance(t, str):
-                _, th = get_text_size(t, self.font)
+            if isinstance(t, (str, BadgedLabel, DisabledLabel)):
+                _, th = get_text_size(t if isinstance(t, str) else t.text, self.font)
                 th = th + v_margin * 2
             else:
                 # Rich rows: 1px top inset, no bottom padding.

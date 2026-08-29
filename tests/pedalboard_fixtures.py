@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable
 
+from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo
 from modalapi.connections import Connection, Endpoint, EndpointKind
 from modalapi.plugin_customization import PluginExtraData
 
@@ -29,6 +30,18 @@ class MockPlugin:
     controllers: list = field(default_factory=list)
     uri: str | None = None
     extra_data: PluginExtraData | None = None
+    parameters: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        info: PortInfo = {"shortName": "bypass", "symbol": BYPASS_SYMBOL, "ranges": {"minimum": 0, "maximum": 1}}
+        self.parameters.setdefault(BYPASS_SYMBOL, Parameter(info, 1.0 if self.bypassed else 0.0, None, self.instance_id))
+
+    def subscribe(self, cb):
+        unsubs = [p.subscribe(cb) for p in self.parameters.values()]
+        def _unsub():
+            for u in unsubs:
+                u()
+        return _unsub
 
     @property
     def display_name(self) -> str:
@@ -55,7 +68,7 @@ class MockPlugin:
         return False
 
     def is_bypassed(self) -> bool:
-        return self.bypassed
+        return self.parameters[BYPASS_SYMBOL].value > 0.5
 
 
 @dataclass

@@ -5,8 +5,8 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pistomp.switchstate as switchstate
 from tests.types import SystemFixture
+from tests.v3.nav_helpers import nav_click
 
 
 def test_v3_pedalboard_change_via_modui(v3_system: SystemFixture, make_plugin, snapshot):
@@ -54,9 +54,9 @@ def test_v3_pedalboard_change_via_lcd(v3_system: SystemFixture, nav_handler, mak
     handler.pedalboards["/path/to/new.pedalboard"].plugins = [make_plugin("fuzz")]
 
     nav_handler(1)
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
     nav_handler(1)
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
 
     assert any("pedalboard/load_bundle" in u for u in get_urls(mock_post))
     assert any("reset" in u for u in get_urls(mock_get))
@@ -86,9 +86,7 @@ def test_v3_pedalboard_change_via_lcd(v3_system: SystemFixture, nav_handler, mak
     snapshot()
 
 
-def test_v3_pedalboard_selection_menu_shows_all_boards(
-    v3_system: SystemFixture, nav_handler, make_plugin, snapshot
-):
+def test_v3_pedalboard_selection_menu_shows_all_boards(v3_system: SystemFixture, nav_handler, make_plugin, snapshot):
     """Starting from a loaded pedalboard, open the pedalboard selection menu
     showing 6 boards with distinct titles."""
     handler = v3_system.handler
@@ -96,6 +94,7 @@ def test_v3_pedalboard_selection_menu_shows_all_boards(
 
     titles = ["Blues Rig", "Doom Bass", "Shoegaze", "Ambient Pad", "Metal", "Jazz Clean"]
     from unittest.mock import MagicMock
+
     for i, title in enumerate(titles):
         pb = MagicMock()
         pb.title = title
@@ -110,11 +109,79 @@ def test_v3_pedalboard_selection_menu_shows_all_boards(
     nav_handler(1)
 
     # Click to open the selection menu
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
     handler.poll_lcd_updates()
 
     snapshot()
 
+
+def _list_side_effect(boards: list[tuple[str, str]]):
+    """mock_get side effect where pedalboard/list returns exactly `boards` as (title, bundle)."""
+
+    def side_effect(url, **_kwargs):
+        resp = MagicMock()
+        resp.status_code = 200
+        if "pedalboard/list" in url:
+            resp.text = json.dumps([{"title": t, "bundle": b} for t, b in boards])
+        elif "snapshot/list" in url:
+            resp.text = json.dumps({"0": "Default"})
+        elif "snapshot/name" in url:
+            resp.text = json.dumps({"name": "Default"})
+        else:
+            resp.text = "{}"
+        return resp
+
+    return side_effect
+
+
+def test_v3_refetch_for_unknown_bundle_does_not_duplicate_list(v3_system: SystemFixture):
+    """last.json naming a board we haven't cached refetches the list. The refetch
+    rebuilds it — a board known before must not appear twice afterwards."""
+    handler = v3_system.handler
+
+    before = [pb.bundle for pb in handler.pedalboard_list]
+    assert before == ["/path/to/rig.pedalboard", "/path/to/new.pedalboard"]
+
+    v3_system.mock_get.side_effect = _list_side_effect(
+        [
+            ("Integration Rig", "/path/to/rig.pedalboard"),
+            ("New Rig", "/path/to/new.pedalboard"),
+            ("Restored Rig", "/path/to/restored.pedalboard"),
+        ]
+    )
+
+    last_json = Path(handler.data_dir) / "last.json"
+    last_json.write_text(json.dumps({"pedalboard": "/path/to/restored.pedalboard"}))
+    os.utime(last_json, (9999, 9999))
+
+    handler.poll_modui_changes()
+
+    assert handler.current
+    assert handler.current.pedalboard.title == "Restored Rig"
+
+    bundles = [pb.bundle for pb in handler.pedalboard_list]
+    assert bundles == [
+        "/path/to/rig.pedalboard",
+        "/path/to/new.pedalboard",
+        "/path/to/restored.pedalboard",
+    ]
+    assert len(handler.pedalboards) == 3
+
+
+def test_v3_refetch_drops_boards_modui_no_longer_lists(v3_system: SystemFixture):
+    """A board deleted in MOD-UI leaves both the dict and the nav list on refetch."""
+    handler = v3_system.handler
+
+    v3_system.mock_get.side_effect = _list_side_effect(
+        [
+            ("Integration Rig", "/path/to/rig.pedalboard"),
+        ]
+    )
+
+    handler.load_pedalboards()
+
+    assert "/path/to/new.pedalboard" not in handler.pedalboards
+    assert [pb.bundle for pb in handler.pedalboard_list] == ["/path/to/rig.pedalboard"]
 
 
 def test_v3_outbound_ws_suppressed_during_pedalboard_change(v3_system: SystemFixture, make_plugin):
@@ -128,12 +195,11 @@ def test_v3_outbound_ws_suppressed_during_pedalboard_change(v3_system: SystemFix
     handler.current.pedalboard.plugins = [old_plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, handler.hardware.footswitches)
     handler.lcd.draw_main_panel()
-    widget = next(w for w in handler.lcd.w_plugins if w.object is old_plugin)
     ws_bridge.sent.clear()
 
     # Simulate a user tapping the bypass on the old pedalboard while a change is in flight
     handler._is_pedalboard_loading = True
-    handler.toggle_plugin_bypass(widget, old_plugin)
+    handler.toggle_plugin_bypass(old_plugin)
 
     # The bypass should flip locally, but NO ws message should be sent
     assert old_plugin.is_bypassed()
@@ -141,7 +207,7 @@ def test_v3_outbound_ws_suppressed_during_pedalboard_change(v3_system: SystemFix
 
     # After clearing suppression, sends resume
     handler._is_pedalboard_loading = False
-    handler.toggle_plugin_bypass(widget, old_plugin)
+    handler.toggle_plugin_bypass(old_plugin)
     assert not old_plugin.is_bypassed()
     assert ws_bridge.sent_values_for("old_fuzz", ":bypass") == [0.0]
 

@@ -1,55 +1,28 @@
 #!/usr/bin/env sh
-# Launch the pi-stomp emulator, wiring in lilv if available outside the venv.
 
-# Locate the lilv Python binding and shared library.
-# Priority: pkg-config (Linux/macOS system install), then Homebrew.
-_lilv_pypath=""
-_lilv_libpath=""
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists lilv-0 2>/dev/null; then
-    _libdir=$(pkg-config --variable=libdir lilv-0)
-    if [ -n "$_libdir" ]; then
-        _lilv_libpath="$_libdir"
-        # Look for a Python binding in the same prefix
-        _prefix=$(pkg-config --variable=prefix lilv-0)
-        for _pydir in "$_prefix"/lib/python*/site-packages; do
-            if [ -f "$_pydir/lilv.py" ]; then
-                _lilv_pypath="$_pydir"
-                break
-            fi
-        done
-    fi
-fi
+# Launch the pi-stomp emulator.
 
-# Homebrew fallback (macOS)
-if [ -z "$_lilv_pypath" ] && command -v brew >/dev/null 2>&1; then
-    _brew_prefix=$(brew --prefix lilv 2>/dev/null)
-    if [ -n "$_brew_prefix" ]; then
-        _lilv_libpath="$_brew_prefix/lib"
-        for _pydir in "$_brew_prefix"/lib/python*/site-packages; do
-            if [ -f "$_pydir/lilv.py" ]; then
-                _lilv_pypath="$_pydir"
-                break
-            fi
-        done
-    fi
-fi
-
-if [ -n "$_lilv_pypath" ]; then
-    export PYTHONPATH="${_lilv_pypath}${PYTHONPATH:+:$PYTHONPATH}"
-fi
-if [ -n "$_lilv_libpath" ]; then
-    # macOS uses DYLD_LIBRARY_PATH; Linux uses LD_LIBRARY_PATH
-    case "$(uname -s)" in
-        Darwin) export DYLD_LIBRARY_PATH="${_lilv_libpath}${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" ;;
-        *)      export LD_LIBRARY_PATH="${_lilv_libpath}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
-    esac
-fi
-
-# Optional first argument: v1 / v2 / v3 (default: v3)
+# Optional first argument: v2 / v3 (default: v3)
 _version="${1:-v3}"
 case "$_version" in
-    v1|v2|v3) shift ;;
+    v2|v3) shift ;;
     *) _version="v3" ;;
 esac
 

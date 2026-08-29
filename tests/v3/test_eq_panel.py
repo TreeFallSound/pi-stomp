@@ -13,7 +13,6 @@ To regenerate snapshots after intentional UI changes:
     uv run pytest tests/v3/test_eq_panel.py --snapshot-update
 """
 
-import pistomp.switchstate as switchstate
 from modalapi.parameter import Parameter
 from modalapi.plugin import Plugin
 from pistomp.controller import Controller
@@ -22,6 +21,11 @@ from plugins.fil4 import FIL4_MONO_URI
 from plugins.fil4.band_spec import BAND_SPECS, PLUGIN_ENABLE_SYM
 from plugins.fil4.panel import Fil4Panel
 from tests.types import SystemFixture
+from tests.v3.nav_helpers import nav_click
+from common.parameter import BYPASS_SYMBOL, PortInfo, Symbol
+from common.contexts import BindingDecl, ContextKind, ContextLayer, ContextRef, ControlClass, ControlRef, EventKind, ParamEffect, ShadowState
+from pistomp.footswitch import Footswitch
+from unittest.mock import MagicMock
 
 
 # ---------------------------------------------------------------------------
@@ -38,9 +42,16 @@ class _FakeEnc(Controller):
 
 
 def _param(
-    symbol: str, value: float, minimum: float = 0.0, maximum: float = 1.0, instance_id: str = "fil4"
+    symbol: str,
+    value: float,
+    minimum: float = 0.0,
+    maximum: float = 1.0,
+    instance_id: str = "fil4",
+    unit: str | None = None,
 ) -> Parameter:
-    info = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
+    info: PortInfo = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
+    if unit is not None:
+        info["units"] = {"symbol": unit}
     return Parameter(info, value, None, instance_id)
 
 
@@ -50,24 +61,24 @@ def make_fil4_plugin(instance_id: str = "fil4") -> Plugin:
     Provides every symbol the EQ panel reads, with neutral defaults
     (all bands disabled, geometric-mean freq, Q=1.0, gain=0 dB).
     """
-    params: dict[str, Parameter] = {}
+    params: dict[Symbol, Parameter] = {}
 
     # Plugin-wide
-    bypass_info = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
-    params[":bypass"] = Parameter(bypass_info, False, None, instance_id)
+    bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
+    params[BYPASS_SYMBOL] = Parameter(bypass_info, False, None, instance_id)
     params[PLUGIN_ENABLE_SYM] = _param(PLUGIN_ENABLE_SYM, 1.0, instance_id=instance_id)
-    params["gain"] = _param("gain", 0.0, -18.0, 18.0, instance_id=instance_id)
+    params[Symbol("gain")] = _param(Symbol("gain"), 0.0, -18.0, 18.0, instance_id=instance_id, unit="dB")
 
     # Per-band
     for b in BAND_SPECS:
         if b.enable_sym is not None:
             params[b.enable_sym] = _param(b.enable_sym, 0.0, instance_id=instance_id)
         f0 = (b.freq_min * b.freq_max) ** 0.5
-        params[b.freq_sym] = _param(b.freq_sym, f0, b.freq_min, b.freq_max, instance_id=instance_id)
+        params[b.freq_sym] = _param(b.freq_sym, f0, b.freq_min, b.freq_max, instance_id=instance_id, unit="Hz")
         if b.q_sym is not None:
             params[b.q_sym] = _param(b.q_sym, 1.0, b.q_min, b.q_max, instance_id=instance_id)
         if b.gain_sym is not None:
-            params[b.gain_sym] = _param(b.gain_sym, 0.0, -18.0, 18.0, instance_id=instance_id)
+            params[b.gain_sym] = _param(b.gain_sym, 0.0, -18.0, 18.0, instance_id=instance_id, unit="dB")
 
     plugin = Plugin(instance_id, params, {}, "Filter", uri=FIL4_MONO_URI)
     plugin.has_footswitch = False
@@ -108,17 +119,17 @@ def tweak(handler, idx: int, rotations: int) -> bool:
     The LCD gets first crack; if the EQ panel is topmost it consumes the
     event via PluginPanel.on_encoder_rotation.
     """
-    event = EncoderEvent(controller=_FakeEnc(idx), rotations=rotations, new_value=0.0, new_midi_value=0)
+    event = EncoderEvent(controller=_FakeEnc(idx), rotations=rotations)
     return handler.handle(event)
 
 
 def short_press(handler) -> None:
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
 
 
 def long_press(handler) -> None:
-    handler.universal_encoder_sw(switchstate.Value.LONGPRESSED)
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler, long=True)
+    nav_click(handler)
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +270,37 @@ def test_eq_hp_no_gain_axis(v3_system: SystemFixture, snapshot):
 def test_eq_bypass_button_saga(v3_system: SystemFixture, nav_handler, snapshot):
     """Nav to Bypass chrome, short-press to bypass, again to re-enable."""
     handler = v3_system.handler
-    plugin = open_eq(v3_system)
+    hw = v3_system.hw
+
+    # Bind a footswitch to bypass before opening the panel so the badge
+    # renders on the bypass button from construction time.
+    plugin = make_fil4_plugin()
+    handler.current.pedalboard.plugins = [plugin]
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    control_id = "0:10"
+    fs = Footswitch(id=0, led_pin=None, pixel=None, midi_CC=10, midi_channel=0, refresh_callback=MagicMock())
+    handler.hardware.controllers[control_id] = fs
+    row = BindingDecl(
+        control=ControlRef(cls=ControlClass.FOOTSWITCH, id=control_id),
+        event_kind=EventKind.PRESS,
+        effects=(ParamEffect(plugin=plugin, symbol=BYPASS_SYMBOL),),
+        context=ContextRef(kind=ContextKind.PEDALBOARD),
+        shadow_state=ShadowState.ACTIVE,
+    )
+    key = (ControlClass.FOOTSWITCH, EventKind.PRESS)
+    for layer in handler.effective_table.layers:
+        if layer.ref.kind is ContextKind.PEDALBOARD:
+            layer.rows.setdefault(key, []).append(row)
+            break
+    else:
+        handler.effective_table.layers.append(
+            ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD), rows={key: [row]})
+        )
+
+    handler.show_fullscreen_panel(plugin, Fil4Panel)
+    handler.poll_lcd_updates()
 
     # Enable + boost a band so the curve is visible for the bypass-dim check
     nav(nav_handler, 2)  # HP, LS, B1
@@ -370,7 +411,7 @@ def test_eq_volume_passthrough_on_chrome(v3_system: SystemFixture, nav_handler):
 
     # Helper: ask the LCD whether it would consume a tweak encoder event.
     def _lcd_consumes(enc_id: int) -> bool:
-        event = EncoderEvent(controller=_FakeEnc(enc_id), rotations=1, new_value=0.0, new_midi_value=0)
+        event = EncoderEvent(controller=_FakeEnc(enc_id), rotations=1)
         return handler.lcd.handle(event)
 
     # Tweak3 on a band → consumed by the panel (controls Q)

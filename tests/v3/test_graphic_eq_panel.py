@@ -8,7 +8,6 @@ To regenerate snapshots after intentional UI changes:
     uv run pytest tests/v3/test_graphic_eq_panel.py --snapshot-update
 """
 
-import pistomp.switchstate as switchstate
 from modalapi.parameter import Parameter
 from modalapi.plugin import Plugin
 from pistomp.controller import Controller
@@ -17,6 +16,8 @@ from plugins.capseq10 import CAPSEQ10_URI
 from plugins.capseq10.band_spec import BAND_SPECS
 from plugins.capseq10.panel import CapsEq10Panel
 from tests.types import SystemFixture
+from tests.v3.nav_helpers import nav_click
+from common.parameter import BYPASS_SYMBOL, PortInfo, Symbol
 
 
 # ---------------------------------------------------------------------------
@@ -31,9 +32,16 @@ class _FakeEnc(Controller):
 
 
 def _param(
-    symbol: str, value: float, minimum: float = 0.0, maximum: float = 1.0, instance_id: str = "eq10"
+    symbol: str,
+    value: float,
+    minimum: float = 0.0,
+    maximum: float = 1.0,
+    instance_id: str = "eq10",
+    unit: str | None = None,
 ) -> Parameter:
-    info = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
+    info: PortInfo = {"shortName": symbol, "symbol": symbol, "ranges": {"minimum": minimum, "maximum": maximum}}
+    if unit is not None:
+        info["units"] = {"symbol": unit}
     return Parameter(info, value, None, instance_id)
 
 
@@ -42,14 +50,14 @@ def make_capseq10_plugin(instance_id: str = "eq10") -> Plugin:
 
     All bands start at 0 dB (enabled), gain range -48..+24 dB.
     """
-    params: dict[str, Parameter] = {}
+    params: dict[Symbol, Parameter] = {}
 
-    bypass_info = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
-    params[":bypass"] = Parameter(bypass_info, False, None, instance_id)
-    params["enable"] = _param("enable", 1.0, instance_id=instance_id)
+    bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
+    params[BYPASS_SYMBOL] = Parameter(bypass_info, False, None, instance_id)
+    params[Symbol("enable")] = _param("enable", 1.0, instance_id=instance_id)
 
     for b in BAND_SPECS:
-        params[b.gain_sym] = _param(b.gain_sym, 0.0, b.gain_min, b.gain_max, instance_id=instance_id)
+        params[b.gain_sym] = _param(b.gain_sym, 0.0, b.gain_min, b.gain_max, instance_id=instance_id, unit="dB")
 
     plugin = Plugin(instance_id, params, {}, "EQ", uri=CAPSEQ10_URI)
     plugin.has_footswitch = False
@@ -83,17 +91,16 @@ def nav(nav_handler, steps: int) -> None:
 
 
 def tweak(handler, idx: int, rotations: int) -> bool:
-    event = EncoderEvent(controller=_FakeEnc(idx), rotations=rotations, new_value=0.0, new_midi_value=0)
+    event = EncoderEvent(controller=_FakeEnc(idx), rotations=rotations)
     return handler.handle(event)
 
 
 def short_press(handler) -> None:
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
 
 
 def long_press(handler) -> None:
-    handler.universal_encoder_sw(switchstate.Value.LONGPRESSED)
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler, long=True)
 
 
 # ---------------------------------------------------------------------------
@@ -244,24 +251,27 @@ def test_long_press_resets_band(v3_system: SystemFixture, nav_handler, snapshot)
 
 
 # ---------------------------------------------------------------------------
-# Saga 7 — Tweak2/3 are consumed but no-op on graphic EQ
+# Saga 7 — Tweak2 is consumed no-op; Tweak3 has no band role, so it always
+# reaches the volume encoder
 # ---------------------------------------------------------------------------
 
 
-def test_tweak23_consumed_noop(v3_system: SystemFixture, nav_handler):
-    """Tweak2 and Tweak3 are consumed by the panel (no handler fall-through)."""
+def test_tweak2_noop_tweak3_volume(v3_system: SystemFixture, nav_handler):
+    """Graphic EQ claims only gain (Tweak1) and absorbs Tweak2; Tweak3 has no
+    band role, so it falls through to volume whether or not a band is selected."""
     handler = v3_system.handler
     open_eq(v3_system)
 
     def _lcd_consumes(enc_id: int) -> bool:
-        event = EncoderEvent(controller=_FakeEnc(enc_id), rotations=1, new_value=0.0, new_midi_value=0)
+        event = EncoderEvent(controller=_FakeEnc(enc_id), rotations=1)
         return handler.lcd.handle(event)
 
+    # Band selected: gain edited, Tweak2 absorbed, Tweak3 falls through.
     assert _lcd_consumes(1) is True
     assert _lcd_consumes(2) is True
-    assert _lcd_consumes(3) is True
+    assert _lcd_consumes(3) is False
 
-    # On chrome: Tweak3 falls through, Tweak1/2 consumed
+    # Chrome focused: Tweak1 now absorbs (no band), Tweak2/3 unchanged.
     nav(nav_handler, 10)
     assert _lcd_consumes(3) is False
     assert _lcd_consumes(1) is True

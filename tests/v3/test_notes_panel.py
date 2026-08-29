@@ -6,7 +6,6 @@ To regenerate snapshots after intentional UI changes:
     uv run pytest tests/v3/test_notes_panel.py --snapshot-update
 """
 
-import pistomp.switchstate as switchstate
 from modalapi.parameter import Parameter
 from modalapi.plugin import Plugin
 from pistomp.controller import Controller
@@ -15,7 +14,9 @@ from plugins.customization import lookup
 from plugins.notes import NOTES_URI
 from plugins.notes.panel import NotesData, NotesPanel
 from tests.types import SystemFixture
-import common.token as Token
+from pistomp.controller import ControlType
+from tests.v3.nav_helpers import nav_click
+from common.parameter import BYPASS_SYMBOL, PortInfo, Symbol
 
 # ── sample text long enough to require scrolling ──────────────────────────────
 
@@ -51,14 +52,14 @@ class _NavEnc(Controller):
 
     def __init__(self) -> None:
         super().__init__(midi_channel=0, midi_CC=None)
-        self.type = Token.NAV
+        self.type = ControlType.NAV
         self.id = 0
 
 
 def make_notes_plugin(instance_id: str = "notes_1") -> Plugin:
-    bypass_info = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
-    params: dict[str, Parameter] = {
-        ":bypass": Parameter(bypass_info, 0.0, None, instance_id),
+    bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
+    params: dict[Symbol, Parameter] = {
+        BYPASS_SYMBOL: Parameter(bypass_info, 0.0, None, instance_id),
     }
     plugin = Plugin(
         instance_id,
@@ -70,7 +71,7 @@ def make_notes_plugin(instance_id: str = "notes_1") -> Plugin:
         extra_data=NotesData(text=_NOTES_TEXT),
     )
     plugin.has_footswitch = False
-    plugin.pedalboard_snapshot = {":bypass": 0.0}
+    plugin.pedalboard_snapshot = {BYPASS_SYMBOL: 0.0}
     return plugin
 
 
@@ -94,8 +95,6 @@ def scroll(handler, rotations: int) -> None:
     event = EncoderEvent(
         controller=_NavEnc(),
         rotations=rotations,
-        new_value=0.0,
-        new_midi_value=0,
     )
     handler.handle(event)
     handler.poll_lcd_updates()
@@ -120,6 +119,6 @@ def test_notes_panel_saga(v3_system: SystemFixture, snapshot):
     snapshot("at_bottom")
 
     # Press the nav encoder (RELEASED = short press) → activates Back button.
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
     handler.poll_lcd_updates()
     snapshot("closed")

@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Graphic EQ panel — vertical bar visualization.
 
 ``GraphicEqPanel`` is the abstract base; subclasses provide band specs via
@@ -11,39 +28,57 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Optional
 
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextRef,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    NoneEffect,
+    SelectionEditEffect,
+)
+from common.param_roles import ParamRole
+from common.parameter import Symbol
+from common.parameter_steps import ParameterSteps, effective_multiplier, resolution
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import GraphicBandSpec
-from plugins.eq.parametric import paint_band_node, _fmt_freq as _fmt_freq_long
+from plugins.eq.parametric import _fmt_freq as _fmt_freq_long
+from uilib.glyphs.circle_handle import paint_circle_handle
 from uilib.box import Box
 from uilib.config import Config
+from uilib.glyphs.badge import BadgeGlyph
+from uilib.glyphs.bar import FILL_ACTIVE, FILL_INACTIVE, READOUT_COLOR, TRACK_COLOR, paint_bar
 from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size
 from uilib.widget import Widget
+from modalapi.plugin import Plugin
 
 # ── layout constants ────────────────────────────────────────────────────────
 
 _W = 320
 _H = 240
 
-VISIBLE_BANDS  = 10
-COL_W          = _W // VISIBLE_BANDS   # 32 px per column
-BAR_W          = 3                      # track + fill width (matches node diameter)
+VISIBLE_BANDS = 10
+COL_W = _W // VISIBLE_BANDS  # 32 px per column
+BAR_W = 3  # track + fill width (matches node diameter)
 
-READOUT_H      = 22
-FREQ_LABEL_H   = 14
-BAR_Y0         = 6                      # bars start 6px from widget top (halo clearance from readout)
-BAR_Y1         = 164                    # bar area ends 8px before freq labels (halo clearance)
-BAR_H          = BAR_Y1 - BAR_Y0      # 158
-FREQ_LABEL_Y   = BAR_Y1 + 8            # 172 — 6px halo + 2px padding below bars
-WIDGET_H       = FREQ_LABEL_Y + FREQ_LABEL_H  # 186 — includes freq labels
+READOUT_H = 22
+FREQ_LABEL_H = 14
+BAR_Y0 = 6  # bars start 6px from widget top (halo clearance from readout)
+BAR_Y1 = 164  # bar area ends 8px before freq labels (halo clearance)
+BAR_H = BAR_Y1 - BAR_Y0  # 158
+FREQ_LABEL_Y = BAR_Y1 + 8  # 172 — 6px halo + 2px padding below bars
+WIDGET_H = FREQ_LABEL_Y + FREQ_LABEL_H  # 186 — includes freq labels
 
 # ── colours ──────────────────────────────────────────────────────────────────
 
-BG_BLACK        = (0, 0, 0)
-TRACK_COLOR     = (40, 40, 40)
-FILL_INACTIVE   = (160, 160, 160)
-FILL_ACTIVE     = (240, 240, 240)
-READOUT_COLOR   = (200, 200, 200)
+BG_BLACK = (0, 0, 0)
 FREQ_LABEL_COLOR = (110, 110, 110)
+
+# enc1 is always SelectionEditEffect here — badge lives in the readout, not
+# on any bar, since the dense 32px columns have no room for it (R4 §3a).
+_BADGE_TWEAK1 = BadgeGlyph("1")
+_BADGE_GAP = 3
 
 
 # ── label helpers ────────────────────────────────────────────────────────────
@@ -154,6 +189,10 @@ class BarWidget(Widget):
         pass
 
     def _draw(self, ctx) -> None:
+        # TODO: a Tweak1 detent redraws every visible band's full-height
+        # track+fill even though only the selected column's fill length moved.
+        # Dirty just the edited column (and the old/new node halo rows) and skip
+        # untouched bars — this repaints on every 10ms tick while spinning.
         ctx.draw_rectangle(ctx.dirty_bounds, fill=BG_BLACK)
 
         if self._state is None:
@@ -173,33 +212,40 @@ class BarWidget(Widget):
 
         for col, band in enumerate(visible):
             cx = col * COL_W + COL_W // 2
-            bar_x = cx - BAR_W // 2
-
-            # Track — full height
-            ctx.draw_rectangle(Box(bar_x, BAR_Y0, bar_x + BAR_W, BAR_Y1), fill=TRACK_COLOR)
 
             p = self._state.bands.get(band.name)
-            if p is None:
-                continue
-
-            gain = p.gain_db if p.enabled else band.gain_min
-            gain_y = _gain_to_y(gain, band)
 
             is_sel = band.name == self._selected_band
-
             fill_color: tuple[int, int, int] = FILL_ACTIVE if is_sel else FILL_INACTIVE
             if shade < 1.0:
                 fill_color = tuple(int(c * shade) for c in fill_color)  # type: ignore[assignment]
 
-            # Fill — bottom to gain position
-            if gain_y < BAR_Y1:
-                ctx.draw_rectangle(Box(bar_x, gain_y, bar_x + BAR_W, BAR_Y1), fill=fill_color)
+            span = band.gain_max - band.gain_min
+            if p is None:
+                frac = 0.0
+            else:
+                gain = p.gain_db if p.enabled else band.gain_min
+                frac = 0.0 if span <= 0 else (gain - band.gain_min) / span
+
+            bar_x = cx - BAR_W // 2
+            _, gain_y = paint_bar(
+                ctx,
+                box=Box(bar_x, BAR_Y0, bar_x + BAR_W, BAR_Y1),
+                orientation="vertical",
+                frac=frac,
+                track_color=TRACK_COLOR,
+                fill_color=fill_color,
+                thickness=BAR_W,
+            )
+
+            if p is None:
+                continue
 
             # Node — same circle style as parametric EQ
             node_color: tuple[int, int, int] = band.color
             if shade < 1.0:
                 node_color = tuple(int(c * shade) for c in node_color)  # type: ignore[assignment]
-            paint_band_node(ctx, cx, gain_y, node_color, is_sel)
+            paint_circle_handle(ctx, cx, gain_y, node_color, is_sel)
 
             # Frequency label — below bars, above chrome
             if self._font is not None:
@@ -226,7 +272,13 @@ class GraphicReadoutWidget(Widget):
         self._message: Optional[str] = None
 
     def set_fields(self, band_idx: int, band_total: int, freq: str, gain: str) -> None:
-        if self._message is None and band_idx == self._band_idx and band_total == self._band_total and freq == self._freq and gain == self._gain:
+        if (
+            self._message is None
+            and band_idx == self._band_idx
+            and band_total == self._band_total
+            and freq == self._freq
+            and gain == self._gain
+        ):
             return
         self._band_idx = band_idx
         self._band_total = band_total
@@ -248,9 +300,12 @@ class GraphicReadoutWidget(Widget):
         if self._message is not None:
             ctx.draw_text((6, 1), self._message, fill=READOUT_COLOR, font=self._font)
             return
-        # Left: band number
+        # Left: badge (if any, drawn by `_draw_badge`) + band number
+        band_x = 6
+        if self._badge is not None:
+            band_x += self._badge.width + _BADGE_GAP
         band_str = f"Band {self._band_idx + 1}/{self._band_total}"
-        ctx.draw_text((6, 1), band_str, fill=READOUT_COLOR, font=self._font)
+        ctx.draw_text((band_x, 1), band_str, fill=READOUT_COLOR, font=self._font)
         # Center: frequency
         if self._freq:
             tw, _ = get_text_size(self._freq, self._font)
@@ -259,6 +314,14 @@ class GraphicReadoutWidget(Widget):
         if self._gain:
             tw, _ = get_text_size(self._gain, self._font)
             ctx.draw_text((_W - 6 - tw, 1), self._gain, fill=READOUT_COLOR, font=self._font)
+
+    def _draw_badge(self, ctx) -> None:
+        """enc1 badge for the selected band — see `_BADGE_TWEAK1`. Suppressed
+        while a message occupies the strip (no band selected)."""
+        if self._badge is None or self._message is not None:
+            return
+        by = (ctx.height - self._badge.height) // 2
+        ctx.paste(self._badge.render(), (6, by))
 
 
 # ── GraphicEqState ──────────────────────────────────────────────────────────
@@ -297,11 +360,8 @@ class GraphicBandSelectable(Widget):
         self.selected = selected
 
     def input_event(self, event) -> bool:  # type: ignore[override]
-        if event == InputEvent.CLICK:
-            self._panel._reset_band_gain(self.band)
-            return True
         if event == InputEvent.LONG_CLICK:
-            self._panel._reset_band_to_snapshot(self.band)
+            self._panel._reset_band_gain(self.band)
             return True
         return False
 
@@ -317,6 +377,9 @@ class GraphicBandSelectable(Widget):
     def _draw_selection(self, ctx) -> None:
         pass
 
+    def symbol_for(self, role: ParamRole) -> Symbol | None:
+        return self.band.gain_sym if role in (ParamRole.GAIN_DB, ParamRole.GENERIC) else None
+
 
 # ── GraphicEqPanel (ABC) ─────────────────────────────────────────────────────
 
@@ -328,6 +391,8 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
     ``GraphicBandSpec`` for this plugin.
     """
 
+    plugin: Plugin  # narrowing: graphic EQ panels are always Plugin panels
+
     # ── subclass contract ──────────────────────────────────────────────────
 
     def build_band_specs(self) -> Sequence[GraphicBandSpec]:
@@ -338,9 +403,9 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
     def snapshot_state(self) -> GraphicEqState:
         params = self.plugin.parameters
 
-        def _val(symbol: str, default: float) -> float:
+        def _val(symbol: Symbol, default: float) -> float:
             p = params.get(symbol)
-            return float(p.value) if p is not None and p.value is not None else default
+            return float(p.value) if p is not None else default
 
         bands: dict[str, GraphicBandParams] = {}
         for band in self.bands:
@@ -349,7 +414,7 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
                 gain_db=_val(band.gain_sym, 0.0),
             )
         return GraphicEqState(
-            plugin_enabled=bool(_val("enable", 1.0)),
+            plugin_enabled=bool(_val(Symbol("enable"), 1.0)),
             bands=bands,
         )
 
@@ -387,32 +452,44 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
         self.apply_state(self.snapshot_state())
         self.sel_widget(self._band_sels[self.bands[0].name])
 
-    def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:
-        if encoder_id not in (1, 2, 3) or rotations == 0:
-            return False
-        band = self.selected_band
-        if band is None:
-            return encoder_id != 3
-        delta = rotations
-        p = self._state.bands[band.name]
-        if encoder_id == 1:
-            new_gain = max(band.gain_min, min(band.gain_max, p.gain_db + delta * 0.5))
-            if new_gain == p.gain_db:
-                return True
-            self.set_param(band.gain_sym, new_gain)
-            self._replace_band(band, gain_db=new_gain)
-            return True
-        elif encoder_id in (2, 3):
-            return True  # consume but no-op
-        return False
+    def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        # Only gain (Tweak1) is per-band; Tweak2 absorbs. Tweak3 has no band role,
+        # so it's left unclaimed and always reaches the volume encoder.
+        ctx = ContextRef(kind=ContextKind.PANEL, name="graphic_eq")
+        return (
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=1),
+                event_kind=EventKind.ROTATE,
+                effects=(SelectionEditEffect(role=ParamRole.GAIN_DB),),
+                context=ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=2),
+                event_kind=EventKind.ROTATE,
+                effects=(NoneEffect(),),
+                context=ctx,
+            ),
+        )
 
-    def tick(self) -> None:
-        bypassed = self.plugin.is_bypassed()
-        if bypassed != getattr(self, "_last_bypassed", None):
-            self._last_bypassed = bypassed
-            self._bar_widget.set_bypassed(bypassed)
-            self._update_readout()
-        super().tick()
+    def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool:
+        band = self.selected_band
+        if band is None or symbol != band.gain_sym:
+            return super().edit_symbol(symbol, rotations, multiplier)
+        p = self._state.bands[band.name]
+        lv2 = self.plugin.parameters.get(symbol)
+        if lv2 is None:
+            return False
+        steps = ParameterSteps(band.gain_min, band.gain_max, lv2.is_logarithmic, resolution(lv2))
+        steps.set_value(p.gain_db)
+        delta = int(round(rotations * effective_multiplier(multiplier, lv2)))
+        if delta == 0:
+            return False
+        new_gain = steps.move(delta)
+        if new_gain == p.gain_db:
+            return False
+        self.set_param(band.gain_sym, new_gain)
+        self._replace_band(band, gain_db=new_gain)
+        return True
 
     def _refresh_bypass_style(self) -> None:
         super()._refresh_bypass_style()
@@ -454,14 +531,19 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
                 else:
                     gain = f"{p.gain_db:+.1f} dB"
                 self._readout.set_fields(idx, len(self.bands), freq, gain)
+            self._readout.set_badge(_BADGE_TWEAK1)
         elif sel_w is self._btn_bypass:
             self._readout.set_message("Plugin bypassed" if self.plugin.is_bypassed() else "Bypass plugin")
+            self._readout.set_badge(None)
         elif sel_w is self._btn_back:
             self._readout.set_message("Close EQ")
+            self._readout.set_badge(None)
         elif sel_w is self._btn_reset:
             self._readout.set_message("Reset to pedalboard")
+            self._readout.set_badge(None)
         else:
             self._readout.set_message("")
+            self._readout.set_badge(None)
 
     def _select_widget_ref(self, w):  # type: ignore[override]
         super()._select_widget_ref(w)
@@ -488,9 +570,3 @@ class GraphicEqPanel(FullscreenPluginPanel[GraphicEqState]):
             return
         self.set_param(band.gain_sym, 0.0)
         self._replace_band(band, gain_db=0.0)
-
-    def _reset_band_to_snapshot(self, band: GraphicBandSpec) -> None:
-        snap = self.plugin.pedalboard_snapshot
-        if band.gain_sym in snap and not self._is_symbol_locked(self.plugin.instance_id, band.gain_sym):
-            self.set_param(band.gain_sym, snap[band.gain_sym])
-        self.apply_state(self.snapshot_state())

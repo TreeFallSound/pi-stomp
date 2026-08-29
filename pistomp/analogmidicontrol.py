@@ -1,19 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing import Any
 
 import common.util as util
 import pistomp.analogcontrol as analogcontrol
@@ -28,8 +29,8 @@ def as_midi_value(adc_value: int):
     return util.renormalize(adc_value, 0, 1023, 0, 127)
 
 
-class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
-    def __init__(self, spi, adc_channel, tolerance, midi_CC, midi_channel, type, id=None, cfg=None, autosync=False):
+class AnalogMidiControl(analogcontrol.AnalogControl, controller.StatefulController):
+    def __init__(self, spi, adc_channel, tolerance, midi_CC, midi_channel, type, id=None, autosync=False):
         super(AnalogMidiControl, self).__init__(spi, adc_channel, tolerance)
         controller.Controller.__init__(self, midi_channel, midi_CC)
         self.autosync = autosync
@@ -37,8 +38,8 @@ class AnalogMidiControl(analogcontrol.AnalogControl, controller.Controller):
         self.type = type
         self.id = id
         self.last_read = 0
+        self.midi_value = 0
         self.value = None
-        self.cfg: dict[str, Any] = cfg or {}
         self._connection = AnalogConnectionMonitor()
 
     def set_midi_channel(self, midi_channel):

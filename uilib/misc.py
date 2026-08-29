@@ -1,23 +1,26 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
 
 from enum import Enum, Flag
+from functools import lru_cache
 
-from common.parameter import Parameter, Type
+from common.parameter import Type
 
 
 # Input events.
@@ -65,8 +68,16 @@ def trace(obj, *args):
         print(str(type(obj)), n, args)
 
 
-# Utility function (from stack overflow). TODO: Move to a TextUtils
-def get_text_size(text_string, font, metrics=None):
+@lru_cache(maxsize=1024)
+def get_line_height(font, size=0):
+    """Fixed line height (ascender + descender) for `font`, independent of text."""
+    asc = int(font.get_sized_ascender(size))
+    desc = abs(int(font.get_sized_descender(size)))
+    return asc + desc
+
+
+@lru_cache(maxsize=1024)
+def get_text_size(text_string, font, size=0):
     """Return (width, height) of `text_string` rendered with `font`.
 
     Width matches PIL's `font.getbbox(text)[2] - getbbox(text)[0]` exactly:
@@ -79,10 +90,11 @@ def get_text_size(text_string, font, metrics=None):
 
     Height = font ascender + font descender + per-text glyph descent overflow
     (for descender glyphs like g/p/y), matching PIL's `bbox[3] + descent`.
+
+    `size` overrides the font's default point size for this measurement only
+    (e.g. for supersampled rendering) — 0 means "use the font's own size".
     """
-    asc = int(font.get_sized_ascender())
-    desc = abs(int(font.get_sized_descender()))
-    line_height = asc + desc
+    line_height = get_line_height(font, size)
     if not text_string:
         return (0, line_height)
 
@@ -97,7 +109,7 @@ def get_text_size(text_string, font, metrics=None):
     ink_right = 0.0
     has_any = False
     glyph_desc = 0
-    for m in font.get_metrics(text_string):
+    for m in font.get_metrics(text_string, size=size):
         if m is None:
             continue
         min_x = _signed(m[0])
@@ -128,31 +140,46 @@ def get_text_size(text_string, font, metrics=None):
 
 INACTIVE_SHADE = 0.45
 
+# Per-unit arc-ring colours. Derived from the parameter's unit_symbol at render
+# time so subclasses don't need to pick colours per slot.
+_UNIT_COLORS: dict[str, tuple[int, int, int]] = {
+    "dB": (255, 180, 80),
+    "Hz": (110, 200, 230),
+    "ms": (130, 220, 110),
+    "s": (130, 220, 110),
+    "%": (200, 200, 200),
+}
+
+
+# Same green as the ms/s unit rings.
+_TOGGLE_COLOR = _UNIT_COLORS["ms"]
+
+
+def color_for_param(param) -> tuple[int, int, int]:
+    """Return an arc-ring colour. Toggles read as on/off, so they get a fixed
+    green regardless of unit; everything else keys off the unit symbol."""
+    if param is not None and param.type == Type.TOGGLED:
+        return _TOGGLE_COLOR
+    if param is not None and param.unit_symbol is not None:
+        return _UNIT_COLORS.get(param.unit_symbol, (200, 200, 200))
+    return (200, 200, 200)
+
 
 def shade_color(color: tuple[int, int, int], factor: float) -> tuple[int, int, int]:
     return (int(color[0] * factor), int(color[1] * factor), int(color[2] * factor))
 
 
-def step_for_param(param: Parameter) -> float:
-    t = param.type
-    if t in (Type.ENUMERATION, Type.INTEGER, Type.TOGGLED):
-        return 1.0
-    if t == Type.LOGARITHMIC:
-        ratio = 2.0 ** (1.0 / 12.0)
-        return max(0.01, (param.value or param.minimum) * (ratio - 1.0))
-    return max(0.01, (param.maximum - param.minimum) / 100.0)
-
-
-def fmt_hz(value: float) -> str:
+def fmt_hz(value: float) -> tuple[str, str]:
     if value >= 1000.0:
-        return f"{value / 1000.0:.1f}k"
-    return f"{value:.0f}"
+        return f"{value / 1000.0:.1f}", "kHz"
+    return f"{value:.0f}", "Hz"
 
 
 def fmt_db(value: float) -> str:
     return f"{value:+.0f}dB"
 
 
+@lru_cache(maxsize=1024)
 def get_text_bbox(text_string, font):
     """Return (x0, y0, x1, y1) of `text_string`'s ink, matching PIL's
     `ImageFont.getbbox(text)` with the default 'la' anchor.

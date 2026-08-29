@@ -9,38 +9,83 @@ import pytest
 
 from tests.conftest import PROJECT_ROOT
 from tests import pedalboard_fixtures
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextLayer,
+    ContextRef,
+    ContextStack,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    MidiCcEffect,
+    ParamEffect,
+    ShadowState,
+)
+from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
+from modalapi.external_midi import EXTERNAL_INSTANCE_ID
+from pistomp.encoder_controller import EncoderController
+from pistomp.footswitch import Footswitch
 from pistomp.lcd320x240 import Lcd
 from pistomp.taptempo import TapTempo
 import common.token as Token
+from pistomp.controller import ControlType
 from uilib.misc import InputEvent
 from modalapi.connections import Connection, Endpoint, EndpointKind
+from modalapi.pedalboard import Pedalboard
+from modalapi.plugin import Plugin
+from pistomp.current import Current
 
 
-class MockObject:
-    preset_callback_arg = None  # footswitch default; override via kwargs
+def _make_plugin(
+    instance_id: str,
+    uri: str | None = None,
+    category: str | None = None,
+    has_footswitch: bool = False,
+    bypassed: bool = False,
+    parameters: dict[Symbol, Parameter] | None = None,
+) -> Plugin:
+    bypass_info: PortInfo = {"shortName": "bypass", "symbol": BYPASS_SYMBOL, "ranges": {"minimum": 0, "maximum": 1}}
+    all_params: dict[Symbol, Parameter] = dict(parameters or {})
+    all_params[BYPASS_SYMBOL] = Parameter(bypass_info, 1.0 if bypassed else 0.0, None, instance_id)
+    plugin = Plugin(instance_id, all_params, {}, category, uri=uri)
+    plugin.has_footswitch = has_footswitch
+    return plugin
 
-    def __init__(self, **kwargs):
-        self.__dict__.update(kwargs)
 
-    @property
-    def subtitle(self):
-        return None
+def _make_pedalboard(title: str, plugins: list[Plugin], connections: list[Connection]) -> Pedalboard:
+    pedalboard = Pedalboard(title, bundle="")
+    pedalboard.plugins = plugins
+    pedalboard.connections = connections
+    return pedalboard
 
-    @property
-    def tile_active_color(self):
-        return None
 
-    @property
-    def tile_border(self):
-        return None
+def _make_footswitch(id: int, toggled: bool = False, display_label: str = "", taptempo=None) -> Footswitch:
+    fs = Footswitch(
+        id=id, led_pin=None, pixel=None, midi_CC=1, midi_channel=0,
+        refresh_callback=lambda *a, **k: None, taptempo=taptempo,
+    )
+    fs.toggled = toggled
+    fs.display_label = display_label
+    return fs
 
-    @property
-    def panel_cls(self):
-        return None
 
-    @property
-    def intercept_shortpress(self):
-        return False
+def _real_param(
+    name: str = "Gain",
+    symbol: str = "gain",
+    instance_id: str = "delay",
+    value: float = 0.5,
+    minimum: float = 0.0,
+    maximum: float = 1.0,
+) -> Parameter:
+    """A real Parameter with the same defaults as the old _mock_param helper,
+    so the dialog tests exercise the reactive property path."""
+    info: PortInfo = {
+        "shortName": name,
+        "symbol": symbol,
+        "ranges": {"minimum": minimum, "maximum": maximum},
+    }
+    return Parameter(info, value, None, instance_id)
 
 
 @pytest.fixture
@@ -56,6 +101,9 @@ def mock_handler():
     handler.SystemState = "Running"
     handler.temperature = "45C"
     handler.throttled = "None"
+    handler.wifi_status = {}
+    handler.wifi_ip = None
+    handler.ethernet_ip = None
     # MagicMock would auto-truthify `ethernet_manager.carrier_up` and surface
     # the Wired Connection row in every wifi-menu snapshot. Pin it off here;
     # tests that exercise the ethernet flow can override per-test.
@@ -71,88 +119,33 @@ def lcd(fake_lcd, mock_handler):
     return instance, fake_lcd
 
 
+def _enc_step(instance, d, multiplier=1.0):
+    """Step the top panel's nav selector, as the retired lcd.enc_step did."""
+    if d == 0:
+        return
+    instance.pstack.current.input_step(1 if d > 0 else -1, abs(d), multiplier)
+
+
 def setup_main_ui(instance):
-    mock_gain = MockObject(
-        name="Gain",
-        instance_id="distortion",
-        value=0.5,
-        minimum=0.0,
-        maximum=1.0,
-        type=MockObject(value=0),
-        get_taper=lambda: 1,
-        format=lambda v: f"{v:.2f}",
-    )
-    mock_time = MockObject(
-        name="Time",
-        instance_id="delay",
-        value=0.3,
-        minimum=0.0,
-        maximum=1.0,
-        type=MockObject(value=0),
-        get_taper=lambda: 1,
-        format=lambda v: f"{v:.2f}",
-    )
-    mock_mix = MockObject(
-        name="Mix",
-        instance_id="reverb",
-        value=0.4,
-        minimum=0.0,
-        maximum=1.0,
-        type=MockObject(value=0),
-        get_taper=lambda: 1,
-        format=lambda v: f"{v:.2f}",
-    )
+    mock_gain = _real_param(name="Gain", symbol="gain", instance_id="distortion", value=0.5)
+    mock_time = _real_param(name="Time", symbol="time", instance_id="delay", value=0.3)
+    mock_mix = _real_param(name="Mix", symbol="mix", instance_id="reverb", value=0.4)
     plugins = [
-        MockObject(
-            instance_id="distortion",
-            uri="mock://distortion",
-            display_name="distortion",
-            is_bypassed=lambda: False,
-            category="Distortion",
-            has_footswitch=True,
-            controllers=[],
-            parameters={":bypass": MockObject(name=":bypass"), "gain": mock_gain},
+        _make_plugin(
+            "distortion", uri="mock://distortion", category="Distortion", has_footswitch=True,
+            parameters={Symbol("gain"): mock_gain},
         ),
-        MockObject(
-            instance_id="delay",
-            uri="mock://delay",
-            display_name="delay",
-            is_bypassed=lambda: False,
-            category="Delay",
-            has_footswitch=True,
-            controllers=[],
-            parameters={":bypass": MockObject(name=":bypass"), "time": mock_time},
+        _make_plugin(
+            "delay", uri="mock://delay", category="Delay", has_footswitch=True,
+            parameters={Symbol("time"): mock_time},
         ),
-        MockObject(
-            instance_id="reverb",
-            uri="mock://reverb",
+        _make_plugin(
+            "reverb", uri="mock://reverb", category="Reverb", has_footswitch=True, bypassed=True,
+            parameters={Symbol("mix"): mock_mix},
         ),
-        MockObject(
-            instance_id="reverb",
-            uri="mock://reverb",
-            display_name="reverb",
-            is_bypassed=lambda: True,
-            category="Reverb",
-            has_footswitch=True,
-            controllers=[],
-            parameters={":bypass": MockObject(name=":bypass"), "mix": mock_mix},
-        ),
-        MockObject(
-            instance_id="chorus",
-            uri="mock://chorus",
-        ),
-        MockObject(
-            instance_id="chorus",
-            uri="mock://chorus",
-            display_name="chorus",
-            is_bypassed=lambda: False,
-            category="Modulator",
-            has_footswitch=False,
-            controllers=[],
-            parameters={":bypass": MockObject(name=":bypass")},
-        ),
+        _make_plugin("chorus", uri="mock://chorus", category="Modulator", has_footswitch=False),
     ]
-    ids = [p.instance_id for p in plugins]  # pyright: ignore[reportAttributeAccessIssue]
+    ids = [p.instance_id for p in plugins]
     connections = [
         Connection(
             src=Endpoint(kind=EndpointKind.PLUGIN, id=ids[i], port_symbol="", port_idx=0),
@@ -160,18 +153,16 @@ def setup_main_ui(instance):
         )
         for i in range(len(ids) - 1)
     ]
-    mock_pedalboard = MockObject(title="Rock Rig", plugins=plugins, connections=connections)
-    mock_current = MockObject(
+    mock_pedalboard = _make_pedalboard("Rock Rig", plugins, connections)
+    mock_current = Current(
         pedalboard=mock_pedalboard,
         presets={0: "Clean", 1: "Lead"},
         preset_index=0,
         analog_controllers={
-            "exp:pedal": {Token.ID: 0, Token.TYPE: Token.EXPRESSION, Token.COLOR: "Red", Token.NAME: "Wah"},
+            "exp:pedal": {Token.ID: 0, Token.TYPE: ControlType.EXPRESSION},
         },
     )
-    mock_footswitches = [
-        MockObject(id=i, toggled=False, get_display_label=lambda: "", parameter=None) for i in range(4)
-    ]
+    mock_footswitches = [_make_footswitch(i) for i in range(4)]
     instance.link_data(pedalboards=[mock_pedalboard], current=mock_current, footswitches=mock_footswitches)
     instance.draw_main_panel()
 
@@ -191,15 +182,15 @@ def test_main_panel_snapshot(lcd, snapshot):
 
 def test_analog_assignments_snapshot(lcd, snapshot):
     instance, _ = lcd
-    mock_pedalboard = MockObject(title="Analog Test", plugins=[], connections=[])
-    mock_current = MockObject(
+    mock_pedalboard = _make_pedalboard("Analog Test", [], [])
+    mock_current = Current(
         pedalboard=mock_pedalboard,
         presets={0: "Clean"},
         preset_index=0,
         analog_controllers={
-            "exp:pedal": {Token.ID: 0, Token.TYPE: Token.EXPRESSION, Token.COLOR: "Red", Token.NAME: "Wah"},
-            "gain:knob": {Token.ID: 1, Token.TYPE: Token.KNOB, Token.COLOR: "Green", Token.NAME: "Gain"},
-            "vol:knob": {Token.ID: 2, Token.TYPE: Token.VOLUME, Token.COLOR: "Blue", Token.NAME: "Volume"},
+            "exp:pedal": {Token.ID: 0, Token.TYPE: ControlType.EXPRESSION},
+            "gain:knob": {Token.ID: 1, Token.TYPE: ControlType.KNOB},
+            "vol:knob": {Token.ID: 2, Token.TYPE: ControlType.VOLUME},
         },
     )
     instance.link_data(pedalboards=[mock_pedalboard], current=mock_current, footswitches=[])
@@ -230,37 +221,126 @@ def test_system_info_dialog_snapshot(lcd, snapshot):
     snapshot()
 
 
+def test_system_info_dialog_no_network(lcd, snapshot):
+    """No IP lines shown when neither WiFi nor Ethernet is connected."""
+    instance, _ = lcd
+    instance.handler.wifi_ip = None
+    instance.handler.ethernet_ip = None
+    setup_main_ui(instance)
+    instance.draw_system_info_dialog(None)
+    snapshot()
+
+
+def test_system_info_dialog_wifi_ip(lcd, snapshot):
+    """WiFi IP shown when connected."""
+    instance, _ = lcd
+    instance.handler.wifi_ip = "192.168.2.152"
+    instance.handler.ethernet_ip = None
+    setup_main_ui(instance)
+    instance.draw_system_info_dialog(None)
+    snapshot()
+
+
+def test_system_info_dialog_ethernet_ip(lcd, snapshot):
+    """Ethernet IP shown when connected."""
+    instance, _ = lcd
+    instance.handler.wifi_ip = None
+    instance.handler.ethernet_ip = "192.168.2.100"
+    setup_main_ui(instance)
+    instance.draw_system_info_dialog(None)
+    snapshot()
+
+
+def test_system_info_dialog_both_ips(lcd, snapshot):
+    """Both IPs shown when both connected."""
+    instance, _ = lcd
+    instance.handler.wifi_ip = "192.168.2.152"
+    instance.handler.ethernet_ip = "192.168.2.100"
+    setup_main_ui(instance)
+    instance.draw_system_info_dialog(None)
+    snapshot()
+
+
 def test_parameter_dialog_snapshot(lcd, snapshot):
     instance, _ = lcd
     setup_main_ui(instance)
-    mock_param = MockObject(
-        name="Gain",
-        instance_id="delay",
-        value=0.5,
-        minimum=0.0,
-        maximum=1.0,
-        type=MockObject(value=0),
-        get_taper=lambda: 1,
-        format=lambda v: f"{v:.2f}",
-    )
+    mock_param = _real_param(name="Gain", instance_id="delay", value=0.5)
     instance.draw_parameter_dialog(mock_param)
     snapshot()
 
 
+def test_parameter_dialog_batches_detents(lcd):
+    """A tick's worth of detents advances the value once, in a single render.
+
+    On v2 the nav encoder is the only way into this dialog, so a per-detent
+    render would put a fast spin over the 10ms tick budget.
+    """
+    instance, _ = lcd
+    setup_main_ui(instance)
+    mock_param = _real_param(name="Gain", instance_id="delay", value=0.5)
+    dialog = instance.draw_parameter_dialog(mock_param)
+
+    renders = 0
+    original = dialog._draw_graph
+
+    def counting_draw_graph():
+        nonlocal renders
+        renders += 1
+        original()
+
+    dialog._draw_graph = counting_draw_graph
+    _enc_step(instance, 3)
+
+    # 0.5 sits on step 63 of the 128-step grid; 3 detents → step 66.
+    assert dialog.parameter.value == pytest.approx(dialog.steps.values[66])
+    assert renders == 1
+
+
+def test_parameter_dialog_applies_encoder_multiplier(lcd):
+    """The nav encoder's speed factor scales the step; menus ignore it."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    mock_param = _real_param(name="Gain", instance_id="delay", value=0.0)
+    dialog = instance.draw_parameter_dialog(mock_param)
+
+    # 2 detents at 3x = 6 grid steps from the bottom.
+    _enc_step(instance, 2, multiplier=3.0)
+    assert dialog.parameter.value == pytest.approx(dialog.steps.values[6])
+
+
+def test_menu_ignores_encoder_multiplier(lcd):
+    """Selection is discrete: a fast spin must not skip extra widgets."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    panel = instance.pstack.current
+
+    _enc_step(instance, 2, multiplier=4.0)
+    accelerated = panel.sel_ref
+
+    _enc_step(instance, -2, multiplier=4.0)
+    _enc_step(instance, 2)
+
+    assert panel.sel_ref is accelerated
+
+
+def test_menu_batches_detents_into_one_selection_move(lcd):
+    """A batch of detents lands on the same widget as the same number of singles."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    panel = instance.pstack.current
+
+    _enc_step(instance, 3)
+    batched = panel.sel_ref
+
+    _enc_step(instance, -3)
+    for _ in range(3):
+        _enc_step(instance, 1)
+
+    assert panel.sel_ref is batched
+
+
 def _mock_param(**overrides):
-    defaults = dict(
-        name="Gain",
-        symbol="gain",
-        instance_id="delay",
-        value=0.5,
-        minimum=0.0,
-        maximum=1.0,
-        type=MockObject(value=0),
-        get_taper=lambda: 1,
-        format=lambda v: f"{v:.2f}",
-    )
-    defaults.update(overrides)
-    return MockObject(**defaults)
+    return _real_param(**overrides)
 
 
 def test_tweak_dialog_has_no_timeout_and_shows_close_button(lcd):
@@ -280,6 +360,24 @@ def test_tweak_dialog_never_autocloses(lcd):
     assert d.expiry_time is None
     d.tick()
     assert d.parent is not None  # still open
+
+
+def test_tweak_button_click_closes_parameter_dialog(lcd):
+    """A tweak/volume encoder button press confirms & closes an open param dialog
+    (the NAV button isn't the only way to dismiss it)."""
+    from pistomp.controller import Controller
+    from pistomp.input.event import SwitchEvent, SwitchEventKind
+
+    instance, _ = lcd
+    setup_main_ui(instance)
+    d = instance.draw_parameter_dialog(_mock_param())
+    assert d.parent is not None  # open
+
+    knob = Controller(midi_channel=0, midi_CC=None)
+    knob.type = ControlType.KNOB
+    knob.id = 1
+    instance.handle(SwitchEvent(controller=knob, kind=SwitchEventKind.PRESS, timestamp=0.0))
+    assert d.parent is None  # closed by the tweak-button click
 
 
 def test_volume_dialog_autocloses_and_has_no_close_button(lcd):
@@ -323,35 +421,230 @@ def test_plugin_longpress_opens_parameter_menu(lcd, snapshot):
     snapshot()
 
 
-def test_update_footswitch_off_snapshot(lcd, snapshot):
-    instance, _ = lcd
-    mock_fs = MockObject(id=0, toggled=True, get_display_label=lambda: "Dist", color="Red", parameter=None)
-    mock_current = MockObject(
-        pedalboard=MockObject(title="PB", plugins=[], connections=[]),
-        presets={0: "Clean"},
-        preset_index=0,
-        analog_controllers={},
+def _footswitch_row(plugin, symbol, control_id, shadow_state=ShadowState.ACTIVE):
+    return BindingDecl(
+        control=ControlRef(cls=ControlClass.FOOTSWITCH, id=control_id),
+        event_kind=EventKind.PRESS,
+        effects=(ParamEffect(plugin=plugin, symbol=symbol),),
+        context=ContextRef(kind=ContextKind.PEDALBOARD),
+        shadow_state=shadow_state,
     )
-    instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
-    instance.draw_main_panel()
-    mock_fs.toggled = False  # pyright: ignore[reportAttributeAccessIssue]
-    instance.update_footswitch(mock_fs)
+
+
+def test_footswitch_badge_letter_from_effective_table(lcd):
+    """(A)-(D): footswitch_badge_letter reads the effective binding table and
+    resolves the physical footswitch's slot letter, not the CC identity."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    distortion = instance.current.pedalboard.plugins[0]
+    gain_param = distortion.parameters[Symbol("gain")]
+
+    fs = Footswitch(id=2, led_pin=None, pixel=None, midi_CC=10, midi_channel=0, refresh_callback=MagicMock())
+    instance.handler.hardware.controllers = {"0:10": fs}
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.FOOTSWITCH, EventKind.PRESS): [_footswitch_row(distortion, gain_param.symbol, "0:10")]
+                },
+            )
+        ]
+    )
+
+    assert instance.footswitch_badge_letter(distortion, gain_param) == "C"
+
+
+def test_footswitch_badge_letter_none_when_shadowed(lcd):
+    """Badge honesty (requirement 5): a SHADOWED row must not surface a badge."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    distortion = instance.current.pedalboard.plugins[0]
+    gain_param = distortion.parameters[Symbol("gain")]
+
+    fs = Footswitch(id=0, led_pin=None, pixel=None, midi_CC=10, midi_channel=0, refresh_callback=MagicMock())
+    instance.handler.hardware.controllers = {"0:10": fs}
+    row = _footswitch_row(distortion, "gain", "0:10", shadow_state=ShadowState.SHADOWED)
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD), rows={(ControlClass.FOOTSWITCH, EventKind.PRESS): [row]}
+            )
+        ]
+    )
+
+    assert instance.footswitch_badge_letter(distortion, gain_param) is None
+
+
+def _analog_row(plugin, symbol, control_id, shadow_state=ShadowState.ACTIVE):
+    return BindingDecl(
+        control=ControlRef(cls=ControlClass.ANALOG, id=control_id),
+        event_kind=EventKind.ROTATE,
+        effects=(ParamEffect(plugin=plugin, symbol=symbol),),
+        context=ContextRef(kind=ContextKind.PEDALBOARD),
+        shadow_state=shadow_state,
+    )
+
+
+def test_tweak_badge_number_from_effective_table(lcd):
+    """1/2/3: tweak_badge_number reads the effective table's legacy
+    ANALOG-class binding — the TTL/config-bound tweak encoder, independent of
+    any open custom panel (TWEAK rows themselves are always panel-scoped)."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    distortion = instance.current.pedalboard.plugins[0]
+    gain_param = distortion.parameters[Symbol("gain")]
+
+    enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=2)
+    instance.handler.hardware.controllers = {"encoder2": enc}
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.symbol, "encoder2")]
+                },
+            )
+        ]
+    )
+
+    assert instance.tweak_badge_number(distortion, gain_param) == 2
+
+
+def test_tweak_badge_number_none_when_shadowed(lcd):
+    """Badge honesty: a SHADOWED analog row must not surface a tweak badge."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    distortion = instance.current.pedalboard.plugins[0]
+    gain_param = distortion.parameters[Symbol("gain")]
+
+    enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=2)
+    instance.handler.hardware.controllers = {"encoder2": enc}
+    row = _analog_row(distortion, gain_param.symbol, "encoder2", shadow_state=ShadowState.SHADOWED)
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD), rows={(ControlClass.ANALOG, EventKind.ROTATE): [row]}
+            )
+        ]
+    )
+
+    assert instance.tweak_badge_number(distortion, gain_param) is None
+
+
+def test_parameter_menu_shows_tweak_badge(lcd, snapshot):
+    """The parameter window shows badge on list rows for tweak-bound params."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    distortion = instance.current.pedalboard.plugins[0]
+    gain_param = distortion.parameters[Symbol("gain")]
+
+    enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=3)
+    instance.handler.hardware.controllers = {"encoder3": enc}
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.symbol, "encoder3")]
+                },
+            )
+        ]
+    )
+
+    # Long-press opens ParameterWindow
+    instance.main_panel.sel_widget(instance.w_plugins[0])
+    instance.main_panel.input_event(InputEvent.LONG_CLICK)
     snapshot()
 
 
-def test_update_footswitch_on_snapshot(lcd, snapshot):
+def test_parameter_dialog_shows_tweak_badge_snapshot(lcd, snapshot):
+    """Parameterdialog badges itself ② when opened for a parameter that's
+    TTL/config-bound to a physical tweak encoder."""
     instance, _ = lcd
-    mock_fs = MockObject(id=1, toggled=False, get_display_label=lambda: "Drive", color="Orange", parameter=None)
-    mock_current = MockObject(
-        pedalboard=MockObject(title="PB", plugins=[], connections=[]),
-        presets={0: "Clean"},
-        preset_index=0,
-        analog_controllers={},
+    setup_main_ui(instance)
+    distortion = instance.current.pedalboard.plugins[0]
+    gain_param = distortion.parameters[Symbol("gain")]
+
+    enc = EncoderController(d_pin=None, clk_pin=None, type=None, id=2)
+    instance.handler.hardware.controllers = {"encoder2": enc}
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.ANALOG, EventKind.ROTATE): [_analog_row(distortion, gain_param.symbol, "encoder2")]
+                },
+            )
+        ]
     )
-    instance.link_data(pedalboards=[], current=mock_current, footswitches=[mock_fs])
-    instance.draw_main_panel()
-    mock_fs.toggled = True  # pyright: ignore[reportAttributeAccessIssue]
-    instance.update_footswitch(mock_fs)
+
+    instance.draw_parameter_dialog(gain_param)
+    snapshot()
+
+
+def test_parameter_dialog_shows_tweak_badge_for_external_param(lcd):
+    """External MIDI-CC controllers get a MidiCcEffect row in the pedalboard
+    layer (controller_manager._bind_external_controllers). The badge comes
+    from that row via the effective table, not a direct controller lookup."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+
+    ext_info: PortInfo = {
+        "shortName": "external_71",
+        "symbol": Symbol("external_71"),
+        "ranges": {"minimum": 0, "maximum": 127},
+    }
+    ext_param = Parameter(ext_info, 0, "0:71", EXTERNAL_INSTANCE_ID)
+
+    enc = EncoderController(d_pin=None, clk_pin=None, type=ControlType.KNOB, id=2, midi_channel=0, midi_CC=71)
+    enc.bind_to_parameter(ext_param)
+    instance.handler.hardware.controllers = {"0:71": enc}
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.ANALOG, EventKind.ROTATE): [
+                        BindingDecl(
+                            control=ControlRef(cls=ControlClass.ANALOG, id="0:71"),
+                            event_kind=EventKind.ROTATE,
+                            effects=(MidiCcEffect(cc_ref="0:71"),),
+                            context=ContextRef(kind=ContextKind.PEDALBOARD),
+                        )
+                    ]
+                },
+            )
+        ]
+    )
+
+    d = instance.draw_parameter_dialog(ext_param)
+    assert d._badge is not None
+
+
+def test_parameter_menu_shows_footswitch_badge(lcd, snapshot):
+    """The parameter window shows badge on list rows for footswitch-bound params."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    distortion = instance.current.pedalboard.plugins[0]
+    gain_param = distortion.parameters[Symbol("gain")]
+
+    fs = Footswitch(id=0, led_pin=None, pixel=None, midi_CC=10, midi_channel=0, refresh_callback=MagicMock())
+    instance.handler.hardware.controllers = {"0:10": fs}
+    instance.handler.effective_table = ContextStack(
+        layers=[
+            ContextLayer(
+                ref=ContextRef(kind=ContextKind.PEDALBOARD),
+                rows={
+                    (ControlClass.FOOTSWITCH, EventKind.PRESS): [_footswitch_row(distortion, gain_param.symbol, "0:10")]
+                },
+            )
+        ]
+    )
+
+    # Long-press opens ParameterWindow
+    instance.main_panel.sel_widget(instance.w_plugins[0])
+    instance.main_panel.input_event(InputEvent.LONG_CLICK)
     snapshot()
 
 
@@ -424,9 +717,9 @@ def test_tap_tempo_snapshot(lcd, snapshot):
     tt = TapTempo()
     tt.enable(True)
     tt.set_bpm(120.0)
-    mock_fs = MockObject(id=2, toggled=True, get_display_label=lambda: "120", parameter=None, taptempo=tt)
-    mock_current = MockObject(
-        pedalboard=MockObject(title="BPM Test", plugins=[], connections=[]),
+    mock_fs = _make_footswitch(2, toggled=True, taptempo=tt)
+    mock_current = Current(
+        pedalboard=_make_pedalboard("BPM Test", [], []),
         presets={0: "Clean"},
         preset_index=0,
         analog_controllers={},
@@ -442,16 +735,9 @@ def test_tap_tempo_disable_clears_label(lcd, snapshot):
     tt = TapTempo()
     tt.enable(True)
     tt.set_bpm(120.0)
-    # Mirrors Footswitch.get_display_label(): BPM when enabled, empty when not.
-    mock_fs = MockObject(
-        id=2,
-        toggled=True,
-        get_display_label=lambda: str(round(tt.get_bpm())) if tt.is_enabled() else "",
-        parameter=None,
-        taptempo=tt,
-    )
-    mock_current = MockObject(
-        pedalboard=MockObject(title="BPM Test", plugins=[], connections=[]),
+    mock_fs = _make_footswitch(2, toggled=True, taptempo=tt)
+    mock_current = Current(
+        pedalboard=_make_pedalboard("BPM Test", [], []),
         presets={0: "Clean"},
         preset_index=0,
         analog_controllers={},
@@ -462,21 +748,16 @@ def test_tap_tempo_disable_clears_label(lcd, snapshot):
     snapshot("tap_tempo_enabled")
 
     tt.enable(False)
-    mock_fs.toggled = False  # pyright: ignore[reportAttributeAccessIssue]
+    mock_fs.toggled = False
     instance.update_footswitch(mock_fs)
     snapshot("tap_tempo_disabled")
 
 
 def test_update_footswitch_clears_label_when_empty(lcd):
     instance, _ = lcd
-    labels = ["120"]
-
-    def get_label():
-        return labels[0]
-
-    mock_fs = MockObject(id=2, toggled=True, get_display_label=get_label, parameter=None)
-    mock_current = MockObject(
-        pedalboard=MockObject(title="BPM Test", plugins=[], connections=[]),
+    mock_fs = _make_footswitch(2, toggled=True, display_label="120")
+    mock_current = Current(
+        pedalboard=_make_pedalboard("BPM Test", [], []),
         presets={0: "Clean"},
         preset_index=0,
         analog_controllers={},
@@ -488,23 +769,21 @@ def test_update_footswitch_clears_label_when_empty(lcd):
     wfs = instance.w_footswitches[0]
     assert wfs.label == "120"
 
-    labels[0] = ""
-    mock_fs.toggled = False  # pyright: ignore[reportAttributeAccessIssue]
+    mock_fs.display_label = ""
+    mock_fs.toggled = False
     instance.update_footswitch(mock_fs)
 
     assert wfs.label == "", f"Expected empty label after tap tempo disabled, got: {wfs.label!r}"
 
 
 def _setup_pedalboard(instance, pb):
-    mock_current = MockObject(
+    mock_current = Current(
         pedalboard=pb,
         presets={0: "Clean"},
         preset_index=0,
         analog_controllers={},
     )
-    mock_footswitches = [
-        MockObject(id=i, toggled=False, get_display_label=lambda: "", parameter=None) for i in range(4)
-    ]
+    mock_footswitches = [_make_footswitch(i) for i in range(4)]
     instance.link_data(pedalboards=[pb], current=mock_current, footswitches=mock_footswitches)
     instance.draw_main_panel()
 

@@ -1,25 +1,27 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from typing import Optional, Tuple
 from typing_extensions import override
 from abc import ABC
+from contextlib import contextmanager
 
 import pygame
 
-from uilib import profiling
 from uilib.box import Box
 from uilib.container import ContainerWidget
 from uilib.glyphs import render_rounded_mask, render_rounded_outline
@@ -28,7 +30,9 @@ from uilib.widget import Widget
 from uilib.misc import InputEvent, trace
 from uilib.paint import PaintContext, _pg_rect
 
-from pistomp.input.event import ControllerEvent, EncoderEvent
+from pistomp.controller import ControlType
+from common.contexts import BindingDecl
+from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.input.sink import InputSink
 
 #
@@ -111,10 +115,23 @@ class Panel(ContainerWidget, InputSink):
         self.sel_list.append(widget)  # TODO if a widget is not selectable, adding to sel_list seems wrong
 
     def _select_widget_ref(self, w):
-        if self.sel_ref is not None and self.sel_ref is not w:
-            self.sel_ref.set_selected(False)
-        self.sel_ref = w
-        w.set_selected(True)
+        # Batch the deselect + select so both dirty rects coalesce into a
+        # single LCD push, avoiding a two-frame artifact where the deselected
+        # widget pops inline before the selected widget's update arrives.
+        # During construction (before the panel is pushed onto a PanelStack)
+        # there is no LCD to push to, so skip batching.
+        stack = self.parent
+        if isinstance(stack, PanelStack):
+            with stack.batch():
+                if self.sel_ref is not None and self.sel_ref is not w:
+                    self.sel_ref.set_selected(False)
+                self.sel_ref = w
+                w.set_selected(True)
+        else:
+            if self.sel_ref is not None and self.sel_ref is not w:
+                self.sel_ref.set_selected(False)
+            self.sel_ref = w
+            w.set_selected(True)
 
     def _notify_detach(self, widget):
         if widget in self.sel_list:
@@ -130,7 +147,33 @@ class Panel(ContainerWidget, InputSink):
         elif event == InputEvent.RIGHT:
             self.sel_next()
             return True
+        elif event == InputEvent.CLICK:
+            return self._open_editor_for_selection()
         return False
+
+    def _open_editor_for_selection(self) -> bool:
+        """CLICK on a selected widget that didn't handle it itself: open a
+        value editor for whatever it represents. Base no-op — panels with
+        nothing to edit (menus, system screens) are unaffected; PluginPanel
+        overrides this."""
+        return False
+
+    def input_step(self, direction: int, count: int, multiplier: float = 1.0) -> bool:
+        """Handle a tick's worth of encoder detents.
+
+        Selection moves `count` places in one go, so the batch costs a single
+        deselect/select repaint rather than one per detent. A tick is 10ms, so
+        this still reads as scanning rather than jumping. `multiplier` is the
+        encoder's speed factor; discrete selection ignores it. Panels driving a
+        continuous value (see Parameterdialog) override this.
+        """
+        event = InputEvent.RIGHT if direction > 0 else InputEvent.LEFT
+        if self.sel_ref is not None and self.sel_ref.input_event(event):
+            for _ in range(count - 1):
+                self.sel_ref.input_event(event)
+            return True
+        self._step_sel(direction * count)
+        return True
 
     def _step_sel(self, delta):
         flat = self._flat_sel()
@@ -174,16 +217,38 @@ class Panel(ContainerWidget, InputSink):
     def _get_panel(self):
         return self
 
-    # ── InputSink: tweak-encoder dispatch (NAV stays on the legacy enc_step path) ──
+    # ── InputSink: the base panel owns NAV; panels drive their own controls ──
 
     def handle(self, event: ControllerEvent) -> bool:
         match event:
-            case EncoderEvent() if event.controller.id in (1, 2, 3):
-                return self.on_encoder_rotation(event.controller.id, event.rotations)
+            case EncoderEvent() if event.controller.type == ControlType.NAV:
+                d = event.rotations
+                if d == 0:
+                    return True
+                return self.input_step(1 if d > 0 else -1, abs(d), event.multiplier)
+            case SwitchEvent() if event.controller.type == ControlType.NAV:
+                click = InputEvent.LONG_CLICK if event.kind is SwitchEventKind.LONGPRESS else InputEvent.CLICK
+                return self.input_event(click)
+        if self.on_event(event):
+            return True
+        match event:
+            case SwitchEvent() if (
+                event.kind is SwitchEventKind.PRESS
+                and event.controller.type in (ControlType.KNOB, ControlType.VOLUME)
+            ):
+                return self.input_event(InputEvent.CLICK)
         return False
 
-    def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:
-        return False  # default: release (let the handler cascade pick it up)
+    def on_event(self, event: ControllerEvent) -> bool:
+        """Handle this panel's own non-NAV controls. NAV is owned by the base
+        panel and never reaches here."""
+        return False
+
+    def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        """This panel's own TWEAK/VOLUME(opt-in)/FOOTSWITCH(opt-in) rows.
+        Base returns (); override to declare bindings resolved via
+        pistomp.input.dispatch.resolve_local/fire."""
+        return ()
 
     def wants_fast_tick(self) -> bool:
         """Returns True iff this panel renders at a high refresh rate."""
@@ -261,6 +326,13 @@ class ShroudedPanel(Panel):
 
         ctx = PaintContext(self.surface, cbox, frame=self.box.norm())
         child.do_draw(ctx, cbox)
+        # A slot spans the panel's full height, so it repaints over whatever
+        # do_draw normally lays down after its children. Re-apply that, clipped
+        # to the slot.
+        with ctx.painting(self.box.norm()) as pctx:
+            self._draw_outline(pctx)
+            self._draw_selection(pctx)
+            self._draw_badge(pctx)
         self.propagate_dirty(cbox)
 
 
@@ -353,6 +425,10 @@ class PanelStack(ContainerWidget):
         #     and the offset remains 0,0 (don't try to scroll)
         if box is None:
             box = Box((0, 0), lcd.dimensions())
+        # The root stays opaque even when dimming. It is a blend *destination*:
+        # 32-bit keeps full 8-bit blend precision, but a dest alpha channel buys
+        # nothing, and an SRCALPHA root would force the LCD's 565 convert-blit
+        # down SDL's alpha-blending path (~7x slower).
         if image_format is None:
             image_format = lcd.default_format()
 
@@ -376,6 +452,24 @@ class PanelStack(ContainerWidget):
         self.lcd_needs_update = False
         self._pending_lcd_clip: Optional[Box] = None  # None = full screen or nothing pending
         self.capture_callback = None
+        self._batching = False
+
+    @contextmanager
+    def batch(self):
+        """Suppress inline LCD pushes so multiple dirty rects coalesce into one flush.
+
+        During a batch, ``propagate_dirty`` always coalesces into
+        ``_pending_lcd_clip`` instead of pushing small clips inline.
+        On exit, any coalesced dirty region is flushed in a single
+        ``lcd.update()`` call.
+        """
+        self._batching = True
+        try:
+            yield
+        finally:
+            self._batching = False
+            if self.lcd_needs_update:
+                self._flush_lcd()
 
     def poll_updates(self):
         if self.lcd_needs_update:
@@ -423,40 +517,47 @@ class PanelStack(ContainerWidget):
         if top is not None and top.opaque and top.box is not None and top.box.contains(clip):
             # Fast path: opaque fullscreen top panel covers the dirty clip —
             # skip erasing the stack surface and skip all lower panels.
-            with profiling.measure("panelstack.recompose"):
-                inter = clip.intersection(top.box)
-                if not inter.is_empty():
-                    ctx = PaintContext(self.surface, inter)
-                    top.do_draw(ctx, top.box)
+            inter = clip.intersection(top.box)
+            if not inter.is_empty():
+                ctx = PaintContext(self.surface, inter)
+                top.do_draw(ctx, top.box)
         else:
-            with profiling.measure("panelstack.recompose"):
-                erase_ctx = PaintContext(self.surface, clip, frame=clip)
-                self._draw_erase(erase_ctx)
+            erase_ctx = PaintContext(self.surface, clip, frame=clip)
+            self._draw_erase(erase_ctx)
 
-                for p in self.stack:
-                    if self.dimmer is not None and not p.no_dim:
-                        self.surface.blit(self.dimmer, clip.topleft, area=_pg_rect(clip))
-                    d = p.decorator
-                    if d is not None:
-                        inter = clip.intersection(d.box)
-                        if not inter.is_empty():
-                            ctx = PaintContext(self.surface, inter)
-                            d.do_draw(ctx, d.box)
-                    inter = clip.intersection(p.box)
+            for p in self.stack:
+                if self.dimmer is not None and not p.no_dim:
+                    self.surface.blit(self.dimmer, clip.topleft, area=_pg_rect(clip))
+                d = p.decorator
+                if d is not None:
+                    inter = clip.intersection(d.box)
                     if not inter.is_empty():
                         ctx = PaintContext(self.surface, inter)
-                        p.do_draw(ctx, p.box)
+                        d.do_draw(ctx, d.box)
+                inter = clip.intersection(p.box)
+                if not inter.is_empty():
+                    ctx = PaintContext(self.surface, inter)
+                    p.do_draw(ctx, p.box)
 
         if self.capture_callback:
             self.capture_callback(self.surface)
 
-        if self.lcd.transfer_ms(clip) <= self.INLINE_BUDGET_MS:
+        if not self._batching and self.lcd.transfer_ms(clip) <= self.INLINE_BUDGET_MS:
             self.lcd.update(self.surface, clip)
             return
 
-        # Coalesce into the pending push; None means a full-screen redraw is
-        # already pending (from push/pop).
-        if self._pending_lcd_clip is not None:
+        # Coalesce into the pending push. ``_pending_lcd_clip`` is None only
+        # when a full-screen redraw is already pending (from push/pop); in
+        # that case, leave it None (full screen ⊇ any clip). Otherwise, union
+        # the clip into the pending region — if nothing was pending yet, this
+        # establishes the clip as the pending region.
+        if self._pending_lcd_clip is None:
+            # A structural change (push/pop) set None = full screen pending.
+            # If lcd_needs_update is False, nothing is actually pending and we
+            # should start a new coalesced region with this clip.
+            if not self.lcd_needs_update:
+                self._pending_lcd_clip = clip
+        else:
             self._pending_lcd_clip = self._pending_lcd_clip.union(clip)
         self.lcd_needs_update = True
 
@@ -509,12 +610,6 @@ class PanelStack(ContainerWidget):
             if isinstance(p, type):
                 return p
         return None
-
-    def input_event(self, event):
-        assert isinstance(event, InputEvent)
-        if self.current is not None:
-            return self.current.input_event(event)
-        return False
 
 
 class PanelDecorator(Widget):

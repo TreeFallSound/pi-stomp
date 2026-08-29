@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Full-screen text viewer for the Notes LV2 plugin."""
 
 from __future__ import annotations
@@ -7,13 +24,11 @@ from dataclasses import dataclass
 
 from typing_extensions import override
 
-import common.token as Token
 from modalapi.plugin import Plugin
 from modalapi.plugin_customization import PluginExtraData, extra_data_as
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.customization import PluginCustomization, register
 from plugins.notes import NOTES_URI
-from pistomp.input.event import ControllerEvent, EncoderEvent
 from uilib.box import Box
 from uilib.config import Config
 from uilib.misc import TextHAlign, get_text_size
@@ -21,7 +36,9 @@ from uilib.paint import PaintContext
 from uilib.text import TextWidget
 from uilib.widget import Widget
 
-_NOTES_RE = re.compile(r'<[^>]*notes#text>\s+"""(.*?)"""', re.DOTALL)
+_NOTES_URI = "http://open-music-kontrollers.ch/lv2/notes#text"
+# Turtle only long-quotes when the text needs it; a one-line note is plain-quoted.
+_NOTES_RE = re.compile(r'<[^>]*notes#text>\s+(?:"""(.*?)"""|"((?:[^"\\]|\\.)*)")', re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -31,9 +48,23 @@ class NotesData(PluginExtraData):
     text: str
 
 
+_TTL_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\"}
+
+
+def _unescape(s: str) -> str:
+    return re.sub(r"\\(.)", lambda m: _TTL_ESCAPES.get(m.group(1), m.group(1)), s)
+
+
 def _parse_notes(ttl: str) -> NotesData | None:
     m = _NOTES_RE.search(ttl)
-    return NotesData(text=m.group(1)) if m else None
+    if m is None:
+        return None
+    long_form, short_form = m.group(1), m.group(2)
+    return NotesData(text=long_form if long_form is not None else _unescape(short_form))
+
+
+def _patch_notes(param_uri: str, value: str) -> NotesData | None:
+    return NotesData(text=value) if param_uri == _NOTES_URI else None
 
 
 def _notes_text(plugin: Plugin) -> str:
@@ -111,6 +142,8 @@ class NotesPanel(FullscreenPluginPanel[None]):
     events fall through to the normal handler cascade.
     """
 
+    plugin: Plugin  # narrowing: NotesPanel is always a Plugin panel
+
     # ── PluginPanel contract ───────────────────────────────────────────────
 
     def snapshot_state(self) -> None:
@@ -149,26 +182,22 @@ class NotesPanel(FullscreenPluginPanel[None]):
         )
 
         # Bypass and Reset don't apply to a read-only notes viewer.
-        # Hide them before base adds chrome to sel_list.
-        self._btn_bypass.visible = False
+        # Hide them before base adds chrome to sel_list. FullscreenPluginPanel
+        # always creates the buttons before calling build_widgets.
+        if self._btn_bypass is not None:
+            self._btn_bypass.visible = False
         self._btn_reset.visible = False
         # Expand Back to span the full chrome row.
         self._btn_back.box = Box.xywh(_BTN_GAP, _H - _BTN_H - _BTN_GAP, _W - 2 * _BTN_GAP, _BTN_H)
 
-    # ── encoder routing ────────────────────────────────────────────────────
-
-    @override
-    def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:  # noqa: ARG002
-        return False  # Tweak encoders fall through
-
-    @override
-    def handle(self, event: ControllerEvent) -> bool:
-        if isinstance(event, EncoderEvent) and event.controller.type == Token.NAV:
-            self._scroll(event.rotations)
-            return True
-        return super().handle(event)
-
     # ── internal ───────────────────────────────────────────────────────────
+
+    @override
+    def input_step(self, direction: int, count: int, multiplier: float = 1.0) -> bool:
+        # NAV rotates scroll the text rather than moving selection — the
+        # sanctioned override point for shaping NAV's effect.
+        self._scroll(direction * count)
+        return True
 
     def _visible_text(self) -> str:
         return "\n".join(self._lines[self._top : self._top + self._vis_count])
@@ -198,4 +227,5 @@ register(
         tile_active_color=(214, 217, 111),
     ),
     extra_data_fn=_parse_notes,
+    patch_data_fn=_patch_notes,
 )

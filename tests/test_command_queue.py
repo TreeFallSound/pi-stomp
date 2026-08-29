@@ -3,6 +3,7 @@
 import threading
 import time
 from dataclasses import dataclass, field
+from unittest.mock import patch
 
 import pytest
 
@@ -16,6 +17,11 @@ class _Ctx:
     lock: threading.Lock = field(default_factory=threading.Lock)
     started: list = field(default_factory=list)
     finished: list = field(default_factory=list)
+    refreshes: int = 0
+
+    def request_refresh(self) -> None:
+        with self.lock:
+            self.refreshes += 1
 
 
 @dataclass
@@ -143,6 +149,35 @@ def test_poll_main_thread_only(queue, ctx):
     t.start()
     t.join()
     assert len(err) == 1
+
+
+def test_write_op_requests_status_refresh_but_scan_does_not(queue, ctx):
+    """A write op may have changed connectivity, so the poller is nudged for
+    fresh status. A scan changes nothing — nudging on every 2s scan would spin
+    the poller for no reason."""
+    results: list = []
+    queue.submit(SleepCmd("write", delay=0.0), results.append)
+    _drain(queue, results, 1)
+    assert ctx.refreshes == 1
+
+    queue.submit_scan(SleepCmd("scan", delay=0.0), results.append)
+    _drain(queue, results, 2)
+    assert ctx.refreshes == 1
+
+
+def test_worker_survives_a_failing_refresh(queue, ctx):
+    """A blowup in the post-op refresh must not kill the worker — that would
+    silently wedge every later wifi command."""
+    with patch.object(_Ctx, "request_refresh", side_effect=RuntimeError("nope")):
+        results: list = []
+        queue.submit(SleepCmd("A", delay=0.0), results.append)
+        _drain(queue, results, 1)
+        assert results == ["A"]
+
+    results2: list = []
+    queue.submit(SleepCmd("B", delay=0.0), results2.append)
+    _drain(queue, results2, 1)
+    assert results2 == ["B"]
 
 
 def test_shutdown_joins_worker(ctx):

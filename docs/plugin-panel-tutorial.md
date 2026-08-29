@@ -19,11 +19,15 @@ How many parameters, and are they band-based (freq/gain/Q)?
 
   Band-based, 3+ bands           → ParametricEqPanel or GraphicEqPanel
   Compressor (thr/rat/mak[/kn])  → CompressorPanel subclass
-  Up to ~10 flat parameters      → MultibandWindow subclass
+  Up to ~10 flat parameters      → no panel at all; declare pinned_params
   Needs a bespoke visualization  → FullscreenPluginPanel subclass
   Read-only display              → FullscreenPluginPanel[None]
   Non-parameter workflow (NAM)   → bare FullscreenPanel, not PluginPanel
 ```
+
+**Write a panel class only when you need pixels nobody else draws.** A flat set
+of parameters is not a panel — it is a `pinned_params` declaration (Step 2B),
+and the generic `ParameterWindow` renders it.
 
 Create the directory and files:
 
@@ -66,38 +70,42 @@ named `lv2_audio_in_1`/`lv2_audio_out_1`, pass `in_audio_sym`/`out_audio_sym`.
 
 ---
 
-## Step 2B: MultibandWindow (flat parameter grid)
+## Step 2B: Pinned params (flat parameter grid) — no class needed
 
-For 1-10 parameters that don't need a full-screen visualization — a compact
-card with one arc ring per parameter.
+For 1-10 parameters that don't need a full-screen visualization. There is no
+panel to write: long-pressing any plugin without a `panel_cls` opens the generic
+`ParameterWindow`, which renders the pinned params as arc rings and everything
+else as a scrollable list. All you declare is which params get rings, and in
+what order.
 
-`plugins/<name>/panel.py` (or `window.py`, matching existing plugins):
+`plugins/<name>/__init__.py` — the whole plugin:
 ```python
-from plugins.multiband_menu import MultibandWindow, ParamSlot
-
-class MyWindow(MultibandWindow):
-    def build_slots(self):
-        return [
-            ParamSlot("drive", "Drive", (255, 180, 80)),
-            ParamSlot("tone", "Tone", (130, 220, 110)),
-            ParamSlot("level", "Level", (200, 200, 200)),
-        ]
-```
-
-`plugins/<name>/__init__.py`:
-```python
+from common.parameter import Symbol
+from modalapi.plugin_customization import PinnedParam
 from plugins.customization import PluginCustomization, register
-from plugins.<name>.panel import MyWindow
+from uilib.misc import fmt_hz
 
 register(
     "urn:my-plugin-uri",
-    customization=PluginCustomization(panel_cls=MyWindow, display_name="My Plugin"),
+    customization=PluginCustomization(
+        display_name="My Plugin",
+        pinned_params=(
+            PinnedParam(Symbol("drive"), "Drive"),
+            PinnedParam(Symbol("tone"), "Tone"),
+            PinnedParam(Symbol("freq"), "Freq", display_fn=fmt_hz),
+        ),
+    ),
 )
 ```
 
-`ParamSlot(symbol, label, color, display_fn=None)`; add `display_fn` (a
-`Callable[[float], str]`) for units like Hz. Layout, Tweak1 editing, and
-LONG_CLICK reset are handled by the base.
+`PinnedParam(symbol, label, display_fn=None)`; `display_fn` is a
+`Callable[[float], str]` for units the LV2 metadata doesn't carry. Colour is
+derived from the param's unit at render time, not declared. Layout, badges,
+Tweak1 editing and LONG_CLICK reset all come from `ParameterWindow`.
+
+Declare nothing and you still get a window — a heuristic pins the first few
+continuous params. Reach for `pinned_params` when that picks wrong, or when the
+labels want to be shorter than the LV2 names.
 
 ---
 
@@ -206,6 +214,40 @@ class MyPanel(FullscreenPluginPanel[MyState]):
 For a read-only panel with no editable state, use `FullscreenPluginPanel[None]`
 (see `plugins/notes/panel.py`) and set `intercept_shortpress=True` in the
 registration if a short-press should open it instead of toggling bypass.
+
+---
+
+## Step 2E: Hiding ports the user must never touch
+
+Most plugins expose ports no UI should paint: a `notOnGUI` internal, an LV2
+`freeWheeling` port, or a redundant author-rolled bypass. **You usually don't
+have to do anything** — `common.parameter.is_hidden_port` already drops any port
+carrying `notOnGUI` or one of the `HIDDEN_DESIGNATIONS` (197 of the 5913 control
+ports on a stock device), mirroring the list mod-ui itself calls "badports".
+
+That includes the LV2-designated `enabled` port, which is worth understanding:
+mod-host writes the *inverse of the bypass value* into it. It isn't merely
+redundant with `:bypass` — it **is** `:bypass`, so exposing it would hand the
+user a knob that silently desyncs the bypass state.
+
+A minority of plugins (Calf, Invada) roll their own `bypass`/`on`/`power` port
+and declare no metadata at all. Nothing can catch those automatically — symbol
+names are worthless as a global rule, since `on` is a redundant bypass in Calf
+Reverb and a real control elsewhere. Curate them per-URI in
+`plugins/redundant_ports.py`:
+
+```python
+hide_params("http://calf.sourceforge.net/plugins/Compressor", symbols=frozenset({Symbol("bypass")}))
+```
+
+`hide_params` and `register` both *merge* `hidden_params`, so a plugin can have
+a panel and a curated hide list without the two clobbering each other,
+whichever imports first.
+
+Hiding is a display exclusion, not a deletion: the `Parameter` stays in
+`plugin.parameters`, so MIDI bindings, `pedalboard_snapshot`/Reset and inbound
+`param_set` echo reconciliation all keep working. Only
+`Plugin.visible_parameters` — what the UI paints — is filtered.
 
 ---
 

@@ -1,22 +1,24 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
 
 import pistomp.analogVU as AnalogVU
-import common.token as Token
+from pistomp.controller import ControlType
 import common.util as Util
 import pistomp.encoder_controller as EncoderController
 import pistomp.hardware as hardware
@@ -89,7 +91,7 @@ class Pistomptre(hardware.Hardware):
                                      spi_speed_hz=50_000_000,
                                      reset=not has_system_splash()))
 
-    def add_encoder(self, id, type, callback, longpress_callback, midi_channel, midi_cc):
+    def add_encoder(self, id, type, longpress_callback, midi_channel, midi_cc):
         enc_pins = Util.DICT_GET(ENC, id)
         if enc_pins is None:
             raise ValueError("Cannot create encoder object for id:", id)
@@ -99,10 +101,10 @@ class Pistomptre(hardware.Hardware):
         sw_pin = Util.DICT_GET(enc_pins, 'SW')
 
         # Volume encoders have no MIDI CC; tweak encoders are KNOB-typed.
-        if type == Token.VOLUME:
+        if type == ControlType.VOLUME:
             enc_type, enc_cc = type, None
         else:
-            enc_type, enc_cc = Token.KNOB, midi_cc
+            enc_type, enc_cc = ControlType.KNOB, midi_cc
 
         return EncoderController.EncoderController(
             d_pin=d_pin, clk_pin=clk_pin,
@@ -114,29 +116,26 @@ class Pistomptre(hardware.Hardware):
 
     def init_encoders(self):
         enc = EncoderController.EncoderController(
-            NAV_PIN_D, NAV_PIN_CLK, type=Token.NAV,
+            NAV_PIN_D, NAV_PIN_CLK, type=ControlType.NAV,
             sw_adc_chan=NAV_ADC_CHAN, spi=self.spi,
             max_drain=1,  # one detent per tick → visible selector scanning
         )
         self.encoders.append(enc)
 
         # Tweak encoders
-        cfg = self.default_cfg.copy()
-        self.create_encoders(cfg)
+        self.create_encoders(self.config)
 
     def init_relays(self):
         pass
 
     def init_analog_controls(self):
         # These are defined in the config file
-        cfg = self.default_cfg.copy()
         if len(self.analog_controls) == 0:
-            self.create_analog_controls(cfg)
+            self.create_analog_controls(self.config)
     def init_footswitches(self):
         # These are defined in the config file
-        cfg = self.default_cfg.copy()
         if len(self.footswitches) == 0:
-            self.create_footswitches(cfg)
+            self.create_footswitches(self.config)
 
     def init_vu(self):
         if self.ledstrip is None:

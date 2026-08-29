@@ -42,11 +42,11 @@ def test_steady_reference_rate_is_unity(enc, monkeypatch):
 
 
 def test_fast_burst_amplifies(enc, monkeypatch):
-    # 4 detents in 20ms ⇒ 5ms/detent ⇒ 80/5 = 16× (clamped at MAX).
+    # 4 detents in 20ms ⇒ 5ms/detent ⇒ 80/5 = 16× (below MAX, no clamp).
     _clock(monkeypatch, [0.0, 0.020])
     enc._compute_multiplier(1)
     m = enc._compute_multiplier(4)
-    assert m == pytest.approx(EncoderController.MAX_MULTIPLIER)
+    assert m == pytest.approx(16.0)
 
 
 def test_slow_spin_stays_at_min(enc, monkeypatch):
@@ -66,7 +66,8 @@ def test_direction_reversal_resets(enc, monkeypatch):
 
 
 def test_multiplier_clamped_to_max(enc, monkeypatch):
-    # Extremely fast: many detents in ~0 time.
+    # Degenerate dt<=0 (same-ms bursts) returns MAX — the safety ceiling that
+    # bounds the raw signal. Per-parameter caps in ParameterSteps govern feel.
     _clock(monkeypatch, [0.0, 0.001])
     enc._compute_multiplier(1)
     assert enc._compute_multiplier(50) == EncoderController.MAX_MULTIPLIER
@@ -77,3 +78,14 @@ def test_continuous_curve_between_min_and_max(enc, monkeypatch):
     _clock(monkeypatch, [0.0, 0.040])
     enc._compute_multiplier(1)
     assert enc._compute_multiplier(2) == pytest.approx(4.0)
+
+
+def test_physical_spin_rate_unclamped(enc, monkeypatch):
+    # A realistic fast hand-spin (~2ms/detent) should not hit the degenerate
+    # MAX_MULTIPLIER ceiling; the per-parameter cap in ParameterSteps is the
+    # real governor. 1ms/detent ⇒ 80× raw.
+    _clock(monkeypatch, [0.0, 0.001])
+    enc._compute_multiplier(1)
+    m = enc._compute_multiplier(1)
+    assert m == pytest.approx(80.0)
+    assert m < EncoderController.MAX_MULTIPLIER

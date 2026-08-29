@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 """Type definitions for blend mode."""
@@ -18,13 +20,14 @@
 from dataclasses import dataclass
 from typing import Any, Callable, NamedTuple, NotRequired, Protocol, TypeAlias, TypedDict
 
+from common.parameter import Symbol
 from modalapi.parameter import Type as ParameterType
 
 
-# Domain identifiers. These are all `str` at runtime; the aliases exist so that
+# Domain identifiers. Symbol is a NewType (common.parameter) and is enforced;
+# the rest are `str` at runtime and exist so that
 # `dict[InstanceId, dict[Symbol, ParamData]]` reads as documentation.
 InstanceId: TypeAlias = str  # e.g. "BigMuffPi" (canonical, no leading slash)
-Symbol: TypeAlias = str  # e.g. "Tone", ":bypass"
 PositionKey: TypeAlias = str  # stringified float, e.g. "0.0", "0.5"
 SnapshotRef: TypeAlias = int | str  # snapshot index or name
 
@@ -70,6 +73,7 @@ class BlendInputProtocol(Protocol):
     """Protocol for blend mode input sources (expression pedal or encoder)."""
 
     id: int
+    type: str | None
 
     def get_normalized_value(self) -> float: ...
 

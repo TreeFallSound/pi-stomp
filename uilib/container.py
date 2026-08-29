@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from typing import Optional, Tuple
@@ -159,6 +161,7 @@ class ContainerWidget(Widget):
                         c._dirty = True
             self._draw_outline(ctx)
             self._draw_selection(ctx)
+            self._draw_badge(ctx)
             self._finalize_cache()
             self._dirty_region = None
             if self.visible and self.parent is not None:
@@ -175,6 +178,7 @@ class ContainerWidget(Widget):
                     c.do_draw(ctx, c.box.offset(local_frame))
             self._draw_outline(ctx)
             self._draw_selection(ctx)
+            self._draw_badge(ctx)
             self._finalize_cache()
             self._dirty_region = None
             if self.visible and self.parent is not None:
@@ -224,6 +228,7 @@ class ContainerWidget(Widget):
                                 c.do_draw(full_ctx, cf)
                     self._draw_outline(full_ctx)
                     self._draw_selection(full_ctx)
+                    self._draw_badge(full_ctx)
                 self._finalize_cache()
                 self._dirty_region = None
 

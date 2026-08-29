@@ -133,37 +133,6 @@ def _make_enc_midi(midi_CC=70, midi_channel=0):
     return enc
 
 
-def test_tweak_encoder_step_advances_midi_value():
-    enc = _make_enc_midi(midi_CC=70, midi_channel=2)
-    assert enc.midi_value == 64
-
-    enc.step(3)
-
-    assert enc.midi_value == 67
-
-
-def test_tweak_encoder_clamps_to_midi_range():
-    enc = _make_enc_midi()
-    enc.set_value(125)
-
-    enc.step(10)  # would go to 135 → clamped to 127
-    assert enc.midi_value == 127
-
-    enc.set_value(5)
-    enc.step(-20)  # would go to -15 → clamped to 0
-    assert enc.midi_value == 0
-
-
-def test_tweak_encoder_set_value_seeds_midi_value():
-    enc = _make_enc_midi()
-
-    enc.set_value(100)
-    assert enc.midi_value == 100
-
-    enc.set_value(33.7)
-    assert enc.midi_value == 34  # Encoder snaps to nearest step
-
-
 def test_tweak_encoder_step_dispatches_to_sink():
     enc = _make_enc_midi(midi_CC=70, midi_channel=0)
     sink = _make_sink()

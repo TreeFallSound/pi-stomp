@@ -1,10 +1,29 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 from __future__ import annotations
 
 import numpy as np
 import pygame
 
+from common.color import SELECT_COLOR
 from uilib.box import Box
 from uilib.glyphs.circle import RingGlyph
+from uilib.glyphs.tint import tint_mask
 from uilib.misc import INACTIVE_SHADE, get_text_size, shade_color
 from uilib.widget import Widget
 
@@ -18,8 +37,8 @@ _GRID = (46, 64, 54)
 _FRAME = (52, 78, 64)
 _UNITY = (74, 104, 84)
 _CURVE = (120, 240, 150)
-_RETICULE = (255, 200, 90)
-_RETICULE_DIM = (150, 118, 58)
+_RETICULE = SELECT_COLOR
+_RETICULE_DIM = (150, 150, 0)
 _LABEL = (150, 168, 156)
 _CURVE_THICKNESS = 1.4
 
@@ -187,9 +206,5 @@ class ReticuleGraphWidget(Widget):
             ctx.draw_line([(x, min(unity_y, y)), (x, max(unity_y, y))], fill=shade_color(_UNITY, shade), width=1)
         for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
             ctx.draw_line([(x + dx * 3, y + dy * 3), (x + dx * 8, y + dy * 8)], fill=col, width=1)
-        ring = RingGlyph(6, ring_half=0.9).render()
-        tinted = ring.copy()
-        cs = pygame.Surface(ring.get_size(), pygame.SRCALPHA)
-        cs.fill(col)
-        tinted.blit(cs, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-        ctx.paste(tinted, (x - 7, y - 7))
+        ring = RingGlyph(6, ring_half=0.75).render()
+        ctx.paste(tint_mask(ring, col), (x - 7, y - 7))

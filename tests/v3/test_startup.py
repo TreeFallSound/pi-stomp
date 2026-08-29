@@ -1,8 +1,9 @@
 """Startup, basic navigation, and footswitch press — smoke tests for the full stack."""
 
 import pistomp.switchstate as switchstate
-import common.token as Token
+from pistomp.controller import ControlType
 from pistomp.encoder_controller import EncoderController
+from tests.v3.nav_helpers import nav_click
 
 
 def test_v3_startup_snapshot(v3_system, snapshot):
@@ -14,7 +15,7 @@ def test_v3_startup_snapshot(v3_system, snapshot):
 def test_v3_nav_to_system_menu(v3_system, snapshot):
     """Wrench is initially selected; clicking encoder opens the system menu."""
     handler = v3_system.handler
-    handler.universal_encoder_sw(switchstate.Value.RELEASED)
+    nav_click(handler)
     snapshot()
 
 
@@ -37,7 +38,7 @@ def test_v3_nav_encoder_button_press_opens_system_menu(v3_system, snapshot):
     """Nav encoder button press routes through the sink pipeline to lcd.enc_sw."""
     hw = v3_system.hw
 
-    nav_enc = next(e for e in hw.encoders if isinstance(e, EncoderController) and e.type == Token.NAV)
+    nav_enc = next(e for e in hw.encoders if isinstance(e, EncoderController) and e.type == ControlType.NAV)
     nav_enc._on_button(switchstate.Value.RELEASED, timestamp=0.0)
 
     snapshot()

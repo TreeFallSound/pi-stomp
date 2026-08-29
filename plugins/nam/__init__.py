@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """NAM (Neural Amp Modeler) plugin customizations.
 
 Registers custom tile colors, border, display name, and subtitle
@@ -14,7 +31,8 @@ from dataclasses import dataclass
 
 from common.color import RectBorder
 from modalapi.plugin import Plugin
-from modalapi.plugin_customization import PluginExtraData, extra_data_as
+from common.parameter import Symbol
+from modalapi.plugin_customization import PluginExtraData, PinnedParam, extra_data_as
 from plugins.customization import PluginCustomization, register
 
 NAM_URIS = (
@@ -38,9 +56,19 @@ class NamData(PluginExtraData):
     model_path: str
 
 
+_MODEL_URI = "http://github.com/mikeoliphant/neural-amp-modeler-lv2#model"
+
+
 def _parse_nam(ttl: str) -> NamData | None:
     m = _MODEL_RE.search(ttl)
     return NamData(model_path=m.group(1)) if m else None
+
+
+def _patch_nam(param_uri: str, value: str) -> NamData | None:
+    # An unloaded slot patches an empty path; keep the generic name over "".
+    if param_uri != _MODEL_URI or not value:
+        return None
+    return NamData(model_path=value)
 
 
 def _model_filename(plugin: Plugin) -> str | None:
@@ -78,6 +106,12 @@ register(
         ),
         display_name_fn=_nam_display_name,
         subtitle_fn=_nam_subtitle,
+        pinned_params=(
+            PinnedParam(Symbol("input_level"), "Input"),
+            PinnedParam(Symbol("output_level"), "Output"),
+            PinnedParam(Symbol("quality_scale"), "Quality"),
+        ),
     ),
     extra_data_fn=_parse_nam,
+    patch_data_fn=_patch_nam,
 )

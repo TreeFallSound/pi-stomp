@@ -1,21 +1,24 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
 import pygame
@@ -23,8 +26,10 @@ import pygame
 from uilib.box import Box
 from uilib.config import Color, Config
 from uilib.glyphs import CircleGlyph, RingGlyph
-from uilib.misc import get_text_size
+from uilib.glyphs.tint import tint_mask
+from uilib.misc import InputEvent, get_text_size
 from uilib.paint import PaintContext
+from uilib.panel import ShroudedPanel
 from uilib.widget import Widget
 
 if TYPE_CHECKING:
@@ -42,7 +47,7 @@ class TapTempoProtocol(Protocol):
 DOT_RADIUS = 6
 DOT_TOP = 4
 DOT_DIAMETER = 2 * DOT_RADIUS
-LABEL_TOP = DOT_TOP + DOT_DIAMETER + 2  # 18
+LABEL_TOP = DOT_TOP + DOT_DIAMETER + 1  # 17
 
 # Letter badge: same size and y position as a bound dot.
 BADGE_RADIUS = DOT_RADIUS
@@ -55,15 +60,6 @@ SMALL_FONT_THRESHOLD = 60
 
 # Title white — same (255,255,255) used for pedalboard/snapshot titles.
 TITLE_WHITE: Color = (255, 255, 255)
-
-
-def tint_mask(mask: pygame.Surface, color: Color) -> pygame.Surface:
-    """Tint a white alpha-mask glyph into `color` (BLEND_RGBA_MULT on a copy)."""
-    tinted = mask.copy()
-    color_surf = pygame.Surface(mask.get_size(), pygame.SRCALPHA)
-    color_surf.fill(color)
-    tinted.blit(color_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-    return tinted
 
 
 class FootswitchWidget(Widget):
@@ -258,3 +254,29 @@ class FootswitchWidget(Widget):
 
     def toggle(self, is_bypassed: bool) -> None:
         self.is_bypassed = is_bypassed
+
+
+class FootswitchBarPanel(ShroudedPanel):
+    """The footswitch strip, selectable as one whole widget (never per-switch:
+    the individual FootswitchWidget children are never added to any sel_list).
+
+    CLICK and LONG_CLICK both delegate to ``on_press`` — this panel holds no
+    opinion on what that opens."""
+
+    def __init__(
+        self,
+        box: Box,
+        on_press: Callable[[], None] | None = None,
+        **kwargs,
+    ):
+        super(FootswitchBarPanel, self).__init__(box=box, **kwargs)
+        self.on_press = on_press
+
+    def sel_children(self):
+        return [self]
+
+    def input_event(self, event: InputEvent) -> bool:
+        if event in (InputEvent.CLICK, InputEvent.LONG_CLICK) and self.on_press is not None:
+            self.on_press()
+            return True
+        return False

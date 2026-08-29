@@ -1,31 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
 
-import bisect
 import logging
 import time
-from typing import List, Optional
+from typing import Optional
 
 import common.util as util
 import pistomp.controller as controller
-import pistomp.analogswitch as analogswitch
+import pistomp.adcswitch as adcswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
-from common.parameter import Parameter, Type
+from pistomp.controller import ControlType
 from pistomp.encoder import Encoder
 from pistomp.input.event import EncoderEvent, SwitchEvent, SwitchEventKind
 
@@ -34,29 +35,40 @@ def _clamp(value, min_value, max_value):
     return max(min_value, min(max_value, value))
 
 
+# Unbound fallback CC seeds at midpoint so a fresh tweak reads 50%.
+ENCODER_FALLBACK_DEFAULT = 64
+
+
+def encoder_key(controller: "EncoderController") -> str:
+    """Handler key for an encoder's unbound fallback CC. Same "channel:CC" shape
+    the effective table and external-parameter binding use."""
+    return f"{controller.midi_channel}:{controller.midi_CC}"
+
+
 class EncoderController(controller.Controller):
-    """Rotary encoder Controller. Owns a hardware Encoder, parameter quantizer,
-    and optional absorbed button. Dispatches events via self.sink.
+    """Rotary encoder Controller. Owns a hardware Encoder and an optional
+    absorbed button. Dispatches events via self.sink.
 
-    Two modes, distinguished by the handler via controller.type — not by the
-    controller itself, which dispatches identically in both:
-    - Nav mode (type=Token.NAV): the quantizer still advances, but the handler
-      reads only event.rotations and ignores new_value/new_midi_value.
-    - Param mode (midi_channel + midi_CC): the handler consumes the quantized
-      new_value/new_midi_value.
-
-    In both modes the quantizer is built at construction (whenever type or
-    midi_CC is set); nav simply leaves its output unused downstream.
+    An encoder is a delta source: refresh() reports rotations at a speed
+    multiplier and nothing more. It owns no copy of a value that belongs to
+    something else — the owner (a parameter via the handler, blend, a menu
+    selection) integrates the delta into whatever it owns. An unbound encoder
+    still emits a CC so mod-ui can MIDI-learn it (input/README.md), but that
+    fallback accumulator belongs to the handler (the emitter), not here.
 
     Button: if sw_pin is provided, owns a GpioSwitch that emits SwitchEvent
-    via self.sink. If sw_adc_chan is provided, owns an AnalogSwitch instead.
+    via self.sink. If sw_adc_chan is provided, owns an AdcSwitch instead.
     Longpress is stored as a string callback name resolved by the handler at
     dispatch time.
     """
 
     # Speed amplification: at this per-detent interval, multiplier = 1×.
     REFERENCE_DT_MS = 80.0
-    MAX_MULTIPLIER = 4.0
+    # Raw multiplier ceiling. High because the effective cap lives in
+    # ParameterSteps.effective_multiplier (per-parameter, resolution-aware);
+    # this only bounds the degenerate dt<=0 case and very fast spins on big
+    # grids. Each consumer (blend, fallback CC, params) applies its own cap.
+    MAX_MULTIPLIER = 1000.0
     MIN_MULTIPLIER = 1.0
 
     def __init__(
@@ -66,7 +78,7 @@ class EncoderController(controller.Controller):
         *,
         midi_channel: int = 0,
         midi_CC: Optional[int] = None,
-        type: Optional[str] = None,
+        type: ControlType | None = None,
         id: Optional[int] = None,
         sw_pin: Optional[int] = None,
         sw_adc_chan: Optional[int] = None,
@@ -79,18 +91,11 @@ class EncoderController(controller.Controller):
         self.type = type
         self.id = id
 
-        # Param-mode quantizer state (inert until bound or used)
-        self.step_values: List[float] = []
-        self.current_step: int = 0
-        self.num_steps: int = 128
         self._last_detent_time: Optional[float] = None
         self._last_direction: int = 0
-        if midi_channel is not None and midi_CC is not None or type is not None:
-            self._recalculate_steps()
-            self.set_value(64)
 
         # Absorbed button (GPIO or ADC)
-        self._button: Optional[gpioswitch.GpioSwitch | analogswitch.AnalogSwitch] = None
+        self._button: Optional[gpioswitch.GpioSwitch | adcswitch.AdcSwitch] = None
         self.longpress: Optional[str] = longpress  # string name; resolved at dispatch
         if sw_pin is not None:
             self._button = gpioswitch.GpioSwitch(
@@ -99,7 +104,7 @@ class EncoderController(controller.Controller):
                 longpress_callback=self._on_button_longpress,
             )
         elif sw_adc_chan is not None:
-            self._button = analogswitch.AnalogSwitch(
+            self._button = adcswitch.AdcSwitch(
                 spi,
                 sw_adc_chan,
                 callback=self._on_button,
@@ -131,69 +136,27 @@ class EncoderController(controller.Controller):
             else:
                 self._button.refresh()
 
-    # ── Quantizer ────────────────────────────────────────────────────────
+    # ── Value ────────────────────────────────────────────────────────────
 
-    @property
-    def taper(self) -> float:
-        return self.parameter.get_taper() if self.parameter is not None else 1.0
-
-    @property
-    def min_val(self) -> float:
-        return self.parameter.minimum if self.parameter is not None else self.midi_min
-
-    @property
-    def max_val(self) -> float:
-        return self.parameter.maximum if self.parameter is not None else self.midi_max
-
-    def _calculate_parameter_resolution(self) -> int:
-        if self.midi_CC is not None or self.parameter is None:
-            return 128
-        if self.parameter.type == Type.INTEGER:
-            return int(self.parameter.maximum - self.parameter.minimum) + 1
-        if self.parameter.type == Type.ENUMERATION:
-            return len(self.parameter.get_enum_value_list())
-        if self.parameter.type == Type.TOGGLED:
-            return 2
-        return 256
-
-    def _recalculate_steps(self) -> None:
-        self.step_values = []
-        self.num_steps = self._calculate_parameter_resolution()
-        if self.num_steps <= 1:
-            self.step_values = [self.min_val]
-            return
-        _taper = self.taper
-        rng = self.max_val - self.min_val
-        for i in range(self.num_steps):
-            pos = i / (self.num_steps - 1)
-            tapered_pos = pos**_taper
-            self.step_values.append(self.min_val + (rng * tapered_pos))
-
-    def bind_to_parameter(self, parameter: Parameter) -> None:
-        self.parameter = parameter
-        self._recalculate_steps()
-        self.set_value(parameter.value)
-        logging.debug(
-            f"EncoderController bound: id={self.id}, param={parameter.name}, "
-            f"midi_CC={self.midi_CC}, num_steps={self.num_steps}, value={parameter.value}"
+    def to_midi(self, value: float) -> int:
+        """Convert a bound-parameter value to this control's 7-bit CC byte. The
+        MIDI mechanics (range, channel, routing) are the controller's, not the
+        param's — the param stays MIDI-agnostic."""
+        assert self.parameter is not None, "to_midi is bound-only; unbound lives on the handler"
+        # mod-host maps the CC back onto the port with the port's own taper, so a
+        # logarithmic port needs the geometric inverse
+        position = util.to_normalized(
+            value, self.parameter.minimum, self.parameter.maximum, self.parameter.is_logarithmic
         )
+        midi_value = round(util.from_normalized(position, self.midi_min, self.midi_max))
+        return int(_clamp(midi_value, 0, 127))
 
-    def set_value(self, value: float) -> None:
-        idx = bisect.bisect_left(self.step_values, value)
-        if idx == 0:
-            self.current_step = 0
-        elif idx == len(self.step_values):
-            self.current_step = len(self.step_values) - 1
-        else:
-            if abs(self.step_values[idx - 1] - value) <= abs(self.step_values[idx] - value):
-                self.current_step = idx - 1
-            else:
-                self.current_step = idx
-        self.midi_value = self._value_to_midi(self.step_values[self.current_step])
-
-    def _move_steps(self, delta_steps: int) -> float:
-        self.current_step = _clamp(self.current_step + delta_steps, 0, len(self.step_values) - 1)
-        return self.step_values[self.current_step]
+    def bar_midi_value(self) -> int:
+        """0-127 for the LCD bar and the MIDI-learn emit of a *bound* encoder,
+        derived from the parameter (the owner). Unbound, the value lives on the
+        handler — ask Modhandler.encoder_fallback."""
+        assert self.parameter is not None, "bar_midi_value is bound-only; unbound lives on the handler"
+        return self.to_midi(self.parameter.value)
 
     def _compute_multiplier(self, rotations: int) -> float:
         now = time.monotonic()
@@ -211,24 +174,6 @@ class EncoderController(controller.Controller):
         dt_per_detent_ms = (dt * 1000.0) / abs(rotations)
         return _clamp(self.REFERENCE_DT_MS / dt_per_detent_ms, self.MIN_MULTIPLIER, self.MAX_MULTIPLIER)
 
-    def _value_to_midi(self, value: float) -> int:
-        if self.parameter is None:
-            midi_value = value
-        else:
-            midi_value = util.renormalize(
-                value,
-                self.parameter.minimum,
-                self.parameter.maximum,
-                self.midi_min,
-                self.midi_max,
-            )
-        return int(_clamp(midi_value, 0, 127))
-
-    def get_normalized_value(self) -> float:
-        if self.num_steps <= 1:
-            return 0.0
-        return self.current_step / (self.num_steps - 1)
-
     def get_display_info(self) -> controller.AnalogDisplayInfo:
         info: controller.AnalogDisplayInfo = {"category": None}
         if self.type is not None:
@@ -241,28 +186,8 @@ class EncoderController(controller.Controller):
 
     def refresh(self, rotations: int) -> None:
         """Handle a tick's worth of detents."""
-        # resync if parameter value was changed externally
-        if self.parameter is not None and self.step_values:
-            quantised = self.step_values[self.current_step]
-            if abs(self.parameter.value - quantised) > 1e-9:
-                self.set_value(self.parameter.value)
-
         multiplier = self._compute_multiplier(rotations)
-        delta = int(round(rotations * multiplier))
-        new_value = self._move_steps(delta)
-        self.midi_value = self._value_to_midi(new_value)
-        if self.parameter is not None:
-            self.parameter.value = new_value
-
-        self.sink.handle(
-            EncoderEvent(
-                controller=self,
-                rotations=rotations,
-                multiplier=multiplier,
-                new_value=new_value,
-                new_midi_value=self.midi_value,
-            )
-        )
+        self.sink.handle(EncoderEvent(controller=self, rotations=rotations, multiplier=multiplier))
 
     # ── Button ───────────────────────────────────────────────────────────
 

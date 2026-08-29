@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import statistics
@@ -18,7 +20,6 @@ import time
 from collections import deque
 from typing import Callable, Literal
 
-from uilib import profiling
 from common.fonts import font_path
 from uilib.box import Box
 from uilib.config import Config
@@ -409,7 +410,6 @@ class TunerPanel(Panel):
         self.add_sel_widget(self._btn_input)
         self._apply_mute_style(muted)
         self._cents_history: deque[float] = deque(maxlen=3)
-        profiling.maybe_start()
 
     def _create_engine(self, port: int) -> TunerBackend:
         return self._backend_factory(port)
@@ -450,8 +450,6 @@ class TunerPanel(Panel):
             self._cents_history.clear()
             cents = None
 
-        profiling.set_cents_bin(profiling.bin_for_cents(cents))
-        with profiling.measure("TunerPanel.tick"):
-            self._header.tick(reading)
-            self._bar.tick(cents)
-            self._strobe.tick(cents)
+        self._header.tick(reading)
+        self._bar.tick(cents)
+        self._strobe.tick(cents)

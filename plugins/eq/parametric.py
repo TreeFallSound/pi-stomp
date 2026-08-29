@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Abstract parametric EQ panel — frequency-response curve visualization.
 
 Subclasses provide band specs via ``build_band_specs()``.
@@ -12,8 +29,21 @@ from typing import Optional
 import numpy as np
 import pygame
 
+from common.contexts import (
+    BindingDecl,
+    ContextKind,
+    ContextRef,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    SelectionEditEffect,
+)
+from common.param_roles import ParamRole
+from common.parameter import Symbol
+from common.parameter_steps import ParameterSteps, effective_multiplier, resolution
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import BandSpec
+from plugins.eq.filters import as_q
 from plugins.eq.curve import (
     GRAPH_W,
     BandParams,
@@ -25,11 +55,11 @@ from plugins.eq.curve import (
 )
 from uilib.box import Box
 from uilib.config import Config
-from uilib.footswitch import tint_mask
-from uilib.glyphs.circle import CircleGlyph, RingGlyph
+from uilib.glyphs.badge import BadgeGlyph
+from uilib.glyphs.circle_handle import HALO_R, paint_circle_handle
 from uilib.misc import INACTIVE_SHADE, InputEvent, get_text_size
 from uilib.widget import Widget
-
+from modalapi.plugin import Plugin
 
 # Type alias for the per-band geometry we cache for diff-paint
 # (image_x, image_y, color_rgb, enabled).
@@ -57,22 +87,7 @@ GRID_DIM = (45, 45, 45)
 GRID_0DB = (140, 140, 140)
 CURVE_COLOR = (220, 220, 220)
 CURVE_THICKNESS = 1.3
-HALO_COLOR = (255, 255, 255)
 READOUT_COLOR = (200, 200, 200)
-
-NODE_R = 4
-HALO_R = 6
-
-
-def paint_band_node(ctx, cx: int, cy: int, color: tuple[int, int, int], selected: bool) -> None:
-    """Paint the parametric-EQ node circle (black eraser, coloured fill, optional halo)."""
-    eraser = CircleGlyph(NODE_R + 2)
-    ctx.paste(tint_mask(eraser.render(), BG_BLACK), (cx - eraser.radius, cy - eraser.radius))
-    node = CircleGlyph(NODE_R)
-    ctx.paste(tint_mask(node.render(), color), (cx - node.radius, cy - node.radius))
-    if selected:
-        halo = RingGlyph(HALO_R)
-        ctx.paste(tint_mask(halo.render(), HALO_COLOR), (cx - halo.half_size, cy - halo.half_size))
 
 
 SMEAR_ALPHA = 0.65
@@ -575,7 +590,7 @@ class GraphWidget(Widget):
             ctx.draw_text((tx, ty), text, fill=_AXIS_LABEL_COLOR, font=font)
 
     def _paint_node(self, ctx, cx: int, cy: int, color: tuple[int, int, int], selected: bool) -> None:
-        paint_band_node(ctx, cx, cy, color, selected)
+        paint_circle_handle(ctx, cx, cy, color, selected)
 
 
 # ── ReadoutWidget ────────────────────────────────────────────────────────────
@@ -583,10 +598,25 @@ class GraphWidget(Widget):
 
 _READOUT_COLS_LEFT: tuple[tuple[str, int], ...] = (
     ("name", 6),
-    ("freq", 60),
-    ("q", 160),
+    ("gain", 60),
+    ("freq", 160),
+    ("q", 250),
 )
-_READOUT_GAIN_RIGHT: int = _W - 6
+
+# enc1/2/3 are all live simultaneously here (gain/freq/Q of the selected
+# band) — unlike every other migrated panel's readout, which needs at most
+# one badge at a time. `ReadoutWidget` stores its own three glyphs, keyed by
+# column, and overrides `_draw_badge` to paint all of them, leaving the
+# inherited single-slot `Widget._badge`/`set_badge()` untouched and unused
+# on this class (see the multi-badge pattern in uilib/README.md's Badges section).
+# Column order mirrors the tweak-knob order (1=gain, 2=freq, 3=q), not the
+# tuple's insertion order.
+_COL_BADGES: dict[str, BadgeGlyph] = {
+    "gain": BadgeGlyph("1"),
+    "freq": BadgeGlyph("2"),
+    "q": BadgeGlyph("3"),
+}
+_BADGE_GAP = 3
 
 
 class ReadoutWidget(Widget):
@@ -599,6 +629,7 @@ class ReadoutWidget(Widget):
         self._fields: dict[str, str] = {k: "" for k, _ in _READOUT_COLS_LEFT}
         self._fields["gain"] = ""
         self._message: Optional[str] = None
+        self._badged: bool = False
 
     def set_fields(self, name: str, freq: str, q: str, gain: str) -> None:
         new = {"name": name, "freq": freq, "q": q, "gain": gain}
@@ -614,6 +645,14 @@ class ReadoutWidget(Widget):
         self._message = text
         self.refresh()
 
+    def set_badged(self, badged: bool) -> None:
+        """Show/hide the gain/freq/Q badges — on whenever a band is
+        selected (all three encoders are then live), off otherwise."""
+        if badged == self._badged:
+            return
+        self._badged = badged
+        self.refresh()
+
     def _draw_erase(self, ctx) -> None:
         ctx.draw_rectangle(ctx.bounds, fill=BG_BLACK)
 
@@ -625,11 +664,20 @@ class ReadoutWidget(Widget):
             text = self._fields.get(key, "")
             if text:
                 ctx.draw_text((x, 1), text, fill=READOUT_COLOR, font=self._font)
-        gain = self._fields.get("gain", "")
-        if gain:
-            tw, _ = get_text_size(gain, self._font)
-            x = _READOUT_GAIN_RIGHT - tw
-            ctx.draw_text((x, 1), gain, fill=READOUT_COLOR, font=self._font)
+
+    def _draw_badge(self, ctx) -> None:
+        """One badge per live encoder, each sitting in its column's left
+        gutter without shifting that column's (fixed-position) text. A column
+        with no text (e.g. gain on a band with no gain param) gets no badge
+        either — nothing for that encoder to do."""
+        if not self._badged or self._message is not None:
+            return
+        for key, x in _READOUT_COLS_LEFT:
+            badge = _COL_BADGES.get(key)
+            if badge is None or not self._fields.get(key, ""):
+                continue
+            by = (ctx.height - badge.height) // 2
+            ctx.paste(badge.render(), (x - _BADGE_GAP - badge.width, by))
 
 
 # ── invisible band selectable ────────────────────────────────────────────────
@@ -652,8 +700,7 @@ class BandSelectable(Widget):
             self._panel._toggle_band_enable(self.band)
             return True
         if event == InputEvent.LONG_CLICK:
-            self._panel._reset_band_to_snapshot(self.band)
-            return True
+            return self._panel._open_editor_for_selection()
         return False
 
     def scroll_into_view(self) -> bool:
@@ -668,39 +715,64 @@ class BandSelectable(Widget):
     def _draw_selection(self, ctx) -> None:
         pass
 
+    def symbol_for(self, role: ParamRole) -> Symbol | None:
+        match role:
+            case ParamRole.GAIN_DB:
+                return self.band.gain_sym
+            case ParamRole.FREQUENCY_HZ:
+                return self.band.freq_sym
+            case ParamRole.Q_FACTOR:
+                return self.band.q_sym
+            case _:
+                return None
+
+    def menu_title(self) -> str:
+        return f"{self._panel.plugin.name}:{self.band.name}"
+
+    def menu_rows(self) -> tuple[tuple[str, Symbol], ...]:
+        """NAV LONGPRESS on a band: a submenu over whichever of gain/freq/Q
+        this band actually has (some bands, e.g. HP/LP filters, lack gain)."""
+        rows: list[tuple[str, Symbol]] = []
+        if self.band.gain_sym is not None:
+            rows.append(("Gain", self.band.gain_sym))
+        if self.band.freq_sym is not None:
+            rows.append(("Freq", self.band.freq_sym))
+        if self.band.q_sym is not None:
+            rows.append(("Q", self.band.q_sym))
+        return tuple(rows)
+
 
 # ── readout formatting ──────────────────────────────────────────────────────
 
 
 def _fmt_freq(hz: float) -> str:
     if hz >= 1000.0:
-        return f"{hz / 1000.0:.2f} kHz"
+        k = hz / 1000.0
+        if k >= 10.0:
+            return f"{k:.1f} kHz"
+        return f"{k:.2f} kHz"
     return f"{hz:.0f} Hz"
 
 
 def band_readout_fields(band: BandSpec, p: BandParams) -> tuple[str, str, str, str]:
-    """Format readout fields for a parametric band. Returns (name, freq, q, gain)."""
+    """Format readout fields for a parametric band. Returns (name, freq, q, gain).
+
+    gain is "" for bands with no gain param at all (e.g. HP/LP filters) \u2014 enc1
+    is a no-op there (see ParametricEqPanel.edit_symbol), so a live-looking
+    badge over a permanent em-dash was just noise.
+    """
     name = band.name
     freq = _fmt_freq(p.freq)
-    q = f"Q {p.q:.2f}"
-    if not p.enabled:
+    # Q column empty for plugins with no q_sym (plain TAP EQ has a fixed BW
+    # the user cannot control) — the (3) badge keys off non-empty text.
+    q = f"Q {as_q(band.q_units, p.q):.2f}" if band.q_units is not None else ""
+    if band.gain_sym is None:
+        gain = ""
+    elif not p.enabled:
         gain = "disabled"
-    elif band.gain_sym is None:
-        gain = "\u2014"
     else:
         gain = f"{p.gain_db:+.1f} dB"
     return name, freq, q, gain
-
-
-# ── tweak step sizes ────────────────────────────────────────────────────────
-
-_GAIN_STEP_DB = 0.5
-_FREQ_STEP = 2.0 ** (1.0 / 12.0)
-_Q_STEP = 0.05
-
-
-def _clip(v: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, v))
 
 
 # ── ParametricEqPanel (ABC) ──────────────────────────────────────────────────
@@ -713,6 +785,8 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
     ``BandSpec`` for this plugin.
     """
 
+    plugin: Plugin  # narrowing: parametric EQ panels are always Plugin panels
+
     _show_axis_labels: bool = True
 
     # ── subclass contract ──────────────────────────────────────────────────
@@ -720,14 +794,19 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
     def build_band_specs(self) -> Sequence[BandSpec]:
         raise NotImplementedError
 
+    def _port_value_for_band_param(self, band: BandSpec, field_name: str, value: float) -> float:
+        """Override when the LV2 port uses a different unit than the panel's
+        internal representation (e.g. linear gain vs dB). Default: pass through."""
+        return value
+
     # ── PluginPanel subclass contract ────────────────────────────────────────
 
     def snapshot_state(self) -> EqState:
         params = self.plugin.parameters
 
-        def _val(symbol: str, default: float) -> float:
+        def _val(symbol: Symbol, default: float) -> float:
             p = params.get(symbol)
-            return float(p.value) if p is not None and p.value is not None else default
+            return float(p.value) if p is not None else default
 
         bands: dict[str, BandParams] = {}
         for band in self.bands:
@@ -739,8 +818,8 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
                 gain_db=_val(band.gain_sym, 0.0) if band.gain_sym else 0.0,
             )
         return EqState(
-            plugin_enabled=bool(_val("enable", 1.0)),
-            global_gain_db=_val("gain", 0.0),
+            plugin_enabled=bool(_val(Symbol("enable"), 1.0)),
+            global_gain_db=_val(Symbol("gain"), 0.0),
             bands=bands,
         )
 
@@ -779,48 +858,61 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
         self.apply_state(self.snapshot_state())
         self.sel_widget(self._band_sels[self.bands[0].name])
 
-    def on_encoder_rotation(self, encoder_id: int, rotations: int) -> bool:
-        if encoder_id not in (1, 2, 3) or rotations == 0:
-            return False
+    def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        ctx = ContextRef(kind=ContextKind.PANEL, name="parametric_eq")
+        return (
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=1),
+                event_kind=EventKind.ROTATE,
+                effects=(SelectionEditEffect(role=ParamRole.GAIN_DB),),
+                context=ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=2),
+                event_kind=EventKind.ROTATE,
+                effects=(SelectionEditEffect(role=ParamRole.FREQUENCY_HZ),),
+                context=ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=3),
+                event_kind=EventKind.ROTATE,
+                effects=(SelectionEditEffect(role=ParamRole.Q_FACTOR),),
+                context=ctx,
+                # Chrome focused: Q yields to volume instead of absorbing.
+                enabled_when=lambda: self.selected_band is not None,
+            ),
+        )
+
+    def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool:
         band = self.selected_band
         if band is None:
-            return encoder_id != 3
-        delta = rotations
+            return False
         p = self._state.bands[band.name]
-        if encoder_id == 1:
-            if band.gain_sym is None:
-                return True
-            new_gain = _clip(p.gain_db + delta * _GAIN_STEP_DB, band.gain_min, band.gain_max)
-            if new_gain == p.gain_db:
-                return True
-            self.set_param(band.gain_sym, new_gain)
-            self._replace_band(band, gain_db=new_gain)
-            return True
-        elif encoder_id == 2:
-            new_freq = _clip(p.freq * (_FREQ_STEP**delta), band.freq_min, band.freq_max)
-            if new_freq == p.freq:
-                return True
-            self.set_param(band.freq_sym, new_freq)
-            self._replace_band(band, freq=new_freq)
-            return True
-        elif encoder_id == 3:
-            if band.q_sym is None:
-                return True
-            new_q = _clip(p.q + delta * _Q_STEP, band.q_min, band.q_max)
-            if new_q == p.q:
-                return True
-            self.set_param(band.q_sym, new_q)
-            self._replace_band(band, q=new_q)
-            return True
-        return False
-
-    def tick(self) -> None:
-        bypassed = self.plugin.is_bypassed()
-        if bypassed != getattr(self, "_last_bypassed", None):
-            self._last_bypassed = bypassed
-            self._graph.set_bypassed(bypassed)
-            self._update_readout()
-        super().tick()
+        if symbol == band.gain_sym:
+            current, lo, hi, field_name = p.gain_db, band.gain_min, band.gain_max, "gain_db"
+        elif symbol == band.freq_sym:
+            current, lo, hi, field_name = p.freq, band.freq_min, band.freq_max, "freq"
+        elif symbol == band.q_sym:
+            _role, current, lo, hi, field_name = ParamRole.Q_FACTOR, p.q, band.q_min, band.q_max, "q"
+            # Bandwidth runs opposite to Q, so invert to keep clockwise = narrower.
+            if band.q_units == "bw_oct":
+                rotations = -rotations
+        else:
+            return super().edit_symbol(symbol, rotations, multiplier)
+        lv2 = self.plugin.parameters.get(symbol)
+        if lv2 is None:
+            return False
+        steps = ParameterSteps(lo, hi, lv2.is_logarithmic, resolution(lv2))
+        steps.set_value(current)
+        delta = int(round(rotations * effective_multiplier(multiplier, lv2)))
+        if delta == 0:
+            return False
+        new_val = steps.move(delta)
+        if new_val == current:
+            return False
+        self.set_param(symbol, self._port_value_for_band_param(band, field_name, new_val))
+        self._replace_band(band, **{field_name: new_val})
+        return True
 
     def _refresh_bypass_style(self) -> None:
         super()._refresh_bypass_style()
@@ -851,17 +943,23 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
             p = self._state.bands.get(sel_w.band.name)
             if p is None:
                 self._readout.set_message("")
+                self._readout.set_badged(False)
             else:
                 name, freq, q, gain = band_readout_fields(sel_w.band, p)
                 self._readout.set_fields(name, freq, q, gain)
+                self._readout.set_badged(True)
         elif sel_w is self._btn_bypass:
             self._readout.set_message("Plugin bypassed" if self.plugin.is_bypassed() else "Bypass plugin")
+            self._readout.set_badged(False)
         elif sel_w is self._btn_back:
             self._readout.set_message("Close EQ")
+            self._readout.set_badged(False)
         elif sel_w is self._btn_reset:
             self._readout.set_message("Reset to pedalboard")
+            self._readout.set_badged(False)
         else:
             self._readout.set_message("")
+            self._readout.set_badged(False)
 
     def _select_widget_ref(self, w):  # type: ignore[override]
         super()._select_widget_ref(w)
@@ -878,15 +976,3 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
         new_enabled = not p.enabled
         self.set_param(band.enable_sym, 1.0 if new_enabled else 0.0)
         self._replace_band(band, enabled=new_enabled)
-
-    def _reset_band_to_snapshot(self, band: BandSpec) -> None:
-        snap = self.plugin.pedalboard_snapshot
-        for symbol in (band.enable_sym, band.freq_sym, band.q_sym):
-            if symbol is None:
-                continue
-            if symbol in snap and not self._is_symbol_locked(self.plugin.instance_id, symbol):
-                self.set_param(symbol, snap[symbol])
-        if band.gain_sym is not None and band.gain_sym in snap:
-            if not self._is_symbol_locked(self.plugin.instance_id, band.gain_sym):
-                self.set_param(band.gain_sym, snap[band.gain_sym])
-        self.apply_state(self.snapshot_state())

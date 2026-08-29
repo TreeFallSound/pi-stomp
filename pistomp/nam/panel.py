@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Full-screen LCD panel for the NAM Capture pedalboard marker.
 
 Two distinct layouts:
@@ -40,24 +57,36 @@ from typing import Callable
 
 from uilib.box import Box
 from uilib.config import Config
-from uilib.glyphs import ArcDialWidget, DialVariant
+from uilib.arc_dial import ArcDialWidget, DialVariant
+from uilib.glyphs.badge import BadgeGlyph
 from uilib.label import Label
 from uilib.misc import TextHAlign, get_text_bbox, get_text_size
 from uilib.paint import PaintContext
+from uilib.progress_bar import ProgressBarWidget, fmt_time
 from uilib.pygame_init import font as _make_font
 from uilib.text import Button, TextWidget
 from uilib.widget import Widget
 
 import common.token as Token
-import pistomp.switchstate as switchstate
-
-from uilib import profiling
+from common.contexts import (
+    AudioCardEffect,
+    BindingDecl,
+    ContextKind,
+    ContextRef,
+    ControlClass,
+    ControlRef,
+    EventKind,
+    NoneEffect,
+)
+from common.param_roles import ParamRole
+from common.parameter import Parameter, PortInfo, Symbol
 
 from uilib.panel import Panel
-from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
+from pistomp.input.dispatch import Selectable, fire, resolve_local
+from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent
 from pistomp.nam import routing
 from pistomp.nam.engine import CaptureState, NamCaptureEngine
-from pistomp.nam.wavio import wav_duration, wav_peak_dbfs
+from pistomp.nam.wavio import wav_duration
 
 _W = 320
 _H = 240
@@ -71,9 +100,17 @@ _REAMP_WAV = Path(__file__).resolve().parents[2] / "setup" / "nam" / "T3K-sweep-
 _TITLE_H = 26
 _NAME_Y = 30
 _NAME_H = 28
-_KNOB_Y = 82
-_KNOB_H = 114
+_KNOB_Y = 70
+_KNOB_H = 124  # the enc2/enc3 badge sits in the ring's bottom cutout, so the box
+# only needs to clear the ring + top label
 _KNOB_W = 148
+
+# enc2/enc3 are only ever live while the setup view is showing (both rows'
+# enabled_when is idle(); the capture view swaps these knobs out entirely),
+# so a badge set once at construction is accurate for as long as it's
+# visible — same fixed-knob pattern as gx_cabinet/tap_reverb.
+_BADGE_TWEAK2 = BadgeGlyph("2")
+_BADGE_TWEAK3 = BadgeGlyph("3")
 
 # Chrome row — shared between views
 _BTN_GAP = 2
@@ -95,14 +132,6 @@ _METER_IN_Y = _METER_OUT_Y + _METER_H + 2  # 180
 # ── Colour palette ────────────────────────────────────────────────────────────
 
 # Progress bar colour stops (position 0.0–1.0 along bar width)
-_BAR_STOPS: list[tuple[float, tuple[int, int, int]]] = [
-    (0.00, (0, 200, 75)),
-    (0.35, (120, 215, 0)),
-    (0.65, (230, 148, 0)),
-    (1.00, (215, 55, 10)),
-]
-_BAR_DIM = 0.13  # brightness of unfilled segments
-
 # Status LED
 _LED_IDLE = (70, 70, 78)
 _LED_CAPTURING = (0, 200, 80)
@@ -123,7 +152,6 @@ _METER_CLIP_FG = (220, 60, 50)
 # Knobs
 _KNOB_ARC_FG = (195, 135, 40)  # amber — filled arc
 _KNOB_ARC_BG = (38, 30, 14)  # dim warm dark — empty arc track
-_KNOB_TIP = (255, 210, 80)  # bright amber — tip dot
 _KNOB_LABEL_FG = (115, 115, 125)
 _KNOB_VALUE_FG = (175, 175, 195)
 
@@ -140,11 +168,6 @@ _HEADER_NAME_FG = (100, 100, 110)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _fmt_time(seconds: float) -> str:
-    s = max(0, int(seconds))
-    return f"{s // 60}:{s % 60:02d}"
-
-
 def _centred_x(text: str, font, width: int) -> int:
     bb = get_text_bbox(text, font)
     return (width - (bb[2] - bb[0])) // 2 - bb[0]
@@ -158,7 +181,9 @@ class KnobWidget(ArcDialWidget):
 
     _ARC_RADIUS = 39
 
-    def __init__(self, box: Box, label: str, min_val: float, max_val: float, parent: Widget) -> None:
+    def __init__(
+        self, box: Box, label: str, symbol: str, min_val: float, max_val: float, parent: Widget
+    ) -> None:
         super().__init__(
             box=box,
             label=label,
@@ -168,113 +193,16 @@ class KnobWidget(ArcDialWidget):
             formatter=lambda v: (f"{v:.1f}", "dB"),
             parent=parent,
             radius=self._ARC_RADIUS,
-            tip_radius=7.0,
             variant=DialVariant.LARGE,
             empty_color=_KNOB_ARC_BG,
-            tip_color=_KNOB_TIP,
             value_fg=_KNOB_VALUE_FG,
             unit_fg=_KNOB_LABEL_FG,
             label_fg=_KNOB_LABEL_FG,
         )
+        self.symbol = symbol
 
-
-class ProgressBarWidget(Widget):
-    """Segmented colour-gradient progress bar with elapsed/remaining time labels."""
-
-    _MARGIN = 12        # left/right inset
-    _BAR_Y = 30         # top of bar within widget
-    _BAR_H = 30         # bar height
-    _LABEL_GAP = 10     # gap between bar bottom and label top
-    _N_SEGS = 40        # number of colour segments
-    _SEG_GAP = 2        # gap between segments in pixels
-
-    def __init__(self, box: Box, total_seconds: float, font, caption_font, parent: Widget) -> None:
-        super().__init__(box=box, bkgnd_color=(0, 0, 0), parent=parent)
-        self._total = total_seconds
-        self._progress = 0.0
-        self._frozen = False
-        self._elapsed = 0.0
-        self._remaining = total_seconds
-        self._font = font
-        self._caption_font = caption_font
-        inner_w = box.width - 2 * self._MARGIN
-        self._seg_w = max(1, (inner_w - (self._N_SEGS - 1) * self._SEG_GAP) // self._N_SEGS)
-
-    def set_progress(self, progress: float) -> None:
-        if self._frozen:
-            return
-        p = max(0.0, min(1.0, progress))
-        old_filled = int(self._progress * self._N_SEGS)
-        self._progress = p
-        self._elapsed = p * self._total
-        self._remaining = self._total - self._elapsed
-        if int(p * self._N_SEGS) != old_filled:
-            self.refresh()
-
-    def freeze(self) -> None:
-        self._frozen = True
-
-    def set_done(self) -> None:
-        self._progress = 1.0
-        self._elapsed = self._total
-        self._remaining = 0.0
-        self._frozen = True
-
-    def reset(self) -> None:
-        self._progress = 0.0
-        self._elapsed = 0.0
-        self._remaining = self._total
-        self._frozen = False
-
-    def advance_rotation(self, dt: float) -> None:
-        pass
-
-    @staticmethod
-    def _color_at(t: float) -> tuple[int, int, int]:
-        stops = _BAR_STOPS
-        if t <= stops[0][0]:
-            return stops[0][1]
-        if t >= stops[-1][0]:
-            return stops[-1][1]
-        for i in range(len(stops) - 1):
-            t0, c0 = stops[i]
-            t1, c1 = stops[i + 1]
-            if t0 <= t <= t1:
-                f = (t - t0) / (t1 - t0)
-                return (
-                    int(c0[0] + f * (c1[0] - c0[0])),
-                    int(c0[1] + f * (c1[1] - c0[1])),
-                    int(c0[2] + f * (c1[2] - c0[2])),
-                )
-        return stops[-1][1]
-
-    def _draw(self, ctx: PaintContext) -> None:
-        with profiling.measure("nam.bar._draw"):
-            n = self._N_SEGS
-            filled = int(self._progress * n)
-            sw = self._seg_w
-            bx = self._MARGIN
-            by = self._BAR_Y
-            ctx.fill((0, 0, 0))
-
-            for i in range(n):
-                t = i / (n - 1) if n > 1 else 0.0
-                r, g, b = self._color_at(t)
-                if i < filled:
-                    color: tuple[int, int, int] = (r, g, b)
-                else:
-                    color = (int(r * _BAR_DIM), int(g * _BAR_DIM), int(b * _BAR_DIM))
-                ctx.draw_rectangle(Box.xywh(bx + i * (sw + self._SEG_GAP), by, sw, self._BAR_H), fill=color)
-
-            label_y = by + self._BAR_H + self._LABEL_GAP
-            right_x = ctx.width - self._MARGIN
-
-            elapsed_str = _fmt_time(self._elapsed)
-            ctx.draw_text((bx, label_y), elapsed_str, fill=(130, 118, 80), font=self._font)
-
-            remaining_str = f"−{_fmt_time(self._remaining)}"
-            rw, _ = get_text_size(remaining_str, self._font)
-            ctx.draw_text((right_x - rw, label_y), remaining_str, fill=(205, 180, 110), font=self._font)
+    def symbol_for(self, role: ParamRole) -> str | None:
+        return self.symbol
 
 
 class LevelMeter(Widget):
@@ -416,10 +344,7 @@ class NamCapturePanel(Panel):
         self._pending_path_shown: bool = False
         self._analog_clip_ticks: int = 0
         self._duration = wav_duration(reamp_wav)
-        try:
-            self._max_out_db: float = min(6.0, -wav_peak_dbfs(reamp_wav))
-        except Exception:
-            self._max_out_db = 6.0
+        self._max_out_db: float = 0  # works for the sweep file we have
         self._muted: bool = False
         self._gain_val: float = -10.0
         self._vol_val: float = -3.0
@@ -461,17 +386,21 @@ class NamCapturePanel(Panel):
         self._knob_gain = KnobWidget(
             box=Box.xywh(8, _KNOB_Y, _KNOB_W, _KNOB_H),
             label="IN2",
+            symbol="CAPTURE_VOLUME",
             min_val=-19.75,
             max_val=12.0,
             parent=self,
         )
+        self._knob_gain.set_badge(_BADGE_TWEAK2)
         self._knob_vol = KnobWidget(
             box=Box.xywh(_W - _KNOB_W - 8, _KNOB_Y, _KNOB_W, _KNOB_H),
             label="OUT2",
+            symbol="MASTER",
             min_val=-25.75,
             max_val=self._max_out_db,
             parent=self,
         )
+        self._knob_vol.set_badge(_BADGE_TWEAK3)
 
         self._btn_setup_close = Button(
             box=Box.xywh(_BTN_X_CLOSE, _BTN_Y, _BTN_W, _BTN_H),
@@ -483,7 +412,7 @@ class NamCapturePanel(Panel):
         )
         self._btn_start = Button(
             box=Box.xywh(_BTN_X_ACTION, _BTN_Y, _BTN_W, _BTN_H),
-            text=f"Start ({_fmt_time(self._duration)})",
+            text=f"Start ({fmt_time(self._duration)})",
             font=font,
             outline_radius=4,
             parent=self,
@@ -500,6 +429,8 @@ class NamCapturePanel(Panel):
             self._btn_start,
         ]
         self.add_sel_widget(self._name_btn)
+        self.add_sel_widget(self._knob_gain)
+        self.add_sel_widget(self._knob_vol)
         self.add_sel_widget(self._btn_setup_close)
         self.add_sel_widget(self._btn_start)
 
@@ -597,7 +528,6 @@ class NamCapturePanel(Panel):
 
         # Read initial values from hardware to seed the internal trackers
         self._init_knob_values()
-        profiling.maybe_start()
 
         # Connect In2 → Out1 so the user can hear the amp while the panel is open.
         routing.connect_monitor()
@@ -626,42 +556,112 @@ class NamCapturePanel(Panel):
 
     # ── Input handling ────────────────────────────────────────────────────────
 
-    def handle(self, event: ControllerEvent) -> bool:
-        cid = getattr(event.controller, "id", None)
-
-        # Tweak1 (cid=1) mirrors the NAV encoder for the whole panel.
-        if cid == 1 and self._handler is not None:
-            if isinstance(event, EncoderEvent):
-                self._handler.universal_encoder_select(event.rotations)
-                return True
-            if isinstance(event, SwitchEvent) and event.kind == SwitchEventKind.LONGPRESS:
-                self._handler.universal_encoder_sw(switchstate.Value.LONGPRESSED)
-                return True
-            # PRESS falls through — modhandler already calls universal_encoder_sw(RELEASED).
-            return False
-
-        if not isinstance(event, EncoderEvent):
-            return False
-        if cid not in (2, 3):
-            return False
-
-        state = self._engine.state
-
-        # Swallow enc 2/3 during capture — no level changes mid-recording.
-        if state == CaptureState.CAPTURING:
+    def on_event(self, event: ControllerEvent) -> bool:
+        # Tweak1 press/longpress: swallowed outright, no effect.
+        if isinstance(event, SwitchEvent) and event.controller.id == 1:
             return True
 
-        # Only on failure: pass through so the vanilla parameter overlay pops
-        # up and the user can adjust levels before retrying.
-        if state == CaptureState.FAILED:
+        if not isinstance(event, EncoderEvent) or event.controller.id not in (1, 2, 3):
             return False
+        if event.rotations == 0:
+            return True
 
-        # IDLE: handle locally and update the on-screen knobs.
-        # DONE/ABORTED: swallow — the setup view knobs aren't visible.
-        if state == CaptureState.IDLE and self._handler is not None:
-            steps = int(round(event.rotations * event.multiplier))
-            self._nudge_audio(cid == 2, steps)
+        decl = resolve_local(
+            self.declare_bindings(), ControlRef(cls=ControlClass.TWEAK, id=event.controller.id), EventKind.ROTATE
+        )
+        # No enabled row (FAILED state, enc 2/3): pass through so the vanilla
+        # parameter overlay pops up and the user can adjust levels before retrying.
+        if decl is None:
+            return False
+        return fire(decl, self, event)
+
+    def declare_bindings(self) -> tuple[BindingDecl, ...]:
+        ctx = ContextRef(kind=ContextKind.PANEL, name="nam_capture")
+
+        def idle() -> bool:
+            return self._engine.state == CaptureState.IDLE
+
+        def swallowed() -> bool:
+            return self._engine.state in (CaptureState.CAPTURING, CaptureState.DONE, CaptureState.ABORTED)
+
+        return (
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=1),
+                event_kind=EventKind.ROTATE,
+                effects=(NoneEffect(),),
+                context=ctx,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=2),
+                event_kind=EventKind.ROTATE,
+                effects=(AudioCardEffect(param_symbol=Symbol("CAPTURE_VOLUME")),),
+                context=ctx,
+                enabled_when=idle,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=2),
+                event_kind=EventKind.ROTATE,
+                effects=(NoneEffect(),),
+                context=ctx,
+                enabled_when=swallowed,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=3),
+                event_kind=EventKind.ROTATE,
+                effects=(AudioCardEffect(param_symbol=Symbol("MASTER")),),
+                context=ctx,
+                enabled_when=idle,
+            ),
+            BindingDecl(
+                control=ControlRef(cls=ControlClass.TWEAK, id=3),
+                event_kind=EventKind.ROTATE,
+                effects=(NoneEffect(),),
+                context=ctx,
+                enabled_when=swallowed,
+            ),
+        )
+
+    def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool:
+        """AudioCardEffect's target: CAPTURE_VOLUME/MASTER aren't LV2 params,
+        but the edit shape (rotations -> commit) is identical."""
+        if self._handler is None or symbol not in ("CAPTURE_VOLUME", "MASTER"):
+            return False
+        self._nudge_audio(symbol == "CAPTURE_VOLUME", int(round(rotations * multiplier)))
         return True
+
+    def _open_editor_for_selection(self) -> bool:
+        """NAV CLICK on the gain/vol knob: not a PluginPanel, so open a
+        synthetic-Parameter audio dialog instead of an LV2 one. Only
+        meaningful in IDLE — same gate declare_bindings() applies to the
+        Tweak encoders for these same two symbols."""
+        if self._handler is None or self._engine.state != CaptureState.IDLE:
+            return False
+        sel = self.sel_ref
+        symbol = sel.symbol_for(ParamRole.GENERIC) if isinstance(sel, Selectable) else None
+        if symbol not in ("CAPTURE_VOLUME", "MASTER"):
+            return False
+        is_gain = symbol == "CAPTURE_VOLUME"
+        name = "Input Gain" if is_gain else "Output Volume"
+        value = self._gain_val if is_gain else self._vol_val
+        minimum = -19.75 if is_gain else -25.75
+        maximum = 12.0 if is_gain else self._max_out_db
+        info = PortInfo(name=name, symbol=symbol, ranges={"minimum": minimum, "maximum": maximum})
+        param = Parameter(info, value, None)
+        param.unit_symbol = "dB"
+        self._handler.open_audio_parameter_dialog(param, self._commit_audio_dialog_value)
+        return True
+
+    def _commit_audio_dialog_value(self, symbol: str, value: float) -> None:
+        if self._handler is None or symbol not in ("CAPTURE_VOLUME", "MASTER"):
+            return
+        if symbol == "CAPTURE_VOLUME":
+            self._gain_val = value
+            self._handler.audio_parameter_commit(self._handler.audiocard.CAPTURE_VOLUME, value)
+            self._knob_gain.set_value(value)
+        else:
+            self._vol_val = value
+            self._handler.audio_parameter_commit(self._handler.audiocard.MASTER, value)
+            self._knob_vol.set_value(value)
 
     # ── Polling ───────────────────────────────────────────────────────────────
 
@@ -675,10 +675,8 @@ class NamCapturePanel(Panel):
         self._last_tick = now
 
         state = self._engine.state
-        profiling.set_context_tag(state.name.lower())
 
-        with profiling.measure("nam.tick"):
-            self._tick_body(now, dt, state)
+        self._tick_body(now, dt, state)
 
     def _tick_body(self, now: float, dt: float, state: CaptureState) -> None:
         if state != self._last_state:
@@ -700,10 +698,8 @@ class NamCapturePanel(Panel):
                 hw = self._handler.hardware
                 if hw is not None:
                     from pistomp.analogVU import AnalogVU, VuState
-                    is_clipping = any(
-                        isinstance(ind, AnalogVU) and ind.state == VuState.CLIP
-                        for ind in hw.indicators
-                    )
+
+                    is_clipping = any(isinstance(ind, AnalogVU) and ind.state == VuState.CLIP for ind in hw.indicators)
                     if is_clipping:
                         self._analog_clip_ticks += 1
                         if self._analog_clip_ticks >= 5:
@@ -890,7 +886,7 @@ class NamCapturePanel(Panel):
         self.refresh()
 
     def _switch_to_capture_view(self) -> None:
-        for w in (self._name_btn, self._btn_setup_close, self._btn_start):
+        for w in (self._name_btn, self._knob_gain, self._knob_vol, self._btn_setup_close, self._btn_start):
             self.del_sel_widget(w)
         for w in self._setup_group:
             w.hide(refresh=False)
@@ -911,6 +907,8 @@ class NamCapturePanel(Panel):
         for w in self._setup_group:
             w.show(refresh=False)
         self.add_sel_widget(self._name_btn)
+        self.add_sel_widget(self._knob_gain)
+        self.add_sel_widget(self._knob_vol)
         self.add_sel_widget(self._btn_setup_close)
         self.add_sel_widget(self._btn_start)
         self._in_capture_view = False

@@ -13,6 +13,7 @@ from blend.parameter_setter import ParameterSetter
 from blend.stop import BlendStop
 from pistomp.input.event import AnalogEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.encoder_controller import EncoderController
+from common.parameter import Symbol
 
 
 def _make_encoder(midi_CC=70, midi_channel=0, id_=1):
@@ -34,7 +35,7 @@ def _make_ic(enc):
     stop = BlendStop(
         position=0.0,
         snapshot_index=0,
-        snapshot_state={"FX": {"Level": 0.5}},
+        snapshot_state={"FX": {Symbol("Level"): 0.5}},
     )
     ic = InputController(
         easing_func=EASING_FUNCTIONS["linear"],
@@ -99,7 +100,7 @@ def test_handle_event_rejects_switch_event_even_if_same_id():
 def test_blend_mode_intercept_delegates_to_input_controller():
     enc = _make_encoder(id_=1)
     ic, _ = _make_ic(enc)
-    bm = BlendMode(MagicMock(), {"name": "Test", "input_id": 1})  # type: ignore[arg-type]
+    bm = BlendMode(MagicMock(), {"name": "Test", "input_id": 1, "stops": {}})
     bm.input_controller = ic
 
     consumed = bm.intercept(EncoderEvent(controller=enc, rotations=1))
@@ -108,7 +109,7 @@ def test_blend_mode_intercept_delegates_to_input_controller():
 
 
 def test_blend_mode_intercept_no_controller_returns_false():
-    bm = BlendMode(MagicMock(), {"name": "Test", "input_id": 1})  # type: ignore[arg-type]
+    bm = BlendMode(MagicMock(), {"name": "Test", "input_id": 1, "stops": {}})
 
     assert bm.intercept(EncoderEvent(controller=_make_encoder(), rotations=1)) is False
 
@@ -122,7 +123,7 @@ def test_blend_mode_intercept_blocks_switch_events_from_its_own_controller():
     """SwitchEvents from the blend input controller must not trigger interpolation."""
     enc = _make_encoder(id_=1)
     ic, setter = _make_ic(enc)
-    bm = BlendMode(MagicMock(), {"name": "Test", "input_id": 1})  # type: ignore[arg-type]
+    bm = BlendMode(MagicMock(), {"name": "Test", "input_id": 1, "stops": {}})
     bm.input_controller = ic
 
     switch_event = SwitchEvent(controller=enc, kind=SwitchEventKind.PRESS)

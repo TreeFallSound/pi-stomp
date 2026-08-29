@@ -7,10 +7,10 @@ MIDI / preset logic lives in the handler (see tests/input_router/).
 """
 
 from contextlib import contextmanager
-from typing import Optional, cast
+from typing import Optional
 from unittest.mock import MagicMock
 
-from common.parameter import Parameter
+from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from pistomp.footswitch import Footswitch
 from pistomp.input.event import SwitchEvent, SwitchEventKind
 from pistomp.input.sink import InputSink
@@ -41,24 +41,6 @@ def _make_footswitch(**kwargs):
     yield fs, sink
 
 
-class TestLongpressGroups:
-    def test_set_longpress_groups_stores_list(self):
-        with _make_footswitch() as (fs, _sink):
-            fs.set_longpress_groups(["next_snapshot"])
-            assert fs.longpress_groups == ["next_snapshot"]
-
-    def test_set_longpress_groups_accepts_space_separated_string(self):
-        with _make_footswitch() as (fs, _sink):
-            fs.set_longpress_groups("next_snapshot toggle_bypass")
-            assert fs.longpress_groups == ["next_snapshot", "toggle_bypass"]
-
-    def test_set_longpress_groups_none_clears(self):
-        with _make_footswitch() as (fs, _sink):
-            fs.set_longpress_groups(["toggle_bypass"])
-            fs.set_longpress_groups(None)
-            assert fs.longpress_groups == []
-
-
 class TestOnSwitch:
     def test_short_press_dispatches_press_event(self):
         with _make_footswitch() as (fs, sink):
@@ -86,6 +68,30 @@ class TestOnSwitch:
             assert sink.events == []
 
 
+class TestPressState:
+    def test_no_detector_reads_released(self):
+        with _make_footswitch() as (fs, _sink):
+            assert fs.press_state is switchstate.Value.RELEASED
+
+    def test_reads_the_adc_detector(self):
+        with _make_footswitch() as (fs, _sink):
+            fs.adc_switch = MagicMock(state=switchstate.Value.PRESSED)
+            assert fs.press_state is switchstate.Value.PRESSED
+
+    def test_reads_the_gpio_detector(self):
+        with _make_footswitch() as (fs, _sink):
+            fs.gpio_switch = MagicMock(state=switchstate.Value.LONGPRESSED)
+            assert fs.press_state is switchstate.Value.LONGPRESSED
+
+    def test_disabled_footswitch_reads_released(self):
+        """A disabled switch stops being polled, so its detector state freezes.
+        Frozen at PRESSED it would look like a chord partner forever."""
+        with _make_footswitch() as (fs, _sink):
+            fs.adc_switch = MagicMock(state=switchstate.Value.PRESSED)
+            fs.disabled = True
+            assert fs.press_state is switchstate.Value.RELEASED
+
+
 class TestHardwareMethods:
     def test_toggle_relays(self):
         with _make_footswitch() as (fs, _sink):
@@ -108,36 +114,39 @@ class TestHardwareMethods:
 
 class TestSetValue:
     @staticmethod
-    def _param(symbol: str, value: float, minimum: Optional[float] = 0, maximum: Optional[float] = 1) -> Parameter:
-        return cast(Parameter, MagicMock(symbol=symbol, value=value, minimum=minimum, maximum=maximum))
+    def _param(symbol: Symbol, value: float, minimum: Optional[float] = 0, maximum: Optional[float] = 1) -> Parameter:
+        info: PortInfo = {"shortName": str(symbol), "symbol": str(symbol)}
+        if minimum is not None and maximum is not None:
+            info["ranges"] = {"minimum": minimum, "maximum": maximum}
+        return Parameter(info, value, None, "plug")
 
     def test_bypass_engaged_when_not_bypassed(self):
         with _make_footswitch() as (fs, _sink):
-            fs.parameter = self._param(":bypass", 0)
+            fs.parameter = self._param(BYPASS_SYMBOL, 0)
             fs.set_value(0)
             assert fs.toggled is True
 
     def test_bypass_off_when_bypassed(self):
         with _make_footswitch() as (fs, _sink):
-            fs.parameter = self._param(":bypass", 1)
+            fs.parameter = self._param(BYPASS_SYMBOL, 1)
             fs.set_value(1)
             assert fs.toggled is False
 
     def test_non_bypass_off_value_is_off(self):
         with _make_footswitch() as (fs, _sink):
-            fs.parameter = self._param("solo", 0)
+            fs.parameter = self._param(Symbol("solo"), 0)
             fs.set_value(0)
             assert fs.toggled is False
 
     def test_non_bypass_on_value_is_on(self):
         with _make_footswitch() as (fs, _sink):
-            fs.parameter = self._param("solo", 1)
+            fs.parameter = self._param(Symbol("solo"), 1)
             fs.set_value(1)
             assert fs.toggled is True
 
     def test_non_bypass_handles_missing_range(self):
         with _make_footswitch() as (fs, _sink):
-            fs.parameter = self._param("gain", 1, minimum=None, maximum=None)
+            fs.parameter = self._param(Symbol("gain"), 1, minimum=None, maximum=None)
             fs.set_value(1)
             assert fs.toggled is True
 
@@ -148,45 +157,3 @@ class TestSetValue:
             assert fs.toggled is True
             fs.set_value(1)
             assert fs.toggled is False
-
-
-class TestClearPedalboardInfo:
-    def test_clears_state(self):
-        with _make_footswitch() as (fs, _sink):
-            fs.toggled = True
-            fs.display_label = "Reverb"
-            pixel = MagicMock()
-            fs.pixel = pixel
-
-            fs.clear_pedalboard_info()
-
-            assert fs.toggled is False
-            assert fs.display_label is None
-            assert fs.preset_callback is None
-
-    def test_clears_preset_callback_arg(self):
-        """Regression: clear_pedalboard_info must also reset preset_callback_arg.
-        get_display_label() short-circuits to "" only when both midi_CC and
-        preset_callback_arg are None, so a stale callback_arg makes the footswitch
-        keep acting like a preset switch and fall through to the else branch that
-        returns the (now-None) display_label — i.e. the old preset binding bleeds
-        onto the new pedalboard."""
-        with _make_footswitch(midi_CC=None) as (fs, _sink):
-            fs.add_preset(callback=MagicMock(), callback_arg=5)
-            fs.set_display_label("Lead")
-
-            fs.clear_pedalboard_info()
-
-            assert fs.preset_callback_arg is None
-            assert fs.get_display_label() == ""
-
-    def test_clears_parameter(self):
-        """Regression: clear_pedalboard_info must also reset parameter, so the
-        drives_display check (and any other consumer of fs.parameter) doesn't
-        see a stale plugin binding from a previous pedalboard."""
-        with _make_footswitch(midi_CC=None) as (fs, _sink):
-            fs.parameter = TestSetValue._param(":bypass", 0)
-
-            fs.clear_pedalboard_info()
-
-            assert fs.parameter is None

@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
@@ -18,7 +20,7 @@ import logging
 import pygame
 
 import common.util as Util
-import pistomp.category as Category
+from common.color import accent_color_for
 
 # LED strip configuration:  # TODO get these from hardware impl (pisompcore.py)
 LED_COUNT = 6          # Number of LED pixels.
@@ -58,7 +60,7 @@ class Pixel:
 
     # set the color for the pixel based on category, then render based on enabled status
     def set_color_by_category(self, category, enabled):
-        self.set_color(Category.get_category_color(category))
+        self.set_color(accent_color_for(category))
         self.set_enable(enabled)
 
     # render based on enable

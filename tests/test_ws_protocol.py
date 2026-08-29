@@ -1,6 +1,7 @@
 """Unit tests for ws_protocol.parse_message."""
 
 from modalapi.ws_protocol import (
+    PatchSetMessage,
     AddHwPortMessage,
     AddPluginMessage,
     ConnectMessage,
@@ -19,6 +20,7 @@ from modalapi.ws_protocol import (
     UnknownMessage,
     parse_message,
 )
+from common.parameter import Symbol
 
 
 # ---------------------------------------------------------------------------
@@ -202,12 +204,23 @@ def test_plugin_bypass_nested_instance():
 
 def test_midi_map_bypass():
     msg = parse_message("midi_map /graph/CollisionDrive :bypass 0 60 0.0 1.0")
-    assert msg == MidiMapMessage(instance="CollisionDrive", symbol=":bypass", channel=0, controller=60)
+    assert msg == MidiMapMessage(
+        instance="CollisionDrive", symbol=Symbol(":bypass"), channel=0, controller=60, minimum=0.0, maximum=1.0
+    )
 
 
 def test_midi_map_control_port():
     msg = parse_message("midi_map /graph/HotBox gain 13 70 0.0 1.0")
-    assert msg == MidiMapMessage(instance="HotBox", symbol="gain", channel=13, controller=70)
+    assert msg == MidiMapMessage(
+        instance="HotBox", symbol=Symbol("gain"), channel=13, controller=70, minimum=0.0, maximum=1.0
+    )
+
+
+def test_midi_map_carries_custom_sub_range():
+    msg = parse_message("midi_map /graph/HotBox gain 13 70 0.0 0.5")
+    assert isinstance(msg, MidiMapMessage)
+    assert (msg.minimum, msg.maximum) == (0.0, 0.5)
+    assert msg.binding_range == (0.0, 0.5)
 
 
 def test_midi_map_malformed_is_unknown():
@@ -222,11 +235,26 @@ def test_midi_map_malformed_is_unknown():
 
 
 def test_transport_rolling():
-    assert parse_message("transport 1 4.0 120.0 Internal") == TransportMessage(rolling=True, bpm=120.0)
+    assert parse_message("transport 1 4.0 120.0 none") == TransportMessage(rolling=True, bpm=120.0, sync_mode="none")
 
 
 def test_transport_stopped():
-    assert parse_message("transport 0 4.0 90.5 Internal") == TransportMessage(rolling=False, bpm=90.5)
+    assert parse_message("transport 0 4.0 90.5 none") == TransportMessage(rolling=False, bpm=90.5, sync_mode="none")
+
+
+def test_transport_link_sync_mode():
+    assert parse_message("transport 1 4.0 110.0 link") == TransportMessage(rolling=True, bpm=110.0, sync_mode="link")
+
+
+def test_transport_midi_clock_slave_sync_mode():
+    assert parse_message("transport 0 4.0 88.0 midi_clock_slave") == TransportMessage(
+        rolling=False, bpm=88.0, sync_mode="midi_clock_slave"
+    )
+
+
+def test_transport_legacy_omits_sync_mode():
+    # Older mod-ui installs shipped no syncMode token — default to internal.
+    assert parse_message("transport 1 4.0 120.0") == TransportMessage(rolling=True, bpm=120.0, sync_mode="none")
 
 
 def test_transport_malformed_bpm_is_unknown():
@@ -243,7 +271,7 @@ def test_plugin_bypass_nonzero_is_true():
 def test_param_set_generic_control_port():
     # Inbound (space) form for a non-bypass control port.
     msg = parse_message("param_set /graph/Delay gain 0.75")
-    assert msg == ParamSetMessage(instance="Delay", symbol="gain", value=0.75)
+    assert msg == ParamSetMessage(instance="Delay", symbol=Symbol("gain"), value=0.75)
 
 
 def test_param_set_bypass_precedes_generic_arm():
@@ -265,7 +293,9 @@ def test_param_set_missing_value_is_unknown():
 def test_add_plugin_bypassed():
     # add {instance} {uri} {x} {y} {bypassed} {sversion} {buildEnv}
     msg = parse_message("add CollisionDrive http://moddevices.com/caps 419.0 198.0 1 2 1")
-    assert msg == AddPluginMessage(instance="CollisionDrive", uri="http://moddevices.com/caps", x=419.0, y=198.0, bypassed=True)
+    assert msg == AddPluginMessage(
+        instance="CollisionDrive", uri="http://moddevices.com/caps", x=419.0, y=198.0, bypassed=True
+    )
 
 
 def test_add_plugin_active():
@@ -353,3 +383,41 @@ def test_malformed_pedal_snapshot_non_int():
 def test_empty_string():
     msg = parse_message("")
     assert isinstance(msg, UnknownMessage)
+
+
+# ---------------------------------------------------------------------------
+# patch_set — writable plugin properties (frames captured off a live device)
+# ---------------------------------------------------------------------------
+
+
+def test_patch_set_string_value():
+    msg = parse_message("patch_set /graph/notes 1 http://open-music-kontrollers.ch/lv2/notes#text s Abc123")
+    assert msg == PatchSetMessage(
+        instance="notes",
+        param_uri="http://open-music-kontrollers.ch/lv2/notes#text",
+        value_type="s",
+        value="Abc123",
+    )
+
+
+def test_patch_set_path_value_keeps_spaces():
+    msg = parse_message(
+        "patch_set /graph/neural_amp_modeler_lv2_1 1 "
+        "http://github.com/mikeoliphant/neural-amp-modeler-lv2#model p "
+        "/home/pistomp/data/user-files/NAM Models/Clean (G1 L0 B1 T1).nam"
+    )
+    assert msg == PatchSetMessage(
+        instance="neural_amp_modeler_lv2_1",
+        param_uri="http://github.com/mikeoliphant/neural-amp-modeler-lv2#model",
+        value_type="p",
+        value="/home/pistomp/data/user-files/NAM Models/Clean (G1 L0 B1 T1).nam",
+    )
+
+
+def test_patch_set_empty_value():
+    msg = parse_message("patch_set /graph/nam 1 http://uri#model p ")
+    assert msg == PatchSetMessage(instance="nam", param_uri="http://uri#model", value_type="p", value="")
+
+
+def test_patch_set_truncated_is_unknown():
+    assert isinstance(parse_message("patch_set /graph/nam 1 http://uri#model"), UnknownMessage)

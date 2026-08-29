@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Per-plugin-type customization type. The registry lives in `plugins.customization`."""
 
 from __future__ import annotations
@@ -7,8 +24,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from common.color import RectBorder
+from common.param_roles import ParamRole
+from common.parameter import Symbol
 
 if TYPE_CHECKING:
+    from common.parameter import Parameter
     from modalapi.plugin import Plugin
     from plugins.base import PluginPanel
 
@@ -28,6 +48,20 @@ def extra_data_as(plugin: Plugin, kind: type[_TExtra]) -> _TExtra | None:
 
 
 @dataclass(frozen=True)
+class PinnedParam:
+    """One arc-ring slot in a parameter window.
+
+    Color is derived from the parameter's unit at render time, not stored here.
+    """
+
+    symbol: Symbol
+    label: str
+    # value -> (value_text, unit_text); unit "" ⇒ single centred line, non-empty
+    # ⇒ unit stacked on a second line (same contract as arc_dial.DialFormatter).
+    display_fn: Callable[[float], tuple[str, str]] | None = None
+
+
+@dataclass(frozen=True)
 class PluginCustomization:
     panel_cls: type[PluginPanel] | None = None
     display_name: str | None = None
@@ -37,6 +71,22 @@ class PluginCustomization:
     tile_active_color: tuple[int, int, int] | None = None
     tile_border: RectBorder | None = None
     extra_data: PluginExtraData | None = None
+
+    # Per-symbol edit-math classification, supplementing the LV2 port's
+    #  Symbols absent here are ParamRole.GENERIC.
+    param_roles: dict[Symbol, ParamRole] = field(default_factory=dict, compare=False, hash=False)
+
+    # Arc-ring slots pinned to the top of the parameter window. When set, these
+    # replace the heuristic (first N continuous params). None = use heuristic.
+    pinned_params: tuple[PinnedParam, ...] | None = None
+
+    # Redundant ports the UI must never paint: author-rolled bypass/enable ports
+    # carrying no LV2 metadata to catch them. `common.parameter.is_hidden_port`
+    # handles the ones that do.
+    hidden_params: frozenset[Symbol] = frozenset()
+
+    # Live label for a bound control (knob/footswitch/dialog title).
+    control_label_fn: Callable[[Parameter], str] | None = field(default=None, compare=False, hash=False)
 
 
 class Customizer(Protocol):
