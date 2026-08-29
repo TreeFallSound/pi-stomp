@@ -121,6 +121,34 @@ class TransportMessage:
     sync_mode: SyncModeWire = "none"
 
 
+# mirrors BEAT_SYNC_FLAG_* in mod-host src/effects.c
+BEAT_SYNC_NEW_BAR = 0x1
+BEAT_SYNC_TEMPO_CHANGED = 0x2
+
+
+@dataclass
+class BeatSyncMessage:
+    """A sample of the transport clock at `t_us`. Consumers calculates the
+    position after `t_us` from `bpm`. Each sample replaces the sample before it."""
+
+    t_us: int
+    bpm: float
+    bpb: float
+    beat_in_bar: float
+    flags: int
+
+    @property
+    def is_new_bar(self) -> bool:
+        """The sample occurs on a bar line: its phase is correct."""
+        return bool(self.flags & BEAT_SYNC_NEW_BAR)
+
+    @property
+    def is_tempo_change(self) -> bool:
+        """A discrete bpm or bpb change. The sample gives the new tempo, but
+        its phase is not correct."""
+        return bool(self.flags & BEAT_SYNC_TEMPO_CHANGED)
+
+
 @dataclass
 class AddPluginMessage:
     """Plugin present in a (re)connect/load dump, or dynamically added (add ...)."""
@@ -177,6 +205,15 @@ class ParamSetMessage:
 
 
 @dataclass
+class OutputSetMessage:
+    """A plugin output-port value changed (output_set)."""
+
+    instance: str
+    symbol: str
+    value: float
+
+
+@dataclass
 class MidiMapMessage:
     """A MIDI binding was learned/assigned in mod-ui (midi_map ...)."""
 
@@ -216,12 +253,14 @@ WebSocketMessage = Union[
     TrueBypassMessage,
     PluginBypassMessage,
     TransportMessage,
+    BeatSyncMessage,
     AddPluginMessage,
     PatchSetMessage,
     RemovePluginMessage,
     ConnectMessage,
     DisconnectMessage,
     ParamSetMessage,
+    OutputSetMessage,
     MidiMapMessage,
     UnknownMessage,
 ]
@@ -338,6 +377,12 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                 symbol, value_str = rest.split(" ", 1)
                 return ParamSetMessage(instance=instance, symbol=Symbol(symbol), value=float(value_str))
 
+            # Format: output_set /graph/{instance} {symbol} {value}
+            case ["output_set", path, rest]:
+                instance = path.removeprefix("/graph/")
+                symbol, value_str = rest.split(" ", 1)
+                return OutputSetMessage(instance=instance, symbol=symbol, value=float(value_str))
+
             # Format: midi_map /graph/{instance} {symbol} {channel} {controller} {min} {max}
             case ["midi_map", path, rest]:
                 symbol, ch, ctrl, mn, mx = rest.split(" ")[:5]
@@ -371,6 +416,17 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                     bpm=bpm,
                     beats_per_bar=bpb,
                     sync_mode=cast(SyncModeWire, sync_mode),
+                )
+
+            # Format: beat_sync {t_us} {bpm} {bpb} {beat_in_bar} {flags}
+            case ["beat_sync", t_us, rest]:
+                bpm, bpb, beat_in_bar, flags = rest.split(" ")
+                return BeatSyncMessage(
+                    t_us=int(t_us),
+                    bpm=float(bpm),
+                    bpb=float(bpb),
+                    beat_in_bar=float(beat_in_bar),
+                    flags=int(flags),
                 )
 
     except (ValueError, IndexError) as e:

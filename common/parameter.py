@@ -34,6 +34,7 @@ TTL_PROPERTIES = "properties"
 TTL_SCALEPOINTS = "scalePoints"
 TTL_TAPTEMPO = "tapTempo"
 TTL_TOGGLED = "toggled"
+TTL_TRIGGER = "trigger"
 
 # Identifies a Parameter: the key of plugin.parameters, ParamEffect.symbol,
 # edit_symbol(). Usually an LV2 port symbol (":bypass", "gain"); also an ALSA
@@ -110,6 +111,14 @@ def is_hidden_port(plugin_info: PortInfo) -> bool:
     return plugin_info.get("designation", "") in HIDDEN_DESIGNATIONS
 
 
+def _has_property(properties: list[str], name: str) -> bool:
+    """Match MOD-UI's short property names and raw LV2 URIs."""
+    return any(
+        property_name == name or property_name.rsplit("#", 1)[-1].rsplit("/", 1)[-1] == name
+        for property_name in properties
+    )
+
+
 class Type(Enum):
     DEFAULT = 0  # No explicitly defined type (eg. linear float)
     ENUMERATION = 1
@@ -117,6 +126,7 @@ class Type(Enum):
     LOGARITHMIC = 3
     TAPTEMPO = 4
     TOGGLED = 5
+    TRIGGER = 6  # pprops:trigger — edge-triggered, self-clearing (momentary)
 
 
 class Parameter:
@@ -171,19 +181,27 @@ class Parameter:
 
         properties = plugin_info.get("properties") or []
         if len(properties) > 0:
-            if TTL_LOGARITHMIC in properties:
+            if _has_property(properties, TTL_LOGARITHMIC):
                 self.is_logarithmic = True
-            if TTL_ENUMERATION in properties:
+            if _has_property(properties, TTL_TRIGGER):
+                self.type = Type.TRIGGER
+            elif _has_property(properties, TTL_ENUMERATION):
                 self.enum_values = plugin_info.get("scalePoints") or []
                 self.type = Type.ENUMERATION
-            elif TTL_INTEGER in properties:
+            elif _has_property(properties, TTL_INTEGER):
                 self.type = Type.INTEGER
-            elif TTL_LOGARITHMIC in properties:
+            elif _has_property(properties, TTL_LOGARITHMIC):
                 self.type = Type.LOGARITHMIC
-            elif TTL_TAPTEMPO in properties:
+            elif _has_property(properties, TTL_TAPTEMPO):
                 self.type = Type.TAPTEMPO
-            elif TTL_TOGGLED in properties:
+            elif _has_property(properties, TTL_TOGGLED):
                 self.type = Type.TOGGLED
+
+    @property
+    def is_momentary(self) -> bool:
+        """True for edge-triggered, self-clearing ports (pprops:trigger) —
+        these need a one-shot 127 press rather than an absolute 127/0 toggle."""
+        return self.type == Type.TRIGGER
 
     @property
     def value(self) -> float:
@@ -214,6 +232,16 @@ class Parameter:
         if sink is not None and not sink(self):
             self._set(self._confirmed)
             return
+        self._notify_settled()
+
+    def pulse(self, sink: ParamSink | None) -> None:
+        """A self-clearing trigger edge (pprops:trigger): drive to the "on" edge,
+        publish it once through *sink*, then clear to rest — persists no value
+        and never reverts, so each press is a fresh rising edge."""
+        self._set(self.maximum)
+        if sink is not None:
+            sink(self)
+        self._set(self.minimum)
         self._notify_settled()
 
     def _set(self, value: float) -> None:

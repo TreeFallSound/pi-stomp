@@ -83,7 +83,7 @@ class Effect:
 class ParamEffect(Effect):
     plugin: object  # PluginRef, resolved at pedalboard load
     symbol: Union[Symbol, type[SelectionSymbol]]
-    commit: bool = True  # WebSocket send_parameter on fire
+    commit: bool = True  # Declared: WebSocket send on fire. Dispatch does not read it. A no-op today.
     mirror: bool = True  # reconcile from inbound param_set echo
 
 
@@ -188,6 +188,12 @@ class ContextLayer:
             )
         key = (decl.control.cls, decl.event_kind)
         self.rows.setdefault(key, []).append(decl)
+
+    def remove(self, should_drop: Callable[[BindingDecl], bool]) -> None:
+        """Drop every row for which *should_drop* is true, across all buckets —
+        the mutation counterpart to add(), so callers never touch `rows`."""
+        for key, rows in list(self.rows.items()):
+            self.rows[key] = [d for d in rows if not should_drop(d)]
 
 
 # Per-class chain: which ContextKinds are consulted, top (highest precedence)

@@ -31,6 +31,7 @@ import threading
 from typing import Optional
 
 import websockets
+import websockets.exceptions  # lazy __getattr__ aliases the API, not the submodules
 import uvloop
 from common.parameter import Symbol
 
@@ -48,7 +49,11 @@ class WebSocketWorker:
     """
 
     def __init__(
-        self, ws_url: str, backpressure_threshold: int, command_queue: queue.Queue, received_queue: queue.Queue
+        self,
+        ws_url: str,
+        backpressure_threshold: int,
+        command_queue: queue.Queue,
+        received_queue: queue.Queue,
     ):
         self.ws_url = ws_url
         self.backpressure_threshold = backpressure_threshold
@@ -58,6 +63,15 @@ class WebSocketWorker:
         self.ws = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._stop_event: asyncio.Event = asyncio.Event()
+        # Atomically-swappable set of "instance/symbol" keys whose output_set
+        # frames survive the prefix drop. Owned by the worker so it doesn't
+        # need a back-reference to the bridge. Swapped from the main thread
+        # via set_interesting_outputs; read here on the worker thread. The
+        # frozenset ref-swap is atomic under the GIL (CPython only).
+        self._interesting: frozenset[str] = frozenset()
+        # Latest unsubscribed output_set per "instance/symbol", replayed when a
+        # subscription for it arrives. Bounded by the port count, not the rate.
+        self._latest_outputs: dict[str, str] = {}
         self._wakeup: asyncio.Event = asyncio.Event()
 
         # Metrics
@@ -236,7 +250,22 @@ class WebSocketWorker:
                     await ws.send(message)
                     continue
                 elif message.startswith("output_set "):
-                    continue  # audio-meter flood; nothing consumes it, drop before it floods the queue
+                    # Keep only if a footswitch behavior subscribed to this output.
+                    parts = message.split(" ", 3)
+                    if len(parts) >= 3:
+                        inst = parts[1].removeprefix("/graph/")
+                        key = f"{inst}/{parts[2]}"
+                        if key in self._interesting:
+                            self.received_queue.put(message)
+                            self.messages_received += 1
+                            logging.debug(f"Received subscribed output_set: {message[:100]}")
+                        else:
+                            # mod-ui dumps every monitored port on connect, before
+                            # the board binds and the subscriptions are known. Hold
+                            # the latest value per port so the first paint isn't
+                            # stale until the plugin next moves.
+                            self._latest_outputs[key] = message
+                    continue
                 self.received_queue.put(message)
                 self.messages_received += 1
                 logging.debug(f"Received message from server: {message[:100]}")
@@ -244,6 +273,20 @@ class WebSocketWorker:
             logging.debug("WebSocket receive loop closed")
         except Exception as e:
             logging.error(f"Error receiving message: {e}")
+
+    def set_interesting_outputs(self, keys: frozenset[str]) -> None:
+        """Atomically swap the set of 'instance/symbol' keys whose output_set
+        frames survive the prefix drop. Called from the main thread on
+        pedalboard load/rebind. Thread-safe under the GIL (frozenset ref swap).
+
+        Set before the replay, so a value arriving mid-swap takes the queue path
+        rather than landing in a dict nobody drains again."""
+        self._interesting = keys
+        for key in keys:
+            message = self._latest_outputs.pop(key, None)
+            if message is not None:
+                self.received_queue.put(message)
+                self.messages_received += 1
 
     def _get_write_buffer_size(self, ws) -> int:
         """Return bytes waiting in the TCP write buffer, or 0 if unavailable."""
@@ -319,6 +362,10 @@ class AsyncWebSocketBridge:
     def get_queue_depth(self) -> int:
         return self.command_queue.qsize()
 
+    def set_interesting_outputs(self, keys: frozenset[str]) -> None:
+        """Delegate to the worker, which owns the interesting-set."""
+        self._worker.set_interesting_outputs(keys)
+
     def get_stats(self) -> dict:
         stats = {
             "queue_depth": self.get_queue_depth(),
@@ -333,6 +380,7 @@ class AsyncWebSocketBridge:
 
     def clear_queue(self) -> int:
         """Clear all pending messages from the queue, returning num cleared."""
+        self._worker._latest_outputs.clear()
         cleared_count = 0
         try:
             while True:

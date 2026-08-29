@@ -198,6 +198,33 @@ def test_settled_fires_on_reconcile_and_commit_not_preview():
     assert settled == [130.0, 140.0]  # rolled back — did not settle
 
 
+def test_pulse_emits_one_edge_and_self_clears():
+    """A pprops:trigger pulse drives the value to its "on" edge, publishes that
+    single edge through the sink, then self-clears to rest — a footswitch CC
+    reads 127 once and the port never latches."""
+    info: PortInfo = {"shortName": "adv", "symbol": "advance", "ranges": {"minimum": 0, "maximum": 1}}
+    p = Parameter(info, 0.0, None, "inst")
+    sent: list[float] = []
+    p.pulse(lambda param: sent.append(param.value) or True)
+
+    assert sent == [1.0], "the sink sees the held 'on' edge"
+    assert p.value == 0.0, "a trigger persists no value — it self-clears to rest"
+
+
+def test_pulse_settles_at_rest_not_at_the_edge():
+    """subscribe_settled fires once, at the cleared rest value — a bound
+    footswitch keycap that mirrors settled state never latches 'on'."""
+    info: PortInfo = {"shortName": "adv", "symbol": "advance", "ranges": {"minimum": 0, "maximum": 1}}
+    p = Parameter(info, 0.0, None, "inst")
+    settled: list[float] = []
+    p.subscribe_settled(lambda param: settled.append(param.value))
+
+    p.pulse(lambda param: True)
+    p.pulse(lambda param: True)
+
+    assert settled == [0.0, 0.0], "each pulse settles once, at rest"
+
+
 def test_subscribe_returns_unsubscriber():
     """The returned callable tears down the subscription."""
     info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 1}}

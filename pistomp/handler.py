@@ -118,6 +118,13 @@ class Handler(InputSink):
     def poll_controls(self):
         raise NotImplementedError()
 
+    def _drive_footswitch_leds(self) -> None:
+        """Render footswitch LEDs from behaviors. Base implementation is a no-op;
+        Modhandler overrides with the beat-aware driver. Called from
+        poll_controls so the LED update happens in the same 10ms tick as the
+        press that triggered it."""
+        return
+
     def poll_modui_changes(self):
         raise NotImplementedError()
 
