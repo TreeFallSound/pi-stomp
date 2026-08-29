@@ -16,6 +16,8 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import os
+import time
+
 import pygame
 import qrcode
 import qrcode.constants
@@ -42,6 +44,8 @@ _BG = (255, 255, 255)
 _FG = (48, 48, 48)
 _QR_COLOUR = (0, 0, 0)
 _LIGHT = (120, 120, 120)
+_DISABLED = (170, 170, 170)
+_RESTORE_POLL_S = 1.0
 QR_TEXT = "treefallsound.github.io/pistomp-manual/"
 
 
@@ -138,6 +142,31 @@ class WelcomePanel(Panel):
         self.add_sel_widget(self._btn_start)
         self.add_sel_widget(self._btn_restore)
         self.add_sel_widget(self._btn_setup)
+
+        self._restore_enabled = True
+        self._restore_checked_at = 0.0
+        self._sync_restore()
+
+    def tick(self) -> None:
+        # Nothing tells us that a drive appeared. The user plugs one in while this
+        # panel is on screen, thus poll.
+        if time.monotonic() - self._restore_checked_at >= _RESTORE_POLL_S:
+            self._sync_restore()
+
+    def _sync_restore(self) -> None:
+        self._restore_checked_at = time.monotonic()
+        enabled = self._handler.usb_restore_available
+        if enabled == self._restore_enabled:
+            return
+        self._restore_enabled = enabled
+        self._btn_restore.set_foreground(_FG if enabled else _DISABLED)
+        if enabled:
+            # Remove and re-add Setup to keep NAV in left-to-right button order.
+            self.del_sel_widget(self._btn_setup)
+            self.add_sel_widget(self._btn_restore)
+            self.add_sel_widget(self._btn_setup)
+        else:
+            self.del_sel_widget(self._btn_restore)
 
     def _on_start(self):
         self._handler.settings.set_setting(Token.WELCOME_SEEN, True)

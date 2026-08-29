@@ -65,6 +65,7 @@ from modalapi.plugin import Plugin
 from blend.input_controller import InputController
 import modalapi.pedalboard as Pedalboard
 from modalapi.pedalboard import BPM_SYMBOL, BPB_SYMBOL, ROLLING_SYMBOL
+import modalapi.usb as usb
 import modalapi.wifi as Wifi
 
 # Importing the plugins package runs every plugin module's register() — this is
@@ -77,6 +78,7 @@ import modalapi.external_midi as ExternalMidi
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
 from pistomp.lcd320x240 import Lcd
+from uilib.menu import row_label
 from pistomp.hardware import Hardware
 import pistomp.settings as Settings
 from blend.snapshot import SnapshotManager
@@ -1559,28 +1561,16 @@ class Modhandler(Handler):
         logging.info("Entering recovery mode")
         os.system("sudo systemctl --no-block start pistomp-recovery")
 
-    def _usb_media_mounts(self) -> list[str]:
-        # /media is populated solely by pi-gen-pistomp's pistomp-usb-mount udev
-        # script (one subdir per mounted USB partition, named by fs label or
-        # kernel device); anything mounted there is USB content storage.
-        media_root = "/media"
-        if not os.path.isdir(media_root):
-            return []
-        return [
-            os.path.join(media_root, name)
-            for name in sorted(os.listdir(media_root))
-            if os.path.ismount(os.path.join(media_root, name))
-        ]
+    def usb_drives(self) -> list[usb.UsbDrive]:
+        return usb.discover(self.backup_file)
 
-    def check_usb(self) -> list[str]:
-        # One backups dir per mounted stick, created if needed.
-        backup_dirs = []
-        for mount in self._usb_media_mounts():
-            backup_dir = os.path.join(mount, "backups")
-            if not os.path.exists(backup_dir):
-                os.mkdir(backup_dir)
-            backup_dirs.append(backup_dir)
-        return backup_dirs
+    @property
+    def usb_backup_available(self) -> bool:
+        return any(d.writable for d in self.usb_drives())
+
+    @property
+    def usb_restore_available(self) -> bool:
+        return any(d.archive for d in self.usb_drives())
 
     @staticmethod
     def _human_size(num_bytes: int) -> str:
@@ -1591,64 +1581,79 @@ class Modhandler(Handler):
             value /= 1000
         return f"{value:.1f}GB"
 
-    def _drive_detail(self, backup_dir: str) -> str:
+    def _drive_detail(self, drive: usb.UsbDrive) -> str:
         """Drive name plus free space — the thing that decides whether a backup fits."""
-        mount = os.path.dirname(backup_dir)
-        name = os.path.basename(mount)
         try:
-            usage = shutil.disk_usage(mount)
+            usage = shutil.disk_usage(drive.mount)
         except OSError:
-            return name
-        return f"{name} · {self._human_size(usage.free)} free of {self._human_size(usage.total)}"
+            return drive.name
+        return f"{drive.name} · {self._human_size(usage.free)} free of {self._human_size(usage.total)}"
 
-    def _archive_detail(self, backup_dir: str) -> str:
+    def _archive_detail(self, drive: usb.UsbDrive) -> str:
         """Drive name plus the archive's size and age — restore overwrites data/,
         so which vintage is about to land matters more than free space."""
-        mount = os.path.dirname(backup_dir)
-        name = os.path.basename(mount)
-        path = os.path.join(backup_dir, self.backup_file)
+        if drive.archive is None:
+            return drive.name
         try:
-            st = os.stat(path)
+            st = os.stat(drive.archive)
         except OSError:
-            return name
+            return drive.name
         when = datetime.datetime.fromtimestamp(st.st_mtime).strftime("%d %b %H:%M")
-        return f"{name} · {self._human_size(st.st_size)} from {when}"
+        return f"{drive.name} · {self._human_size(st.st_size)} from {when}"
 
-    def _drive_label(self, backup_dir: str) -> str:
-        mount = os.path.dirname(backup_dir)
+    def _drive_label(self, drive: usb.UsbDrive) -> str:
         try:
-            size = self._human_size(shutil.disk_usage(mount).total)
+            size = self._human_size(shutil.disk_usage(drive.mount).total)
         except OSError:
-            return os.path.basename(mount)
-        return f"{os.path.basename(mount)} ({size})"
+            return drive.name
+        return f"{drive.name} ({size})"
 
-    def _choose_usb_drive(self, backup_dirs: list[str], action):
-        # Runs action(backup_dir) directly for a single stick; with several,
-        # lets the user pick one from an LCD menu first.
-        if not backup_dirs:
-            logging.info("No USB device found")
-            self.lcd.draw_message_dialog("No USB device found")
-        elif len(backup_dirs) == 1:
-            action(backup_dirs[0])
+    def _choose_usb_drive(self, choices: list[tuple[usb.UsbDrive, str | None]], empty_message: str, action):
+        # `choices` pairs each drive with the reason it cannot be used, or None.
+        # An unusable drive stays in the menu, dim, with its reason. A drive the
+        # user cannot see is a drive the user thinks we did not detect.
+        usable = [drive for drive, reason in choices if reason is None]
+        if not usable:
+            logging.info(empty_message)
+            self.lcd.draw_message_dialog(empty_message)
+        elif len(usable) == 1:
+            action(usable[0])
         else:
-            items = [(self._drive_label(d), action, d) for d in backup_dirs]
+            items = [
+                (
+                    row_label(
+                        self._drive_label(drive) if reason is None else f"{drive.name} ({reason})",
+                        enabled=reason is None,
+                    ),
+                    action,
+                    drive,
+                )
+                for drive, reason in choices
+            ]
             self.lcd.draw_selection_menu(items, "Choose USB drive", auto_dismiss=True, dismiss_option=True)
 
     def user_backup_data(self, arg):
-        self._choose_usb_drive(self.check_usb(), self._do_backup_data)
+        choices = [(d, None if d.writable else "read-only") for d in self.usb_drives()]
+        self._choose_usb_drive(choices, "No writable USB drive", self._do_backup_data)
 
-    def _do_backup_data(self, backup_dir: str):
+    def _do_backup_data(self, drive: usb.UsbDrive):
         from modalapi.archive import ArchiveJob
         from ui.archive_panel import ArchiveProgressPanel
 
         logging.info("Data backup...")
+        try:
+            backup_dir = usb.ensure_backup_dir(drive)
+        except OSError as e:
+            logging.error(f"Cannot write to {drive.mount}: {e}")
+            self.lcd.draw_message_dialog(f"{drive.name} is not writable")
+            return
         cmd = os.path.join(self.homedir, "util", "data-backup.sh")
         job = ArchiveJob.backup(cmd, os.path.join(backup_dir, self.backup_file), self.data_dir)
         self.lcd.pstack.push_panel(
             ArchiveProgressPanel(
                 title="Backing up",
                 noun="Backup",
-                subtitle=self._drive_detail(backup_dir),
+                subtitle=self._drive_detail(drive),
                 job=job,
                 on_dismiss=self._dismiss_archive_panel,
                 cancellable=True,
@@ -1656,24 +1661,25 @@ class Modhandler(Handler):
         )
 
     def user_restore_data(self, arg, on_success=None):
-        # Only offer drives that actually hold a backup — no point asking the
-        # user to choose when just one (or none) does.
-        restorable = [d for d in self.check_usb() if os.path.exists(os.path.join(d, self.backup_file))]
-        self._choose_usb_drive(restorable, lambda d: self._do_restore_data(d, on_success=on_success))
+        choices = [(d, None if d.archive else "no backup") for d in self.usb_drives()]
+        self._choose_usb_drive(
+            choices, "No backup found on USB", lambda d: self._do_restore_data(d, on_success=on_success)
+        )
 
-    def _do_restore_data(self, backup_dir: str, on_success=None):
+    def _do_restore_data(self, drive: usb.UsbDrive, on_success=None):
         from modalapi.archive import ArchiveJob
         from ui.archive_panel import ArchiveProgressPanel
 
+        assert drive.archive is not None
         logging.info("Restoring data backup...")
         cmd = os.path.join(self.homedir, "util", "data-restore.sh")
-        job = ArchiveJob.restore(cmd, self.username, os.path.join(backup_dir, self.backup_file), self.data_dir)
+        job = ArchiveJob.restore(cmd, self.username, drive.archive, self.data_dir)
         self._restoring = True
         self.lcd.pstack.push_panel(
             ArchiveProgressPanel(
                 title="Restoring",
                 noun="Restore",
-                subtitle=self._archive_detail(backup_dir),
+                subtitle=self._archive_detail(drive),
                 job=job,
                 on_dismiss=lambda: self._dismiss_restore_panel(on_success),
                 cancellable=False,
