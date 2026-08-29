@@ -30,7 +30,6 @@ import pistomp.httpclient as req
 from pistomp.httpclient import Response
 import subprocess
 import sys
-import yaml
 from collections import namedtuple
 from collections.abc import Callable
 from dataclasses import replace
@@ -99,6 +98,8 @@ from modalapi.ws_protocol import (
     WebSocketMessage,
 )
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
+import pistomp.config as config
+from pistomp.controller import ControlType
 from modalapi.version_check import DpkgDriftCheck
 
 from pistomp.controller_manager import ControllerManager
@@ -127,14 +128,6 @@ from pathlib import Path
 # Front-loaded: mod-ui usually binds its port within ~300ms of us first asking, so the
 # common case costs one short sleep. Tail covers a slow LV2 scan. 4s total, 6 attempts.
 STARTUP_REST_BACKOFF_S = (0.25, 0.25, 0.5, 1.0, 2.0)
-
-
-def _remove_binding_row(layer: ContextLayer, binding_id: str) -> None:
-    # Drop any PEDALBOARD-layer row whose control.id matches a learned binding
-    # that's being replaced. Scans all event_kind buckets since a re-learn could
-    # cross controller classes (footswitch ↔ encoder).
-    for (cls, event_kind), rows in list(layer.rows.items()):
-        layer.rows[(cls, event_kind)] = [d for d in rows if d.control.id != binding_id]
 
 
 class LongpressCcKey(namedtuple("LongpressCcKey", ["channel", "cc"])):
@@ -319,7 +312,7 @@ class Modhandler(Handler):
         if master is None:  # card exposes no master mixer control (e.g. hifiberry)
             return
         for enc in self.hardware.encoders:
-            if enc.type != Token.VOLUME or not isinstance(enc, EncoderController):
+            if enc.type != ControlType.VOLUME or not isinstance(enc, EncoderController):
                 continue
             value = self.audiocard.get_volume_parameter(master)
             info = PortInfo(
@@ -401,7 +394,7 @@ class Modhandler(Handler):
         # backing plugin parameter, just the audio card.
         delta = int(round(event.rotations * effective_multiplier(event.multiplier, c.parameter)))
 
-        if c.type == Token.VOLUME and c.parameter is not None:
+        if c.type == ControlType.VOLUME and c.parameter is not None:
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
             c.parameter.preview(new_value)
             self.audiocard.set_volume_parameter(self.audiocard.MASTER, new_value)
@@ -1125,6 +1118,9 @@ class Modhandler(Handler):
         if self._current is not None and self._current.analog_controllers:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
+        if self._current is not None:
+            self._current.close()
+
         # Delete previous "current"
         del self._current
 
@@ -1152,13 +1148,8 @@ class Modhandler(Handler):
                         self._apply_patch(plugin, param_uri, value)
             self._pending_dump_patch.clear()
 
-        # Load Pedalboard specific config (overrides default set during initial hardware init)
-        config_file = Path(pedalboard.bundle) / "config.yml"
-        cfg = None
-        if config_file.exists():
-            with open(config_file.as_posix(), "r") as ymlfile:
-                cfg = yaml.load(ymlfile, Loader=yaml.SafeLoader)
-        self.hardware.reinit(cfg)
+        pedalboard_config = config.resolve(self.hardware.default_cfg, pedalboard.bundle)
+        self.hardware.reinit(pedalboard_config)
 
         # Initialize the data and draw on LCD
         self.bind_current_pedalboard()
@@ -1180,14 +1171,14 @@ class Modhandler(Handler):
 
         # Prepare blend modes if configured (snapshot-based activation)
         try:
-            blend_configs = cfg.get("blend_snapshots", []) if cfg else []
+            blend_configs = pedalboard_config.blend_snapshots
             bundle_path = Path(self.current.pedalboard.bundle)
 
             # Sync all blend snapshots (create/recreate based on config)
             snapshot_indices = SnapshotManager.sync_blend_snapshots(bundle_path, blend_configs, self.root_uri)
 
             # Create and prepare BlendMode instances for each blend snapshot
-            from blend import BlendMode
+            from blend.manager import BlendMode
 
             for blend_cfg in blend_configs:
                 snapshot_name = blend_cfg.get("name")
@@ -1266,34 +1257,11 @@ class Modhandler(Handler):
             return False
         return self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
-    def _redraw_after_binding(self, controller: Controller | None, is_footswitch: bool) -> None:
-        if is_footswitch and controller is not None:
-            # Footswitch: redraw just that one switch, not the whole board.
-            self.lcd.update_footswitch(controller)
-        else:
+    def _rebind_pedalboard(self) -> None:
+        self._controller_manager.bind(self._current)
+        self.lcd.draw_main_panel()
+        if self._current is not None:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)
-
-    def _add_learned_binding_row(
-        self, plugin: Plugin, param: Parameter, controller: Controller | None, old_binding: str | None
-    ) -> None:
-        layer = self._controller_manager.effective_table.layers[0]
-        if old_binding is not None:
-            _remove_binding_row(layer, old_binding)
-        if controller is None:
-            return
-        if isinstance(controller, Footswitch):
-            cls, event_kind = ControlClass.FOOTSWITCH, EventKind.PRESS
-        else:
-            cls, event_kind = ControlClass.ANALOG, EventKind.ROTATE
-        assert param.binding is not None
-        layer.add(
-            BindingDecl(
-                control=ControlRef(cls=cls, id=param.binding),
-                event_kind=event_kind,
-                effects=(ParamEffect(plugin=plugin, symbol=param.symbol),),
-                context=layer.ref,
-            )
-        )
 
     def pedalboard_change(self, pedalboard: Pedalboard.Pedalboard) -> None:
         logging.info("Pedalboard change")

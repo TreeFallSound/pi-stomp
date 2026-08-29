@@ -19,12 +19,23 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import TYPE_CHECKING, TypedDict
+
 from common.parameter import Parameter
 
 if TYPE_CHECKING:
     from pistomp.input.sink import InputSink
+
+
+class ControlType(StrEnum):
+    """What a control does. Only KNOB, EXPRESSION and VOLUME come from a config
+    file; NAV is a fixed property of the hardware."""
+
+    KNOB = "KNOB"
+    EXPRESSION = "EXPRESSION"
+    VOLUME = "VOLUME"
+    NAV = "nav"
 
 
 class RoutingDestination(Enum):
@@ -47,7 +58,7 @@ class RoutingInfo:
 
 
 class AnalogDisplayInfo(TypedDict, total=False):
-    type: str | None  # Token.KNOB, Token.EXPRESSION, Token.VOLUME
+    type: ControlType | None  # KNOB, EXPRESSION, or VOLUME
     id: int | None  # Position on screen (0-based from left); None if unpositioned
     category: str | None
     port_name: str | None  # External port name if routed externally
@@ -55,18 +66,19 @@ class AnalogDisplayInfo(TypedDict, total=False):
 
 
 # Per-pedalboard analog/encoder assignment display, keyed by "instance:param"
-# (plugin-bound), "channel:cc" (external), or Token.VOLUME.
+# (plugin-bound), "channel:cc" (external), or ControlType.VOLUME.
 AnalogControllers = dict[str, AnalogDisplayInfo]
 
 
 class Controller:
-    type: str | None = None  # class default; not in __init__ — Encoder sets its own type via the encoder MRO
+    type: ControlType | None = None
     id: int | None = None    # position/identifier for display routing or event filtering
 
     def __init__(self, midi_channel: int, midi_CC: int | None):
         self.midi_channel: int = midi_channel
         self.midi_CC: int | None = midi_CC
         self.parameter: Parameter | None = None
+        self.disabled = False
         # type is not declared here — it conflicts with Encoder's MRO.
         # Subclasses that carry type must declare it themselves.
         self.midi_min: int = 0

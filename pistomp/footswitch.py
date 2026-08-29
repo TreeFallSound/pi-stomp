@@ -17,17 +17,14 @@
 
 import logging
 import sys
-from typing import cast
 
 from typing_extensions import override
 
-import common.token as Token
 import pistomp.controller as controller
 import pistomp.adcswitch as adcswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
 from pistomp.input.event import SwitchEvent, SwitchEventKind
-from common.contexts import LongpressActionConfig
 from common.parameter import BYPASS_SYMBOL
 
 
@@ -58,13 +55,11 @@ class Footswitch(controller.StatefulController):
         self.category = None
         self.pixel = pixel
         self.longpress_groups: list[str] = []
-        # Mapping-form longpress; exclusive with the chord form.
-        self.longpress_action: LongpressActionConfig | None = None
         self.disabled = False
         self.taptempo = taptempo
 
         if adc_input and gpio_input:
-            logging.error("Switch cannot be specified with both %s and %s", (Token.ADC_INPUT, Token.GPIO_INPUT))
+            logging.error("Switch %s cannot have both adc_input and gpio_input", id)
             sys.exit()
 
         self.gpio_switch = None
@@ -117,6 +112,7 @@ class Footswitch(controller.StatefulController):
         super().unbind_from_parameter()
         self.display_label = None
         self.set_category(None)
+        self.toggled = False
 
     @property
     def press_state(self) -> switchstate.Value:
@@ -194,20 +190,6 @@ class Footswitch(controller.StatefulController):
     def set_lcd_color(self, color):
         self.lcd_color = color
 
-    def set_longpress_groups(self, groups):
-        if groups is None:
-            self.longpress_groups = []
-            self.longpress_action = None
-        elif isinstance(groups, str):
-            self.longpress_groups = groups.split()
-            self.longpress_action = None
-        elif isinstance(groups, list):
-            self.longpress_groups = groups
-            self.longpress_action = None
-        elif isinstance(groups, dict):
-            self.longpress_groups = []
-            self.longpress_action = cast(LongpressActionConfig, groups)
-
     def poll(self):
         if self.disabled:
             return
@@ -238,14 +220,3 @@ class Footswitch(controller.StatefulController):
         self.preset_direction = direction
         self.preset_callback_arg = callback_arg
 
-    def clear_pedalboard_info(self):
-        self.toggled = False
-        self.disabled = False
-        self.display_label = None
-        self.set_category(None)
-        self.preset_direction = None
-        self.preset_callback_arg = None
-        self.parameter = None
-        self.longpress_groups = []
-        self.longpress_action = None
-        self.clear_relays()

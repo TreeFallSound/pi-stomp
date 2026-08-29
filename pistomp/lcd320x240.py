@@ -24,6 +24,7 @@ from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Optional
 from common.fonts import font_path
 import common.token as Token
+from pistomp.controller import ControlType
 import common.util as util
 from common.contexts import BindingDecl, ControlClass, EventKind, MidiCcEffect, ParamEffect, ShadowState
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, Type
@@ -735,7 +736,7 @@ class Lcd:
         controller = self.handler.hardware.controllers.get(control_id)
         if (
             isinstance(controller, EncoderController)
-            and controller.type not in (Token.NAV, Token.VOLUME)
+            and controller.type not in (ControlType.NAV, ControlType.VOLUME)
             and controller.id is not None
         ):
             return controller.id
@@ -1230,7 +1231,7 @@ class Lcd:
             # Look up the actual control instance for progress bar tracking
             analog_control = None
             for ac in self.handler.hardware.analog_controls + self.handler.hardware.encoders:
-                if hasattr(ac, "id") and ac.id == i and getattr(ac, "type", None) != Token.NAV:
+                if ac.id == i and ac.type != ControlType.NAV:
                     analog_control = ac
                     break
 
@@ -1246,8 +1247,8 @@ class Lcd:
             if k is None:
                 # Non-mapped control
                 name = "none"
-                control_type = Token.EXPRESSION if i == 0 else Token.KNOB  # HACK cuz we don't know type of unmapped
-                subtitle = "Expression pedal (unassigned)" if control_type == Token.EXPRESSION else "Knob (unassigned)"
+                control_type = ControlType.EXPRESSION if i == 0 else ControlType.KNOB  # HACK cuz we don't know type of unmapped
+                subtitle = "Expression pedal (unassigned)" if control_type == ControlType.EXPRESSION else "Knob (unassigned)"
                 color = accent_color_for(None)
                 text_color = color
                 control_label_fn = None
@@ -1257,10 +1258,10 @@ class Lcd:
                 control_type = util.DICT_GET(v, Token.TYPE)
                 control_label_fn = None
                 control_param = None
-                if control_type == Token.VOLUME:
+                if control_type == ControlType.VOLUME:
                     name = "volume"
                     subtitle = "Output volume"
-                    control_type = Token.KNOB
+                    control_type = ControlType.KNOB
                     color = TILE_DEFAULT_COLOR
                     text_color = color
                 else:
@@ -1305,7 +1306,7 @@ class Lcd:
                         subtitle = f"Blend: {snapshot_name}"
 
             w = None
-            if control_type == Token.KNOB:
+            if control_type == ControlType.KNOB:
                 w = Icon(
                     box=Box.xywh(x, y, TILE_W, height_per_control),
                     text=name,
@@ -1320,7 +1321,7 @@ class Lcd:
                 if blend_initial_progress is not None:
                     w.set_progress(blend_initial_progress)
                 self.w_controls.append(w)
-            elif control_type == Token.EXPRESSION:
+            elif control_type == ControlType.EXPRESSION:
                 w = Icon(
                     box=Box.xywh(x, y, TILE_W, height_per_control),
                     text=name,
@@ -1343,7 +1344,7 @@ class Lcd:
 
         # Rebuild path: widget create/destroy above marks regions dirty, but
         # the LCD push only fires on a refresh. Called standalone from
-        # _redraw_after_binding (midi-learn of an encoder), where there's no
+        # _rebind_pedalboard (midi-learn of an encoder), where there's no
         # enclosing draw_main_panel to refresh for us.
         self.main_panel.refresh()
 

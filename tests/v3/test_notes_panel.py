@@ -14,7 +14,7 @@ from plugins.customization import lookup
 from plugins.notes import NOTES_URI
 from plugins.notes.panel import NotesData, NotesPanel
 from tests.types import SystemFixture
-import common.token as Token
+from pistomp.controller import ControlType
 from tests.v3.nav_helpers import nav_click
 from common.parameter import BYPASS_SYMBOL, PortInfo, Symbol
 
@@ -52,7 +52,7 @@ class _NavEnc(Controller):
 
     def __init__(self) -> None:
         super().__init__(midi_channel=0, midi_CC=None)
-        self.type = Token.NAV
+        self.type = ControlType.NAV
         self.id = 0
 
 

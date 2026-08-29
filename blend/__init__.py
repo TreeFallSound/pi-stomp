@@ -15,29 +15,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Blend mode: an analog input interpolates between snapshots.
+
+Import from the submodules. This package must not re-export them, or
+`pistomp.config` cannot use `blend.types` without a cycle.
 """
-Blend mode package - Analog input-driven snapshot interpolation.
-
-This package provides functionality for smoothly interpolating between snapshots
-based on analog input position (expression pedals or tweak encoders).
-"""
-
-from blend.easing import EASING_FUNCTIONS, EasingFunc
-from blend.input_controller import InputController
-from blend.manager import BlendMode
-from blend.parameter_setter import ParameterSetter
-from blend.snapshot import SnapshotManager
-from blend.stop import BlendStop
-from blend.types import BlendSnapshotConfig, NormalizedStops
-
-__all__ = [
-    "BlendMode",
-    "BlendStop",
-    "InputController",
-    "SnapshotManager",
-    "ParameterSetter",
-    "BlendSnapshotConfig",
-    "NormalizedStops",
-    "EASING_FUNCTIONS",
-    "EasingFunc",
-]
