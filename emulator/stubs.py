@@ -288,6 +288,9 @@ class StubEthernetManager(EthernetManager):
     def read_netadapter_health(self) -> tuple[int, int, str]:
         return (1, 6, "eth0")
 
+    def read_link_health(self) -> tuple[bool, int]:
+        return (False, 0)
+
 
 class StubJackMute(JackMute):
     """In-memory mute state; no JACK calls. Lets the menu's Mute/Unmute MOD
