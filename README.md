@@ -43,6 +43,14 @@ but note that the setup scripts have not been updated to work with the newer v3 
 Also keep in mind that there are hundreds of packages used to build the system.
 Package version incompatibilities are much more likely using this method.
 
+## Installing a Python package on the device
+
+To test a package on the device before you commit it, install it into that venv:
+
+```bash
+ssh pistomp@pistomp.local '/opt/pistomp/venvs/pi-stomp/bin/python -m pip install <package>'
+```
+
 ## Running tests
 
 Run tests using `pytest` in the virtual environment. There is a Github Actions workflow that runs this in CI as well.
