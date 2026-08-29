@@ -64,7 +64,10 @@ def test_midi_wins_over_hid_when_a_device_advertises_both():
     "raw,expected",
     [
         ("org.bluez.Error.AuthenticationFailed: x", "pairing failed"),
-        ("org.bluez.Error.ConnectionAttemptFailed: br-connection-page-timeout", "couldn't connect — is it still in pairing mode?"),
+        (
+            "org.bluez.Error.ConnectionAttemptFailed: br-connection-page-timeout",
+            "couldn't connect — is it still in pairing mode?",
+        ),
         ("org.bluez.Error.NotAvailable: no", "the device is no longer in range"),
         ("something InProgress happened", "already connecting"),
     ],
@@ -104,9 +107,9 @@ def test_has_adapter_true_when_hci_node_exists(tmp_path):
     assert has_adapter(str(tmp_path)) is True
 
 
-def test_has_adapter_false_on_pi3_pi4(tmp_path):
-    """dtoverlay=pi3-disable-bt hands the UART to DIN MIDI, so the directory
-    exists but registers no hci device."""
+def test_has_adapter_false_when_no_hci_node_is_registered(tmp_path):
+    """An empty sysfs dir — a board whose controller never attached. Not the
+    Pi 3/4 case: they give Bluetooth the mini UART and do register hci0."""
     assert has_adapter(str(tmp_path)) is False
 
 
@@ -236,3 +239,92 @@ def test_non_busy_errors_are_not_retried():
     with pytest.raises(DBusError):
         _run_set_flag(adapter)
     assert adapter.calls == 1
+
+
+# ----- enable/disable owns the radio, not just the daemon -----
+
+
+class _FakeClient:
+    """Records the order of everything set_enabled does to the adapter."""
+
+    def __init__(self, log, available=True):
+        self._log = log
+        self.available = available
+        self.powered = True
+
+    def call(self, coro):
+        # Log the verb the manager handed us, so on/off cases read differently.
+        name = getattr(coro, "__name__", "adapter_call")
+        coro.close()  # never awaited in this fake
+        self._log.append(name)
+
+    def stop(self):
+        self._log.append("client.stop")
+
+    def start(self, on_change=None):
+        self._log.append("client.start")
+        return True
+
+
+def _disable_with_fakes(manager, client_available=True):
+    log = []
+    manager.client = _FakeClient(log, available=client_available)
+    with (
+        patch.object(ops, "power_off", lambda c: _named_coro("power_off")),
+        patch.object(ops, "disable_service", lambda: log.append("disable_service")),
+        patch.object(ops, "rfkill_set_blocked", lambda b: log.append("rfkill_block" if b else "rfkill_unblock")),
+    ):
+        assert manager.set_enabled(False) is None
+    return log
+
+
+def _named_coro(name):
+    """A throwaway coroutine whose __name__ the fake client logs."""
+
+    async def _c():
+        return None
+
+    _c.__name__ = name
+    return _c()
+
+
+def test_disable_powers_the_radio_off_before_the_daemon_goes_away(manager):
+    """The adapter's D-Bus object disappears with bluetoothd, so a power-off
+    issued after stop/disable silently does nothing and the radio stays up."""
+    log = _disable_with_fakes(manager)
+    assert log == ["power_off", "client.stop", "disable_service", "rfkill_block"]
+
+
+def test_disable_still_blocks_the_radio_when_dbus_is_unavailable(manager):
+    """No bluez connection means no D-Bus power-off; the rfkill block is the
+    guarantee."""
+    log = _disable_with_fakes(manager, client_available=False)
+    assert log == ["client.stop", "disable_service", "rfkill_block"]
+
+
+def test_disable_reports_the_error_and_does_not_block_when_the_unit_fails(manager):
+    log = []
+    manager.client = _FakeClient(log)
+    with (
+        patch.object(ops, "power_off", lambda c: _named_coro("power_off")),
+        patch.object(ops, "disable_service", lambda: "Failed to disable unit"),
+        patch.object(ops, "rfkill_set_blocked", lambda b: log.append("rfkill")),
+    ):
+        assert manager.set_enabled(False) == "Failed to disable unit"
+    assert "rfkill" not in log
+    assert manager._enabled is False
+
+
+def test_enable_unblocks_the_radio_before_starting_the_unit(manager):
+    """The adapter boots soft-blocked; starting bluetoothd against a blocked
+    radio leaves it off-blocked."""
+    log = []
+    manager.client = _FakeClient(log)
+    with (
+        patch.object(ops, "power_on", lambda c: _named_coro("power_on")),
+        patch.object(ops, "enable_service", lambda: log.append("enable_service")),
+        patch.object(ops, "rfkill_set_blocked", lambda b: log.append("rfkill_block" if b else "rfkill_unblock")),
+    ):
+        assert manager.set_enabled(True) is None
+    assert log == ["rfkill_unblock", "enable_service", "client.start", "power_on"]
+    assert "rfkill_block" not in log

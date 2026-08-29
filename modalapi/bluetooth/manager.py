@@ -91,10 +91,10 @@ class BluetoothManager:
 
     @property
     def supported(self) -> bool:
-        """Hardware present. Pi 3/4 hand the BT UART to DIN MIDI via
-        dtoverlay=pi3-disable-bt, so no hci device is registered and no row is
-        ever shown. The node exists whether or not bluetoothd is running, which
-        is what lets the menu offer to turn Bluetooth on."""
+        """Hardware present, judged by an hci node in sysfs rather than board
+        model — Pi 3/4 do register one, since config.txt gives Bluetooth the
+        mini UART rather than disabling it. The node exists whether or not
+        bluetoothd runs, which is what lets the menu offer to turn it on."""
         return self._has_adapter
 
     @property
@@ -207,17 +207,33 @@ class BluetoothManager:
     # ----- verbs, called from the queue's worker thread -----
 
     def set_enabled(self, enabled: bool) -> Optional[str]:
+        """Menu on/off owns the radio, not just the daemon. Down: power off
+        over D-Bus while bluetoothd still answers, drop the client, stop the
+        unit, re-apply the rfkill block. Up: unblock, start, power on."""
         if not enabled:
+            if self.client.available:
+                try:
+                    self.client.call(ops.power_off(self.client))
+                except Exception as e:
+                    # Best-effort; the rfkill block below is the guarantee.
+                    logging.warning("Bluetooth power-off failed: %s", e)
             # Drop the connection before the daemon goes away, so nothing is
             # left holding object paths that stop existing.
             self.client.stop()
+        else:
+            ops.rfkill_set_blocked(False)
         err = ops.enable_service() if enabled else ops.disable_service()
         if err is not None:
             logging.error("Bluetooth %s failed: %s", "enable" if enabled else "disable", err)
             return err
         self._enabled = enabled
-        if enabled and self.client.start(on_change=self.request_refresh):
-            self.client.call(ops.power_on(self.client))
+        if enabled:
+            if self.client.start(on_change=self.request_refresh):
+                self.client.call(ops.power_on(self.client))
+        else:
+            err = ops.rfkill_set_blocked(True)
+            if err is not None:
+                logging.warning("Bluetooth rfkill block failed: %s", err)
         self.request_refresh()
         return None
 

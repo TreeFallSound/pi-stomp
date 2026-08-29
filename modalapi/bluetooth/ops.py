@@ -96,16 +96,28 @@ def install_support_package() -> Optional[str]:
     return None if rc == 0 else out
 
 
+def rfkill_set_blocked(blocked: bool) -> Optional[str]:
+    """Mirror of pistomp-bluetooth's drop-in soft-unblock, both directions, so
+    "off" means off even if bluetoothd exited without powering down. Writes
+    sysfs because the image ships no rfkill(8); trailing `true` tolerates a
+    board with no bluetooth rfkill node."""
+    script = 'for f in /sys/class/rfkill/*; do [ "$(cat $f/type)" = bluetooth ] && echo %d > $f/soft; done; true' % (
+        1 if blocked else 0
+    )
+    rc, out = _run(["sh", "-c", script], timeout=10, sudo=True)
+    return None if rc == 0 else out
+
+
 # ----- adapter -----
 
 
-async def _set_adapter_flag(client: BluezClient, name: str) -> None:
+async def _set_adapter_flag(client: BluezClient, name: str, value: bool = True) -> None:
     """A freshly restarted bluetoothd answers Busy until the adapter finishes
     initialising. That resolves on its own, so retry a bounded number of times
     rather than putting a dialog in front of the user."""
     for attempt in range(_BUSY_RETRIES + 1):
         try:
-            await client.set_adapter_property(name, Variant("b", True))
+            await client.set_adapter_property(name, Variant("b", value))
             return
         except DBusError as e:
             if "Busy" not in str(e) or attempt == _BUSY_RETRIES:
@@ -118,6 +130,18 @@ async def power_on(client: BluezClient) -> None:
     # Pairable persists in the adapter's settings, but say it explicitly rather
     # than inherit whatever a previous session left behind.
     await _set_adapter_flag(client, "Pairable")
+
+
+async def power_off(client: BluezClient) -> None:
+    """Take the radio down. Must run while bluetoothd is still alive: the
+    adapter's D-Bus object disappears with the daemon. Discoverable and
+    Pairable go first so nothing can pair in the gap; neither is fatal."""
+    for name in ("Discoverable", "Pairable"):
+        try:
+            await _set_adapter_flag(client, name, False)
+        except DBusError as e:
+            logging.warning("Bluetooth: clearing %s failed: %s", name, e)
+    await _set_adapter_flag(client, "Powered", False)
 
 
 async def start_discovery(client: BluezClient) -> None:

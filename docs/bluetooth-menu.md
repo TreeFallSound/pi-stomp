@@ -21,8 +21,11 @@ Three things do not exist and are ours:
 - **No on/off control after first boot.** `BLUETOOTH_ENABLED` is consumed once by
   `firstboot.sh`, which then renames itself to `firstboot.done`.
 
-Bluetooth hardware exists on **Pi 5 only** — `config.txt` gives the BT UART to DIN MIDI
-on Pi 3/4 via `dtoverlay=pi3-disable-bt`.
+Bluetooth hardware exists on **Pi 3, 4 and 5 alike**. `config.txt` gives BT the mini
+UART (`dtoverlay=pi3-miniuart-bt`) and leaves the PL011 on GPIO14/15 for DIN MIDI, so
+the controller stays available. Verified on a Pi 3A+ running the 3.3 image: `hci0` is
+registered, `has_adapter()` is true, and the adapter boots rfkill soft-blocked exactly
+as on a Pi 5 — which is what `pistomp-bluetooth`'s drop-in clears.
 
 Outcome: a phone-style pair/connect/forget menu for BLE-MIDI devices, plus HID input
 devices (presenters, page-turners, keyboards, mice) usable as wireless footswitches.
@@ -34,7 +37,7 @@ devices (presenters, page-turners, keyboards, mice) usable as wireless footswitc
 | 1 | **D-Bus via `dbus-fast`**, added to `pyproject.toml` → uv venv | No pi-gen change for the Python side. Gives a persistent `org.bluez.Agent1` (required for headless pairing), `PropertiesChanged` signals for RSSI/Connected/Paired instead of polling, and clean `Pair`/`Connect` calls. We already run as root (`ps-run` uses sudo), so stock D-Bus policy suffices. |
 | 2 | **Reuse `CommandQueue`**; `dbus-fast` replaces only its worker *thread's* job | The queue's real work — serialize, dedupe by `key()`, drain results on the main thread — is still exactly what we want. Each `Command.run()` blocks on `asyncio.run_coroutine_threadsafe(coro, loop).result(timeout)`. `poll()`, `pending_op_count()`, exception-as-result and the whole test-fixture shape stay untouched. |
 | 3 | **Entry point: a row in the Network (WiFi) menu** | Same conditional-row idiom as "Wired Connection" → `EthernetMenu`. Toolbar stays at 4 tiles (it is full: 210/240/270/296 at 20px on a 320px screen). |
-| 4 | **No BT hardware → no row, no mention of Bluetooth anywhere** | Pi 3/4 users must not see a feature their board cannot have. |
+| 4 | **No BT hardware → no row, no mention of Bluetooth anywhere** | Gated on `has_adapter()` (an `hci*` node in sysfs), not board model. Pi 3/4/5 all register one, so this is a fallback rather than the Pi 3/4 case. |
 | 5 | **Menu owns enable/disable**; no `pistomp.conf` write-back | `systemctl enable --now bluetooth` persists on its own (it writes a symlink), so the firstboot flag never needs rewriting. Avoids touching the boot partition at runtime. |
 | 6 | **Nearby list shows only MIDI and HID devices** | Everything else (phones, laptops, beacons, fitness trackers) is noise we can do nothing with. Predicate in §"Device filter". |
 | 7 | **Pair + trust + connect is one action** | The three-way distinction is bluez's model, not the user's. Trust-on-pair is also what makes reconnection work at all (see Context). |
