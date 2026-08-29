@@ -167,10 +167,12 @@ def setup_main_ui(instance):
     instance.draw_main_panel()
 
 
-def test_splash_snapshot(lcd, snapshot):
-    _, fake = lcd
+def test_cleanup_blacks_the_panel(lcd, snapshot):
+    instance, fake = lcd
+    setup_main_ui(instance)
+    instance.cleanup()
     fake.flush()
-    assert len(fake.frames) > 0, "expected at least one frame from splash_show during __init__"
+    assert instance.pstack.stack == []
     snapshot()
 
 

@@ -13,18 +13,28 @@ from uilib.menu import DisabledLabel, label_key
 
 def test_system_menu_shutdown(modhandler_system: SystemFixture):
     handler = modhandler_system.handler
-    with patch.object(handler.lcd, "cleanup"), patch("os.system") as mock_os, patch("os._exit") as mock_exit:
+    with patch("os.system") as mock_os:
         handler.system_menu_shutdown(None)
-    mock_os.assert_called_once_with("sudo systemctl --no-wall poweroff")
-    mock_exit.assert_called_once_with(0)
+    mock_os.assert_called_once_with("sudo systemctl --no-wall --no-block poweroff")
 
 
 def test_system_menu_reboot(modhandler_system: SystemFixture):
     handler = modhandler_system.handler
-    with patch("os.system") as mock_os, patch("os._exit") as mock_exit:
+    with patch("os.system") as mock_os:
         handler.system_menu_reboot(None)
-    mock_os.assert_called_once_with("sudo systemctl reboot")
-    mock_exit.assert_called_once_with(0)
+    mock_os.assert_called_once_with("sudo systemctl --no-wall --no-block reboot")
+
+
+def test_shutdown_survives_polls_before_sigterm(modhandler_system: SystemFixture):
+    """The loop keeps ticking between the poweroff request and systemd's SIGTERM."""
+    handler = modhandler_system.handler
+    with patch("os.system"):
+        handler.system_menu_shutdown(None)
+    handler.lcd.update_bypass(True, True)
+    handler.lcd.update_wifi({"hotspot_active": False, "wifi_connected": True})
+    handler.poll_lcd_updates()
+    assert handler.lcd.pstack.stack == []
+    assert handler.lcd.pstack.current is None
 
 
 def test_system_menu_reload(modhandler_system: SystemFixture):

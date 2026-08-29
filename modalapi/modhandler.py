@@ -1545,16 +1545,14 @@ class Modhandler(Handler):
         )
 
     def system_menu_shutdown(self, arg):
-        self.lcd.splash_show(False)
+        self.lcd.cleanup()
         logging.info("System Shutdown")
-        os.system("sudo systemctl --no-wall poweroff")
-        os._exit(0)
+        os.system("sudo systemctl --no-wall --no-block poweroff")
 
     def system_menu_reboot(self, arg):
-        self.lcd.splash_show(False)
+        self.lcd.cleanup()
         logging.info("System Reboot")
-        os.system("sudo systemctl reboot")
-        os._exit(0)
+        os.system("sudo systemctl --no-wall --no-block reboot")
 
     def system_menu_recovery_mode(self, arg):
         self.lcd.draw_info_message("Entering recovery mode...", refresh=True)
@@ -1752,7 +1750,6 @@ class Modhandler(Handler):
             logging.error("restart_ui_stack: %s", e)
 
     def system_menu_restart_sound(self, arg):
-        self.lcd.splash_show()
         logging.info("Restart sound engine (jack)")
         os.system("sudo systemctl restart jack")
 
