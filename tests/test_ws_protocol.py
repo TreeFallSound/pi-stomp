@@ -235,15 +235,11 @@ def test_midi_map_malformed_is_unknown():
 
 
 def test_transport_rolling():
-    assert parse_message("transport 1 4.0 120.0 Internal") == TransportMessage(
-        rolling=True, bpm=120.0, sync_mode="Internal"
-    )
+    assert parse_message("transport 1 4.0 120.0 none") == TransportMessage(rolling=True, bpm=120.0, sync_mode="none")
 
 
 def test_transport_stopped():
-    assert parse_message("transport 0 4.0 90.5 Internal") == TransportMessage(
-        rolling=False, bpm=90.5, sync_mode="Internal"
-    )
+    assert parse_message("transport 0 4.0 90.5 none") == TransportMessage(rolling=False, bpm=90.5, sync_mode="none")
 
 
 def test_transport_link_sync_mode():
@@ -257,8 +253,8 @@ def test_transport_midi_clock_slave_sync_mode():
 
 
 def test_transport_legacy_omits_sync_mode():
-    # Older mod-ui installs shipped no syncMode token — default to Internal.
-    assert parse_message("transport 1 4.0 120.0") == TransportMessage(rolling=True, bpm=120.0, sync_mode="Internal")
+    # Older mod-ui installs shipped no syncMode token — default to internal.
+    assert parse_message("transport 1 4.0 120.0") == TransportMessage(rolling=True, bpm=120.0, sync_mode="none")
 
 
 def test_transport_malformed_bpm_is_unknown():

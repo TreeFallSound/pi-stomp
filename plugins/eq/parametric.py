@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Abstract parametric EQ panel — frequency-response curve visualization.
 
 Subclasses provide band specs via ``build_band_specs()``.
@@ -26,6 +43,7 @@ from common.parameter import Symbol
 from common.parameter_steps import ParameterSteps, effective_multiplier, resolution
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import BandSpec
+from plugins.eq.filters import as_q
 from plugins.eq.curve import (
     GRAPH_W,
     BandParams,
@@ -745,17 +763,9 @@ def band_readout_fields(band: BandSpec, p: BandParams) -> tuple[str, str, str, s
     """
     name = band.name
     freq = _fmt_freq(p.freq)
-    if band.q_is_bw_oct and p.q > 0:
-        _n = 2.0**p.q
-        disp_q = _n**0.5 / (_n - 1.0)
-    elif band.kind == "shelf":
-        disp_q = 0.2129 + p.q / 2.25
-    else:
-        disp_q = p.q
-
     # Q column empty for plugins with no q_sym (plain TAP EQ has a fixed BW
     # the user cannot control) — the (3) badge keys off non-empty text.
-    q = f"Q {disp_q:.2f}" if band.q_sym is not None else ""
+    q = f"Q {as_q(band.q_units, p.q):.2f}" if band.q_units is not None else ""
     if band.gain_sym is None:
         gain = ""
     elif not p.enabled:
@@ -884,8 +894,8 @@ class ParametricEqPanel(FullscreenPluginPanel[EqState]):
             current, lo, hi, field_name = p.freq, band.freq_min, band.freq_max, "freq"
         elif symbol == band.q_sym:
             _role, current, lo, hi, field_name = ParamRole.Q_FACTOR, p.q, band.q_min, band.q_max, "q"
-            # Bandwidth-in-octaves bands invert the knob: clockwise widens, narrowing Q.
-            if band.q_is_bw_oct:
+            # Bandwidth runs opposite to Q, so invert to keep clockwise = narrower.
+            if band.q_units == "bw_oct":
                 rotations = -rotations
         else:
             return super().edit_symbol(symbol, rotations, multiplier)

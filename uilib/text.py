@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import time
@@ -442,6 +444,16 @@ class Button(TextWidget):
         self.outline = self._get_arg(kwargs, "outline", 1)
         self.sel_width = self._get_arg(kwargs, "sel_width", 2)
         super(Button, self).__init__(**kwargs)
+
+    @override
+    def _get_margins(self):
+        # TextWidget top-aligns at v_margin, which leaves a fixed-height button's
+        # label riding high. Centre in the leftover space unless told otherwise.
+        h_margin, v_margin = super()._get_margins()
+        if self.v_margin is None and self.box is not None and self.box.height > 0:
+            _, th = self._get_text_size()
+            v_margin = max(v_margin, int((self.box.height - self.outline - th) // 2))
+        return (h_margin, v_margin)
 
 
 class PluginTile(TextWidget):

@@ -124,6 +124,9 @@ def _fs_cfg(longpress):
     "next_snapshot",
     ["next_snapshot", "toggle_bypass"],
     "toggle_tuner_enable",
+    "next_pedalboard",
+    "previous_pedalboard",
+    ["previous_snapshot", "previous_pedalboard"],
 ])
 def test_longpress_mapping_form_valid(longpress):
     validate(instance=_fs_cfg(longpress), schema=schema)

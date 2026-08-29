@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from typing import Optional
 
 import common.util as util
 import pistomp.controller as controller
-import pistomp.analogswitch as analogswitch
+import pistomp.adcswitch as adcswitch
 import pistomp.gpioswitch as gpioswitch
 import pistomp.switchstate as switchstate
 from pistomp.encoder import Encoder
@@ -54,7 +56,7 @@ class EncoderController(controller.Controller):
     fallback accumulator belongs to the handler (the emitter), not here.
 
     Button: if sw_pin is provided, owns a GpioSwitch that emits SwitchEvent
-    via self.sink. If sw_adc_chan is provided, owns an AnalogSwitch instead.
+    via self.sink. If sw_adc_chan is provided, owns an AdcSwitch instead.
     Longpress is stored as a string callback name resolved by the handler at
     dispatch time.
     """
@@ -92,7 +94,7 @@ class EncoderController(controller.Controller):
         self._last_direction: int = 0
 
         # Absorbed button (GPIO or ADC)
-        self._button: Optional[gpioswitch.GpioSwitch | analogswitch.AnalogSwitch] = None
+        self._button: Optional[gpioswitch.GpioSwitch | adcswitch.AdcSwitch] = None
         self.longpress: Optional[str] = longpress  # string name; resolved at dispatch
         if sw_pin is not None:
             self._button = gpioswitch.GpioSwitch(
@@ -101,7 +103,7 @@ class EncoderController(controller.Controller):
                 longpress_callback=self._on_button_longpress,
             )
         elif sw_adc_chan is not None:
-            self._button = analogswitch.AnalogSwitch(
+            self._button = adcswitch.AdcSwitch(
                 spi,
                 sw_adc_chan,
                 callback=self._on_button,

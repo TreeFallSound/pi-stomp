@@ -376,13 +376,16 @@ def test_chord_footswitch_longpress_falls_through_to_chord_helper(v3_system: Sys
 
     observed: list = []
     original = handler.chord_helper.observe
-    handler.chord_helper.observe = lambda fs, timestamp: observed.append((fs, timestamp))
+
+    def _spy(fs):
+        observed.append(fs)
+        return []
+
+    handler.chord_helper.observe = _spy
 
     event = SwitchEvent(controller=fs0, kind=SwitchEventKind.LONGPRESS, timestamp=99.0)
     assert handler.handle(event) is True
-    assert len(observed) == 1
-    assert observed[0][0] is fs0
-    assert observed[0][1] == 99.0
+    assert observed == [fs0]
 
     handler.chord_helper.observe = original
 

@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 """
@@ -29,7 +31,7 @@ from common.parameter import Symbol
 # closed set (TRANSPORT_SOURCE_* in mod/profile.py). Kept as a Literal on
 # the message so it stays a faithful wire echo; the device-side canonical
 # form is modalapi.sync.SyncMode (parse via SyncMode.parse).
-SyncModeWire = Literal["Internal", "link", "midi_clock_slave"]
+SyncModeWire = Literal["none", "link", "midi_clock_slave"]
 
 
 def _bare_instance(path: str) -> str:
@@ -116,7 +118,7 @@ class TransportMessage:
     rolling: bool
     bpm: float
     beats_per_bar: float = 4.0
-    sync_mode: SyncModeWire = "Internal"
+    sync_mode: SyncModeWire = "none"
 
 
 @dataclass
@@ -363,7 +365,7 @@ def parse_message(raw_message: str) -> WebSocketMessage:
                 bpm = float(parts[1])
                 # mod-ui broadcasts the syncMode token on every transport message
                 # (and on new WebSocket connect); older installs may omit it.
-                sync_mode = parts[2] if len(parts) > 2 else "Internal"
+                sync_mode = parts[2] if len(parts) > 2 else "none"
                 return TransportMessage(
                     rolling=rolling != "0",
                     bpm=bpm,
