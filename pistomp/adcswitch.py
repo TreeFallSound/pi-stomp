@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from typing_extensions import override
@@ -20,7 +22,7 @@ import pistomp.analogcontrol as analogcontrol
 import pistomp.switchstate as switchstate
 
 
-class AnalogSwitch(analogcontrol.AnalogControl):
+class AdcSwitch(analogcontrol.AnalogControl):
     """Raw ADC press detector (10-bit via MCP3008 SPI).
 
     Hardware paths:
@@ -42,7 +44,7 @@ class AnalogSwitch(analogcontrol.AnalogControl):
 
     def __init__(self, spi, adc_channel, callback, longpress_callback=None):
         # Tolerance is not used for switch detection (binary pressed/released)
-        super(AnalogSwitch, self).__init__(spi, adc_channel, tolerance=0)
+        super(AdcSwitch, self).__init__(spi, adc_channel, tolerance=0)
         self.callback = callback
         self.longpress_callback = longpress_callback
         self.state = switchstate.Value.RELEASED

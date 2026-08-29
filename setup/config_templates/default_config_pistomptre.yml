@@ -28,28 +28,30 @@ hardware:
   # midi_channel: <integer>       Override MIDI channel for this footswitch (0-15); required when midi_port is set
   # longpress: <callback_name>    The name of a handler method to call when switch is long-pressed (optional)
   #                               longpress can be a list enclosed with []'s
+  #                               A name shared by two or more switches is a chord: long-pressing them
+  #                               together runs the shared action instead of each switch's own.
   #
   footswitches:
   - id: 0
     adc_input: 0
     ledstrip_position: 0
     midi_CC: 60
-    longpress: previous_snapshot
+    longpress: [previous_snapshot, previous_pedalboard]
   - id: 1
     adc_input: 1
     ledstrip_position: 1
     midi_CC: 61
-    longpress: next_snapshot
+    longpress: [next_snapshot, previous_pedalboard]
   - id: 2
     adc_input: 2
     ledstrip_position: 2
     midi_CC: 62
-    longpress: toggle_tuner_enable
+    longpress: [toggle_tuner_enable, next_pedalboard]
   - id: 3
     adc_input: 3
     ledstrip_position: 3
     midi_CC: 63
-    longpress: toggle_tap_tempo_enable
+    longpress: [toggle_tap_tempo_enable, next_pedalboard]
     tap_tempo: set_mod_tap_tempo
 
   # analog_controllers:

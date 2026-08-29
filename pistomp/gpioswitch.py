@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
@@ -34,6 +36,7 @@ class GpioSwitch:
     def __init__(self, gpio_input, callback, longpress_callback=None):
         self.gpio_input = gpio_input
         self.cur_tstamp = None
+        self.state = switchstate.Value.RELEASED
         self.events = queue.Queue()
         self.callback = callback
         self.longpress_callback = longpress_callback
@@ -74,6 +77,11 @@ class GpioSwitch:
             self.cur_tstamp = new_tstamp
 
         if self.cur_tstamp is None:
+            # Not tracking a press. A delivered longpress leaves the switch
+            # held with nothing left to poll, so clear the state here once the
+            # foot lifts.
+            if self.state is switchstate.Value.LONGPRESSED and not self.button.is_pressed:
+                self.state = switchstate.Value.RELEASED
             return
 
         time_pressed = time.monotonic() - self.cur_tstamp
@@ -83,9 +91,11 @@ class GpioSwitch:
         elif not self.button.is_pressed:
             state = switchstate.Value.RELEASED
         else:
+            self.state = switchstate.Value.PRESSED
             return
         press_tstamp = self.cur_tstamp
         self.cur_tstamp = None
+        self.state = state
 
         if state == switchstate.Value.LONGPRESSED and self.longpress_callback is not None:
             logging.debug("GPIO Switch %d %s %s" % (self.gpio_input, state, self.longpress_callback))

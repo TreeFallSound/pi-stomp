@@ -1,4 +1,5 @@
 # pi-Stomp!
+[![License: AGPL v3+](https://img.shields.io/badge/License-AGPL%20v3%2B-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 #### pi-Stomp is a DIY high definition, multi-effects stompbox platform for guitar, bass and keyboards
 For more info about what it is and what it can do, go to [treefallsound.com](https://treefallsound.com)
 
@@ -10,6 +11,10 @@ The pi-Stomp hardware requires drivers to interface with the LCD, potentiometers
 
 A pi-Stomp software service, mod-ala-pi-stomp, uses the drivers to monitor all input devices, to drive the LCD
 and to, among other things, send commands to mod-host for reading/writing pedalboard configuration information. 
+
+## License
+This project is licensed under `AGPL-3.0-or-later`. See `LICENSE` for the full license text.
+Third-party components bundled in the OS image are listed in `THIRD_PARTY_LICENSES.md`.
 
 This repository includes:
 * the pi-Stomp hardware drivers ('pistomp' module)
@@ -23,7 +28,7 @@ This repository includes:
   * sample pedalboards
 
 ## Installing
-For full installation instructions, see [this guide](https://www.treefallsound.com/wiki/doku.php?id=software_installation_3.x)
+For full installation instructions, see [this guide](https://treefallsound.github.io/pistomp-manual/building/software-install/)
 
 Those instructions start with a pre-built pi-Stomp image.  The supporting packages are pre-installed.
 This is the recommended method of installation for most users.
@@ -37,6 +42,14 @@ You can start with a base RPi image and use these
 but note that the setup scripts have not been updated to work with the newer v3 hardware so you are on your own there.
 Also keep in mind that there are hundreds of packages used to build the system.
 Package version incompatibilities are much more likely using this method.
+
+## Installing a Python package on the device
+
+To test a package on the device before you commit it, install it into that venv:
+
+```bash
+ssh pistomp@pistomp.local '/opt/pistomp/venvs/pi-stomp/bin/python -m pip install <package>'
+```
 
 ## Running tests
 

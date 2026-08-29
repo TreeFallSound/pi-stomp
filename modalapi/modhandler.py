@@ -1,16 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
 # This file is part of pi-stomp.
 #
 # pi-stomp is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # pi-stomp is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 from pistomp.handler import Handler
@@ -18,6 +20,7 @@ from pistomp.audiocard import Audiocard
 from modalapi.sync import SyncMode, SyncModeSetter
 
 import bisect
+import datetime
 import json
 import logging
 import os
@@ -197,6 +200,7 @@ class Modhandler(Handler):
         # Backup
         self.backup_file = "pistomp_backup.zip"
         self.data_dir = data_dir
+        self._restoring = False
 
         # Banks
         self.banks_file = os.path.join(self.data_dir, "banks.json")
@@ -480,7 +484,7 @@ class Modhandler(Handler):
                 self._fire_row(winner, SwitchEvent(controller=fs, kind=kind, timestamp=timestamp))
                 return True
             # No LONGPRESS row — chord longpress (the exception, stays as code)
-            self.chord_helper.observe(fs, timestamp)
+            self._fire_longpress_groups(fs)
             return True
 
         # Short press
@@ -597,7 +601,7 @@ class Modhandler(Handler):
     def poll_controls(self):
         if self.hardware:
             self.hardware.poll_controls()
-        self._tick_chords()
+        self.chord_helper.poll()
 
     def poll_indicators(self):
         if self.hardware:
@@ -986,6 +990,11 @@ class Modhandler(Handler):
         # reads next_pedalboard_preset_index this tick. No-op if already drained.
         self.poll_ws_messages()
 
+        # unzip rewrites last.json/banks.json/snapshots.json
+        # don't poll again until we restart the service
+        if self._restoring:
+            return
+
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
             self._is_pedalboard_loading = True
@@ -996,6 +1005,15 @@ class Modhandler(Handler):
 
                 if mod_bundle not in self.pedalboards:
                     self.load_pedalboards()
+                if mod_bundle not in self.pedalboards:
+                    # MOD-UI owns this relationship; if its own list still lacks
+                    # the bundle we have nothing to load and no business picking
+                    # a substitute mid-session. Keep the board we have.
+                    logging.warning("last.json names a pedalboard MOD-UI does not list: %s", mod_bundle)
+                    self._is_pedalboard_loading = False
+                    self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
+                    self.lcd.draw_main_panel()
+                    return
 
                 pb = self.reload_pedalboard(mod_bundle)
                 self.set_current_pedalboard(pb)
@@ -1069,6 +1087,8 @@ class Modhandler(Handler):
             sys.exit()
 
         pbs = json.loads(resp.text)
+        self.pedalboards = {}
+        self.pedalboard_list = []
         for pb in pbs:
             bundle = pb[Token.BUNDLE]
             title = pb[Token.TITLE]
@@ -1265,23 +1285,26 @@ class Modhandler(Handler):
             return False
         return self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
-    def _redraw_after_binding(self, controller: Controller, is_footswitch: bool) -> None:
-        if is_footswitch:
+    def _redraw_after_binding(self, controller: Controller | None, is_footswitch: bool) -> None:
+        if is_footswitch and controller is not None:
             # Footswitch: redraw just that one switch, not the whole board.
             self.lcd.update_footswitch(controller)
         else:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)
 
     def _add_learned_binding_row(
-        self, plugin: Plugin, param: Parameter, controller: Controller, old_binding: str | None
+        self, plugin: Plugin, param: Parameter, controller: Controller | None, old_binding: str | None
     ) -> None:
         layer = self._controller_manager.effective_table.layers[0]
         if old_binding is not None:
             _remove_binding_row(layer, old_binding)
+        if controller is None:
+            return
         if isinstance(controller, Footswitch):
             cls, event_kind = ControlClass.FOOTSWITCH, EventKind.PRESS
         else:
             cls, event_kind = ControlClass.ANALOG, EventKind.ROTATE
+        assert param.binding is not None
         layer.add(
             BindingDecl(
                 control=ControlRef(cls=cls, id=param.binding),
@@ -1619,6 +1642,29 @@ class Modhandler(Handler):
             value /= 1000
         return f"{value:.1f}GB"
 
+    def _drive_detail(self, backup_dir: str) -> str:
+        """Drive name plus free space — the thing that decides whether a backup fits."""
+        mount = os.path.dirname(backup_dir)
+        name = os.path.basename(mount)
+        try:
+            usage = shutil.disk_usage(mount)
+        except OSError:
+            return name
+        return f"{name} · {self._human_size(usage.free)} free of {self._human_size(usage.total)}"
+
+    def _archive_detail(self, backup_dir: str) -> str:
+        """Drive name plus the archive's size and age — restore overwrites data/,
+        so which vintage is about to land matters more than free space."""
+        mount = os.path.dirname(backup_dir)
+        name = os.path.basename(mount)
+        path = os.path.join(backup_dir, self.backup_file)
+        try:
+            st = os.stat(path)
+        except OSError:
+            return name
+        when = datetime.datetime.fromtimestamp(st.st_mtime).strftime("%d %b %H:%M")
+        return f"{name} · {self._human_size(st.st_size)} from {when}"
+
     def _drive_label(self, backup_dir: str) -> str:
         mount = os.path.dirname(backup_dir)
         try:
@@ -1643,17 +1689,22 @@ class Modhandler(Handler):
         self._choose_usb_drive(self.check_usb(), self._do_backup_data)
 
     def _do_backup_data(self, backup_dir: str):
-        self.lcd.draw_info_message("Backing up, please wait...", refresh=True)
+        from modalapi.archive import ArchiveJob
+        from ui.archive_panel import ArchiveProgressPanel
+
         logging.info("Data backup...")
         cmd = os.path.join(self.homedir, "util", "data-backup.sh")
-        try:
-            subprocess.check_output([cmd, os.path.join(backup_dir, self.backup_file), self.data_dir])
-            self.lcd.draw_message_dialog("Backup complete", "Info")
-            logging.info("Backup complete")
-        except subprocess.CalledProcessError as e:
-            logging.error("user_backup_data:" + str(e.output))
-        finally:
-            self.lcd.draw_info_message("", refresh=True)
+        job = ArchiveJob.backup(cmd, os.path.join(backup_dir, self.backup_file), self.data_dir)
+        self.lcd.pstack.push_panel(
+            ArchiveProgressPanel(
+                title="Backing up",
+                noun="Backup",
+                subtitle=self._drive_detail(backup_dir),
+                job=job,
+                on_dismiss=self._dismiss_archive_panel,
+                cancellable=True,
+            )
+        )
 
     def user_restore_data(self, arg, on_success=None):
         # Only offer drives that actually hold a backup — no point asking the
@@ -1662,24 +1713,45 @@ class Modhandler(Handler):
         self._choose_usb_drive(restorable, lambda d: self._do_restore_data(d, on_success=on_success))
 
     def _do_restore_data(self, backup_dir: str, on_success=None):
-        self.lcd.draw_info_message("Restoring, please wait...", refresh=True)
+        from modalapi.archive import ArchiveJob
+        from ui.archive_panel import ArchiveProgressPanel
+
         logging.info("Restoring data backup...")
         cmd = os.path.join(self.homedir, "util", "data-restore.sh")
-        try:
-            subprocess.check_output(
-                ["sudo", "-u", self.username, cmd, os.path.join(backup_dir, self.backup_file), self.data_dir]
+        job = ArchiveJob.restore(cmd, self.username, os.path.join(backup_dir, self.backup_file), self.data_dir)
+        self._restoring = True
+        self.lcd.pstack.push_panel(
+            ArchiveProgressPanel(
+                title="Restoring",
+                noun="Restore",
+                subtitle=self._archive_detail(backup_dir),
+                job=job,
+                on_dismiss=lambda: self._dismiss_restore_panel(on_success),
+                cancellable=False,
+                done_label="Restart to continue",
             )
-            logging.info("Restore complete")
-            if on_success is not None:
-                on_success()
-            self.lcd.draw_message_dialog(
-                "Restore complete. Press OK to restart.", "Info", on_dismiss=lambda: self.system_menu_restart_sound(None)
-            )
-        except subprocess.CalledProcessError as e:
-            self.lcd.draw_message_dialog(e.output.decode("utf-8"))
-            logging.error("user_restore_data: " + e.output.decode("utf-8"))
-        finally:
-            self.lcd.draw_info_message("", refresh=True)
+        )
+
+    def _dismiss_archive_panel(self) -> None:
+        from ui.archive_panel import ArchiveProgressPanel
+
+        panel = self.lcd.pstack.find_panel_type(ArchiveProgressPanel)
+        if panel is not None:
+            self.lcd.pstack.pop_panel(panel)
+        self.lcd.draw_main_panel()
+
+    def _dismiss_restore_panel(self, on_success=None) -> None:
+        from modalapi.archive import JobState
+        from ui.archive_panel import ArchiveProgressPanel
+
+        panel = self.lcd.pstack.find_panel_type(ArchiveProgressPanel)
+        restored = panel is not None and panel.job_state is JobState.DONE
+        self._dismiss_archive_panel()
+        if not restored:
+            return
+        if on_success is not None:
+            on_success()
+        self.restart_ui_stack()
 
     def system_menu_save_current_pb(self, _arg: None):
         if self._current is None:
@@ -1712,6 +1784,17 @@ class Modhandler(Handler):
     def system_menu_reload(self, arg):
         logging.info("Exiting main process, systemctl should restart if enabled")
         sys.exit(0)
+
+    def restart_ui_stack(self) -> None:
+        logging.info("Restarting mod-ui + deps")
+        try:
+            subprocess.Popen(
+                ["sudo", "systemctl", "--no-block", "restart", "mod-ui"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError as e:
+            logging.error("restart_ui_stack: %s", e)
 
     def system_menu_restart_sound(self, arg):
         self.lcd.splash_show()

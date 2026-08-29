@@ -1,3 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This file is part of pi-stomp.
+#
+# pi-stomp is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pi-stomp is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
+
 """Filter magnitude response calculators for parametric EQ curve rendering.
 
 All math is vectorised numpy — we evaluate |H(e^jω)| analytically at each
@@ -13,6 +30,8 @@ from __future__ import annotations
 import math
 
 import numpy as np
+
+from plugins.eq.band_spec import QUnits
 
 
 FS = 48000.0
@@ -37,15 +56,54 @@ def _biquad_mag_db(
     return 20.0 * np.log10(np.abs(num / den) + 1e-12)
 
 
+# ── width-port conversions ────────────────────────────────────────────────────
+
+# rakarrack: the wrapper re-adds the 64 it subtracted, so the code cancels to
+# Q = 30^(code/64); AnalogFilter then scales that by 3 for the peaking section
+# (src/EQ.C:173, src/AnalogFilter.C:228).
+RKR_Q_BASE = 30.0
+RKR_Q_SCALE = 3.0
+
+
+def bw_oct_to_q(bw_oct: float) -> float:
+    """Bandwidth in octaves → RBJ Q, the standard cookbook identity."""
+    n = 2.0 ** max(bw_oct, 1e-6)
+    return math.sqrt(n) / max(n - 1.0, 1e-12)
+
+
+def q_to_bw_oct(q: float) -> float:
+    """RBJ Q → bandwidth in octaves; the inverse of bw_oct_to_q."""
+    return 2.0 / math.log(2.0) * math.asinh(1.0 / (2.0 * max(q, 1e-6)))
+
+
+def as_q(units: QUnits, value: float) -> float:
+    """A width port's raw value → true RBJ Q."""
+    match units:
+        case "q":
+            return value
+        case "bw_oct":
+            return bw_oct_to_q(value)
+        case "x42_shelf_slope":
+            return 0.2129 + value / 2.25
+        case "rkr_code":
+            return RKR_Q_SCALE * RKR_Q_BASE ** (value / 64.0)
+
+
+def as_bw_oct(units: QUnits, value: float) -> float:
+    """A width port's raw value → bandwidth in octaves. Ports already in
+    octaves pass through — round-tripping them via Q would perturb fil4's
+    curve by the difference between its taper and the cookbook identity."""
+    if units == "bw_oct":
+        return value
+    return q_to_bw_oct(as_q(units, value))
+
+
 # ── RBJ biquad cookbook ───────────────────────────────────────────────────────
 
 
 def rbj_peaking(f0: float, bw_oct: float, gain_db: float) -> np.ndarray:
-    """RBJ peaking biquad magnitude at GRAPH_FREQS.
-
-    ``bw_oct`` is bandwidth in octaves (the raw LV2 port value for all our
-    custom EQ panels).
-    """
+    """RBJ peaking biquad magnitude at GRAPH_FREQS. ``bw_oct`` is bandwidth in
+    octaves — see `as_bw_oct` for converting a port that isn't."""
     A = 10.0 ** (gain_db / 40.0)
     w0 = 2.0 * math.pi * f0 / FS
     cosw0 = math.cos(w0)
@@ -63,13 +121,12 @@ def rbj_peaking(f0: float, bw_oct: float, gain_db: float) -> np.ndarray:
 
 
 def rbj_lowshelf(f0: float, q: float, gain_db: float) -> np.ndarray:
-    """RBJ low-shelf biquad magnitude at GRAPH_FREQS."""
+    """RBJ low-shelf biquad magnitude at GRAPH_FREQS. ``q`` is a true Q."""
     A = 10.0 ** (gain_db / 40.0)
     w0 = 2.0 * math.pi * f0 / FS
     cosw0 = math.cos(w0)
     sinw0 = math.sin(w0)
-    q_eff = 0.2129 + q / 2.25
-    alpha = sinw0 / (2.0 * max(q_eff, 1e-4))
+    alpha = sinw0 / (2.0 * max(q, 1e-4))
     two_sqrtA_alpha = 2.0 * math.sqrt(A) * alpha
     a0 = (A + 1.0) + (A - 1.0) * cosw0 + two_sqrtA_alpha
     b0 = (A * ((A + 1.0) - (A - 1.0) * cosw0 + two_sqrtA_alpha)) / a0
@@ -81,13 +138,12 @@ def rbj_lowshelf(f0: float, q: float, gain_db: float) -> np.ndarray:
 
 
 def rbj_highshelf(f0: float, q: float, gain_db: float) -> np.ndarray:
-    """RBJ high-shelf biquad magnitude at GRAPH_FREQS."""
+    """RBJ high-shelf biquad magnitude at GRAPH_FREQS. ``q`` is a true Q."""
     A = 10.0 ** (gain_db / 40.0)
     w0 = 2.0 * math.pi * f0 / FS
     cosw0 = math.cos(w0)
     sinw0 = math.sin(w0)
-    q_eff = 0.2129 + q / 2.25
-    alpha = sinw0 / (2.0 * max(q_eff, 1e-4))
+    alpha = sinw0 / (2.0 * max(q, 1e-4))
     two_sqrtA_alpha = 2.0 * math.sqrt(A) * alpha
     a0 = (A + 1.0) - (A - 1.0) * cosw0 + two_sqrtA_alpha
     b0 = (A * ((A + 1.0) + (A - 1.0) * cosw0 + two_sqrtA_alpha)) / a0

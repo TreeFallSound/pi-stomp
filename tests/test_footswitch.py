@@ -86,6 +86,30 @@ class TestOnSwitch:
             assert sink.events == []
 
 
+class TestPressState:
+    def test_no_detector_reads_released(self):
+        with _make_footswitch() as (fs, _sink):
+            assert fs.press_state is switchstate.Value.RELEASED
+
+    def test_reads_the_adc_detector(self):
+        with _make_footswitch() as (fs, _sink):
+            fs.adc_switch = MagicMock(state=switchstate.Value.PRESSED)
+            assert fs.press_state is switchstate.Value.PRESSED
+
+    def test_reads_the_gpio_detector(self):
+        with _make_footswitch() as (fs, _sink):
+            fs.gpio_switch = MagicMock(state=switchstate.Value.LONGPRESSED)
+            assert fs.press_state is switchstate.Value.LONGPRESSED
+
+    def test_disabled_footswitch_reads_released(self):
+        """A disabled switch stops being polled, so its detector state freezes.
+        Frozen at PRESSED it would look like a chord partner forever."""
+        with _make_footswitch() as (fs, _sink):
+            fs.adc_switch = MagicMock(state=switchstate.Value.PRESSED)
+            fs.disabled = True
+            assert fs.press_state is switchstate.Value.RELEASED
+
+
 class TestHardwareMethods:
     def test_toggle_relays(self):
         with _make_footswitch() as (fs, _sink):
