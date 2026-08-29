@@ -18,6 +18,9 @@
 import math
 from typing import Any
 
+# Teardown join budget for subprocesses
+TEARDOWN_JOIN_S = 0.25
+
 
 def LILV_FOREACH(collection, func):
     itr = collection.begin()

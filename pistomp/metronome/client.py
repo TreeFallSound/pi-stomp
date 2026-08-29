@@ -25,6 +25,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from common.util import TEARDOWN_JOIN_S
+
+
 # Absolute path of the repository root, injected as PYTHONPATH so the
 # subprocess imports from the same source tree as the parent process.
 _SRC_ROOT = str(Path(__file__).resolve().parents[2])
@@ -74,11 +77,11 @@ class MetronomeClient:
         except OSError:
             pass
         try:
-            proc.wait(timeout=3.0)
+            proc.wait(timeout=TEARDOWN_JOIN_S)
         except subprocess.TimeoutExpired:
             proc.send_signal(signal.SIGTERM)
             try:
-                proc.wait(timeout=2.0)
+                proc.wait(timeout=TEARDOWN_JOIN_S)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
