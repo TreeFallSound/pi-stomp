@@ -38,6 +38,7 @@ class DialogScheme:
     When None is passed to Dialog/DialogDecorator, the current Config defaults
     are used (system menus render pixel-identical).
     """
+
     title_fgnd: tuple[int, int, int]
     title_bkgnd: tuple[int, int, int]
     outline_color: tuple[int, int, int]
@@ -130,7 +131,9 @@ class Dialog(RoundedPanel):
         if title_font is None:
             title_font = Config().get_font("default_title")
         self._title_strip_h = get_text_size(title, title_font)[1] + 2
-        deco = functools.partial(DialogDecorator, title=title, title_font=title_font, outline_radius=radius, scheme=scheme)
+        deco = functools.partial(
+            DialogDecorator, title=title, title_font=title_font, outline_radius=radius, scheme=scheme
+        )
         super(Dialog, self).__init__(box=box, align=WidgetAlign.CENTRE, radius=radius, decorator=deco, **kwargs)
 
     def _adjust_box(self):
@@ -155,9 +158,14 @@ class Dialog(RoundedPanel):
 
 
 class MessageDialog(Dialog):
-    def __init__(self, panelstack, message, title="Error", width=200, height=90, on_dismiss=None):
-        super(MessageDialog, self).__init__(width=width, height=height, title=title, auto_destroy=True)
-
+    def __init__(self, panelstack, message, title="Error", width=200, height=90, on_dismiss=None, dismissable=True):
+        super(MessageDialog, self).__init__(
+            width=width,
+            height=height,
+            title=title,
+            auto_destroy=True,
+            dismissable=dismissable,
+        )
         font = Config().get_font("default_title")
         char_w = font.get_rect("a").width if font else 0
         chars_per_line = width // max(1, int(char_w))
@@ -168,8 +176,11 @@ class MessageDialog(Dialog):
         num_lines = wrapped.count("\n") + 1
         text_h = line_h * num_lines
         text_box_h = max(0, min(text_h, height - 34))
+        # No Ok button — center the message in the body instead of leaving a
+        # top-heavy block above the empty button slot.
+        y_offset = (height - text_box_h) // 2 if not dismissable else 0
         t = TextWidget(
-            box=Box.xywh(5, 0, width - 10, text_box_h),
+            box=Box.xywh(5, y_offset, width - 10, text_box_h),
             text=wrapped,
             parent=self,
             outline=0,
@@ -183,19 +194,20 @@ class MessageDialog(Dialog):
             if on_dismiss:
                 on_dismiss()
 
-        b = TextWidget(
-            box=Box.xywh(int((width / 2) - 20), height - 30, 0, 0),
-            text="Ok",
-            parent=self,
-            outline=1,
-            sel_width=3,
-            outline_radius=5,
-            action=_dismiss,
-            align=WidgetAlign.NONE,
-            name="ok_btn",
-        )
-        self.add_sel_widget(b)
-        self.sel_widget(b)
+        if dismissable:
+            b = TextWidget(
+                box=Box.xywh(int((width / 2) - 20), height - 30, 0, 0),
+                text="Ok",
+                parent=self,
+                outline=1,
+                sel_width=3,
+                outline_radius=5,
+                action=_dismiss,
+                align=WidgetAlign.NONE,
+                name="ok_btn",
+            )
+            self.add_sel_widget(b)
+            self.sel_widget(b)
 
 
 class ConfirmDialog(Dialog):

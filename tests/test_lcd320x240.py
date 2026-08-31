@@ -62,8 +62,13 @@ def _make_pedalboard(title: str, plugins: list[Plugin], connections: list[Connec
 
 def _make_footswitch(id: int, toggled: bool = False, display_label: str = "", taptempo=None) -> Footswitch:
     fs = Footswitch(
-        id=id, led_pin=None, pixel=None, midi_CC=1, midi_channel=0,
-        refresh_callback=lambda *a, **k: None, taptempo=taptempo,
+        id=id,
+        led_pin=None,
+        pixel=None,
+        midi_CC=1,
+        midi_channel=0,
+        refresh_callback=lambda *a, **k: None,
+        taptempo=taptempo,
     )
     fs.toggled = toggled
     fs.display_label = display_label
@@ -132,15 +137,25 @@ def setup_main_ui(instance):
     mock_mix = _real_param(name="Mix", symbol="mix", instance_id="reverb", value=0.4)
     plugins = [
         _make_plugin(
-            "distortion", uri="mock://distortion", category="Distortion", has_footswitch=True,
+            "distortion",
+            uri="mock://distortion",
+            category="Distortion",
+            has_footswitch=True,
             parameters={Symbol("gain"): mock_gain},
         ),
         _make_plugin(
-            "delay", uri="mock://delay", category="Delay", has_footswitch=True,
+            "delay",
+            uri="mock://delay",
+            category="Delay",
+            has_footswitch=True,
             parameters={Symbol("time"): mock_time},
         ),
         _make_plugin(
-            "reverb", uri="mock://reverb", category="Reverb", has_footswitch=True, bypassed=True,
+            "reverb",
+            uri="mock://reverb",
+            category="Reverb",
+            has_footswitch=True,
+            bypassed=True,
             parameters={Symbol("mix"): mock_mix},
         ),
         _make_plugin("chorus", uri="mock://chorus", category="Modulator", has_footswitch=False),
@@ -213,6 +228,14 @@ def test_system_menu_snapshot(lcd, snapshot):
     setup_main_ui(instance)
     instance.draw_system_menu(None, None)
     snapshot()
+
+
+def test_busy_dialog_snapshot(lcd, snapshot):
+    """Uncancellable "Please wait" dialog: message only, no Ok button."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    instance.draw_message_dialog("Restarting sound engine…", title="Please wait", dismissable=False)
+    snapshot("busy_dialog")
 
 
 def test_system_info_dialog_snapshot(lcd, snapshot):

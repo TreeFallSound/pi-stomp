@@ -16,6 +16,7 @@ def test_system_menu_shutdown(modhandler_system: SystemFixture):
     with patch("os.system") as mock_os:
         handler.system_menu_shutdown(None)
     mock_os.assert_called_once_with("sudo systemctl --no-wall --no-block poweroff")
+    assert handler.lcd.pstack.current is not None  # uncancellable dialog stays up
 
 
 def test_system_menu_reboot(modhandler_system: SystemFixture):
@@ -23,6 +24,7 @@ def test_system_menu_reboot(modhandler_system: SystemFixture):
     with patch("os.system") as mock_os:
         handler.system_menu_reboot(None)
     mock_os.assert_called_once_with("sudo systemctl --no-wall --no-block reboot")
+    assert handler.lcd.pstack.current is not None  # uncancellable dialog stays up
 
 
 def test_shutdown_survives_polls_before_sigterm(modhandler_system: SystemFixture):
@@ -33,8 +35,22 @@ def test_shutdown_survives_polls_before_sigterm(modhandler_system: SystemFixture
     handler.lcd.update_bypass(True, True)
     handler.lcd.update_wifi({"hotspot_active": False, "wifi_connected": True})
     handler.poll_lcd_updates()
-    assert handler.lcd.pstack.stack == []
-    assert handler.lcd.pstack.current is None
+    assert handler.lcd.pstack.current is not None  # dialog still up, not black-screened
+
+
+def test_uncancellable_message_dialog_has_no_ok_button(modhandler_system: SystemFixture):
+    """dismissable=False drops the Ok button and its selectable — nothing to
+    press, so the dialog swallows everything and can't be dismissed."""
+    handler = modhandler_system.handler
+    from pistomp.input.event import EncoderEvent
+    from tests.v3.nav_helpers import nav_encoder
+
+    handler.lcd.draw_message_dialog("Please wait…", dismissable=False)
+    d = handler.lcd.pstack.current
+    assert d is not None
+    assert d.sel_ref is None  # no selectable Ok button
+
+    assert d.handle(EncoderEvent(controller=nav_encoder(handler), rotations=1)) is True  # NAV swallowed
 
 
 def test_system_menu_reload(modhandler_system: SystemFixture):
