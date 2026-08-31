@@ -284,9 +284,7 @@ class Modhandler(Handler):
             resp = self._rest_get(url)
             if resp is not None and resp.status_code == 200:
                 return resp
-            logging.info(
-                "mod-ui not ready, retrying (%d/%d) in %ss...", attempt, len(STARTUP_REST_BACKOFF_S), delay
-            )
+            logging.info("mod-ui not ready, retrying (%d/%d) in %ss...", attempt, len(STARTUP_REST_BACKOFF_S), delay)
             time.sleep(delay)
         return self._rest_get(url)
 
@@ -450,9 +448,7 @@ class Modhandler(Handler):
             # ControllerManager._bind_encoder_longpress.
             if event.kind == SwitchEventKind.LONGPRESS and controller.midi_CC is not None:
                 key = f"{controller.midi_channel}:{controller.midi_CC}"
-                winner = self.effective_table.resolve(
-                    ControlRef(cls=ControlClass.ANALOG, id=key), EventKind.LONGPRESS
-                )
+                winner = self.effective_table.resolve(ControlRef(cls=ControlClass.ANALOG, id=key), EventKind.LONGPRESS)
                 if winner is not None:
                     self._fire_row(winner, event)
             return True
@@ -467,9 +463,7 @@ class Modhandler(Handler):
         Handler._handle_footswitch imperative if-chain."""
         if kind == SwitchEventKind.LONGPRESS:
             key = fs.dispatch_key
-            winner = self.effective_table.resolve(
-                ControlRef(cls=ControlClass.FOOTSWITCH, id=key), EventKind.LONGPRESS
-            )
+            winner = self.effective_table.resolve(ControlRef(cls=ControlClass.FOOTSWITCH, id=key), EventKind.LONGPRESS)
             if winner is not None:
                 self._fire_row(winner, SwitchEvent(controller=fs, kind=kind, timestamp=timestamp))
                 return True
@@ -479,9 +473,7 @@ class Modhandler(Handler):
 
         # Short press
         key = fs.dispatch_key
-        winner = self.effective_table.resolve(
-            ControlRef(cls=ControlClass.FOOTSWITCH, id=key), EventKind.PRESS
-        )
+        winner = self.effective_table.resolve(ControlRef(cls=ControlClass.FOOTSWITCH, id=key), EventKind.PRESS)
         if winner is not None:
             self._fire_row(winner, SwitchEvent(controller=fs, kind=kind, timestamp=timestamp))
             return True
@@ -1245,7 +1237,7 @@ class Modhandler(Handler):
         return self.set_mod_tap_tempo(param.value)
 
     def _publish_audio(self, param: Parameter) -> bool:
-        """ A local ALSA write. No remote echo, so the send always lands."""
+        """A local ALSA write. No remote echo, so the send always lands."""
         self.audio_parameter_commit(param.symbol, param.value)
         return True
 
@@ -1521,6 +1513,7 @@ class Modhandler(Handler):
         if self.settings.get_setting(Token.WELCOME_SEEN):
             return
         from ui.welcome import WelcomePanel
+
         self.lcd.pstack.push_panel(WelcomePanel(self))
 
     def get_software_version(self) -> str:
@@ -1545,16 +1538,14 @@ class Modhandler(Handler):
         )
 
     def system_menu_shutdown(self, arg):
-        self.lcd.splash_show(False)
         logging.info("System Shutdown")
-        os.system("sudo systemctl --no-wall poweroff")
-        os._exit(0)
+        self.lcd.draw_message_dialog("Shutting down…", title="Please wait", dismissable=False)
+        os.system("sudo systemctl --no-wall --no-block poweroff")
 
     def system_menu_reboot(self, arg):
-        self.lcd.splash_show(False)
         logging.info("System Reboot")
-        os.system("sudo systemctl reboot")
-        os._exit(0)
+        self.lcd.draw_message_dialog("Rebooting…", title="Please wait", dismissable=False)
+        os.system("sudo systemctl --no-wall --no-block reboot")
 
     def system_menu_recovery_mode(self, arg):
         self.lcd.draw_info_message("Entering recovery mode...", refresh=True)
@@ -1752,8 +1743,8 @@ class Modhandler(Handler):
             logging.error("restart_ui_stack: %s", e)
 
     def system_menu_restart_sound(self, arg):
-        self.lcd.splash_show()
         logging.info("Restart sound engine (jack)")
+        self.lcd.draw_message_dialog("Restarting sound engine…", title="Please wait", dismissable=False)
         os.system("sudo systemctl restart jack")
 
     def system_disable_eq(self):
