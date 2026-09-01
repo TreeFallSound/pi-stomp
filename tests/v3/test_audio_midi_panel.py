@@ -133,11 +133,9 @@ class TestAudioMidiPanelSnapshot:
         handler.poll_lcd_updates()
         assert panel.sel_ref is panel._sync_row
 
-
-# ---------------------------------------------------------------------------
-# Behaviour: tweak bindings, sync-mode echo
-# ---------------------------------------------------------------------------
-
+    # ---------------------------------------------------------------------------
+    # Behaviour: tweak bindings, sync-mode echo
+    # ---------------------------------------------------------------------------
 
     @pytest.mark.parametrize(
         "rate",
@@ -277,7 +275,6 @@ class TestAudioMidiPanelNoEqHardware:
         ac.set_switch_parameter.assert_not_called()
 
     def test_eq_row_skipped_in_nav_cycle(self, no_eq_system: SystemFixture):
-        handler = no_eq_system.handler
         panel = _open_panel(no_eq_system)
         # Initial selection falls through the EQ column to the Input arc.
         assert panel.sel_ref is panel._in_arc
