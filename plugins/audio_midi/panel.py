@@ -681,7 +681,8 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
 
     def _on_restart(self) -> None:
         # Mirrors handler.system_menu_restart_sound — restarts jack (which
-        # cascades to mod-host/mod-ui). The splash covers the teardown.
+        # cascades to mod-host/mod-ui). The uncancellable dialog covers the
+        # teardown until this service is SIGTERMed.
         self._handler.system_menu_restart_sound(None)
 
     def wants_fast_tick(self) -> bool:

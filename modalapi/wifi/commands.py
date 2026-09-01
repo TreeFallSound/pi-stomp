@@ -22,6 +22,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
 
+from common.util import TEARDOWN_JOIN_S
+
 if TYPE_CHECKING:
     from .manager import WifiManager
 
@@ -201,4 +203,4 @@ class CommandQueue:
 
     def shutdown(self) -> None:
         self._cmd_queue.put(_SHUTDOWN_SENTINEL)
-        self._worker.join(timeout=2.0)
+        self._worker.join(timeout=TEARDOWN_JOIN_S)

@@ -1,0 +1,278 @@
+state.sndrpihifiberry {
+	control.1 {
+		iface MIXER
+		name 'Digital Playback Volume'
+		value.0 205
+		value.1 205
+		comment {
+			access 'read write'
+			type INTEGER
+			count 2
+			range '0 - 207'
+			dbmin -9999999
+			dbmax 0
+			dbvalue.0 -100
+			dbvalue.1 -100
+		}
+	}
+	control.2 {
+		iface MIXER
+		name 'Analogue Playback Volume'
+		value.0 1
+		value.1 1
+		comment {
+			access 'read write'
+			type INTEGER
+			count 2
+			range '0 - 1'
+			dbmin -600
+			dbmax 0
+			dbvalue.0 0
+			dbvalue.1 0
+		}
+	}
+	control.3 {
+		iface MIXER
+		name 'Analogue Playback Boost Volume'
+		value.0 0
+		value.1 0
+		comment {
+			access 'read write'
+			type INTEGER
+			count 2
+			range '0 - 1'
+			dbmin 0
+			dbmax 80
+			dbvalue.0 0
+			dbvalue.1 0
+		}
+	}
+	control.4 {
+		iface MIXER
+		name 'Digital Playback Switch'
+		value.0 true
+		value.1 true
+		comment {
+			access 'read write'
+			type BOOLEAN
+			count 2
+		}
+	}
+	control.5 {
+		iface MIXER
+		name 'Deemphasis Switch'
+		value true
+		comment {
+			access 'read write'
+			type BOOLEAN
+			count 1
+		}
+	}
+	control.6 {
+		iface MIXER
+		name 'DSP Program'
+		value 'FIR interpolation with de-emphasis'
+		comment {
+			access 'read write'
+			type ENUMERATED
+			count 1
+			item.0 'FIR interpolation with de-emphasis'
+			item.1 'Low latency IIR with de-emphasis'
+			item.2 'High attenuation with de-emphasis'
+			item.3 'Fixed process flow'
+			item.4 'Ringing-less low latency FIR'
+		}
+	}
+	control.7 {
+		iface MIXER
+		name 'Clock Missing Period'
+		value '1s'
+		comment {
+			access 'read write'
+			type ENUMERATED
+			count 1
+			item.0 '1s'
+			item.1 '2s'
+			item.2 '3s'
+			item.3 '4s'
+			item.4 '5s'
+			item.5 '6s'
+			item.6 '7s'
+			item.7 '8s'
+		}
+	}
+	control.8 {
+		iface MIXER
+		name 'Auto Mute Time Left'
+		value '21ms'
+		comment {
+			access 'read write'
+			type ENUMERATED
+			count 1
+			item.0 '21ms'
+			item.1 '106ms'
+			item.2 '213ms'
+			item.3 '533ms'
+			item.4 '1.07s'
+			item.5 '2.13s'
+			item.6 '5.33s'
+			item.7 '10.66s'
+		}
+	}
+	control.9 {
+		iface MIXER
+		name 'Auto Mute Time Right'
+		value '21ms'
+		comment {
+			access 'read write'
+			type ENUMERATED
+			count 1
+			item.0 '21ms'
+			item.1 '106ms'
+			item.2 '213ms'
+			item.3 '533ms'
+			item.4 '1.07s'
+			item.5 '2.13s'
+			item.6 '5.33s'
+			item.7 '10.66s'
+		}
+	}
+	control.10 {
+		iface MIXER
+		name 'Auto Mute Mono Switch'
+		value true
+		comment {
+			access 'read write'
+			type BOOLEAN
+			count 1
+		}
+	}
+	control.11 {
+		iface MIXER
+		name 'Auto Mute Switch'
+		value.0 true
+		value.1 true
+		comment {
+			access 'read write'
+			type BOOLEAN
+			count 2
+		}
+	}
+	control.12 {
+		iface MIXER
+		name 'Volume Ramp Down Rate'
+		value '1 sample/update'
+		comment {
+			access 'read write'
+			type ENUMERATED
+			count 1
+			item.0 '1 sample/update'
+			item.1 '2 samples/update'
+			item.2 '4 samples/update'
+			item.3 Immediate
+		}
+	}
+	control.13 {
+		iface MIXER
+		name 'Volume Ramp Down Step'
+		value '1dB/step'
+		comment {
+			access 'read write'
+			type ENUMERATED
+			count 1
+			item.0 '4dB/step'
+			item.1 '2dB/step'
+			item.2 '1dB/step'
+			item.3 '0.5dB/step'
+		}
+	}
+	control.14 {
+		iface MIXER
+		name 'Volume Ramp Up Rate'
+		value '1 sample/update'
+		comment {
+			access 'read write'
+			type ENUMERATED
+			count 1
+			item.0 '1 sample/update'
+			item.1 '2 samples/update'
+			item.2 '4 samples/update'
+			item.3 Immediate
+		}
+	}
+	control.15 {
+		iface MIXER
+		name 'Volume Ramp Up Step'
+		value '1dB/step'
+		comment {
+			access 'read write'
+			type ENUMERATED
+			count 1
+			item.0 '4dB/step'
+			item.1 '2dB/step'
+			item.2 '1dB/step'
+			item.3 '0.5dB/step'
+		}
+	}
+	control.16 {
+		iface MIXER
+		name 'Volume Ramp Down Emergency Rate'
+		value '1 sample/update'
+		comment {
+			access 'read write'
+			type ENUMERATED
+			count 1
+			item.0 '1 sample/update'
+			item.1 '2 samples/update'
+			item.2 '4 samples/update'
+			item.3 Immediate
+		}
+	}
+	control.17 {
+		iface MIXER
+		name 'Volume Ramp Down Emergency Step'
+		value '4dB/step'
+		comment {
+			access 'read write'
+			type ENUMERATED
+			count 1
+			item.0 '4dB/step'
+			item.1 '2dB/step'
+			item.2 '1dB/step'
+			item.3 '0.5dB/step'
+		}
+	}
+	control.18 {
+		iface MIXER
+		name 'Max Overclock PLL'
+		value 0
+		comment {
+			access 'read write'
+			type INTEGER
+			count 1
+			range '0 - 20'
+		}
+	}
+	control.19 {
+		iface MIXER
+		name 'Max Overclock DSP'
+		value 0
+		comment {
+			access 'read write'
+			type INTEGER
+			count 1
+			range '0 - 40'
+		}
+	}
+	control.20 {
+		iface MIXER
+		name 'Max Overclock DAC'
+		value 0
+		comment {
+			access 'read write'
+			type INTEGER
+			count 1
+			range '0 - 40'
+		}
+	}
+}

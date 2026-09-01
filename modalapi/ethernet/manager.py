@@ -23,6 +23,7 @@ import time
 from functools import cached_property
 from typing import Optional
 
+from common.util import TEARDOWN_JOIN_S
 from pistomp.alsa_pcm import read_hw_params
 
 # Contract with the JackBridge service: truncate-on-start, atomic-rewrite of a
@@ -76,7 +77,7 @@ class EthernetManager:
 
     def shutdown(self) -> None:
         self._stop.set()
-        self._thread.join(timeout=2.0)
+        self._thread.join(timeout=TEARDOWN_JOIN_S)
 
     # ----- background polling -----
 
