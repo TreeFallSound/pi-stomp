@@ -1539,12 +1539,12 @@ class Modhandler(Handler):
 
     def system_menu_shutdown(self, arg):
         logging.info("System Shutdown")
-        self.lcd.draw_message_dialog("Shutting down…", title="Please wait", dismissable=False)
+        self.lcd.draw_final_message("Shutting down...")
         os.system("sudo systemctl --no-wall --no-block poweroff")
 
     def system_menu_reboot(self, arg):
         logging.info("System Reboot")
-        self.lcd.draw_message_dialog("Rebooting…", title="Please wait", dismissable=False)
+        self.lcd.draw_final_message("Rebooting...")
         os.system("sudo systemctl --no-wall --no-block reboot")
 
     def system_menu_recovery_mode(self, arg):
@@ -1744,7 +1744,7 @@ class Modhandler(Handler):
 
     def system_menu_restart_sound(self, arg):
         logging.info("Restart sound engine (jack)")
-        self.lcd.draw_message_dialog("Restarting sound engine…", title="Please wait", dismissable=False)
+        self.lcd.draw_final_message("Restarting sound engine...")
         os.system("sudo systemctl restart jack")
 
     def system_disable_eq(self):

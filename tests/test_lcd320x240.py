@@ -182,13 +182,18 @@ def setup_main_ui(instance):
     instance.draw_main_panel()
 
 
-def test_cleanup_blacks_the_panel(lcd, snapshot):
+def test_final_message_survives_teardown(lcd, snapshot):
+    """The notice is the last frame: the menu that launched it is still on the
+    stack, and destroying it moves the selection, which would otherwise flush."""
     instance, fake = lcd
     setup_main_ui(instance)
+    instance.draw_selection_menu([("System shutdown", None, None)], "System Menu")
+    instance.draw_final_message("Shutting down...")
+    snapshot("please_wait")
     instance.cleanup()
     fake.flush()
     assert instance.pstack.stack == []
-    snapshot()
+    snapshot("please_wait")
 
 
 def test_main_panel_snapshot(lcd, snapshot):
@@ -917,6 +922,7 @@ def test_title_does_not_tick_off_main_panel(long_title_lcd, fake_clock):
         instance._poll_updates()
     assert title.scroll_offset == offset
     assert fake.frames == []
+
 
 def test_at_most_one_title_scrolls(long_title_lcd, fake_clock):
     instance, _ = long_title_lcd
