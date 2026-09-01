@@ -229,8 +229,17 @@ class TextWidget(Widget):
     font: "pygame._freetype.Font"
 
     def __init__(
-        self, box, text="", font=None, edit_message=None, h_margin=None, v_margin=None, text_halign=None,
-        badge: "BadgeGlyph | None" = None, badge_gap: int = 3, **kwargs
+        self,
+        box,
+        text="",
+        font=None,
+        edit_message=None,
+        h_margin=None,
+        v_margin=None,
+        text_halign=None,
+        badge: "BadgeGlyph | None" = None,
+        badge_gap: int = 3,
+        **kwargs,
     ):
         self.text = text
         if font is None:
@@ -478,7 +487,15 @@ class PluginTile(TextWidget):
     widget must fully, opaquely cover its own rect.
     """
 
-    def __init__(self, *, plugin: "Plugin", border: RectBorder | None = None, backdrop: tuple[int, int, int] = (0, 0, 0), foreground: tuple[int, int, int] = (255, 255, 255), **kwargs):
+    def __init__(
+        self,
+        *,
+        plugin: "Plugin",
+        border: RectBorder | None = None,
+        backdrop: tuple[int, int, int] = (0, 0, 0),
+        foreground: tuple[int, int, int] = (255, 255, 255),
+        **kwargs,
+    ):
         self._custom_border = border
         self._backdrop = backdrop
         self._foreground = foreground
@@ -575,14 +592,13 @@ class LoopPluginTile(PluginTile):
 
 
 class ScrollingText(TextWidget):
-    """TextWidget with horizontal ping-pong scrolling for overflow text."""
+    """TextWidget that ping-pong scrolls its contents when selected."""
 
     def __init__(
         self,
         pixels_per_second: float = 50.0,
         pause_start_sec: float = 2.0,
         pause_end_sec: float = 1.0,
-        lcd_poll_divisor: int = 8,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -623,31 +639,41 @@ class ScrollingText(TextWidget):
             self.font.origin = prev
         self.cached_text_image = surf
 
+    def _scroll_hroom(self) -> int:
+        assert self.box is not None
+        h_margin, _ = self._get_margins()
+        return self.box.width - h_margin - self.outline
+
     def _should_scroll(self) -> bool:
         if self.cached_text_image is None:
             return False
-        assert self.box is not None
-        h_margin, _ = self._get_margins()
-        available_width = self.box.width - h_margin - self.outline
-        return self.cached_text_width > available_width
+        return self.cached_text_width > self._scroll_hroom()
+
+    @override
+    def set_selected(self, selected: bool) -> None:
+        if not selected:
+            self._snap_home(refresh=False)
+        super().set_selected(selected)
+
+    def _snap_home(self, refresh: bool = True) -> None:
+        if self.scroll_offset != 0:
+            self.scroll_offset = 0
+            if refresh:
+                self.refresh()
+        self._anchor_time = None
+        self._last_tick_time = None
 
     @override
     def tick(self) -> None:
         if self.cached_text_image is None:
             self._render_text_to_cache()
 
-        if not self._should_scroll():
-            if self.scroll_offset != 0:
-                self.scroll_offset = 0
-                self._anchor_time = None
-                self._last_tick_time = None
-                self.refresh()
+        if not self.selected or not self.visible or not self._should_scroll():
+            self._snap_home()
             return
 
-        assert self.box is not None
-        h_margin, _ = self._get_margins()
-        available_width = self.box.width - 2 * h_margin - self.outline
-        max_offset = self.cached_text_width - available_width
+        hroom = self._scroll_hroom()
+        max_offset = self.cached_text_width - hroom
         if max_offset <= 0:
             return
 
@@ -655,8 +681,6 @@ class ScrollingText(TextWidget):
         period = self.pause_start_sec + scroll_duration + self.pause_end_sec + scroll_duration
 
         now = time.monotonic()
-        # On first tick, or after a wild gap (process paused, panel hidden),
-        # re-anchor so we start a fresh cycle at the initial pause.
         if self._anchor_time is None or (self._last_tick_time is not None and now - self._last_tick_time > 0.25):
             self._anchor_time = now
         self._last_tick_time = now

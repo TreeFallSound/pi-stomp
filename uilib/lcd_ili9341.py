@@ -142,10 +142,6 @@ class LcdIli9341(LcdBase):
             # Release lock once
             spi.unlock()
 
-    @property
-    def has_system_splash(self) -> bool:
-        return has_system_splash()
-
     def _set_stamp(self):
         try:
             with open(INIT_STAMP, "w") as _f:

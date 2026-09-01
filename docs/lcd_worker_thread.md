@@ -5,6 +5,8 @@
 A full-frame push blocks the UI thread for **21.4 ms on v2** and **25.2 ms on v3**,
 against a 10 ms tick. Nothing mitigates this today.
 
+LCD SPI transfers can be audible through the DAC at high gain, so avoid LCD updates that are not associated with the user's input.
+
 `PanelStack.propagate_dirty` gates pushes on `transfer_ms(clip) <= INLINE_BUDGET_MS`
 (8 ms), which *looks* like it protects the poll loop. It doesn't. The deferred path
 — `poll_lcd_updates()` → `flush()` → `lcd.update()` — runs on the **same UI thread**

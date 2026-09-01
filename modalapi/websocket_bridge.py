@@ -34,6 +34,7 @@ import websockets
 import websockets.exceptions  # lazy __getattr__ aliases the API, not the submodules
 import uvloop
 from common.parameter import Symbol
+from common.util import TEARDOWN_JOIN_S
 
 # Service will restart after this
 MAX_RECONNECT_ATTEMPTS = 4
@@ -329,7 +330,7 @@ class AsyncWebSocketBridge:
         self._worker.running = False
         self._worker.signal_stop()
         if self._thread and not sys.is_finalizing():
-            self._thread.join(timeout=2.0)
+            self._thread.join(timeout=TEARDOWN_JOIN_S)
         logging.info(f"WebSocket worker stopped (sent={self._worker.messages_sent})")
 
     def send_bpm(self, bpm: float) -> bool:

@@ -161,12 +161,9 @@ class Lcd:
         # Colors
         self.background = (0, 0, 0)
         self.foreground = (255, 255, 255)
-        self.color_splash_up = (70, 255, 70)
-        self.color_splash_down = (255, 20, 20)
 
         # TODO get fonts from config.json
         self.title_font = _make_font(font_path("DejaVuSans-Bold.ttf"), 26)
-        self.splash_font = _make_font(font_path("DejaVuSans.ttf"), 48)
         self.small_font = _make_font(font_path("DejaVuSans.ttf"), 20)
         self.tiny_font = _make_font(font_path("DejaVuSans.ttf"), 16)
         self.subtitle_font = _make_font(font_path("DejaVuSans.ttf"), 14)
@@ -202,7 +199,6 @@ class Lcd:
         self.grid_panel: Optional[GridPanel] = None
         self.w_footswitches = []
         self.w_controls = []
-        self.w_splash = None
         self.w_info_msg = None
         self.w_subtitle: Optional[Subtitle] = None
         self._subtitle_desc = ""  # last selection description seen
@@ -211,8 +207,6 @@ class Lcd:
 
         # panels
         self.pstack = PanelStack(display, image_format="RGB", use_dimming=True)
-        self.splash_panel = Panel(box=Box.xywh(0, 0, self.display_width, self.display_height))
-        self.pstack.push_panel(self.splash_panel, refresh=False)
         self.main_panel = Panel(
             box=Box.xywh(0, 0, self.display_width, self.display_height), persist_on_board_change=True
         )
@@ -235,9 +229,6 @@ class Lcd:
         # Constructed here (not with ethernet_menu above) because WifiMenu needs
         # the PanelStack, which is created earlier in this block.
         self.wifi_menu: WifiMenu = WifiMenu(self)
-
-        if not display.has_system_splash:
-            self.splash_show(True)
 
     #
     # Main
@@ -294,10 +285,11 @@ class Lcd:
     def _poll_updates(self):
         for d in self.w_parameter_dialogs.values():
             d.tick()
-        if self.w_pedalboard is not None:
-            self.w_pedalboard.tick()
-        if self.w_preset is not None:
-            self.w_preset.tick()
+        if self.pstack.current is self.main_panel:
+            if self.w_pedalboard is not None:
+                self.w_pedalboard.tick()
+            if self.w_preset is not None:
+                self.w_preset.tick()
         for wfs in self.w_footswitches:
             wfs.tick()
 
@@ -333,9 +325,7 @@ class Lcd:
                 elif isinstance(icon.object, EncoderController):
                     enc = icon.object
                     midi_value = (
-                        enc.bar_midi_value()
-                        if enc.parameter is not None
-                        else self.handler.encoder_fallback(enc)
+                        enc.bar_midi_value() if enc.parameter is not None else self.handler.encoder_fallback(enc)
                     )
                 elif isinstance(icon.object, BlendMode):
                     ic = icon.object.input_controller
@@ -495,7 +485,6 @@ class Lcd:
                 font=self.title_font,
                 parent=self.main_panel,
                 action=self.draw_pedalboard_menu,
-                lcd_poll_divisor=self.poll_divisor,
                 subtitle="Pedalboard",
             )
             self.main_panel.add_sel_widget(self.w_pedalboard)
@@ -528,7 +517,6 @@ class Lcd:
             font=self.title_font,
             parent=self.main_panel,
             action=self.draw_preset_menu,
-            lcd_poll_divisor=self.poll_divisor,
             subtitle="Snapshot",
         )
         self.main_panel.add_sel_widget(self.w_preset)
@@ -591,8 +579,8 @@ class Lcd:
         self.pstack.push_panel(m)
         return m
 
-    def draw_message_dialog(self, text, title="Error", on_dismiss=None):
-        d = MessageDialog(self.pstack, text, title=title, on_dismiss=on_dismiss)
+    def draw_message_dialog(self, text, title="Error", on_dismiss=None, dismissable=True):
+        d = MessageDialog(self.pstack, text, title=title, on_dismiss=on_dismiss, dismissable=dismissable)
         self.pstack.push_panel(d)
 
     def draw_plugins(self):
@@ -1149,18 +1137,6 @@ class Lcd:
     #
     # General
     #
-    def splash_show(self, boot=True):
-        color = self.color_splash_up if boot else self.color_splash_down
-        if self.w_splash is None:
-            self.w_splash = TextWidget(
-                box=Box.xywh(12, 80, self.display_width, self.display_height),
-                text="pi Stomp!",
-                font=self.splash_font,
-                parent=self.splash_panel,
-            )
-        self.w_splash.set_foreground(color)
-        self.splash_panel.refresh()
-
     def cleanup(self):
         # Walk every input-accepting panel (dialogs, tuner, plugin panels, …)
         # so buried panels are destroyed too, not just the top-most one.
@@ -1170,7 +1146,7 @@ class Lcd:
             self.pstack.pop_panel(self.footswitch_panel)
         if self.main_panel_pushed and self.main_panel in self.pstack.stack:
             self.pstack.pop_panel(self.main_panel)
-        self.splash_show(False)
+        self.pstack.refresh()  # black screen
 
     def clear(self):
         pass
@@ -1318,8 +1294,12 @@ class Lcd:
             if k is None:
                 # Non-mapped control
                 name = "none"
-                control_type = ControlType.EXPRESSION if i == 0 else ControlType.KNOB  # HACK cuz we don't know type of unmapped
-                subtitle = "Expression pedal (unassigned)" if control_type == ControlType.EXPRESSION else "Knob (unassigned)"
+                control_type = (
+                    ControlType.EXPRESSION if i == 0 else ControlType.KNOB
+                )  # HACK cuz we don't know type of unmapped
+                subtitle = (
+                    "Expression pedal (unassigned)" if control_type == ControlType.EXPRESSION else "Knob (unassigned)"
+                )
                 color = accent_color_for(None)
                 text_color = color
                 control_label_fn = None
