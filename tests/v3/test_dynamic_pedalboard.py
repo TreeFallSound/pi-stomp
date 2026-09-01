@@ -568,12 +568,13 @@ def test_v3_parallel_beths_dynamic_epic(parallel_beths_system: SystemFixture, sn
 
     # ── Phase 7: navigate encoder to ExtraChorus ─────────────────────────────
     # draw_main_panel() resets selection to the wrench.  Selector chain:
-    #   wrench → pedalboard title → preset title → [grid tiles in layout order]
+    #   wrench → pedalboard title → preset title → analog row → [grid tiles in layout order]
     # Grid order is column-major L→R, rows within each column.
 
     snapshot("07_nav_start_wrench")
 
-    # 3 steps from wrench to first plugin tile
+    # 4 steps from wrench to first plugin tile
+    nav_handler(1)
     nav_handler(1)
     nav_handler(1)
     nav_handler(1)

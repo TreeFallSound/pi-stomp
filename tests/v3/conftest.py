@@ -29,8 +29,8 @@ def freeze_monotonic(monkeypatch):
 
 
 @pytest.fixture
-def v3_system(fake_lcd, tmp_path) -> Generator[SystemFixture, None, None]:
-    yield from _v3_stack(fake_lcd, tmp_path)
+def v3_system(fake_lcd, tmp_path, input_enable_seed) -> Generator[SystemFixture, None, None]:
+    yield from _v3_stack(fake_lcd, tmp_path, input_enable_seed)
 
 
 # ---------------------------------------------------------------------------
@@ -262,15 +262,19 @@ def blend_system_exp(
     """v3 stack with blend mode on expression pedal (id=0, last_read=512 ≈ 50%)."""
 
     def _add_exp_pedal(hw):
-        exp_pedal = MockAnalogControl(
-            midi_CC=75,
-            midi_channel=0,
-            midiout=None,
-            control_type=ControlType.EXPRESSION,
-            id=0,
-        )
+        # The config already builds the expression control; a second one with
+        # the same id would shadow it in the analog row lookup.
+        exp_pedal = next((c for c in hw.analog_controls if c.id == 0), None)
+        if exp_pedal is None:
+            exp_pedal = MockAnalogControl(
+                midi_CC=75,
+                midi_channel=0,
+                midiout=None,
+                control_type=ControlType.EXPRESSION,
+                id=0,
+            )
+            hw.analog_controls.append(exp_pedal)
         exp_pedal.last_read = 512
-        hw.analog_controls.append(exp_pedal)
 
     yield _build_blend_system(
         v3_system,

@@ -16,6 +16,7 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 __all__ = [
+    "AnalogBarPanel",
     "Box",
     "Button",
     "Config",
@@ -57,6 +58,7 @@ __all__ = [
     "trace",
 ]
 
+from uilib.analog_bar import AnalogBarPanel
 from uilib.box import Box
 from uilib.config import Config
 from uilib.container import ContainerWidget

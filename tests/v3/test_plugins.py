@@ -360,7 +360,8 @@ def test_v3_parameter_edit(v3_system: SystemFixture, nav_handler, make_parameter
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
 
-    # wrench → pedalboard → preset → plugin
+    # wrench → pedalboard → preset → analog row → plugin
+    nav_handler(1)
     nav_handler(1)
     nav_handler(1)
     nav_handler(1)
