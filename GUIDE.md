@@ -143,11 +143,14 @@ It's often useful to a create screen capture of the current LCD for documentatio
 On the pi-Stomp with all services running, execute the following:
 
 ```bash
-uv run python ~/pi-stomp/util/record_lcd.py --still
+ps-record-lcd --still
 ```
 That writes a date-stamped file named: ~/pistomp_capture_YYYYMMDD_HHMMSS.png
 
 To alternatively specify the filename:
 ```bash
-uv run python ~/pi-stomp/util/record_lcd.py --still -o FILE-PATH
+ps-record-lcd --still -o FILE-PATH
 ```
+
+`ps-record-lcd` is a PATH symlink to `util/record_lcd.py`, installed by the image
+(`stage2/05-pistomp/02-run.sh`). Drop `--still` to record video to .mp4 instead.
