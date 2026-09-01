@@ -40,6 +40,10 @@ Tweak2 = Input Gain; Tweak3/Vol = Output Volume (per §6). Clock Source
 opens a radio submenu (Internal / Ableton Link / MIDI Clock Slave); VU Cal
 opens the existing VU calibration dialog. Switching the Equalizer off drops
 the bands out of the NAV cycle and dims them.
+
+Cards without the DAC EQ hardware (and rates where the DA7213 EQ is N/A)
+keep the row and bars visible — perma-disabled with an [N/A] badge, bands
+greyed at their stored/0 dB values and out of the NAV cycle.
 """
 
 from __future__ import annotations
@@ -139,7 +143,7 @@ def _eq_badge(on: bool, supported: bool = True) -> PillGlyph:
 
     if not supported:
         # Never toggles, so it can size to its own label.
-        return PillGlyph("DISABLED", height=_BADGE_GLYPH_H, color=DEFAULT_COLOR, outline=True)
+        return PillGlyph("N/A", height=_BADGE_GLYPH_H, color=DEFAULT_COLOR, outline=True)
     # Both states share the wider of the two labels so the row doesn't reflow.
     w = max(PillGlyph(t, height=_BADGE_GLYPH_H).width for t in ("ON", "OFF"))
     return PillGlyph(
@@ -362,7 +366,7 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
         except RuntimeError:
             logging.warning("no sample rate; disabling the DAC EQ")
             specs = None
-        self._eq_supported = specs is not None
+        self._eq_supported = specs is not None and self._has_eq
         self._bands = specs if specs is not None else BAND_SPECS
         super().__init__(
             plugin=source,  # type: ignore[arg-type]  # ParamSource, not Plugin
@@ -382,11 +386,10 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
     def snapshot_state(self) -> AudioMidiState:
         params = self.plugin.parameters
         bands: dict[str, GraphicBandParams] = {}
-        if self._has_eq:
-            for band in self._bands:
-                p = params.get(band.gain_sym)
-                gain = float(p.value) if p is not None else 0.0
-                bands[band.name] = GraphicBandParams(enabled=True, gain_db=gain)
+        for band in self._bands:
+            p = params.get(band.gain_sym)
+            gain = float(p.value) if p is not None else 0.0
+            bands[band.name] = GraphicBandParams(enabled=True, gain_db=gain)
         ac = self._handler.audiocard
         in_sym = Symbol(ac.CAPTURE_VOLUME) if ac.CAPTURE_VOLUME is not None else None
         out_sym = Symbol(ac.MASTER) if ac.MASTER is not None else None
@@ -450,28 +453,26 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
             self._out_arc.set_badge(_BADGE_TWEAK3)
 
         # Right column: EQ bars (4px top margin).
-        if self._has_eq:
-            self._bar_widget = _CompactEqWidget(
-                box=Box.xywh(cb.x0 + _EQ_BAR_X, cb.y0 + _EQ_Y, _EQ_BAR_W, _EQ_H),
-                bands=self._bands,
-                font=self._tiny_font,
-                parent=self,
-            )
-            self._bar_widget.set_enabled(self.eq_enabled)
-            self._bar_widget.set_state(self.snapshot_state().eq)
+        self._bar_widget = _CompactEqWidget(
+            box=Box.xywh(cb.x0 + _EQ_BAR_X, cb.y0 + _EQ_Y, _EQ_BAR_W, _EQ_H),
+            bands=self._bands,
+            font=self._tiny_font,
+            parent=self,
+        )
+        self._bar_widget.set_enabled(self.eq_enabled)
+        self._bar_widget.set_state(self.snapshot_state().eq)
 
         self.apply_state(self.snapshot_state())
 
     def _build_rows(self) -> None:
         cb = self.content_box
-        if self._has_eq:
-            self._eq_row = _DiscreteRow(
-                box=Box.xywh(cb.x0 + _ROWS_X, cb.y0 + _EQ_SW_Y, _ROWS_W, _ROW_H),
-                segments=self._eq_row_segments(),
-                action=self._on_eq_row,
-                font=self._row_font,
-                parent=self,
-            )
+        self._eq_row = _DiscreteRow(
+            box=Box.xywh(cb.x0 + _ROWS_X, cb.y0 + _EQ_SW_Y, _ROWS_W, _ROW_H),
+            segments=self._eq_row_segments(),
+            action=self._on_eq_row,
+            font=self._row_font,
+            parent=self,
+        )
         y = cb.y0 + _ROWS_Y
         sync_segs = self._sync_row_segments()
         self._sync_row = _DiscreteRow(

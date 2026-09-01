@@ -4,6 +4,10 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Fixed
+- Global EQ in the Audio & MIDI menu no longer disappears on sound cards without the DAC EQ (and at unsupported sample rates): the Equalizer row and bars stay visible, perma-disabled with an [N/A] badge
+
 ## [v3.3.1] - 2026-08-14
 ### Fixed
 - Pedalboards list no longer shows deleted pedalboards after they are removed from MOD-UI

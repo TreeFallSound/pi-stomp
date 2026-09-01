@@ -139,7 +139,6 @@ class TestAudioMidiPanelSnapshot:
 # ---------------------------------------------------------------------------
 
 
-class TestAudioMidiPanelBehaviour:
     @pytest.mark.parametrize(
         "rate",
         [
@@ -229,6 +228,59 @@ class TestAudioMidiPanelBehaviour:
         assert panel._btn_bypass is None
         assert panel._btn_reset is None
         assert panel._btn_back is not None
+
+
+# ---------------------------------------------------------------------------
+# Non-IQaudIO cards (no DAC EQ): the EQ is perma-disabled, not a black hole
+# ---------------------------------------------------------------------------
+
+
+class TestAudioMidiPanelNoEqHardware:
+    """Cards without ``DAC_EQ`` keep the Equalizer row and the bars visible
+    but inert — [N/A] badge, bars greyed, nothing EQ in the NAV cycle, and
+    no writes to the audiocard."""
+
+    @pytest.fixture
+    def no_eq_system(self, audio_midi_system: SystemFixture) -> SystemFixture:
+        handler = audio_midi_system.handler
+        ac = cast(MagicMock, handler.audiocard)
+        ac.DAC_EQ = None
+        ac.EQ_1 = ac.EQ_2 = ac.EQ_3 = ac.EQ_4 = ac.EQ_5 = None
+        handler.eq_status = True  # stale bit; the panel must still grey the EQ
+        return audio_midi_system
+
+    def test_eq_visible_inert_with_na_badge(self, no_eq_system: SystemFixture):
+        from plugins.audio_midi.panel import _eq_badge
+        from uilib.misc import InputEvent
+
+        handler = no_eq_system.handler
+        panel = _open_panel(no_eq_system)
+
+        assert panel._eq_supported is False
+        assert panel.eq_enabled is False
+        # Shown, not hidden: row and bars exist.
+        assert panel._eq_row is not None
+        assert panel._bar_widget is not None
+        # [N/A] badge, not the toggleable [OFF].
+        assert _eq_badge(True, supported=False)._label == "N/A"
+        # Nothing EQ participates in the nav cycle.
+        assert panel._eq_row not in panel.sel_list
+        assert not any(isinstance(w, _BandSelectable) for w in panel.sel_children())
+        # Bars render greyed-out at their fallback 0 dB.
+        st = panel.snapshot_state().eq
+        assert [b.name for b in BAND_SPECS] == list(st.bands)
+        assert all(p.gain_db == 0.0 for p in st.bands.values())
+        assert panel._bar_widget._enabled is False
+        # Row click is a no-op — no toggle, no hardware write.
+        assert panel._on_eq_row(InputEvent.CLICK) is False
+        ac = cast(MagicMock, handler.audiocard)
+        ac.set_switch_parameter.assert_not_called()
+
+    def test_eq_row_skipped_in_nav_cycle(self, no_eq_system: SystemFixture):
+        handler = no_eq_system.handler
+        panel = _open_panel(no_eq_system)
+        # Initial selection falls through the EQ column to the Input arc.
+        assert panel.sel_ref is panel._in_arc
 
 
 # ---------------------------------------------------------------------------
