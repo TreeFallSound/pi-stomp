@@ -64,6 +64,52 @@ def test_root_menu_when_off_offers_only_power_on(v3_system, bluetooth_state, sna
     snapshot("root_off")
 
 
+def test_power_toggle_shows_wait_then_settles(v3_system, bluetooth_state, snapshot):
+    """The toggle takes tens of seconds; the menu must say so instead of
+    ignoring the click, then return to normal when it lands."""
+    deferred: list = []
+    bluetooth_state(enabled=False, deferred=deferred)
+    lcd = _open(v3_system)
+    _click_row(lcd, "Turn Bluetooth on")
+    menu = lcd.pstack.current
+    labels = _labels(menu)
+    assert "Turning Bluetooth on…" in labels
+    assert "Turn Bluetooth on" not in labels, "the toggle row must be replaced while in flight"
+
+    # Second tap while waiting: no second PowerCmd is submitted — the queue
+    # dedupes by key, and the wait row carries no action anyway.
+    assert sum(type(c).__name__ == "PowerCmd" for c, _ in deferred) == 1
+
+    _, on_done = deferred.pop()
+    on_done(None)
+    # Success publishes fresh status; the test harness has no poll loop, so
+    # drive the publish the way poll() would.
+    v3_system.handler._on_bluetooth_status_change(
+        {"supported": True, "capable": True, "enabled": True, "powered": True, "discovering": False, "connected": []}
+    )
+    menu = lcd.pstack.current
+    assert "Turning Bluetooth on…" not in _labels(menu)
+    assert "Nearby devices..." in _labels(menu)
+    snapshot("root_on")
+
+
+def test_power_toggle_failure_clears_wait_and_shows_error(v3_system, bluetooth_state):
+    deferred: list = []
+    bluetooth_state(enabled=False, deferred=deferred)
+    lcd = _open(v3_system)
+    _click_row(lcd, "Turn Bluetooth on")
+    assert "Turning Bluetooth on…" in _labels(lcd.pstack.current)
+
+    _, on_done = deferred.pop()
+    on_done("sudo: a password is required")
+    menu = lcd.pstack.current
+    assert not isinstance(menu, Menu), "a failure must raise a dialog over the menu"
+    text = " ".join(
+        w.text for w in getattr(menu, "sel_list", []) + getattr(menu, "widgets", []) if hasattr(w, "text")
+    )
+    assert "password" in text
+
+
 def test_incapable_image_says_so_and_offers_nothing(v3_system, bluetooth_state, snapshot):
     bluetooth_state(capable=False)
     lcd = _open(v3_system)
@@ -74,13 +120,16 @@ def test_incapable_image_says_so_and_offers_nothing(v3_system, bluetooth_state, 
     snapshot("root_needs_package")
 
 
-def test_known_but_absent_device_says_what_to_do(v3_system, bluetooth_state, snapshot):
-    """A non-bonding device drops to unpaired on disconnect, so the row must
-    name the physical remedy rather than just reading 'Disconnected'."""
+def test_known_but_absent_device_shows_just_its_name(v3_system, bluetooth_state, snapshot):
+    """A known device bluez can't see shows the plain name, like a saved
+    wifi network that's out of range — no prescriptive hint. Tapping the
+    row is what starts the search-and-pair flow."""
     bluetooth_state(devices=[], known=[make_bt_known()])
     lcd = _open(v3_system)
     menu = lcd.pstack.current
-    assert any("press its button" in label for label in _labels(menu))
+    labels = [label.strip() for label in _labels(menu)]
+    assert "EV-1-WL" in labels
+    assert not any("press its" in label for label in labels)
     snapshot("root_known_absent")
 
 
@@ -152,21 +201,49 @@ def test_leaving_nearby_stops_discovery(v3_system, bluetooth_state):
     assert any(type(cmd).__name__ == "StopDiscoveryCmd" for cmd in submitted)
 
 
+def test_ghost_device_vanishes_from_nearby_once_stale(v3_system, bluetooth_state):
+    """A device switched off mid-scan: bluez keeps its object with the last
+    RSSI and never signals the disappearance, so the manager's staleness
+    eviction is the only thing that drops the row. What the user must see:
+    it disappears from the nearby list instead of sitting there as a
+    tap-target for a doomed Pair()."""
+    mgr = bluetooth_state(devices=[make_bt_device()])
+    lcd = _open(v3_system)
+    _click_row(lcd, "Nearby devices")
+    assert any("EV-1-WL" in label for label in _labels(lcd.pstack.current))
+
+    # The device went dark: the next poll's device list no longer has it.
+    mgr.devices.return_value = []
+    lcd.bluetooth_menu.notify_status_change()
+
+    labels = _labels(lcd.pstack.current)
+    assert not any("EV-1-WL" in label for label in labels), "stale ghost must leave the nearby list"
+    assert any("Put it in pairing mode" in label for label in labels)
+
+
 # ----- pairing saga -----
 
 
 def test_pairing_shows_progress_then_settles(v3_system, bluetooth_state, snapshot):
     """Multi-frame: the in-row 'Pairing…' text must appear while the command
-    is in flight, and clear when it lands."""
+    is in flight, and success drops back to the root list showing the device."""
     deferred: list = []
-    bluetooth_state(devices=[make_bt_device()], deferred=deferred)
+    known: list = []
+    mgr = bluetooth_state(devices=[make_bt_device()], known=known, deferred=deferred)
     lcd = _open(v3_system)
     _click_row(lcd, "Nearby devices")
     _click_row(lcd, "EV-1-WL")
     snapshot("pairing_in_flight")
 
+    # The pair landed: bluez now holds it paired, and the manager remembered it.
+    device = mgr.devices.return_value[0]
+    device["paired"] = True
+    device["connected"] = True
+    known.append(make_bt_known())
     _, on_done = deferred.pop()
     on_done(None)
+    menu = lcd.pstack.current
+    assert _labels(menu)[0].startswith("EV-1-WL"), "pairing success must land on the root list"
     snapshot("pairing_done")
 
 

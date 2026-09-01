@@ -382,8 +382,10 @@ def bluetooth_state(v3_system):
         mgr = v3_system.handler.bluetooth_manager
         mgr.supported = supported
         mgr.capable = capable
-        mgr.devices.return_value = list(devices)
-        mgr.known_devices.return_value = list(known)
+        _devices = list(devices)
+        _known = list(known)
+        mgr.devices.return_value = _devices
+        mgr.known_devices.return_value = _known
 
         def _run_inline(cmd, on_done):
             if deferred is not None:
@@ -407,7 +409,7 @@ def bluetooth_state(v3_system):
             "enabled": enabled,
             "powered": enabled,
             "discovering": False,
-            "connected": [d["name"] for d in devices if d["connected"]],
+            "connected": [d["name"] for d in _devices if d["connected"]],
         }
         v3_system.handler.bluetooth_status = status
         return mgr

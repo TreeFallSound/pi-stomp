@@ -287,6 +287,8 @@ class EmulatorWindow:
             hints[-1] += "  A/S enc2  D=press"
         if vol is not None:
             hints.append("Z/X vol enc")
+        if getattr(getattr(self.hw, "handler", None), "bluetooth_manager", None) is not None:
+            hints.append("b/shift-b bluetooth device off/on")
         if self.hw.analog_controls:
             hints.append("↑↓ expr pedal   Esc=quit")
         else:
@@ -322,10 +324,20 @@ class EmulatorWindow:
     def _handle_key(self, key, mod):
         nav = getattr(self.hw, 'nav_encoder', None)
         tweak = getattr(self.hw, 'tweak_encoders', [])
-        vol   = getattr(self.hw, 'volume_encoder', None)
+        bt = getattr(getattr(self.hw, "handler", None), "bluetooth_manager", None)
 
         if key == pygame.K_ESCAPE:
             raise KeyboardInterrupt
+
+        # Bluetooth: simulate switching a nearby device off (b) / back on
+        # (shift-b). Exercises the ghost-eviction path: a real bluez keeps
+        # the Device1 object for the whole scan with its last RSSI, never
+        # signalling the device has gone dark.
+        elif key == pygame.K_b and bt is not None:
+            if mod & pygame.KMOD_SHIFT:
+                bt._revive()
+            else:
+                bt.power_cycle()
 
         # Nav encoder
         elif key == pygame.K_LEFT and nav:

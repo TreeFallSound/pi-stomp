@@ -31,7 +31,7 @@ from modalapi.bluetooth import (
 )
 from uilib import Config, MessageDialog, get_line_height
 from uilib.glyphs import PillGlyph, SignalBarsGlyph
-from uilib.menu import Menu, MenuItem
+from uilib.menu import Menu, MenuItem, row_label
 from uilib.rich_text import IconSeg, Segment, Spacer, TextSeg
 
 if TYPE_CHECKING:
@@ -55,7 +55,11 @@ NEEDS_UPDATE = ("Please install pistomp-bluetooth", "from Updates and Recovery")
 
 # BLE-MIDI peripherals only advertise while discoverable.
 EMPTY_NEARBY = ("No devices found.", "Put it in pairing mode.")
-PAIRING_HINT = "press its button"
+
+POWER_WAITING: dict[Optional[bool], str] = {
+    True: "Turning Bluetooth on…",
+    False: "Turning Bluetooth off…",
+}
 
 
 class BtRow(TypedDict):
@@ -104,11 +108,12 @@ class BluetoothMenu:
         self.lcd: "Lcd" = lcd
         self._root_menu: Optional["Menu"] = None
         self._nearby_menu: Optional["Menu"] = None
-        self._root_sig: tuple[RowSig, ...] = ()
+        self._root_sig: tuple[Optional[bool] | RowSig, ...] = ()
         self._nearby_sig: tuple[RowSig, ...] = ()
         self._busy: dict[str, str] = {}
         self._awaiting: Optional[str] = None  # address to pair as soon as it appears
         self._discovering: bool = False
+        self._power_pending: Optional[bool] = None  # enable value of the in-flight PowerCmd
 
     @property
     def _host(self) -> _BluetoothHost:
@@ -216,10 +221,6 @@ class BluetoothMenu:
         h = _glyph_height()
         busy = self._busy.get(row["address"])
         label = row["name"]
-        if busy is None and known and not row["present"]:
-            # Say what to do, not just "Disconnected" — a non-bonding device
-            # needs the physical button before anything can reach it.
-            label = "%s %s %s" % (row["name"], SEP, PAIRING_HINT)
         segs: list[Segment] = [TextSeg(label)]
         if row["kind"] is not DeviceKind.OTHER:
             segs.append(TextSeg(" "))
@@ -248,6 +249,13 @@ class BluetoothMenu:
         if not self._status.get("capable"):
             items.extend((line, None, None) for line in NEEDS_UPDATE)
             return items
+        wait = POWER_WAITING.get(self._power_pending)
+        if wait is not None:
+            # The radio toggle can take tens of seconds (rfkill, systemd,
+            # bluez bring-up). Show it as the only thing happening rather
+            # than a menu that ignores the last click.
+            items.append((row_label(wait, enabled=False), None, None))
+            return items
         if not self._status.get("enabled"):
             items.append(("Turn Bluetooth on", self._toggle_power, None))
             return items
@@ -260,7 +268,7 @@ class BluetoothMenu:
 
     def _render_root_menu(self, default_label: Optional[str] = None) -> None:
         rows, _ = self._current_rows()
-        self._root_sig = _rows_sig(rows, self._busy)
+        self._root_sig = (self._power_pending,) + _rows_sig(rows, self._busy)
         self._root_menu = self.lcd.draw_selection_menu(
             self._build_items(rows), self._title(), dismiss_option=True, default_item=default_label, width=MENU_WIDTH
         )
@@ -288,7 +296,7 @@ class BluetoothMenu:
                 self._rerender_nearby()
         elif self._root_menu is not None and current is self._root_menu:
             self._maybe_pair_awaited(rows)
-            if _rows_sig(rows, self._busy) != self._root_sig:
+            if (self._power_pending,) + _rows_sig(rows, self._busy) != self._root_sig:
                 self._rerender_root()
 
     def _maybe_pair_awaited(self, rows: list[BtRow]) -> None:
@@ -322,7 +330,14 @@ class BluetoothMenu:
 
     def _toggle_power(self, _: object = None) -> None:
         enable = not self._status.get("enabled")
-        self._manager.queue.submit(PowerCmd(enable), self._on_op_done)
+        if self._power_pending is not None:
+            # Already mid-toggle: the queue would dedupe it anyway, but the
+            # user should not be left waiting on a click that did nothing.
+            return
+        if not self._manager.queue.submit(PowerCmd(enable), self._on_power_done):
+            return  # an identical command is still in flight
+        self._power_pending = enable
+        self.notify_status_change()
 
     def _open_nearby_menu(self, _: object = None) -> None:
         self._render_nearby_menu()
@@ -401,9 +416,33 @@ class BluetoothMenu:
 
     # ----- results -----
 
+    def _on_power_done(self, err: object) -> None:
+        # Clear first: the status publish later in this same poll tick is what
+        # repaints the menu, and it only rerenders once the pending flag (part
+        # of the root signature) has dropped.
+        self._power_pending = None
+        if err is None:
+            return
+        self.notify_status_change()
+        self._on_op_done(err)
+
     def _on_device_op_done(self, err: object, address: str) -> None:
         self._clear_busy(address)
+        if err is None and self._nearby_menu is not None and self._pstack.current is self._nearby_menu:
+            # Pairing succeeded from the nearby list: drop back to the root so
+            # the result is visible in the device list, not in the nearby row
+            # that no longer exists once the device is paired.
+            self._pop_nearby_to_root()
         self._on_op_done(err)
+
+    def _pop_nearby_to_root(self) -> None:
+        nearby = self._nearby_menu
+        self._nearby_menu = None
+        self._nearby_sig = ()
+        self._pstack.pop_panel(nearby)
+        self._stop_discovery()
+        # Rebuild the root menu beneath, not a second one stacked on top.
+        self._rerender_root()
 
     def _on_op_done(self, err: object) -> None:
         if isinstance(err, Exception):

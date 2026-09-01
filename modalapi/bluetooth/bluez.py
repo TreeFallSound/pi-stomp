@@ -24,7 +24,7 @@ import asyncio
 import logging
 import threading
 import time
-from typing import Any, Callable, Coroutine, Optional, TypeVar
+from typing import Any, Coroutine, Optional, TypeVar
 
 from dbus_fast import BusType, DBusError, Message, MessageType, Variant
 from dbus_fast.aio import MessageBus
@@ -47,6 +47,9 @@ _PROPS_IFACE = "org.freedesktop.DBus.Properties"
 _OM_IFACE = "org.freedesktop.DBus.ObjectManager"
 _BLUEZ_ROOT = "/org/bluez"
 _ADAPTER_WAIT_S = 10.0
+# bluez keeps an unpaired Device1 object for as long as discovery runs, even
+# after the device has gone dark; staleness is the only signal we get.
+_STALE_AFTER_S = 15.0
 
 _MATCH_RULES = (
     f"type='signal',sender='{BLUEZ_SERVICE}',interface='{_PROPS_IFACE}',member='PropertiesChanged'",
@@ -64,6 +67,8 @@ class BluezClient:
     which the UI reads as "this board has no Bluetooth"."""
 
     def __init__(self) -> None:
+        # path -> monotonic time of the last advertisement seen from it
+        self._seen: dict[str, float] = {}
         self._lock = threading.Lock()
         self._devices: dict[str, dict[str, Any]] = {}
         self._adapter_props: dict[str, Any] = {}
@@ -75,18 +80,16 @@ class BluezClient:
         self._ready = threading.Event()
         self._lifecycle = threading.Lock()
         self._started = False
-        self._on_change: Optional[Callable[[], None]] = None
 
     # ----- lifecycle -----
 
-    def start(self, on_change: Optional[Callable[[], None]] = None) -> bool:
+    def start(self) -> bool:
         """Bring up the loop thread and connect. Blocks until the first
         GetManagedObjects lands (or setup fails). Returns available()."""
         with self._lifecycle:
             if self._started:
                 return self.available
             self._started = True
-            self._on_change = on_change
             self._ready.clear()
             self._thread = threading.Thread(target=self._run_loop, name="bluez", daemon=True)
             self._thread.start()
@@ -164,14 +167,17 @@ class BluezClient:
         objects: dict[str, dict[str, dict[str, Any]]] = body[0]
         with self._lock:
             self._devices.clear()
+            self._seen.clear()
             self._adapter_path = None
             self._adapter_props = {}
+            now = time.monotonic()
             for path, ifaces in objects.items():
                 if ADAPTER_IFACE in ifaces and self._adapter_path is None:
                     self._adapter_path = path
                     self._adapter_props = _unwrap(ifaces[ADAPTER_IFACE])
                 if DEVICE_IFACE in ifaces:
                     self._devices[path] = _unwrap(ifaces[DEVICE_IFACE])
+                    self._seen[path] = now
 
     def stop(self, join: bool = True) -> None:
         """Tear down completely so start() can bring up a fresh connection."""
@@ -192,6 +198,7 @@ class BluezClient:
             self._ready.clear()
             with self._lock:
                 self._devices.clear()
+                self._seen.clear()
                 self._adapter_props.clear()
                 self._adapter_path = None
 
@@ -200,33 +207,31 @@ class BluezClient:
     def _on_signal(self, msg: Message) -> Optional[bool]:
         if msg.message_type is not MessageType.SIGNAL:
             return None
-        changed = False
         if msg.interface == _OM_IFACE and msg.member == "InterfacesAdded":
             path, ifaces = msg.body[0], msg.body[1]
             if DEVICE_IFACE in ifaces:
                 with self._lock:
                     self._devices[path] = _unwrap(ifaces[DEVICE_IFACE])
-                changed = True
+                    self._seen[path] = time.monotonic()
         elif msg.interface == _OM_IFACE and msg.member == "InterfacesRemoved":
             path, ifaces = msg.body[0], msg.body[1]
             if DEVICE_IFACE in ifaces:
                 with self._lock:
-                    changed = self._devices.pop(path, None) is not None
+                    self._seen.pop(path, None)
+                    self._devices.pop(path, None)
         elif msg.interface == _PROPS_IFACE and msg.member == "PropertiesChanged":
             iface, props = msg.body[0], _unwrap(msg.body[1])
             path = msg.path or ""
             with self._lock:
                 if iface == DEVICE_IFACE:
                     self._devices.setdefault(path, {}).update(props)
-                    changed = True
+                    # RSSI/TxPower arrive on every advertisement; any other
+                    # property change says nothing about radio presence, so
+                    # only these refresh the heartbeat.
+                    if "RSSI" in props or "TxPower" in props:
+                        self._seen[path] = time.monotonic()
                 elif iface == ADAPTER_IFACE and path == self._adapter_path:
                     self._adapter_props.update(props)
-                    changed = True
-        if changed and self._on_change is not None:
-            try:
-                self._on_change()
-            except Exception:
-                logging.exception("Bluetooth change callback failed")
         return None
 
     # ----- reads -----
@@ -245,14 +250,27 @@ class BluezClient:
         with self._lock:
             return bool(self._adapter_props.get("Discovering"))
 
-    def snapshot(self) -> list[BtDevice]:
-        """Every device bluez currently knows, filtered to MIDI/HID/paired."""
+    def snapshot(self, now: Optional[float] = None) -> list[BtDevice]:
+        """Every device bluez currently knows, filtered to MIDI/HID/paired.
+
+        Unpaired, unconnected device objects whose last advertisement is
+        older than _STALE_AFTER_S are withheld: bluez keeps such objects for
+        the whole of a discovery run even after the device has gone dark,
+        and nothing else ever signals their disappearance. Paired devices
+        persist in /var/lib/bluetooth and don't advertise when idle, so
+        staleness is never held against them."""
+        if now is None:
+            now = time.monotonic()
         with self._lock:
             items = list(self._devices.items())
+            seen = dict(self._seen)
         out: list[BtDevice] = []
         for path, props in items:
             if not is_interesting(props):
                 continue
+            if not (props.get("Paired") or props.get("Connected")):
+                if now - seen.get(path, now) > _STALE_AFTER_S:
+                    continue
             rssi = props.get("RSSI")
             out.append(
                 BtDevice(

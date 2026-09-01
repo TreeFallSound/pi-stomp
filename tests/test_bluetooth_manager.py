@@ -2,12 +2,14 @@
 with no fixture — they encode what a live scan actually returned on a Pi 5."""
 
 import asyncio
+import time
 from unittest.mock import patch
 
 import pytest
 from dbus_fast import DBusError
 
 from modalapi.bluetooth import DeviceKind, device_kind, is_interesting, parse_bluez_error
+from modalapi.bluetooth import bluez
 from modalapi.bluetooth import manager as manager_mod
 from modalapi.bluetooth import ops
 from modalapi.bluetooth.manager import BluetoothManager, has_adapter
@@ -115,6 +117,116 @@ def test_has_adapter_false_when_no_hci_node_is_registered(tmp_path):
 
 def test_has_adapter_false_when_directory_is_absent():
     assert has_adapter("/nonexistent/sysfs/path") is False
+
+# ----- ghost eviction: stale unpaired devices must vanish -----
+
+
+def _msg(interface, member, body, path=""):
+    """A bare dbus_fast Message shaped like a bluez signal."""
+    from dbus_fast import Message, MessageType
+
+    return Message(
+        message_type=MessageType.SIGNAL,
+        interface=interface,
+        member=member,
+        path=path,
+        body=body,
+    )
+
+
+def _client_with_ghost():
+    """A BluezClient whose adapter is up and whose device table holds one
+    unpaired device. The device object stays in the table — that's what
+    bluez does mid-discovery after the device has gone dark — but the
+    snapshot must stop listing it once it is stale."""
+    client = bluez.BluezClient()
+    with client._lock:
+        client._adapter_path = "/org/bluez/hci0"
+        client._devices["/org/bluez/hci0/dev_X"] = {
+            "Address": "AA:BB:CC:DD:EE:FF",
+            "Name": "Ghost Pedal",
+            "UUIDs": [MIDI_UUID],
+            "Paired": False,
+            "Connected": False,
+        }
+    return client
+
+
+def test_stale_unpaired_device_is_withheld_from_snapshot():
+    client = _client_with_ghost()
+    client._seen["/org/bluez/hci0/dev_X"] = time.monotonic() - bluez._STALE_AFTER_S - 1
+    assert client.snapshot() == []
+
+
+def test_fresh_unpaired_device_stays_in_snapshot():
+    client = _client_with_ghost()
+    client._seen["/org/bluez/hci0/dev_X"] = time.monotonic()
+    assert [d["name"] for d in client.snapshot()] == ["Ghost Pedal"]
+
+
+def test_paired_device_never_goes_stale():
+    """A bonded device idle with discovery off doesn't advertise either —
+    staleness must not mark it absent and cost the user their connect row."""
+    client = _client_with_ghost()
+    with client._lock:
+        client._devices["/org/bluez/hci0/dev_X"]["Paired"] = True
+    client._seen["/org/bluez/hci0/dev_X"] = time.monotonic() - bluez._STALE_AFTER_S * 10
+    assert [d["name"] for d in client.snapshot()] == ["Ghost Pedal"]
+
+
+def test_connected_device_never_goes_stale():
+    client = _client_with_ghost()
+    with client._lock:
+        client._devices["/org/bluez/hci0/dev_X"]["Connected"] = True
+    client._seen["/org/bluez/hci0/dev_X"] = time.monotonic() - bluez._STALE_AFTER_S * 10
+    assert [d["name"] for d in client.snapshot()] == ["Ghost Pedal"]
+
+
+def test_rssi_change_refreshes_the_heartbeat():
+    """PropertiesChanged carrying RSSI is the advertisement heartbeat; the
+    same signal without RSSI (e.g. a ServicesResolved flip) must not."""
+    client = _client_with_ghost()
+    path = "/org/bluez/hci0/dev_X"
+    old = time.monotonic() - bluez._STALE_AFTER_S - 1
+    client._seen[path] = old
+    client._on_signal(_msg("org.freedesktop.DBus.Properties", "PropertiesChanged", ["org.bluez.Device1", {"RSSI": -50}], path=path))
+    assert client._seen[path] > old
+    assert [d["name"] for d in client.snapshot()] == ["Ghost Pedal"]
+
+
+def test_non_rssi_change_does_not_refresh_the_heartbeat():
+    client = _client_with_ghost()
+    path = "/org/bluez/hci0/dev_X"
+    client._seen[path] = time.monotonic() - bluez._STALE_AFTER_S - 1
+    client._on_signal(
+        _msg("org.freedesktop.DBus.Properties", "PropertiesChanged", ["org.bluez.Device1", {"ServicesResolved": True}], path=path)
+    )
+    assert client.snapshot() == []
+
+
+def test_interfaces_added_marks_device_fresh():
+    client = _client_with_ghost()
+    client._seen["/org/bluez/hci0/dev_X"] = time.monotonic() - bluez._STALE_AFTER_S - 1
+    client._on_signal(
+        _msg(
+            "org.freedesktop.DBus.ObjectManager",
+            "InterfacesAdded",
+            ["/org/bluez/hci0/dev_X", {"org.bluez.Device1": {"Name": "Ghost Pedal", "UUIDs": [MIDI_UUID]}}],
+            path="/org/bluez/hci0",
+        )
+    )
+    assert [d["name"] for d in client.snapshot()] == ["Ghost Pedal"]
+
+
+def test_interfaces_removed_clears_the_heartbeat():
+    client = _client_with_ghost()
+    path = "/org/bluez/hci0/dev_X"
+    client._seen[path] = time.monotonic()
+    client._on_signal(
+        _msg("org.freedesktop.DBus.ObjectManager", "InterfacesRemoved", [path, ["org.bluez.Device1"]], path="/org/bluez/hci0")
+    )
+    assert client.snapshot() == []
+    assert path not in client._seen
 
 
 # ----- known-device store -----

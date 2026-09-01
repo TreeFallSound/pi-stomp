@@ -47,8 +47,10 @@ class BluetoothManager:
     """Owns the bluez client, the known-device store, and a CommandQueue.
 
     Unlike wifi there is no periodic status poll: bluez pushes
-    PropertiesChanged, so `changed` is set from the client's callback and
-    drained by poll() on the main thread."""
+    PropertiesChanged, which the client folds into its device table. poll()
+    still runs every 2s — ghost eviction is time-driven, so the device list
+    has to change with no signal from bluez at all — and dedupes on a
+    content signature so unchanged polls publish nothing."""
 
     def __init__(
         self,
@@ -61,7 +63,6 @@ class BluetoothManager:
         self.client: BluezClient = BluezClient()
         self.last_status: BtStatus = {}
         self._last_sig: tuple = ()
-        self.changed: bool = False
         self._has_adapter: bool = has_adapter()
         self._capable: bool = False
         self._enabled: bool = False
@@ -80,14 +81,14 @@ class BluetoothManager:
             return
         self._capable = ops.bluetoothd_is_capable()
         self._enabled = ops.service_enabled()
-        if self._enabled and self.client.start(on_change=self.request_refresh):
+        if self._enabled and self.client.start():
             self.client.call(ops.power_on(self.client))
         self._probed = True
-        self.request_refresh()
 
     def request_refresh(self) -> None:
-        with self.lock:
-            self.changed = True
+        """CommandQueue nudges this after a write op; poll() recomputes
+        unconditionally, so there is nothing to arm."""
+        return
 
     @property
     def supported(self) -> bool:
@@ -113,15 +114,11 @@ class BluetoothManager:
         )
 
     def poll(self) -> None:
-        """Main-thread tick: drain callbacks, publish a changed snapshot."""
+        """Main-thread tick: drain callbacks, publish a changed snapshot.
+
+        Always recomputed: ghost eviction is time-driven, so the device list
+        has to change with no signal from bluez at all."""
         self.queue.poll()
-        publish = False
-        with self.lock:
-            if self.changed:
-                self.changed = False
-                publish = True
-        if not publish:
-            return
         status = self.status()
         # Devices are not part of the published status, so the status alone
         # cannot tell a new discovery from a repeat — dedupe on both.
@@ -228,13 +225,12 @@ class BluetoothManager:
             return err
         self._enabled = enabled
         if enabled:
-            if self.client.start(on_change=self.request_refresh):
+            if self.client.start():
                 self.client.call(ops.power_on(self.client))
         else:
             err = ops.rfkill_set_blocked(True)
             if err is not None:
                 logging.warning("Bluetooth rfkill block failed: %s", err)
-        self.request_refresh()
         return None
 
     def start_discovery(self) -> None:

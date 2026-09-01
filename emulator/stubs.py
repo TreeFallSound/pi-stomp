@@ -307,13 +307,36 @@ class StubBluetoothManager(BluetoothManager):
         self.on_status_change = on_status_change
         self.last_status: BtStatus = {}
         self._last_sig: tuple = ()
-        self.changed: bool = True
         self._enabled: bool = True
         self._capable: bool = True
         self._discovering: bool = False
         self._known: list[KnownDevice] = []
         self._devices: dict[str, BtDevice] = {}
+        self._off: set[str] = set()  # addresses whose device stopped advertising
+        self._off_at: float = 0.0  # monotonic time it went dark
         self.queue: CommandQueue = CommandQueue(self)
+
+    STALE_AFTER_S = 15.0  # mirrors BluezClient._STALE_AFTER_S
+
+    def power_cycle(self, address: Optional[str] = None) -> None:
+        """Simulate switching a device off mid-scan: it stops advertising, so
+        it must vanish from the nearby list even though discovery keeps
+        running (exactly what a real bluez never signals)."""
+        live = [a for a, d in self._devices.items() if not d["paired"]]
+        if address is None:
+            address = live[0] if live else None
+        if address is not None:
+            self._off.add(address)
+            self._off_at = time.monotonic()
+        self.request_refresh()
+
+    def _revive(self, address: Optional[str] = None) -> None:
+        """Device powered back on: advertise again."""
+        if address is None:
+            self._off.clear()
+        else:
+            self._off.discard(address)
+        self.request_refresh()
 
     # ----- overrides of the real manager's bluez-backed surface -----
 
@@ -336,8 +359,8 @@ class StubBluetoothManager(BluetoothManager):
         )
 
     def request_refresh(self) -> None:
-        with self.lock:
-            self.changed = True
+        """Inherited poll() recomputes unconditionally; nothing to arm."""
+        return
 
     def shutdown(self) -> None:
         try:
@@ -346,6 +369,12 @@ class StubBluetoothManager(BluetoothManager):
             pass
 
     def devices(self) -> list[BtDevice]:
+        now = time.monotonic()
+        if self._off and now - self._off_at > self.STALE_AFTER_S:
+            # Evict the ghosts, but keep the off set itself: the device is
+            # still powered off, so a later scan must not resurrect it.
+            self._devices = {a: d for a, d in self._devices.items() if a not in self._off}
+            self._off_at = now
         return list(self._devices.values())
 
     def known_devices(self) -> list[KnownDevice]:
@@ -376,6 +405,8 @@ class StubBluetoothManager(BluetoothManager):
     def start_discovery(self) -> None:
         self._discovering = True
         for device in self._NEARBY:
+            if device["address"] in self._off:
+                continue  # powered off: nothing advertises, bluez has no object
             self._devices.setdefault(device["address"], device.copy())
         self.request_refresh()
 

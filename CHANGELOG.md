@@ -4,6 +4,12 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+
+## [Unreleased]
+### Fixed
+- Bluetooth: nearby devices switched off mid-scan no longer linger as unresponsive "ghost" rows; they leave the list when their last advertisement goes stale
+- Bluetooth: a known device that is off or out of range now shows just its name, like a saved wifi network, instead of the non-applicable "press its button" hint
+
 ## [v3.3.1] - 2026-08-14
 ### Fixed
 - Pedalboards list no longer shows deleted pedalboards after they are removed from MOD-UI
