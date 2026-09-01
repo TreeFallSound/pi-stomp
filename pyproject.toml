@@ -1,6 +1,6 @@
 [project]
 name = "pi-stomp"
-version = "3.3.0"
+version = "3.3.1"
 description = "DIY high definition, multi-effects stompbox platform for guitar, bass and keyboards"
 readme = "README.md"
 requires-python = ">=3.11"
