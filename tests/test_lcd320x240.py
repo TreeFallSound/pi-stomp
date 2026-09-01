@@ -832,3 +832,124 @@ def test_tall_parallel_scrolled_to_last(lcd, snapshot):
     for _ in range(col0_count - 1 + 3):
         instance.main_panel.sel_next()
     snapshot("scrolled_to_last")
+
+
+@pytest.fixture
+def long_title_lcd(lcd, fake_clock):
+    """Main panel with a pedalboard title long enough to overflow its box.
+
+    draw_main_panel auto-selects w_pedalboard on pedalboard load; nav to the
+    wrench elsewhere so the tests control selection explicitly. The clock is
+    warmed past SUBTITLE_TIMEOUT so the nav-change subtitle (a legitimate
+    one-frame LCD push) has already shown and hidden, and any later frame
+    can only come from scrolling.
+    """
+    instance, fake = lcd
+    pb = _make_pedalboard("The Extremely Long Pedalboard Name That Will Not Fit", [], [])
+    _setup_pedalboard(instance, pb)
+    instance.main_panel.sel_widget(instance.w_wrench)
+    for _ in range(20):  # 1.6s > SUBTITLE_TIMEOUT (1.3s)
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+    fake.frames.clear()
+    return instance, fake
+
+
+def test_long_title_is_quiescent_until_selected(long_title_lcd, fake_clock):
+    """SPI traffic is audible on the DAC at high gain, so an unselected
+    overflow title must generate zero LCD pushes, however long you wait."""
+    instance, fake = long_title_lcd
+    title = instance.w_pedalboard
+    assert title is not None and title._should_scroll()
+
+    for _ in range(100):  # ~2.5 cycles worth of ticks
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+    assert fake.frames == []
+    assert title.scroll_offset == 0
+
+
+def test_long_title_scrolls_only_while_selected(long_title_lcd, fake_clock):
+    """NAV onto the overflow title is the one thing that may animate it —
+    and leaving it parks the text back at its start."""
+    instance, fake = long_title_lcd
+    title = instance.w_pedalboard
+    assert title is not None
+
+    def settle():
+        """Run past the nav subtitle's show/hide window, then drop its frames."""
+        for _ in range(20):
+            fake_clock.advance(0.08)
+            instance._poll_updates()
+        fake.frames.clear()
+
+    # Nothing moves while the wrench holds selection.
+    for _ in range(25):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+    assert title.scroll_offset == 0
+    assert fake.frames == []
+
+    # NAV right from the wrench reaches the title (it follows the toolbar).
+    instance.main_panel.input_step(1, 1, 1.0)
+    assert instance.main_panel.sel_ref is title
+    assert title.selected
+    settle()
+
+    # Mid-cycle, the title is scrolling and pushing frames.
+    for _ in range(35):  # past the 2s start pause, into the scroll phase
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+    assert title.scroll_offset > 0
+    assert len(fake.frames) > 0
+
+    # NAV away: snapped home immediately, and quiescent again.
+    instance.main_panel.input_step(1, 1, 1.0)
+    assert not title.selected
+    assert title.scroll_offset == 0
+    settle()
+    for _ in range(50):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+    assert fake.frames == []
+    assert title.scroll_offset == 0
+    fake.frames.clear()
+
+
+def test_at_most_one_title_scrolls(long_title_lcd, fake_clock):
+    """Both title widgets overflow, yet the invariant holds: 0 or 1 moving."""
+    instance, _ = long_title_lcd
+    instance.draw_preset("An Equally Long Snapshot Name That Overflows")
+    pb_title = instance.w_pedalboard
+    preset_title = instance.w_preset
+    assert pb_title is not None and preset_title is not None
+    assert pb_title._should_scroll() and preset_title._should_scroll()
+
+    def moving():
+        return [w for w in (pb_title, preset_title) if w.scroll_offset != 0]
+
+    # Park selection on a neutral widget first.
+    instance.main_panel.sel_widget(instance.w_wrench)
+    for _ in range(100):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+    assert moving() == []
+
+    # Sweep the whole title cycle under selection: at most one mover at any
+    # sample, and each title's move comes only from its own selection.
+    instance.main_panel.sel_widget(pb_title)
+    for _ in range(120):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+        assert len(moving()) <= 1
+        assert preset_title.scroll_offset == 0
+    assert pb_title.scroll_offset > 0  # sanity: it did scroll
+
+    instance.main_panel.sel_widget(preset_title)
+    assert pb_title.scroll_offset == 0  # snapped on the nav itself
+    for _ in range(120):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+        assert len(moving()) <= 1
+        assert pb_title.scroll_offset == 0
+    assert preset_title.scroll_offset > 0

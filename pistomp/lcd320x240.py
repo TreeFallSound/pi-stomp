@@ -481,7 +481,6 @@ class Lcd:
                 font=self.title_font,
                 parent=self.main_panel,
                 action=self.draw_pedalboard_menu,
-                lcd_poll_divisor=self.poll_divisor,
                 subtitle="Pedalboard",
             )
             self.main_panel.add_sel_widget(self.w_pedalboard)
@@ -514,7 +513,6 @@ class Lcd:
             font=self.title_font,
             parent=self.main_panel,
             action=self.draw_preset_menu,
-            lcd_poll_divisor=self.poll_divisor,
             subtitle="Snapshot",
         )
         self.main_panel.add_sel_widget(self.w_preset)

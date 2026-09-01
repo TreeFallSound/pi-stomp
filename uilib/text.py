@@ -548,14 +548,22 @@ class PluginTile(TextWidget):
 
 
 class ScrollingText(TextWidget):
-    """TextWidget with horizontal ping-pong scrolling for overflow text."""
+    """TextWidget that ping-pong-scrolls overflowing text — but only while it
+    is the selected widget; otherwise it sits snapped to the text's start.
+
+    Scrolling is driven by ``tick()`` and gated on the plain ``selected`` flag
+    that NAV already maintains, so no extra state or wiring exists: at most one
+    ScrollingText (the NAV selection) ever animates. Every step is a repaint,
+    repaints are SPI traffic, and SPI traffic is audible on the DAC at high
+    gain — so a long title must be opt-in to scroll rather than animate by
+    default.
+    """
 
     def __init__(
         self,
         pixels_per_second: float = 50.0,
         pause_start_sec: float = 2.0,
         pause_end_sec: float = 1.0,
-        lcd_poll_divisor: int = 8,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -596,31 +604,44 @@ class ScrollingText(TextWidget):
             self.font.origin = prev
         self.cached_text_image = surf
 
+    def _scroll_hroom(self) -> int:
+        """The visible text window: box width minus one h_margin and the
+        outline — the same rectangle the crop blit in ``_draw`` paints into
+        and the static branch leaves for text. One measurement everywhere,
+        else the ping never lands on the text's true end."""
+        assert self.box is not None
+        h_margin, _ = self._get_margins()
+        return self.box.width - h_margin - self.outline
+
     def _should_scroll(self) -> bool:
         if self.cached_text_image is None:
             return False
-        assert self.box is not None
-        h_margin, _ = self._get_margins()
-        available_width = self.box.width - h_margin - self.outline
-        return self.cached_text_width > available_width
+        return self.cached_text_width > self._scroll_hroom()
+
+    @override
+    def set_selected(self, selected: bool) -> None:
+        # Snap home *before* the deselect repaint so the reticule leaving and
+        # the text parking land in a single push — a mid-scroll deselect must
+        # not pay two LCD transfers, the second being a stale-offset frame.
+        if not selected:
+            self._snap_home()
+        super().set_selected(selected)
 
     @override
     def tick(self) -> None:
         if self.cached_text_image is None:
             self._render_text_to_cache()
 
-        if not self._should_scroll():
-            if self.scroll_offset != 0:
-                self.scroll_offset = 0
-                self._anchor_time = None
-                self._last_tick_time = None
-                self.refresh()
+        # The tick's job is to advance a selected, visible overflow; anything
+        # else is already parked (set_selected snaps home), so the gate is a
+        # pure safety net — cheap, and it short-circuits before the box
+        # asserts in _should_scroll.
+        if not self.selected or not self.visible or not self._should_scroll():
+            self._snap_home()
             return
 
-        assert self.box is not None
-        h_margin, _ = self._get_margins()
-        available_width = self.box.width - 2 * h_margin - self.outline
-        max_offset = self.cached_text_width - available_width
+        hroom = self._scroll_hroom()
+        max_offset = self.cached_text_width - hroom
         if max_offset <= 0:
             return
 
@@ -651,13 +672,22 @@ class ScrollingText(TextWidget):
             self.scroll_offset = new_offset
             self.refresh()
 
+    def _snap_home(self) -> None:
+        """Park at the text's start and reset the cycle, so a re-select always
+        begins with the start pause. Repaints only if pixels actually moved —
+        a quiescent widget generates no SPI traffic."""
+        if self.scroll_offset != 0:
+            self.scroll_offset = 0
+            self.refresh()
+        self._anchor_time = None
+        self._last_tick_time = None
+
     def _clear_cache_and_restart(self) -> None:
         self.cached_text_image = None
         self.scroll_offset = 0
         self._anchor_time = None
         self._last_tick_time = None
 
-    @override
     def set_foreground(self, color) -> None:
         self._clear_cache_and_restart()
         super().set_foreground(color)
@@ -702,6 +732,10 @@ class ScrollingText(TextWidget):
             src_rect = pygame.Rect(0, 0, min(tw, hroom), th)
             ctx.surface.blit(self.cached_text_image, (h_margin + hoffset + ox, v_margin + oy), src_rect)
         else:
+            # Overflow: left-anchored crop at the current scroll offset,
+            # which tick keeps at 0 unless this widget is selected — the
+            # unselected rest state and offset 0 render identically, so
+            # selection changes never jump the text.
             crop_width = min(hroom, self.cached_text_width - self.scroll_offset)
             src_rect = pygame.Rect(self.scroll_offset, 0, crop_width, th)
             ctx.surface.blit(self.cached_text_image, (h_margin + ox, v_margin + oy), src_rect)

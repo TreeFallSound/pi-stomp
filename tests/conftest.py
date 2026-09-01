@@ -5,6 +5,7 @@ Injected into sys.modules at import time so application code can be imported in 
 
 import os
 import sys
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -231,6 +232,38 @@ class FakeLcd(LcdBase):
 @pytest.fixture
 def fake_lcd():
     return FakeLcd()
+
+
+# ---------------------------------------------------------------------------
+# FakeClock — deterministic wall time for tick-driven animations
+# ---------------------------------------------------------------------------
+
+
+class FakeClock:
+    """Deterministic time.monotonic for tick-driven animations.
+
+    Patches every module that reads the wall clock for animation pacing
+    (they all share the stdlib time module, so one attribute carries all
+    of them). ``drive(widget, dt, n)`` simulates n mainloop passes:
+    advance the clock by dt, then tick the widget.
+    """
+
+    def __init__(self, monkeypatch, start: float = 0.0):
+        self.now = start
+        monkeypatch.setattr(time, "monotonic", lambda: self.now)
+
+    def advance(self, dt: float) -> None:
+        self.now += dt
+
+    def drive(self, widget, dt: float, n: int = 1) -> None:
+        """Advance the clock by dt and tick the widget, n times."""
+        for _ in range(n):
+            self.advance(dt)
+            widget.tick()
+
+@pytest.fixture
+def fake_clock(monkeypatch):
+    return FakeClock(monkeypatch)
 
 
 # ---------------------------------------------------------------------------
