@@ -404,11 +404,6 @@ class LcdBase(ABC):
         """Estimated ms to push a clip of this box's size. 0 = no cost."""
         return 0.0
 
-    @property
-    def has_system_splash(self) -> bool:
-        return False
-
-
 class PanelStack(ContainerWidget):
     # A push estimated to take longer than this is coalesced rather than pushed
     # inline, leaving headroom under the 10ms tick.
