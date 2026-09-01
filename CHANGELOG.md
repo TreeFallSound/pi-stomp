@@ -4,6 +4,12 @@ Notable user visible changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Changed
+- Pedalboard/snapshot titles now auto-scroll only while selected with the NAV encoder (at most one thing scrolls at a time, and they sit at their leftmost position otherwise) — LCD updates over SPI are audible on the DAC at high gain, so the screen stays quiet while you play
+### Fixed
+- Long titles scrolled slightly past their last pixel before bouncing back; the scroll window now matches the drawn text area exactly
+
 ## [v3.3.1] - 2026-08-14
 ### Fixed
 - Pedalboards list no longer shows deleted pedalboards after they are removed from MOD-UI
