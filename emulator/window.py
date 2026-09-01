@@ -41,8 +41,8 @@ import pistomp.switchstate as switchstate
 
 from uilib.pygame_init import font as _make_font
 
-_FONTS_DIR  = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fonts")
-_FONT_MONO      = os.path.join(_FONTS_DIR, "DejaVuSansMono.ttf")
+_FONTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fonts")
+_FONT_MONO = os.path.join(_FONTS_DIR, "DejaVuSansMono.ttf")
 _FONT_MONO_BOLD = os.path.join(_FONTS_DIR, "DejaVuSansMono-Bold.ttf")
 
 
@@ -56,22 +56,23 @@ class _FTFont:
         surf, _ = self._ft.render(text, color)
         return surf
 
+
 # ---- dimensions (per-instance; these module-level values are defaults) ------
-CTRL_W          = 300
-_TARGET_H       = 480   # desired display area height — scale is computed to match
+CTRL_W = 300
+_TARGET_H = 480  # desired display area height — scale is computed to match
 
 # ---- colours ----------------------------------------------------------------
-BG              = (30, 30, 30)
-PANEL_BG        = (45, 45, 45)
-BTN_IDLE        = (80, 80, 80)
-BTN_HOVER       = (120, 120, 120)
-BTN_ACTIVE      = (200, 200, 200)
-FS_ON           = (0, 200, 80)
-FS_OFF          = (80, 80, 80)
-TEXT_COLOR      = (220, 220, 220)
-DIM_TEXT        = (130, 130, 130)
-SLIDER_BG       = (60, 60, 60)
-SLIDER_FG       = (0, 160, 200)
+BG = (30, 30, 30)
+PANEL_BG = (45, 45, 45)
+BTN_IDLE = (80, 80, 80)
+BTN_HOVER = (120, 120, 120)
+BTN_ACTIVE = (200, 200, 200)
+FS_ON = (0, 200, 80)
+FS_OFF = (80, 80, 80)
+TEXT_COLOR = (220, 220, 220)
+DIM_TEXT = (130, 130, 130)
+SLIDER_BG = (60, 60, 60)
+SLIDER_FG = (0, 160, 200)
 
 
 class _Label:
@@ -89,10 +90,10 @@ class _Btn:
     """Simple clickable rectangle."""
 
     def __init__(self, rect, label, action, font):
-        self.rect   = pygame.Rect(rect)
-        self.label  = label
+        self.rect = pygame.Rect(rect)
+        self.label = label
         self.action = action
-        self.font   = font
+        self.font = font
         self._hover = False
 
     def draw(self, surf, active=False):
@@ -111,7 +112,6 @@ class _Btn:
 
 
 class EmulatorWindow:
-
     def __init__(self, hardware):
         self.hw = hardware
         self.running = True
@@ -127,15 +127,15 @@ class EmulatorWindow:
 
         self.screen = pygame.display.set_mode((self.win_w, self.win_h))
         pygame.key.set_repeat(300, 50)
-        version_label = getattr(hardware, 'VERSION_LABEL', '')
+        version_label = getattr(hardware, "VERSION_LABEL", "")
         title = "pi-Stomp Emulator (%s)" % version_label if version_label else "pi-Stomp Emulator"
         pygame.display.set_caption(title)
 
-        self.font_sm  = _FTFont(_FONT_MONO,      13)
+        self.font_sm = _FTFont(_FONT_MONO, 13)
         self.font_med = _FTFont(_FONT_MONO_BOLD, 15)
         self.font_hdr = _FTFont(_FONT_MONO_BOLD, 14)
 
-        self._exp_value = 64   # 0-127 MIDI value for expression pedal
+        self._exp_value = 64  # 0-127 MIDI value for expression pedal
         self._exp_dragging = False
 
         self._buttons: list[_Btn] = []
@@ -149,7 +149,7 @@ class EmulatorWindow:
 
     def _build_ui(self):
         y = 15
-        _bw, _bh = 60, 30   # default button size
+        _bw, _bh = 60, 30  # default button size
 
         # --- Footswitches ----------------------------------------------------
         num_fs = len(self.hw.footswitches)
@@ -157,10 +157,7 @@ class EmulatorWindow:
         for i, fs in enumerate(self.hw.footswitches):
             x = self.ctrl_x + 5 + i * fs_spacing
             idx = i
-            btn = _Btn((x, y, 56, 46),
-                       "FS%d" % (i + 1),
-                       lambda fs=fs: fs.press(),
-                       self.font_med)
+            btn = _Btn((x, y, 56, 46), "FS%d" % (i + 1), lambda fs=fs: fs.press(), self.font_med)
             self._buttons.append(btn)
             self._fs_btns.append((btn, idx))
 
@@ -174,15 +171,14 @@ class EmulatorWindow:
             enc_y += 8
 
         self._exp_slider_y = enc_y + 10
-        self._exp_slider_rect = pygame.Rect(
-            self.ctrl_x + 5, self._exp_slider_y + 16, CTRL_W - 20, 12)
+        self._exp_slider_rect = pygame.Rect(self.ctrl_x + 5, self._exp_slider_y + 16, CTRL_W - 20, 12)
 
     def _enc_label(self, enc):
-        if hasattr(enc, 'midi_CC') and enc.midi_CC is not None:
+        if hasattr(enc, "midi_CC") and enc.midi_CC is not None:
             return "Enc %s (CC%d)" % (enc.id, enc.midi_CC)
-        if getattr(enc, 'type', None) == 'VOLUME':
+        if getattr(enc, "type", None) == "VOLUME":
             return "Vol (enc %s)" % enc.id
-        if getattr(enc, 'label', None) is not None:
+        if getattr(enc, "label", None) is not None:
             return enc.label
         return "Nav"
 
@@ -191,28 +187,21 @@ class EmulatorWindow:
         y += 15
 
         bw, bh = 38, 28
-        has_press = getattr(enc, 'press_callback', None) is not None
+        has_press = getattr(enc, "press_callback", None) is not None
 
-        left_x  = self.ctrl_x + 5
-        mid_x   = left_x + bw + 4
+        left_x = self.ctrl_x + 5
+        mid_x = left_x + bw + 4
         right_x = mid_x + (bw + 4 if has_press else 0)
 
-        self._buttons.append(_Btn(
-            (left_x, y, bw, bh), "◄",
-            lambda e=enc: e.step(-1), self.font_med))
+        self._buttons.append(_Btn((left_x, y, bw, bh), "◄", lambda e=enc: e.step(-1), self.font_med))
 
         if has_press:
-            self._buttons.append(_Btn(
-                (mid_x, y, bw, bh), "●",
-                lambda e=enc: e.press(switchstate.Value.RELEASED),
-                self.font_med))
-            self._buttons.append(_Btn(
-                (right_x, y, bw, bh), "►",
-                lambda e=enc: e.step(1), self.font_med))
+            self._buttons.append(
+                _Btn((mid_x, y, bw, bh), "●", lambda e=enc: e.press(switchstate.Value.RELEASED), self.font_med)
+            )
+            self._buttons.append(_Btn((right_x, y, bw, bh), "►", lambda e=enc: e.step(1), self.font_med))
         else:
-            self._buttons.append(_Btn(
-                (mid_x, y, bw, bh), "►",
-                lambda e=enc: e.step(1), self.font_med))
+            self._buttons.append(_Btn((mid_x, y, bw, bh), "►", lambda e=enc: e.step(1), self.font_med))
 
         return y + bh + 2
 
@@ -279,14 +268,16 @@ class EmulatorWindow:
         num_fs = len(self.hw.footswitches)
         if num_fs:
             hints.append("1-%d footswitches" % num_fs)
-        tweak = getattr(self.hw, 'tweak_encoders', [])
-        vol   = getattr(self.hw, 'volume_encoder', None)
+        tweak = getattr(self.hw, "tweak_encoders", [])
+        vol = getattr(self.hw, "volume_encoder", None)
         if len(tweak) >= 1:
             hints.append("Q/W enc1  E=press")
         if len(tweak) >= 2:
             hints[-1] += "  A/S enc2  D=press"
         if vol is not None:
             hints.append("Z/X vol enc")
+        if getattr(getattr(self.hw, "handler", None), "bluetooth_manager", None) is not None:
+            hints.append("b/shift-b bluetooth device off/on")
         if self.hw.analog_controls:
             hints.append("↑↓ expr pedal   Esc=quit")
         else:
@@ -310,8 +301,7 @@ class EmulatorWindow:
         pygame.draw.rect(self.screen, SLIDER_BG, r, border_radius=4)
         fill_w = int(r.width * self._exp_value / 127)
         if fill_w > 0:
-            pygame.draw.rect(self.screen, SLIDER_FG,
-                             (r.x, r.y, fill_w, r.height), border_radius=4)
+            pygame.draw.rect(self.screen, SLIDER_FG, (r.x, r.y, fill_w, r.height), border_radius=4)
         tx = r.x + fill_w
         pygame.draw.circle(self.screen, TEXT_COLOR, (tx, r.centery), 7)
 
@@ -320,12 +310,23 @@ class EmulatorWindow:
     # -------------------------------------------------------------------------
 
     def _handle_key(self, key, mod):
-        nav = getattr(self.hw, 'nav_encoder', None)
-        tweak = getattr(self.hw, 'tweak_encoders', [])
-        vol   = getattr(self.hw, 'volume_encoder', None)
+        nav = getattr(self.hw, "nav_encoder", None)
+        tweak = getattr(self.hw, "tweak_encoders", [])
+        vol = getattr(self.hw, "volume_encoder", None)
+        bt = getattr(getattr(self.hw, "handler", None), "bluetooth_manager", None)
 
         if key == pygame.K_ESCAPE:
             raise KeyboardInterrupt
+
+        # Bluetooth: simulate switching a nearby device off (b) / back on
+        # (shift-b). Exercises the ghost-eviction path: a real bluez keeps
+        # the Device1 object for the whole scan with its last RSSI, never
+        # signalling the device has gone dark.
+        elif key == pygame.K_b and bt is not None:
+            if mod & pygame.KMOD_SHIFT:
+                bt._revive()
+            else:
+                bt.power_cycle()
 
         # Nav encoder
         elif key == pygame.K_LEFT and nav:

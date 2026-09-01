@@ -29,6 +29,7 @@ import common.util as util
 from common.contexts import BindingDecl, ControlClass, EventKind, MidiCcEffect, ParamEffect, ShadowState
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, Type
 from modalapi.plugin import Plugin
+from ui.bluetooth_menu import BluetoothMenu
 from ui.ethernet_menu import EthernetMenu
 from ui.footswitch_menu import FootswitchMenu
 from ui.wifi_menu import WifiMenu
@@ -226,6 +227,7 @@ class Lcd:
         # Constructed here (not with ethernet_menu above) because WifiMenu needs
         # the PanelStack, which is created earlier in this block.
         self.wifi_menu: WifiMenu = WifiMenu(self)
+        self.bluetooth_menu: BluetoothMenu = BluetoothMenu(self)
 
     #
     # Main
@@ -405,7 +407,7 @@ class Lcd:
             image=os.path.join(self.imagedir, "wifi_gray.png"),
             parent=self.main_panel,
             action=self.wifi_menu.open,
-            subtitle="Network",
+            subtitle="Wi-Fi and Devices",
         )
         self.main_panel.add_sel_widget(self.w_wifi)
         if self.w_eq is not None:
@@ -542,7 +544,16 @@ class Lcd:
         self.draw_selection_menu(items, "Snapshots", auto_dismiss=True, dismiss_option=True)
 
     def draw_selection_menu(
-        self, items, title="", auto_dismiss=False, dismiss_option=False, font=None, title_font=None, default_item=None
+        self,
+        items,
+        title="",
+        auto_dismiss=False,
+        dismiss_option=False,
+        font=None,
+        title_font=None,
+        default_item=None,
+        width=None,
+        footer=None,
     ):
         # items is a list of tuples: (label, callback, arg) or (label, callback, arg, is_active)
         # or (label, callback, arg, is_active, long_callback) where long_callback is called
@@ -566,7 +577,8 @@ class Lcd:
             items=items,
             auto_destroy=True,
             default_item=default_item,
-            max_width=180,
+            width=width,
+            footer=footer,
             max_height=200,
             auto_dismiss=auto_dismiss,
             dismiss_option=dismiss_option,
