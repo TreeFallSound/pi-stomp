@@ -284,10 +284,11 @@ class Lcd:
     def _poll_updates(self):
         for d in self.w_parameter_dialogs.values():
             d.tick()
-        if self.w_pedalboard is not None:
-            self.w_pedalboard.tick()
-        if self.w_preset is not None:
-            self.w_preset.tick()
+        if self.pstack.current is self.main_panel:
+            if self.w_pedalboard is not None:
+                self.w_pedalboard.tick()
+            if self.w_preset is not None:
+                self.w_preset.tick()
         for wfs in self.w_footswitches:
             wfs.tick()
 
@@ -483,7 +484,6 @@ class Lcd:
                 font=self.title_font,
                 parent=self.main_panel,
                 action=self.draw_pedalboard_menu,
-                lcd_poll_divisor=self.poll_divisor,
                 subtitle="Pedalboard",
             )
             self.main_panel.add_sel_widget(self.w_pedalboard)
@@ -516,7 +516,6 @@ class Lcd:
             font=self.title_font,
             parent=self.main_panel,
             action=self.draw_preset_menu,
-            lcd_poll_divisor=self.poll_divisor,
             subtitle="Snapshot",
         )
         self.main_panel.add_sel_widget(self.w_preset)
