@@ -115,6 +115,7 @@ class EmulatorModhandler(Modhandler):
 
     def system_menu_restart_sound(self, arg):
         logging.info("Emulator: restart sound is a no-op")
+        raise KeyboardInterrupt
 
     def system_menu_reload(self, arg):
         logging.info("Emulator: reload configs is a no-op")

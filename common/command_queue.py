@@ -25,6 +25,8 @@ import threading
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Generic, Protocol, TypeVar
 
+from common.util import TEARDOWN_JOIN_S
+
 T = TypeVar("T")
 
 
@@ -122,4 +124,4 @@ class CommandQueue:
     def shutdown(self, join: bool = True) -> None:
         self._cmd_queue.put(_SHUTDOWN_SENTINEL)
         if join:
-            self._worker.join(timeout=2.0)
+            self._worker.join(timeout=TEARDOWN_JOIN_S)

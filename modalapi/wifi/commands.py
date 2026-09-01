@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Optional
 
 from common.command_queue import Command
 
+
 if TYPE_CHECKING:
     from .manager import WifiManager
 
@@ -109,3 +110,4 @@ class ScanCmd(Command[list]):
 
     def key(self) -> str:
         return "scan"
+

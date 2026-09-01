@@ -21,6 +21,7 @@ import threading
 from typing import Callable, Optional
 
 from common.command_queue import CommandQueue
+from common.util import TEARDOWN_JOIN_S
 
 from . import ops
 from .nmcli import nmcli, parse_kv_lines
@@ -73,7 +74,7 @@ class WifiManager:
         except Exception:
             pass
         if self.thread is not None:
-            self.thread.join(timeout=2.0)
+            self.thread.join(timeout=TEARDOWN_JOIN_S)
 
     def _is_wifi_supported(self) -> bool:
         if self.wireless_supported:
