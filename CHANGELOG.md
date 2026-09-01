@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 - Expression pedal can be turned on from the LCD. It no longer needs an SSH session and an edit to `default_config.yml`.
 - The analog row is now a nav stop. Click it to see every input with its resolved MIDI binding, and to turn one on or off. The choice is kept across pedalboards.
+### Changed
+- Pedalboard/snapshot titles now auto-scroll only while selected with the NAV encoder (at most one thing scrolls at a time, and they sit at their leftmost position otherwise) — LCD updates over SPI are audible on the DAC at high gain, so the screen stays quiet while you play
+### Fixed
+- Long titles scrolled slightly past their last pixel before bouncing back; the scroll window now matches the drawn text area exactly
 
 ## [v3.3.1] - 2026-08-14
 ### Fixed

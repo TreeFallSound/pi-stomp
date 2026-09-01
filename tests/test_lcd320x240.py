@@ -62,8 +62,13 @@ def _make_pedalboard(title: str, plugins: list[Plugin], connections: list[Connec
 
 def _make_footswitch(id: int, toggled: bool = False, display_label: str = "", taptempo=None) -> Footswitch:
     fs = Footswitch(
-        id=id, led_pin=None, pixel=None, midi_CC=1, midi_channel=0,
-        refresh_callback=lambda *a, **k: None, taptempo=taptempo,
+        id=id,
+        led_pin=None,
+        pixel=None,
+        midi_CC=1,
+        midi_channel=0,
+        refresh_callback=lambda *a, **k: None,
+        taptempo=taptempo,
     )
     fs.toggled = toggled
     fs.display_label = display_label
@@ -132,15 +137,25 @@ def setup_main_ui(instance):
     mock_mix = _real_param(name="Mix", symbol="mix", instance_id="reverb", value=0.4)
     plugins = [
         _make_plugin(
-            "distortion", uri="mock://distortion", category="Distortion", has_footswitch=True,
+            "distortion",
+            uri="mock://distortion",
+            category="Distortion",
+            has_footswitch=True,
             parameters={Symbol("gain"): mock_gain},
         ),
         _make_plugin(
-            "delay", uri="mock://delay", category="Delay", has_footswitch=True,
+            "delay",
+            uri="mock://delay",
+            category="Delay",
+            has_footswitch=True,
             parameters={Symbol("time"): mock_time},
         ),
         _make_plugin(
-            "reverb", uri="mock://reverb", category="Reverb", has_footswitch=True, bypassed=True,
+            "reverb",
+            uri="mock://reverb",
+            category="Reverb",
+            has_footswitch=True,
+            bypassed=True,
             parameters={Symbol("mix"): mock_mix},
         ),
         _make_plugin("chorus", uri="mock://chorus", category="Modulator", has_footswitch=False),
@@ -167,10 +182,12 @@ def setup_main_ui(instance):
     instance.draw_main_panel()
 
 
-def test_splash_snapshot(lcd, snapshot):
-    _, fake = lcd
+def test_cleanup_blacks_the_panel(lcd, snapshot):
+    instance, fake = lcd
+    setup_main_ui(instance)
+    instance.cleanup()
     fake.flush()
-    assert len(fake.frames) > 0, "expected at least one frame from splash_show during __init__"
+    assert instance.pstack.stack == []
     snapshot()
 
 
@@ -211,6 +228,14 @@ def test_system_menu_snapshot(lcd, snapshot):
     setup_main_ui(instance)
     instance.draw_system_menu(None, None)
     snapshot()
+
+
+def test_busy_dialog_snapshot(lcd, snapshot):
+    """Uncancellable "Please wait" dialog: message only, no Ok button."""
+    instance, _ = lcd
+    setup_main_ui(instance)
+    instance.draw_message_dialog("Restarting sound engine…", title="Please wait", dismissable=False)
+    snapshot("busy_dialog")
 
 
 def test_system_info_dialog_snapshot(lcd, snapshot):
@@ -807,3 +832,122 @@ def test_tall_parallel_scrolled_to_last(lcd, snapshot):
     for _ in range(col0_count - 1 + 4):
         instance.main_panel.sel_next()
     snapshot("scrolled_to_last")
+
+
+@pytest.fixture
+def long_title_lcd(lcd, fake_clock):
+    instance, fake = lcd
+    pb = _make_pedalboard("The Extremely Long Pedalboard Name That Will Not Fit", [], [])
+    _setup_pedalboard(instance, pb)
+    instance.main_panel.sel_widget(instance.w_wrench)
+    for _ in range(20):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+    fake.frames.clear()
+    return instance, fake
+
+
+def test_long_title_stays_still_until_selected(long_title_lcd, fake_clock):
+    instance, fake = long_title_lcd
+    title = instance.w_pedalboard
+    assert title is not None and title._should_scroll()
+
+    for _ in range(100):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+    assert fake.frames == []
+    assert title.scroll_offset == 0
+
+
+def test_long_title_scrolls_only_while_selected(long_title_lcd, fake_clock):
+    instance, fake = long_title_lcd
+    title = instance.w_pedalboard
+    assert title is not None
+
+    def settle():
+        for _ in range(20):
+            fake_clock.advance(0.08)
+            instance._poll_updates()
+        fake.frames.clear()
+
+    for _ in range(25):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+    assert title.scroll_offset == 0
+    assert fake.frames == []
+
+    instance.main_panel.input_step(1, 1, 1.0)
+    assert instance.main_panel.sel_ref is title
+    assert title.selected
+    settle()
+
+    for _ in range(35):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+    assert title.scroll_offset > 0
+    assert len(fake.frames) > 0
+
+    instance.main_panel.input_step(1, 1, 1.0)
+    assert not title.selected
+    assert title.scroll_offset == 0
+    settle()
+    for _ in range(50):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+    assert fake.frames == []
+    assert title.scroll_offset == 0
+    fake.frames.clear()
+
+
+def test_title_does_not_tick_off_main_panel(long_title_lcd, fake_clock):
+    instance, fake = long_title_lcd
+    title = instance.w_pedalboard
+    assert title is not None
+    instance.main_panel.sel_widget(title)
+    for _ in range(35):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+    assert title.scroll_offset > 0
+    fake.frames.clear()
+
+    instance.pstack.current = None
+    offset = title.scroll_offset
+    for _ in range(50):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+    assert title.scroll_offset == offset
+    assert fake.frames == []
+
+def test_at_most_one_title_scrolls(long_title_lcd, fake_clock):
+    instance, _ = long_title_lcd
+    instance.draw_preset("An Equally Long Snapshot Name That Overflows")
+    pb_title = instance.w_pedalboard
+    preset_title = instance.w_preset
+    assert pb_title is not None and preset_title is not None
+    assert pb_title._should_scroll() and preset_title._should_scroll()
+
+    def moving():
+        return [w for w in (pb_title, preset_title) if w.scroll_offset != 0]
+
+    instance.main_panel.sel_widget(instance.w_wrench)
+    for _ in range(100):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+    assert moving() == []
+
+    instance.main_panel.sel_widget(pb_title)
+    for _ in range(120):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+        assert len(moving()) <= 1
+        assert preset_title.scroll_offset == 0
+    assert pb_title.scroll_offset > 0
+
+    instance.main_panel.sel_widget(preset_title)
+    assert pb_title.scroll_offset == 0
+    for _ in range(120):
+        fake_clock.advance(0.08)
+        instance._poll_updates()
+        assert len(moving()) <= 1
+        assert pb_title.scroll_offset == 0
+    assert preset_title.scroll_offset > 0

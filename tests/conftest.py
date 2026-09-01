@@ -5,7 +5,9 @@ Injected into sys.modules at import time so application code can be imported in 
 
 import os
 import sys
+import time
 from pathlib import Path
+from typing import Protocol
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -240,6 +242,29 @@ def input_enable_seed():
     from tests.integration.conftest import DEFAULT_INPUT_ENABLE_SEED
 
     return DEFAULT_INPUT_ENABLE_SEED
+
+
+class Tickable(Protocol):
+    def tick(self) -> None: ...
+
+
+class FakeClock:
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, start: float = 0.0) -> None:
+        self.now = start
+        monkeypatch.setattr(time, "monotonic", lambda: self.now)
+
+    def advance(self, dt: float) -> None:
+        self.now += dt
+
+    def drive(self, widget: Tickable, dt: float, n: int = 1) -> None:
+        for _ in range(n):
+            self.advance(dt)
+            widget.tick()
+
+
+@pytest.fixture
+def fake_clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
+    return FakeClock(monkeypatch)
 
 
 # ---------------------------------------------------------------------------
