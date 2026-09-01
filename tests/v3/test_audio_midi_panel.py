@@ -133,10 +133,13 @@ class TestAudioMidiPanelSnapshot:
         handler.poll_lcd_updates()
         assert panel.sel_ref is panel._sync_row
 
-    # ---------------------------------------------------------------------------
-    # Behaviour: tweak bindings, sync-mode echo
-    # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Behaviour: tweak bindings, sync-mode echo
+# ---------------------------------------------------------------------------
+
+
+class TestAudioMidiPanelBehaviour:
     @pytest.mark.parametrize(
         "rate",
         [
