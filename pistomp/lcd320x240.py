@@ -18,16 +18,18 @@
 import functools
 import logging
 import os
+import re
 import time
 import socket
 from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 from common.fonts import font_path
 import common.token as Token
 from pistomp.controller import ControlType
 import common.util as util
 from common.contexts import BindingDecl, ControlClass, EventKind, MidiCcEffect, ParamEffect, ShadowState
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol, Type
+from modalapi.led_render import render_led_spec, state_label
 from modalapi.plugin import Plugin
 from ui.ethernet_menu import EthernetMenu
 from ui.footswitch_menu import FootswitchMenu
@@ -56,6 +58,7 @@ from uilib import (
     Parameterdialog,
     ScrollingText,
     TextWidget,
+    LoopPluginTile,
 )
 from uilib.glyphs.badge import BadgeGlyph
 from uilib.menu import row_label
@@ -608,13 +611,10 @@ class Lcd:
         def tile_factory(node, box, parent):
             plugin = plugins_by_id[node.id]
             display_name = plugin.display_name
-            label = display_name[: self.plugin_label_length].replace("_", "")
-            label = self.shorten_name(label, box.width)
             subtitle = plugin.subtitle or (f"{plugin.category}: {display_name}" if plugin.category else display_name)
-            tile = PluginTile(
+            common_kw: dict[str, Any] = dict(
                 plugin=plugin,
                 box=box,
-                text=label,
                 outline_radius=5,
                 parent=parent,
                 action=self.plugin_event,
@@ -623,6 +623,14 @@ class Lcd:
                 backdrop=self.background,
                 foreground=self.foreground,
             )
+            if plugin.customization.loop_icon:
+                m = re.search(r"\d+$", display_name)
+                loop_num = int(m.group()) if m else 0
+                tile = LoopPluginTile(loop_num=loop_num, **common_kw)
+            else:
+                label = display_name[: self.plugin_label_length].replace("_", "")
+                label = self.shorten_name(label, box.width)
+                tile = PluginTile(text=label, **common_kw)
             tile.set_font(self.small_font)
             self.w_plugins.append(tile)
             return tile
@@ -855,6 +863,37 @@ class Lcd:
             name = param.instance_id
         return self.shorten_name(name, width)
 
+    def _footswitch_state(self, footswitch):
+        """(name, state_label, color, loop_icon) for a switch bound to a plugin that
+        publishes a state via its LedSpec, else (None, None, None, False). The name is
+        the plugin's, not the bound port's — the port is a trigger ("Advance"),
+        which says nothing about which loop this is."""
+        param = footswitch.parameter
+        if param is None or self.current is None:
+            return None, None, None, False
+        plugin = self.current.pedalboard.find_plugin(param.instance_id)
+        if plugin is None:
+            return None, None, None, False
+        spec = plugin.customization.led_spec
+        if spec is None:
+            return None, None, None, False
+        label = state_label(spec, plugin.output_values)
+        if label is None:
+            return None, None, None, False
+        color, _style = render_led_spec(spec, plugin.output_values)
+        return plugin.display_name, label, color, plugin.customization.loop_icon
+
+    def _progress_fn(self, footswitch, state_label: str | None):
+        """Only the state view has a border to draw the loop position on."""
+        if state_label is None or self.handler is None:
+            return None
+        return functools.partial(self.handler.footswitch_loop_progress, footswitch)
+
+    def _tap_flash_fn(self, footswitch):
+        if footswitch.taptempo is None or self.handler is None:
+            return None
+        return functools.partial(self.handler.footswitch_tap_flash, footswitch)
+
     def draw_footswitches(self):
         # One slot-ordered pass over the physical switches, so selection order is
         # the stable physical order regardless of plugin/pedalboard ordering.
@@ -867,6 +906,8 @@ class Lcd:
         slot_w = pitch
         for fs in sorted(self.footswitches, key=lambda f: f.id):
             x = pitch * fs.id
+            state = None
+            loop_icon = False
             if fs.preset_callback_arg is not None:
                 label = self.footswitch_label(fs, slot_w)
                 fs.set_display_label(label)
@@ -878,9 +919,15 @@ class Lcd:
                 fs.toggled = active
                 fs.set_led(active)  # a press never touches toggled for preset switches
             elif fs.parameter is not None:
-                label = self.footswitch_label(fs, slot_w)
+                name, state, state_color, loop_icon = self._footswitch_state(fs)
+                if state is not None:
+                    label = name
+                    color = state_color
+                else:
+                    label = self.footswitch_label(fs, slot_w)
+                    color = accent_color_for(fs.category)
+                    loop_icon = False
                 fs.set_display_label(label)
-                color = accent_color_for(fs.category)
                 action = self.footswitch_event
             else:
                 label = fs.get_display_label() or ""
@@ -893,10 +940,15 @@ class Lcd:
                 not fs.toggled,
                 small_font=self.tiny_font,
                 taptempo=fs.taptempo,
+                state_label=state,
+                progress_fn=self._progress_fn(fs, state),
+                tap_flash_fn=self._tap_flash_fn(fs),
+                loop_icon=loop_icon if state is not None else False,
                 parent=self.footswitch_panel,
                 action=action,
                 object=fs,
             )
+            p.poll_progress()
             self.w_footswitches.append(p)
         self.footswitch_panel.refresh()
 
@@ -910,16 +962,30 @@ class Lcd:
                     footswitch.toggled = active
                     footswitch.set_led(active)
                     wfs.color = FootswitchWidget.DEFAULT_COLOR
+                    wfs.state_label = None
+                    wfs.progress_fn = None
                 elif footswitch.parameter is not None:
                     # Binding may be new (e.g. MIDI learn) — reflect label + color.
-                    footswitch.set_display_label(self.footswitch_label(footswitch, slot_w))
-                    wfs.color = accent_color_for(footswitch.category)
+                    name, state, state_color, loop_icon = self._footswitch_state(footswitch)
+                    if state is not None:
+                        footswitch.set_display_label(name)
+                        wfs.color = state_color
+                        wfs.loop_icon = loop_icon
+                    else:
+                        footswitch.set_display_label(self.footswitch_label(footswitch, slot_w))
+                        wfs.color = accent_color_for(footswitch.category)
+                        wfs.loop_icon = False
+                    wfs.state_label = state
+                    wfs.progress_fn = self._progress_fn(footswitch, state)
                     wfs.action = self.footswitch_event
                 else:
                     wfs.color = None
                     wfs.action = None
+                    wfs.state_label = None
+                    wfs.progress_fn = None
                 wfs.toggle(not footswitch.toggled)
                 wfs.label = footswitch.get_display_label() or ""
+                wfs.poll_progress()
                 wfs.refresh()
                 break
 

@@ -1,14 +1,18 @@
 """Unit tests for ws_protocol.parse_message."""
 
 from modalapi.ws_protocol import (
+    BEAT_SYNC_NEW_BAR,
+    BEAT_SYNC_TEMPO_CHANGED,
     PatchSetMessage,
     AddHwPortMessage,
     AddPluginMessage,
+    BeatSyncMessage,
     ConnectMessage,
     DisconnectMessage,
     LoadingEndMessage,
     LoadingStartMessage,
     MidiMapMessage,
+    OutputSetMessage,
     PedalSnapshotMessage,
     ParamSetMessage,
     PluginBypassMessage,
@@ -263,6 +267,75 @@ def test_transport_malformed_bpm_is_unknown():
     )
 
 
+# ---------------------------------------------------------------------------
+# beat_sync (beat_sync {t_us} {bpm} {bpb} {beat_in_bar} {flags}) — a clock
+# sample (t_us=now), not a back-dated downbeat event. No absolute bar count —
+# that's DAW context mod-host doesn't need to expose. flags gives the cause of
+# the sample (BEAT_SYNC_NEW_BAR / BEAT_SYNC_TEMPO_CHANGED).
+# ---------------------------------------------------------------------------
+
+
+def test_beat_sync_basic():
+    assert parse_message("beat_sync 1234567890 120.0 4 0.0 1") == BeatSyncMessage(
+        t_us=1234567890, bpm=120.0, bpb=4.0, beat_in_bar=0.0, flags=BEAT_SYNC_NEW_BAR
+    )
+
+
+def test_beat_sync_zero_beat_in_bar():
+    assert parse_message("beat_sync 0 60.0 3 0.0 1") == BeatSyncMessage(
+        t_us=0, bpm=60.0, bpb=3.0, beat_in_bar=0.0, flags=BEAT_SYNC_NEW_BAR
+    )
+
+
+def test_beat_sync_fractional_bpb():
+    assert parse_message("beat_sync 1000000 90.5 7 2.5 2") == BeatSyncMessage(
+        t_us=1000000, bpm=90.5, bpb=7.0, beat_in_bar=2.5, flags=BEAT_SYNC_TEMPO_CHANGED
+    )
+
+
+def test_beat_sync_new_bar_flag_reads_as_new_bar():
+    msg = parse_message("beat_sync 10 120.0 4 0.0 1")
+    assert isinstance(msg, BeatSyncMessage)
+    assert msg.is_new_bar is True
+    assert msg.is_tempo_change is False
+
+
+def test_beat_sync_tempo_change_flag_reads_as_tempo_change():
+    msg = parse_message("beat_sync 10 140.0 4 2.5 2")
+    assert isinstance(msg, BeatSyncMessage)
+    assert msg.is_new_bar is False
+    assert msg.is_tempo_change is True
+
+
+def test_beat_sync_both_flags_read_together():
+    # A forced tempo change that lands on a bar line sets both bits.
+    msg = parse_message("beat_sync 10 140.0 4 0.0 3")
+    assert isinstance(msg, BeatSyncMessage)
+    assert msg.is_new_bar is True
+    assert msg.is_tempo_change is True
+
+
+def test_beat_sync_without_flags_is_unknown():
+    # The four-field form never shipped; it is not accepted.
+    assert isinstance(parse_message("beat_sync 1234567890 120.0 4 0.0"), UnknownMessage)
+
+
+def test_beat_sync_too_few_fields_is_unknown():
+    assert isinstance(parse_message("beat_sync 5 1234567890 120.0"), UnknownMessage)
+
+
+def test_beat_sync_non_int_t_us_is_unknown():
+    assert isinstance(parse_message("beat_sync 5 notanumber 120.0 4 1"), UnknownMessage)
+
+
+def test_beat_sync_non_float_bpm_is_unknown():
+    assert isinstance(parse_message("beat_sync 5 1234567890 notanumber 4 1"), UnknownMessage)
+
+
+def test_beat_sync_non_int_flags_is_unknown():
+    assert isinstance(parse_message("beat_sync 5 1234567890 120.0 4 notanumber"), UnknownMessage)
+
+
 def test_plugin_bypass_nonzero_is_true():
     msg = parse_message("param_set /graph/Reverb :bypass 0.5")
     assert msg == PluginBypassMessage(instance="Reverb", bypassed=True)
@@ -383,6 +456,36 @@ def test_malformed_pedal_snapshot_non_int():
 def test_empty_string():
     msg = parse_message("")
     assert isinstance(msg, UnknownMessage)
+
+
+# ---------------------------------------------------------------------------
+# output_set (output_set /graph/{instance} {symbol} {value})
+# ---------------------------------------------------------------------------
+
+
+def test_output_set_parses_to_output_set_message():
+    msg = parse_message("output_set /graph/loopjefe state 2.0")
+    assert msg == OutputSetMessage(instance="loopjefe", symbol="state", value=2.0)
+
+
+def test_output_set_integer_port():
+    msg = parse_message("output_set /graph/loopjefe measure_number 0.0")
+    assert msg == OutputSetMessage(instance="loopjefe", symbol="measure_number", value=0.0)
+
+
+def test_output_set_missing_value_is_unknown():
+    msg = parse_message("output_set /graph/loopjefe state")
+    assert isinstance(msg, UnknownMessage)
+
+
+def test_output_set_non_float_value_is_unknown():
+    msg = parse_message("output_set /graph/loopjefe state notanumber")
+    assert isinstance(msg, UnknownMessage)
+
+
+def test_output_set_strips_graph_prefix():
+    msg = parse_message("output_set /graph/loopjefe state 4.0")
+    assert msg == OutputSetMessage(instance="loopjefe", symbol="state", value=4.0)
 
 
 # ---------------------------------------------------------------------------

@@ -358,3 +358,41 @@ def test_encoder_type_transition_rebinds_volume(v3_system: SystemFixture):
 
     assert enc.type == "VOLUME"
     assert enc.parameter is v3_system.handler.volume_parameter
+
+
+# ---------------------------------------------------------------------------
+# MIDI channel — the overlay must not clobber it
+# ---------------------------------------------------------------------------
+
+
+def test_overlay_without_midi_block_keeps_channel(v3_system: SystemFixture):
+    """A pedalboard config that says nothing about MIDI leaves the channel alone.
+
+    Resetting it re-keys every controller under "0:<cc>" while the parameter
+    bindings still read "<chan>:<cc>", so the switch stops dispatching and its
+    longpress goes out on the wrong channel.
+    """
+    hw = v3_system.hw
+    channel = hw.midi_channel
+    fs = hw.footswitches[0]
+    key = fs.dispatch_key
+
+    hw.reinit(_cfg(hw, footswitches=[{"id": 0, "midi_CC": fs.midi_CC}]))
+
+    assert hw.midi_channel == channel
+    assert hw.footswitches[0].midi_channel == channel
+    assert hw.footswitches[0].dispatch_key == key
+    assert hw.controllers[key] is hw.footswitches[0]
+
+
+def test_overlay_may_still_override_midi_channel(v3_system: SystemFixture):
+    """An overlay that does declare a channel still wins (1-based in config)."""
+    hw = v3_system.hw
+
+    overlay = config.parse(
+        {"hardware": {"midi": {"channel": 5}, "footswitches": [{"id": 0, "midi_CC": 60}]}}, "<test>"
+    )
+    hw.reinit(adapt(merge(hw.default_cfg, overlay)))
+
+    assert hw.midi_channel == 4
+    assert hw.footswitches[0].dispatch_key == "4:60"

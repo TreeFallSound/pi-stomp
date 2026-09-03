@@ -5,6 +5,7 @@ import common.util as util
 from common.contexts import ControlClass, EventKind, MidiCcEffect, ParamEffect
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from tests.types import SystemFixture
+from tests.v3.test_hardware_config import _cfg
 
 LOG_PORT: PortInfo = {
     "shortName": "HP",
@@ -12,6 +13,26 @@ LOG_PORT: PortInfo = {
     "ranges": {"minimum": 30.0, "maximum": 800.0},
     "properties": ["logarithmic"],
 }
+
+
+def test_trigger_uri_property_is_momentary():
+    """Raw LV2 property URIs still identify LoopJefe trigger ports."""
+    parameter = Parameter(
+        {
+            "symbol": "advance",
+            "shortName": "Advance",
+            "ranges": {"minimum": 0.0, "maximum": 1.0},
+            "properties": [
+                "http://lv2plug.in/ns/lv2core#integer",
+                "http://lv2plug.in/ns/ext/port-props#trigger",
+            ],
+        },
+        0.0,
+        "0:60",
+        "loopjefe_1",
+    )
+
+    assert parameter.is_momentary is True
 
 
 def _binding_for(hw, controller):
@@ -306,6 +327,209 @@ def test_v3_midi_learn_unknown_instance_is_ignored(v3_system: SystemFixture, mak
 
     assert fs0.parameter is None
     assert plugin.has_footswitch is False
+
+
+def _make_loopjefe_plugin_with_advance(_make_parameter, instance_id="loopjefe"):
+    """Build LoopJefe from the same LV2 trigger metadata mod-ui returns."""
+    from modalapi.plugin import Plugin
+    from plugins import lookup
+    from plugins.loopjefe import LOOPJEFE_URIS
+
+    advance = Parameter(
+        {
+            "symbol": "advance",
+            "shortName": "Advance",
+            "ranges": {"minimum": 0.0, "maximum": 1.0},
+            "properties": [
+                "http://lv2plug.in/ns/lv2core#integer",
+                "http://lv2plug.in/ns/ext/port-props#trigger",
+            ],
+        },
+        0.0,
+        None,
+        instance_id,
+    )
+    uri = LOOPJEFE_URIS[0]
+    return Plugin(instance_id, {Symbol("advance"): advance}, {}, "Looper", uri=uri, customization=lookup(uri))
+
+
+class TestMidiLearnBindsMomentaryAndOutputs:
+    """Regression: the live MIDI-learn path (Handler._apply_midi_binding →
+    _bind_controller_to_param) must not need any plugin-specific input code —
+    momentary semantics come for free from the bound parameter's port type
+    (pprops:trigger → Type.TRIGGER), and the LED driver reads the plugin's own
+    generically-mirrored output_values (from its LedSpec), not anything cached
+    on the footswitch."""
+
+    def test_midi_learn_binds_trigger_parameter_as_momentary(self, v3_system: SystemFixture, make_parameter):
+        handler = v3_system.handler
+        hw = v3_system.hw
+        ws_bridge = v3_system.ws_bridge
+        assert handler.current
+
+        fs0 = hw.footswitches[0]
+        channel, cc = _binding_for(hw, fs0).split(":")
+
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        handler.current.pedalboard.plugins = [plugin]
+
+        ws_bridge.inject(f"midi_map /graph/loopjefe advance {channel} {cc} 0.0 1.0")
+        handler.poll_ws_messages()
+
+        assert fs0.parameter is plugin.parameters[Symbol("advance")]
+        assert fs0.parameter is not None
+        assert fs0.parameter.is_momentary is True, (
+            "advance is pprops:trigger — momentary must be derived from the "
+            "port type, with zero loopjefe-specific input code"
+        )
+
+    def test_momentary_press_emits_one_shot_127_every_press(
+        self, v3_system: SystemFixture, make_parameter
+    ):
+        """A pprops:trigger port fires on a rising edge only (loopjefe self-
+        clears the port). So every short-press must emit a fresh 127 — never
+        the 127/0 alternation a latching toggle produces, which would make the
+        looper advance on only every other press."""
+        from pistomp.input.event import SwitchEvent, SwitchEventKind
+
+        handler = v3_system.handler
+        hw = v3_system.hw
+        ws_bridge = v3_system.ws_bridge
+        assert handler.current
+
+        fs0 = hw.footswitches[0]
+        channel, cc = _binding_for(hw, fs0).split(":")
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        handler.current.pedalboard.plugins = [plugin]
+        ws_bridge.inject(f"midi_map /graph/loopjefe advance {channel} {cc} 0.0 1.0")
+        handler.poll_ws_messages()
+
+        hw.midiout.send_message.reset_mock()
+        for _ in range(3):
+            handler.handle(SwitchEvent(controller=fs0, kind=SwitchEventKind.PRESS, timestamp=1.0))
+
+        sent = [c.args[0][2] for c in hw.midiout.send_message.call_args_list]
+        assert sent == [127, 127, 127], "momentary trigger must one-shot 127, not toggle 127/0"
+        assert all(c.args[0][1] == int(cc) for c in hw.midiout.send_message.call_args_list)
+        assert fs0.toggled is False, "a trigger has no on/off state to latch"
+
+    def test_momentary_longpress_reset_emits_one_shot_127(
+        self, v3_system: SystemFixture, make_parameter
+    ):
+        """A longpress raw-CC mapped to a pprops:trigger port (loopjefe reset)
+        is a one-shot too: every longpress emits 127, not the 127/0 toggle the
+        raw-CC path uses for ordinary (non-trigger) targets."""
+        from rtmidi.midiconstants import CONTROL_CHANGE
+        from common.parameter import Type
+        from pistomp.input.event import SwitchEvent, SwitchEventKind
+
+        handler = v3_system.handler
+        hw = v3_system.hw
+        assert handler.current
+
+        fs0 = hw.footswitches[0]
+        reset_cc = 64
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        reset = make_parameter("reset", "loopjefe", value=0.0)
+        reset.type = Type.TRIGGER  # pprops:trigger in loopjefe.ttl
+        reset.binding = f"{fs0.midi_channel}:{reset_cc}"  # pedalboard-learned CC
+        plugin.parameters[Symbol("reset")] = reset
+        handler.current.pedalboard.plugins = [plugin]
+
+        hw.reinit(_cfg(hw, footswitches=[{"id": 0, "longpress": {"midi_CC": reset_cc}}]))
+        handler.bind_current_pedalboard()
+
+        hw.midiout.send_message.reset_mock()
+        event = SwitchEvent(controller=fs0, kind=SwitchEventKind.LONGPRESS, timestamp=1.0)
+        for _ in range(3):
+            handler.handle(event)
+
+        expected = [fs0.midi_channel | CONTROL_CHANGE, reset_cc, 127]
+        assert all(c.args[0] == expected for c in hw.midiout.send_message.call_args_list), (
+            "reset is pprops:trigger — every longpress must emit 127, not toggle 127/0"
+        )
+
+    def test_longpress_toggle_target_flips_through_reactive_layer(
+        self, v3_system: SystemFixture, make_parameter
+    ):
+        """A longpress raw-CC resolving to a loaded *non*-trigger param toggles
+        it through the reactive layer: each longpress flips the param and emits
+        its bound CC as an alternating 127/0 edge — no local _longpress_cc_state,
+        so the toggle tracks the param's real value."""
+        from rtmidi.midiconstants import CONTROL_CHANGE
+        from pistomp.input.event import SwitchEvent, SwitchEventKind
+
+        handler = v3_system.handler
+        hw = v3_system.hw
+        assert handler.current
+
+        fs0 = hw.footswitches[0]
+        toggle_cc = 64
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        solo = make_parameter("solo", "loopjefe", value=0.0)  # non-trigger toggle
+        solo.binding = f"{fs0.midi_channel}:{toggle_cc}"
+        plugin.parameters[Symbol("solo")] = solo
+        handler.current.pedalboard.plugins = [plugin]
+
+        hw.reinit(_cfg(hw, footswitches=[{"id": 0, "longpress": {"midi_CC": toggle_cc}}]))
+        handler.bind_current_pedalboard()
+
+        hw.midiout.send_message.reset_mock()
+        event = SwitchEvent(controller=fs0, kind=SwitchEventKind.LONGPRESS, timestamp=1.0)
+        for _ in range(2):
+            handler.handle(event)
+
+        sent = [c.args[0][2] for c in hw.midiout.send_message.call_args_list]
+        assert sent == [127, 0], "a loaded toggle target alternates 127/0 on its bound CC"
+        assert all(
+            c.args[0][:2] == [fs0.midi_channel | CONTROL_CHANGE, toggle_cc]
+            for c in hw.midiout.send_message.call_args_list
+        )
+        assert solo.value == 0.0, "two flips return the param to rest"
+
+    def test_update_interesting_outputs_derives_from_plugin_led_spec(
+        self, v3_system: SystemFixture, make_parameter
+    ):
+        """Monitored outputs are owned by the plugin (its LedSpec), not by
+        whichever footswitch happens to be bound to it."""
+        handler = v3_system.handler
+        assert handler.current
+
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        handler.current.pedalboard.plugins = [plugin]
+
+        handler._update_interesting_outputs()
+
+        last = v3_system.ws_bridge.interesting_calls[-1]
+        assert "loopjefe/state" in last
+        assert "loopjefe/measure_number" in last
+
+    def test_output_set_updates_plugin_output_values_for_led_spec(
+        self, v3_system: SystemFixture, make_parameter
+    ):
+        """End-to-end: an output_set for loopjefe/state and measure_number
+        updates plugin.output_values generically, and the plugin's LedSpec
+        renders the right color/style from them — no footswitch involved."""
+        from modalapi.led_render import LedDisplayStyle, render_led_spec
+
+        handler = v3_system.handler
+        ws_bridge = v3_system.ws_bridge
+        assert handler.current
+
+        plugin = _make_loopjefe_plugin_with_advance(make_parameter)
+        handler.current.pedalboard.plugins = [plugin]
+
+        ws_bridge.inject("output_set /graph/loopjefe state 2.0")
+        ws_bridge.inject("output_set /graph/loopjefe measure_number 1.0")
+        handler.poll_ws_messages()
+
+        assert plugin.output_values["state"] == 2.0
+        assert plugin.output_values["measure_number"] == 1.0
+
+        assert plugin.customization.led_spec is not None
+        color, style = render_led_spec(plugin.customization.led_spec, plugin.output_values)
+        assert color == (255, 0, 0)  # Recording → red
+        assert style == LedDisplayStyle.METRONOME
 
 
 def test_v3_midi_learn_adds_table_row_for_encoder(v3_system: SystemFixture, make_plugin, make_parameter):
@@ -641,3 +865,56 @@ def test_v3_midi_learn_moving_footswitch_binding_clears_old_lcd_display(v3_syste
     assert w0.action is None
     w1 = next(w for w in lcd.w_footswitches if w.object is fs1)
     assert w1.color is not None
+
+
+def test_v3_two_plugins_sharing_one_cc_both_keep_their_rows(v3_system: SystemFixture, make_plugin):
+    """Two plugins mapped to one footswitch's CC (a ganged stomp) each keep a
+    row. Learning the second must not evict the first: unmapping either one in
+    MOD-UI has to leave the other still driving the switch, not a dead switch.
+
+    Which of the two a press acts on is graph order, asserted here only to pin
+    the choice as deterministic.
+    """
+    import pistomp.switchstate as switchstate
+
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+
+    assert handler.current and handler.lcd
+
+    fs0 = hw.footswitches[0]
+    binding_id = _binding_for(hw, fs0)
+    channel, cc = binding_id.split(":")
+
+    def param_rows():
+        rows = handler.effective_table.layers[0].rows.get((ControlClass.FOOTSWITCH, EventKind.PRESS), [])
+        return [r for r in rows if r.control.id == binding_id and any(isinstance(e, ParamEffect) for e in r.effects)]
+
+    delay = make_plugin("delay", bypassed=False, has_footswitch=False)
+    reverb = make_plugin("reverb", bypassed=False, has_footswitch=False)
+    handler.current.pedalboard.plugins = [delay, reverb]
+    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    handler.lcd.draw_main_panel()
+
+    ws_bridge.inject(f"midi_map /graph/delay :bypass {channel} {cc} 0.0 1.0")
+    handler.poll_ws_messages()
+    ws_bridge.inject(f"midi_map /graph/reverb :bypass {channel} {cc} 0.0 1.0")
+    handler.poll_ws_messages()
+
+    bound = [e.plugin for r in param_rows() for e in r.effects if isinstance(e, ParamEffect)]
+    assert delay in bound and reverb in bound, "learning the second mapping evicted the first"
+
+    fs0._on_switch(switchstate.Value.RELEASED)
+    assert delay.parameters[BYPASS_SYMBOL].value == 1
+    assert reverb.parameters[BYPASS_SYMBOL].value == 0.0
+
+    # Drop the first mapping in MOD-UI; the switch must fall to the survivor.
+    ws_bridge.inject("midi_map /graph/delay :bypass -1 -1 0.0 1.0")
+    handler.poll_ws_messages()
+
+    survivors = [e.plugin for r in param_rows() for e in r.effects if isinstance(e, ParamEffect)]
+    assert survivors == [reverb]
+
+    fs0._on_switch(switchstate.Value.RELEASED)
+    assert reverb.parameters[BYPASS_SYMBOL].value == 1, "unmapping one plugin left the switch dead"

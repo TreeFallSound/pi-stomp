@@ -58,6 +58,7 @@ from common.contexts import (
     RelayEffect,
     TapTempoEffect,
 )
+from common.color import accent_color_for
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from common.param_source import ParamSink
 from common.parameter_steps import ParameterSteps, effective_multiplier
@@ -75,6 +76,8 @@ from plugins.base import PluginPanel
 from plugins.customization import lookup as plugin_lookup
 from plugins.customization import patch_extra_data
 import modalapi.external_midi as ExternalMidi
+from common.loop_progress import LoopProgress
+from modalapi.led_render import LedDisplayStyle, loop_progress, metronome_brightness, render_led_spec
 from modalapi.ethernet import EthernetManager
 from modalapi.jack_mute import JackMute
 from pistomp.lcd320x240 import Lcd
@@ -87,9 +90,11 @@ from modalapi.ws_protocol import (
     parse_message,
     LoadingEndMessage,
     LoadingStartMessage,
+    OutputSetMessage,
     PedalSnapshotMessage,
     PluginBypassMessage,
     TransportMessage,
+    BeatSyncMessage,
     AddPluginMessage,
     PatchSetMessage,
     RemovePluginMessage,
@@ -114,6 +119,7 @@ from pistomp.encoder_controller import (
 )
 from pistomp.footswitch import Footswitch
 from pistomp.footswitch_chords import FootswitchChords
+from pistomp.beatsync import BeatGrid, TickState
 from pistomp.input.event import (
     AnalogEvent,
     ControllerEvent,
@@ -135,6 +141,14 @@ STARTUP_REST_BACKOFF_S = (0.25, 0.25, 0.5, 1.0, 2.0)
 class LongpressCcKey(namedtuple("LongpressCcKey", ["channel", "cc"])):
     """(channel, cc) identity for a raw-CC longpress row; tracks what value to
     send next. mod-ui's echo reconciles the learned plugin."""
+
+
+_METRONOME_DOWNBEAT_RGB = (255, 255, 255)
+_METRONOME_BEAT_RGB = (180, 180, 180)
+
+
+def _now_us() -> int:
+    return int(time.clock_gettime(time.CLOCK_MONOTONIC) * 1_000_000)
 
 
 class Modhandler(Handler):
@@ -254,6 +268,9 @@ class Modhandler(Handler):
         # Footswitch longpress/chord resolver (rebuilt on pedalboard change)
         self.chord_helper = FootswitchChords()
 
+        self.beat_grid = BeatGrid()
+        self._last_beat: TickState | None = None
+        self._taptempo_fs_cache: Footswitch | None = None
         # First raw-CC longpress sends 127; alternates thereafter.
         self._longpress_cc_state: dict[LongpressCcKey, bool] = {}
 
@@ -514,21 +531,30 @@ class Modhandler(Handler):
                         if controller.parameter is not None:
                             controller.parameter.preview(controller.value_for(controller.toggled))
                         self.update_lcd_fs(footswitch=controller)
-                case ParamEffect():
-                    # Footswitch PRESS with a bound plugin param. "on" polarity
-                    # differs by param: :bypass "on" is not-bypassed (0), a plain
-                    # toggle "on" is the max end — value_for encodes both, the
-                    # inverse of Footswitch.set_value. The MIDI CC carries the
-                    # change to mod-host.
+                case ParamEffect(plugin=eff_plugin, symbol=eff_symbol):
+                    # Resolve the param from the row's own effect, not
+                    # fs.parameter, so two instances sharing a CC stay distinct.
                     if fs is not None:
-                        new_toggled = not fs.toggled
-                        fs.toggled = new_toggled
-                        fs.set_led(new_toggled)
-                        if fs.midi_CC is not None:
-                            self._emit_midi(fs, 127 if new_toggled else 0)
-                        if fs.parameter is not None:
-                            fs.parameter.preview(fs.value_for(new_toggled))
-                        self.update_lcd_fs(footswitch=fs)
+                        params = getattr(eff_plugin, "parameters", None)
+                        param = params.get(eff_symbol) if params else None
+                        if param is not None and param.is_momentary:
+                            # pprops:trigger (advance): one-shot edge, not a
+                            # toggle — the plugin self-clears the port.
+                            param.pulse(self._sink_for(param, fs))
+                            self.update_lcd_fs(footswitch=fs)
+                        else:
+                            # Absolute toggle (:bypass, plain toggled params): "on"
+                            # polarity differs by param — value_for encodes both,
+                            # the inverse of Footswitch.set_value. The MIDI CC
+                            # carries the change to mod-host.
+                            new_toggled = not fs.toggled
+                            fs.toggled = new_toggled
+                            fs.set_led(new_toggled)
+                            if fs.midi_CC is not None:
+                                self._emit_midi(fs, 127 if new_toggled else 0)
+                            if param is not None:
+                                param.preview(fs.value_for(new_toggled))
+                            self.update_lcd_fs(footswitch=fs)
                 case RelayEffect():
                     if fs is not None:
                         new_toggled = not fs.toggled
@@ -537,9 +563,24 @@ class Modhandler(Handler):
                         fs.set_led(new_toggled)
                         self.update_lcd_fs(bypass_change=True)
                 case RawMidiCcEffect(channel=ch, cc=cc):
-                    key = LongpressCcKey(channel=ch, cc=cc)
-                    on = self._longpress_cc_state[key] = not self._longpress_cc_state.get(key, False)
-                    self._emit_raw_cc(ch, cc, 127 if on else 0)
+                    param = self._param_bound_to_cc(ch, cc)
+                    sink = functools.partial(self._publish_raw_cc, ch, cc)
+                    if param is not None and param.is_momentary:
+                        # Trigger target (loopjefe reset): one-shot edge on the
+                        # param's own bound CC. Resolved at fire time, so a live
+                        # re-learn needs no longpress-row patch.
+                        param.pulse(sink)
+                    elif param is not None:
+                        # Loaded toggle target: flip through the reactive layer.
+                        lo = param.minimum if param.minimum is not None else 0.0
+                        hi = param.maximum if param.maximum is not None else 1.0
+                        edge = lo if param.value >= (lo + hi) / 2 else hi
+                        param.commit(edge, sink)
+                    else:
+                        # Orphan CC (no loaded param): local 127/0 toggle.
+                        key = LongpressCcKey(channel=ch, cc=cc)
+                        on = self._longpress_cc_state[key] = not self._longpress_cc_state.get(key, False)
+                        self._emit_raw_cc(ch, cc, 127 if on else 0)
                 case PedalboardEffect(direction=direction):
                     if direction == "DOWN":
                         self.previous_pedalboard()
@@ -551,6 +592,29 @@ class Modhandler(Handler):
         """Send a CC with no owning controller, bypassing _emit_midi's
         controller.midi_CC guard; virtual out only."""
         self.hardware.midiout.send_message([channel | CONTROL_CHANGE, cc, int(value)])
+
+    def _param_bound_to_cc(self, channel: int, cc: int) -> Parameter | None:
+        """The loaded plugin parameter MIDI-bound to (channel, cc), or None for
+        an orphan CC. Resolved at fire time so a live re-learn is reflected with
+        no longpress-row patch — the CC is a free reference, not a controller."""
+        if self._current is None:
+            return None
+        binding = f"{channel}:{cc}"
+        for plugin in self.current.pedalboard.plugins:
+            if plugin.parameters is None:
+                continue
+            for param in plugin.parameters.values():
+                if param.binding == binding:
+                    return param
+        return None
+
+    def _publish_raw_cc(self, channel: int, cc: int, param: Parameter) -> bool:
+        """Emit a resolved param's binary CC on its own (channel, cc): the "on"
+        edge (max) sends 127, rest 0, with no owning controller. pulse and commit
+        ride this so a longpress reaches mod-host on the param's bound CC."""
+        hi = param.maximum if param.maximum is not None else 1.0
+        self._emit_raw_cc(channel, cc, 127 if param.value >= hi else 0)
+        return True
 
     def _emit_midi(self, controller, midi_value: int) -> None:
         """Send a CC. Tries the external port if routed; falls back to virtual."""
@@ -584,10 +648,139 @@ class Modhandler(Handler):
         if self.hardware:
             self.hardware.poll_controls()
         self.chord_helper.poll()
+        # Drive footswitch LEDs in the same 10ms tick as the press so there's
+        # no latency between a state change and the LED reflecting it. Both
+        # fs.pixel and fs.led are written here — the single source of truth.
+        self._drive_footswitch_leds()
 
     def poll_indicators(self):
         if self.hardware:
             self.hardware.poll_indicators()
+
+    def _taptempo_footswitch(self):
+        if self._taptempo_fs_cache is None and self.hardware is not None:
+            for fs in self.hardware.footswitches:
+                if fs.taptempo is not None:
+                    self._taptempo_fs_cache = fs
+                    break
+        return self._taptempo_fs_cache
+
+    def _drive_footswitch_leds(self, beat: TickState | None = None) -> None:
+        """Single per-tick LED driver: for each footswitch, get a (color, style)
+        frame from whichever renderer applies, then write it through the one
+        writer below. The taptempo footswitch is just another renderer — not a
+        special-cased branch — so ownership of "the pulse" lives in one place:
+        the brightness envelope in `_write_led`."""
+        if self.hardware is None:
+            return
+        if beat is None:
+            tt = self.hardware.taptempo
+            beat = self.beat_grid.tick(
+                _now_us(),
+                free_bpm=tt.get_bpm() if tt else 0.0,
+                free_anchor_us=int(tt.anchor * 1_000_000) if tt else 0,
+            )
+        # The LCD reads the phase from here rather than ticking the grid
+        # itself; a second tick() would swallow the beat-crossing edge.
+        self._last_beat = beat
+        taptempo_fs = self._taptempo_footswitch()
+        for fs in self.hardware.footswitches:
+            if fs is taptempo_fs:
+                color, style = self._render_taptempo(fs, beat)
+            else:
+                color, style = self._render_footswitch(fs, beat)
+            self._write_led(fs, color, style, beat)
+
+    @staticmethod
+    def _taptempo_phase(fs: Footswitch, beat: TickState) -> tuple[bool, bool] | None:
+        """(lit, is_bar_start) for the taptempo flash. None when there is no
+        beat to flash on."""
+        if fs.taptempo is None or not fs.taptempo.is_enabled() or not beat.is_running:
+            return None
+        return beat.is_flashing, beat.is_bar_start
+
+    def _render_taptempo(self, fs: Footswitch, beat: TickState) -> tuple[tuple[int, int, int] | None, LedDisplayStyle]:
+        """Renderer for the taptempo footswitch. With no tempo, the default
+        per-footswitch renderer applies."""
+        phase = self._taptempo_phase(fs, beat)
+        if phase is None:
+            return self._render_footswitch(fs, beat)
+        lit, is_bar_start = phase
+        if not lit:
+            return None, LedDisplayStyle.SOLID
+        return (_METRONOME_DOWNBEAT_RGB if is_bar_start else _METRONOME_BEAT_RGB), LedDisplayStyle.SOLID
+
+    def footswitch_tap_flash(self, fs: Footswitch) -> bool:
+        """True when the LCD tap border is lit. Steady with no tempo."""
+        if self._last_beat is None:
+            return True
+        phase = self._taptempo_phase(fs, self._last_beat)
+        return phase is None or phase[0]
+
+    def _render_footswitch(
+        self,
+        fs: Footswitch,
+        beat: TickState,  # noqa: ARG002 - kept for renderer signature symmetry
+    ) -> tuple[tuple[int, int, int] | None, LedDisplayStyle]:
+        """Default per-footswitch renderer: a plugin's declarative LedSpec (read
+        from its generically-mirrored output_values) if bound and available,
+        else the built-in toggle + category color."""
+        plugin = self._bound_plugin(fs)
+        if plugin is not None and plugin.customization.led_spec is not None:
+            return render_led_spec(plugin.customization.led_spec, plugin.output_values)
+        if not fs.toggled:
+            return None, LedDisplayStyle.SOLID
+        color = accent_color_for(fs.category) if fs.category is not None else (255, 255, 255)
+        return color, LedDisplayStyle.SOLID
+
+    def footswitch_loop_progress(self, fs: Footswitch) -> LoopProgress | None:
+        """Loop position for a switch bound to a plugin that publishes one."""
+        plugin = self._bound_plugin(fs)
+        if plugin is None:
+            return None
+        spec = plugin.customization.led_spec
+        if spec is None:
+            return None
+        beat = self._last_beat
+        if beat is None:
+            return loop_progress(spec, plugin.output_values, None)
+        return loop_progress(
+            spec,
+            plugin.output_values,
+            beat.bar_phase if beat.is_anchored else None,
+            metronome_brightness(beat.is_flashing) if beat.is_running else 1.0,
+        )
+
+    def _bound_plugin(self, fs: Footswitch):
+        if fs.parameter is None or self._current is None:
+            return None
+        for plugin in self.current.pedalboard.plugins:
+            if plugin.instance_id == fs.parameter.instance_id:
+                return plugin
+        return None
+
+    @staticmethod
+    def _write_led(
+        fs: Footswitch,
+        color: tuple[int, int, int] | None,
+        style: LedDisplayStyle,
+        beat: TickState,
+    ) -> None:
+        """Write one rendered frame to both physical LED outputs."""
+        if color is not None and style == LedDisplayStyle.METRONOME and beat.is_running:
+            if not beat.is_flashing:
+                color = None
+        if color is None:
+            if fs.pixel is not None:
+                fs.pixel.set_enable(False)
+            if fs.led is not None:
+                fs.led.off()
+            return
+        if fs.pixel is not None:
+            fs.pixel.set_color(color)
+            fs.pixel.set_enable(True)
+        if fs.led is not None:
+            fs.led.on()
 
     def poll_wifi(self):
         self.wifi_manager.poll()
@@ -869,17 +1062,27 @@ class Modhandler(Handler):
                 tp = self.current.pedalboard.transport_plugin
                 tp.set_param_value(ROLLING_SYMBOL, 1.0 if msg.rolling else 0.0)
                 tp.set_param_value(BPB_SYMBOL, msg.beats_per_bar)
-                tp.set_param_value(BPM_SYMBOL, msg.bpm)
-            if self.hardware and self.hardware.taptempo:
-                self.hardware.taptempo.set_bpm(msg.bpm)
-                if self.hardware.taptempo.is_enabled():
-                    fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
-                    self.update_lcd_fs(footswitch=fs)
+            self._adopt_bpm(msg.bpm)
             if self._lcd is not None:
                 if sync_changed:
                     self.lcd.update_sync_mode(new_sync)
                 if rolling_changed:
                     self.lcd.update_audio_midi_tile()
+            if not msg.rolling:
+                self.beat_grid.clear()
+
+        elif isinstance(msg, BeatSyncMessage):
+            self.beat_grid.on_anchor(msg)
+
+        elif isinstance(msg, OutputSetMessage):
+            if self._current is not None:
+                for plugin in self.current.pedalboard.plugins:
+                    if plugin.instance_id == msg.instance:
+                        changed = plugin.output_values.get(msg.symbol) != msg.value
+                        plugin.set_output_value(msg.symbol, msg.value)
+                        if changed:
+                            self._repaint_state_switches(plugin, msg.symbol)
+                        break
 
         elif isinstance(msg, ParamSetMessage):
             # Mirror mod-ui's live value: refresh the cache (so a later edit opens
@@ -1209,6 +1412,23 @@ class Modhandler(Handler):
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
         self._controller_manager.bind(self.current)
+        self._update_interesting_outputs()
+
+    def _update_interesting_outputs(self) -> None:
+        """Recompute the WS output_set subscription set from the pedalboard's
+        plugins (their own declared LedSpec outputs) — the plugin is the
+        natural owner of its output ports, not whichever footswitch happens to
+        be bound to it. Computed once at pedalboard load; a footswitch binding
+        change afterward can't add or remove monitored outputs since those are
+        fixed per plugin instance."""
+        if self._current is None:
+            self.ws_bridge.set_interesting_outputs(frozenset())
+            return
+        keys: set[str] = set()
+        for plugin in self.current.pedalboard.plugins:
+            for sym in plugin.monitored_output_symbols:
+                keys.add(f"{plugin.instance_id}/{sym}")
+        self.ws_bridge.set_interesting_outputs(frozenset(keys))
 
     def _sink_for(self, param: Parameter, controller: Controller | None = None) -> ParamSink | None:
         """The upstream channel a param's commit rides, by provenance. None is
@@ -1228,6 +1448,10 @@ class Modhandler(Handler):
             enc = enc if isinstance(enc, EncoderController) else None
         if enc is not None and enc.midi_CC is not None:
             return functools.partial(self._publish_cc, enc)
+        if isinstance(controller, Footswitch) and controller.midi_CC is not None:
+            # A footswitch rides its own CC (pulse for a trigger, toggle
+            # otherwise), not the param_set an unheld param takes.
+            return functools.partial(self._publish_fs_cc, controller)
         if param.instance_id in (ExternalMidi.EXTERNAL_INSTANCE_ID, Pedalboard.TRANSPORT_INSTANCE_ID):
             return None
         return self._publish_plugin_param
@@ -1235,6 +1459,31 @@ class Modhandler(Handler):
     def _publish_bpm(self, param: Parameter) -> bool:
         """Publish the BPM to the transport."""
         return self.set_mod_tap_tempo(param.value)
+
+    def _adopt_bpm(self, bpm: float) -> None:
+        """Take a BPM as the local truth: the :bpm param that the tweak readout
+        subscribes to, and the tap tempo that the TAP slot and the free beat
+        grid read. mod-ui does not send its transport message back to the socket
+        that sent the change, thus a BPM that leaves here gets no echo. The tap
+        and the tweak knob would else keep the old rate.
+
+        set_param_value routes through reconcile, not commit, so the :bpm sink
+        does not fire back at the sender."""
+        # mod-host emits no beat_sync for a `transport` bpm change, thus the
+        # grid must take the rate from here or it keeps the old one until the
+        # next bar heartbeat.
+        self.beat_grid.set_tempo(bpm, _now_us())
+        if self._current is not None:
+            tp = self.current.pedalboard.transport_plugin
+            param = tp.parameters.get(BPM_SYMBOL)
+            if param is not None and param.value != bpm:
+                tp.set_param_value(BPM_SYMBOL, bpm)
+        if not self.hardware or not self.hardware.taptempo:
+            return
+        self.hardware.taptempo.set_bpm(bpm)
+        if self.hardware.taptempo.is_enabled():
+            fs = next((f for f in self.hardware.footswitches if f.taptempo is self.hardware.taptempo), None)
+            self.update_lcd_fs(footswitch=fs)
 
     def _publish_audio(self, param: Parameter) -> bool:
         """A local ALSA write. No remote echo, so the send always lands."""
@@ -1244,6 +1493,16 @@ class Modhandler(Handler):
     def _publish_cc(self, controller: EncoderController, param: Parameter) -> bool:
         """Publish the parameter (to MOD-UI or anything else) via MIDI CC."""
         self._emit_midi(controller, controller.to_midi(param.value))
+        return True
+
+    def _publish_fs_cc(self, fs: Footswitch, param: Parameter) -> bool:
+        """Emit a footswitch-bound param as its binary CC: the "on" edge (max)
+        sends 127, rest 0. A trigger pulse holds max for the send, so it fires
+        one 127 then self-clears."""
+        if fs.midi_CC is None:
+            return False
+        hi = param.maximum if param.maximum is not None else 1.0
+        self._emit_midi(fs, 127 if param.value >= hi else 0)
         return True
 
     def _publish_plugin_param(self, param: Parameter) -> bool:
@@ -1416,6 +1675,17 @@ class Modhandler(Handler):
             value = plugin.toggle_bypass()
             if not self._is_pedalboard_loading:
                 self.ws_bridge.send_parameter(plugin.instance_id, BYPASS_SYMBOL, value)
+
+    def _repaint_state_switches(self, plugin, symbol: str) -> None:
+        """The plugin moved its LedSpec state; the switches bound to it render
+        that word, so they need repainting. Only the state port qualifies —
+        the downbeat port ticks every bar and only the LED driver reads it."""
+        spec = plugin.customization.led_spec
+        if spec is None or symbol != spec.state_symbol:
+            return
+        for controller in plugin.controllers:
+            if isinstance(controller, Footswitch):
+                self.update_lcd_fs(footswitch=controller)
 
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
         self.lcd.update_footswitch(footswitch)
@@ -1861,9 +2131,13 @@ class Modhandler(Handler):
         if bpm is None:
             return False
         if self.ws_bridge is not None and self.ws_bridge.send_bpm(bpm):
+            self._adopt_bpm(bpm)
             return True
         resp = self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
-        return resp is not None and resp.ok
+        if resp is None or not resp.ok:
+            return False
+        self._adopt_bpm(bpm)
+        return True
 
     def set_sync_mode(self, mode: SyncMode) -> None:
         """Optimistically switch the clock source; mod-ui's transport echo

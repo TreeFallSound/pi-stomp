@@ -38,7 +38,7 @@ from uilib.config import Config
 from common.color import ColorRGB, RectBorder, tile_color_for
 
 from uilib.paint import ColorLike
-from uilib.glyphs import RoundedRectGlyph
+from uilib.glyphs import LoopIconGlyph, RoundedRectGlyph
 from uilib.glyphs.badge import BadgeGlyph
 from uilib.radius import Radius
 
@@ -562,6 +562,33 @@ class PluginTile(TextWidget):
     def _draw_outline(self, ctx):
         # Border was already painted as part of the glyph in _draw_erase.
         return
+
+
+class LoopPluginTile(PluginTile):
+    """Plugin tile for loopjefe tracks: renders the racetrack glyph + track number
+    centred in the tile instead of the 'Loop N' text label."""
+
+    def __init__(self, *, loop_num: int, **kwargs) -> None:
+        kwargs.setdefault("text", "")
+        super().__init__(**kwargs)
+        self._loop_num = loop_num
+        self._loop_glyph = LoopIconGlyph()
+
+    @override
+    def _draw(self, ctx) -> None:
+        from uilib.glyphs.tint import tint_mask
+        from uilib.misc import get_text_size
+        num_str = str(self._loop_num)
+        nw, nh = get_text_size(num_str, self.font)
+        g = self._loop_glyph
+        gap = 4
+        total_w = g.width + gap + nw
+        gx = (ctx.width - total_w) // 2
+        gy = (ctx.height - g.height) // 2
+        ny = (ctx.height - nh) // 2
+        ox, oy = ctx._f().topleft
+        ctx.surface.blit(tint_mask(g.render(), self.fgnd_color), (gx + ox, gy + oy))
+        ctx.draw_text((gx + g.width + gap, ny), num_str, fill=self.fgnd_color, font=self.font)
 
 
 class ScrollingText(TextWidget):
