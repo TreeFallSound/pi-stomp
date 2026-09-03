@@ -51,30 +51,31 @@ class _EthernetHost(Protocol):
 
 
 class EthernetMenu:
-    """The Wired Connection sub-screen: status readout + enable/disable toggle.
+    """The Wired Connection sub-screen. Status readout only.
 
-    A single Dialog is pushed onto the panel stack; re-renders are done by
-    popping and rebuilding (mirroring WifiMenu.notify_status_change). State
-    comes from EthernetManager, which polls carrier + service-active on a
-    background thread; this class touches the panel stack only from the UI
-    thread (via handler poll-loop callbacks).
+    The Enable/Disable toggle is gone (see modalapi/ethernet/manager.py).
+    pi-stomp-jackbridge starts when the Mac asks for it and stays under
+    systemd supervision. A musician has nothing to toggle here. The repair
+    verbs live in the Mac menu.
+
+    One Dialog sits on the panel stack. A re-render pops and rebuilds it
+    (like WifiMenu.notify_status_change). State comes from EthernetManager,
+    which polls on a background thread. This class touches the panel stack
+    only from the UI thread.
     """
 
     def __init__(self, lcd: "Lcd") -> None:
         self.lcd: "Lcd" = lcd
         self._panel: Optional[Dialog] = None
-        # Remembered across pop/rebuild so periodic re-renders don't yank focus
-        # back to the toggle button after the user has moved selection.
-        # One of: 'back', 'toggle', 'mute', or None.
+        # Kept across a pop/rebuild so a re-render holds the user's selection.
+        # One of: 'back', 'mute', or None.
         self._last_selected_role: Optional[str] = None
         self._role_widgets: dict[str, object] = {}
-        # Refs to widgets that mutate in place — reset on every _render().
-        # tick() updates the xrun rows via set_text(); the action handlers
-        # update their own button label the same way. None of these paths
-        # rebuild the dialog, so the buttons don't vanish under the user's
-        # finger and the SPI blit stays a precise clip.
+        # Widgets that mutate in place. Reset on every _render(). tick()
+        # updates the xrun rows with set_text(); the mute handler updates its
+        # own label the same way. Neither path rebuilds the dialog, so a
+        # button never moves under the user's finger.
         self._xrun_widgets: list[TextWidget] = []
-        self._toggle_btn: Optional[TextWidget] = None
         self._mute_btn: Optional[TextWidget] = None
 
     def _capture_selected_role(self) -> None:
@@ -117,10 +118,10 @@ class EthernetMenu:
         self._render()
 
     def notify_change(self) -> None:
-        """Carrier or service-active flipped — re-render if we're on top.
+        """Carrier or service-active changed. Re-render if this panel is on top.
 
-        If the cable was pulled, pop the sub-screen and surface the
-        disconnected dialog so the user isn't left looking at a stale IP."""
+        If the cable was pulled, pop the sub-screen and show the
+        disconnected dialog so no stale IP stays on screen."""
         if self._panel is None or self._pstack.current is not self._panel:
             return
         if not self._manager.carrier_up:
@@ -132,11 +133,11 @@ class EthernetMenu:
         self._render()
 
     def tick(self) -> None:
-        """Update the xrun counters while we're on top, without rebuilding
-        the dialog. The rest of the rows and the buttons are static between
-        state flips; mutating them via set_text() takes the per-widget
-        dirty-rect path so the buttons stay put (no reblit under the user's
-        finger, no full-screen redraw on the SPI bus)."""
+        """Update the xrun counters in place while this panel is on top.
+
+        The other rows and the buttons are static between state changes.
+        set_text() takes the per-widget dirty-rect path, so the buttons stay
+        put and the SPI bus sees no full redraw."""
         if self._panel is None or self._pstack.current is not self._panel:
             return
         if not self._manager.carrier_up:
@@ -159,13 +160,14 @@ class EthernetMenu:
             self._panel = None
             self._pstack.pop_panel(old)
 
-        # Old widgets were just destroyed — drop our refs so tick() / actions
-        # don't try to mutate zombies if a render races a poll.
+        # The old widgets are gone. Drop the refs so a render that races a
+        # poll does not touch a dead widget.
         self._xrun_widgets = []
-        self._toggle_btn = None
         self._mute_btn = None
 
         active = self._manager.service_active
+        n_adapters, n_wired, route = self._manager.read_netadapter_health()
+        resyncing, restarts = self._manager.read_link_health()
 
         d = Dialog(width=DIALOG_W, height=DIALOG_H, title="Ethernet Audio Interface", auto_destroy=True)
         font = _make_font(_FONTS_DIR / "DejaVuSans.ttf", 14)
@@ -179,9 +181,19 @@ class EthernetMenu:
             rows.append(("xruns 1m:", str(b1)))
             rows.append(("xruns 5m:", str(b5)))
             rows.append(("xruns 15m:", str(b15)))
+            if resyncing:
+                # The ports stay wired through a netadapter restart, so the
+                # port count (unfortunately) continues to read healthy
+                rows.append(("Link:", f"⚠ resyncing (x{restarts})"))
+                rows.append(("", "Restart JackBridge on Host"))
+            else:
+                rows.append(("Link ports:", f"{n_wired}/6 wired"))
+            if n_adapters > 1:
+                rows.append(("Adapters:", f"⚠ {n_adapters} (duplicate)"))
+            if not route or route.startswith("wl"):
+                rows.append(("Route:", f"⚠ {route or 'none'}"))
 
         muted = self._mute.is_muted()
-        toggle_label = "Disable" if active else "Enable"
         mute_label = "Unmute MOD" if muted else "Mute MOD"
 
         line_h = 18
@@ -215,29 +227,8 @@ class EthernetMenu:
         )
         d.add_sel_widget(back_btn)
 
-        # Toggle sits to the right of back; constructed with the wider of the
-        # two labels so the box is the same size in both states. Without
-        # this, swapping "Enable"→"Disable" via set_text() would clip the
-        # trailing "e" inside the original (narrower) box.
-        assert back_btn.box
-        toggle_x = back_btn.box.x0 + back_btn.box.width + 6
-        toggle_btn = TextWidget(
-            box=Box.xywh(toggle_x, btn_y, 0, 0),
-            text="Disable",
-            parent=d,
-            outline=1,
-            sel_width=3,
-            outline_radius=5,
-            action=self._on_toggle_service,
-            align=WidgetAlign.NONE,
-            name="ethernet_toggle_btn",
-        )
-        toggle_btn.set_text(toggle_label)
-        d.add_sel_widget(toggle_btn)
-        self._toggle_btn = toggle_btn
-
-        # Mute button: same trick — size to fit "Unmute MOD" so a set_text
-        # back to "Mute MOD" doesn't leave dead space at the right edge.
+        # Size the mute button for "Unmute MOD" so a set_text back to
+        # "Mute MOD" leaves no dead space at the right edge.
         mute_btn = TextWidget(
             box=Box.xywh(0, btn_y, 0, 0),
             text="Unmute MOD",
@@ -257,13 +248,13 @@ class EthernetMenu:
         d.add_sel_widget(mute_btn)
         self._mute_btn = mute_btn
 
-        # Stash refs by role so re-renders can preserve selection (panel pop
-        # blows away widget identity, so we track which role was selected).
-        self._role_widgets = {"back": back_btn, "toggle": toggle_btn, "mute": mute_btn}
+        # Track which role holds the selection. A panel pop destroys widget
+        # identity, so a re-render restores selection by role, not by ref.
+        self._role_widgets = {"back": back_btn, "mute": mute_btn}
 
-        # Restore selection from before the rebuild when possible, so periodic
-        # ticks and unrelated actions (Mute) don't drag focus back to Toggle.
-        restore_target = self._role_widgets.get(self._last_selected_role or "toggle", toggle_btn)
+        # Keep the selection across a rebuild so ticks and the Mute action
+        # do not move the focus.
+        restore_target = self._role_widgets.get(self._last_selected_role or "mute", mute_btn)
         d.sel_widget(restore_target)
 
         self._panel = d
@@ -275,20 +266,8 @@ class EthernetMenu:
 
     # ----- actions -----
 
-    def _on_toggle_service(self, _event: object = None, _widget: object = None) -> None:
-        # Optimistic update: show the *new* state immediately, before the
-        # background poll observes systemctl's effect. The bg poll's
-        # notify_change() will re-render the dialog (full rebuild is needed
-        # there anyway, because the row *set* changes when service_active
-        # flips) and reconcile any drift.
-        if self._manager.service_active:
-            self._manager.stop_service()
-            new_label = "Enable"
-        else:
-            self._manager.start_service()
-            new_label = "Disable"
-        if self._toggle_btn is not None:
-            self._toggle_btn.set_text(new_label)
+    # No _on_toggle_service: the Enable/Disable button is gone. The Mac menu
+    # owns start and stop; this screen only renders.
 
     def _on_toggle_mute(self, _event: object = None, _widget: object = None) -> None:
         if self._mute.is_muted():

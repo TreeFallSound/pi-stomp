@@ -19,7 +19,7 @@
 
 VirtualAudiocard      — in-memory audiocard; no ALSA/hardware access.
 StubWifiManager       — in-memory wifi; satisfies Mod/Modhandler's wifi_manager.
-StubEthernetManager   — pinned-up ethernet stub; no sysfs / systemctl / threads.
+StubEthernetManager   — pinned-up ethernet stub; no sysfs / pi-status / threads.
 StubRelay             — no-op relay; satisfies the Relay interface without GPIO.
 """
 
@@ -258,18 +258,16 @@ class StubWifiManager(WifiManager):
 class StubEthernetManager(EthernetManager):
     """Pinned-up ethernet stub for the emulator.
 
-    `carrier_up` is always True so the Wired Connection menu surface is always
-    reachable. `service_active` is flipped locally by start/stop so the menu
-    re-renders with the new state on the next poll tick — no real systemd unit
-    is touched. The base class' background polling thread is not started; we
-    override __init__ to skip it entirely so the emulator has no /sysfs or
-    systemctl dependencies.
+    `carrier_up` and `service_active` are always True, so the full status
+    screen is reachable. The Mac owns the real lifecycle, so there are no
+    start or stop verbs. __init__ skips the base thread, so the emulator
+    needs no sysfs or jackbridge-pi-status.
     """
 
     def __init__(self) -> None:
-        # Deliberately skip super().__init__() — no thread, no sysfs polling.
+        # Skip super().__init__() — no thread, no sysfs polling.
         self.carrier_up = True
-        self.service_active = False
+        self.service_active = True
         # Signal a single initial render so the menu picks up our fake state.
         self._changed = True
         self._lock = threading.Lock()
@@ -287,15 +285,11 @@ class StubEthernetManager(EthernetManager):
     def read_xrun_buckets(self) -> tuple[int, int, int]:
         return (0, 0, 0)
 
-    def start_service(self) -> None:
-        with self._lock:
-            self.service_active = True
-            self._changed = True
+    def read_netadapter_health(self) -> tuple[int, int, str]:
+        return (1, 6, "eth0")
 
-    def stop_service(self) -> None:
-        with self._lock:
-            self.service_active = False
-            self._changed = True
+    def read_link_health(self) -> tuple[bool, int]:
+        return (False, 0)
 
 
 class StubJackMute(JackMute):
