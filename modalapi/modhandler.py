@@ -124,6 +124,7 @@ from pistomp.input.event import (
 from pistomp.tuner import TunerPanel, TunerSourceFactory
 from pistomp.tuner.client import TunerClient
 from pistomp.tuner.engine import TunerBackend, TunerEngine
+from pistomp.metronome.client import MetronomeClient
 from rtmidi.midiconstants import CONTROL_CHANGE
 from pathlib import Path
 
@@ -230,6 +231,10 @@ class Modhandler(Handler):
         self._tuner_source_spec: str = "jack"
         self._tuner_muted: bool = False
 
+        # Metronome
+        self._metronome_enabled: bool = bool(self.settings.get_setting(Token.METRONOME_ENABLED))
+        self._metronome_client: MetronomeClient | None = None
+
         # Callback function map.  Key is the user specified name, value is function from this handler
         # Used for calling handler callbacks pointed to by names which may be user set in the config file
         self.callbacks = {
@@ -239,6 +244,7 @@ class Modhandler(Handler):
             "toggle_bypass": self.system_toggle_bypass,
             "toggle_tap_tempo_enable": self.toggle_tap_tempo_enable,
             "toggle_tuner_enable": self.toggle_tuner_enable,
+            "toggle_metronome_enable": self.toggle_metronome_enable,
             "next_pedalboard": self.next_pedalboard,
             "previous_pedalboard": self.previous_pedalboard,
         }
@@ -266,6 +272,9 @@ class Modhandler(Handler):
         if self._hardware is not None:
             self._hardware.cleanup()
         self.external_midi.close()
+        if self._metronome_client is not None:
+            self._metronome_client.stop()
+            self._metronome_client = None
         self.ws_bridge.stop()
         logging.info("WebSocket bridge stopped")
         self.ethernet_manager.shutdown()
@@ -1819,6 +1828,35 @@ class Modhandler(Handler):
     def system_menu_vu_calibration(self, arg):
         value = self.settings.get_setting("analogVU.adc_baseline")
         self.lcd.draw_vu_calibration_dialog("analogVU.adc_baseline", value, commit_callback=self.settings_file_commit)
+
+    # ── metronome ─────────────────────────────────────────────────────────────
+
+    @property
+    def metronome_enabled(self) -> bool:
+        return self._metronome_enabled
+
+    def start_audio_services(self) -> None:
+        """Start background audio subprocesses. Call once after full handler init."""
+        self._start_metronome()
+
+    def _start_metronome(self) -> None:
+        if self._metronome_client is not None:
+            return
+        try:
+            client = MetronomeClient()
+            client.start(enabled=self._metronome_enabled)
+            self._metronome_client = client
+            logging.info("Metronome subprocess started (enabled=%s)", self._metronome_enabled)
+        except Exception as e:
+            logging.warning("metronome: failed to start: %s", e)
+
+    def toggle_metronome_enable(self) -> None:
+        self._metronome_enabled = not self._metronome_enabled
+        if self._metronome_client is not None:
+            self._metronome_client.set_enabled(self._metronome_enabled)
+        self.settings.set_setting(Token.METRONOME_ENABLED, self._metronome_enabled)
+        if self._lcd is not None:
+            self._lcd.update_audio_midi_tile()
 
     def settings_file_commit(self, symbol, value):
         self.settings.set_setting(symbol, value)
