@@ -754,6 +754,7 @@ class Modhandler(Handler):
         elif isinstance(msg, LoadingEndMessage):
             # Sometimes mod-ui sends us -1 for preset index, but shows 0 anyway ("Default")
             self.next_pedalboard_preset_index = max(0, msg.snapshot_id)
+            self._is_pedalboard_loading = False
 
         elif isinstance(msg, PedalSnapshotMessage):
             if self.next_pedalboard_preset_index is not None:
@@ -965,7 +966,6 @@ class Modhandler(Handler):
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
-            self._is_pedalboard_loading = True
             self.lcd.draw_info_message("Loading...")
             mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
             if mod_bundle and self._current is not None and mod_bundle != self._current.pedalboard.bundle:
@@ -978,7 +978,6 @@ class Modhandler(Handler):
                     # the bundle we have nothing to load and no business picking
                     # a substitute mid-session. Keep the board we have.
                     logging.warning("last.json names a pedalboard MOD-UI does not list: %s", mod_bundle)
-                    self._is_pedalboard_loading = False
                     self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
                     self.lcd.draw_main_panel()
                     return
@@ -1201,7 +1200,7 @@ class Modhandler(Handler):
             self.blend_modes = {}
             self.active_blend_mode = None
 
-        # Resume outbound WebSocket messages now that the new pedalboard is fully set up.
+        # Caught up with mod-ui. Also closes a window an aborted load left open.
         self._is_pedalboard_loading = False
 
     def bind_current_pedalboard(self):
@@ -1247,7 +1246,7 @@ class Modhandler(Handler):
         return True
 
     def _publish_plugin_param(self, param: Parameter) -> bool:
-        if self._is_pedalboard_loading or self.ws_bridge is None or param.instance_id is None:
+        if self._is_pedalboard_loading or param.instance_id is None:
             return False
         return self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
@@ -1402,7 +1401,7 @@ class Modhandler(Handler):
     #
     # Plugin Stuff
     #
-    def toggle_plugin_bypass(self, plugin):
+    def toggle_plugin_bypass(self, plugin: Plugin) -> None:
         logging.debug("toggle_plugin_bypass")
         if plugin is not None:
             if plugin.has_footswitch:
@@ -1410,12 +1409,12 @@ class Modhandler(Handler):
                     if isinstance(c, Footswitch):
                         self._handle_footswitch(c, SwitchEventKind.PRESS, time.monotonic())
                         return
-            # Optimistic: no echo arrives for a WS-initiated bypass, so the local
-            # write is the only thing that repaints (via the bypass subscription).
-            # Contrast with footswitches, which send MIDI CC → mod-host → feedback.
-            value = plugin.toggle_bypass()
-            if not self._is_pedalboard_loading:
-                self.ws_bridge.send_parameter(plugin.instance_id, BYPASS_SYMBOL, value)
+            # No echo arrives for a WS-initiated bypass, so the local write is the
+            # only thing that repaints (via the bypass subscription). Contrast with
+            # footswitches, which send MIDI CC → mod-host → feedback.
+            param = plugin.parameters.get(BYPASS_SYMBOL)
+            if param is not None:
+                plugin.toggle_bypass(self._sink_for(param))
 
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
         self.lcd.update_footswitch(footswitch)
@@ -1860,7 +1859,7 @@ class Modhandler(Handler):
         # Returns whether the value left, so a failed send rolls the LCD back.
         if bpm is None:
             return False
-        if self.ws_bridge is not None and self.ws_bridge.send_bpm(bpm):
+        if self.ws_bridge.send_bpm(bpm):
             return True
         resp = self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
         return resp is not None and resp.ok

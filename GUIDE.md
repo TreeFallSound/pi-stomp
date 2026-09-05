@@ -110,10 +110,21 @@ uv-managed venv. Don't try to pip-install the system ones.
 
 - **A UI bypass of a footswitch-less plugin gets no echo.** mod-ui skips the origin
   socket, and mod-host emits no `param_set` for bypasses it received from mod-ui. So
-  that path must update local state itself (`toggle_plugin_bypass`'s optimistic write).
-  A footswitch-bound plugin is the opposite: `toggle_plugin_bypass` routes through the
+  that path must update local state itself: `Plugin.toggle_bypass` commits, which
+  writes and publishes as one act and reverts if the send never leaves. A
+  footswitch-bound plugin is the opposite: `toggle_plugin_bypass` routes through the
   footswitch press path, which sends MIDI CC → mod-host → feedback echo, and that echo
-  reconciles it. The asymmetry is deliberate, not a bug to "fix."
+  reconciles it. The asymmetry is deliberate, not a bug to "fix." Every bypass — LCD
+  tile, plugin panel button, footswitch — goes through `Handler.toggle_plugin_bypass`.
+
+- **`loading_start` opens a window that suppresses outbound sends; `loading_end`
+  closes it.** Both come from mod-ui, in pairs, from a board load and from the
+  connect dump alike. Nothing else may raise `_is_pedalboard_loading` — a window
+  raised where nothing closes it silently refuses every parameter send for the rest
+  of the session, and `commit` then rolls each edit back on screen.
+  `set_current_pedalboard` clears it as the point we have caught up, which also
+  covers the one case mod-ui abandons its own window (an aborted load returns before
+  `loading_end`).
 
 - **Send form and echo form differ.** We send `param_set /graph/{id}/{sym} {v}`; both broadcast paths come back as `param_set /graph/{id} {sym} {v:%f}`
 
