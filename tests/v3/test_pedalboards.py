@@ -227,8 +227,9 @@ def test_v3_loading_start_suppresses_outbound_ws(v3_system: SystemFixture):
 
 
 def test_v3_same_bundle_last_json_clears_suppression(v3_system: SystemFixture):
-    """Save in MOD-UI rewrites last.json under the bundle already current, and
-    emits no loading_start/loading_end pair at all (mod-ui host.py save_pedalboard).
+    """last.json can name the bundle that is already current: mod-ui writes it
+    during its own start, and again on a save. Neither is a load, and the save
+    emits no loading_start/loading_end pair (mod-ui host.py save_pedalboard).
     Nothing is loading, so nothing may suppress outbound sends."""
     handler = v3_system.handler
     assert handler.current
