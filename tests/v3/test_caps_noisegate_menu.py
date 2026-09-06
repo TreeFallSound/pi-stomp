@@ -67,7 +67,6 @@ def make_noisegate_plugin(instance_id: str = "Gate") -> Plugin:
         Symbol("mains"): _param(Symbol("mains"), 50.0, 0.0, 100.0, instance_id, unit="Hz"),
     }
     plugin = Plugin(instance_id, params, {}, "Dynamics", uri=CAPS_NOISEGATE_URI, customization=lookup(CAPS_NOISEGATE_URI))
-    plugin.has_footswitch = True
     plugin.pedalboard_snapshot = {
         sym: float(p.value) if p.value is not None else 0.0
         for sym, p in params.items()
@@ -177,7 +176,6 @@ def test_parameter_window_scrolls_when_content_overflows(v3_system: SystemFixtur
         sym = Symbol(f"param_{i:02d}")
         params[sym] = _param(sym, 0.5, 0.0, 1.0, "many", unit="dB")
     plugin = Plugin("many", params, {}, "Dynamics")
-    plugin.has_footswitch = True
     plugin.pedalboard_snapshot = {sym: 0.5 for sym in params}
 
     handler.current.pedalboard.plugins = [plugin]

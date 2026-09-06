@@ -7,7 +7,7 @@ def test_v3_tap_tempo_lcd_snapshot(v3_system: SystemFixture, make_plugin, snapsh
     handler = v3_system.handler
     hw = v3_system.hw
 
-    plugin = make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=True)
+    plugin = make_plugin("fuzz", category="Distortion", bypassed=False)
     handler.current.pedalboard.plugins = [plugin]
     handler.bind_current_pedalboard()
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)

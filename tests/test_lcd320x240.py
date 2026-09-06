@@ -41,7 +41,6 @@ def _make_plugin(
     instance_id: str,
     uri: str | None = None,
     category: str | None = None,
-    has_footswitch: bool = False,
     bypassed: bool = False,
     parameters: dict[Symbol, Parameter] | None = None,
 ) -> Plugin:
@@ -49,7 +48,6 @@ def _make_plugin(
     all_params: dict[Symbol, Parameter] = dict(parameters or {})
     all_params[BYPASS_SYMBOL] = Parameter(bypass_info, 1.0 if bypassed else 0.0, None, instance_id)
     plugin = Plugin(instance_id, all_params, {}, category, uri=uri)
-    plugin.has_footswitch = has_footswitch
     return plugin
 
 
@@ -140,25 +138,22 @@ def setup_main_ui(instance):
             "distortion",
             uri="mock://distortion",
             category="Distortion",
-            has_footswitch=True,
             parameters={Symbol("gain"): mock_gain},
         ),
         _make_plugin(
             "delay",
             uri="mock://delay",
             category="Delay",
-            has_footswitch=True,
             parameters={Symbol("time"): mock_time},
         ),
         _make_plugin(
             "reverb",
             uri="mock://reverb",
             category="Reverb",
-            has_footswitch=True,
             bypassed=True,
             parameters={Symbol("mix"): mock_mix},
         ),
-        _make_plugin("chorus", uri="mock://chorus", category="Modulator", has_footswitch=False),
+        _make_plugin("chorus", uri="mock://chorus", category="Modulator"),
     ]
     ids = [p.instance_id for p in plugins]
     connections = [

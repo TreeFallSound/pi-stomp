@@ -60,7 +60,6 @@ def make_capseq10_plugin(instance_id: str = "eq10") -> Plugin:
         params[b.gain_sym] = _param(b.gain_sym, 0.0, b.gain_min, b.gain_max, instance_id=instance_id, unit="dB")
 
     plugin = Plugin(instance_id, params, {}, "EQ", uri=CAPSEQ10_URI)
-    plugin.has_footswitch = False
     plugin.pedalboard_snapshot = {
         sym: float(p.value) if p.value is not None else 0.0
         for sym, p in params.items()

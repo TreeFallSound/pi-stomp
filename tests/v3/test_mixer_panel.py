@@ -46,7 +46,6 @@ def make_mixer_plugin(instance_id: str = "mixer") -> Plugin:
     params[Symbol("MasterVolume")] = _param("MasterVolume", 0.75, 0.0, 1.0, 0.75, instance_id)
     params[Symbol("AltVolume")] = _param("AltVolume", 0.5, 0.0, 1.0, 0.5, instance_id)
     plugin = Plugin(instance_id, params, {}, "Mixer", uri=MOD_MIXER_URI)
-    plugin.has_footswitch = False
     plugin.pedalboard_snapshot = {sym: float(p.value) if p.value is not None else 0.0
                                   for sym, p in params.items()}
     return plugin

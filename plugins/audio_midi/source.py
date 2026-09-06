@@ -15,25 +15,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Synthetic reactive param source for the Audio & MIDI menu.
+"""Synthetic `ParamSource` for the Audio & MIDI menu.
 
-The Audio & MIDI menu edits the audiocard's global EQ (5 bands) and
-input/output levels — there is no backing ``Plugin``. Per
-``docs/audio-midi-menu.md`` §4.1 these are modelled as synthetic reactive
-``Parameter``s so the menu reuses ``PluginPanel``'s entire param machinery
-(coalescing, subscribe→dirty→apply_state, edit_symbol's ParameterSteps math)
-instead of bespoke commit callbacks.
-
-The source satisfies ``common.param_source.ParamSource`` structurally:
-``parameters``, ``instance_id``, ``set_param_value`` (the write side —
-commits to the audiocard), ``subscribe`` (fans out over the synthetic
-parameters). It does **not** implement ``BypassSource`` — the audio menu
-has no bypass, so the reactive core's bypass/reset paths no-op and the
-footer omits Bypass/Reset (§4.2).
-
-Symbols are the audiocard's ALSA mixer names (``MASTER``, ``CAPTURE_VOLUME``,
-``EQ_1``..``EQ_5``), so the existing ``audio_parameter_commit`` write path
-matches exactly.
+The audiocard's levels and global EQ have no backing `Plugin`, so they are
+modelled as reactive `Parameter`s and the menu reuses `PluginPanel` whole.
+Symbols are the ALSA mixer names (`MASTER`, `CAPTURE_VOLUME`, `EQ_1`..`EQ_5`),
+which is what `audio_parameter_commit` writes. Not a `Plugin`: no bypass.
 """
 
 from __future__ import annotations
@@ -48,9 +35,8 @@ if TYPE_CHECKING:
     from pistomp.audiocard import Audiocard
     from pistomp.hardware import Hardware
 
-# instance_id for the synthetic source. ``_flush_param_queue`` keys the
-# WebSocket send on this; ``_send_param`` is overridden to no-op (no
-# mod-host instance), so the value is purely diagnostic.
+# No mod-host instance to send to (`_send_param` is overridden), so this is
+# diagnostic only.
 INSTANCE_ID = "audio_midi"
 
 # Range mirror of modhandler._create_audio_parameter / bind_volume_encoder.

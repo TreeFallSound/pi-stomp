@@ -566,8 +566,8 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
 
     # ── no mod-host echo to send; the synthetic source already wrote the card ──
 
-    def _send_param(self, instance_id: str, symbol: Symbol, value: float) -> None:
-        pass
+    def _send_param(self, instance_id: str, symbol: Symbol, value: float) -> bool:
+        return True  # the card is already written; nothing to mirror
 
     # ── selection ─────────────────────────────────────────────────────────────
 
