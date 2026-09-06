@@ -18,29 +18,23 @@ def test_set_mod_tap_tempo(modhandler_system: SystemFixture):
 
 
 def test_set_mod_tap_tempo_reports_failure_when_send_never_leaves(modhandler_system: SystemFixture):
-    """A refused send plus a rejected POST means the value never left — commit
-    relies on this False to roll the LCD back."""
+    """A refused send means the value never left — commit relies on this False to
+    roll the LCD back."""
     handler = modhandler_system.handler
     modhandler_system.ws_bridge.send_bpm = MagicMock(return_value=False)
-    failed = MagicMock()
-    failed.ok = False
-    modhandler_system.mock_post.side_effect = lambda *a, **k: failed
 
     assert handler.set_mod_tap_tempo(120) is False
+    modhandler_system.mock_post.assert_not_called()  # no blocking POST fallback ever
 
 
-def test_set_mod_tap_tempo_falls_back_to_post_when_refused(modhandler_system: SystemFixture):
-    """A refused WebSocket send — the bridge is not connected — falls back to POST /set_bpm."""
+def test_set_mod_tap_tempo_refused_during_a_load(modhandler_system: SystemFixture):
+    """The load window suppresses BPM like every other parameter. A value that
+    slipped through would be overwritten by mod-ui's post-load rebroadcast."""
     handler = modhandler_system.handler
-    mock_post = modhandler_system.mock_post
-    modhandler_system.ws_bridge.send_bpm = MagicMock(return_value=False)
+    handler._is_pedalboard_loading = True
 
-    handler.set_mod_tap_tempo(120)
-
-    mock_post.assert_called_once()
-    call_args = mock_post.call_args
-    assert "set_bpm" in call_args.args[0]
-    assert call_args.kwargs.get("json", {}).get("value") == 120
+    assert handler.set_mod_tap_tempo(120) is False
+    assert modhandler_system.ws_bridge.sent == []
 
 
 def test_set_mod_tap_tempo_none(modhandler_system: SystemFixture):

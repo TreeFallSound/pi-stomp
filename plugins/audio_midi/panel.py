@@ -564,10 +564,10 @@ class AudioMidiPanel(ModalDialog[AudioMidiState]):
             )
         return tuple(rows)
 
-    # ── no mod-host echo to send; the synthetic source already wrote the card ──
-
-    def _send_param(self, symbol: Symbol, value: float) -> bool:
-        return True  # the card is already written; nothing to mirror
+    def _send_param(self, symbol: Symbol, value: float) -> None:
+        # The card is the single writer, so the ALSA write is the send and there
+        # is nothing to refuse. Riding the tick keeps alsactl off every detent.
+        self.plugin.set_param_value(symbol, value)
 
     # ── selection ─────────────────────────────────────────────────────────────
 

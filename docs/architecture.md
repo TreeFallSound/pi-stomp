@@ -242,20 +242,31 @@ the commit writes the value.
 `command_queue` is unbounded — never drops blend-mode messages. `send_parameter` and
 `send_bpm` refuse only one condition: the bridge holds no live connection. There is no
 write-buffer measurement — that number counts bytes our own asyncio transport has not
-handed to the kernel, so it reports nothing about what mod-ui has processed. A `False`
-return means the value never left, so a `commit` reverts it rather than showing a value
-mod-ui does not have; a panel's coalescing queue instead keeps it and retries on the
-next tick.
+handed to the kernel, so it reports nothing about what mod-ui has processed.
+
+A `False` return means the value never left, so `commit` reverts it. Every UI edit
+does this, panels included: the audio did not change, so a screen that kept the new
+number would disagree with the player's ear and nothing else would say why. The
+refusal is not retried — the knob visibly does nothing, which is what happened.
+Only `_publish_plugin_param` and `_publish_bpm` can refuse; MIDI CC and the audio
+card always land.
 
 A reconnect empties the queue, so a send accepted as the socket drops is still lost.
 The window is one tick wide and closing it needs a queue that survives a reconnect.
+
+The worker keepalives at `PING_INTERVAL_S` with no ping timeout. Tornado answers a
+PING inline on the ioloop that `Host.load` blocks, so `ws.latency` measures that
+stall directly and the stats line logs its peak. A finite timeout would drop the
+socket during a long board load and the reconnect would empty the queue, so a mod-ui
+that is alive but never reads leaves `connected` true.
 
 ### Outbound suppression during a load
 
 `loading_start` .. `loading_end` brackets mod-ui replaying a whole graph at us — a
 board load, or the connect dump on every WebSocket connect. While it is open,
 inbound graph messages are replay rather than news, and outbound parameter sends are
-refused (`_publish_plugin_param`). `set_current_pedalboard` also clears the flag, as
+refused — `_publish_plugin_param`, and `set_mod_tap_tempo` for the transport BPM,
+which the tap-tempo footswitch also reaches directly. `set_current_pedalboard` also clears the flag, as
 the point where we have caught up with the board mod-ui loaded; that covers the one
 case mod-ui abandons its own window, an aborted load returning before `loading_end`.
 Nothing else may raise it: a window that nothing closes refuses every send for the

@@ -411,7 +411,7 @@ class Modhandler(Handler):
             # encoder, the WebSocket for :bpm) owns the send.
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
             c.parameter.commit(new_value, self._sink_for(c.parameter))
-            self.lcd.display_parameter_value(c.parameter, new_value)
+            self.lcd.display_parameter_value(c.parameter, c.parameter.value)
             return True
 
         # Unbound: no sink, no row. This fallback CC is the only way mod-ui sees
@@ -1236,9 +1236,6 @@ class Modhandler(Handler):
             return functools.partial(self._publish_switch_cc, control)
         return self._publish_plugin_param
 
-    def publish_param(self, param: Parameter, value: float) -> bool:
-        return param.commit(value, self._sink_for(param))
-
     def _publish_bpm(self, param: Parameter) -> bool:
         """Publish the BPM to the transport."""
         return self.set_mod_tap_tempo(param.value)
@@ -1864,15 +1861,10 @@ class Modhandler(Handler):
         return util.DICT_GET(self.callbacks, callback_name)
 
     def set_mod_tap_tempo(self, bpm: float | None) -> bool:
-        # WebSocket first: _rest_post blocks the 10ms loop, and an encoder spin
-        # calls this once per detent. POST only when the bridge has no connection.
         # Returns whether the value left, so a failed send rolls the LCD back.
-        if bpm is None:
+        if bpm is None or self._is_pedalboard_loading:
             return False
-        if self.ws_bridge.send_bpm(bpm):
-            return True
-        resp = self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
-        return resp is not None and resp.ok
+        return self.ws_bridge.send_bpm(bpm)
 
     def set_sync_mode(self, mode: SyncMode) -> None:
         """Optimistically switch the clock source; mod-ui's transport echo

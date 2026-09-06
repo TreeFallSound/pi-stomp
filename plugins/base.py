@@ -263,14 +263,15 @@ class PluginPanel(Panel, Generic[TState], ABC):
     def set_param(self, symbol: Symbol, value: float) -> None:
         """Queue a parameter change.
 
-        Writes ``value`` into ``plugin.parameters[symbol]`` immediately so the UI
-        stays consistent; the websocket send is deferred to the next ``tick()``
-        so rapid encoder spins collapse into one send per symbol. Goes through
-        set_param_value so a bound footswitch reconciles now, the same mirror the
-        mod-host echo runs — a tweak edit must match the NAV commit path.
+        Paints ``value`` immediately so the knob tracks the encoder; the send is
+        deferred to the next ``tick()`` so rapid spins collapse into one send per
+        symbol. A preview, not a reconcile: ``_confirmed`` is mod-ui's word, and
+        a local edit that has not left must not overwrite it.
         """
         self._param_queue[symbol] = value
-        self.plugin.set_param_value(symbol, value)
+        param = self.plugin.parameters.get(symbol)
+        if param is not None:
+            param.preview(value)
 
     def tick(self) -> None:
         """Drain the coalesced parameter queue, then reconcile from the model
@@ -286,22 +287,16 @@ class PluginPanel(Panel, Generic[TState], ABC):
             self._refresh_bypass_style()
 
     def _flush_param_queue(self) -> None:
-        if not self._param_queue:
-            return
-        for symbol, value in list(self._param_queue.items()):
-            # A send that did not leave stays queued: the value is
-            # not wrong, it is late, and a newer one for the same symbol replaces
-            # it next tick — same coalescing the queue already does.
-            if self._send_param(symbol, value):
-                del self._param_queue[symbol]
+        for symbol, value in self._param_queue.items():
+            self._send_param(symbol, value)
+        self._param_queue.clear()
 
-    def _send_param(self, symbol: Symbol, value: float) -> bool:
-        """A synthetic source (audiocard) overrides: its ``set_param_value``
-        already wrote the hardware, and there is no route to choose."""
+    def _send_param(self, symbol: Symbol, value: float) -> None:
+        """A synthetic source (audiocard) overrides: the card is the single writer,
+        so there is no route to choose."""
         param = self.plugin.parameters.get(symbol)
-        if param is None:
-            return False
-        return self.handler.publish_param(param, value)
+        if param is not None:
+            self.handler.parameter_value_commit(param, value)
 
     # ── chrome actions ─────────────────────────────────────────────────────
 

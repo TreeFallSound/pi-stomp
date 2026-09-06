@@ -330,14 +330,6 @@ class AsyncWebSocketBridge:
     def get_queue_depth(self) -> int:
         return self.command_queue.qsize()
 
-    def get_stats(self) -> dict:
-        return {
-            "queue_depth": self.get_queue_depth(),
-            "messages_sent": self._worker.messages_sent,
-            "messages_received": self._worker.messages_received,
-            "connected": self.connected,
-        }
-
     def clear_queue(self) -> int:
         """Clear all pending messages from the queue, returning num cleared."""
         cleared_count = 0

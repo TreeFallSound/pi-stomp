@@ -105,10 +105,9 @@ class Handler(InputSink):
         per-parameter dialog as open_parameter_dialog."""
         raise NotImplementedError()
 
-    def publish_param(self, param: "Parameter", value: float) -> bool:
-        """Commit an edited value through the transport that owns this
-        parameter — WebSocket, MIDI CC, or the audio card. False if it never
-        left, so the caller may send it again."""
+    def parameter_value_commit(self, param: "Parameter", value: float) -> None:
+        """Commit an edited value through the transport that owns this parameter.
+        Reverts on screen if the send never left."""
         raise NotImplementedError()
 
     def toggle_plugin_bypass(self, plugin: "Plugin") -> None:

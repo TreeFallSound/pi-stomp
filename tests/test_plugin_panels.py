@@ -38,10 +38,10 @@ class FakeHandler:
     def is_symbol_locked(self, instance_id: str, symbol: str) -> bool:
         return (instance_id, symbol) in self.locked
 
-    def publish_param(self, param: Parameter, value: float) -> bool:
+    def parameter_value_commit(self, param: Parameter, value: float) -> None:
         """Mirrors Modhandler: the route is chosen here, and commit reverts a
         value that never left."""
-        return param.commit(value, lambda p: self.ws_bridge.send_parameter(str(p.instance_id), p.symbol, p.value))
+        param.commit(value, lambda p: self.ws_bridge.send_parameter(str(p.instance_id), p.symbol, p.value))
 
     def toggle_plugin_bypass(self, plugin) -> None:
         """Mirrors Modhandler for a footswitch-less plugin: commit over the WS."""
@@ -145,33 +145,19 @@ class TestPluginPanel:
         assert panel._param_queue == {}
         assert fake_handler.ws_bridge.sent == [("pedalboard/demo", "gain", 7.0)]
 
-    def test_refused_send_stays_queued_and_retries(self, fake_plugin, fake_handler):
-        """Backpressure is transient: the value is late, not wrong. It waits in
-        the queue instead of being dropped on the floor."""
+    def test_refused_send_reverts_on_screen(self, fake_plugin, fake_handler):
+        """The knob must not show a value mod-ui never took: the ear would
+        disagree with the screen, and nothing else would tell the player."""
         panel = DemoPanel(plugin=fake_plugin, handler=fake_handler, on_dismiss=lambda: None)
+        param = fake_plugin.parameters[Symbol("gain")]
         fake_handler.ws_bridge.refusing = True
+
         panel.set_param(Symbol("gain"), 7.0)
         panel.tick()
-        assert panel._param_queue == {Symbol("gain"): 7.0}
-        assert fake_handler.ws_bridge.sent == []
 
-        fake_handler.ws_bridge.refusing = False
-        panel.tick()
+        assert param.value == 5.0
         assert panel._param_queue == {}
-        assert fake_handler.ws_bridge.sent == [("pedalboard/demo", "gain", 7.0)]
-
-    def test_refused_send_is_superseded_by_a_newer_value(self, fake_plugin, fake_handler):
-        """A spin that keeps moving replaces the waiting value; only the latest
-        is sent, which is the coalescing the queue already promises."""
-        panel = DemoPanel(plugin=fake_plugin, handler=fake_handler, on_dismiss=lambda: None)
-        fake_handler.ws_bridge.refusing = True
-        panel.set_param(Symbol("gain"), 7.0)
-        panel.tick()
-
-        panel.set_param(Symbol("gain"), 8.0)
-        fake_handler.ws_bridge.refusing = False
-        panel.tick()
-        assert fake_handler.ws_bridge.sent == [("pedalboard/demo", "gain", 8.0)]
+        assert fake_handler.ws_bridge.sent == []
 
     def test_handle_encoder_returns_true_when_consumed(self, fake_plugin, fake_handler):
         panel = DemoPanel(plugin=fake_plugin, handler=fake_handler, on_dismiss=lambda: None)
