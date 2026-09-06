@@ -304,13 +304,6 @@ class ArcDialWidget(Widget):
 
     # ── value state ─────────────────────────────────────────────────────────
 
-    def set_range(self, minimum: float, maximum: float) -> None:
-        if (minimum, maximum) == (self._minimum, self._maximum):
-            return
-        self._minimum, self._maximum = minimum, maximum
-        self._value = max(minimum, min(maximum, self._value))
-        self.refresh()
-
     def set_value(self, value: float) -> None:
         value = max(self._minimum, min(self._maximum, value))
         if value == self._value:

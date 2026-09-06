@@ -161,7 +161,6 @@ class ParamSlotWidget(ArcDialWidget):
     def sync(self) -> None:
         param = self._param()
         if param is not None and param.value is not None:
-            self.set_range(param.minimum, param.maximum)
             self.set_value(float(param.value))
 
     def set_param(self, value: float) -> None:

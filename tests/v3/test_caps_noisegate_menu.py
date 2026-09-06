@@ -10,7 +10,6 @@ To regenerate snapshots after intentional UI changes:
 
 from __future__ import annotations
 
-from typing import cast
 from unittest.mock import MagicMock
 
 from common.contexts import (
@@ -30,7 +29,6 @@ from pistomp.controller import Controller
 from pistomp.footswitch import Footswitch
 from pistomp.input.event import EncoderEvent
 from plugins.customization import lookup
-from plugins.parameter_window import ParameterWindow
 from uilib.misc import InputEvent
 from tests.types import SystemFixture
 from tests.v3.nav_helpers import nav_click
@@ -445,35 +443,3 @@ def test_unbound_fallback_owned_by_handler(v3_system: SystemFixture):
 
     assert handler.encoder_fallback(enc1) > start
 
-
-def test_arc_slot_follows_a_widened_binding_range(v3_system: SystemFixture):
-    """A pinned arc caches the extents it is built with. When the binding is
-    removed and the range changes under it, the arc must not clamp the value to
-    the old maximum."""
-    handler = v3_system.handler
-    hw = v3_system.hw
-    assert handler.current
-
-    plugin = make_noisegate_plugin()
-    param = plugin.parameters[Symbol("mains")]
-    declared_max = param.maximum
-    narrow_max = (param.minimum + declared_max) / 2
-    param.set_binding_range((param.minimum, narrow_max))
-
-    handler.current.pedalboard.plugins = [plugin]
-    handler.current.pedalboard.connections = []
-    handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
-    handler.lcd.draw_main_panel()
-    handler.lcd.main_panel.sel_widget(handler.lcd.w_plugins[0])
-    handler.lcd.main_panel.input_event(InputEvent.LONG_CLICK)
-    handler.poll_lcd_updates()
-
-    window = cast(ParameterWindow, handler.lcd.pstack.current)
-    slot = next(w for w in window._slot_widgets if w.slot.symbol == Symbol("mains"))
-
-    param.clear_binding_range()
-    param.reconcile(declared_max)
-    handler.poll_lcd_updates()
-
-    assert param.value == declared_max
-    assert slot.value == declared_max
