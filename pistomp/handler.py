@@ -105,6 +105,12 @@ class Handler(InputSink):
         per-parameter dialog as open_parameter_dialog."""
         raise NotImplementedError()
 
+    def publish_param(self, param: "Parameter", value: float) -> bool:
+        """Commit an edited value through the transport that owns this
+        parameter — WebSocket, MIDI CC, or the audio card. False if it never
+        left, so the caller may send it again."""
+        raise NotImplementedError()
+
     def toggle_plugin_bypass(self, plugin: "Plugin") -> None:
         """Flip a plugin's bypass the one way the whole UI flips it: through the
         footswitch press path when the plugin has one (so mod-host's echo

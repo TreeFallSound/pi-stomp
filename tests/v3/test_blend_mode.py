@@ -511,3 +511,31 @@ def test_midi_bound_param_excluded_from_blend_sweep(blend_system: SystemFixture)
     assert test_ws.sent_values_for("BigMuff", "Tone") == []
     # Level is unbound → still interpolated and sent
     assert test_ws.sent_values_for("BigMuff", "Level") != []
+
+
+def test_reconnect_pushes_the_position_again(blend_system: SystemFixture):
+    """A reconnect flushes the send queue, so blend must not trust its dedupe."""
+    handler = blend_system.handler
+    test_ws = cast(FakeWebSocketBridge, handler.ws_bridge)
+    handler.poll_modui_changes()
+    test_ws.sent.clear()
+
+    handler.poll_modui_changes()
+    assert test_ws.sent == []
+
+    test_ws.reconnects = 1
+    handler.poll_modui_changes()
+
+    assert test_ws.sent_values_for("BigMuff", "Tone")
+
+
+def test_deactivate_keeps_other_senders_messages(blend_system: SystemFixture):
+    """The queue is shared, so blend must not clear what it did not put there."""
+    handler = blend_system.handler
+    assert handler.active_blend_mode
+    cleared = MagicMock(return_value=0)
+    handler.ws_bridge.clear_queue = cleared
+
+    handler.active_blend_mode.deactivate()
+
+    cleared.assert_not_called()

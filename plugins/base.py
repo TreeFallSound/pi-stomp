@@ -288,20 +288,20 @@ class PluginPanel(Panel, Generic[TState], ABC):
     def _flush_param_queue(self) -> None:
         if not self._param_queue:
             return
-        instance_id = self.plugin.instance_id
         for symbol, value in list(self._param_queue.items()):
             # A send that did not leave stays queued: the value is
             # not wrong, it is late, and a newer one for the same symbol replaces
             # it next tick — same coalescing the queue already does.
-            if self._send_param(instance_id, symbol, value):
+            if self._send_param(symbol, value):
                 del self._param_queue[symbol]
 
-    def _send_param(self, instance_id: str, symbol: Symbol, value: float) -> bool:
-        """Commit one queued param to the backend, returning whether it left.
-        Plugin panels send over the WebSocket; a synthetic source (audiocard)
-        overrides — its ``set_param_value`` already wrote the hardware and there
-        is no mod-host instance to mirror."""
-        return self.handler.ws_bridge.send_parameter(instance_id, symbol, value)
+    def _send_param(self, symbol: Symbol, value: float) -> bool:
+        """A synthetic source (audiocard) overrides: its ``set_param_value``
+        already wrote the hardware, and there is no route to choose."""
+        param = self.plugin.parameters.get(symbol)
+        if param is None:
+            return False
+        return self.handler.publish_param(param, value)
 
     # ── chrome actions ─────────────────────────────────────────────────────
 

@@ -67,6 +67,7 @@ class WebSocketWorker:
         self.messages_sent = 0
         self.messages_received = 0
         self.peak_latency = 0.0
+        self.reconnects = 0
 
     def run(self):
         """Entry point for the background thread."""
@@ -126,6 +127,7 @@ class WebSocketWorker:
                     close_timeout=1.0,
                 ) as ws:
                     self.ws = ws
+                    self.reconnects += 1
                     logging.info(f"WebSocket connected to {self.ws_url}")
                     retry_delay = 1.0  # Reset on successful connect
                     reconnect_attempts = 0  # Reset attempts on success
@@ -265,6 +267,10 @@ class AsyncWebSocketBridge:
         self.received_queue: queue.Queue = queue.Queue()
         self._worker = WebSocketWorker(ws_url, self.command_queue, self.received_queue)
         self._thread: Optional[threading.Thread] = None
+
+    def get_reconnects_since_last_call(self) -> int:
+        count, self._worker.reconnects = self._worker.reconnects, 0
+        return count
 
     @property
     def connected(self) -> bool:

@@ -38,6 +38,11 @@ class FakeHandler:
     def is_symbol_locked(self, instance_id: str, symbol: str) -> bool:
         return (instance_id, symbol) in self.locked
 
+    def publish_param(self, param: Parameter, value: float) -> bool:
+        """Mirrors Modhandler: the route is chosen here, and commit reverts a
+        value that never left."""
+        return param.commit(value, lambda p: self.ws_bridge.send_parameter(str(p.instance_id), p.symbol, p.value))
+
     def toggle_plugin_bypass(self, plugin) -> None:
         """Mirrors Modhandler for a footswitch-less plugin: commit over the WS."""
         plugin.toggle_bypass(
@@ -83,10 +88,11 @@ def fake_plugin():
         {"name": "Gain", "symbol": "gain", "ranges": {"minimum": 0, "maximum": 10}},
         5.0,
         None,
+        "/pedalboard/demo",
     )
     p = Plugin(
         instance_id="/pedalboard/demo",
-        parameters={Symbol("gain"): param, BYPASS_SYMBOL: Parameter({"name": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, 0.0, None)},
+        parameters={Symbol("gain"): param, BYPASS_SYMBOL: Parameter({"name": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, 0.0, None, "/pedalboard/demo")},
         info={},
         category="Utility",
         uri="http://example.com/demo",

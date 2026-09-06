@@ -204,17 +204,17 @@ class Parameter:
         Repaints live observers; does not settle; publishes nothing."""
         self._set(value)
 
-    def commit(self, value: float, sink: ParamSink | None) -> None:
+    def commit(self, value: float, sink: ParamSink | None) -> bool:
         """A finished local edit: repaint, publish through *sink*, then settle.
-        Rolls back to the last confirmed value (and does not settle) if the send
-        never leaves — otherwise the LCD would show a number mod-ui never took.
-        A `None` sink is display-only. Publishing is unconditional; preview and
-        reconcile share mechanics, so there is nothing to diff against here."""
+        Returns False and rolls back to the last confirmed value, without
+        settling, if the send never leaves — otherwise the LCD would show a
+        number mod-ui never applied."""
         self._set(value)
         if sink is not None and not sink(self):
             self._set(self._confirmed)
-            return
+            return False
         self._notify_settled()
+        return True
 
     def _set(self, value: float) -> None:
         if value == self._value:

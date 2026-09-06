@@ -109,3 +109,17 @@ def test_ui_edit_landing_on_an_endpoint_rides_the_cc(v3_system, make_plugin, mak
 
     assert hw.midiout.send_message.call_args[0][0][2] == 127
     assert v3_system.ws_bridge.sent_values_for("amp", gain.symbol) == []
+
+
+def test_publish_param_routes_a_bound_param_to_the_cc(v3_system, make_plugin):
+    """The panel path used to reach the bridge directly, so a bound param left
+    as a param_set from a panel and as its CC from everywhere else."""
+    handler, hw = v3_system.handler, v3_system.hw
+    enc = next(e for e in hw.encoders if e.midi_CC is not None and e.parameter is None)
+    _, param = _plugin_with_bound_param(handler, make_plugin, f"{enc.midi_channel}:{enc.midi_CC}")
+    hw.midiout.send_message.reset_mock()
+
+    assert handler.publish_param(param, 0.75)
+
+    assert hw.midiout.send_message.call_args[0][0][1] == enc.midi_CC
+    assert v3_system.ws_bridge.sent_values_for("Amp", param.symbol) == []

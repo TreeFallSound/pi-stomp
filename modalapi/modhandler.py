@@ -689,6 +689,16 @@ class Modhandler(Handler):
             return 2
         return self._lcd.poll_divisor
 
+    def _poll_ws_reconnect(self) -> None:
+        if self._is_pedalboard_loading:
+            return
+
+        if self.ws_bridge.get_reconnects_since_last_call() == 0:
+            return
+
+        if self.active_blend_mode is not None:
+            self.active_blend_mode.sync_current_position()
+
     def _handle_blend_mode_snapshot_change(self, new_snapshot_index: int):
         """
         Handle blend mode activation/deactivation when snapshot changes.
@@ -954,6 +964,7 @@ class Modhandler(Handler):
         # Drain WS first so loading_end/snapshot lands before the file-watch
         # reads next_pedalboard_preset_index this tick. No-op if already drained.
         self.poll_ws_messages()
+        self._poll_ws_reconnect()
 
         # unzip rewrites last.json/banks.json/snapshots.json
         # don't poll again until we restart the service
@@ -1224,6 +1235,9 @@ class Modhandler(Handler):
         if isinstance(control, Footswitch) and control.midi_CC is not None:
             return functools.partial(self._publish_switch_cc, control)
         return self._publish_plugin_param
+
+    def publish_param(self, param: Parameter, value: float) -> bool:
+        return param.commit(value, self._sink_for(param))
 
     def _publish_bpm(self, param: Parameter) -> bool:
         """Publish the BPM to the transport."""

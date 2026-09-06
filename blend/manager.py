@@ -135,11 +135,16 @@ class BlendMode:
         if not self.input_controller:
             return
 
-        self._clear_ws_queue()
         self.input_controller.detach_from_input()
         if self.parameter_setter:
             self.parameter_setter.reset_tracking()
         logging.info(f"Deactivated blend mode: '{self.config.get('name')}'")
+
+    def sync_current_position(self) -> None:
+        if self.input_controller is None or self.parameter_setter is None:
+            return
+        self.parameter_setter.reset_tracking()
+        self.input_controller.sync_current_position()
 
     def cleanup(self) -> None:
         """Full teardown (pedalboard unload or re-prepare). Idempotent."""
@@ -189,11 +194,6 @@ class BlendMode:
         return self.input_controller.handle_event(event)
 
     # ----------------------------------------------------------------- helpers
-
-    def _clear_ws_queue(self) -> None:
-        cleared = self.handler.ws_bridge.clear_queue()
-        if cleared > 0:
-            logging.debug(f"Cleared {cleared} pending WebSocket messages")
 
     def _extract_midi_bound_parameters(self) -> MidiBoundParams:
         """Collect (instance_id, symbol) for every MIDI-bound parameter on the current pedalboard."""
