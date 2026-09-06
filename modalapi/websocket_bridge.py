@@ -38,6 +38,11 @@ from common.util import TEARDOWN_JOIN_S
 # Service will restart after this
 MAX_RECONNECT_ATTEMPTS = 4
 
+# Protocol-level pings are responded to in-sequence with other events,
+# so their round trips are a direct measure of how far behind mod-ui is
+PING_INTERVAL_S = 5.0
+STATS_INTERVAL_S = 60.0
+
 
 class WebSocketWorker:
     """
@@ -61,6 +66,7 @@ class WebSocketWorker:
         # Metrics
         self.messages_sent = 0
         self.messages_received = 0
+        self.peak_latency = 0.0
 
     def run(self):
         """Entry point for the background thread."""
@@ -115,7 +121,8 @@ class WebSocketWorker:
                     self.ws_url,
                     max_queue=32,
                     write_limit=65536,
-                    ping_interval=None,
+                    ping_interval=PING_INTERVAL_S,
+                    ping_timeout=None,  # a pedalboard load blocks mod-ui for seconds; never drop the socket for it
                     close_timeout=1.0,
                 ) as ws:
                     self.ws = ws
@@ -142,6 +149,8 @@ class WebSocketWorker:
                         tasks = {
                             asyncio.create_task(self._process_queue(ws)),
                             asyncio.create_task(self._receive_messages(ws)),
+                            asyncio.create_task(self._monitor_latency(ws)),
+                            asyncio.create_task(self._report_stats()),
                         }
                         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
                         for task in pending:
@@ -193,9 +202,6 @@ class WebSocketWorker:
                 self.messages_sent += 1
                 self.command_queue.task_done()
 
-                if self.messages_sent % 1000 == 0:
-                    logging.debug(f"WebSocket stats: sent={self.messages_sent}, queue={self.command_queue.qsize()}")
-
             except websockets.exceptions.ConnectionClosed as e:
                 logging.warning(f"WebSocket connection closed: {e}")
                 break
@@ -204,6 +210,26 @@ class WebSocketWorker:
                     logging.error(f"Error sending message: {msg[:50]}...'", exc_info=True)
                 else:
                     logging.error(f"Error in WebSocket worker: {e}", exc_info=True)
+
+    async def _report_stats(self):
+        """Print the period, then start a new one."""
+        while self.running:
+            if await self._interruptible_sleep(STATS_INTERVAL_S):
+                return
+            logging.info(
+                f"WebSocket stats: sent={self.messages_sent}, received={self.messages_received}, "
+                f"queue={self.command_queue.qsize()}, peak_latency={self.peak_latency * 1000:.0f}ms"
+            )
+            self.messages_sent = 0
+            self.messages_received = 0
+            self.peak_latency = 0.0
+
+    async def _monitor_latency(self, ws):
+        """Sample the keepalive round trip."""
+        while self.running:
+            if await self._interruptible_sleep(PING_INTERVAL_S):
+                return
+            self.peak_latency = max(self.peak_latency, ws.latency)
 
     async def _receive_messages(self, ws):
         """Receive messages from WebSocket and queue them for the main thread."""
@@ -266,7 +292,7 @@ class AsyncWebSocketBridge:
         self._worker.signal_stop()
         if self._thread and not sys.is_finalizing():
             self._thread.join(timeout=TEARDOWN_JOIN_S)
-        logging.info(f"WebSocket worker stopped (sent={self._worker.messages_sent})")
+        logging.info("WebSocket worker stopped")
 
     def send_bpm(self, bpm: float) -> bool:
         """Queue a BPM change. Returns False if there is no connection to send it over."""
