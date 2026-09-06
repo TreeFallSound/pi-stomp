@@ -24,7 +24,6 @@ from common.parameter import Parameter
 from modalapi.pedalboard import Pedalboard
 from modalapi.plugin import Plugin
 from pistomp.controller import AnalogControllers, Controller
-from pistomp.footswitch import Footswitch
 
 
 @dataclass
