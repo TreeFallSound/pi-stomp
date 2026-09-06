@@ -66,7 +66,7 @@ class EmulatorModhandler(Modhandler):
 
         # Replace the :80 bridge created by super().__init__() with the emulator port
         self.ws_bridge.stop()
-        self.ws_bridge = AsyncWebSocketBridge(ws_url="ws://127.0.0.1:18181/websocket", backpressure_threshold=8192)
+        self.ws_bridge = AsyncWebSocketBridge(ws_url="ws://127.0.0.1:18181/websocket")
         self.ws_bridge.start()
 
         self._window = None

@@ -2,8 +2,11 @@
 
 import asyncio
 import queue
+from typing import cast
 
 import pytest
+import websockets
+from websockets.asyncio.client import ClientConnection
 
 from modalapi.websocket_bridge import AsyncWebSocketBridge, WebSocketWorker
 from common.parameter import BYPASS_SYMBOL, Symbol
@@ -14,16 +17,19 @@ from common.parameter import BYPASS_SYMBOL, Symbol
 # ---------------------------------------------------------------------------
 
 
-def _make_bridge() -> AsyncWebSocketBridge:
-    """Construct a bridge without starting the background thread."""
-    return AsyncWebSocketBridge(ws_url="ws://localhost/test", backpressure_threshold=8192)
+def _make_bridge(*, connected: bool = True) -> AsyncWebSocketBridge:
+    """Construct a bridge without starting the background thread. A send is refused
+    unless the worker holds a connection, so most tests want one."""
+    bridge = AsyncWebSocketBridge(ws_url="ws://localhost/test")
+    if connected:
+        bridge._worker.ws = cast(ClientConnection, _SendWs())
+    return bridge
 
 
 def _make_worker() -> WebSocketWorker:
     """Construct a worker with fresh queues, not running."""
     return WebSocketWorker(
         ws_url="ws://localhost/test",
-        backpressure_threshold=8192,
         command_queue=queue.Queue(),
         received_queue=queue.Queue(),
     )
@@ -242,7 +248,7 @@ def test_multiple_sends_preserve_order():
 
 
 class _SendWs:
-    """WebSocket stand-in that records sends. No transport => buffer size reads as 0."""
+    """WebSocket stand-in that records sends."""
 
     def __init__(self):
         self.sent: list[str] = []
@@ -313,3 +319,99 @@ def test_notify_before_worker_starts_is_a_noop():
     bridge = _make_bridge()
     bridge.send_parameter("a", Symbol("x"), 1.0)
     assert bridge.get_queue_depth() == 1
+
+
+# ---------------------------------------------------------------------------
+# Refused sends: the bridge sends only while it holds a connection
+# ---------------------------------------------------------------------------
+
+
+def test_send_is_refused_before_the_first_connect():
+    bridge = _make_bridge(connected=False)
+    assert bridge.connected is False
+    assert bridge.send_parameter("a", Symbol("x"), 1.0) is False
+    assert bridge.send_bpm(120) is False
+    assert bridge.get_queue_depth() == 0
+
+
+def test_send_is_accepted_while_connected():
+    bridge = _make_bridge()
+    assert bridge.connected is True
+    assert bridge.send_parameter("a", Symbol("x"), 1.0) is True
+    assert _drain(bridge) == ["param_set /graph/a/x 1.0"]
+
+
+def test_send_is_refused_after_the_connection_ends():
+    bridge = _make_bridge()
+    bridge._worker.ws = None
+    assert bridge.send_parameter("a", Symbol("x"), 1.0) is False
+    assert bridge.get_queue_depth() == 0
+
+
+def test_refusal_does_not_latch():
+    """The connect scope owns the handle, so a refusal cannot outlive the disconnect
+    that caused it. The write-buffer flag this replaced could stay set for the session."""
+    bridge = _make_bridge(connected=False)
+    assert bridge.send_parameter("a", Symbol("x"), 1.0) is False
+
+    bridge._worker.ws = cast(ClientConnection, _SendWs())
+    assert bridge.send_parameter("a", Symbol("x"), 1.0) is True
+    assert _drain(bridge) == ["param_set /graph/a/x 1.0"]
+
+
+# ---------------------------------------------------------------------------
+# Connection lifecycle
+# ---------------------------------------------------------------------------
+
+
+class _ClosingWs(_SendWs):
+    """Yields nothing and closes, which ends the connection scope by the receive arm."""
+
+    def __init__(self, worker: WebSocketWorker):
+        super().__init__()
+        self._worker = worker
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        self._worker.running = False  # one pass through the reconnect loop
+        raise websockets.exceptions.ConnectionClosed(None, None)
+
+
+class _FakeConnect:
+    def __init__(self, ws):
+        self._ws = ws
+
+    async def __aenter__(self):
+        return self._ws
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+def test_connection_scope_clears_the_handle(monkeypatch):
+    """_process_queue can return without raising, so only the scope's finally can
+    clear ws. A stale handle would make `connected` report true against a dead socket."""
+    worker = _make_worker()
+    worker.running = True
+    monkeypatch.setattr(websockets, "connect", lambda *a, **k: _FakeConnect(_ClosingWs(worker)))
+
+    asyncio.run(worker._async_worker())
+
+    assert worker.ws is None
+
+
+def test_reconnect_discards_queued_messages(monkeypatch):
+    """A value queued before the connect is dropped, not sent. Section 6 of the plan:
+    closing this window needs a queue that survives a reconnect."""
+    worker = _make_worker()
+    worker.running = True
+    worker.command_queue.put_nowait("param_set /graph/a/x 1.0")
+    ws = _ClosingWs(worker)
+    monkeypatch.setattr(websockets, "connect", lambda *a, **k: _FakeConnect(ws))
+
+    asyncio.run(worker._async_worker())
+
+    assert worker.command_queue.empty()
+    assert ws.sent == []

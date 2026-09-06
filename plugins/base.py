@@ -290,7 +290,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
             return
         instance_id = self.plugin.instance_id
         for symbol, value in list(self._param_queue.items()):
-            # A send that did not leave (backpressure) stays queued: the value is
+            # A send that did not leave stays queued: the value is
             # not wrong, it is late, and a newer one for the same symbol replaces
             # it next tick — same coalescing the queue already does.
             if self._send_param(instance_id, symbol, value):

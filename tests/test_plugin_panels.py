@@ -21,7 +21,7 @@ from common.parameter import BYPASS_SYMBOL, Symbol
 class FakeWsBridge:
     def __init__(self):
         self.sent: list[tuple[str, str, float]] = []
-        self.refusing = False  # stands in for backpressure
+        self.refusing = False  # stands in for a send the bridge refuses
 
     def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
         if self.refusing:

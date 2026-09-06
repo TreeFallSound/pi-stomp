@@ -223,7 +223,7 @@ The outlier is a **non-footswitch UI bypass** (e.g. tapping a plugin on the LCD)
 As such, no echo arrives, and nothing will correct a local write that mod-ui never
 received. So this path commits (`Parameter.commit`): it writes and paints
 immediately, publishes over the WebSocket, and reverts if the send never left the
-box — during a pedalboard load, or under backpressure.
+box — during a pedalboard load, or while the bridge is not connected.
 
 A footswitch-bound plugin differs only in transport: `_sink_for` finds the bound
 `Footswitch` and publishes the commit as MIDI CC, so mod-host's echo reconciles it.
@@ -237,13 +237,18 @@ between). `_publish_switch_cc` sends anything between them over the WebSocket
 instead. The choice is made at publish time, not in `_sink_for`, which runs before
 the commit writes the value.
 
-### Backpressure
+### Refused sends
 
-`command_queue` is unbounded — never drops blend-mode messages. If the TCP write
-buffer exceeds 8KB, outbound sends return `False` until it drains. A `False` return
-means the value never left, so a `commit` reverts it rather than showing a value
+`command_queue` is unbounded — never drops blend-mode messages. `send_parameter` and
+`send_bpm` refuse only one condition: the bridge holds no live connection. There is no
+write-buffer measurement — that number counts bytes our own asyncio transport has not
+handed to the kernel, so it reports nothing about what mod-ui has processed. A `False`
+return means the value never left, so a `commit` reverts it rather than showing a value
 mod-ui does not have; a panel's coalescing queue instead keeps it and retries on the
-next tick, since backpressure is transient.
+next tick.
+
+A reconnect empties the queue, so a send accepted as the socket drops is still lost.
+The window is one tick wide and closing it needs a queue that survives a reconnect.
 
 ### Outbound suppression during a load
 
@@ -434,7 +439,7 @@ reads the ADC and sends current position on pedalboard load.
 
 **MOD API**
 - `modalapi/pedalboard.py` — LILV TTL parser
-- `modalapi/websocket_bridge.py` — Async WS bridge (daemon thread, backpressure)
+- `modalapi/websocket_bridge.py` — Async WS bridge (daemon thread, reconnect)
 - `modalapi/ws_protocol.py` — Message parsing into typed dataclasses
 - `modalapi/pedalboard_monitor.py` — FileChangeMonitor for last.json/banks.json
 - `common/parameter.py` — Parameter representation, formatting, taper

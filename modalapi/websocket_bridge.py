@@ -45,14 +45,11 @@ class WebSocketWorker:
 
     Runs inside a dedicated background thread's event loop. Reads from a
     shared queue and forwards messages to mod-ui, with exponential-backoff
-    reconnection and backpressure monitoring.
+    reconnection. Owns the connection state the send path reads.
     """
 
-    def __init__(
-        self, ws_url: str, backpressure_threshold: int, command_queue: queue.Queue, received_queue: queue.Queue
-    ):
+    def __init__(self, ws_url: str, command_queue: queue.Queue, received_queue: queue.Queue):
         self.ws_url = ws_url
-        self.backpressure_threshold = backpressure_threshold
         self.command_queue = command_queue
         self.received_queue = received_queue
         self.running = False
@@ -64,8 +61,6 @@ class WebSocketWorker:
         # Metrics
         self.messages_sent = 0
         self.messages_received = 0
-        self.backpressure_events = 0
-        self.backpressure_active = False
 
     def run(self):
         """Entry point for the background thread."""
@@ -128,35 +123,39 @@ class WebSocketWorker:
                     retry_delay = 1.0  # Reset on successful connect
                     reconnect_attempts = 0  # Reset attempts on success
 
-                    # Flush stale messages from before the disconnect.
-                    # After a reconnect, mod-ui sends a fresh loading_end which re-syncs state.
-                    flushed = 0
-                    while not self.command_queue.empty():
-                        try:
-                            self.command_queue.get_nowait()
-                            flushed += 1
-                        except queue.Empty:
-                            break
-                    if flushed:
-                        logging.info(f"Flushed {flushed} stale messages from queue after reconnect")
+                    try:
+                        # Flush stale messages from before the disconnect.
+                        # After a reconnect, mod-ui sends a fresh loading_end which re-syncs state.
+                        flushed = 0
+                        while not self.command_queue.empty():
+                            try:
+                                self.command_queue.get_nowait()
+                                flushed += 1
+                            except queue.Empty:
+                                break
+                        if flushed:
+                            logging.info(f"Flushed {flushed} stale messages from queue after reconnect")
 
-                    # FIRST_COMPLETED, not gather: the send loop parks on _wakeup and
-                    # cannot notice a closed socket on its own. Whichever loop exits
-                    # first cancels the other so we fall through to reconnect.
-                    tasks = {
-                        asyncio.create_task(self._process_queue(ws)),
-                        asyncio.create_task(self._receive_messages(ws)),
-                    }
-                    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-                    for task in pending:
-                        task.cancel()
-                    await asyncio.gather(*pending, return_exceptions=True)
-                    for task in done:
-                        task.result()  # re-raise so the reconnect handler sees it
+                        # FIRST_COMPLETED, not gather: the send loop parks on _wakeup and
+                        # cannot notice a closed socket on its own. Whichever loop exits
+                        # first cancels the other so we fall through to reconnect.
+                        tasks = {
+                            asyncio.create_task(self._process_queue(ws)),
+                            asyncio.create_task(self._receive_messages(ws)),
+                        }
+                        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                        for task in pending:
+                            task.cancel()
+                        await asyncio.gather(*pending, return_exceptions=True)
+                        for task in done:
+                            task.result()  # re-raise so the reconnect handler sees it
+                    finally:
+                        # _process_queue can return without raising, so the scope alone
+                        # must clear the handle; otherwise `connected` reads a dead socket.
+                        self.ws = None
 
             except (websockets.exceptions.WebSocketException, OSError, ConnectionRefusedError) as e:
                 logging.error(f"WebSocket connection error: {e}")
-                self.ws = None
 
                 reconnect_attempts += 1
                 if reconnect_attempts > MAX_RECONNECT_ATTEMPTS:
@@ -172,7 +171,6 @@ class WebSocketWorker:
                     retry_delay = min(retry_delay * 2, 30.0)
             except Exception as e:
                 logging.error(f"Unexpected WebSocket error: {e}", exc_info=True)
-                self.ws = None
                 if await self._interruptible_sleep(retry_delay):
                     return
 
@@ -195,27 +193,8 @@ class WebSocketWorker:
                 self.messages_sent += 1
                 self.command_queue.task_done()
 
-                buffer_size = self._get_write_buffer_size(ws)
-
-                if buffer_size > self.backpressure_threshold and not self.backpressure_active:
-                    self.backpressure_active = True
-                    self.backpressure_events += 1
-                    logging.warning(
-                        f"WebSocket backpressure START: {buffer_size} bytes buffered, "
-                        f"queue={self.command_queue.qsize()}, threshold={self.backpressure_threshold}"
-                    )
-                elif buffer_size <= self.backpressure_threshold and self.backpressure_active:
-                    self.backpressure_active = False
-                    logging.info(
-                        f"WebSocket backpressure CLEAR: {buffer_size} bytes buffered, "
-                        f"queue={self.command_queue.qsize()}"
-                    )
-
                 if self.messages_sent % 1000 == 0:
-                    logging.debug(
-                        f"WebSocket stats: sent={self.messages_sent}, "
-                        f"buffer={buffer_size}, queue={self.command_queue.qsize()}"
-                    )
+                    logging.debug(f"WebSocket stats: sent={self.messages_sent}, queue={self.command_queue.qsize()}")
 
             except websockets.exceptions.ConnectionClosed as e:
                 logging.warning(f"WebSocket connection closed: {e}")
@@ -246,13 +225,6 @@ class WebSocketWorker:
         except Exception as e:
             logging.error(f"Error receiving message: {e}")
 
-    def _get_write_buffer_size(self, ws) -> int:
-        """Return bytes waiting in the TCP write buffer, or 0 if unavailable."""
-        try:
-            return ws.transport.get_write_buffer_size()
-        except Exception:
-            return 0
-
 
 class AsyncWebSocketBridge:
     """
@@ -261,12 +233,18 @@ class AsyncWebSocketBridge:
     Queues messages from the main thread; the worker drains them asynchronously.
     """
 
-    def __init__(self, ws_url: str = "ws://localhost:80/websocket", backpressure_threshold: int = 8192):
+    def __init__(self, ws_url: str = "ws://localhost:80/websocket"):
         self.ws_url = ws_url
         self.command_queue: queue.Queue = queue.Queue()  # Unbounded - never drop blend mode messages
         self.received_queue: queue.Queue = queue.Queue()
-        self._worker = WebSocketWorker(ws_url, backpressure_threshold, self.command_queue, self.received_queue)
+        self._worker = WebSocketWorker(ws_url, self.command_queue, self.received_queue)
         self._thread: Optional[threading.Thread] = None
+
+    @property
+    def connected(self) -> bool:
+        """True while the worker holds a live connection. The connect scope owns the
+        handle, so this cannot latch."""
+        return self._worker.ws is not None
 
     def start(self):
         """Start background async worker thread."""
@@ -291,8 +269,8 @@ class AsyncWebSocketBridge:
         logging.info(f"WebSocket worker stopped (sent={self._worker.messages_sent})")
 
     def send_bpm(self, bpm: float) -> bool:
-        """Queue a BPM change. Returns False if backpressure is active."""
-        if self._worker.backpressure_active:
+        """Queue a BPM change. Returns False if there is no connection to send it over."""
+        if not self.connected:
             return False
         self.command_queue.put_nowait(f"transport-bpm {bpm}")
         self._worker.notify()
@@ -300,8 +278,8 @@ class AsyncWebSocketBridge:
 
     def send_parameter(self, instance_id: str, symbol: Symbol, value: float) -> bool:
         """Queue a parameter update. instance_id should be canonical (no leading slash).
-        Returns False if backpressure is active."""
-        if self._worker.backpressure_active:
+        Returns False if there is no connection to send it over."""
+        if not self.connected:
             return False
         self.command_queue.put_nowait(f"param_set /graph/{instance_id}/{symbol} {value}")
         self._worker.notify()
@@ -321,16 +299,12 @@ class AsyncWebSocketBridge:
         return self.command_queue.qsize()
 
     def get_stats(self) -> dict:
-        stats = {
+        return {
             "queue_depth": self.get_queue_depth(),
             "messages_sent": self._worker.messages_sent,
             "messages_received": self._worker.messages_received,
-            "backpressure_events": self._worker.backpressure_events,
-            "backpressure_active": self._worker.backpressure_active,
+            "connected": self.connected,
         }
-        if self._worker.ws:
-            stats["write_buffer_bytes"] = self._worker._get_write_buffer_size(self._worker.ws)
-        return stats
 
     def clear_queue(self) -> int:
         """Clear all pending messages from the queue, returning num cleared."""

@@ -501,7 +501,7 @@ def test_encoder_bpm_turn_without_websocket_bridge_falls_back_to_rest_post(v3_sy
         bpm_cc={"channel": int(channel), "control": int(cc), "hasRanges": True, "minimum": 20.0, "maximum": 280.0},
     )
 
-    # Mock send_bpm to return False (simulating backpressure/send failure)
+    # Mock send_bpm to return False (the bridge has no connection)
     ws_bridge.send_bpm = MagicMock(return_value=False)
     mock_post.reset_mock()
 
@@ -515,7 +515,7 @@ def test_encoder_bpm_turn_without_websocket_bridge_falls_back_to_rest_post(v3_sy
 
 
 def test_encoder_bpm_turn_does_not_post_when_websocket_accepts(v3_system: SystemFixture, make_plugin):
-    """The POST is a backpressure fallback, not a companion to the send — it blocks
+    """The POST is a fallback for a refused send, not a companion to it — it blocks
     the 10ms loop and an encoder spin calls it once per detent."""
     from pistomp.input.event import EncoderEvent
 

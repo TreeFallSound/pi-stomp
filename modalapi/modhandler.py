@@ -214,10 +214,7 @@ class Modhandler(Handler):
         self.jack_mute = JackMute()
 
         # WebSocket bridge for MOD-UI communication
-        self.ws_bridge = AsyncWebSocketBridge(
-            ws_url="ws://localhost:80/websocket",
-            backpressure_threshold=8192,  # 8 KB
-        )
+        self.ws_bridge = AsyncWebSocketBridge(ws_url="ws://localhost:80/websocket")
         self.ws_bridge.start()
         logging.info("WebSocket bridge started")
 
@@ -1854,7 +1851,7 @@ class Modhandler(Handler):
 
     def set_mod_tap_tempo(self, bpm: float | None) -> bool:
         # WebSocket first: _rest_post blocks the 10ms loop, and an encoder spin
-        # calls this once per detent. POST only when backpressure refused the send.
+        # calls this once per detent. POST only when the bridge has no connection.
         # Returns whether the value left, so a failed send rolls the LCD back.
         if bpm is None:
             return False

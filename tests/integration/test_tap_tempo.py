@@ -18,7 +18,7 @@ def test_set_mod_tap_tempo(modhandler_system: SystemFixture):
 
 
 def test_set_mod_tap_tempo_reports_failure_when_send_never_leaves(modhandler_system: SystemFixture):
-    """Backpressure plus a rejected POST means the value never left — commit
+    """A refused send plus a rejected POST means the value never left — commit
     relies on this False to roll the LCD back."""
     handler = modhandler_system.handler
     modhandler_system.ws_bridge.send_bpm = MagicMock(return_value=False)
@@ -29,8 +29,8 @@ def test_set_mod_tap_tempo_reports_failure_when_send_never_leaves(modhandler_sys
     assert handler.set_mod_tap_tempo(120) is False
 
 
-def test_set_mod_tap_tempo_falls_back_to_post_under_backpressure(modhandler_system: SystemFixture):
-    """A refused WebSocket send (backpressure) falls back to POST /set_bpm."""
+def test_set_mod_tap_tempo_falls_back_to_post_when_refused(modhandler_system: SystemFixture):
+    """A refused WebSocket send — the bridge is not connected — falls back to POST /set_bpm."""
     handler = modhandler_system.handler
     mock_post = modhandler_system.mock_post
     modhandler_system.ws_bridge.send_bpm = MagicMock(return_value=False)
