@@ -105,7 +105,6 @@ from pistomp.controller import ControlType
 from modalapi.version_check import DpkgDriftCheck
 
 from pistomp.controller_manager import ControllerManager
-from pistomp.controller import Controller
 from pistomp.current import Current
 from pistomp.encoder_controller import (
     ENCODER_FALLBACK_DEFAULT,
@@ -414,7 +413,7 @@ class Modhandler(Handler):
             # One transport per bound turn: the sink (CC to mod-host for a mapped
             # encoder, the WebSocket for :bpm) owns the send.
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
-            c.parameter.commit(new_value, self._sink_for(c.parameter, c))
+            c.parameter.commit(new_value, self._sink_for(c.parameter))
             self.lcd.display_parameter_value(c.parameter, new_value)
             return True
 
@@ -1209,26 +1208,24 @@ class Modhandler(Handler):
         # any real time settings
         self._controller_manager.bind(self.current)
 
-    def _sink_for(self, param: Parameter, controller: Controller | None = None) -> ParamSink | None:
-        """The upstream channel a param's commit rides, by provenance. None is
-        display-only: reconciled from mod-ui, never sent back — bpb/rolling when
-        unmapped (mod-ui rejects param_set on them) and an external footswitch
-        (its press path owns the CC). A param mapped to an encoder rides that
-        encoder's CC; :bpm is the exception — its range won't fit 7 bits, so it
-        keeps the WebSocket. Pass *controller* when the caller holds it (an
-        encoder turn); otherwise it's recovered from the binding."""
+    def _sink_for(self, param: Parameter) -> ParamSink | None:
+        """Where a changed value is sent. None means send nothing: the screen
+        shows the value, and only mod-ui changes it — bpb/rolling when unmapped
+        (mod-ui rejects param_set on them) and an external control, whose own
+        port owns the CC. Both bail below the encoder arm and above the
+        footswitch one, so a bound encoder still rides its CC and an external
+        footswitch does not."""
         if param.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID and param.symbol == BPM_SYMBOL:
             return self._publish_bpm
         if param.instance_id is None:
             return self._publish_audio
-        enc = controller if isinstance(controller, EncoderController) else None
-        if enc is None and param.binding is not None:
-            enc = self.hardware.controllers.get(param.binding)
-            enc = enc if isinstance(enc, EncoderController) else None
-        if enc is not None and enc.midi_CC is not None:
-            return functools.partial(self._publish_cc, enc)
+        control = self._current.control_for(param) if self._current is not None else None
+        if isinstance(control, EncoderController) and control.midi_CC is not None:
+            return functools.partial(self._publish_cc, control)
         if param.instance_id in (ExternalMidi.EXTERNAL_INSTANCE_ID, Pedalboard.TRANSPORT_INSTANCE_ID):
             return None
+        if isinstance(control, Footswitch) and control.midi_CC is not None:
+            return functools.partial(self._publish_switch_cc, control)
         return self._publish_plugin_param
 
     def _publish_bpm(self, param: Parameter) -> bool:
@@ -1243,6 +1240,17 @@ class Modhandler(Handler):
     def _publish_cc(self, controller: EncoderController, param: Parameter) -> bool:
         """Publish the parameter (to MOD-UI or anything else) via MIDI CC."""
         self._emit_midi(controller, controller.to_midi(param.value))
+        return True
+
+    def _publish_switch_cc(self, fs: Footswitch, param: Parameter) -> bool:
+        """A switch's CC has two codes, so it carries only the two ends of the
+        binding range. An edit that lands between them takes the WebSocket, or
+        mod-host would answer the screen with an endpoint. Decided here, not in
+        _sink_for, which runs before the commit writes the value."""
+        cc = fs.cc_for(param.value)
+        if cc is None:
+            return self._publish_plugin_param(param)
+        self._emit_midi(fs, cc)
         return True
 
     def _publish_plugin_param(self, param: Parameter) -> bool:
@@ -1403,18 +1411,9 @@ class Modhandler(Handler):
     #
     def toggle_plugin_bypass(self, plugin: Plugin) -> None:
         logging.debug("toggle_plugin_bypass")
-        if plugin is not None:
-            if plugin.has_footswitch:
-                for c in plugin.controllers:
-                    if isinstance(c, Footswitch):
-                        self._handle_footswitch(c, SwitchEventKind.PRESS, time.monotonic())
-                        return
-            # No echo arrives for a WS-initiated bypass, so the local write is the
-            # only thing that repaints (via the bypass subscription). Contrast with
-            # footswitches, which send MIDI CC → mod-host → feedback.
-            param = plugin.parameters.get(BYPASS_SYMBOL)
-            if param is not None:
-                plugin.toggle_bypass(self._sink_for(param))
+        param = plugin.parameters.get(BYPASS_SYMBOL)
+        if param is not None:
+            plugin.toggle_bypass(self._sink_for(param))
 
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
         self.lcd.update_footswitch(footswitch)

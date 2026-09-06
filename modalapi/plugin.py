@@ -62,7 +62,6 @@ class Plugin:
         self.bypass_indicator_xy: tuple[Point, Point] = ((0, 0), (0, 0))
         self.lcd_xyz: LcdPosition | None = None
         self.controllers: list[Controller] = []
-        self.has_footswitch: bool = False
         self.category: str | None = category
         self.uri: str | None = uri
         self.pedalboard_snapshot: dict[Symbol, float] = {}

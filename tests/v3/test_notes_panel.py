@@ -70,7 +70,6 @@ def make_notes_plugin(instance_id: str = "notes_1") -> Plugin:
         customization=lookup(NOTES_URI),
         extra_data=NotesData(text=_NOTES_TEXT),
     )
-    plugin.has_footswitch = False
     plugin.pedalboard_snapshot = {BYPASS_SYMBOL: 0.0}
     return plugin
 

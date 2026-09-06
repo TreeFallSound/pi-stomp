@@ -112,10 +112,23 @@ uv-managed venv. Don't try to pip-install the system ones.
   socket, and mod-host emits no `param_set` for bypasses it received from mod-ui. So
   that path must update local state itself: `Plugin.toggle_bypass` commits, which
   writes and publishes as one act and reverts if the send never leaves. A
-  footswitch-bound plugin is the opposite: `toggle_plugin_bypass` routes through the
-  footswitch press path, which sends MIDI CC → mod-host → feedback echo, and that echo
-  reconciles it. The asymmetry is deliberate, not a bug to "fix." Every bypass — LCD
-  tile, plugin panel button, footswitch — goes through `Handler.toggle_plugin_bypass`.
+  footswitch-bound plugin is the opposite: `_sink_for` routes its commit out as MIDI
+  CC → mod-host → feedback echo, and that echo reconciles it. The asymmetry is one of
+  *transport*, chosen by `_sink_for`, and it is deliberate.
+
+  Dispatch carries no such fork. Every UI bypass — LCD tile, plugin panel button — is
+  one commit on `:bypass`, and the keycap follows because `StatefulController`
+  subscribes to the settled value. Never reach the wire by faking a press: the row
+  that wins that switch need not be the bypass. The press is its own path — a preview
+  plus the emit in `_fire_row`'s `ParamEffect` arm — because it already knows its
+  transport and has no sink to choose.
+
+- **A switch's CC carries only the two ends of the binding range.** mod-ui's advanced
+  MIDI-learn menu puts a footswitch on a continuous parameter with its own min/max,
+  and a press alternates between exactly those. A UI edit that lands *between* them
+  has no CC code, so `_publish_switch_cc` sends it over the WebSocket instead — else
+  mod-host answers an endpoint against a screen showing the real value. Pinned by the
+  endpoint pair in `tests/v3/test_sink_routing.py`.
 
 - **`loading_start` opens a window that suppresses outbound sends; `loading_end`
   closes it.** Both come from mod-ui, in pairs, from a board load and from the

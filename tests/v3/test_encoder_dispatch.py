@@ -159,7 +159,7 @@ def test_parameter_dialog_nav_change_emits_cc_for_external_param(v3_system: Syst
 
     enc1 = _enc(hw, 1)
     ext_param = hw.create_external_parameter("virtual", enc1.midi_channel, enc1.midi_CC)
-    enc1.bind_to_parameter(ext_param)
+    handler.current.bind(enc1, ext_param)
     binding = f"{enc1.midi_channel}:{enc1.midi_CC}"
     hw.controllers[binding] = enc1
     handler._controller_manager.effective_table = ContextStack(
@@ -221,7 +221,7 @@ def test_tweak_bound_to_different_param_does_not_corrupt_it(v3_system: SystemFix
     enc1 = _enc(hw, 1)
     # Param B: the pedalboard-bound param tweak1 normally drives.
     bound_param = hw.create_external_parameter("virtual", enc1.midi_channel, enc1.midi_CC)
-    enc1.bind_to_parameter(bound_param)
+    handler.current.bind(enc1, bound_param)
     binding = f"{enc1.midi_channel}:{enc1.midi_CC}"
     hw.controllers[binding] = enc1
     handler._controller_manager.effective_table = ContextStack(
@@ -310,7 +310,7 @@ def test_tweak_bound_to_same_param_as_dialog_edits_once(v3_system: SystemFixture
 
     enc1 = _enc(hw, 1)
     ext_param = hw.create_external_parameter("virtual", enc1.midi_channel, enc1.midi_CC)
-    enc1.bind_to_parameter(ext_param)
+    handler.current.bind(enc1, ext_param)
     binding = f"{enc1.midi_channel}:{enc1.midi_CC}"
     hw.controllers[binding] = enc1
     handler._controller_manager.effective_table = ContextStack(

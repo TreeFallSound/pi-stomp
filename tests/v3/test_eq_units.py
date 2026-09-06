@@ -52,7 +52,6 @@ def _finish(instance_id: str, params: dict[Symbol, Parameter], uri: str) -> Plug
     bypass: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
     params[BYPASS_SYMBOL] = Parameter(bypass, False, None, instance_id)
     plugin = Plugin(instance_id, params, {}, "Filter", uri=uri)
-    plugin.has_footswitch = False
     plugin.pedalboard_snapshot = {s: float(p.value or 0.0) for s, p in params.items()}
     return plugin
 

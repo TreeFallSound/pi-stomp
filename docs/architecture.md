@@ -225,6 +225,18 @@ received. So this path commits (`Parameter.commit`): it writes and paints
 immediately, publishes over the WebSocket, and reverts if the send never left the
 box — during a pedalboard load, or under backpressure.
 
+A footswitch-bound plugin differs only in transport: `_sink_for` finds the bound
+`Footswitch` and publishes the commit as MIDI CC, so mod-host's echo reconciles it.
+Both are one commit on `:bypass`, and the keycap and LED follow from
+`StatefulController`'s settled subscription rather than from having run a press. The
+UI never fakes a press — the row that wins that switch need not be the bypass.
+
+That CC has two codes, so it reaches only the two ends of the binding range (the
+min/max of mod-ui's advanced MIDI-learn menu, which is what a press alternates
+between). `_publish_switch_cc` sends anything between them over the WebSocket
+instead. The choice is made at publish time, not in `_sink_for`, which runs before
+the commit writes the value.
+
 ### Backpressure
 
 `command_queue` is unbounded — never drops blend-mode messages. If the TCP write

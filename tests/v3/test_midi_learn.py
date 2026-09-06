@@ -31,7 +31,7 @@ def test_v3_midi_learn_binds_footswitch_live(v3_system: SystemFixture, make_plug
     fs0 = hw.footswitches[0]
     channel, cc = _binding_for(hw, fs0).split(":")
 
-    plugin = make_plugin("noise", category="Utility", bypassed=False, has_footswitch=False)
+    plugin = make_plugin("noise", category="Utility", bypassed=False)
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -41,7 +41,7 @@ def test_v3_midi_learn_binds_footswitch_live(v3_system: SystemFixture, make_plug
     handler.poll_ws_messages()
 
     assert fs0.parameter is plugin.parameters[BYPASS_SYMBOL]
-    assert plugin.has_footswitch is True
+    assert fs0 in plugin.controllers
     snapshot("bound")
 
 
@@ -57,7 +57,7 @@ def test_v3_midi_learn_replay_is_idempotent(v3_system: SystemFixture, make_plugi
     fs0 = hw.footswitches[0]
     channel, cc = _binding_for(hw, fs0).split(":")
 
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False)
+    plugin = make_plugin("noise", bypassed=False)
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -83,7 +83,7 @@ def test_v3_param_set_syncs_bound_footswitch(v3_system: SystemFixture, make_plug
     channel, cc = _binding_for(hw, fs0).split(":")
 
     solo = make_parameter("Solo", "mixer", value=0.0)
-    plugin = make_plugin("mixer", bypassed=False, has_footswitch=False, parameters={"solo": solo})
+    plugin = make_plugin("mixer", bypassed=False, parameters={"solo": solo})
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -113,7 +113,7 @@ def test_v3_midi_learn_applies_custom_sub_range(v3_system: SystemFixture, make_p
 
     gain = make_parameter("Gain", "noise", value=0.25)
     assert (gain.minimum, gain.maximum) == (0.0, 1.0)
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
     handler.current.pedalboard.plugins = [plugin]
 
     ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.0 0.5")
@@ -138,7 +138,7 @@ def test_v3_midi_learn_sub_range_saga(v3_system: SystemFixture, make_plugin, mak
     channel, cc = _binding_for(hw, enc1).split(":")
 
     gain = make_parameter("Gain", "noise", value=0.15)
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -180,7 +180,7 @@ def test_v3_log_parameter_dialog_paints_geometric_curve(v3_system: SystemFixture
     assert handler.current and handler.lcd
 
     freq = Parameter(LOG_PORT, 155.0, None, "eq")  # geometric midpoint: half the bars fill
-    plugin = make_plugin("eq", bypassed=False, has_footswitch=False, parameters={"hpfreq": freq})
+    plugin = make_plugin("eq", bypassed=False, parameters={"hpfreq": freq})
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -204,7 +204,7 @@ def test_v3_midi_learn_logarithmic_cc_round_trips(v3_system: SystemFixture, make
     channel, cc = _binding_for(hw, enc1).split(":")
 
     freq = Parameter(LOG_PORT, 400.0, None, "eq")
-    plugin = make_plugin("eq", bypassed=False, has_footswitch=False, parameters={"hpfreq": freq})
+    plugin = make_plugin("eq", bypassed=False, parameters={"hpfreq": freq})
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -237,7 +237,7 @@ def test_v3_log_parameter_commit_emits_tapered_cc(v3_system: SystemFixture, make
     channel, cc = _binding_for(hw, enc1).split(":")
 
     freq = Parameter(LOG_PORT, 30.0, None, "eq")
-    plugin = make_plugin("eq", bypassed=False, has_footswitch=False, parameters={"hpfreq": freq})
+    plugin = make_plugin("eq", bypassed=False, parameters={"hpfreq": freq})
     handler.current.pedalboard.plugins = [plugin]
     handler.bind_current_pedalboard()
 
@@ -274,7 +274,7 @@ def test_v3_midi_learn_external_controller_is_refused(v3_system: SystemFixture, 
     parameter_before = enc1.parameter
 
     gain = make_parameter("Gain", "noise", value=0.5)
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
     handler.current.pedalboard.plugins = [plugin]
 
     ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.0 1.0")
@@ -298,14 +298,14 @@ def test_v3_midi_learn_unknown_instance_is_ignored(v3_system: SystemFixture, mak
     fs0 = hw.footswitches[0]
     channel, cc = _binding_for(hw, fs0).split(":")
 
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False)
+    plugin = make_plugin("noise", bypassed=False)
     handler.current.pedalboard.plugins = [plugin]
 
     ws_bridge.inject(f"midi_map /graph/other :bypass {channel} {cc} 0.0 1.0")
     handler.poll_ws_messages()
 
     assert fs0.parameter is None
-    assert plugin.has_footswitch is False
+    assert fs0 not in plugin.controllers
 
 
 def test_v3_midi_learn_adds_table_row_for_encoder(v3_system: SystemFixture, make_plugin, make_parameter):
@@ -322,7 +322,7 @@ def test_v3_midi_learn_adds_table_row_for_encoder(v3_system: SystemFixture, make
     channel, cc = _binding_for(hw, enc1).split(":")
 
     gain = make_parameter("Gain", "noise", value=0.5)
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
     handler.current.pedalboard.plugins = [plugin]
 
     ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.0 1.0")
@@ -351,7 +351,7 @@ def test_v3_midi_learn_reroutes_an_already_bound_pedalboard(v3_system: SystemFix
     channel, cc = _binding_for(hw, enc1).split(":")
 
     gain = make_parameter("Gain", "noise", value=0.5)
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
     handler.current.pedalboard.plugins = [plugin]
     handler.bind_current_pedalboard()
 
@@ -385,7 +385,7 @@ def test_v3_midi_unlearn_encoder_clears_binding_and_updates_lcd(
     channel, cc = binding_id.split(":")
 
     gain = make_parameter("Gain", "noise", value=0.5)
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -414,7 +414,8 @@ def test_v3_midi_unlearn_encoder_clears_binding_and_updates_lcd(
 
 
 def test_v3_midi_unlearn_footswitch_clears_binding(v3_system: SystemFixture, make_plugin, snapshot):
-    """Removing a footswitch MIDI mapping in MOD-UI clears footswitch state and has_footswitch flag."""
+    """Removing a footswitch MIDI mapping in MOD-UI clears the footswitch state
+    and detaches it from the plugin."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -425,7 +426,7 @@ def test_v3_midi_unlearn_footswitch_clears_binding(v3_system: SystemFixture, mak
     binding_id = _binding_for(hw, fs0)
     channel, cc = binding_id.split(":")
 
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False)
+    plugin = make_plugin("noise", bypassed=False)
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -433,7 +434,7 @@ def test_v3_midi_unlearn_footswitch_clears_binding(v3_system: SystemFixture, mak
     ws_bridge.inject(f"midi_map /graph/noise :bypass {channel} {cc} 0.0 1.0")
     handler.poll_ws_messages()
     assert fs0.parameter is plugin.parameters[BYPASS_SYMBOL]
-    assert plugin.has_footswitch is True
+    assert fs0 in plugin.controllers
     snapshot("bound")
 
     # Unmap in MOD-UI
@@ -442,7 +443,7 @@ def test_v3_midi_unlearn_footswitch_clears_binding(v3_system: SystemFixture, mak
     assert fs0.parameter is None
     assert fs0.display_label is None
     assert fs0.category is None
-    assert plugin.has_footswitch is False
+    assert fs0 not in plugin.controllers
     snapshot("unbound")
 
 
@@ -470,7 +471,7 @@ def test_v3_midi_unlearn_restores_footswitch_default_action(v3_system: SystemFix
         rows = handler.effective_table.layers[0].rows.get((ControlClass.FOOTSWITCH, EventKind.PRESS), [])
         return [r for r in rows if r.control.id == binding_id]
 
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False)
+    plugin = make_plugin("noise", bypassed=False)
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -512,7 +513,7 @@ def test_v3_midi_learn_updated_binding_range_on_same_parameter(v3_system: System
     channel, cc = _binding_for(hw, enc1).split(":")
 
     gain = make_parameter("Gain", "noise", value=0.5)
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
     handler.current.pedalboard.plugins = [plugin]
 
     # Initial mapping: sub-range 0.0 .. 0.5
@@ -547,7 +548,7 @@ def test_v3_midi_unlearn_restores_declared_range(v3_system: SystemFixture, make_
     channel, cc = _binding_for(hw, enc1).split(":")
 
     gain = make_parameter("Gain", "noise", value=0.5)
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
     handler.current.pedalboard.plugins = [plugin]
 
     ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.1 0.9")
@@ -580,7 +581,7 @@ def test_v3_midi_learn_free_cc_preserves_sub_range(v3_system: SystemFixture, mak
     channel, cc = binding.split(":")
 
     gain = make_parameter("Gain", "noise", value=0.5)
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False, parameters={"gain": gain})
+    plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
     handler.current.pedalboard.plugins = [plugin]
 
     ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.0 0.5")
@@ -608,7 +609,7 @@ def test_v3_midi_learn_moving_footswitch_binding_clears_old_lcd_display(v3_syste
     ch0, cc0 = _binding_for(hw, fs0).split(":")
     ch1, cc1 = _binding_for(hw, fs1).split(":")
 
-    plugin = make_plugin("noise", bypassed=False, has_footswitch=False)
+    plugin = make_plugin("noise", bypassed=False)
     handler.current.pedalboard.plugins = [plugin]
     lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     lcd.draw_main_panel()
@@ -630,7 +631,6 @@ def test_v3_midi_learn_moving_footswitch_binding_clears_old_lcd_display(v3_syste
     assert fs0.parameter is None
     assert fs0.display_label is None
     assert fs0.category is None
-    assert plugin.has_footswitch is True
     assert plugin.controllers.count(fs0) == 0
     assert plugin.controllers.count(fs1) == 1
 

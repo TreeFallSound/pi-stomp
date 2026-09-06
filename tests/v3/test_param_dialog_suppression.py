@@ -1,7 +1,6 @@
-"""A NAV edit in the parameter dialog is the one path that goes through
-``Parameter.commit``, which rolls back when the send does not leave. Outbound
-suppression that outlives its load therefore reads on the LCD as a dialog that
-opens but will not move."""
+"""Outbound suppression that outlives its load reads on the LCD as a parameter
+dialog that opens but will not move: ``Parameter.commit`` rolls back when the
+send does not leave."""
 
 from __future__ import annotations
 
