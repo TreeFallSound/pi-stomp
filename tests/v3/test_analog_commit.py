@@ -114,3 +114,19 @@ def test_unbound_pedal_bar_projects_raw_adc(v3_system: SystemFixture):
 
     icon = next(i for i in handler.lcd.w_controls if i.object is pedal)
     assert icon.progress == pytest.approx(as_midi_value(300) / 127.0)
+
+
+def test_board_load_syncs_analog_after_loading_window_closes(v3_system, monkeypatch):
+    handler = v3_system.handler
+    pedalboard = handler.pedalboards["/path/to/rig.pedalboard"]
+    observed_loading: list[bool] = []
+
+    def sync_analog_controls() -> None:
+        observed_loading.append(handler._is_pedalboard_loading)
+
+    monkeypatch.setattr(handler.hardware, "sync_analog_controls", sync_analog_controls)
+    handler._is_pedalboard_loading = True
+
+    handler.set_current_pedalboard(pedalboard)
+
+    assert observed_loading == [False]

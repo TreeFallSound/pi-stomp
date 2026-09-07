@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Removed the tap tempo REST fallback, as we now expect the websocket bridge to always be available.
 ### Fixed
 - The parameter dialog on the LCD sometimes did not change values due to a race condition with respect to MOD-UI's `last.json`. pi-Stomp then did not send parameter changes to MOD-UI until you selected a different pedalboard. Parameters on a knob or an encoder continued to work, because they send MIDI CC.
 - The LCD showed a bypass that MOD-UI did not receive, if you tapped it while a pedalboard loaded. The LCD now keeps the last value that MOD-UI confirmed.

@@ -402,6 +402,17 @@ def test_connection_scope_clears_the_handle(monkeypatch):
     assert worker.ws is None
 
 
+def test_first_connection_is_not_counted_as_reconnect(monkeypatch):
+    bridge = AsyncWebSocketBridge(ws_url="ws://localhost/test")
+    worker = bridge._worker
+    worker.running = True
+    monkeypatch.setattr(websockets, "connect", lambda *a, **k: _FakeConnect(_ClosingWs(worker)))
+
+    asyncio.run(worker._async_worker())
+
+    assert bridge.get_reconnects_since_last_call() == 0
+
+
 def test_reconnect_discards_queued_messages(monkeypatch):
     """A value queued before the connect is dropped, not sent. Section 6 of the plan:
     closing this window needs a queue that survives a reconnect."""
