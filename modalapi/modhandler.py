@@ -101,7 +101,8 @@ from modalapi.ws_protocol import (
 )
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 import pistomp.config as config
-from pistomp.controller import ControlType
+from pistomp.controller import ControlType, Controller
+from pistomp.analogmidicontrol import AnalogMidiControl
 from modalapi.version_check import DpkgDriftCheck
 
 from pistomp.controller_manager import ControllerManager
@@ -246,6 +247,8 @@ class Modhandler(Handler):
         self.blend_modes: dict[str, Any] = {}  # {snapshot_name: BlendMode}
         self.active_blend_mode: Any | None = None  # Currently active blend mode
         self._blend_layer = ContextLayer(ref=ContextRef(kind=ContextKind.BLEND))
+        self._panel_layer = ContextLayer(ref=ContextRef(kind=ContextKind.PANEL, name="active_panel"))
+        self._context_stack = ContextStack(layers=[])
 
         # Footswitch longpress/chord resolver (rebuilt on pedalboard change)
         self.chord_helper = FootswitchChords()
@@ -345,18 +348,16 @@ class Modhandler(Handler):
         return False
 
     def _fire_blend_row(self, event: ControllerEvent) -> bool:
-        """Resolve the effective table (pedalboard + blend layers) for this
-        control; fire only if the winner is a BlendEffect. A pedalboard row
-        winning (or no row at all) falls through to the legacy dispatch below,
-        unchanged."""
+        """Resolve the shared context stack for this control; fire only if the
+        winner is a BlendEffect. A pedalboard row winning (or no row at all)
+        falls through to the legacy dispatch below."""
         if not isinstance(event, (AnalogEvent, EncoderEvent)):
             return False
         c = event.controller
         if c.midi_CC is None:
             return False
         control = ControlRef(cls=ControlClass.ANALOG, id=f"{c.midi_channel}:{c.midi_CC}")
-        stack = ContextStack(layers=[*self._controller_manager.effective_table.layers, self._blend_layer])
-        decl = stack.resolve(control, EventKind.ROTATE)
+        decl = self._context_stack.resolve(control, EventKind.ROTATE)
         if decl is None or not isinstance(decl.effects[0], BlendEffect):
             return False
         input_controller = decl.effects[0].input_controller
@@ -380,6 +381,20 @@ class Modhandler(Handler):
                 )
             )
         self._blend_layer = layer
+        self._recompose_context_stack()
+
+    def _recompose_context_stack(self) -> None:
+        self._context_stack.layers = [*self.effective_table.layers, self._blend_layer, self._panel_layer]
+
+    def resolve_binding(
+        self, rows: "tuple[BindingDecl, ...]", control: ControlRef, event_kind: EventKind
+    ) -> "BindingDecl | None":
+        layer = ContextLayer(ref=ContextRef(kind=ContextKind.PANEL, name="active_panel"))
+        for decl in rows:
+            layer.add(decl)
+        self._panel_layer = layer
+        self._recompose_context_stack()
+        return self._context_stack.resolve(control, event_kind)
 
     def _handle_encoder(self, event: EncoderEvent) -> bool:
         c = event.controller
@@ -392,11 +407,10 @@ class Modhandler(Handler):
 
         if c.type == ControlType.VOLUME and c.parameter is not None:
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
-            c.parameter.preview(new_value)
-            self.audiocard.set_volume_parameter(self.audiocard.MASTER, new_value)
+            c.parameter.commit(new_value, self._sink_for(c.parameter))
             d = self.lcd.draw_audio_parameter_dialog(c.parameter, self.audio_parameter_commit)
             if d is not None:
-                d.update_value(new_value)
+                d.update_value(c.parameter.value)
             return True
 
         # Resolve the binding row for badge shadow_state (side effect), even
@@ -431,7 +445,15 @@ class Modhandler(Handler):
         return value
 
     def _handle_analog(self, event: AnalogEvent) -> bool:
-        self._emit_midi(event.controller, event.midi_value)
+        c = event.controller
+        param = c.parameter
+        if param is not None and not self.hardware.is_external(c):
+            position = max(0.0, min(1.0, event.raw_value / 1023.0))
+            value = util.from_normalized(position, param.minimum, param.maximum, param.is_logarithmic)
+            param.commit(value, self._sink_for(param))
+            return True
+        # external/unbound: the raw CC is the whole send, no param to reconcile
+        self._emit_midi(c, event.midi_value)
         return True
 
     def _handle_switch(self, event: SwitchEvent) -> bool:
@@ -953,11 +975,27 @@ class Modhandler(Handler):
     def poll_ws_messages(self):
         """Drain inbound WS messages (fast ~10ms cadence). Main-thread only.
         Must not touch next_pedalboard_preset_index (owned by the file-watch path)."""
-        for msg in self.ws_bridge.get_received_messages():
+        parsed: list[tuple[str, WebSocketMessage]] = []
+        for raw in self.ws_bridge.get_received_messages():
             try:
-                self._handle_ws_message(parse_message(msg))
+                parsed.append((raw, parse_message(raw)))
             except Exception as e:
-                logging.error(f"Error handling WebSocket message '{msg}': {e}")
+                logging.error(f"Error parsing WebSocket message '{raw}': {e}")
+
+        # Keep only the last value per (instance, symbol): the port is
+        # level-sampled and the feed is in order, so the newest is the truth.
+        last: dict[tuple[str, Symbol], int] = {}
+        for i, (_, msg) in enumerate(parsed):
+            if isinstance(msg, ParamSetMessage):
+                last[(msg.instance, msg.symbol)] = i
+
+        for i, (raw, msg) in enumerate(parsed):
+            if isinstance(msg, ParamSetMessage) and last[(msg.instance, msg.symbol)] != i:
+                continue
+            try:
+                self._handle_ws_message(msg)
+            except Exception as e:
+                logging.error(f"Error handling WebSocket message '{raw}': {e}")
 
     def poll_modui_changes(self):
         """Poll for changes from MOD-UI: websockets and file watching"""
@@ -1215,6 +1253,7 @@ class Modhandler(Handler):
         # The pedalboard data has already been loaded, but this will overlay
         # any real time settings
         self._controller_manager.bind(self.current)
+        self._recompose_context_stack()
 
     def _sink_for(self, param: Parameter) -> ParamSink | None:
         """Where a changed value is sent. None means send nothing: the screen
@@ -1232,6 +1271,8 @@ class Modhandler(Handler):
             return functools.partial(self._publish_cc, control)
         if param.instance_id in (ExternalMidi.EXTERNAL_INSTANCE_ID, Pedalboard.TRANSPORT_INSTANCE_ID):
             return None
+        if isinstance(control, AnalogMidiControl) and control.midi_CC is not None:
+            return functools.partial(self._publish_cc, control)
         if isinstance(control, Footswitch) and control.midi_CC is not None:
             return functools.partial(self._publish_switch_cc, control)
         return self._publish_plugin_param
@@ -1245,16 +1286,18 @@ class Modhandler(Handler):
         self.audio_parameter_commit(param.symbol, param.value)
         return True
 
-    def _publish_cc(self, controller: EncoderController, param: Parameter) -> bool:
-        """Publish the parameter (to MOD-UI or anything else) via MIDI CC."""
+    def _publish_cc(self, controller: Controller, param: Parameter) -> bool:
+        """Send the value as a MIDI CC. Refused during a load, like param_set."""
+        if self._is_pedalboard_loading:
+            return False
         self._emit_midi(controller, controller.to_midi(param.value))
         return True
 
     def _publish_switch_cc(self, fs: Footswitch, param: Parameter) -> bool:
-        """A switch's CC has two codes, so it carries only the two ends of the
-        binding range. An edit that lands between them takes the WebSocket, or
-        mod-host would answer the screen with an endpoint. Decided here, not in
-        _sink_for, which runs before the commit writes the value."""
+        # The CC carries only the range endpoints; a value between them has no
+        # code and takes the WebSocket instead. Refused during a load.
+        if self._is_pedalboard_loading:
+            return False
         cc = fs.cc_for(param.value)
         if cc is None:
             return self._publish_plugin_param(param)
@@ -1268,6 +1311,7 @@ class Modhandler(Handler):
 
     def _rebind_pedalboard(self) -> None:
         self._controller_manager.bind(self._current)
+        self._recompose_context_stack()
         self.lcd.draw_main_panel()
         if self._current is not None:
             self.lcd.draw_analog_assignments(self.current.analog_controllers)

@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 from typing_extensions import override
 from abc import ABC
 from contextlib import contextmanager
@@ -31,7 +31,7 @@ from uilib.misc import InputEvent, trace
 from uilib.paint import PaintContext, _pg_rect
 
 from pistomp.controller import ControlType
-from common.contexts import BindingDecl
+from common.contexts import BindingDecl, ControlRef, EventKind
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.input.sink import InputSink
 
@@ -246,9 +246,17 @@ class Panel(ContainerWidget, InputSink):
 
     def declare_bindings(self) -> tuple[BindingDecl, ...]:
         """This panel's own TWEAK/VOLUME(opt-in)/FOOTSWITCH(opt-in) rows.
-        Base returns (); override to declare bindings resolved via
-        pistomp.input.dispatch.resolve_local/fire."""
+        Base returns (); override to declare bindings resolved via the shared
+        ContextStack and fired via pistomp.input.dispatch.fire."""
         return ()
+
+    def _resolve_binding(
+        self, rows: tuple[BindingDecl, ...], control: ControlRef, event_kind: EventKind
+    ) -> BindingDecl | None:
+        stack = self.parent
+        if isinstance(stack, PanelStack) and stack.resolve_binding is not None:
+            return stack.resolve_binding(rows, control, event_kind)
+        return None
 
     def wants_fast_tick(self) -> bool:
         """Returns True iff this panel renders at a high refresh rate."""
@@ -450,6 +458,9 @@ class PanelStack(ContainerWidget):
         self.capture_callback = None
         self._batching = False
         self._frozen = False
+        self.resolve_binding: Optional[
+            Callable[[tuple[BindingDecl, ...], ControlRef, EventKind], Optional[BindingDecl]]
+        ] = None
 
     def freeze(self):
         """Stop pushing to the LCD. Panels still tick, pop and destroy; nothing reaches the screen."""

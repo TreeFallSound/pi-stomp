@@ -176,7 +176,7 @@ class ContextLayer:
     def add(self, decl: BindingDecl) -> None:
         """Register a row. Each row states its own context,
         which is what makes aggregating already-authored rows into
-        an ad hoc layer (see dispatch.resolve_local) safe."""
+        a layer (see Modhandler.resolve_binding) safe."""
         if (
             decl.control.cls is ControlClass.VOLUME
             and decl.context.kind is ContextKind.PANEL

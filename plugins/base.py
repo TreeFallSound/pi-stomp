@@ -64,7 +64,7 @@ from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
 from common.parameter_steps import ParameterSteps, effective_multiplier
 from modalapi.plugin import Plugin
 from pistomp.controller import ControlType
-from pistomp.input.dispatch import MultiSelectable, Selectable, fire, resolve_local
+from pistomp.input.dispatch import MultiSelectable, Selectable, fire
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent, SwitchEventKind
 from pistomp.handler import Handler
 from uilib.glyphs.badge import BadgeGlyph
@@ -190,7 +190,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
         rows = self.declare_bindings()
         control_id = event.controller.id
         for cls in (ControlClass.TWEAK, ControlClass.VOLUME):
-            decl = resolve_local(rows, ControlRef(cls=cls, id=control_id), EventKind.ROTATE)
+            decl = self._resolve_binding(rows, ControlRef(cls=cls, id=control_id), EventKind.ROTATE)
             if decl is not None:
                 return fire(decl, self, event)
         return False

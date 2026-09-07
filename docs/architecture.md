@@ -228,7 +228,7 @@ box — during a pedalboard load, or while the bridge is not connected.
 A footswitch-bound plugin differs only in transport: `_sink_for` finds the bound
 `Footswitch` and publishes the commit as MIDI CC, so mod-host's echo reconciles it.
 Both are one commit on `:bypass`, and the keycap and LED follow from
-`StatefulController`'s settled subscription rather than from having run a press. The
+`StatefulController`'s committed subscription rather than from having run a press. The
 UI never fakes a press — the row that wins that switch need not be the bypass.
 
 That CC has two codes, so it reaches only the two ends of the binding range (the
@@ -430,7 +430,8 @@ reads the ADC and sends current position on pedalboard load.
 - `common/contexts.py` — Binding declaration schema (`ControlClass`, `Effect` union,
   `BindingDecl`) + the precedence resolver (`ContextStack`)
 - `common/param_roles.py` — `ParamRole` vocabulary for selection-dependent edit step math
-- `pistomp/input/dispatch.py` — Panel-local binding resolution (`resolve_local`/`fire`)
+- `pistomp/input/dispatch.py` — Panel-local effect firing (`fire`); binding
+  resolution goes through the shared `ContextStack` (`Modhandler._context_stack`)
 - `pistomp/controller.py`, `controller_manager.py` — Controller base + pedalboard binding
   (also builds the pedalboard-level layer of the effective binding table: plugin
   params, external CCs, encoder longpress, and footswitch short-press/relay actions)

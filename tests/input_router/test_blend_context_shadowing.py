@@ -37,6 +37,8 @@ def _encoder(midi_CC=70, midi_channel=0, id_=1):
 def _handler_with_pedalboard_row(control_id: str) -> tuple[Modhandler, ContextLayer]:
     h = object.__new__(Modhandler)
     h._blend_layer = ContextLayer(ref=ContextRef(kind=ContextKind.BLEND))
+    h._panel_layer = ContextLayer(ref=ContextRef(kind=ContextKind.PANEL, name="active_panel"))
+    h._context_stack = ContextStack(layers=[])
     pedalboard_layer = ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD))
     pedalboard_layer.add(
         BindingDecl(

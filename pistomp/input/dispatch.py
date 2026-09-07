@@ -15,25 +15,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Panel-local binding resolution and effect firing — see "Where a panel
-plugs in" in pistomp/input/README.md.
-
-Scoped to one panel's own rows, no cross-context chain — a panel only ever
-competes with itself. Cross-context resolution (pedalboard rows, blend) goes
-through the same ContextStack.resolve directly (see ControllerManager.bind,
-Modhandler._fire_blend_row)."""
+"""Panel-local effect firing — see "Where a panel plugs in" in
+pistomp/input/README.md. Binding resolution goes through the one shared
+ContextStack (Modhandler._context_stack), reached from a panel via its
+PanelStack's injected resolver."""
 
 from typing import Protocol, runtime_checkable
 
 from common.contexts import (
     AudioCardEffect,
     BindingDecl,
-    ContextKind,
-    ContextLayer,
-    ContextRef,
-    ContextStack,
-    ControlRef,
-    EventKind,
     NoneEffect,
     ParamEffect,
     SelectionEditEffect,
@@ -66,15 +57,6 @@ class PanelOps(Protocol):
     def sel_ref(self) -> object: ...
 
     def edit_symbol(self, symbol: Symbol, rotations: int, multiplier: float = 1.0) -> bool: ...
-
-
-def resolve_local(rows: tuple[BindingDecl, ...], control: ControlRef, event_kind: EventKind) -> BindingDecl | None:
-    """Resolve one panel's own declared rows — no chain, no other contexts."""
-    layer = ContextLayer(ref=ContextRef(kind=ContextKind.PANEL))
-    for decl in rows:
-        layer.rows.setdefault((decl.control.cls, decl.event_kind), []).append(decl)
-    stack = ContextStack(layers=[layer])
-    return stack.resolve(control, event_kind)
 
 
 def fire(decl: BindingDecl, ops: PanelOps, event: EncoderEvent) -> bool:

@@ -79,15 +79,15 @@ def declare_bindings(self) -> tuple[BindingDecl, ...]:
 ```
 
 `PluginPanel.on_event` (`plugins/base.py`) is the base implementation every
-migrated panel gets for free: for a `TWEAK` or `VOLUME` control, it calls
-`pistomp/input/dispatch.py`'s `resolve_local(rows, control, event_kind)` —
-which walks just *this panel's own* declared rows (no cross-context chain;
-a panel only ever competes with itself) — and `fire(decl, self, event)` to
-execute the winner's effects. `fire` reaches into the panel through
-`PanelOps`, a small structural `Protocol` (`sel_ref`, `edit_symbol`) rather
-than the concrete `Panel` type — `pistomp/input` cannot import `uilib.Panel`
-back without creating a cycle (`uilib` already imports `pistomp.input.event`/
-`sink`).
+migrated panel gets for free: for a `TWEAK` or `VOLUME` control it resolves
+the control against the one shared `ContextStack` — reached from the panel via
+its `PanelStack`'s injected `resolve_binding` (whose active-panel layer the
+mediator keeps synced to the current panel's `declare_bindings()`) — and calls
+`fire(decl, self, event)` to execute the winner's effects. `fire` reaches into
+the panel through `PanelOps`, a small structural `Protocol` (`sel_ref`,
+`edit_symbol`) rather than the concrete `Panel` type — `pistomp/input` cannot
+import `uilib.Panel` back without creating a cycle (`uilib` already imports
+`pistomp.input.event`/`sink`).
 
 A panel only needs real imperative `on_event` when it's a genuine state
 machine, not a binding set — the NAM capture flow

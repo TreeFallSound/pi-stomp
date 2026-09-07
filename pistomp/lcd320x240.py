@@ -204,6 +204,7 @@ class Lcd:
 
         # panels
         self.pstack = PanelStack(display, image_format="RGB", use_dimming=True)
+        self.pstack.resolve_binding = self.handler.resolve_binding
         self.main_panel = Panel(
             box=Box.xywh(0, 0, self.display_width, self.display_height), persist_on_board_change=True
         )
@@ -318,7 +319,11 @@ class Lcd:
 
                 midi_value = None
                 if isinstance(icon.object, AnalogMidiControl):
-                    midi_value = as_midi_value(icon.object.last_read)
+                    ac = icon.object
+                    if ac.parameter is not None and not self.handler.hardware.is_external(ac):
+                        midi_value = ac.bar_midi_value()
+                    else:
+                        midi_value = as_midi_value(ac.last_read)
                 elif isinstance(icon.object, EncoderController):
                     enc = icon.object
                     midi_value = (

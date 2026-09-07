@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from enum import Enum, StrEnum
 from typing import TYPE_CHECKING, TypedDict
 
+import common.util as util
 from common.parameter import Parameter
 
 if TYPE_CHECKING:
@@ -108,6 +109,21 @@ class Controller:
             self._unsub_param = None
         self.parameter = None
 
+    def to_midi(self, value: float) -> int:
+        """Bound-parameter value → this control's 7-bit CC, inverting the port
+        taper so mod-host's CC→value mapping lands back on *value*."""
+        assert self.parameter is not None, "to_midi is bound-only"
+        position = util.to_normalized(
+            value, self.parameter.minimum, self.parameter.maximum, self.parameter.is_logarithmic
+        )
+        midi_value = round(util.from_normalized(position, self.midi_min, self.midi_max))
+        return int(max(0, min(127, midi_value)))
+
+    def bar_midi_value(self) -> int:
+        """0-127 for the LCD bar of a bound control, derived from the parameter."""
+        assert self.parameter is not None, "bar_midi_value is bound-only"
+        return self.to_midi(self.parameter.value)
+
     def get_display_info(self) -> AnalogDisplayInfo:
         """Own-presentation only; routing-derived fields are added by the
         registry owner (ControllerManager._bind_external_controllers)."""
@@ -127,8 +143,8 @@ class StatefulController(Controller):
     def bind_to_parameter(self, parameter: Parameter) -> None:
         super().bind_to_parameter(parameter)
         self.set_value(parameter.value)
-        # The keycap mirrors settled values — a mod-ui echo or a menu/dialog
+        # The keycap mirrors committed values — a mod-ui echo or a menu/dialog
         # commit — but not a bare preview: a local press updates its own toggle
         # and LED, then waits for the echo to refresh. Neither write path needs
         # to know the controller exists.
-        self._unsub_param = parameter.subscribe_settled(lambda p: self.set_value(p.value))
+        self._unsub_param = parameter.on_commit(lambda p: self.set_value(p.value))

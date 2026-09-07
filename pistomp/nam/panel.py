@@ -82,7 +82,7 @@ from common.param_roles import ParamRole
 from common.parameter import Parameter, PortInfo, Symbol
 
 from uilib.panel import Panel
-from pistomp.input.dispatch import Selectable, fire, resolve_local
+from pistomp.input.dispatch import Selectable, fire
 from pistomp.input.event import ControllerEvent, EncoderEvent, SwitchEvent
 from pistomp.nam import routing
 from pistomp.nam.engine import CaptureState, NamCaptureEngine
@@ -566,7 +566,7 @@ class NamCapturePanel(Panel):
         if event.rotations == 0:
             return True
 
-        decl = resolve_local(
+        decl = self._resolve_binding(
             self.declare_bindings(), ControlRef(cls=ControlClass.TWEAK, id=event.controller.id), EventKind.ROTATE
         )
         # No enabled row (FAILED state, enc 2/3): pass through so the vanilla

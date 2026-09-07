@@ -35,7 +35,7 @@ from common.contexts import (
 import common.util as util
 from common.parameter import Parameter, Symbol
 from common.parameter_steps import ParameterSteps, effective_multiplier
-from pistomp.input.dispatch import resolve_local, fire
+from pistomp.input.dispatch import fire
 from pistomp.input.event import ControllerEvent, EncoderEvent
 
 from collections.abc import Callable
@@ -379,7 +379,7 @@ class Parameterdialog(Dialog):
         rows = self.declare_bindings()
         control_id = event.controller.id
         for cls in (ControlClass.TWEAK, ControlClass.VOLUME):
-            decl = resolve_local(rows, ControlRef(cls=cls, id=control_id), EventKind.ROTATE)
+            decl = self._resolve_binding(rows, ControlRef(cls=cls, id=control_id), EventKind.ROTATE)
             if decl is not None:
                 return fire(decl, self, event)
         return False
