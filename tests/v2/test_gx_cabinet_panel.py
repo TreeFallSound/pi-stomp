@@ -83,8 +83,7 @@ def test_gx_cabinet_nav_only_edits_model(v2_system: SystemFixture, nav_handler, 
 
     nav_click(handler)
     handler.poll_lcd_updates()
-    # Enumeration params open a selection menu (not a Parameterdialog) —
-    # draw_parameter_dialog's own type-based dispatch, reused as-is.
+    # Enumeration params open a selection menu through open_parameter_editor.
     assert current_dialog(v2_system) is None
     assert lcd.pstack.current is not panel_before
     snapshot("model_menu_open")

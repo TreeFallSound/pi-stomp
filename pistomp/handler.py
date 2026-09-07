@@ -110,6 +110,10 @@ class Handler(InputSink):
         Reverts on screen if the send never left."""
         raise NotImplementedError()
 
+    def parameter_ui_value_commit(self, param: "Parameter", value: float) -> None:
+        """Commit a plugin-panel or NAV edit through its UI transport."""
+        raise NotImplementedError()
+
     def toggle_plugin_bypass(self, plugin: "Plugin") -> None:
         """Flip a plugin's bypass the one way the whole UI flips it: through the
         footswitch press path when the plugin has one (so mod-host's echo
@@ -265,5 +269,3 @@ class Handler(InputSink):
         """Build the board's associations and rows again. A handler that owns an
         activation must override this."""
         raise NotImplementedError()
-
-

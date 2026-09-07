@@ -4,6 +4,7 @@ plugin parameter live, so the LCD reflects it without a pedalboard reload."""
 import common.util as util
 from common.contexts import ControlClass, EventKind, MidiCcEffect, ParamEffect
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
+from common.parameter_editing import EditContext
 from tests.types import SystemFixture
 
 LOG_PORT: PortInfo = {
@@ -100,8 +101,8 @@ def test_v3_param_set_syncs_bound_footswitch(v3_system: SystemFixture, make_plug
 
 
 def test_v3_midi_learn_applies_custom_sub_range(v3_system: SystemFixture, make_plugin, make_parameter):
-    """A midi_map carrying a custom sub-range narrows the parameter's encoder
-    sweep and displayed endpoints live, without a pedalboard reload."""
+    """A midi_map custom sub-range changes physical CC conversion. The UI
+    dialog keeps the plugin's declared range."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -115,7 +116,6 @@ def test_v3_midi_learn_applies_custom_sub_range(v3_system: SystemFixture, make_p
     assert (gain.minimum, gain.maximum) == (0.0, 1.0)
     plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
     handler.current.pedalboard.plugins = [plugin]
-
     ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.0 0.5")
     handler.poll_ws_messages()
 
@@ -123,11 +123,8 @@ def test_v3_midi_learn_applies_custom_sub_range(v3_system: SystemFixture, make_p
 
 
 def test_v3_midi_learn_sub_range_saga(v3_system: SystemFixture, make_plugin, make_parameter, snapshot):
-    """End-to-end: MIDI-learn a plugin param to a tweak encoder with a custom
-    sub-range, then reach both extents by spinning. The parameter saturates at
-    the sub-range endpoints (0.1..0.2) — never the plugin's declared 0..1 — and
-    the emitted CC spans the full 7-bit range across that sub-range. The open
-    parameter dialog paints the sub-range endpoints, not 0.0..1.0."""
+    """A mapped physical control uses its custom sub-range for CC conversion,
+    while its UI dialog uses the plugin's declared range."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -148,21 +145,20 @@ def test_v3_midi_learn_sub_range_saga(v3_system: SystemFixture, make_plugin, mak
     assert enc1.parameter is gain
     assert (gain.minimum, gain.maximum) == (0.1, 0.2)
 
-    # The dialog draws param.format(minimum)/param.format(maximum) as its axis
-    # endpoints — the visual proof the sub-range replaced the declared 0.0..1.0.
-    handler.lcd.draw_parameter_dialog(gain)
+    physical_context = EditContext(
+        gain,
+        handler.parameter_value_commit,
+        grid_range=(gain.minimum, gain.maximum),
+    )
+    handler.lcd.display_parameter_value(physical_context, gain.value)
     snapshot("bound_0p15")
 
-    # Spin up hard — enough detents to saturate the 128-step grid at the top.
-    # The parameter stops at the sub-range max (0.2), never the declared 1.0,
-    # and the CC pi-stomp would emit (bar_midi_value) reaches the 7-bit ceiling.
     for _ in range(200):
         enc1.refresh(1)
     assert gain.value == 0.2
     assert enc1.bar_midi_value() == 127
     snapshot("max_0p20")
 
-    # Spin down hard — saturate at the sub-range min (0.1), never 0.0, CC → 0.
     for _ in range(200):
         enc1.refresh(-1)
     assert gain.value == 0.1
@@ -185,7 +181,7 @@ def test_v3_log_parameter_dialog_paints_geometric_curve(v3_system: SystemFixture
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
 
-    handler.lcd.draw_parameter_dialog(freq)
+    handler.lcd.open_parameter_editor(EditContext(freq, handler.parameter_ui_value_commit))
     snapshot("log_dialog_midpoint")
 
 
@@ -572,12 +568,7 @@ def test_v3_midi_learn_free_cc_preserves_sub_range(v3_system: SystemFixture, mak
     assert handler.current
 
     used = set(hw.controllers)
-    binding = next(
-        "%d:%d" % (ch, cc)
-        for ch in range(1, 16)
-        for cc in range(0, 127)
-        if "%d:%d" % (ch, cc) not in used
-    )
+    binding = next("%d:%d" % (ch, cc) for ch in range(1, 16) for cc in range(0, 127) if "%d:%d" % (ch, cc) not in used)
     channel, cc = binding.split(":")
 
     gain = make_parameter("Gain", "noise", value=0.5)

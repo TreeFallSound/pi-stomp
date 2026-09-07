@@ -57,6 +57,7 @@ from uilib import (
     ScrollingText,
     TextWidget,
 )
+from common.parameter_editing import EditContext
 from uilib.glyphs.badge import BadgeGlyph
 from uilib.menu import row_label
 from uilib.gridpanel import GridPanel, TILE_W, CHANNEL
@@ -784,62 +785,91 @@ class Lcd:
             deco.title.set_text(title)
         self.pstack.push_panel(panel)
 
-    def draw_parameter_dialog(self, parameter, timeout=None):
-        # If we already have an active dialog for the parameter, use it
-        d = util.DICT_GET(self.w_parameter_dialogs, parameter.name)
+    def open_parameter_dialog(self, context: EditContext, timeout=None) -> Parameterdialog:
+        d = util.DICT_GET(self.w_parameter_dialogs, context.cache_key)
         if d is not None and d.parent is not None:
             return d
 
-        # Create a new dialog
-        title = parameter.instance_id + ":" + self._param_label(parameter)
+        parameter = context.parameter
+        assert parameter.type not in (Type.ENUMERATION, Type.TOGGLED)
+        d = Parameterdialog(
+            self.pstack,
+            context,
+            width=270,
+            height=130,
+            auto_destroy=True,
+            timeout=timeout,
+        )
+        plugin = (
+            next((p for p in self.current.pedalboard.plugins if p.instance_id == parameter.instance_id), None)
+            if self.current is not None
+            else None
+        )
+        if plugin is not None:
+            n = self.tweak_badge_number(plugin, parameter)
+        elif parameter.binding is not None:
+            n = self._external_tweak_badge_number(parameter)
+        else:
+            n = None
+        d.set_tweak_badge(n, _TWEAK_BADGES.get(n) if n is not None else None)
+        self.w_parameter_dialogs[context.cache_key] = d
+        self.pstack.push_panel(d)
+        return d
+
+    def _open_parameter_menu(self, context: EditContext):
+        d = util.DICT_GET(self.w_parameter_dialogs, context.cache_key)
+        if d is not None and d.parent is not None:
+            return d
+
+        parameter = context.parameter
+        assert parameter.type in (Type.ENUMERATION, Type.TOGGLED)
+        title = Parameterdialog.title_for(context)
         current_value = parameter.value
         if parameter.type == Type.ENUMERATION:
-            items = []
-            for label, value in parameter.get_enum_value_list():
-                item = (label, self.parameter_commit_enum, (parameter, value), value == current_value)
-                items.append(item)
-            d = self.draw_selection_menu(items, title, auto_dismiss=True)
-        elif parameter.type == Type.TOGGLED:
             items = [
-                ("On", self.parameter_commit_enum, (parameter, 1), current_value == 1),
-                ("Off", self.parameter_commit_enum, (parameter, 0), current_value == 0),
+                (label, self.parameter_commit_enum, (context, value), value == current_value)
+                for label, value in parameter.get_enum_value_list()
             ]
-            d = self.draw_selection_menu(items, title, auto_dismiss=True)
         else:
-            d = Parameterdialog(
-                self.pstack,
-                parameter,
-                width=270,
-                height=130,
-                auto_destroy=True,
-                title=title,
-                timeout=timeout,
-                action=self.parameter_commit,
-                object=parameter,
-            )
-            plugin = (
-                next((p for p in self.current.pedalboard.plugins if p.instance_id == parameter.instance_id), None)
-                if self.current is not None
-                else None
-            )
-            if plugin is not None:
-                n = self.tweak_badge_number(plugin, parameter)
-            elif parameter.binding is not None:
-                n = self._external_tweak_badge_number(parameter)
-            else:
-                n = None
-            d.set_tweak_badge(n, _TWEAK_BADGES.get(n) if n is not None else None)
-            self.pstack.push_panel(d)
+            items = [
+                ("On", self.parameter_commit_enum, (context, 1), current_value == 1),
+                ("Off", self.parameter_commit_enum, (context, 0), current_value == 0),
+            ]
+        d = self.draw_selection_menu(items, title, auto_dismiss=True)
+        self.w_parameter_dialogs[context.cache_key] = d
+        return d
 
-        self.w_parameter_dialogs[parameter.name] = d
-        return d  # return the dialog so the parameter can be modified using the tweak knob
+    def open_parameter_editor(self, context: EditContext, timeout=None):
+        if context.parameter.type in (Type.ENUMERATION, Type.TOGGLED):
+            return self._open_parameter_menu(context)
+        return self.open_parameter_dialog(context, timeout)
 
-    def parameter_commit(self, parameter, value):
-        self.handler.parameter_value_commit(parameter, value)
+    def parameter_commit_enum(self, context_value):
+        context, value = context_value
+        context.commit(context.parameter, value)
 
-    def parameter_commit_enum(self, param_value_tuple):
-        # (parameter_object, value)
-        self.parameter_commit(param_value_tuple[0], param_value_tuple[1])
+    def open_audio_parameter_dialog(self, context: EditContext):
+        d = util.DICT_GET(self.w_parameter_dialogs, context.cache_key)
+        if d is not None and d.parent is not None:
+            return d
+
+        d = Parameterdialog(
+            self.pstack,
+            context,
+            width=270,
+            height=130,
+            auto_destroy=True,
+            timeout=PARAMETER_DIALOG_TIMEOUT,
+        )
+        self.w_parameter_dialogs[context.cache_key] = d
+        self.pstack.push_panel(d)
+        return d
+
+    def display_parameter_value(self, context: EditContext, value: float) -> None:
+        if context.parameter.type in (Type.ENUMERATION, Type.TOGGLED):
+            self.open_parameter_editor(context)
+            return
+        self.open_parameter_dialog(context).update_value(value)
 
     #
     # Footswitches
@@ -1035,47 +1065,20 @@ class Lcd:
         if panel is not None:
             self.pstack.pop_panel(panel)
 
-    def draw_audio_parameter_dialog(self, parameter, commit_callback):
-        d = util.DICT_GET(self.w_parameter_dialogs, parameter.name)
-        if d is not None and d.parent is not None:
-            return d
-
-        d = Parameterdialog(
-            self.pstack,
-            parameter,
-            width=270,
-            height=130,
-            auto_destroy=True,
-            title=self._param_label(parameter),
-            timeout=PARAMETER_DIALOG_TIMEOUT,
-            action=commit_callback,
-            object=parameter.symbol,
-        )
-        self.w_parameter_dialogs[parameter.name] = d
-        self.pstack.push_panel(d)
-        return d
-
-    def display_parameter_value(self, parameter: Parameter, value: float) -> None:
-        d = self.draw_parameter_dialog(parameter)
-        if isinstance(d, Parameterdialog):
-            d.update_value(value)
-
     def draw_vu_calibration_dialog(self, symbol, value, commit_callback):
         if value is None:
             value = 512  # 1024 / 2
         name = "VU Calibration"
         info = PortInfo(name=name, symbol=Symbol(symbol), ranges={"minimum": 0, "maximum": 1023})
         param = Parameter(info, value, None)
+        context = EditContext(param, lambda _param, new_value: commit_callback(symbol, new_value))
         d = Parameterdialog(
             self.pstack,
-            param,
+            context,
             width=270,
             height=130,
             auto_destroy=False,
-            title=name,
             timeout=PARAMETER_DIALOG_TIMEOUT,
-            action=commit_callback,
-            object=symbol,
         )
         self.pstack.push_panel(d)
         return d

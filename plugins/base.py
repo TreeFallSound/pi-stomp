@@ -61,7 +61,7 @@ from common.contexts import ControlClass, ControlRef, EventKind
 from common.param_roles import ParamRole
 from common.param_source import ParamSource
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
-from common.parameter_steps import ParameterSteps, effective_multiplier
+from common.parameter_editing import ParameterSteps, effective_multiplier
 from modalapi.plugin import Plugin
 from pistomp.controller import ControlType
 from pistomp.input.dispatch import MultiSelectable, Selectable, fire, resolve_local
@@ -181,9 +181,11 @@ class PluginPanel(Panel, Generic[TState], ABC):
         # global encoder-longpress callback (e.g. previous/next_snapshot), which
         # reloads every parameter under the open panel. While a plugin editor is
         # open the encoders belong to the panel, so swallow it.
-        if (isinstance(event, SwitchEvent)
-                and event.kind is SwitchEventKind.LONGPRESS
-                and event.controller.type in (ControlType.KNOB, ControlType.VOLUME)):
+        if (
+            isinstance(event, SwitchEvent)
+            and event.kind is SwitchEventKind.LONGPRESS
+            and event.controller.type in (ControlType.KNOB, ControlType.VOLUME)
+        ):
             return True
         if not isinstance(event, EncoderEvent):
             return False
@@ -248,8 +250,9 @@ class PluginPanel(Panel, Generic[TState], ABC):
         p = self.plugin.parameters.get(symbol)
         if p is None:
             return False
-        steps = ParameterSteps.for_parameter(p)
-        delta = int(round(rotations * effective_multiplier(multiplier, p)))
+        extents = (p.declared_minimum, p.declared_maximum)
+        steps = ParameterSteps.for_parameter(p, extents)
+        delta = int(round(rotations * effective_multiplier(multiplier, p, *extents)))
         if delta == 0:
             return False
         new_val = steps.move(delta)
@@ -292,11 +295,9 @@ class PluginPanel(Panel, Generic[TState], ABC):
         self._param_queue.clear()
 
     def _send_param(self, symbol: Symbol, value: float) -> None:
-        """A synthetic source (audiocard) overrides: the card is the single writer,
-        so there is no route to choose."""
         param = self.plugin.parameters.get(symbol)
         if param is not None:
-            self.handler.parameter_value_commit(param, value)
+            self.handler.parameter_ui_value_commit(param, value)
 
     # ── chrome actions ─────────────────────────────────────────────────────
 

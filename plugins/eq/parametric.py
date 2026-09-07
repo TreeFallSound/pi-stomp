@@ -40,7 +40,7 @@ from common.contexts import (
 )
 from common.param_roles import ParamRole
 from common.parameter import Symbol
-from common.parameter_steps import ParameterSteps, effective_multiplier, resolution
+from common.parameter_editing import ParameterSteps, effective_multiplier, resolution
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.eq.band_spec import BandSpec
 from plugins.eq.filters import as_q

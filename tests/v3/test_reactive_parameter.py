@@ -16,6 +16,7 @@ from unittest.mock import MagicMock
 
 import pistomp.switchstate as switchstate
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
+from common.parameter_editing import EditContext
 from modalapi.plugin import Plugin
 from plugins.fullscreen import FullscreenPluginPanel
 from plugins.window import PluginWindow
@@ -590,7 +591,12 @@ def test_rapid_footswitch_with_panel_open_coalesces(v3_system: SystemFixture, ma
 
 def _open_dialog(v3_system: SystemFixture, plugin: Plugin) -> Parameterdialog:
     param = plugin.parameters[Symbol("gain")]
-    return cast(Parameterdialog, v3_system.handler.lcd.draw_parameter_dialog(param))
+    return cast(
+        Parameterdialog,
+        v3_system.handler.lcd.open_parameter_editor(
+            EditContext(param, v3_system.handler.parameter_ui_value_commit)
+        ),
+    )
 
 
 def test_open_dialog_follows_external_param_set(v3_system: SystemFixture, make_plugin):

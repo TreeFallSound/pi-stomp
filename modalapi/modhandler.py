@@ -60,7 +60,7 @@ from common.contexts import (
 )
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from common.param_source import ParamSink
-from common.parameter_steps import ParameterSteps, effective_multiplier
+from common.parameter_editing import EditContext, ParameterSteps, effective_multiplier
 from modalapi.plugin import Plugin
 from blend.input_controller import InputController
 import modalapi.pedalboard as Pedalboard
@@ -395,7 +395,8 @@ class Modhandler(Handler):
         if c.type == ControlType.VOLUME and c.parameter is not None:
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
             c.parameter.commit(new_value, self._sink_for(c.parameter))
-            d = self.lcd.draw_audio_parameter_dialog(c.parameter, self.audio_parameter_commit)
+            context = EditContext(c.parameter, lambda p, value: self.audio_parameter_commit(p.symbol, value))
+            d = self.lcd.open_audio_parameter_dialog(context)
             if d is not None:
                 d.update_value(new_value)
             return True
@@ -412,7 +413,12 @@ class Modhandler(Handler):
             # encoder, the WebSocket for :bpm) owns the send.
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
             c.parameter.commit(new_value, self._sink_for(c.parameter))
-            self.lcd.display_parameter_value(c.parameter, c.parameter.value)
+            context = EditContext(
+                c.parameter,
+                self.parameter_value_commit,
+                grid_range=(c.parameter.minimum, c.parameter.maximum),
+            )
+            self.lcd.display_parameter_value(context, c.parameter.value)
             return True
 
         # Unbound: no sink, no row. This fallback CC is the only way mod-ui sees
@@ -585,13 +591,15 @@ class Modhandler(Handler):
         return self._lcd
 
     def open_parameter_dialog(self, parameter: Parameter) -> None:
-        self.lcd.draw_parameter_dialog(parameter)
+        context = EditContext(parameter, self.parameter_ui_value_commit)
+        self.lcd.open_parameter_editor(context)
 
     def open_parameter_submenu(self, plugin: Plugin, rows: tuple[tuple[str, Symbol], ...], title: str) -> None:
         self.lcd.draw_symbol_menu(plugin, rows, title)
 
     def open_audio_parameter_dialog(self, parameter: Parameter, commit_callback: Callable[[str, float], None]) -> None:
-        self.lcd.draw_audio_parameter_dialog(parameter, commit_callback)
+        context = EditContext(parameter, lambda p, value: commit_callback(p.symbol, value))
+        self.lcd.open_audio_parameter_dialog(context)
 
     def poll_controls(self):
         if self.hardware:
@@ -1264,6 +1272,15 @@ class Modhandler(Handler):
             return functools.partial(self._publish_switch_cc, control)
         return self._publish_plugin_param
 
+    def _ui_sink_for(self, param: Parameter) -> ParamSink | None:
+        if param.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID:
+            return self._sink_for(param)
+        if param.instance_id is None:
+            return self._publish_audio
+        if param.instance_id == ExternalMidi.EXTERNAL_INSTANCE_ID:
+            return self._sink_for(param)
+        return self._publish_plugin_param
+
     def _publish_bpm(self, param: Parameter) -> bool:
         """Publish the BPM to the transport."""
         return self.set_mod_tap_tempo(param.value)
@@ -1471,9 +1488,10 @@ class Modhandler(Handler):
     #
     # Parameter Stuff
     #
+    def parameter_ui_value_commit(self, param: Parameter, value: float) -> None:
+        param.commit(value, self._ui_sink_for(param))
+
     def parameter_value_commit(self, param: Parameter, value: float) -> None:
-        # The sink owns the route (WebSocket param_set, transport-bpm, external
-        # CC, local ALSA write); commit repaints, publishes through it, settles.
         param.commit(value, self._sink_for(param))
 
     @property
@@ -1836,7 +1854,8 @@ class Modhandler(Handler):
     def audio_parameter_change(self, direction: int | None, parameter, commit_callback):
         if parameter is None:
             return
-        d = self.lcd.draw_audio_parameter_dialog(parameter, commit_callback)
+        context = EditContext(parameter, lambda p, value: commit_callback(p.symbol, value))
+        d = self.lcd.open_audio_parameter_dialog(context)
         if d is None or direction is None:
             return
         step = (parameter.maximum - parameter.minimum) / 127.0

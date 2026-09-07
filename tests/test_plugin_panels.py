@@ -42,6 +42,8 @@ class FakeHandler:
         """Mirrors Modhandler: the route is chosen here, and commit reverts a
         value that never left."""
         param.commit(value, lambda p: self.ws_bridge.send_parameter(str(p.instance_id), p.symbol, p.value))
+    def parameter_ui_value_commit(self, param: Parameter, value: float) -> None:
+        self.parameter_value_commit(param, value)
 
     def toggle_plugin_bypass(self, plugin) -> None:
         """Mirrors Modhandler for a footswitch-less plugin: commit over the WS."""

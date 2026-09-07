@@ -24,7 +24,7 @@ import pytest
 
 import common.util as util
 from common.parameter import Parameter, Symbol, Type
-from common.parameter_steps import (
+from common.parameter_editing import (
     CONTINUOUS_STEPS,
     FULL_SWEEP_DETENTS,
     REFERENCE_FAST_MULTIPLIER,

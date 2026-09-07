@@ -40,7 +40,7 @@ from common.contexts import (
     SelectionEditEffect,
 )
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol, Type
-from common.parameter_steps import ParameterSteps, effective_multiplier
+from common.parameter_editing import ParameterSteps, effective_multiplier
 from common.param_roles import ParamRole
 from modalapi.plugin import Plugin
 from modalapi.plugin_customization import PinnedParam
@@ -98,7 +98,8 @@ def _discrete_formatter(param: Parameter) -> Callable[[float], tuple[str, str]] 
     an ordered enum's scale-point label (Order 0/1/2 → "1"/"2"/"3") or a
     toggle's On/Off. Continuous params keep the default."""
     if param.type == Type.TOGGLED:
-        midpoint = (param.minimum + param.maximum) / 2
+        minimum, maximum = param.declared_extents
+        midpoint = (minimum + maximum) / 2
 
         def fmt_toggle(value: float) -> tuple[str, str]:
             return ("On" if value >= midpoint else "Off", "")
@@ -134,8 +135,8 @@ class ParamSlotWidget(ArcDialWidget):
         super().__init__(
             box=box,
             label=slot.label,
-            minimum=param.minimum if param is not None else 0.0,
-            maximum=param.maximum if param is not None else 1.0,
+            minimum=param.declared_minimum if param is not None else 0.0,
+            maximum=param.declared_maximum if param is not None else 1.0,
             color=color_for_param(param),
             formatter=self._format,
             parent=parent,
@@ -179,8 +180,9 @@ class ParamSlotWidget(ArcDialWidget):
         param = self._param()
         if param is None:
             return False
-        steps = ParameterSteps.for_parameter(param)
-        delta = int(round(rotations * effective_multiplier(multiplier, param)))
+        extents = param.declared_extents
+        steps = ParameterSteps.for_parameter(param, extents)
+        delta = int(round(rotations * effective_multiplier(multiplier, param, *extents)))
         if delta == 0:
             return False
         new_val = steps.move(delta)
@@ -242,7 +244,8 @@ class _ListRow(Widget):
                 idx = min(range(len(pairs)), key=lambda i: abs(pairs[i][1] - value))
                 return pairs[idx][0]
             return "%d" % round(value)
-        on = value >= (param.minimum + param.maximum) / 2
+        minimum, maximum = param.declared_extents
+        on = value >= (minimum + maximum) / 2
         return "On" if on else "Off"
 
     @staticmethod
@@ -253,8 +256,9 @@ class _ListRow(Widget):
             num = "%d" % round(value)
         else:
             num = f"{value:.1f}".rstrip("0").rstrip(".")
-        span = param.maximum - param.minimum
-        frac = 0.0 if span <= 0 else (value - param.minimum) / span
+        minimum, maximum = param.declared_extents
+        span = maximum - minimum
+        frac = 0.0 if span <= 0 else (value - minimum) / span
         return f"{num}{param.unit_symbol or ''}", frac
 
     def set_bypassed(self, bypassed: bool) -> None:
@@ -276,8 +280,9 @@ class _ListRow(Widget):
         param = self._param()
         if param is None:
             return False
-        steps = ParameterSteps.for_parameter(param)
-        delta = int(round(rotations * effective_multiplier(multiplier, param)))
+        extents = param.declared_extents
+        steps = ParameterSteps.for_parameter(param, extents)
+        delta = int(round(rotations * effective_multiplier(multiplier, param, *extents)))
         if delta == 0:
             return False
         new_val = steps.move(delta)
@@ -321,7 +326,8 @@ class _ListRow(Widget):
         lw, _ = get_text_size(label, self._value_font)
         lx = ctx.width - _RIGHT_MARGIN - lw
         # An engaged toggle lifts its label out of the muted readout grey.
-        on = param.type == Type.TOGGLED and value >= (param.minimum + param.maximum) / 2
+        minimum, maximum = param.declared_extents
+        on = param.type == Type.TOGGLED and value >= (minimum + maximum) / 2
         color = (255, 255, 255) if on else READOUT_COLOR
         ctx.draw_text((lx, val_vy), label, font=self._value_font, fill=shade_color(color, shade))
 

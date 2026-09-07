@@ -30,6 +30,7 @@ from common.contexts import (
     EventKind,
     MidiCcEffect,
 )
+from common.parameter_editing import EditContext
 from pistomp.encoder_controller import EncoderController
 from pistomp.input.event import EncoderEvent
 from rtmidi.midiconstants import CONTROL_CHANGE
@@ -115,7 +116,7 @@ def test_main_panel_volume_encoder_sets_audiocard_master(v3_system: SystemFixtur
     enc3 = _enc(hw, 3)
     assert enc3.parameter is not None
 
-    from common.parameter_steps import ParameterSteps
+    from common.parameter_editing import ParameterSteps
 
     expected = ParameterSteps.for_parameter(enc3.parameter).move(1)
     enc3.refresh(1)
@@ -129,7 +130,7 @@ def test_main_panel_volume_encoder_sets_audiocard_master(v3_system: SystemFixtur
 def test_main_panel_volume_encoder_commits(v3_system: SystemFixture):
     """The volume turn is one commit through the audio sink, so _confirmed
     tracks the card and a keycap-class observer sees committed values."""
-    from common.parameter_steps import ParameterSteps
+    from common.parameter_editing import ParameterSteps
 
     _prime_main_panel(v3_system)
     handler = v3_system.handler
@@ -202,7 +203,7 @@ def test_parameter_dialog_nav_change_emits_cc_for_external_param(v3_system: Syst
         ]
     )
 
-    d = handler.lcd.draw_parameter_dialog(ext_param)
+    d = handler.lcd.open_parameter_editor(EditContext(ext_param, handler.parameter_ui_value_commit))
     hw.midiout.send_message.reset_mock()
 
     d.input_event(InputEvent.RIGHT)
@@ -223,10 +224,10 @@ def test_parameter_dialog_nav_change_emits_cc_for_external_param(v3_system: Syst
 
 
 def _open_dialog_for_param(v3_system, param, *, tweak_id: int | None = None):
-    """Push a Parameterdialog for *param* and (optionally) badge it with a
-    tweak id, mirroring what draw_parameter_dialog does for an external CC."""
+    """Push a Parameterdialog for *param* and (optionally) badge its
+    tweak id, mirroring what ``open_parameter_editor`` does for an external CC."""
     handler = v3_system.handler
-    d = handler.lcd.draw_parameter_dialog(param)
+    d = handler.lcd.open_parameter_editor(EditContext(param, handler.parameter_ui_value_commit))
     if tweak_id is not None:
         from uilib.glyphs.badge import BadgeGlyph
 
@@ -355,8 +356,8 @@ def test_tweak_bound_to_same_param_as_dialog_edits_once(v3_system: SystemFixture
         ]
     )
 
-    handler.lcd.draw_parameter_dialog(ext_param)
-    # draw_parameter_dialog already badges it to tweak1 via tweak_badge_number.
+    handler.lcd.open_parameter_editor(EditContext(ext_param, handler.parameter_ui_value_commit))
+    # open_parameter_editor already badges it to tweak1 via tweak_badge_number.
     hw.midiout.send_message.reset_mock()
     before = ext_param.value
 

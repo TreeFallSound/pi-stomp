@@ -186,6 +186,10 @@ class Parameter:
                 self.type = Type.TOGGLED
 
     @property
+    def declared_extents(self) -> tuple[float, float]:
+        return self.declared_minimum, self.declared_maximum
+
+    @property
     def value(self) -> float:
         return self._value
 

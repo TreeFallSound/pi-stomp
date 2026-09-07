@@ -35,6 +35,7 @@ __all__ = [
     "Panel",
     "PanelDecorator",
     "PanelStack",
+    "EditContext",
     "Parameterdialog",
     "PluginTile",
     "RoundedPanel",
@@ -79,7 +80,7 @@ from uilib.misc import (
     trace,
 )
 from uilib.panel import LcdBase, Panel, PanelDecorator, PanelStack, RoundedPanel, ShroudedPanel
+from common.parameter_editing import EditContext
 from uilib.parameterdialog import Parameterdialog
 from uilib.text import Button, LetterSelector, PluginTile, ScrollingText, TextEditor, TextWidget
 from uilib.widget import Widget
-
