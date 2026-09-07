@@ -162,40 +162,65 @@ def test_commit_rolls_back_when_publish_never_leaves():
     assert seen == [150.0, 120.0]  # painted optimistically, then reverted
 
 
-def test_rollback_targets_the_last_reconciled_value_not_the_last_commit():
-    """Only a reconcile confirms. An unechoed commit followed by a failed one
-    reverts all the way to mod-ui's last word, not to the unconfirmed edit."""
+def test_good_commit_advances_confirmed_without_echo():
+    """No echo ever arrives on the WS send path, so the commit must confirm itself."""
     info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 200}}
     p = Parameter(info, 120.0, None, "inst")
 
-    p.commit(150.0, lambda param: True)  # sent, not yet echoed
-    p.commit(160.0, lambda param: False)  # never left
-    assert p.value == 120.0
+    assert p.commit(150.0, lambda param: True)
+    assert p._confirmed == 150.0
 
-    p.reconcile(150.0)
-    p.commit(160.0, lambda param: False)
+
+def test_rollback_targets_the_last_confirmed_value():
+    """Confirmed = echoed or self-committed, whichever came last."""
+    info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 200}}
+    p = Parameter(info, 120.0, None, "inst")
+
+    p.commit(150.0, lambda param: True)  # sent, no echo on this path
+    p.commit(160.0, lambda param: False)  # never left
     assert p.value == 150.0
 
+    p.reconcile(170.0)
+    p.commit(180.0, lambda param: False)
+    assert p.value == 170.0
 
-def test_settled_fires_on_reconcile_and_commit_not_preview():
-    """subscribe_settled fires for a reconcile (even unchanged) and a successful
+
+def test_on_commit_fires_on_reconcile_and_commit_not_preview():
+    """on_commit fires for a reconcile (even unchanged) and a successful
     commit, but never a bare preview — and not a rolled-back commit."""
     info: PortInfo = {"shortName": "x", "symbol": "x", "ranges": {"minimum": 0, "maximum": 200}}
     p = Parameter(info, 120.0, None, "inst")
-    settled: list[float] = []
-    p.subscribe_settled(lambda param: settled.append(param.value))
+    committed: list[float] = []
+    p.on_commit(lambda param: committed.append(param.value))
 
     p.preview(130.0)
-    assert settled == []  # a scrub does not settle
+    assert committed == []  # a scrub does not commit
 
     p.reconcile(130.0)  # echo confirming the previewed value — unchanged
-    assert settled == [130.0]  # ...still settles, unconditionally
+    assert committed == [130.0]  # ...still commits, unconditionally
 
     p.commit(140.0, lambda param: True)
-    assert settled == [130.0, 140.0]
+    assert committed == [130.0, 140.0]
 
     p.commit(150.0, lambda param: False)
-    assert settled == [130.0, 140.0]  # rolled back — did not settle
+    assert committed == [130.0, 140.0]  # rolled back — did not commit
+
+
+def test_inbound_param_set_coalesces_to_last_per_tick(v3_system: SystemFixture, make_plugin):
+    """A fast scrub's echo burst lands many param_sets for one symbol in a
+    single drain; only the last may reconcile, so the panel repaints once."""
+    handler = v3_system.handler
+    plugin = _install(v3_system, make_plugin)
+    gain = plugin.parameters[Symbol("gain")]
+    seen: list[float] = []
+    gain.subscribe(lambda p: seen.append(p.value))
+
+    for v in (0.6, 0.65, 0.7, 0.75, 0.8):
+        v3_system.ws_bridge.inject(f"param_set /graph/fuzz gain {v}")
+    handler.poll_ws_messages()
+
+    assert seen == [0.8]
+    assert gain.value == 0.8
 
 
 def test_subscribe_returns_unsubscriber():

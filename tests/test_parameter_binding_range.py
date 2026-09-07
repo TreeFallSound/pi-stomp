@@ -107,13 +107,24 @@ def test_clear_binding_range_is_idempotent():
     assert len(notifications) == 1
 
 
-def test_step_grid_sweeps_only_the_sub_range():
-    """The encoder grid's endpoints follow the sub-range, so a full spin can no
-    longer reach the plugin's declared maximum."""
-    p = Parameter(_port(0.0, 1.0), 0.0, binding="0:70", binding_range=(0.0, 0.5))
-    steps = ParameterSteps.for_parameter(p)
-    assert steps.values[0] == 0.0
-    assert steps.values[-1] == 0.5
+def test_reclamp_pulls_confirmed_into_the_new_extents():
+    """A failed commit rolls back to _confirmed, so a stale out-of-range
+    confirmed value would repaint outside the sub-range."""
+    p = Parameter(_port(0.0, 1.0), 0.9, binding=None)
+    p.set_binding_range((0.0, 0.5))
+    assert p._confirmed == 0.5
+
+    p.clear_binding_range()
+    assert p._confirmed == 0.5
+
+
+def test_reclamp_notifies_committed_observers():
+    p = Parameter(_port(0.0, 1.0), 0.9, binding=None)
+    committed: list[float] = []
+    p.on_commit(lambda param: committed.append(param.value))
+
+    p.set_binding_range((0.0, 0.5))
+    assert committed == [0.5]
 
 
 # ── Pedalboard._binding_range (the static pedalboard/info midiCC dict) ──────

@@ -318,7 +318,14 @@ class Lcd:
 
                 midi_value = None
                 if isinstance(icon.object, AnalogMidiControl):
-                    midi_value = as_midi_value(icon.object.last_read)
+                    ac = icon.object
+                    bound = (
+                        ac.parameter is not None
+                        and not self.handler.hardware.is_external(ac)
+                        and self.handler.current is not None
+                        and self.handler.current.control_for(ac.parameter) is ac
+                    )
+                    midi_value = ac.bar_midi_value() if bound else as_midi_value(ac.last_read)
                 elif isinstance(icon.object, EncoderController):
                     enc = icon.object
                     midi_value = (

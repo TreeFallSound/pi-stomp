@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from enum import Enum, StrEnum
 from typing import TYPE_CHECKING, TypedDict
 
+import common.util as util
 from common.parameter import Parameter
 
 if TYPE_CHECKING:
@@ -72,7 +73,7 @@ AnalogControllers = dict[str, AnalogDisplayInfo]
 
 class Controller:
     type: ControlType | None = None
-    id: int | None = None    # position/identifier for display routing or event filtering
+    id: int | None = None  # position/identifier for display routing or event filtering
 
     def __init__(self, midi_channel: int, midi_CC: int | None):
         self.midi_channel: int = midi_channel
@@ -89,9 +90,7 @@ class Controller:
 
     @property
     def sink(self) -> InputSink:
-        assert self._sink is not None, (
-            f"{self.__class__.__name__}.sink accessed before register_sink() was called"
-        )
+        assert self._sink is not None, f"{self.__class__.__name__}.sink accessed before register_sink() was called"
         return self._sink
 
     @sink.setter
@@ -107,6 +106,24 @@ class Controller:
             self._unsub_param()
             self._unsub_param = None
         self.parameter = None
+
+    def to_midi(self, value: float) -> int:
+        """Convert a bound-parameter value to this control's 7-bit CC byte. The
+        MIDI mechanics (range, channel, routing) are the controller's, not the
+        param's — the param stays MIDI-agnostic."""
+        assert self.parameter is not None, "to_midi is bound-only; requires a parameter"
+        # mod-host maps the CC back onto the port with the port's own taper, so a
+        # logarithmic port needs the geometric inverse
+        position = util.to_normalized(
+            value, self.parameter.minimum, self.parameter.maximum, self.parameter.is_logarithmic
+        )
+        midi_value = round(util.from_normalized(position, self.midi_min, self.midi_max))
+        return int(max(0, min(127, midi_value)))
+
+    def bar_midi_value(self) -> int:
+        """0-127 for the LCD bar, derived from the parameter (the owner)."""
+        assert self.parameter is not None, "bar_midi_value is bound-only; requires a parameter"
+        return self.to_midi(self.parameter.value)
 
     def get_display_info(self) -> AnalogDisplayInfo:
         """Own-presentation only; routing-derived fields are added by the
@@ -127,8 +144,8 @@ class StatefulController(Controller):
     def bind_to_parameter(self, parameter: Parameter) -> None:
         super().bind_to_parameter(parameter)
         self.set_value(parameter.value)
-        # The keycap mirrors settled values — a mod-ui echo or a menu/dialog
+        # The keycap mirrors committed values — a mod-ui echo or a menu/dialog
         # commit — but not a bare preview: a local press updates its own toggle
         # and LED, then waits for the echo to refresh. Neither write path needs
         # to know the controller exists.
-        self._unsub_param = parameter.subscribe_settled(lambda p: self.set_value(p.value))
+        self._unsub_param = parameter.on_commit(lambda p: self.set_value(p.value))

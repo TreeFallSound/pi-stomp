@@ -149,10 +149,10 @@ class Parameter:
 
         # Reactive value. Writes go through reconcile/preview/commit, never a raw
         # setter — the verb names the provenance (see those methods). _confirmed
-        # is the last value the single writer (mod-ui) echoed back, and the value
-        # a failed commit rolls back to.
+        # is the last value the single writer (mod-ui) accepted — echoed, or sent
+        # by a commit that left — and the value a failed commit rolls back to.
         self._observers: list[Callable[[Parameter], None]] = []
-        self._settled_observers: list[Callable[[Parameter], None]] = []
+        self._committed_observers: list[Callable[[Parameter], None]] = []
         self._value: float = float(value)
         self._confirmed: float = float(value)
         self.binding: str | None = binding
@@ -190,13 +190,13 @@ class Parameter:
         return self._value
 
     def reconcile(self, value: float) -> None:
-        """Adopt the single writer's value: repaint, mark confirmed, settle,
-        publish nothing. The settle fires even at an unchanged value — a mod-ui
+        """Adopt the single writer's value: repaint, mark confirmed, commit,
+        publish nothing. The commit fires even at an unchanged value — a mod-ui
         echo confirming what we optimistically previewed still has to refresh a
         keycap the preview left alone."""
         self._confirmed = value
         self._set(value)
-        self._notify_settled()
+        self._notify_committed()
 
     def preview(self, value: float) -> None:
         """An optimistic local move not yet committed — a knob mid-turn whose CC
@@ -205,15 +205,16 @@ class Parameter:
         self._set(value)
 
     def commit(self, value: float, sink: ParamSink | None) -> bool:
-        """A finished local edit: repaint, publish through *sink*, then settle.
+        """A finished local edit: repaint, publish through *sink*, then commit.
         Returns False and rolls back to the last confirmed value, without
-        settling, if the send never leaves — otherwise the LCD would show a
-        number mod-ui never applied."""
+        committing observers, if the send never leaves — otherwise the LCD would
+        show a number mod-ui never applied."""
         self._set(value)
         if sink is not None and not sink(self):
             self._set(self._confirmed)
             return False
-        self._notify_settled()
+        self._confirmed = value
+        self._notify_committed()
         return True
 
     def _set(self, value: float) -> None:
@@ -223,26 +224,28 @@ class Parameter:
         for observe in self._observers:
             observe(self)
 
-    def _notify_settled(self) -> None:
-        for observe in self._settled_observers:
+    def _notify_committed(self) -> None:
+        for observe in self._committed_observers:
             observe(self)
 
     def set_binding_range(self, binding_range: tuple[float, float]) -> None:
-        """Set the effective extents from a MIDI-CC (sub-)range and notify observers."""
+        """Set the effective extents from a MIDI-CC (sub-)range."""
         if (self.minimum, self.maximum) != binding_range:
-            self.minimum, self.maximum = binding_range
-            self._value = max(self.minimum, min(self._value, self.maximum))
-            for observe in self._observers:
-                observe(self)
+            self._reclamp(binding_range)
 
     def clear_binding_range(self) -> None:
-        """Restore effective extents to the plugin's declared LV2 range and notify observers."""
-        if (self.minimum, self.maximum) != (self.declared_minimum, self.declared_maximum):
-            self.minimum = self.declared_minimum
-            self.maximum = self.declared_maximum
-            self._value = max(self.minimum, min(self._value, self.maximum))
-            for observe in self._observers:
-                observe(self)
+        """Restore effective extents to the plugin's declared LV2 range."""
+        declared = (self.declared_minimum, self.declared_maximum)
+        if (self.minimum, self.maximum) != declared:
+            self._reclamp(declared)
+
+    def _reclamp(self, extents: tuple[float, float]) -> None:
+        self.minimum, self.maximum = extents
+        self._value = max(self.minimum, min(self._value, self.maximum))
+        self._confirmed = max(self.minimum, min(self._confirmed, self.maximum))
+        for observe in self._observers:
+            observe(self)
+        self._notify_committed()
 
     def subscribe(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
         """Register *cb* to fire on every changed-value write. Returns its own
@@ -257,16 +260,16 @@ class Parameter:
 
         return _unsub
 
-    def subscribe_settled(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
-        """Register *cb* for settled values only — a reconcile or a committed
+    def on_commit(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
+        """Register *cb* for committed values only — a reconcile or a committed
         edit, never a bare preview — fired unconditionally, even when the value
         is unchanged. Stateful presentation (a footswitch keycap) uses this so it
         tracks confirmed state, not a mid-scrub. Returns its own unsubscriber."""
-        self._settled_observers.append(cb)
+        self._committed_observers.append(cb)
 
         def _unsub() -> None:
             try:
-                self._settled_observers.remove(cb)
+                self._committed_observers.remove(cb)
             except ValueError:
                 pass
 

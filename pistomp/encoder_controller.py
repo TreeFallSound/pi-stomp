@@ -20,8 +20,6 @@ from __future__ import annotations
 import logging
 import time
 from typing import Optional
-
-import common.util as util
 import pistomp.controller as controller
 import pistomp.adcswitch as adcswitch
 import pistomp.gpioswitch as gpioswitch
@@ -137,26 +135,6 @@ class EncoderController(controller.Controller):
                 self._button.refresh()
 
     # ── Value ────────────────────────────────────────────────────────────
-
-    def to_midi(self, value: float) -> int:
-        """Convert a bound-parameter value to this control's 7-bit CC byte. The
-        MIDI mechanics (range, channel, routing) are the controller's, not the
-        param's — the param stays MIDI-agnostic."""
-        assert self.parameter is not None, "to_midi is bound-only; unbound lives on the handler"
-        # mod-host maps the CC back onto the port with the port's own taper, so a
-        # logarithmic port needs the geometric inverse
-        position = util.to_normalized(
-            value, self.parameter.minimum, self.parameter.maximum, self.parameter.is_logarithmic
-        )
-        midi_value = round(util.from_normalized(position, self.midi_min, self.midi_max))
-        return int(_clamp(midi_value, 0, 127))
-
-    def bar_midi_value(self) -> int:
-        """0-127 for the LCD bar and the MIDI-learn emit of a *bound* encoder,
-        derived from the parameter (the owner). Unbound, the value lives on the
-        handler — ask Modhandler.encoder_fallback."""
-        assert self.parameter is not None, "bar_midi_value is bound-only; unbound lives on the handler"
-        return self.to_midi(self.parameter.value)
 
     def _compute_multiplier(self, rotations: int) -> float:
         now = time.monotonic()

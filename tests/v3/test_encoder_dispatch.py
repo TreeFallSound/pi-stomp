@@ -126,6 +126,28 @@ def test_main_panel_volume_encoder_sets_audiocard_master(v3_system: SystemFixtur
     hw.midiout.send_message.assert_not_called()
 
 
+def test_main_panel_volume_encoder_commits(v3_system: SystemFixture):
+    """The volume turn is one commit through the audio sink, so _confirmed
+    tracks the card and a keycap-class observer sees committed values."""
+    from common.parameter_steps import ParameterSteps
+
+    _prime_main_panel(v3_system)
+    handler = v3_system.handler
+    handler.bind_volume_encoder()
+    enc3 = _enc(v3_system.hw, 3)
+    param = enc3.parameter
+    assert param is not None
+    expected = ParameterSteps.for_parameter(param).move(1)
+    committed: list[float] = []
+    param.on_commit(lambda p: committed.append(p.value))
+
+    enc3.refresh(1)
+
+    assert committed == [expected]
+    assert param._confirmed == expected
+    cast(MagicMock, handler.audiocard.set_volume_parameter).assert_called_with(handler.audiocard.MASTER, expected)
+
+
 # ---------------------------------------------------------------------------
 # Gap 1 (seam) — with no fullscreen panel, lcd.handle does not consume
 # ---------------------------------------------------------------------------
@@ -207,6 +229,7 @@ def _open_dialog_for_param(v3_system, param, *, tweak_id: int | None = None):
     d = handler.lcd.draw_parameter_dialog(param)
     if tweak_id is not None:
         from uilib.glyphs.badge import BadgeGlyph
+
         d.set_tweak_badge(tweak_id, BadgeGlyph(str(tweak_id)))
     return d
 
@@ -251,6 +274,7 @@ def test_tweak_bound_to_different_param_does_not_corrupt_it(v3_system: SystemFix
     handler.lcd.w_parameter_dialogs[dialog_param.name] = None  # avoid dedup
     d = _open_dialog_for_param(v3_system, dialog_param, tweak_id=1)
     from uilib.parameterdialog import Parameterdialog as _PD
+
     assert isinstance(d, _PD) and d._tweak_id == 1
 
     bound_before = bound_param.value

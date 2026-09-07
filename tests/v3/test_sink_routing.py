@@ -73,9 +73,7 @@ def _learn_footswitch_to_gain(v3_system, make_plugin, make_parameter, binding_ra
     return handler, hw, fs, gain
 
 
-def test_footswitch_press_toggles_between_the_advanced_endpoints(
-    v3_system, make_plugin, make_parameter
-):
+def test_footswitch_press_toggles_between_the_advanced_endpoints(v3_system, make_plugin, make_parameter):
     handler, hw, fs, gain = _learn_footswitch_to_gain(v3_system, make_plugin, make_parameter, (2.0, 8.0))
 
     handler.handle(SwitchEvent(controller=fs, kind=SwitchEventKind.PRESS, timestamp=1.0))
@@ -87,9 +85,7 @@ def test_footswitch_press_toggles_between_the_advanced_endpoints(
     assert hw.midiout.send_message.call_args[0][0][2] == 0
 
 
-def test_ui_edit_between_the_endpoints_takes_the_websocket(
-    v3_system, make_plugin, make_parameter
-):
+def test_ui_edit_between_the_endpoints_takes_the_websocket(v3_system, make_plugin, make_parameter):
     """The switch's CC has only two codes. A mid-range edit sent that way comes
     back from mod-host as an endpoint, against a screen showing the real value."""
     handler, hw, fs, gain = _learn_footswitch_to_gain(v3_system, make_plugin, make_parameter, (2.0, 8.0))
@@ -109,6 +105,35 @@ def test_ui_edit_landing_on_an_endpoint_rides_the_cc(v3_system, make_plugin, mak
 
     assert hw.midiout.send_message.call_args[0][0][2] == 127
     assert v3_system.ws_bridge.sent_values_for("amp", gain.symbol) == []
+
+
+@pytest.mark.parametrize("value", [5.0, 8.0])
+def test_load_window_refuses_cc_publishes(v3_system, make_plugin, make_parameter, value):
+    """A scrub mid-load must not reach mod-host — the WS path already refuses,
+    so the CC path must too, or the failed send advances _confirmed against a
+    loading screen that never got it."""
+    handler, hw, fs, gain = _learn_footswitch_to_gain(v3_system, make_plugin, make_parameter, (2.0, 8.0))
+    handler._is_pedalboard_loading = True
+    hw.midiout.send_message.reset_mock()
+
+    handler.parameter_value_commit(gain, value)
+
+    hw.midiout.send_message.assert_not_called()
+    assert gain.value == 2.0  # rolled back, _confirmed un-advanced
+    assert gain._confirmed == 2.0
+
+
+def test_load_window_refuses_encoder_cc_publishes(v3_system, make_plugin):
+    handler, hw = v3_system.handler, v3_system.hw
+    enc = next(e for e in hw.encoders if e.midi_CC is not None and e.parameter is None)
+    _, param = _plugin_with_bound_param(handler, make_plugin, f"{enc.midi_channel}:{enc.midi_CC}")
+    handler._is_pedalboard_loading = True
+    hw.midiout.send_message.reset_mock()
+
+    handler.parameter_value_commit(param, 0.75)
+
+    hw.midiout.send_message.assert_not_called()
+    assert param.value == 0.5
 
 
 def test_encoder_bound_param_rides_the_cc(v3_system, make_plugin):

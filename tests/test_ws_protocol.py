@@ -4,6 +4,7 @@ from modalapi.ws_protocol import (
     PatchSetMessage,
     AddHwPortMessage,
     AddPluginMessage,
+    coalesce_param_sets,
     ConnectMessage,
     DisconnectMessage,
     LoadingEndMessage,
@@ -421,3 +422,52 @@ def test_patch_set_empty_value():
 
 def test_patch_set_truncated_is_unknown():
     assert isinstance(parse_message("patch_set /graph/nam 1 http://uri#model"), UnknownMessage)
+
+
+# ---------------------------------------------------------------------------
+# coalesce_param_sets — collapse a drain's param_set flood to the last per key
+# ---------------------------------------------------------------------------
+
+
+def test_coalesce_keeps_last_param_set_per_instance_and_symbol():
+    msgs = [
+        parse_message("param_set /graph/amp gain 1.0"),
+        parse_message("param_set /graph/amp gain 2.0"),
+        parse_message("param_set /graph/amp tone 0.5"),
+    ]
+    out = coalesce_param_sets(msgs)
+    assert out == [
+        msgs[1],  # amp/gain's last occurrence, at its original position
+        msgs[2],
+    ]
+
+
+def test_coalesce_preserves_order_of_other_messages():
+    """Non-param_set messages keep their slots; a param_set keeps its own last
+    position, so ordering against loading markers is unchanged."""
+    msgs = [
+        parse_message("loading_start 0"),
+        parse_message("param_set /graph/amp gain 1.0"),
+        parse_message("loading_end 0"),
+        parse_message("param_set /graph/amp gain 3.0"),
+        parse_message("pedal_snapshot 2 Lead"),
+    ]
+    out = coalesce_param_sets(msgs)
+    assert out == [msgs[0], msgs[2], msgs[3], msgs[4]]
+
+
+def test_coalesce_empty_and_single():
+    assert coalesce_param_sets([]) == []
+    one = [parse_message("param_set /graph/amp gain 7.0")]
+    assert coalesce_param_sets(one) == one
+
+
+def test_coalesce_never_touches_non_param_sets():
+    """A drain with no ParamSetMessage — or one carrying other types — passes
+    through unchanged; the bypass echo rides param_set on the wire but parses
+    to PluginBypassMessage, which is not coalescable."""
+    msgs = [
+        parse_message("param_set /graph/amp :bypass 1.0"),
+        parse_message("param_set /graph/amp :bypass 0.0"),
+    ]
+    assert coalesce_param_sets(msgs) == msgs
