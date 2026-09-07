@@ -85,9 +85,8 @@ def test_footswitch_press_toggles_between_the_advanced_endpoints(v3_system, make
     assert hw.midiout.send_message.call_args[0][0][2] == 0
 
 
-def test_ui_edit_between_the_endpoints_takes_the_websocket(v3_system, make_plugin, make_parameter):
-    """The switch's CC has only two codes. A mid-range edit sent that way comes
-    back from mod-host as an endpoint, against a screen showing the real value."""
+def test_switch_sink_midrange_value_uses_websocket(v3_system, make_plugin, make_parameter):
+    """A footswitch CC has only endpoint codes, so a mid-range sink value uses WebSocket."""
     handler, hw, fs, gain = _learn_footswitch_to_gain(v3_system, make_plugin, make_parameter, (2.0, 8.0))
     hw.midiout.send_message.reset_mock()
 
@@ -97,7 +96,7 @@ def test_ui_edit_between_the_endpoints_takes_the_websocket(v3_system, make_plugi
     assert v3_system.ws_bridge.sent_values_for("amp", gain.symbol) == [5.0]
 
 
-def test_ui_edit_landing_on_an_endpoint_rides_the_cc(v3_system, make_plugin, make_parameter):
+def test_switch_sink_endpoint_value_uses_cc(v3_system, make_plugin, make_parameter):
     handler, hw, fs, gain = _learn_footswitch_to_gain(v3_system, make_plugin, make_parameter, (2.0, 8.0))
     hw.midiout.send_message.reset_mock()
 
@@ -108,10 +107,8 @@ def test_ui_edit_landing_on_an_endpoint_rides_the_cc(v3_system, make_plugin, mak
 
 
 @pytest.mark.parametrize("value", [5.0, 8.0])
-def test_load_window_refuses_cc_publishes(v3_system, make_plugin, make_parameter, value):
-    """A scrub mid-load must not reach mod-host — the WS path already refuses,
-    so the CC path must too, or the failed send advances _confirmed against a
-    loading screen that never got it."""
+def test_loading_window_refuses_switch_sink_publishes(v3_system, make_plugin, make_parameter, value):
+    """A load window refuses switch transport sends and keeps the confirmed value."""
     handler, hw, fs, gain = _learn_footswitch_to_gain(v3_system, make_plugin, make_parameter, (2.0, 8.0))
     handler._is_pedalboard_loading = True
     hw.midiout.send_message.reset_mock()
@@ -123,7 +120,7 @@ def test_load_window_refuses_cc_publishes(v3_system, make_plugin, make_parameter
     assert gain._confirmed == 2.0
 
 
-def test_load_window_refuses_encoder_cc_publishes(v3_system, make_plugin):
+def test_loading_window_refuses_encoder_cc_publishes(v3_system, make_plugin):
     handler, hw = v3_system.handler, v3_system.hw
     enc = next(e for e in hw.encoders if e.midi_CC is not None and e.parameter is None)
     _, param = _plugin_with_bound_param(handler, make_plugin, f"{enc.midi_channel}:{enc.midi_CC}")
@@ -136,9 +133,8 @@ def test_load_window_refuses_encoder_cc_publishes(v3_system, make_plugin):
     assert param.value == 0.5
 
 
-def test_encoder_bound_param_rides_the_cc(v3_system, make_plugin):
-    """Every UI edit shares this entry point, panels included, so a bound param
-    never leaves as a param_set."""
+def test_physical_encoder_bound_param_rides_cc(v3_system, make_plugin):
+    """A physical encoder edit uses MIDI CC, not the WebSocket transport."""
     handler, hw = v3_system.handler, v3_system.hw
     enc = next(e for e in hw.encoders if e.midi_CC is not None and e.parameter is None)
     _, param = _plugin_with_bound_param(handler, make_plugin, f"{enc.midi_channel}:{enc.midi_CC}")

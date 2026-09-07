@@ -233,23 +233,15 @@ class Parameter:
             observe(self)
 
     def set_binding_range(self, binding_range: tuple[float, float]) -> None:
-        """Set the effective extents from a MIDI-CC (sub-)range."""
+        """Set the physical-control extents without changing the port value."""
         if (self.minimum, self.maximum) != binding_range:
-            self._reclamp(binding_range)
+            self.minimum, self.maximum = binding_range
 
     def clear_binding_range(self) -> None:
-        """Restore effective extents to the plugin's declared LV2 range."""
+        """Restore physical-control extents to the declared LV2 range."""
         declared = (self.declared_minimum, self.declared_maximum)
         if (self.minimum, self.maximum) != declared:
-            self._reclamp(declared)
-
-    def _reclamp(self, extents: tuple[float, float]) -> None:
-        self.minimum, self.maximum = extents
-        self._value = max(self.minimum, min(self._value, self.maximum))
-        self._confirmed = max(self.minimum, min(self._confirmed, self.maximum))
-        for observe in self._observers:
-            observe(self)
-        self._notify_committed()
+            self.minimum, self.maximum = declared
 
     def subscribe(self, cb: Callable[[Parameter], None]) -> Callable[[], None]:
         """Register *cb* to fire on every changed-value write. Returns its own

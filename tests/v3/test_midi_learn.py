@@ -100,9 +100,8 @@ def test_v3_param_set_syncs_bound_footswitch(v3_system: SystemFixture, make_plug
     assert fs0.toggled is True  # synced on → LED/keycap on
 
 
-def test_v3_midi_learn_applies_custom_sub_range(v3_system: SystemFixture, make_plugin, make_parameter):
-    """A midi_map custom sub-range changes physical CC conversion. The UI
-    dialog keeps the plugin's declared range."""
+def test_v3_midi_learn_updates_physical_extents(v3_system: SystemFixture, make_plugin, make_parameter):
+    """A custom MIDI mapping range changes physical CC conversion; the UI keeps the declared range."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -122,9 +121,10 @@ def test_v3_midi_learn_applies_custom_sub_range(v3_system: SystemFixture, make_p
     assert (gain.minimum, gain.maximum) == (0.0, 0.5)
 
 
-def test_v3_midi_learn_sub_range_saga(v3_system: SystemFixture, make_plugin, make_parameter, snapshot):
-    """A mapped physical control uses its custom sub-range for CC conversion,
-    while its UI dialog uses the plugin's declared range."""
+def test_v3_midi_learn_uses_mapping_for_physical_grid_and_declared_ui_range(
+    v3_system: SystemFixture, make_plugin, make_parameter, snapshot
+):
+    """A physical control uses the mapping range while the UI uses the declared range."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -334,9 +334,8 @@ def test_v3_midi_learn_adds_table_row_for_encoder(v3_system: SystemFixture, make
 
 
 def test_v3_midi_learn_reroutes_an_already_bound_pedalboard(v3_system: SystemFixture, make_plugin, make_parameter):
-    """A param that was WebSocket-routed at bind time switches to its encoder's CC
-    once mod-ui learns the mapping. The route is derived per commit, so a binding
-    learned after bind can't leave a stale one behind."""
+    """A parameter changes from WebSocket transport to encoder CC after MOD learns a mapping.
+    The route is derived per commit, so a binding learned after bind cannot leave a stale route."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -496,9 +495,10 @@ def test_v3_midi_unlearn_restores_footswitch_default_action(v3_system: SystemFix
     assert fs0.toggled is True
 
 
-def test_v3_midi_learn_updated_binding_range_on_same_parameter(v3_system: SystemFixture, make_plugin, make_parameter):
-    """Re-addressing an already bound parameter to a different sub-range on the same CC
-    updates the parameter's binding range and endpoints without bailing early."""
+def test_v3_midi_learn_updates_physical_extents_on_same_parameter(
+    v3_system: SystemFixture, make_plugin, make_parameter
+):
+    """Re-addressing one CC updates its physical extents without changing the parameter value."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -508,7 +508,7 @@ def test_v3_midi_learn_updated_binding_range_on_same_parameter(v3_system: System
     enc1 = next(e for e in hw.encoders if e.id == 1)
     channel, cc = _binding_for(hw, enc1).split(":")
 
-    gain = make_parameter("Gain", "noise", value=0.5)
+    gain = make_parameter("Gain", "noise", value=0.9)
     plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
     handler.current.pedalboard.plugins = [plugin]
 
@@ -518,6 +518,7 @@ def test_v3_midi_learn_updated_binding_range_on_same_parameter(v3_system: System
 
     assert gain.binding == f"{channel}:{cc}"
     assert (gain.minimum, gain.maximum) == (0.0, 0.5)
+    assert gain.value == 0.9
     assert enc1.parameter is gain
     assert plugin.controllers.count(enc1) == 1
 
@@ -527,13 +528,13 @@ def test_v3_midi_learn_updated_binding_range_on_same_parameter(v3_system: System
 
     assert gain.binding == f"{channel}:{cc}"
     assert (gain.minimum, gain.maximum) == (0.2, 0.8)
+    assert gain.value == 0.9
     assert enc1.parameter is gain
     assert plugin.controllers.count(enc1) == 1
 
 
-def test_v3_midi_unlearn_restores_declared_range(v3_system: SystemFixture, make_plugin, make_parameter):
-    """Unmapping (-1:-1) restores the parameter's declared LV2 range rather than
-    keeping the narrowed sub-range or applying the 0..1 unmap frame default."""
+def test_v3_midi_unlearn_restores_declared_physical_extents(v3_system: SystemFixture, make_plugin, make_parameter):
+    """Unmapping restores the declared extents after the physical mapping is removed."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -557,10 +558,8 @@ def test_v3_midi_unlearn_restores_declared_range(v3_system: SystemFixture, make_
     assert (gain.minimum, gain.maximum) == (gain.declared_minimum, gain.declared_maximum)
 
 
-def test_v3_midi_learn_free_cc_preserves_sub_range(v3_system: SystemFixture, make_plugin, make_parameter):
-    """A midi_map naming a CC with no physical pi-stomp control (an external/free
-    MIDI CC) must still apply its sub-range — the guard keys off the -1:-1 unmap
-    sentinel, not controller presence, so a real external device's extents are shown."""
+def test_v3_midi_learn_free_cc_preserves_physical_extents(v3_system: SystemFixture, make_plugin, make_parameter):
+    """A free external CC keeps its physical mapping range without a pi-Stomp control."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
