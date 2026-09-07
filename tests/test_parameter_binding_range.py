@@ -18,7 +18,6 @@ While that binding holds, the encoder sweeps and the LCD reads the sub-range, no
 the plugin's declared LV2 range."""
 
 from common.parameter import MidiCC, Parameter, PortInfo
-from common.parameter_steps import ParameterSteps
 from modalapi.pedalboard import Pedalboard
 
 
