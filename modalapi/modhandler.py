@@ -397,7 +397,7 @@ class Modhandler(Handler):
             c.parameter.commit(new_value, self._sink_for(c.parameter))
             d = self.lcd.draw_audio_parameter_dialog(c.parameter, self.audio_parameter_commit)
             if d is not None:
-                d.update_value(new_value)
+                d.update_value(c.parameter.value)
             return True
 
         # Resolve the binding row for badge shadow_state (side effect), even
@@ -1192,9 +1192,6 @@ class Modhandler(Handler):
         except Exception as e:
             logging.warning(f"Failed to send external MIDI messages: {e}")
 
-        # Sync analog controls last: after bind + external send, matching mod.py
-        self.hardware.sync_analog_controls()
-
         # Prepare blend modes if configured (snapshot-based activation)
         try:
             blend_configs = pedalboard_config.blend_snapshots
@@ -1233,8 +1230,9 @@ class Modhandler(Handler):
             self.blend_modes = {}
             self.active_blend_mode = None
 
-        # Caught up with mod-ui. Also closes a window an aborted load left open.
+        # Caught up with mod-ui.
         self._is_pedalboard_loading = False
+        self.hardware.sync_analog_controls()
 
     def bind_current_pedalboard(self):
         # "current" being the pedalboard mod-host says is current

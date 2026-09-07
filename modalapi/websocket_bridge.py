@@ -67,7 +67,8 @@ class WebSocketWorker:
         self.messages_sent = 0
         self.messages_received = 0
         self.peak_latency = 0.0
-        self.reconnects = 0
+        self._reconnect_events: queue.SimpleQueue[None] = queue.SimpleQueue()
+        self._has_connected = False
 
     def run(self):
         """Entry point for the background thread."""
@@ -102,6 +103,16 @@ class WebSocketWorker:
         except RuntimeError:
             pass  # loop closed during shutdown
 
+    def take_reconnects(self) -> int:
+        """Return the number of pending reconnect events and clear them."""
+        count = 0
+        while True:
+            try:
+                self._reconnect_events.get_nowait()
+            except queue.Empty:
+                return count
+            count += 1
+
     async def _interruptible_sleep(self, delay: float) -> bool:
         """Sleep for delay seconds; returns True if stop was signaled before the delay elapsed."""
         try:
@@ -127,7 +138,10 @@ class WebSocketWorker:
                     close_timeout=1.0,
                 ) as ws:
                     self.ws = ws
-                    self.reconnects += 1
+                    if self._has_connected:
+                        self._reconnect_events.put(None)
+                    else:
+                        self._has_connected = True
                     logging.info(f"WebSocket connected to {self.ws_url}")
                     retry_delay = 1.0  # Reset on successful connect
                     reconnect_attempts = 0  # Reset attempts on success
@@ -269,8 +283,8 @@ class AsyncWebSocketBridge:
         self._thread: Optional[threading.Thread] = None
 
     def get_reconnects_since_last_call(self) -> int:
-        count, self._worker.reconnects = self._worker.reconnects, 0
-        return count
+        """Return the number of pending reconnect events and clear them."""
+        return self._worker.take_reconnects()
 
     @property
     def connected(self) -> bool:
