@@ -8,6 +8,7 @@ from common.parameter_editing import EditContext
 from tests.types import SystemFixture
 from plugins.parameter_window import ParameterWindow
 from uilib.misc import InputEvent
+from uilib.parameterdialog import Parameterdialog
 
 LOG_PORT: PortInfo = {
     "shortName": "HP",
@@ -378,6 +379,7 @@ def test_v3_midi_learn_updates_open_plugin_menu_badge(v3_system: SystemFixture, 
     handler.poll_lcd_updates()
     assert row._badge_char is None
 
+
 def test_v3_midi_unlearn_and_relearn_updates_open_plugin_menu_badge(
     v3_system: SystemFixture, make_plugin, make_parameter
 ):
@@ -426,6 +428,42 @@ def test_v3_midi_unlearn_and_relearn_updates_open_plugin_menu_badge(
     handler.poll_ws_messages()
     handler.poll_lcd_updates()
     assert row._badge_char == "1"
+
+
+def test_v3_midi_unlearn_updates_open_parameter_dialog_badge(v3_system: SystemFixture, make_plugin, make_parameter):
+    """An open Parameterdialog drops and restores its MIDI-learn badge live."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+    lcd = handler.lcd
+
+    assert handler.current and lcd
+
+    enc1 = next(e for e in hw.encoders if e.id == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+    gain = make_parameter("Gain", "noise")
+    plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
+    handler.current.pedalboard.plugins = [plugin]
+    lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    lcd.draw_main_panel()
+
+    learn = f"midi_map /graph/noise gain {channel} {cc} 0.0 1.0"
+    ws_bridge.inject(learn)
+    handler.poll_ws_messages()
+
+    dialog = lcd.open_parameter_editor(EditContext(gain, handler.parameter_ui_value_commit))
+    assert isinstance(dialog, Parameterdialog)
+    assert dialog._tweak_id == 1
+
+    ws_bridge.inject("midi_map /graph/noise gain -1 -1 0.0 1.0")
+    handler.poll_ws_messages()
+    handler.poll_lcd_updates()
+    assert dialog._tweak_id is None
+
+    ws_bridge.inject(learn)
+    handler.poll_ws_messages()
+    handler.poll_lcd_updates()
+    assert dialog._tweak_id == 1
 
 
 def test_v3_midi_learn_reroutes_an_already_bound_pedalboard(v3_system: SystemFixture, make_plugin, make_parameter):

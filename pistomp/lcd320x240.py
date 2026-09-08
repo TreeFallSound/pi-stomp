@@ -202,6 +202,7 @@ class Lcd:
         self._subtitle_desc = ""  # last selection description seen
         self._subtitle_changed_at = 0.0  # monotonic time of last nav change
         self.w_parameter_dialogs = {}
+        self._parameter_dialog_binding_revision: int | None = None
 
         # panels
         self.pstack = PanelStack(display, image_format="RGB", use_dimming=True)
@@ -281,6 +282,7 @@ class Lcd:
         self._poll_updates()
 
     def _poll_updates(self):
+        self._refresh_parameter_dialog_badges()
         for d in self.w_parameter_dialogs.values():
             d.tick()
         if self.pstack.current is self.main_panel:
@@ -725,6 +727,29 @@ class Lcd:
                 return self._encoder_badge_for_control_id(control_id)
         return None
 
+    def _parameter_dialog_badge_state(self, parameter: Parameter) -> tuple[int | None, BadgeGlyph | None]:
+        plugin = (
+            next((p for p in self.current.pedalboard.plugins if p.instance_id == parameter.instance_id), None)
+            if self.current is not None
+            else None
+        )
+        if plugin is not None:
+            number = self.tweak_badge_number(plugin, parameter)
+        elif parameter.binding is not None:
+            number = self._external_tweak_badge_number(parameter)
+        else:
+            number = None
+        return number, _TWEAK_BADGES.get(number) if number is not None else None
+
+    def _refresh_parameter_dialog_badges(self) -> None:
+        revision = self.handler.binding_revision
+        if revision == self._parameter_dialog_binding_revision:
+            return
+        self._parameter_dialog_binding_revision = revision
+        for dialog in self.w_parameter_dialogs.values():
+            if isinstance(dialog, Parameterdialog) and dialog.parent is not None:
+                dialog.set_tweak_badge(*self._parameter_dialog_badge_state(dialog.parameter))
+
     def _active_analog_rotate_rows(self) -> Iterator[tuple[BindingDecl, str]]:
         """the rows a tweak badge can attribute to a real encoder"""
         if self.handler is None:
@@ -792,6 +817,7 @@ class Lcd:
 
         parameter = context.parameter
         assert parameter.type not in (Type.ENUMERATION, Type.TOGGLED)
+
         d = Parameterdialog(
             self.pstack,
             context,
@@ -800,18 +826,8 @@ class Lcd:
             auto_destroy=True,
             timeout=timeout,
         )
-        plugin = (
-            next((p for p in self.current.pedalboard.plugins if p.instance_id == parameter.instance_id), None)
-            if self.current is not None
-            else None
-        )
-        if plugin is not None:
-            n = self.tweak_badge_number(plugin, parameter)
-        elif parameter.binding is not None:
-            n = self._external_tweak_badge_number(parameter)
-        else:
-            n = None
-        d.set_tweak_badge(n, _TWEAK_BADGES.get(n) if n is not None else None)
+        d.set_tweak_badge(*self._parameter_dialog_badge_state(parameter))
+
         self.w_parameter_dialogs[context.cache_key] = d
         self.pstack.push_panel(d)
         return d
