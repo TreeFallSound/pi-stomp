@@ -6,6 +6,8 @@ from common.contexts import ControlClass, EventKind, MidiCcEffect, ParamEffect
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from common.parameter_editing import EditContext
 from tests.types import SystemFixture
+from plugins.parameter_window import ParameterWindow
+from uilib.misc import InputEvent
 
 LOG_PORT: PortInfo = {
     "shortName": "HP",
@@ -331,6 +333,99 @@ def test_v3_midi_learn_adds_table_row_for_encoder(v3_system: SystemFixture, make
     assert isinstance(effect, ParamEffect)
     assert effect.plugin is plugin
     assert effect.symbol == Symbol("gain")
+
+
+def test_v3_midi_learn_updates_open_plugin_menu_badge(v3_system: SystemFixture, make_plugin, make_parameter):
+    """An open ParameterWindow reflects MIDI learn and unlearn without reopening."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+    lcd = handler.lcd
+
+    assert handler.current and lcd
+
+    enc1 = next(e for e in hw.encoders if e.id == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+
+    params = {
+        "gain": make_parameter("Gain", "noise"),
+        "tone": make_parameter("Tone", "noise"),
+        "mix": make_parameter("Mix", "noise"),
+        "drive": make_parameter("Drive", "noise"),
+    }
+    target = make_parameter("Depth", "noise")
+    params["depth"] = target
+    plugin = make_plugin("noise", bypassed=False, parameters=params)
+    handler.current.pedalboard.plugins = [plugin]
+    lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    lcd.draw_main_panel()
+
+    lcd.main_panel.sel_widget(lcd.w_plugins[0])
+    lcd.main_panel.input_event(InputEvent.LONG_CLICK)
+    handler.poll_lcd_updates()
+    panel = lcd.pstack.current
+    assert isinstance(panel, ParameterWindow)
+    row = next(row for row in panel._list_rows if row.symbol == target.symbol)
+    assert row._badge_char is None
+
+    ws_bridge.inject(f"midi_map /graph/noise depth {channel} {cc} 0.0 1.0")
+    handler.poll_ws_messages()
+    handler.poll_lcd_updates()
+    assert row._badge_char == "1"
+
+    ws_bridge.inject("midi_map /graph/noise depth -1 -1 0.0 1.0")
+    handler.poll_ws_messages()
+    handler.poll_lcd_updates()
+    assert row._badge_char is None
+
+def test_v3_midi_unlearn_and_relearn_updates_open_plugin_menu_badge(
+    v3_system: SystemFixture, make_plugin, make_parameter
+):
+    """An open ParameterWindow drops and restores a badge as MIDI learn changes."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+    lcd = handler.lcd
+
+    assert handler.current and lcd
+
+    enc1 = next(e for e in hw.encoders if e.id == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+
+    params = {
+        "gain": make_parameter("Gain", "noise"),
+        "tone": make_parameter("Tone", "noise"),
+        "mix": make_parameter("Mix", "noise"),
+        "drive": make_parameter("Drive", "noise"),
+    }
+    target = make_parameter("Depth", "noise")
+    params["depth"] = target
+    plugin = make_plugin("noise", bypassed=False, parameters=params)
+    handler.current.pedalboard.plugins = [plugin]
+    lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    lcd.draw_main_panel()
+
+    learn = f"midi_map /graph/noise depth {channel} {cc} 0.0 1.0"
+    ws_bridge.inject(learn)
+    handler.poll_ws_messages()
+
+    lcd.main_panel.sel_widget(lcd.w_plugins[0])
+    lcd.main_panel.input_event(InputEvent.LONG_CLICK)
+    handler.poll_lcd_updates()
+    panel = lcd.pstack.current
+    assert isinstance(panel, ParameterWindow)
+    row = next(row for row in panel._list_rows if row.symbol == target.symbol)
+    assert row._badge_char == "1"
+
+    ws_bridge.inject("midi_map /graph/noise depth -1 -1 0.0 1.0")
+    handler.poll_ws_messages()
+    handler.poll_lcd_updates()
+    assert row._badge_char is None
+
+    ws_bridge.inject(learn)
+    handler.poll_ws_messages()
+    handler.poll_lcd_updates()
+    assert row._badge_char == "1"
 
 
 def test_v3_midi_learn_reroutes_an_already_bound_pedalboard(v3_system: SystemFixture, make_plugin, make_parameter):
