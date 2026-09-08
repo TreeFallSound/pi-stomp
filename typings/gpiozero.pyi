@@ -20,3 +20,16 @@ class Button:
     def close(self) -> None: ...
     is_pressed: bool
     when_pressed: Any | None
+
+class RotaryEncoder:
+    def __init__(
+        self,
+        a: int,
+        b: int,
+        *,
+        bounce_time: float | None = None,
+        max_steps: int = 16,
+    ) -> None: ...
+    def close(self) -> None: ...
+    when_rotated_clockwise: Any | None
+    when_rotated_counter_clockwise: Any | None
