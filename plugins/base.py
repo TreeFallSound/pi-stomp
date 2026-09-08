@@ -117,6 +117,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
     _btn_bypass: Button | None
     _badge_fn: Callable[[Parameter], str | None] | None
     _model_dirty: bool
+    _seen_binding_revision: int
     _unsub_model: Callable[[], None] | None
 
     def _init_plugin_state(
@@ -132,6 +133,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
         self._param_queue = {}
         self._badge_fn = None
         self._model_dirty = False
+        self._seen_binding_revision = handler.binding_revision
         self._unsub_model = None
 
     def _badge_for(self, symbol: Symbol) -> str | None:
@@ -144,8 +146,22 @@ class PluginPanel(Panel, Generic[TState], ABC):
         if self._btn_bypass is None:
             return
         badge_char = self._badge_for(BYPASS_SYMBOL)
-        if badge_char is not None:
-            self._btn_bypass.set_badge(BadgeGlyph(badge_char))
+        self._btn_bypass.set_badge(BadgeGlyph(badge_char) if badge_char is not None else None)
+
+    def _refresh_binding_badges(self) -> None:
+        self._badge_bypass()
+
+    def _on_binding_revision(self, revision: int) -> None:
+        """Reconcile presentation derived from the effective bindings."""
+        self._refresh_binding_badges()
+
+    def _check_binding_revision(self) -> None:
+        revision = self.handler.binding_revision
+        if revision == self._seen_binding_revision:
+            return
+        self._seen_binding_revision = revision
+        self._on_binding_revision(revision)
+
 
     def _start_observing(self) -> None:
         """Subscribe to plugin param changes. Call at the end of a child
@@ -277,17 +293,13 @@ class PluginPanel(Panel, Generic[TState], ABC):
             param.preview(value)
 
     def tick(self) -> None:
-        """Drain the coalesced parameter queue, then reconcile from the model
-        if any parameter changed under us since the last tick.
-
-        Subclasses that override ``tick()`` **must** call ``super().tick()`` so
-        queued sends are not lost and the model-dirty drain runs.
-        """
+        """Drain queued writes and reconcile model and binding changes."""
         self._flush_param_queue()
         if self._model_dirty:
             self._model_dirty = False
             self.apply_state(self.snapshot_state())
             self._refresh_bypass_style()
+        self._check_binding_revision()
 
     def _flush_param_queue(self) -> None:
         for symbol, value in self._param_queue.items():

@@ -33,6 +33,7 @@ class FakeWsBridge:
 class FakeHandler:
     def __init__(self):
         self.ws_bridge = FakeWsBridge()
+        self.binding_revision = 0
         self.locked: set[tuple[str, str]] = set()
 
     def is_symbol_locked(self, instance_id: str, symbol: str) -> bool:

@@ -83,6 +83,11 @@ class Handler(InputSink):
         # it dynamically (e.g. when the tuner panel is visible).
         return 20
 
+    @property
+    def binding_revision(self) -> int:
+        """Revision of the handler's effective hardware bindings."""
+        return 0
+
     def noop(self):
         pass
 

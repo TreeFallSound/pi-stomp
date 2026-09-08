@@ -227,6 +227,12 @@ class _ListRow(Widget):
         self._value_font = value_font
         self._bypassed: bool = False
 
+    def set_badge_char(self, badge_char: str | None) -> None:
+        if badge_char == self._badge_char:
+            return
+        self._badge_char = badge_char
+        self.refresh()
+
     def _param(self) -> Parameter | None:
         return self._owner.plugin.parameters.get(self.symbol)
 
@@ -630,6 +636,14 @@ class ParameterWindow(PluginWindow[None]):
         if row is not None:
             return row.on_encoder_rotation(rotations, multiplier)
         return super().edit_symbol(symbol, rotations, multiplier)
+
+    def _refresh_binding_badges(self) -> None:
+        super()._refresh_binding_badges()
+        for widget in self._slot_widgets:
+            badge_char = self._badge_for(widget.slot.symbol)
+            widget.set_badge(BadgeGlyph(badge_char) if badge_char is not None else None)
+        for row in self._list_rows:
+            row.set_badge_char(self._badge_for(row.symbol))
 
     def _refresh_bypass_style(self) -> None:
         super()._refresh_bypass_style()

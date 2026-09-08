@@ -66,11 +66,17 @@ class ControllerManager:
     def __init__(self, hardware: "Hardware"):
         self._hw = hardware
         self.effective_table = ContextStack(layers=[])
+        self._binding_revision = 0
+
+    @property
+    def binding_revision(self) -> int:
+        return self._binding_revision
 
     def bind(self, current: Current | None) -> None:
-        """Create the runtime associations for the active pedalboard."""
+        """Create the runtime associations of the active pedalboard."""
         self.effective_table = ContextStack(layers=[])
         if current is None:
+            self._binding_revision += 1
             return
 
         current.close()
@@ -84,6 +90,7 @@ class ControllerManager:
         self._bind_encoder_longpress(layer)
         self._bind_footswitch_actions(layer)
         self.effective_table = ContextStack(layers=[layer])
+        self._binding_revision += 1
 
     def _bind_plugin_parameters(self, current: Current, pedalboard_layer: ContextLayer) -> None:
         """Bind controllers referenced by plugin parameters."""

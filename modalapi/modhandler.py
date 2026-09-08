@@ -1483,6 +1483,10 @@ class Modhandler(Handler):
         render from."""
         return self._controller_manager.effective_table
 
+    @property
+    def binding_revision(self) -> int:
+        return self._controller_manager.binding_revision
+
     #
     # Parameter Stuff
     #
