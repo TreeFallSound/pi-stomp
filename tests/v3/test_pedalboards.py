@@ -185,7 +185,9 @@ def test_v3_refetch_drops_boards_modui_no_longer_lists(v3_system: SystemFixture)
 
 
 def test_v3_outbound_ws_suppressed_during_pedalboard_change(v3_system: SystemFixture, make_plugin):
-    """While a pedalboard change is in flight, outbound param_set messages are dropped."""
+    """While a pedalboard change is in flight, outbound param_set messages are
+    dropped — and the LCD does not show a bypass mod-ui never received. No echo
+    comes back for a WS bypass, so a local flip here would stand uncorrected."""
     handler = v3_system.handler
     ws_bridge = v3_system.ws_bridge
 
@@ -201,15 +203,16 @@ def test_v3_outbound_ws_suppressed_during_pedalboard_change(v3_system: SystemFix
     handler._is_pedalboard_loading = True
     handler.toggle_plugin_bypass(old_plugin)
 
-    # The bypass should flip locally, but NO ws message should be sent
-    assert old_plugin.is_bypassed()
+    # Nothing sent, and nothing shown: the commit rolls back to the last
+    # value mod-ui confirmed.
+    assert not old_plugin.is_bypassed()
     assert ws_bridge.sent_values_for("old_fuzz", ":bypass") == []
 
-    # After clearing suppression, sends resume
+    # After clearing suppression, the same tap both sends and shows
     handler._is_pedalboard_loading = False
     handler.toggle_plugin_bypass(old_plugin)
-    assert not old_plugin.is_bypassed()
-    assert ws_bridge.sent_values_for("old_fuzz", ":bypass") == [0.0]
+    assert old_plugin.is_bypassed()
+    assert ws_bridge.sent_values_for("old_fuzz", ":bypass") == [1.0]
 
 
 def test_v3_loading_start_suppresses_outbound_ws(v3_system: SystemFixture):
@@ -221,6 +224,34 @@ def test_v3_loading_start_suppresses_outbound_ws(v3_system: SystemFixture):
     ws_bridge.inject("loading_start 0")
     handler.poll_ws_messages()
     assert handler._is_pedalboard_loading is True
+
+
+def test_v3_same_bundle_last_json_clears_suppression(v3_system: SystemFixture):
+    """last.json can name the bundle that is already current: mod-ui writes it
+    during its own start, and again on a save. Neither is a load, and the save
+    emits no loading_start/loading_end pair (mod-ui host.py save_pedalboard).
+    Nothing is loading, so nothing may suppress outbound sends."""
+    handler = v3_system.handler
+    assert handler.current
+
+    last_json = Path(handler.data_dir) / "last.json"
+    last_json.write_text(json.dumps({"pedalboard": handler.current.pedalboard.bundle}))
+    os.utime(last_json, (9999, 9999))
+
+    handler.poll_modui_changes()
+    assert handler._is_pedalboard_loading is False
+
+
+def test_v3_loading_end_clears_suppression(v3_system: SystemFixture):
+    """loading_end closes the window loading_start opened. A load that names no
+    new bundle never reaches set_current_pedalboard, so nothing else would."""
+    handler = v3_system.handler
+    ws_bridge = v3_system.ws_bridge
+
+    ws_bridge.inject("loading_start 0")
+    ws_bridge.inject("loading_end 1")
+    handler.poll_ws_messages()
+    assert handler._is_pedalboard_loading is False
 
 
 def test_v3_set_current_pedalboard_clears_suppression(v3_system: SystemFixture, make_plugin):

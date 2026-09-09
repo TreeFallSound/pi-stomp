@@ -41,7 +41,6 @@ def _make_plugin(
     instance_id: str,
     uri: str | None = None,
     category: str | None = None,
-    has_footswitch: bool = False,
     bypassed: bool = False,
     parameters: dict[Symbol, Parameter] | None = None,
 ) -> Plugin:
@@ -49,7 +48,6 @@ def _make_plugin(
     all_params: dict[Symbol, Parameter] = dict(parameters or {})
     all_params[BYPASS_SYMBOL] = Parameter(bypass_info, 1.0 if bypassed else 0.0, None, instance_id)
     plugin = Plugin(instance_id, all_params, {}, category, uri=uri)
-    plugin.has_footswitch = has_footswitch
     return plugin
 
 
@@ -140,25 +138,22 @@ def setup_main_ui(instance):
             "distortion",
             uri="mock://distortion",
             category="Distortion",
-            has_footswitch=True,
             parameters={Symbol("gain"): mock_gain},
         ),
         _make_plugin(
             "delay",
             uri="mock://delay",
             category="Delay",
-            has_footswitch=True,
             parameters={Symbol("time"): mock_time},
         ),
         _make_plugin(
             "reverb",
             uri="mock://reverb",
             category="Reverb",
-            has_footswitch=True,
             bypassed=True,
             parameters={Symbol("mix"): mock_mix},
         ),
-        _make_plugin("chorus", uri="mock://chorus", category="Modulator", has_footswitch=False),
+        _make_plugin("chorus", uri="mock://chorus", category="Modulator"),
     ]
     ids = [p.instance_id for p in plugins]
     connections = [
@@ -182,13 +177,18 @@ def setup_main_ui(instance):
     instance.draw_main_panel()
 
 
-def test_cleanup_blacks_the_panel(lcd, snapshot):
+def test_final_message_survives_teardown(lcd, snapshot):
+    """The notice is the last frame: the menu that launched it is still on the
+    stack, and destroying it moves the selection, which would otherwise flush."""
     instance, fake = lcd
     setup_main_ui(instance)
+    instance.draw_selection_menu([("System shutdown", None, None)], "System Menu")
+    instance.draw_final_message("Shutting down...")
+    snapshot("please_wait")
     instance.cleanup()
     fake.flush()
     assert instance.pstack.stack == []
-    snapshot()
+    snapshot("please_wait")
 
 
 def test_main_panel_snapshot(lcd, snapshot):
@@ -917,6 +917,7 @@ def test_title_does_not_tick_off_main_panel(long_title_lcd, fake_clock):
         instance._poll_updates()
     assert title.scroll_offset == offset
     assert fake.frames == []
+
 
 def test_at_most_one_title_scrolls(long_title_lcd, fake_clock):
     instance, _ = long_title_lcd

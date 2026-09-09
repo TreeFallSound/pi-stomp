@@ -110,10 +110,34 @@ uv-managed venv. Don't try to pip-install the system ones.
 
 - **A UI bypass of a footswitch-less plugin gets no echo.** mod-ui skips the origin
   socket, and mod-host emits no `param_set` for bypasses it received from mod-ui. So
-  that path must update local state itself (`toggle_plugin_bypass`'s optimistic write).
-  A footswitch-bound plugin is the opposite: `toggle_plugin_bypass` routes through the
-  footswitch press path, which sends MIDI CC → mod-host → feedback echo, and that echo
-  reconciles it. The asymmetry is deliberate, not a bug to "fix."
+  that path must update local state itself: `Plugin.toggle_bypass` commits, which
+  writes and publishes as one act and reverts if the send never leaves. A
+  footswitch-bound plugin is the opposite: `_sink_for` routes its commit out as MIDI
+  CC → mod-host → feedback echo, and that echo reconciles it. The asymmetry is one of
+  *transport*, chosen by `_sink_for`, and it is deliberate.
+
+  Dispatch carries no such fork. Every UI bypass — LCD tile, plugin panel button — is
+  one commit on `:bypass`, and the keycap follows because `StatefulController`
+  subscribes to the settled value. Never reach the wire by faking a press: the row
+  that wins that switch need not be the bypass. The press is its own path — a preview
+  plus the emit in `_fire_row`'s `ParamEffect` arm — because it already knows its
+  transport and has no sink to choose.
+
+- **A switch's CC carries only the two ends of the binding range.** mod-ui's advanced
+  MIDI-learn menu puts a footswitch on a continuous parameter with its own min/max,
+  and a press alternates between exactly those. A UI edit that lands *between* them
+  has no CC code, so `_publish_switch_cc` sends it over the WebSocket instead — else
+  mod-host answers an endpoint against a screen showing the real value. Pinned by the
+  endpoint pair in `tests/v3/test_sink_routing.py`.
+
+- **`loading_start` opens a window that suppresses outbound sends; `loading_end`
+  closes it.** Both come from mod-ui, in pairs, from a board load and from the
+  connect dump alike. Nothing else may raise `_is_pedalboard_loading` — a window
+  raised where nothing closes it silently refuses every parameter send for the rest
+  of the session, and `commit` then rolls each edit back on screen.
+  `set_current_pedalboard` clears it as the point we have caught up, which also
+  covers the one case mod-ui abandons its own window (an aborted load returns before
+  `loading_end`).
 
 - **Send form and echo form differ.** We send `param_set /graph/{id}/{sym} {v}`; both broadcast paths come back as `param_set /graph/{id} {sym} {v:%f}`
 
@@ -143,11 +167,14 @@ It's often useful to a create screen capture of the current LCD for documentatio
 On the pi-Stomp with all services running, execute the following:
 
 ```bash
-uv run python ~/pi-stomp/util/record_lcd.py --still
+ps-record-lcd --still
 ```
 That writes a date-stamped file named: ~/pistomp_capture_YYYYMMDD_HHMMSS.png
 
 To alternatively specify the filename:
 ```bash
-uv run python ~/pi-stomp/util/record_lcd.py --still -o FILE-PATH
+ps-record-lcd --still -o FILE-PATH
 ```
+
+`ps-record-lcd` is a PATH symlink to `util/record_lcd.py`, installed by the image
+(`stage2/05-pistomp/02-run.sh`). Drop `--still` to record video to .mp4 instead.

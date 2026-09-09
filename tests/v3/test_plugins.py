@@ -47,8 +47,7 @@ def test_v3_bind_footswitch_to_plugin(v3_system: SystemFixture, make_plugin):
     handler.bind_current_pedalboard()
 
     assert fs0.parameter is plugin.parameters[BYPASS_SYMBOL]
-    assert plugin.has_footswitch is True
-    assert plugin in [p for p in handler.current.pedalboard.plugins if p.has_footswitch]
+    assert fs0 in plugin.controllers
 
 
 def test_v3_bind_encoder_midi_to_plugin(v3_system: SystemFixture, make_plugin):
@@ -106,7 +105,7 @@ def test_v3_bind_does_not_reorder_footswitch_plugins(v3_system: SystemFixture, m
     handler.bind_current_pedalboard()
 
     assert hw.controllers[fs_key].parameter is fuzz.parameters[BYPASS_SYMBOL]
-    assert fuzz.has_footswitch is True
+    assert hw.controllers[fs_key] in fuzz.controllers
     titles = [p.instance_id for p in handler.current.pedalboard.plugins]
     assert titles == ["fuzz", "reverb"], "v3 must not reorder footswitch plugins"
 
@@ -156,7 +155,7 @@ def test_v3_toggle_plugin_bypass_no_footswitch_sends_websocket(v3_system: System
     assert handler.current
     assert handler.lcd
 
-    plugin = make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=False)
+    plugin = make_plugin("fuzz", category="Distortion", bypassed=False)
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -193,7 +192,6 @@ def test_v3_nam_plugin_uses_tri_color_tile(v3_system: SystemFixture, make_plugin
         "nam_amp",
         category="Simulator",
         bypassed=False,
-        has_footswitch=False,
         uri=nam_uri,
     )
     handler.current.pedalboard.plugins = [plugin]
@@ -220,10 +218,10 @@ def test_v3_nam_plugin_mixed_with_other_types(v3_system: SystemFixture, make_plu
 
     nam_uri = NAM_URIS[0]
     plugins = [
-        make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=False),
-        make_plugin("nam1", category="Simulator", bypassed=False, has_footswitch=False, uri=nam_uri),
-        make_plugin("delay", category="Delay", bypassed=False, has_footswitch=False),
-        make_plugin("nam2", category="Simulator", bypassed=True, has_footswitch=False, uri=nam_uri),
+        make_plugin("fuzz", category="Distortion", bypassed=False),
+        make_plugin("nam1", category="Simulator", bypassed=False, uri=nam_uri),
+        make_plugin("delay", category="Delay", bypassed=False),
+        make_plugin("nam2", category="Simulator", bypassed=True, uri=nam_uri),
     ]
     handler.current.pedalboard.plugins = plugins
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
@@ -241,8 +239,8 @@ def test_v3_nam_plugin_mixed_with_other_types(v3_system: SystemFixture, make_plu
 
 
 def test_v3_toggle_plugin_bypass_via_footswitch(v3_system: SystemFixture, make_plugin, get_urls):
-    """Plugin with has_footswitch: toggle_plugin_bypass() sends MIDI and waits
-    for the WS echo to update state and display."""
+    """A plugin whose :bypass is on a footswitch: toggle_plugin_bypass() leaves as
+    MIDI CC and waits for the WS echo to update state and display."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -416,7 +414,7 @@ def test_v3_poll_ws_messages_drains_without_file_watch(v3_system: SystemFixture,
     ws_bridge = v3_system.ws_bridge
 
     assert handler.current
-    plugin = make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=False)
+    plugin = make_plugin("fuzz", category="Distortion", bypassed=False)
     handler.current.pedalboard.plugins = [plugin]
 
     ws_bridge.inject("param_set /graph/fuzz :bypass 1.0")
@@ -432,7 +430,7 @@ def test_v3_add_dump_reseeds_bypass_on_reconnect(v3_system: SystemFixture, make_
     ws_bridge = v3_system.ws_bridge
 
     assert handler.current
-    plugin = make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=False)
+    plugin = make_plugin("fuzz", category="Distortion", bypassed=False)
     handler.current.pedalboard.plugins = [plugin]
 
     ws_bridge.inject("add fuzz http://uri 0.0 0.0 1 1 1")
@@ -449,7 +447,7 @@ def test_v3_add_dynamic_unknown_plugin_empty_info_silently_fails(v3_system: Syst
     ws_bridge = v3_system.ws_bridge
 
     assert handler.current
-    plugin = make_plugin("fuzz", bypassed=False, has_footswitch=False)
+    plugin = make_plugin("fuzz", bypassed=False)
     handler.current.pedalboard.plugins = [plugin]
     before = len(handler.current.pedalboard.plugins)
 
@@ -468,7 +466,7 @@ def test_v3_handle_bypass_event_updates_plugin(v3_system: SystemFixture, make_pl
     ws_bridge = v3_system.ws_bridge
 
     assert handler.current
-    plugin = make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=False)
+    plugin = make_plugin("fuzz", category="Distortion", bypassed=False)
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -487,7 +485,7 @@ def test_v3_bypass_echo_is_idempotent(v3_system: SystemFixture, make_plugin, sna
     ws_bridge = v3_system.ws_bridge
 
     assert handler.current
-    plugin = make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=False)
+    plugin = make_plugin("fuzz", category="Distortion", bypassed=False)
     handler.current.pedalboard.plugins = [plugin]
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
@@ -544,8 +542,8 @@ def test_v3_snapshot_sequence_applies_bypass_via_ws(v3_system: SystemFixture, ma
     ws_bridge = v3_system.ws_bridge
 
     assert handler.current
-    drive = make_plugin("drive", category="Distortion", bypassed=False, has_footswitch=False)
-    delay = make_plugin("delay", category="Delay", bypassed=False, has_footswitch=False)
+    drive = make_plugin("drive", category="Distortion", bypassed=False)
+    delay = make_plugin("delay", category="Delay", bypassed=False)
     handler.current.pedalboard.plugins = [drive, delay]
     handler.current.pedalboard.connections = [
         Connection(
@@ -586,8 +584,8 @@ def test_v3_reconnect_dump_reseeds_bypass_via_poll(v3_system: SystemFixture, mak
     ws_bridge = v3_system.ws_bridge
 
     assert handler.current
-    drive = make_plugin("drive", category="Distortion", bypassed=False, has_footswitch=False)
-    delay = make_plugin("delay", category="Delay", bypassed=False, has_footswitch=False)
+    drive = make_plugin("drive", category="Distortion", bypassed=False)
+    delay = make_plugin("delay", category="Delay", bypassed=False)
     handler.current.pedalboard.plugins = [drive, delay]
     handler.current.pedalboard.connections = [
         Connection(
@@ -767,8 +765,8 @@ def test_v3_footswitch_states_snapshot(v3_system: SystemFixture, make_plugin, sn
     assert handler.current
     assert handler.lcd
 
-    on_plugin = make_plugin("fuzz", category="Distortion", bypassed=False, has_footswitch=True)
-    off_plugin = make_plugin("delay", category="Delay", bypassed=True, has_footswitch=True)
+    on_plugin = make_plugin("fuzz", category="Distortion", bypassed=False)
+    off_plugin = make_plugin("delay", category="Delay", bypassed=True)
 
     fs0 = hw.footswitches[0]
     fs1 = hw.footswitches[1]

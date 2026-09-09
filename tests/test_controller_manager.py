@@ -142,3 +142,21 @@ def test_encoder_longpress_builds_callback_effect_row():
     effects = [e for e in rows[0].effects if isinstance(e, CallbackEffect)]
     assert len(effects) == 1
     assert effects[0].name == "next_snapshot"
+
+
+def test_one_control_on_two_params_answers_for_the_last_only():
+    """Two plugin parameters can name one CC. The address does not say which of
+    them the control ended up on, so Current records the binder's decision and
+    the loser must not still resolve to that control."""
+    info: PortInfo = {"shortName": "Gain", "symbol": "gain", "ranges": {"minimum": 0.0, "maximum": 1.0}}
+    first = Parameter(info, 0.5, "13:60", "amp")
+    second = Parameter(info, 0.5, "13:60", "drive")
+    knob = _external_analog()
+    current = _make_current()
+
+    current.bind(cast(Controller, knob), first)
+    current.bind(cast(Controller, knob), second)
+
+    assert current.control_for(second) is knob
+    assert current.control_for(first) is None
+    assert knob.parameter is second

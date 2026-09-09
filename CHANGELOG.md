@@ -11,12 +11,34 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Changed
 - Pedalboard/snapshot titles now auto-scroll only while selected with the NAV encoder (at most one thing scrolls at a time, and they sit at their leftmost position otherwise) — LCD updates over SPI are audible on the DAC at high gain, so the screen stays quiet while you play
 ### Fixed
-- Long titles scrolled slightly past their last pixel before bouncing back; the scroll window now matches the drawn text area exactly
+- The parameter dialog on the LCD sometimes did not change values due to a race condition with respect to MOD-UI's `last.json`. pi-Stomp then did not send parameter changes to MOD-UI until you selected a different pedalboard. Parameters on a knob or an encoder continued to work, because they send MIDI CC.
+- The LCD showed a bypass that MOD-UI did not receive, if you tapped it while a pedalboard loaded. The LCD now keeps the last value that MOD-UI confirmed.
+- A parameter change from a plugin menu could be lost if the connection to MOD-UI was busy. pi-Stomp now sends the value again on the next cycle.
+- The bypass button in a plugin menu did not agree with the footswitch LED, if the plugin had a footswitch. Every bypass is now one action, and the LED follows it.
 
-## [v3.3.1] - 2026-08-14
+## [v3.3.1] - 2026-09-01
+### Added
+- "Please wait" dialogs while the unit shuts down, reboots, or restarts the sound engine, so the screen no longer looks frozen
+- Screen capture for documentation and bug reports: `util/record_lcd.py --still` writes a PNG of what is on the LCD
+
+### Changed
+- Pedalboard/snapshot titles now auto-scroll only while selected with the NAV encoder. LCD updates over SPI are audible on the DAC at high gain, so this prevents noise while you play
+- The NAV encoder can no longer be bound to a parameter or a MIDI CC, in config or by MIDI-learn: it always drives the current selection
+- A malformed `default_config.yml` now stops startup instead of being reported in the log and used anyway
+- A malformed pedalboard `config.yml` is now ignored: that pedalboard runs on the global defaults instead of a partly applied overlay
+
 ### Fixed
+- Audio card mixer settings were not restored on the first boot after an install: the per-card fallback state files (IQaudIO, HiFiBerry, AudioInjector) were missing from the v3.3.0 package
+- External MIDI messages from a pedalboard stayed active after you switched to a pedalboard that defines none
+- Unlearning a footswitch's MIDI mapping in MOD-UI left the switch dead and lit: it kept no press action at all, and its keycap stayed at the plugin's last reported value
+- Longpress on a knob in the Audio & MIDI menu crashed instead of resetting the knob to its default
+- Backup and Restore crashed on a read-only USB drive; those menu rows are now greyed out, and Restore appears as soon as you plug in a writable drive
+- Restore no longer reads `last.json` while it unpacks the backup over it
 - Pedalboards list no longer shows deleted pedalboards after they are removed from MOD-UI
 - Fixed a race condition where Restore would re-write `last.json`, triggering a crash when the pedalboard it refers to does not yet exist when it is re-scanned
+- Long titles scrolled slightly past their last pixel before bouncing back; the scroll window now matches the drawn text area exactly
+- Long titles kept scrolling (and driving the LCD) while a menu or dialog covered the main screen
+- Global EQ in the Audio & MIDI menu no longer disappears on sound cards without the DAC EQ (and at unsupported sample rates): the Equalizer row and bars stay visible, perma-disabled with an [N/A] badge
 
 ## [v3.3.0] - 2026-08-14
 ### Added

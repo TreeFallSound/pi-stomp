@@ -59,7 +59,7 @@ from typing import TYPE_CHECKING, Generic, TypeVar
 
 from common.contexts import ControlClass, ControlRef, EventKind
 from common.param_roles import ParamRole
-from common.param_source import BypassSource, ParamSource
+from common.param_source import ParamSource
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
 from common.parameter_steps import ParameterSteps, effective_multiplier
 from modalapi.plugin import Plugin
@@ -93,9 +93,9 @@ class PluginPanel(Panel, Generic[TState], ABC):
     structurally; the Audio & MIDI menu supplies a synthetic bundle of the
     audiocard + global-EQ params (see ``docs/audio-midi-menu.md`` §4.1).
 
-    Bypass/reset are gated on the source also implementing
-    ``BypassSource``; a bypass-free source (audiocard, global EQ) simply
-    composes this core with a footer that omits Bypass/Reset.
+    Bypass/reset are gated on the source being a ``Plugin``; a bypass-free
+    source (audiocard, global EQ) simply composes this core with a footer
+    that omits Bypass/Reset.
 
     Inherits ``Panel`` (so subclasses get the widget/selection API) but never
     calls ``Panel.__init__`` itself — the concrete child picks the actual panel
@@ -289,38 +289,35 @@ class PluginPanel(Panel, Generic[TState], ABC):
         if not self._param_queue:
             return
         instance_id = self.plugin.instance_id
-        for symbol, value in self._param_queue.items():
-            self._send_param(instance_id, symbol, value)
-        self._param_queue.clear()
+        for symbol, value in list(self._param_queue.items()):
+            # A send that did not leave (backpressure) stays queued: the value is
+            # not wrong, it is late, and a newer one for the same symbol replaces
+            # it next tick — same coalescing the queue already does.
+            if self._send_param(instance_id, symbol, value):
+                del self._param_queue[symbol]
 
-    def _send_param(self, instance_id: str, symbol: Symbol, value: float) -> None:
-        """Commit one queued param to the backend. Plugin panels send over the
-        WebSocket; a synthetic source (audiocard) overrides to no-op — its
-        ``set_param_value`` already wrote the hardware and there is no
-        mod-host instance to mirror."""
-        bridge = self.handler.ws_bridge
-        if bridge is not None:
-            bridge.send_parameter(instance_id, symbol, value)
+    def _send_param(self, instance_id: str, symbol: Symbol, value: float) -> bool:
+        """Commit one queued param to the backend, returning whether it left.
+        Plugin panels send over the WebSocket; a synthetic source (audiocard)
+        overrides — its ``set_param_value`` already wrote the hardware and there
+        is no mod-host instance to mirror."""
+        return self.handler.ws_bridge.send_parameter(instance_id, symbol, value)
 
     # ── chrome actions ─────────────────────────────────────────────────────
 
     def _on_toggle_bypass(self) -> None:
         source = self.plugin
-        if not isinstance(source, BypassSource) or self._btn_bypass is None:
+        if not isinstance(source, Plugin) or self._btn_bypass is None:
             return
-        new_bypass = not source.is_bypassed()
-        source.set_bypass(new_bypass)
-        bridge = self.handler.ws_bridge
-        if bridge is not None:
-            bridge.send_parameter(source.instance_id, BYPASS_SYMBOL, 1.0 if new_bypass else 0.0)
-        # Optimistic: the set_bypass above already marked us dirty, so tick would
-        # repaint within 10ms anyway. Painting here keeps the button instant.
+        self.handler.toggle_plugin_bypass(source)
+        # The flip already marked us dirty, so tick would repaint within 10ms
+        # anyway. Painting here keeps the button instant.
         self._refresh_bypass_style()
 
     def _on_reset(self) -> None:
         """Restore all symbols from the parse-time snapshot, skipping locked ones and :bypass."""
         source = self.plugin
-        if not isinstance(source, BypassSource):
+        if not isinstance(source, Plugin):
             return
         self._flush_param_queue()
         snap = source.pedalboard_snapshot
@@ -341,7 +338,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
         if self._btn_bypass is None:
             return
         source = self.plugin
-        bypassed = source.is_bypassed() if isinstance(source, BypassSource) else False
+        bypassed = source.is_bypassed() if isinstance(source, Plugin) else False
         self._btn_bypass.set_background(BYPASS_ACTIVE_COLOR if bypassed else (0, 0, 0))
         self._btn_bypass.refresh()
 
