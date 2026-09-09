@@ -7,6 +7,8 @@ action type — preset, taptempo, midi_CC toggle, relay longpress, plugin-:bypas
 hardware side effects.
 """
 
+from unittest.mock import Mock
+
 from common.contexts import (
     ControlClass,
     EventKind,
@@ -106,7 +108,7 @@ def test_plugin_bound_footswitch_has_param_effect_row(v3_system: SystemFixture, 
     fs0 = v3_system.hw.footswitches[0]
     binding = f"{ch}:{fs0.midi_CC}"
 
-    plugin = make_plugin("fuzz", has_footswitch=True)
+    plugin = make_plugin("fuzz")
     plugin.parameters[BYPASS_SYMBOL].binding = binding
     handler.current.pedalboard.plugins = [plugin]
     handler.bind_current_pedalboard()
@@ -124,18 +126,17 @@ def test_plugin_bound_footswitch_has_param_effect_row(v3_system: SystemFixture, 
     assert len(cc_effects) == 0
 
 
-def test_toggle_plugin_bypass_through_table_fires_param_effect(v3_system: SystemFixture, make_plugin):
-    """toggle_plugin_bypass() on a footswitch-bound plugin routes through the
-    Modhandler._handle_footswitch override → table → ParamEffect arm. With a
-    properly built table (bind_current_pedalboard after setting the binding),
-    the winner is the ParamEffect row, not a stale MidiCcEffect toggle row."""
+def test_ui_bypass_of_a_bound_plugin_does_not_fire_the_table_row(v3_system: SystemFixture, make_plugin):
+    """The binder gives a bypass-bound switch a ParamEffect row, not a stale
+    MidiCcEffect toggle row. A UI bypass must not fire it: the row that wins
+    that switch need not be the bypass, so the button commits instead."""
     handler = v3_system.handler
     hw = v3_system.hw
     ch = hw.midi_channel
     fs0 = hw.footswitches[0]
     binding = f"{ch}:{fs0.midi_CC}"
 
-    plugin = make_plugin("fuzz", has_footswitch=True)
+    plugin = make_plugin("fuzz")
     plugin.parameters[BYPASS_SYMBOL].binding = binding
     handler.current.pedalboard.plugins = [plugin]
     handler.bind_current_pedalboard()
@@ -147,12 +148,11 @@ def test_toggle_plugin_bypass_through_table_fires_param_effect(v3_system: System
     param_rows = [r for r in rows if r.control.id == binding and any(isinstance(e, ParamEffect) for e in r.effects)]
     assert len(param_rows) == 1
 
-    hw.midiout.send_message.reset_mock()
+    handler._handle_footswitch = Mock()
     handler.toggle_plugin_bypass(plugin)
 
-    hw.midiout.send_message.assert_called_once()
-    sent_cc = hw.midiout.send_message.call_args[0][0]
-    assert sent_cc[1] == fs0.midi_CC
+    handler._handle_footswitch.assert_not_called()
+    assert plugin.is_bypassed() is True
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +255,7 @@ def test_taptempo_footswitch_with_plugin_binding_stamps_when_enabled(v3_system: 
     binding = f"{ch}:{fs3.midi_CC}"
 
     # Bind fs3 to a plugin :bypass
-    plugin = make_plugin("fuzz", has_footswitch=True)
+    plugin = make_plugin("fuzz")
     plugin.parameters[BYPASS_SYMBOL].binding = binding
     handler.current.pedalboard.plugins = [plugin]
     handler.bind_current_pedalboard()
@@ -287,7 +287,7 @@ def test_taptempo_footswitch_with_plugin_binding_toggles_bypass_when_disabled(v3
     assert not fs3.taptempo.is_enabled()  # disabled by default
     binding = f"{ch}:{fs3.midi_CC}"
 
-    plugin = make_plugin("fuzz", has_footswitch=True)
+    plugin = make_plugin("fuzz")
     plugin.parameters[BYPASS_SYMBOL].binding = binding
     handler.current.pedalboard.plugins = [plugin]
     handler.bind_current_pedalboard()

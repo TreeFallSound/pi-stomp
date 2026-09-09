@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from common.color import RectBorder
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol, json_default
+from common.param_source import ParamSink
 from modalapi.plugin_customization import PluginCustomization, PluginExtraData
 from pistomp.controller import Controller
 
@@ -61,7 +62,6 @@ class Plugin:
         self.bypass_indicator_xy: tuple[Point, Point] = ((0, 0), (0, 0))
         self.lcd_xyz: LcdPosition | None = None
         self.controllers: list[Controller] = []
-        self.has_footswitch: bool = False
         self.category: str | None = category
         self.uri: str | None = uri
         self.pedalboard_snapshot: dict[Symbol, float] = {}
@@ -126,13 +126,11 @@ class Plugin:
             return bool(param.value)
         return True
 
-    def toggle_bypass(self) -> float:
+    def toggle_bypass(self, sink: ParamSink | None) -> None:
+        """Flip bypass and publish it as one act."""
         param = self.parameters.get(BYPASS_SYMBOL)
-        if param is None:
-            return 0.0
-        new_value = 0.0 if param.value else 1.0
-        param.preview(new_value)
-        return new_value
+        if param is not None:
+            param.commit(0.0 if param.value else 1.0, sink)
 
     def set_param_value(self, symbol: Symbol, value: float) -> None:
         """Reconcile a param to mod-ui's value. Any bound stateful controller
@@ -149,9 +147,11 @@ class Plugin:
         """Fan *cb* out over every parameter. Returns a single unsubscriber that
         tears down all per-param subscriptions, so a panel subscribes once."""
         unsubs = [p.subscribe(cb) for p in self.parameters.values()]
+
         def _unsub() -> None:
             for u in unsubs:
                 u()
+
         return _unsub
 
     def to_json(self) -> str:
