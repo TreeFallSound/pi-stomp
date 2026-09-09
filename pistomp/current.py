@@ -24,7 +24,6 @@ from common.parameter import Parameter
 from modalapi.pedalboard import Pedalboard
 from modalapi.plugin import Plugin
 from pistomp.controller import AnalogControllers, Controller
-from pistomp.footswitch import Footswitch
 
 
 @dataclass
@@ -40,14 +39,30 @@ class Current:
     analog_controllers: AnalogControllers = field(default_factory=dict)
     _controllers: list[Controller] = field(default_factory=list)
     _plugin_bindings: list[tuple[Plugin, Controller]] = field(default_factory=list)
+    _control_by_param: dict[Parameter, Controller] = field(default_factory=dict)
 
     def bind(self, controller: Controller, parameter: Parameter) -> None:
+        self._release(controller)
         controller.bind_to_parameter(parameter)
+        self._control_by_param[parameter] = controller
         self.track(controller)
 
     def attach(self, controller: Controller, parameter: Parameter) -> None:
+        self._release(controller)
         controller.parameter = parameter
+        self._control_by_param[parameter] = controller
         self.track(controller)
+
+    def control_for(self, parameter: Parameter) -> Controller | None:
+        """The control bound to this parameter. A CC number is an address, not
+        an identity: two parameters can name the same one, so the binder's
+        decision is the record and this is how to read it."""
+        return self._control_by_param.get(parameter)
+
+    def _release(self, controller: Controller) -> None:
+        prior = controller.parameter
+        if prior is not None and self._control_by_param.get(prior) is controller:
+            del self._control_by_param[prior]
 
     def track(self, controller: Controller) -> None:
         if controller not in self._controllers:
@@ -63,9 +78,9 @@ class Current:
         for plugin, controller in reversed(self._plugin_bindings):
             if controller in plugin.controllers:
                 plugin.controllers.remove(controller)
-            plugin.has_footswitch = any(isinstance(c, Footswitch) for c in plugin.controllers)
         for controller in reversed(self._controllers):
             controller.unbind_from_parameter()
         self._plugin_bindings.clear()
         self._controllers.clear()
+        self._control_by_param.clear()
         self.analog_controllers = {}

@@ -134,28 +134,45 @@ class Footswitch(controller.StatefulController):
         indicators itself. When bound to a plugin :bypass, the WS broadcast does."""
         return self.parameter is None
 
+    @property
+    def _toggle_extents(self) -> tuple[float, float] | None:
+        """The (off, on) values this switch alternates between. None for
+        :bypass and unbound, whose polarity is inverted."""
+        param = self.parameter
+        if param is None or param.symbol == BYPASS_SYMBOL:
+            return None
+        lo = param.minimum if param.minimum is not None else 0
+        hi = param.maximum if param.maximum is not None else 1
+        return lo, hi
+
+    def is_on(self, value: float) -> bool:
+        extents = self._toggle_extents
+        if extents is None:
+            return value < 1
+        lo, hi = extents
+        return value >= (lo + hi) / 2
+
     @override
     def set_value(self, value: float):
-        param = self.parameter
-        if param is not None and param.symbol != BYPASS_SYMBOL:
-            # Non-:bypass binding: "on" is the max end, so compare against midpoint.
-            lo = param.minimum if param.minimum is not None else 0
-            hi = param.maximum if param.maximum is not None else 1
-            self.toggled = value >= (lo + hi) / 2
-        else:
-            self.toggled = value < 1
+        self.toggled = self.is_on(value)
         self.set_led(self.toggled)
         self.refresh_callback(footswitch=self)
 
+    def cc_for(self, value: float) -> int | None:
+        """This switch's CC code for *value*, or None where it has none: it
+        reaches the two ends of the binding range and nothing between them."""
+        if value == self.value_for(True):
+            return 127
+        if value == self.value_for(False):
+            return 0
+        return None
+
     def value_for(self, toggled: bool) -> float:
-        """Parameter value for a toggle state — the inverse of set_value's read.
-        Non-:bypass: "on" is the max end. :bypass: "on" is not-bypassed, i.e. 0."""
-        param = self.parameter
-        if param is not None and param.symbol != BYPASS_SYMBOL:
-            lo = param.minimum if param.minimum is not None else 0
-            hi = param.maximum if param.maximum is not None else 1
-            return hi if toggled else lo
-        return 0 if toggled else 1
+        extents = self._toggle_extents
+        if extents is None:
+            return 0 if toggled else 1
+        lo, hi = extents
+        return hi if toggled else lo
 
     def current_toggle_state(self) -> bool:
         return self.toggled

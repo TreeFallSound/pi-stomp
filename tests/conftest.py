@@ -282,7 +282,6 @@ def make_plugin():
         # Fixture acts as the composition root: resolve customization by URI,
         # mirroring how the handler injects it in production.
         p = Plugin(instance_id, parameters, {}, category, uri=uri, customization=lookup(uri))
-        p.has_footswitch = has_footswitch
         return p
 
     return _make

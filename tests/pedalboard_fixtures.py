@@ -7,7 +7,7 @@ one of the topologies here.
 
 Each helper returns a `MockPedalboard` exposing the duck-typed attributes
 used by `lcd320x240.draw_plugins`: `title`, `plugins` (with `instance_id`,
-`is_bypassed()`, `category`, `has_footswitch`, `controllers`), and
+`is_bypassed()`, `category`, `controllers`), and
 `connections` (a list of `modalapi.connections.Connection`).
 """
 
@@ -25,7 +25,6 @@ from modalapi.plugin_customization import PluginExtraData
 class MockPlugin:
     instance_id: str
     category: str = "Distortion"
-    has_footswitch: bool = False
     bypassed: bool = False
     controllers: list = field(default_factory=list)
     uri: str | None = None
@@ -125,10 +124,10 @@ def blank() -> MockPedalboard:
 def linear_chain() -> MockPedalboard:
     """Classic serial chain: distort → delay → reverb → chorus."""
     plugins = [
-        MockPlugin("distortion", "Distortion", has_footswitch=True),
-        MockPlugin("delay", "Delay", has_footswitch=True),
-        MockPlugin("reverb", "Reverb", has_footswitch=True, bypassed=True),
-        MockPlugin("chorus", "Modulator", has_footswitch=False),
+        MockPlugin("distortion", "Distortion"),
+        MockPlugin("delay", "Delay"),
+        MockPlugin("reverb", "Reverb", bypassed=True),
+        MockPlugin("chorus", "Modulator"),
     ]
     return MockPedalboard(
         title="Rock Rig",
@@ -172,15 +171,15 @@ def tall_parallel() -> MockPedalboard:
     Lane 5 (depth 1): Chorus ────────────────(dummies)─────────┘
     """
     plugins = [
-        MockPlugin("gate", "Dynamics", has_footswitch=True),
-        MockPlugin("amp", "Amplifier", has_footswitch=True),
+        MockPlugin("gate", "Dynamics"),
+        MockPlugin("amp", "Amplifier"),
         MockPlugin("cab", "Utility"),
-        MockPlugin("comp", "Dynamics", has_footswitch=True),
-        MockPlugin("drive", "Distortion", has_footswitch=True),
+        MockPlugin("comp", "Dynamics"),
+        MockPlugin("drive", "Distortion"),
         MockPlugin("eq", "EQ"),
-        MockPlugin("delay", "Delay", has_footswitch=True),
-        MockPlugin("reverb", "Reverb", has_footswitch=True),
-        MockPlugin("chorus", "Modulator", has_footswitch=True),
+        MockPlugin("delay", "Delay"),
+        MockPlugin("reverb", "Reverb"),
+        MockPlugin("chorus", "Modulator"),
         MockPlugin("x42-eq", "EQ"),
     ]
     conns = [
@@ -217,8 +216,8 @@ def stereo_chain() -> MockPedalboard:
     capture_2 → EQ(1) → Comp(1) → Limit(1) → playback_2
     """
     plugins = [
-        MockPlugin("eq", "EQ", has_footswitch=True),
-        MockPlugin("comp", "Dynamics", has_footswitch=True),
+        MockPlugin("eq", "EQ"),
+        MockPlugin("comp", "Dynamics"),
         MockPlugin("limit", "Dynamics"),
     ]
     conns = [
@@ -246,8 +245,8 @@ def split_merge() -> MockPedalboard:
     """
     plugins = [
         MockPlugin("split", "Utility"),
-        MockPlugin("delay", "Delay", has_footswitch=True),
-        MockPlugin("reverb", "Reverb", has_footswitch=True),
+        MockPlugin("delay", "Delay"),
+        MockPlugin("reverb", "Reverb"),
         MockPlugin("merge", "Utility"),
     ]
     conns = [
@@ -274,20 +273,20 @@ def parallel_beths() -> MockPedalboard:
                 ├── OD → Chorus           ──┤→ MixEQ → playback_{1,2}
                 └── Gate                  ──┘
     """
-    # (instance_id, category, has_footswitch, bypassed)
-    _LANES: list[list[tuple[str, str, bool, bool]]] = [
+    # (instance_id, category, bypassed)
+    _LANES: list[list[tuple[str, str, bool]]] = [
         # Lane A – Clean (depth 3)
-        [("Comp", "Dynamics", True, False), ("Amp", "Amplifier", True, False), ("Delay", "Delay", True, False)],
+        [("Comp", "Dynamics", False), ("Amp", "Amplifier", False), ("Delay", "Delay", False)],
         # Lane B – Crunch (depth 2; Chorus bypassed)
-        [("OD", "Distortion", True, False), ("Chorus", "Modulator", True, True)],
+        [("OD", "Distortion", False), ("Chorus", "Modulator", True)],
         # Lane C – Gate only (depth 1)
-        [("Gate", "Dynamics", False, False)],
+        [("Gate", "Dynamics", False)],
     ]
 
     lane_plugins: list[list[MockPlugin]] = [
-        [MockPlugin(iid, cat, fs, byp) for iid, cat, fs, byp in lane] for lane in _LANES
+        [MockPlugin(iid, cat, byp) for iid, cat, byp in lane] for lane in _LANES
     ]
-    mix_eq = MockPlugin("MixEQ", "EQ", False, False)
+    mix_eq = MockPlugin("MixEQ", "EQ", False)
     all_plugins: list[MockPlugin] = [p for lane in lane_plugins for p in lane] + [mix_eq]
     assert len(all_plugins) == 7, f"expected 7, got {len(all_plugins)}"
 

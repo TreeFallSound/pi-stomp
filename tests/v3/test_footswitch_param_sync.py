@@ -37,7 +37,7 @@ def _bind_solo_footswitch(v3_system: SystemFixture, make_plugin, make_parameter)
     fs0 = hw.footswitches[0]
     binding = f"{ch}:{fs0.midi_CC}"
 
-    plugin = make_plugin("mixer", has_footswitch=True)
+    plugin = make_plugin("mixer")
     solo = make_parameter("Solo1", "mixer", value=0.0, minimum=0.0, maximum=1.0)
     solo.binding = binding
     plugin.parameters[solo.symbol] = solo

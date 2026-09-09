@@ -126,7 +126,6 @@ class ControllerManager:
                 current.track_plugin_binding(plugin, controller)
 
                 if isinstance(controller, Footswitch):
-                    plugin.has_footswitch = True
                     controller.set_category(plugin.category)
                     event_kind = EventKind.PRESS
                     cls = ControlClass.FOOTSWITCH

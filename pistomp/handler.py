@@ -105,6 +105,12 @@ class Handler(InputSink):
         per-parameter dialog as open_parameter_dialog."""
         raise NotImplementedError()
 
+    def toggle_plugin_bypass(self, plugin: "Plugin") -> None:
+        """Flip a plugin's bypass the one way the whole UI flips it: through the
+        footswitch press path when the plugin has one (so mod-host's echo
+        reconciles it), else committed over the WebSocket."""
+        raise NotImplementedError()
+
     def open_audio_parameter_dialog(
         self, parameter: "Parameter", commit_callback: Callable[[str, float], None]
     ) -> None:

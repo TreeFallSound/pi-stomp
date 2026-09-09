@@ -232,9 +232,9 @@ class Panel(ContainerWidget, InputSink):
         if self.on_event(event):
             return True
         match event:
-            case SwitchEvent() if (
-                event.kind is SwitchEventKind.PRESS
-                and event.controller.type in (ControlType.KNOB, ControlType.VOLUME)
+            case SwitchEvent() if event.kind is SwitchEventKind.PRESS and event.controller.type in (
+                ControlType.KNOB,
+                ControlType.VOLUME,
             ):
                 return self.input_event(InputEvent.CLICK)
         return False
@@ -404,6 +404,7 @@ class LcdBase(ABC):
         """Estimated ms to push a clip of this box's size. 0 = no cost."""
         return 0.0
 
+
 class PanelStack(ContainerWidget):
     # A push estimated to take longer than this is coalesced rather than pushed
     # inline, leaving headroom under the 10ms tick.
@@ -448,6 +449,12 @@ class PanelStack(ContainerWidget):
         self._pending_lcd_clip: Optional[Box] = None  # None = full screen or nothing pending
         self.capture_callback = None
         self._batching = False
+        self._frozen = False
+
+    def freeze(self):
+        """Stop pushing to the LCD. Panels still tick, pop and destroy; nothing reaches the screen."""
+        self._frozen = True
+        self.lcd_needs_update = False
 
     @contextmanager
     def batch(self):
@@ -478,6 +485,8 @@ class PanelStack(ContainerWidget):
           * None      — full screen: compose everything, push full screen
         """
         assert self.surface is not None
+        if self._frozen:
+            return
         clip = self._pending_lcd_clip
         if clip is None:
             clip = self.box.norm()
@@ -490,6 +499,8 @@ class PanelStack(ContainerWidget):
         self.capture_callback = callback
 
     def refresh(self, box=None):
+        if self._frozen:
+            return
         clip = self.box.norm() if box is None else box
         self.propagate_dirty(clip)
         self.lcd.update(self.surface, clip)
@@ -506,6 +517,8 @@ class PanelStack(ContainerWidget):
         the poll slot, skipping to the latest state.
         """
         assert self.surface is not None
+        if self._frozen:
+            return
         clip = local_clip
 
         top = self.stack[-1] if self.stack else None

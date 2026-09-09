@@ -81,7 +81,6 @@ def make_fil4_plugin(instance_id: str = "fil4") -> Plugin:
             params[b.gain_sym] = _param(b.gain_sym, 0.0, -18.0, 18.0, instance_id=instance_id, unit="dB")
 
     plugin = Plugin(instance_id, params, {}, "Filter", uri=FIL4_MONO_URI)
-    plugin.has_footswitch = False
     # Simulate parse-time snapshot for Reset
     plugin.pedalboard_snapshot = {
         sym: float(p.value) if p.value is not None else 0.0
