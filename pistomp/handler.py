@@ -83,6 +83,11 @@ class Handler(InputSink):
         # it dynamically (e.g. when the tuner panel is visible).
         return 20
 
+    @property
+    def binding_revision(self) -> int:
+        """Revision of the handler's effective hardware bindings."""
+        return 0
+
     def noop(self):
         pass
 
@@ -103,6 +108,15 @@ class Handler(InputSink):
         """NAV CLICK on a compound selection (e.g. an EQ band's gain/freq/Q):
         open a submenu over just these symbols, each row opening the same
         per-parameter dialog as open_parameter_dialog."""
+        raise NotImplementedError()
+
+    def parameter_value_commit(self, param: "Parameter", value: float) -> None:
+        """Commit an edited value through the transport that owns this parameter.
+        Reverts on screen if the send never left."""
+        raise NotImplementedError()
+
+    def parameter_ui_value_commit(self, param: "Parameter", value: float) -> None:
+        """Commit a plugin-panel or NAV edit through its UI transport."""
         raise NotImplementedError()
 
     def toggle_plugin_bypass(self, plugin: "Plugin") -> None:
@@ -260,5 +274,3 @@ class Handler(InputSink):
         """Build the board's associations and rows again. A handler that owns an
         activation must override this."""
         raise NotImplementedError()
-
-

@@ -158,6 +158,8 @@ class FakeWebSocketBridge:
     def __init__(self):
         self.sent: list[str] = []
         self._inbox: list[str] = []
+        self.connected = True
+        self.reconnects = 0
 
     def start(self) -> None:
         pass
@@ -172,6 +174,10 @@ class FakeWebSocketBridge:
     def send_bpm(self, bpm: float) -> bool:
         self.sent.append(f"transport-bpm {bpm}")
         return True
+
+    def get_reconnects_since_last_call(self) -> int:
+        count, self.reconnects = self.reconnects, 0
+        return count
 
     def clear_queue(self) -> int:
         return 0

@@ -13,12 +13,12 @@
 # You should have received a copy of the GNU General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""A MIDI-CC binding can carry a custom sub-range (mod-ui's "Advanced" addressing).
-While that binding holds, the encoder sweeps and the LCD reads the sub-range, not
-the plugin's declared LV2 range."""
+"""A MIDI-CC binding carries a physical-control sub-range (mod-ui's "Advanced" addressing).
+The plugin keeps its declared range; the sub-range controls physical MIDI conversion
+and step grids only.
+"""
 
 from common.parameter import MidiCC, Parameter, PortInfo
-from common.parameter_steps import ParameterSteps
 from modalapi.pedalboard import Pedalboard
 
 
@@ -26,69 +26,66 @@ def _port(minimum: float = 0.0, maximum: float = 1.0) -> PortInfo:
     return PortInfo(shortName="gain", symbol="gain", ranges={"minimum": minimum, "maximum": maximum})
 
 
-def test_binding_range_overrides_declared_range():
+def test_binding_range_sets_physical_extents():
     p = Parameter(_port(0.0, 1.0), 0.25, binding="0:70", binding_range=(0.0, 0.5))
     assert p.minimum == 0.0
     assert p.maximum == 0.5
 
 
-def test_no_binding_range_uses_declared_range():
+def test_unmapped_parameter_physical_extents_match_declared():
     p = Parameter(_port(0.0, 1.0), 0.25, binding="0:70")
     assert p.minimum == 0.0
     assert p.maximum == 1.0
 
 
-def test_set_binding_range_live_narrows_sweep():
+def test_set_binding_range_updates_physical_extents():
     p = Parameter(_port(0.0, 1.0), 0.25, binding=None)
     p.set_binding_range((0.2, 0.6))
     assert (p.minimum, p.maximum) == (0.2, 0.6)
 
 
-def test_set_binding_range_widens_to_full_range():
-    """mod-host re-sends the effective range on re-address — a re-map back to the
-    full range arrives as the declared extents and overwrites the sub-range."""
+def test_set_binding_range_updates_physical_extents_to_new_mapping():
+    """A re-address can replace a custom MIDI sub-range with the full range."""
     p = Parameter(_port(0.0, 1.0), 0.25, binding="0:70", binding_range=(0.0, 0.5))
     p.set_binding_range((0.0, 1.0))
     assert (p.minimum, p.maximum) == (0.0, 1.0)
 
 
-def test_set_binding_range_preserves_identity():
-    """The range mutates in place — the same Parameter object, so every
-    controller/dialog/subscriber holding it stays wired."""
+def test_set_binding_range_preserves_parameter_identity():
+    """The same Parameter object keeps all controller and UI references valid."""
     p = Parameter(_port(0.0, 1.0), 0.25, binding=None)
     before = id(p)
     p.set_binding_range((0.2, 0.6))
     assert id(p) == before
 
 
-def test_clear_binding_range_restores_declared_range():
-    """Calling clear_binding_range resets minimum and maximum to declared_minimum and declared_maximum."""
+def test_clear_binding_range_restores_declared_physical_extents():
     p = Parameter(_port(30.0, 800.0), 100.0, binding="0:70", binding_range=(100.0, 400.0))
     assert (p.minimum, p.maximum) == (100.0, 400.0)
     p.clear_binding_range()
     assert (p.minimum, p.maximum) == (30.0, 800.0)
 
 
-def test_binding_range_notifies_subscribers_and_clamps_value():
-    """set_binding_range and clear_binding_range notify observers and clamp value if out of bounds."""
+def test_binding_range_change_preserves_parameter_value():
+    """Changing MIDI coverage must not change the MOD-owned port value."""
     p = Parameter(_port(0.0, 1.0), 0.9, binding="0:70", binding_range=(0.0, 1.0))
     notifications = []
     p.subscribe(lambda param: notifications.append(param.value))
 
-    # Narrow range past current value (0.9 -> 0.5 max)
     p.set_binding_range((0.0, 0.5))
-    assert p.value == 0.5
-    assert len(notifications) == 1
+    assert p.value == 0.9
+    assert p._confirmed == 0.9
+    assert notifications == []
 
-    # Clear binding range back to 0.0 .. 1.0
     p.clear_binding_range()
     assert (p.minimum, p.maximum) == (0.0, 1.0)
-    assert p.value == 0.5  # Remains at 0.5 when restored
-    assert len(notifications) == 2
+    assert p.value == 0.9
+    assert p._confirmed == 0.9
+    assert notifications == []
 
 
 def test_set_binding_range_is_idempotent():
-    """A connect-dump replay re-sends the same range; equality guard suppresses it."""
+    """A connect dump can repeat the same physical extents without a value event."""
     p = Parameter(_port(0.0, 1.0), 0.5, binding="0:70", binding_range=(0.0, 0.5))
     notifications = []
     p.subscribe(lambda param: notifications.append(param.value))
@@ -97,23 +94,14 @@ def test_set_binding_range_is_idempotent():
 
 
 def test_clear_binding_range_is_idempotent():
-    """A replayed unmap (-1:-1) after the range is already restored is a no-op."""
+    """A repeated unmap does not create a value event."""
     p = Parameter(_port(30.0, 800.0), 400.0, binding="0:70", binding_range=(100.0, 400.0))
     notifications = []
     p.subscribe(lambda param: notifications.append(param.value))
     p.clear_binding_range()
-    assert len(notifications) == 1
+    assert len(notifications) == 0
     p.clear_binding_range()
-    assert len(notifications) == 1
-
-
-def test_step_grid_sweeps_only_the_sub_range():
-    """The encoder grid's endpoints follow the sub-range, so a full spin can no
-    longer reach the plugin's declared maximum."""
-    p = Parameter(_port(0.0, 1.0), 0.0, binding="0:70", binding_range=(0.0, 0.5))
-    steps = ParameterSteps.for_parameter(p)
-    assert steps.values[0] == 0.0
-    assert steps.values[-1] == 0.5
+    assert len(notifications) == 0
 
 
 # ── Pedalboard._binding_range (the static pedalboard/info midiCC dict) ──────

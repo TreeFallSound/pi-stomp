@@ -61,7 +61,7 @@ from common.contexts import ControlClass, ControlRef, EventKind
 from common.param_roles import ParamRole
 from common.param_source import ParamSource
 from common.parameter import BYPASS_SYMBOL, Parameter, Symbol
-from common.parameter_steps import ParameterSteps, effective_multiplier
+from common.parameter_editing import ParameterSteps, effective_multiplier
 from modalapi.plugin import Plugin
 from pistomp.controller import ControlType
 from pistomp.input.dispatch import MultiSelectable, Selectable, fire, resolve_local
@@ -117,6 +117,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
     _btn_bypass: Button | None
     _badge_fn: Callable[[Parameter], str | None] | None
     _model_dirty: bool
+    _seen_binding_revision: int
     _unsub_model: Callable[[], None] | None
 
     def _init_plugin_state(
@@ -132,6 +133,7 @@ class PluginPanel(Panel, Generic[TState], ABC):
         self._param_queue = {}
         self._badge_fn = None
         self._model_dirty = False
+        self._seen_binding_revision = handler.binding_revision
         self._unsub_model = None
 
     def _badge_for(self, symbol: Symbol) -> str | None:
@@ -144,8 +146,22 @@ class PluginPanel(Panel, Generic[TState], ABC):
         if self._btn_bypass is None:
             return
         badge_char = self._badge_for(BYPASS_SYMBOL)
-        if badge_char is not None:
-            self._btn_bypass.set_badge(BadgeGlyph(badge_char))
+        self._btn_bypass.set_badge(BadgeGlyph(badge_char) if badge_char is not None else None)
+
+    def _refresh_binding_badges(self) -> None:
+        self._badge_bypass()
+
+    def _on_binding_revision(self, revision: int) -> None:
+        """Reconcile presentation derived from the effective bindings."""
+        self._refresh_binding_badges()
+
+    def _check_binding_revision(self) -> None:
+        revision = self.handler.binding_revision
+        if revision == self._seen_binding_revision:
+            return
+        self._seen_binding_revision = revision
+        self._on_binding_revision(revision)
+
 
     def _start_observing(self) -> None:
         """Subscribe to plugin param changes. Call at the end of a child
@@ -181,9 +197,11 @@ class PluginPanel(Panel, Generic[TState], ABC):
         # global encoder-longpress callback (e.g. previous/next_snapshot), which
         # reloads every parameter under the open panel. While a plugin editor is
         # open the encoders belong to the panel, so swallow it.
-        if (isinstance(event, SwitchEvent)
-                and event.kind is SwitchEventKind.LONGPRESS
-                and event.controller.type in (ControlType.KNOB, ControlType.VOLUME)):
+        if (
+            isinstance(event, SwitchEvent)
+            and event.kind is SwitchEventKind.LONGPRESS
+            and event.controller.type in (ControlType.KNOB, ControlType.VOLUME)
+        ):
             return True
         if not isinstance(event, EncoderEvent):
             return False
@@ -248,8 +266,9 @@ class PluginPanel(Panel, Generic[TState], ABC):
         p = self.plugin.parameters.get(symbol)
         if p is None:
             return False
-        steps = ParameterSteps.for_parameter(p)
-        delta = int(round(rotations * effective_multiplier(multiplier, p)))
+        extents = (p.declared_minimum, p.declared_maximum)
+        steps = ParameterSteps.for_parameter(p, extents)
+        delta = int(round(rotations * effective_multiplier(multiplier, p, *extents)))
         if delta == 0:
             return False
         new_val = steps.move(delta)
@@ -263,45 +282,34 @@ class PluginPanel(Panel, Generic[TState], ABC):
     def set_param(self, symbol: Symbol, value: float) -> None:
         """Queue a parameter change.
 
-        Writes ``value`` into ``plugin.parameters[symbol]`` immediately so the UI
-        stays consistent; the websocket send is deferred to the next ``tick()``
-        so rapid encoder spins collapse into one send per symbol. Goes through
-        set_param_value so a bound footswitch reconciles now, the same mirror the
-        mod-host echo runs — a tweak edit must match the NAV commit path.
+        Paints ``value`` immediately so the knob tracks the encoder; the send is
+        deferred to the next ``tick()`` so rapid spins collapse into one send per
+        symbol. A preview, not a reconcile: ``_confirmed`` is mod-ui's word, and
+        a local edit that has not left must not overwrite it.
         """
         self._param_queue[symbol] = value
-        self.plugin.set_param_value(symbol, value)
+        param = self.plugin.parameters.get(symbol)
+        if param is not None:
+            param.preview(value)
 
     def tick(self) -> None:
-        """Drain the coalesced parameter queue, then reconcile from the model
-        if any parameter changed under us since the last tick.
-
-        Subclasses that override ``tick()`` **must** call ``super().tick()`` so
-        queued sends are not lost and the model-dirty drain runs.
-        """
+        """Drain queued writes and reconcile model and binding changes."""
         self._flush_param_queue()
         if self._model_dirty:
             self._model_dirty = False
             self.apply_state(self.snapshot_state())
             self._refresh_bypass_style()
+        self._check_binding_revision()
 
     def _flush_param_queue(self) -> None:
-        if not self._param_queue:
-            return
-        instance_id = self.plugin.instance_id
-        for symbol, value in list(self._param_queue.items()):
-            # A send that did not leave (backpressure) stays queued: the value is
-            # not wrong, it is late, and a newer one for the same symbol replaces
-            # it next tick — same coalescing the queue already does.
-            if self._send_param(instance_id, symbol, value):
-                del self._param_queue[symbol]
+        for symbol, value in self._param_queue.items():
+            self._send_param(symbol, value)
+        self._param_queue.clear()
 
-    def _send_param(self, instance_id: str, symbol: Symbol, value: float) -> bool:
-        """Commit one queued param to the backend, returning whether it left.
-        Plugin panels send over the WebSocket; a synthetic source (audiocard)
-        overrides — its ``set_param_value`` already wrote the hardware and there
-        is no mod-host instance to mirror."""
-        return self.handler.ws_bridge.send_parameter(instance_id, symbol, value)
+    def _send_param(self, symbol: Symbol, value: float) -> None:
+        param = self.plugin.parameters.get(symbol)
+        if param is not None:
+            self.handler.parameter_ui_value_commit(param, value)
 
     # ── chrome actions ─────────────────────────────────────────────────────
 

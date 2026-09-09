@@ -5,11 +5,17 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Removed the tap tempo REST fallback, as we now expect the websocket bridge to always be available.
 ### Fixed
 - The parameter dialog on the LCD sometimes did not change values due to a race condition with respect to MOD-UI's `last.json`. pi-Stomp then did not send parameter changes to MOD-UI until you selected a different pedalboard. Parameters on a knob or an encoder continued to work, because they send MIDI CC.
 - The LCD showed a bypass that MOD-UI did not receive, if you tapped it while a pedalboard loaded. The LCD now keeps the last value that MOD-UI confirmed.
 - A parameter change from a plugin menu could be lost if the connection to MOD-UI was busy. pi-Stomp now sends the value again on the next cycle.
 - The bypass button in a plugin menu did not agree with the footswitch LED, if the plugin had a footswitch. Every bypass is now one action, and the LED follows it.
+- Turning an encoder or expression pedal bound to a parameter while a pedalboard loads no longer leaves the LCD on a value the audio never took: MIDI-CC sends are held back during the load, the same way parameter sends over the WebSocket already were, and the edit reverts on screen.
+- An edit that MOD-UI cannot take — the connection is down, or a pedalboard load is in progress — now reverts on the LCD immediately instead of being shown as applied and retried later. A retry of an edit made during a load could deliver the old value after the switch, onto the newly loaded pedalboard.
+- An expression pedal or knob bound to a parameter now moves the parameter the way a bound encoder does: the value is confirmed only when the send leaves, and the LCD bar shows the parameter's value instead of the raw pedal position, which could disagree with the audio on a logarithmic or stepped parameter.
+- Turning a knob quickly no longer repaints the LCD once per echoed value: the parameter echoes of one poll cycle collapse to the last value per parameter, so a fast tweak paints once.
 
 ## [v3.3.1] - 2026-09-01
 ### Added

@@ -113,8 +113,10 @@ def test_menu_commit_refreshes_footswitch(v3_system: SystemFixture, make_plugin,
 
 
 def test_tweak_setparam_on_toggles_footswitch(v3_system: SystemFixture, make_plugin, make_parameter):
-    """A tweak edit commits through PluginPanel.set_param, not
-    parameter_value_commit — it must reconcile the footswitch identically."""
+    """A tweak edit publishes through PluginPanel.set_param, not
+    parameter_value_commit — it must reconcile the footswitch identically. The
+    settle rides the tick that sends it, so the keycap never claims a state that
+    did not leave."""
     handler, fs0, solo = _bind_solo_footswitch(v3_system, make_plugin, make_parameter)
     plugin = handler.current.pedalboard.plugins[0]
     handler.show_fullscreen_panel(plugin, _BarePanel)
@@ -122,6 +124,7 @@ def test_tweak_setparam_on_toggles_footswitch(v3_system: SystemFixture, make_plu
     assert fs0.toggled is False
 
     panel.set_param(solo.symbol, solo.maximum)
+    panel.tick()
 
     assert fs0.toggled is True
 
@@ -132,8 +135,10 @@ def test_tweak_setparam_off_toggles_footswitch(v3_system: SystemFixture, make_pl
     handler.show_fullscreen_panel(plugin, _BarePanel)
     panel = cast(_BarePanel, handler.lcd.pstack.current)
     panel.set_param(solo.symbol, solo.maximum)
+    panel.tick()
     assert fs0.toggled is True
 
     panel.set_param(solo.symbol, solo.minimum)
+    panel.tick()
 
     assert fs0.toggled is False

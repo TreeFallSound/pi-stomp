@@ -60,17 +60,21 @@ def _param(
 
 def make_noisegate_plugin(instance_id: str = "Gate") -> Plugin:
     params: dict[Symbol, Parameter] = {
-        BYPASS_SYMBOL: Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, instance_id),
+        BYPASS_SYMBOL: Parameter(
+            {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}},
+            False,
+            None,
+            instance_id,
+        ),
         Symbol("open"): _param(Symbol("open"), -45.0, -60.0, 0.0, instance_id, unit="dB"),
         Symbol("attack"): _param(Symbol("attack"), 0.0, 0.0, 5.0, instance_id, unit="ms"),
         Symbol("close"): _param(Symbol("close"), -67.5, -80.0, 0.0, instance_id, unit="dB"),
         Symbol("mains"): _param(Symbol("mains"), 50.0, 0.0, 100.0, instance_id, unit="Hz"),
     }
-    plugin = Plugin(instance_id, params, {}, "Dynamics", uri=CAPS_NOISEGATE_URI, customization=lookup(CAPS_NOISEGATE_URI))
-    plugin.pedalboard_snapshot = {
-        sym: float(p.value) if p.value is not None else 0.0
-        for sym, p in params.items()
-    }
+    plugin = Plugin(
+        instance_id, params, {}, "Dynamics", uri=CAPS_NOISEGATE_URI, customization=lookup(CAPS_NOISEGATE_URI)
+    )
+    plugin.pedalboard_snapshot = {sym: float(p.value) if p.value is not None else 0.0 for sym, p in params.items()}
     return plugin
 
 
@@ -94,9 +98,7 @@ def bind_footswitch(handler, plugin: Plugin, symbol: Symbol, fs_id: int) -> None
         if layer.ref.kind is ContextKind.PEDALBOARD:
             layer.rows.setdefault(key, []).append(row)
             return
-    handler.effective_table.layers.append(
-        ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD), rows={key: [row]})
-    )
+    handler.effective_table.layers.append(ContextLayer(ref=ContextRef(kind=ContextKind.PEDALBOARD), rows={key: [row]}))
 
 
 def open_menu(v3_system: SystemFixture) -> Plugin:
@@ -170,7 +172,9 @@ def test_parameter_window_scrolls_when_content_overflows(v3_system: SystemFixtur
 
     assert handler.current
     params: dict[Symbol, Parameter] = {
-        BYPASS_SYMBOL: Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "many"),
+        BYPASS_SYMBOL: Parameter(
+            {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "many"
+        ),
     }
     for i in range(12):
         sym = Symbol(f"param_{i:02d}")
@@ -217,7 +221,9 @@ def test_list_row_tweak1_edits_value(v3_system: SystemFixture, nav_handler, snap
 
     assert handler.current
     params: dict[Symbol, Parameter] = {
-        BYPASS_SYMBOL: Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "many"),
+        BYPASS_SYMBOL: Parameter(
+            {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "many"
+        ),
     }
     for i in range(6):
         sym = Symbol(f"param_{i:02d}")
@@ -249,7 +255,9 @@ def test_list_row_tweak1_edits_value(v3_system: SystemFixture, nav_handler, snap
     snapshot("row_edited")
 
 
-def _enum_param(symbol: str, minimum: float, maximum: float, points: list[tuple[str, float]], value: float = 0.0) -> Parameter:
+def _enum_param(
+    symbol: str, minimum: float, maximum: float, points: list[tuple[str, float]], value: float = 0.0
+) -> Parameter:
     return Parameter(
         {
             "shortName": symbol,
@@ -272,11 +280,18 @@ def test_discrete_types_pin_as_rings(v3_system: SystemFixture, nav_handler, snap
 
     assert handler.current
     params: dict[Symbol, Parameter] = {
-        BYPASS_SYMBOL: Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "mix"),
+        BYPASS_SYMBOL: Parameter(
+            {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "mix"
+        ),
         Symbol("gain"): _param(Symbol("gain"), 0.5, 0.0, 1.0, "mix", unit="dB"),
         Symbol("mode"): _enum_param("mode", 0, 2, [("Bypass", 0.0), ("Warm", 1.0), ("Bright", 2.0)]),
         Symbol("boost"): Parameter(
-            {"shortName": "boost", "symbol": "boost", "ranges": {"minimum": 0, "maximum": 1}, "properties": ["toggled"]},
+            {
+                "shortName": "boost",
+                "symbol": "boost",
+                "ranges": {"minimum": 0, "maximum": 1},
+                "properties": ["toggled"],
+            },
             0.0,
             None,
             "mix",
@@ -323,7 +338,9 @@ def test_discrete_list_rows_on_overflow(v3_system: SystemFixture, nav_handler, s
 
     assert handler.current
     params: dict[Symbol, Parameter] = {
-        BYPASS_SYMBOL: Parameter({"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "mix"),
+        BYPASS_SYMBOL: Parameter(
+            {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}, False, None, "mix"
+        ),
         Symbol("a1"): _param(Symbol("a1"), 0.5, 0.0, 1.0, "mix", unit="dB"),
         Symbol("a2"): _param(Symbol("a2"), 0.5, 0.0, 1.0, "mix", unit="dB"),
         Symbol("a3"): _param(Symbol("a3"), 0.5, 0.0, 1.0, "mix", unit="dB"),
@@ -350,6 +367,7 @@ def test_discrete_list_rows_on_overflow(v3_system: SystemFixture, nav_handler, s
     lcd.main_panel.input_event(InputEvent.LONG_CLICK)
     handler.poll_lcd_updates()
     snapshot("initial")
+
 
 def test_tweak_bound_to_pedalboard_param_not_corrupted_by_open_menu(v3_system: SystemFixture):
     """The original bug, end to end: a plugin parameter menu (ParameterWindow) is
@@ -424,3 +442,4 @@ def test_unbound_fallback_owned_by_handler(v3_system: SystemFixture):
         enc1.refresh(1)
 
     assert handler.encoder_fallback(enc1) > start
+

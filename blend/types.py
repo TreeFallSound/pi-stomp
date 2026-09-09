@@ -80,7 +80,6 @@ class BlendInputProtocol(Protocol):
 
 class WebSocketBridgeProtocol(Protocol):
     def send_parameter(self, instance_id: InstanceId, symbol: Symbol, value: float) -> bool: ...
-    def clear_queue(self) -> int: ...
 
 
 SnapshotStateDict: TypeAlias = dict[InstanceId, dict[Symbol, float]]

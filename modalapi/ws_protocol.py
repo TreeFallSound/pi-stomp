@@ -378,3 +378,18 @@ def parse_message(raw_message: str) -> WebSocketMessage:
         return UnknownMessage(raw=raw_message)
 
     return UnknownMessage(raw=raw_message)
+
+
+def coalesce_param_sets(messages: list[WebSocketMessage]) -> list[WebSocketMessage]:
+    """Drop every param_set but the last per (instance, symbol), keeping each
+    survivor at its original position. The port is level-sampled and the feed
+    is in-order, so intermediate values of one drain are paint-only."""
+    latest: dict[tuple[str, Symbol], int] = {}
+    for i, msg in enumerate(messages):
+        if isinstance(msg, ParamSetMessage):
+            latest[(msg.instance, msg.symbol)] = i
+    if not latest:
+        return messages
+    return [
+        m for i, m in enumerate(messages) if not isinstance(m, ParamSetMessage) or latest[(m.instance, m.symbol)] == i
+    ]

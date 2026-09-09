@@ -8,14 +8,14 @@ Architecture reference: `docs/architecture.md`. Subsystem detail:
 `pistomp/input/README.md` (input dispatch), `uilib/README.md` (paint system).
 Wire protocol: `../pistomp-manual/src/developers/websocket-bridge.md` (message table,
 bypass paths); `../pistomp-manual/src/plugins/choosing-pedals/build.md` (REST add/connect/save).
-**Read the code before trusting any doc, including this one.**
+**Read the code before trusting any doc, excluding this one.**
 
 ## Agent behaviour
 
-As the user, I expect you to lead with suggestions and uncover facts; I own the architecture and judgment.
+As the user, I expect you to lead with suggestions and uncover facts. I hold that context; you do not. An implementation built on a guess is expensive to me: I have to find the guess, see where it left the intent, and unwind it. A suggestion costs one read and a "no." So lead with suggestions and uncover facts; I own the architecture and judgment.
 
 1. **Suggest, with justification** — prior art, real hardware/ecosystem examples, ways this lets players express themselves. A suggestion I can reject beats an implementation I have to unwind.
-2. **When the design space is open, hand it back as a question.** Decompose it into its principal axes and ask with the multi-select tool, not as prose options. *Open* means more than one defensible architecture, or a choice that's expensive to reverse. A bug fix or an already-constrained detail is not open — just do it.
+2. **When the design space is open, hand it back as a question.** Decompose it into its principal axes and ask with the multi-select tool, not as prose options. *Open* means more than one defensible architecture, or a choice that's expensive to reverse. A bug fix or an already-constrained detail is not open — just do it. (Debounce constant for a new encoder: constrained, do it. Whether encoders map to parameter pages at all: open, ask.)
 3. **I own the scaffolding.** Once my choices constrain the space, fill in the rest. That's where you accelerate me.
 
 Don't correct me on things that aren't germane, especially when you're only guessing I don't understand. Do tell me when I'm wrong about the thing at hand.
@@ -24,12 +24,12 @@ Don't correct me on things that aren't germane, especially when you're only gues
 
 - **pyright zero.** No new errors, ever.
 - **No broad `# pyright: ignore`.** A blanket ignore is a bug you haven't found yet.
-- **`getattr` / `hasattr` are banned.** If you reach for them, the type is wrong.
+- **`getattr` / `hasattr` are banned.** If you reach for them, the type is wrong — lean on the annotations and `cast` where you must. A dynamic attribute is a typed protocol you haven't written yet.
 - **Dependencies form a DAG.** No cycles between modules.
 - **MOD-UI is the single writer** of bypass and parameter state. We emit, paint
   optimistically, and reconcile against its echo. Never treat local state as truth.
 - **No comments explaining course corrections.**
-- **Production python files must always have AGPL headers.**
+- **Production python files must always have AGPL headers.** Copy the SPDX block from any of them, e.g. `pistomp/adcswitch.py`.
 - **NAV is unhijackable.** Rotate/click/longpress on the NAV control always operates on
   the current selection. No panel or binding may consume a raw NAV event, and no
   `declare_bindings()` row may name `cls=NAV` — it's the one axiom the precedence
@@ -59,13 +59,11 @@ observability cruft. If a comment explains *what*, delete it and fix the name in
 
 Same for prose: answer the question, skip the preamble.
 
-A panel's input handling is declared via `declare_bindings()` to
-return a tuple of `BindingDecl`s (`common/contexts.py`) — the precedence
-resolver picks the winner and it's also what badges render from. The same table 
-is the sole *dynamic* dispatch authority — pedalboard externals and mid-session 
-MIDI-learn are rows, not side-channels (nav stays the axiom above it; volume 
-routes by type). Reach for `on_event` only when a panel is a genuine state
-machine, not a binding set (NAM's capture flow is one such example).
+A panel declares its input handling with `declare_bindings()` → `BindingDecl`s
+(`common/contexts.py`); the precedence resolver picks the winner and badges render off the
+same table. Two things the source won't tell you: nav stays the axiom above the resolver,
+and `on_event` is only for a panel that is a genuine state machine (NAM's capture flow), not
+a binding set.
 
 ## Commands
 
@@ -80,64 +78,50 @@ ssh pistomp@pistomp.local "journalctl -u mod-ala-pi-stomp -f"   # live logs
 ```
 
 Deploy by `scp` + `ps-restart` on the device or by `./deploy.sh`; source lives at
-`/home/pistomp/pi-stomp/`. Shipping a release requires a version bump in the
-*separate* `pi-gen-pistomp` repo — see `docs/architecture.md`.
+`/home/pistomp/pi-stomp/`. Shipping a release needs a version bump in the `pi-gen-pistomp`
+repo, which is not in this checkout — see `docs/architecture.md`.
 
 The system python provides base packages (`python3-lilv`); PyPI deps live in a
 uv-managed venv. Don't try to pip-install the system ones.
 
 ## Traps
 
-- **Never create a bare `pygame.Surface((w, h))`.** It inherits the display format —
-  opaque RGB when headless (device/tests) but ARGB under a real window driver (the
-  cocoa emulator). The stray alpha silently breaks SRCALPHA compositing; glyph pastes
-  drop their fill and you will blame the wrong thing. Be explicit: `pygame.SRCALPHA`
-  for alpha, or `depth=32, masks=(0xFF0000, 0xFF00, 0xFF, 0)` for opaque RGB
+- **Never create a bare `pygame.Surface((w, h))`.** It inherits the display format — opaque
+  RGB when headless (device/tests), ARGB under a real window driver (the cocoa emulator) —
+  and the stray alpha breaks SRCALPHA compositing. Be explicit: `pygame.SRCALPHA` for alpha,
+  or the opaque 32-bit `masks=` construction in `uilib/container.py` for a blend destination
   (bit-identical to the device; `depth=24` differs in AA rounding).
 
 - **`PanelStack`'s root surface must stay opaque.** `LcdIli9341.update` quantises it to
-  RGB565 with an SDL convert-blit; give that blit an `SRCALPHA` source and SDL silently
-  switches to its per-pixel *alpha-blending* blitter — ~7x slower, and it lands on every
-  LCD push. The root is a blend *destination*, so it needs 32-bit for blend precision
-  but gains nothing from a dest alpha channel (a dimmer over black yields the same
-  `(128,128,128)` either way). Panel surfaces (`ShroudedPanel`, `RoundedPanel`) are blit
-  *sources* and do still need `RGBA`. Benchmark the pack path with
-  `tools/bench_pack_variants.py`.
+  RGB565 with a convert-blit; an `SRCALPHA` source flips SDL to its per-pixel
+  alpha-blending blitter — ~7x slower, on every LCD push. The root is a blend
+  *destination*: it needs 32-bit for blend precision but no dest alpha channel. Panel
+  surfaces (`ShroudedPanel`, `RoundedPanel`) are blit *sources* and do need `RGBA`.
+  Benchmark the pack path with `tools/bench_pack_variants.py`.
 
 - **Snapshot loads broadcast only deltas** against mod-ui's own cache; pedalboard loads
   and connect dumps rebroadcast unconditionally. Reselecting a *board* is a full
   resync. Reselecting a *snapshot* is not.
 
-- **A UI bypass of a footswitch-less plugin gets no echo.** mod-ui skips the origin
-  socket, and mod-host emits no `param_set` for bypasses it received from mod-ui. So
-  that path must update local state itself: `Plugin.toggle_bypass` commits, which
-  writes and publishes as one act and reverts if the send never leaves. A
-  footswitch-bound plugin is the opposite: `_sink_for` routes its commit out as MIDI
-  CC → mod-host → feedback echo, and that echo reconciles it. The asymmetry is one of
-  *transport*, chosen by `_sink_for`, and it is deliberate.
+- **A UI bypass of a footswitch-less plugin gets no echo.** mod-ui skips the origin socket,
+  and mod-host emits no `param_set` for a bypass it received from mod-ui — so that path must
+  update local state itself (`Plugin.toggle_bypass` commits). A footswitch-bound plugin is
+  the opposite: `_sink_for` routes the commit out as MIDI CC and the echo reconciles it. The
+  asymmetry is one of *transport*, chosen by `_sink_for`, and it is deliberate. (Dispatch
+  carries no such fork; never fake a press to reach the wire — see `_fire_row`.)
 
-  Dispatch carries no such fork. Every UI bypass — LCD tile, plugin panel button — is
-  one commit on `:bypass`, and the keycap follows because `StatefulController`
-  subscribes to the settled value. Never reach the wire by faking a press: the row
-  that wins that switch need not be the bypass. The press is its own path — a preview
-  plus the emit in `_fire_row`'s `ParamEffect` arm — because it already knows its
-  transport and has no sink to choose.
+- **A switch's CC carries only the two ends of the binding range.** A press alternates
+  between exactly the min/max mod-ui's advanced MIDI-learn assigned. A UI edit that lands
+  *between* them has no CC code, so `_publish_switch_cc` sends it over the WebSocket
+  instead — else mod-host answers an endpoint against a screen showing the real value.
+  Pinned by the endpoint pair in `tests/v3/test_sink_routing.py`.
 
-- **A switch's CC carries only the two ends of the binding range.** mod-ui's advanced
-  MIDI-learn menu puts a footswitch on a continuous parameter with its own min/max,
-  and a press alternates between exactly those. A UI edit that lands *between* them
-  has no CC code, so `_publish_switch_cc` sends it over the WebSocket instead — else
-  mod-host answers an endpoint against a screen showing the real value. Pinned by the
-  endpoint pair in `tests/v3/test_sink_routing.py`.
-
-- **`loading_start` opens a window that suppresses outbound sends; `loading_end`
-  closes it.** Both come from mod-ui, in pairs, from a board load and from the
-  connect dump alike. Nothing else may raise `_is_pedalboard_loading` — a window
-  raised where nothing closes it silently refuses every parameter send for the rest
-  of the session, and `commit` then rolls each edit back on screen.
-  `set_current_pedalboard` clears it as the point we have caught up, which also
-  covers the one case mod-ui abandons its own window (an aborted load returns before
-  `loading_end`).
+- **`loading_start` opens a window that suppresses outbound sends; `loading_end` closes
+  it.** Both come from mod-ui in pairs, from a board load and a connect dump alike. Nothing
+  else may raise `_is_pedalboard_loading` — an unclosed window silently refuses every send
+  for the rest of the session, and `commit` then rolls each edit back on screen.
+  `set_current_pedalboard` also clears it, covering the aborted load that returns before
+  `loading_end`.
 
 - **Send form and echo form differ.** We send `param_set /graph/{id}/{sym} {v}`; both broadcast paths come back as `param_set /graph/{id} {sym} {v:%f}`
 
@@ -145,7 +129,7 @@ uv-managed venv. Don't try to pip-install the system ones.
   `tar --to-stdout`. Prefer inspecting the live device anyway.
 
 - **Blocking subprocess calls (nmcli, systemctl) must not run on the UI thread.** They
-  stall the 10ms loop. Use a worker thread and poll-drain the result.
+  stall the polling loop. Use a worker thread and poll-drain the result.
 
 ## Tests
 
@@ -162,19 +146,7 @@ On a snapshot mismatch: **fix real failures first.** When only snapshot differen
 
 ## Create an LCD screen capture
 
-It's often useful to a create screen capture of the current LCD for documentation, debugging, etc.
-
-On the pi-Stomp with all services running, execute the following:
-
-```bash
-ps-record-lcd --still
-```
-That writes a date-stamped file named: ~/pistomp_capture_YYYYMMDD_HHMMSS.png
-
-To alternatively specify the filename:
-```bash
-ps-record-lcd --still -o FILE-PATH
-```
-
-`ps-record-lcd` is a PATH symlink to `util/record_lcd.py`, installed by the image
-(`stage2/05-pistomp/02-run.sh`). Drop `--still` to record video to .mp4 instead.
+On the device with services running, `ps-record-lcd --still` writes
+`~/pistomp_capture_YYYYMMDD_HHMMSS.png`; `-o FILE` overrides the name, and dropping `--still`
+records `.mp4` instead. It's a PATH symlink to `util/record_lcd.py`, installed by the
+`pi-gen-pistomp` image build (not this checkout).

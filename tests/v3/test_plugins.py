@@ -12,7 +12,7 @@ import pistomp.switchstate as switchstate
 from pistomp.encoder_controller import EncoderController as Encoder
 from pistomp.footswitch import Footswitch
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
-from common.parameter_steps import ParameterSteps
+from common.parameter_editing import ParameterSteps
 from modalapi.plugin import Plugin
 from pistomp.controller import ControlType
 from pistomp.config.adapt_v1 import adapt

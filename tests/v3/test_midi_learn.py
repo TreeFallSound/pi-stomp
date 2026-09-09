@@ -4,7 +4,11 @@ plugin parameter live, so the LCD reflects it without a pedalboard reload."""
 import common.util as util
 from common.contexts import ControlClass, EventKind, MidiCcEffect, ParamEffect
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
+from common.parameter_editing import EditContext
 from tests.types import SystemFixture
+from plugins.parameter_window import ParameterWindow
+from uilib.misc import InputEvent
+from uilib.parameterdialog import Parameterdialog
 
 LOG_PORT: PortInfo = {
     "shortName": "HP",
@@ -99,9 +103,8 @@ def test_v3_param_set_syncs_bound_footswitch(v3_system: SystemFixture, make_plug
     assert fs0.toggled is True  # synced on → LED/keycap on
 
 
-def test_v3_midi_learn_applies_custom_sub_range(v3_system: SystemFixture, make_plugin, make_parameter):
-    """A midi_map carrying a custom sub-range narrows the parameter's encoder
-    sweep and displayed endpoints live, without a pedalboard reload."""
+def test_v3_midi_learn_updates_physical_extents(v3_system: SystemFixture, make_plugin, make_parameter):
+    """A custom MIDI mapping range changes physical CC conversion; the UI keeps the declared range."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -115,19 +118,16 @@ def test_v3_midi_learn_applies_custom_sub_range(v3_system: SystemFixture, make_p
     assert (gain.minimum, gain.maximum) == (0.0, 1.0)
     plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
     handler.current.pedalboard.plugins = [plugin]
-
     ws_bridge.inject(f"midi_map /graph/noise gain {channel} {cc} 0.0 0.5")
     handler.poll_ws_messages()
 
     assert (gain.minimum, gain.maximum) == (0.0, 0.5)
 
 
-def test_v3_midi_learn_sub_range_saga(v3_system: SystemFixture, make_plugin, make_parameter, snapshot):
-    """End-to-end: MIDI-learn a plugin param to a tweak encoder with a custom
-    sub-range, then reach both extents by spinning. The parameter saturates at
-    the sub-range endpoints (0.1..0.2) — never the plugin's declared 0..1 — and
-    the emitted CC spans the full 7-bit range across that sub-range. The open
-    parameter dialog paints the sub-range endpoints, not 0.0..1.0."""
+def test_v3_midi_learn_uses_mapping_for_physical_grid_and_declared_ui_range(
+    v3_system: SystemFixture, make_plugin, make_parameter, snapshot
+):
+    """A physical control uses the mapping range while the UI uses the declared range."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -148,21 +148,20 @@ def test_v3_midi_learn_sub_range_saga(v3_system: SystemFixture, make_plugin, mak
     assert enc1.parameter is gain
     assert (gain.minimum, gain.maximum) == (0.1, 0.2)
 
-    # The dialog draws param.format(minimum)/param.format(maximum) as its axis
-    # endpoints — the visual proof the sub-range replaced the declared 0.0..1.0.
-    handler.lcd.draw_parameter_dialog(gain)
+    physical_context = EditContext(
+        gain,
+        handler.parameter_value_commit,
+        grid_range=(gain.minimum, gain.maximum),
+    )
+    handler.lcd.display_parameter_value(physical_context, gain.value)
     snapshot("bound_0p15")
 
-    # Spin up hard — enough detents to saturate the 128-step grid at the top.
-    # The parameter stops at the sub-range max (0.2), never the declared 1.0,
-    # and the CC pi-stomp would emit (bar_midi_value) reaches the 7-bit ceiling.
     for _ in range(200):
         enc1.refresh(1)
     assert gain.value == 0.2
     assert enc1.bar_midi_value() == 127
     snapshot("max_0p20")
 
-    # Spin down hard — saturate at the sub-range min (0.1), never 0.0, CC → 0.
     for _ in range(200):
         enc1.refresh(-1)
     assert gain.value == 0.1
@@ -185,7 +184,7 @@ def test_v3_log_parameter_dialog_paints_geometric_curve(v3_system: SystemFixture
     handler.lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
     handler.lcd.draw_main_panel()
 
-    handler.lcd.draw_parameter_dialog(freq)
+    handler.lcd.open_parameter_editor(EditContext(freq, handler.parameter_ui_value_commit))
     snapshot("log_dialog_midpoint")
 
 
@@ -337,10 +336,139 @@ def test_v3_midi_learn_adds_table_row_for_encoder(v3_system: SystemFixture, make
     assert effect.symbol == Symbol("gain")
 
 
+def test_v3_midi_learn_updates_open_plugin_menu_badge(v3_system: SystemFixture, make_plugin, make_parameter):
+    """An open ParameterWindow reflects MIDI learn and unlearn without reopening."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+    lcd = handler.lcd
+
+    assert handler.current and lcd
+
+    enc1 = next(e for e in hw.encoders if e.id == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+
+    params = {
+        "gain": make_parameter("Gain", "noise"),
+        "tone": make_parameter("Tone", "noise"),
+        "mix": make_parameter("Mix", "noise"),
+        "drive": make_parameter("Drive", "noise"),
+    }
+    target = make_parameter("Depth", "noise")
+    params["depth"] = target
+    plugin = make_plugin("noise", bypassed=False, parameters=params)
+    handler.current.pedalboard.plugins = [plugin]
+    lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    lcd.draw_main_panel()
+
+    lcd.main_panel.sel_widget(lcd.w_plugins[0])
+    lcd.main_panel.input_event(InputEvent.LONG_CLICK)
+    handler.poll_lcd_updates()
+    panel = lcd.pstack.current
+    assert isinstance(panel, ParameterWindow)
+    row = next(row for row in panel._list_rows if row.symbol == target.symbol)
+    assert row._badge_char is None
+
+    ws_bridge.inject(f"midi_map /graph/noise depth {channel} {cc} 0.0 1.0")
+    handler.poll_ws_messages()
+    handler.poll_lcd_updates()
+    assert row._badge_char == "1"
+
+    ws_bridge.inject("midi_map /graph/noise depth -1 -1 0.0 1.0")
+    handler.poll_ws_messages()
+    handler.poll_lcd_updates()
+    assert row._badge_char is None
+
+
+def test_v3_midi_unlearn_and_relearn_updates_open_plugin_menu_badge(
+    v3_system: SystemFixture, make_plugin, make_parameter
+):
+    """An open ParameterWindow drops and restores a badge as MIDI learn changes."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+    lcd = handler.lcd
+
+    assert handler.current and lcd
+
+    enc1 = next(e for e in hw.encoders if e.id == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+
+    params = {
+        "gain": make_parameter("Gain", "noise"),
+        "tone": make_parameter("Tone", "noise"),
+        "mix": make_parameter("Mix", "noise"),
+        "drive": make_parameter("Drive", "noise"),
+    }
+    target = make_parameter("Depth", "noise")
+    params["depth"] = target
+    plugin = make_plugin("noise", bypassed=False, parameters=params)
+    handler.current.pedalboard.plugins = [plugin]
+    lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    lcd.draw_main_panel()
+
+    learn = f"midi_map /graph/noise depth {channel} {cc} 0.0 1.0"
+    ws_bridge.inject(learn)
+    handler.poll_ws_messages()
+
+    lcd.main_panel.sel_widget(lcd.w_plugins[0])
+    lcd.main_panel.input_event(InputEvent.LONG_CLICK)
+    handler.poll_lcd_updates()
+    panel = lcd.pstack.current
+    assert isinstance(panel, ParameterWindow)
+    row = next(row for row in panel._list_rows if row.symbol == target.symbol)
+    assert row._badge_char == "1"
+
+    ws_bridge.inject("midi_map /graph/noise depth -1 -1 0.0 1.0")
+    handler.poll_ws_messages()
+    handler.poll_lcd_updates()
+    assert row._badge_char is None
+
+    ws_bridge.inject(learn)
+    handler.poll_ws_messages()
+    handler.poll_lcd_updates()
+    assert row._badge_char == "1"
+
+
+def test_v3_midi_unlearn_updates_open_parameter_dialog_badge(v3_system: SystemFixture, make_plugin, make_parameter):
+    """An open Parameterdialog drops and restores its MIDI-learn badge live."""
+    handler = v3_system.handler
+    hw = v3_system.hw
+    ws_bridge = v3_system.ws_bridge
+    lcd = handler.lcd
+
+    assert handler.current and lcd
+
+    enc1 = next(e for e in hw.encoders if e.id == 1)
+    channel, cc = _binding_for(hw, enc1).split(":")
+    gain = make_parameter("Gain", "noise")
+    plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
+    handler.current.pedalboard.plugins = [plugin]
+    lcd.link_data(handler.pedalboard_list, handler.current, hw.footswitches)
+    lcd.draw_main_panel()
+
+    learn = f"midi_map /graph/noise gain {channel} {cc} 0.0 1.0"
+    ws_bridge.inject(learn)
+    handler.poll_ws_messages()
+
+    dialog = lcd.open_parameter_editor(EditContext(gain, handler.parameter_ui_value_commit))
+    assert isinstance(dialog, Parameterdialog)
+    assert dialog._tweak_id == 1
+
+    ws_bridge.inject("midi_map /graph/noise gain -1 -1 0.0 1.0")
+    handler.poll_ws_messages()
+    handler.poll_lcd_updates()
+    assert dialog._tweak_id is None
+
+    ws_bridge.inject(learn)
+    handler.poll_ws_messages()
+    handler.poll_lcd_updates()
+    assert dialog._tweak_id == 1
+
+
 def test_v3_midi_learn_reroutes_an_already_bound_pedalboard(v3_system: SystemFixture, make_plugin, make_parameter):
-    """A param that was WebSocket-routed at bind time switches to its encoder's CC
-    once mod-ui learns the mapping. The route is derived per commit, so a binding
-    learned after bind can't leave a stale one behind."""
+    """A parameter changes from WebSocket transport to encoder CC after MOD learns a mapping.
+    The route is derived per commit, so a binding learned after bind cannot leave a stale route."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -500,9 +628,10 @@ def test_v3_midi_unlearn_restores_footswitch_default_action(v3_system: SystemFix
     assert fs0.toggled is True
 
 
-def test_v3_midi_learn_updated_binding_range_on_same_parameter(v3_system: SystemFixture, make_plugin, make_parameter):
-    """Re-addressing an already bound parameter to a different sub-range on the same CC
-    updates the parameter's binding range and endpoints without bailing early."""
+def test_v3_midi_learn_updates_physical_extents_on_same_parameter(
+    v3_system: SystemFixture, make_plugin, make_parameter
+):
+    """Re-addressing one CC updates its physical extents without changing the parameter value."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -512,7 +641,7 @@ def test_v3_midi_learn_updated_binding_range_on_same_parameter(v3_system: System
     enc1 = next(e for e in hw.encoders if e.id == 1)
     channel, cc = _binding_for(hw, enc1).split(":")
 
-    gain = make_parameter("Gain", "noise", value=0.5)
+    gain = make_parameter("Gain", "noise", value=0.9)
     plugin = make_plugin("noise", bypassed=False, parameters={"gain": gain})
     handler.current.pedalboard.plugins = [plugin]
 
@@ -522,6 +651,7 @@ def test_v3_midi_learn_updated_binding_range_on_same_parameter(v3_system: System
 
     assert gain.binding == f"{channel}:{cc}"
     assert (gain.minimum, gain.maximum) == (0.0, 0.5)
+    assert gain.value == 0.9
     assert enc1.parameter is gain
     assert plugin.controllers.count(enc1) == 1
 
@@ -531,13 +661,13 @@ def test_v3_midi_learn_updated_binding_range_on_same_parameter(v3_system: System
 
     assert gain.binding == f"{channel}:{cc}"
     assert (gain.minimum, gain.maximum) == (0.2, 0.8)
+    assert gain.value == 0.9
     assert enc1.parameter is gain
     assert plugin.controllers.count(enc1) == 1
 
 
-def test_v3_midi_unlearn_restores_declared_range(v3_system: SystemFixture, make_plugin, make_parameter):
-    """Unmapping (-1:-1) restores the parameter's declared LV2 range rather than
-    keeping the narrowed sub-range or applying the 0..1 unmap frame default."""
+def test_v3_midi_unlearn_restores_declared_physical_extents(v3_system: SystemFixture, make_plugin, make_parameter):
+    """Unmapping restores the declared extents after the physical mapping is removed."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -561,10 +691,8 @@ def test_v3_midi_unlearn_restores_declared_range(v3_system: SystemFixture, make_
     assert (gain.minimum, gain.maximum) == (gain.declared_minimum, gain.declared_maximum)
 
 
-def test_v3_midi_learn_free_cc_preserves_sub_range(v3_system: SystemFixture, make_plugin, make_parameter):
-    """A midi_map naming a CC with no physical pi-stomp control (an external/free
-    MIDI CC) must still apply its sub-range — the guard keys off the -1:-1 unmap
-    sentinel, not controller presence, so a real external device's extents are shown."""
+def test_v3_midi_learn_free_cc_preserves_physical_extents(v3_system: SystemFixture, make_plugin, make_parameter):
+    """A free external CC keeps its physical mapping range without a pi-Stomp control."""
     handler = v3_system.handler
     hw = v3_system.hw
     ws_bridge = v3_system.ws_bridge
@@ -572,12 +700,7 @@ def test_v3_midi_learn_free_cc_preserves_sub_range(v3_system: SystemFixture, mak
     assert handler.current
 
     used = set(hw.controllers)
-    binding = next(
-        "%d:%d" % (ch, cc)
-        for ch in range(1, 16)
-        for cc in range(0, 127)
-        if "%d:%d" % (ch, cc) not in used
-    )
+    binding = next("%d:%d" % (ch, cc) for ch in range(1, 16) for cc in range(0, 127) if "%d:%d" % (ch, cc) not in used)
     channel, cc = binding.split(":")
 
     gain = make_parameter("Gain", "noise", value=0.5)

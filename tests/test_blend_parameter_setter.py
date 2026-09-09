@@ -28,9 +28,9 @@ def test_same_value_within_tolerance_skipped(bridge, setter):
     bridge.send_parameter.assert_not_called()
 
 
-def test_bridge_backpressure_returns_false(bridge, setter, caplog):
+def test_refused_send_returns_false(bridge, setter, caplog):
     bridge.send_parameter.return_value = False
     with caplog.at_level(logging.WARNING):
         result = setter.send_parameter("Fx", "Vol", 0.5)
     assert result is False
-    assert "Dropped" in caplog.text
+    assert "Dropped (not connected)" in caplog.text

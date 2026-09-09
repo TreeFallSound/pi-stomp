@@ -15,6 +15,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from __future__ import annotations
+
 from uilib.box import Box
 from uilib.config import Config
 from uilib.dialog import Dialog
@@ -34,7 +36,7 @@ from common.contexts import (
 )
 import common.util as util
 from common.parameter import Parameter, Symbol
-from common.parameter_steps import ParameterSteps, effective_multiplier
+from common.parameter_editing import EditContext, ParameterSteps, effective_multiplier
 from pistomp.input.dispatch import resolve_local, fire
 from pistomp.input.event import ControllerEvent, EncoderEvent
 
@@ -51,6 +53,7 @@ import time
 # envelope to [MIN_BAR_PX, full]. Linear ramps already start visible; they
 # render exactly as they always have.
 MIN_BAR_PX = 3
+
 
 # Bar geometry/colors are fixed constants so the rendered bar surface depends
 # only on the taper shape and color. A log port's height curve depends only on
@@ -95,55 +98,53 @@ class _GraphWidget(ImageWidget):
         pass
 
 
+
+
 class Parameterdialog(Dialog):
-    # TODO detailed dimensions, colors, etc. should not be defined in uilib
     GRAPH_Y0 = 80
     GRAPH_X_OFFSET = 10
-    BAR_FILLED = (255, 255, 0)  # 'yellow'
+    BAR_FILLED = (255, 255, 0)
     BAR_UNFILLED = (100, 100, 240)
 
-    def __init__(self, stack, parameter, width, height, title, title_font=None, timeout=None, **kwargs):
+    @staticmethod
+    def title_for(edit_context: EditContext) -> str:
+        parameter = edit_context.parameter
+        if parameter.instance_id is None:
+            return parameter.name
+        return f"{parameter.instance_id}:{parameter.name}"
+
+    def __init__(
+        self,
+        stack,
+        edit_context: EditContext,
+        width,
+        height,
+        title: str | None = None,
+        title_font=None,
+        timeout=None,
+        **kwargs,
+    ):
         self._init_attrs(Widget.INH_ATTRS, kwargs)
-        super(Parameterdialog, self).__init__(width, height, title, title_font, **kwargs)
-        self.stack = (
-            stack  # TODO very LAME to require the stack to be passed, ideally panel would be able to pop itself
-        )
-        self.parameter: Parameter = parameter
-
-        # The tweak encoder (1/2/3) TTL/config-bound to this dialog's parameter
-        # (set by Lcd320x240.draw_parameter_dialog from tweak_badge_number).
-        # When set, the dialog declares a PANEL row for it so a turn drives the
-        # dialog's parameter through the binding table instead of falling
-        # through to Modhandler._handle_encoder (which would write the tweak's
-        # pedalboard-bound parameter underneath — see input/README.md).
+        self.stack = stack
+        super().__init__(width, height, title or self.title_for(edit_context), title_font, **kwargs)
+        self.edit_context = edit_context
+        self.parameter = edit_context.parameter
+        self.minimum, self.maximum = edit_context.extents
         self._tweak_id: int | None = None
-
-        # The nav encoder steps this dialog through the same quantized grid a v3
-        # tweak encoder uses, so a detent moves the value identically whichever
-        # control you turn (v2 nav, v3 nav, v3 tweak).
-        self.steps = ParameterSteps.for_parameter(self.parameter)
+        self.steps = ParameterSteps.for_parameter(self.parameter, (self.minimum, self.maximum))
 
         self.timeout = timeout
         self.expiry_time = None
         if self.timeout:
             self.reset_timeout()
 
-        # "graph" are the y-scaled values, "actual" are the actual non-scaled values
-        self.num_actual = 256  # High resolution for better stepping
+        self.num_actual = 256
         self.num_points = 60
         self.bar_width = 4
         self.actual_abscissa = np.linspace(0, self.num_actual, self.num_actual)
-        self.actual_points = self._calc_graph_points(
-            self.actual_abscissa, self.parameter.minimum, self.parameter.maximum
-        )
-
-        # Value at which each bar becomes filled. Nondecreasing, so the filled
-        # bars are always the prefix [0, k) and a value change dirties only the
-        # columns between the old and new k.
+        self.actual_points = self._calc_graph_points(self.actual_abscissa, self.minimum, self.maximum)
         self.bar_thresholds = self.actual_points[(np.arange(self.num_points) * self.num_actual) // self.num_points]
-
         self.graph_width = self.GRAPH_X_OFFSET + self.bar_width * self.num_points
-        # +1 row of headroom so a max-height bar's bottom edge isn't clipped.
         self.graph_height = self.GRAPH_Y0 + 1
 
         self.w_value = None
@@ -151,7 +152,7 @@ class Parameterdialog(Dialog):
         self._graph_surface: pygame.Surface | None = None
         self._bars_filled: pygame.Surface | None = None
         self._bars_unfilled: pygame.Surface | None = None
-        self.last_param_value: float = self.parameter.value
+        self.last_param_value = self.parameter.value
         self._draw_contents()
         self._unsub: Callable[[], None] | None = self.parameter.subscribe(self._on_param_changed)
 
@@ -170,9 +171,7 @@ class Parameterdialog(Dialog):
     def _calc_graph_points(self, x, min, max):
         # Same curve the step grid and the CC lattice use, so the bar the dial
         # paints for a value matches where a detent puts it.
-        return np.array(
-            [util.from_normalized(p, min, max, self.parameter.is_logarithmic) for p in x / len(x)]
-        )
+        return np.array([util.from_normalized(p, min, max, self.parameter.is_logarithmic) for p in x / len(x)])
 
     def _draw_contents(self):
         if self.timeout is None:
@@ -191,10 +190,10 @@ class Parameterdialog(Dialog):
         self._draw_graph()
 
     def _update_text_widget(self):
-        y0 = 80
         val_text = self.parameter.format(self.parameter.value)
-        min_text = self.parameter.format(self.parameter.minimum)
-        max_text = self.parameter.format(self.parameter.maximum)
+        y0 = 80
+        min_text = self.parameter.format(self.minimum)
+        max_text = self.parameter.format(self.maximum)
 
         # Calculate centered position
         font = Config().get_font("default")
@@ -255,8 +254,11 @@ class Parameterdialog(Dialog):
 
         if self.w_graph is None:
             self._graph_surface = pygame.Surface((self.graph_width, self.graph_height), pygame.SRCALPHA)
-            pmin, pmax = self.parameter.minimum, self.parameter.maximum
-            log_ratio = pmax / pmin if self.parameter.is_logarithmic and pmin > 0.0 and pmax > 0.0 else None
+            log_ratio = (
+                self.maximum / self.minimum
+                if self.parameter.is_logarithmic and self.minimum > 0.0 and self.maximum > 0.0
+                else None
+            )
             args = (
                 log_ratio,
                 self.num_points,
@@ -320,10 +322,9 @@ class Parameterdialog(Dialog):
     def parameter_value_change(self, direction, count: int = 1, multiplier: float = 1.0):
         self.reset_timeout()
 
-        # Same arithmetic as EncoderController.refresh: the multiplier scales the
-        # number of grid steps, not the value. effective_multiplier caps it per
-        # parameter so a full-speed spin covers the same fraction of any grid.
-        delta = int(round(direction * count * effective_multiplier(multiplier, self.parameter)))
+        delta = int(
+            round(effective_multiplier(multiplier, self.parameter, self.minimum, self.maximum) * direction * count)
+        )
         if delta == 0:
             return
         new_value = self.steps.move(delta)
@@ -331,8 +332,7 @@ class Parameterdialog(Dialog):
             return
 
         self.parameter.preview(new_value)
-        if self.action is not None:
-            self.action(self.object, new_value)
+        self.edit_context.commit(self.parameter, new_value)
 
     def input_event(self, event):
         if event == InputEvent.CLICK:

@@ -15,18 +15,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Quantized step grid for encoder-driven parameter edits.
-
-Shared by EncoderController (v3 tweak encoders) and Parameterdialog (the nav
-encoder, which is the only encoder on v2), so that one detent moves a parameter
-by the same amount whichever control you turn.
-"""
+"""Shared models and step math for encoder-driven parameter edits."""
 
 import bisect
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import List
 
 import common.util as util
-from common.parameter import Parameter, Type
+from common.parameter import Parameter, Symbol, Type
+
 
 # Steps for a continuous parameter. Matches the 0-127 MIDI CC range, so a full
 # sweep of a CC-bound encoder emits every distinct MIDI value.
@@ -40,24 +38,40 @@ CONTINUOUS_STEPS = 128
 # notch of a stepped range stays reachable.
 FULL_SWEEP_DETENTS = 32
 # The raw multiplier at which a spin counts as "full speed" — the historic
-# MAX_MULTIPLIER. At or above this, the per-parameter cap binds; below it,
-# the multiplier is interpolated linearly between 1 step/detent and the cap.
+# MAX_MULTIPLIER. At or above this, the per-parameter cap binds; below it, the
+# multiplier is interpolated linearly between 1 step/detent and the cap.
 REFERENCE_FAST_MULTIPLIER = 4.0
 
 
-def resolution(parameter: Parameter | None) -> int:
-    """Detents needed to cross the parameter's range.
+EditCommit = Callable[[Parameter, float], None]
 
-    An unbound encoder (parameter is None) is a free-running CC: give it the
-    full 128-value sweep. A bound discrete parameter gets one detent per
-    distinct value — extra steps would emit no additional MIDI values, since
-    the CC is derived from the parameter.
-    """
+
+@dataclass(frozen=True)
+class EditContext:
+    parameter: Parameter
+    commit: EditCommit
+    grid_range: tuple[float, float] | None = None
+
+    @property
+    def cache_key(self) -> tuple[str | None, Symbol]:
+        return self.parameter.instance_id, self.parameter.symbol
+
+    @property
+    def extents(self) -> tuple[float, float]:
+        if self.grid_range is not None:
+            return self.grid_range
+        return self.parameter.declared_extents
+
+
+def resolution(parameter: Parameter | None, minimum: float | None = None, maximum: float | None = None) -> int:
+    """Detents needed to cross the selected parameter range."""
     if parameter is None:
         return CONTINUOUS_STEPS
+    lo = parameter.minimum if minimum is None else minimum
+    hi = parameter.maximum if maximum is None else maximum
     match parameter.type:
         case Type.INTEGER:
-            return int(parameter.maximum - parameter.minimum) + 1
+            return int(hi - lo) + 1
         case Type.ENUMERATION:
             return len(parameter.get_enum_value_list())
         case Type.TOGGLED:
@@ -66,18 +80,18 @@ def resolution(parameter: Parameter | None) -> int:
             return CONTINUOUS_STEPS
 
 
-def effective_multiplier(multiplier: float, parameter: Parameter | None) -> float:
-    """The multiplier actually applied to a parameter edit.
-
+def effective_multiplier(
+    multiplier: float,
+    parameter: Parameter | None,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float:
+    """
     Maps the encoder's raw speed multiplier onto the parameter's step range
     so a full-speed spin covers the same fraction of any grid in roughly the
-    same number of detents. At ``multiplier == 1`` (slow) every detent moves
-    one step — every notch of a stepped range is reachable. At
-    ``multiplier >= REFERENCE_FAST_MULTIPLIER`` (full speed) each detent moves
-    ``resolution / FULL_SWEEP_DETENTS`` steps, so the whole range sweeps in
-    ~32 detents regardless of grid size.
+    same number of detents.
     """
-    res = resolution(parameter)
+    res = resolution(parameter, minimum, maximum)
     cap = res / FULL_SWEEP_DETENTS
     if cap <= 1.0:
         return multiplier  # small grid: precision floor, no scaling
@@ -106,8 +120,9 @@ class ParameterSteps:
         ]
 
     @classmethod
-    def for_parameter(cls, parameter: Parameter) -> "ParameterSteps":
-        steps = cls(parameter.minimum, parameter.maximum, parameter.is_logarithmic, resolution(parameter))
+    def for_parameter(cls, parameter: Parameter, extents: tuple[float, float] | None = None) -> "ParameterSteps":
+        minimum, maximum = extents or (parameter.minimum, parameter.maximum)
+        steps = cls(minimum, maximum, parameter.is_logarithmic, resolution(parameter, minimum, maximum))
         steps.set_value(parameter.value)
         return steps
 

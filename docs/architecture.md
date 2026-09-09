@@ -223,12 +223,14 @@ The outlier is a **non-footswitch UI bypass** (e.g. tapping a plugin on the LCD)
 As such, no echo arrives, and nothing will correct a local write that mod-ui never
 received. So this path commits (`Parameter.commit`): it writes and paints
 immediately, publishes over the WebSocket, and reverts if the send never left the
-box — during a pedalboard load, or under backpressure.
+box — during a pedalboard load, or while the bridge is not connected. A send that
+does leave confirms itself, so a later failed commit rolls back to it, not to the
+last echo.
 
 A footswitch-bound plugin differs only in transport: `_sink_for` finds the bound
 `Footswitch` and publishes the commit as MIDI CC, so mod-host's echo reconciles it.
 Both are one commit on `:bypass`, and the keycap and LED follow from
-`StatefulController`'s settled subscription rather than from having run a press. The
+`StatefulController`'s on_commit subscription rather than from having run a press. The
 UI never fakes a press — the row that wins that switch need not be the bypass.
 
 That CC has two codes, so it reaches only the two ends of the binding range (the
@@ -237,20 +239,38 @@ between). `_publish_switch_cc` sends anything between them over the WebSocket
 instead. The choice is made at publish time, not in `_sink_for`, which runs before
 the commit writes the value.
 
-### Backpressure
+### Refused sends
 
-`command_queue` is unbounded — never drops blend-mode messages. If the TCP write
-buffer exceeds 8KB, outbound sends return `False` until it drains. A `False` return
-means the value never left, so a `commit` reverts it rather than showing a value
-mod-ui does not have; a panel's coalescing queue instead keeps it and retries on the
-next tick, since backpressure is transient.
+`command_queue` is unbounded — never drops blend-mode messages. `send_parameter` and
+`send_bpm` refuse only one condition: the bridge holds no live connection. There is no
+write-buffer measurement — that number counts bytes our own asyncio transport has not
+handed to the kernel, so it reports nothing about what mod-ui has processed.
+
+A `False` return means the value never left, so `commit` reverts it. Every UI edit
+does this, panels included: the audio did not change, so a screen that kept the new
+number would disagree with the player's ear and nothing else would say why. The
+refusal is not retried — the knob visibly does nothing, which is what happened.
+`_publish_plugin_param` and `_publish_bpm` refuse on a dead bridge or a board
+load (below); `_publish_cc` refuses the board load alone, MIDI being fire-and-forget.
+The audio card always lands.
+
+A reconnect empties the queue, so a send accepted as the socket drops is still lost.
+The window is one tick wide and closing it needs a queue that survives a reconnect.
+
+The worker keepalives at `PING_INTERVAL_S` with no ping timeout. Tornado answers a
+PING inline on the ioloop that `Host.load` blocks, so `ws.latency` measures that
+stall directly and the stats line logs its peak. A finite timeout would drop the
+socket during a long board load and the reconnect would empty the queue, so a mod-ui
+that is alive but never reads leaves `connected` true.
 
 ### Outbound suppression during a load
 
 `loading_start` .. `loading_end` brackets mod-ui replaying a whole graph at us — a
 board load, or the connect dump on every WebSocket connect. While it is open,
 inbound graph messages are replay rather than news, and outbound parameter sends are
-refused (`_publish_plugin_param`). `set_current_pedalboard` also clears the flag, as
+refused — `_publish_plugin_param`, `_publish_cc` for a bound encoder or analog
+control, and `set_mod_tap_tempo` for the transport BPM,
+which the tap-tempo footswitch also reaches directly. `set_current_pedalboard` also clears the flag, as
 the point where we have caught up with the board mod-ui loaded; that covers the one
 case mod-ui abandons its own window, an aborted load returning before `loading_end`.
 Nothing else may raise it: a window that nothing closes refuses every send for the
@@ -434,7 +454,7 @@ reads the ADC and sends current position on pedalboard load.
 
 **MOD API**
 - `modalapi/pedalboard.py` — LILV TTL parser
-- `modalapi/websocket_bridge.py` — Async WS bridge (daemon thread, backpressure)
+- `modalapi/websocket_bridge.py` — Async WS bridge (daemon thread, reconnect)
 - `modalapi/ws_protocol.py` — Message parsing into typed dataclasses
 - `modalapi/pedalboard_monitor.py` — FileChangeMonitor for last.json/banks.json
 - `common/parameter.py` — Parameter representation, formatting, taper

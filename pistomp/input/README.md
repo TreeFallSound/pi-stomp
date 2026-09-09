@@ -142,9 +142,9 @@ open for the same symbol(s):
   symbols at once) opens a `Menu` submenu over `menu_rows()`; a plain
   `Selectable` opens a single `Parameterdialog` for
   `symbol_for(ParamRole.GENERIC)`. Both go through
-  `Handler.open_parameter_dialog`/`open_parameter_submenu`
-  (`pistomp/handler.py` → `Lcd320x240.draw_parameter_dialog`/
-  `draw_symbol_menu`).
+  ``Handler.open_parameter_dialog``/``open_parameter_submenu``
+  (``pistomp/handler.py`` → ``Lcd320x240.open_parameter_editor``/
+  ``draw_symbol_menu``).
 * Both take an `on_change` callback wired to `self.apply_state(self.
   snapshot_state())` — the same resync call the mod-ui `ParamSetMessage` echo
   handler uses. Needed because the generic dialog commits straight to

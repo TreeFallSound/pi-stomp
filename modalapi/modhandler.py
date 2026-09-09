@@ -60,7 +60,7 @@ from common.contexts import (
 )
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
 from common.param_source import ParamSink
-from common.parameter_steps import ParameterSteps, effective_multiplier
+from common.parameter_editing import EditContext, ParameterSteps, effective_multiplier
 from modalapi.plugin import Plugin
 from blend.input_controller import InputController
 import modalapi.pedalboard as Pedalboard
@@ -84,6 +84,7 @@ import pistomp.settings as Settings
 from blend.snapshot import SnapshotManager
 from modalapi.websocket_bridge import AsyncWebSocketBridge
 from modalapi.ws_protocol import (
+    coalesce_param_sets,
     parse_message,
     LoadingEndMessage,
     LoadingStartMessage,
@@ -101,7 +102,8 @@ from modalapi.ws_protocol import (
 )
 from modalapi.pedalboard_monitor import FileChangeMonitor, read_pedalboard_bundle
 import pistomp.config as config
-from pistomp.controller import ControlType
+from pistomp.analogmidicontrol import AnalogMidiControl
+from pistomp.controller import ControlType, Controller
 from modalapi.version_check import DpkgDriftCheck
 
 from pistomp.controller_manager import ControllerManager
@@ -214,10 +216,7 @@ class Modhandler(Handler):
         self.jack_mute = JackMute()
 
         # WebSocket bridge for MOD-UI communication
-        self.ws_bridge = AsyncWebSocketBridge(
-            ws_url="ws://localhost:80/websocket",
-            backpressure_threshold=8192,  # 8 KB
-        )
+        self.ws_bridge = AsyncWebSocketBridge(ws_url="ws://localhost:80/websocket")
         self.ws_bridge.start()
         logging.info("WebSocket bridge started")
 
@@ -395,11 +394,11 @@ class Modhandler(Handler):
 
         if c.type == ControlType.VOLUME and c.parameter is not None:
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
-            c.parameter.preview(new_value)
-            self.audiocard.set_volume_parameter(self.audiocard.MASTER, new_value)
-            d = self.lcd.draw_audio_parameter_dialog(c.parameter, self.audio_parameter_commit)
+            c.parameter.commit(new_value, self._sink_for(c.parameter))
+            context = EditContext(c.parameter, lambda p, value: self.audio_parameter_commit(p.symbol, value))
+            d = self.lcd.open_audio_parameter_dialog(context)
             if d is not None:
-                d.update_value(new_value)
+                d.update_value(c.parameter.value)
             return True
 
         # Resolve the binding row for badge shadow_state (side effect), even
@@ -414,7 +413,12 @@ class Modhandler(Handler):
             # encoder, the WebSocket for :bpm) owns the send.
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
             c.parameter.commit(new_value, self._sink_for(c.parameter))
-            self.lcd.display_parameter_value(c.parameter, new_value)
+            context = EditContext(
+                c.parameter,
+                self.parameter_value_commit,
+                grid_range=(c.parameter.minimum, c.parameter.maximum),
+            )
+            self.lcd.display_parameter_value(context, c.parameter.value)
             return True
 
         # Unbound: no sink, no row. This fallback CC is the only way mod-ui sees
@@ -434,7 +438,23 @@ class Modhandler(Handler):
         return value
 
     def _handle_analog(self, event: AnalogEvent) -> bool:
-        self._emit_midi(event.controller, event.midi_value)
+        control = event.controller
+        assert isinstance(control, AnalogMidiControl)
+        param = control.parameter
+        if (
+            param is None
+            or self._current is None
+            or self._current.control_for(param) is not control
+            or self.hardware.is_external(control)
+        ):
+            # Unbound or externally-routed: the raw CC is the whole story — the
+            # external port or MIDI-learn is the only transport.
+            self._emit_midi(control, event.midi_value)
+            return True
+        steps = ParameterSteps.for_parameter(param)
+        value = util.from_normalized(event.midi_value / 127.0, param.minimum, param.maximum, param.is_logarithmic)
+        steps.set_value(value)
+        param.commit(steps.value, self._sink_for(param))
         return True
 
     def _handle_switch(self, event: SwitchEvent) -> bool:
@@ -571,13 +591,15 @@ class Modhandler(Handler):
         return self._lcd
 
     def open_parameter_dialog(self, parameter: Parameter) -> None:
-        self.lcd.draw_parameter_dialog(parameter)
+        context = EditContext(parameter, self.parameter_ui_value_commit)
+        self.lcd.open_parameter_editor(context)
 
     def open_parameter_submenu(self, plugin: Plugin, rows: tuple[tuple[str, Symbol], ...], title: str) -> None:
         self.lcd.draw_symbol_menu(plugin, rows, title)
 
     def open_audio_parameter_dialog(self, parameter: Parameter, commit_callback: Callable[[str, float], None]) -> None:
-        self.lcd.draw_audio_parameter_dialog(parameter, commit_callback)
+        context = EditContext(parameter, lambda p, value: commit_callback(p.symbol, value))
+        self.lcd.open_audio_parameter_dialog(context)
 
     def poll_controls(self):
         if self.hardware:
@@ -691,6 +713,16 @@ class Modhandler(Handler):
         if top is not None and top.wants_fast_tick():
             return 2
         return self._lcd.poll_divisor
+
+    def _poll_ws_reconnect(self) -> None:
+        if self._is_pedalboard_loading:
+            return
+
+        if self.ws_bridge.get_reconnects_since_last_call() == 0:
+            return
+
+        if self.active_blend_mode is not None:
+            self.active_blend_mode.sync_current_position()
 
     def _handle_blend_mode_snapshot_change(self, new_snapshot_index: int):
         """
@@ -945,10 +977,19 @@ class Modhandler(Handler):
 
     def poll_ws_messages(self):
         """Drain inbound WS messages (fast ~10ms cadence). Main-thread only.
-        Must not touch next_pedalboard_preset_index (owned by the file-watch path)."""
-        for msg in self.ws_bridge.get_received_messages():
+        Must not touch next_pedalboard_preset_index (owned by the file-watch path).
+        A drain's param_set burst collapses to the last per (instance, symbol)
+        before dispatch, so a fast scrub repaints once, not once per echo."""
+        raw = self.ws_bridge.get_received_messages()
+        parsed: list[WebSocketMessage] = []
+        for msg in raw:
             try:
-                self._handle_ws_message(parse_message(msg))
+                parsed.append(parse_message(msg))
+            except Exception as e:
+                logging.error(f"Error parsing WebSocket message '{msg}': {e}")
+        for msg in coalesce_param_sets(parsed):
+            try:
+                self._handle_ws_message(msg)
             except Exception as e:
                 logging.error(f"Error handling WebSocket message '{msg}': {e}")
 
@@ -957,6 +998,7 @@ class Modhandler(Handler):
         # Drain WS first so loading_end/snapshot lands before the file-watch
         # reads next_pedalboard_preset_index this tick. No-op if already drained.
         self.poll_ws_messages()
+        self._poll_ws_reconnect()
 
         # unzip rewrites last.json/banks.json/snapshots.json
         # don't poll again until we restart the service
@@ -1158,9 +1200,6 @@ class Modhandler(Handler):
         except Exception as e:
             logging.warning(f"Failed to send external MIDI messages: {e}")
 
-        # Sync analog controls last: after bind + external send, matching mod.py
-        self.hardware.sync_analog_controls()
-
         # Prepare blend modes if configured (snapshot-based activation)
         try:
             blend_configs = pedalboard_config.blend_snapshots
@@ -1199,8 +1238,9 @@ class Modhandler(Handler):
             self.blend_modes = {}
             self.active_blend_mode = None
 
-        # Caught up with mod-ui. Also closes a window an aborted load left open.
+        # Caught up with mod-ui.
         self._is_pedalboard_loading = False
+        self.hardware.sync_analog_controls()
 
     def bind_current_pedalboard(self):
         # "current" being the pedalboard mod-host says is current
@@ -1224,8 +1264,19 @@ class Modhandler(Handler):
             return functools.partial(self._publish_cc, control)
         if param.instance_id in (ExternalMidi.EXTERNAL_INSTANCE_ID, Pedalboard.TRANSPORT_INSTANCE_ID):
             return None
+        if isinstance(control, AnalogMidiControl) and control.midi_CC is not None:
+            return functools.partial(self._publish_cc, control)
         if isinstance(control, Footswitch) and control.midi_CC is not None:
             return functools.partial(self._publish_switch_cc, control)
+        return self._publish_plugin_param
+
+    def _ui_sink_for(self, param: Parameter) -> ParamSink | None:
+        if param.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID:
+            return self._sink_for(param)
+        if param.instance_id is None:
+            return self._publish_audio
+        if param.instance_id == ExternalMidi.EXTERNAL_INSTANCE_ID:
+            return self._sink_for(param)
         return self._publish_plugin_param
 
     def _publish_bpm(self, param: Parameter) -> bool:
@@ -1237,8 +1288,10 @@ class Modhandler(Handler):
         self.audio_parameter_commit(param.symbol, param.value)
         return True
 
-    def _publish_cc(self, controller: EncoderController, param: Parameter) -> bool:
+    def _publish_cc(self, controller: Controller, param: Parameter) -> bool:
         """Publish the parameter (to MOD-UI or anything else) via MIDI CC."""
+        if self._is_pedalboard_loading:
+            return False
         self._emit_midi(controller, controller.to_midi(param.value))
         return True
 
@@ -1247,6 +1300,8 @@ class Modhandler(Handler):
         binding range. An edit that lands between them takes the WebSocket, or
         mod-host would answer the screen with an endpoint. Decided here, not in
         _sink_for, which runs before the commit writes the value."""
+        if self._is_pedalboard_loading:
+            return False
         cc = fs.cc_for(param.value)
         if cc is None:
             return self._publish_plugin_param(param)
@@ -1428,12 +1483,17 @@ class Modhandler(Handler):
         render from."""
         return self._controller_manager.effective_table
 
+    @property
+    def binding_revision(self) -> int:
+        return self._controller_manager.binding_revision
+
     #
     # Parameter Stuff
     #
+    def parameter_ui_value_commit(self, param: Parameter, value: float) -> None:
+        param.commit(value, self._ui_sink_for(param))
+
     def parameter_value_commit(self, param: Parameter, value: float) -> None:
-        # The sink owns the route (WebSocket param_set, transport-bpm, external
-        # CC, local ALSA write); commit repaints, publishes through it, settles.
         param.commit(value, self._sink_for(param))
 
     @property
@@ -1796,7 +1856,8 @@ class Modhandler(Handler):
     def audio_parameter_change(self, direction: int | None, parameter, commit_callback):
         if parameter is None:
             return
-        d = self.lcd.draw_audio_parameter_dialog(parameter, commit_callback)
+        context = EditContext(parameter, lambda p, value: commit_callback(p.symbol, value))
+        d = self.lcd.open_audio_parameter_dialog(context)
         if d is None or direction is None:
             return
         step = (parameter.maximum - parameter.minimum) / 127.0
@@ -1853,15 +1914,10 @@ class Modhandler(Handler):
         return util.DICT_GET(self.callbacks, callback_name)
 
     def set_mod_tap_tempo(self, bpm: float | None) -> bool:
-        # WebSocket first: _rest_post blocks the 10ms loop, and an encoder spin
-        # calls this once per detent. POST only when backpressure refused the send.
         # Returns whether the value left, so a failed send rolls the LCD back.
-        if bpm is None:
+        if bpm is None or self._is_pedalboard_loading:
             return False
-        if self.ws_bridge.send_bpm(bpm):
-            return True
-        resp = self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
-        return resp is not None and resp.ok
+        return self.ws_bridge.send_bpm(bpm)
 
     def set_sync_mode(self, mode: SyncMode) -> None:
         """Optimistically switch the clock source; mod-ui's transport echo

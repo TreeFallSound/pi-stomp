@@ -23,6 +23,7 @@ from common.contexts import (
     ShadowState,
 )
 from common.parameter import BYPASS_SYMBOL, Parameter, PortInfo, Symbol
+from common.parameter_editing import EditContext
 from modalapi.external_midi import EXTERNAL_INSTANCE_ID
 from pistomp.encoder_controller import EncoderController
 from pistomp.footswitch import Footswitch
@@ -290,8 +291,42 @@ def test_parameter_dialog_snapshot(lcd, snapshot):
     instance, _ = lcd
     setup_main_ui(instance)
     mock_param = _real_param(name="Gain", instance_id="delay", value=0.5)
-    instance.draw_parameter_dialog(mock_param)
+    instance.open_parameter_editor(EditContext(mock_param, instance.handler.parameter_ui_value_commit))
     snapshot()
+
+
+def test_parameter_dialog_cache_separates_parameter_instances(lcd):
+    instance, _ = lcd
+    setup_main_ui(instance)
+    first = _real_param(instance_id="amp_1")
+    second = _real_param(instance_id="amp_2")
+    first_dialog = instance.open_parameter_editor(EditContext(first, instance.handler.parameter_ui_value_commit))
+    second_dialog = instance.open_parameter_editor(EditContext(second, instance.handler.parameter_ui_value_commit))
+    assert first_dialog is not second_dialog
+
+
+def test_parameter_dialog_uses_context_range_and_title(lcd):
+    instance, _ = lcd
+    setup_main_ui(instance)
+    info: PortInfo = {
+        "shortName": "Gain",
+        "symbol": "gain",
+        "ranges": {"minimum": 0.0, "maximum": 1.0},
+    }
+    param = Parameter(info, 0.5, "0:70", None, binding_range=(0.25, 0.75))
+    ui_dialog = instance.open_parameter_editor(EditContext(param, instance.handler.parameter_ui_value_commit))
+    assert (ui_dialog.minimum, ui_dialog.maximum) == (0.0, 1.0)
+    assert ui_dialog.decorator.title.text == "Gain"
+    ui_dialog.pop()
+
+    physical_context = EditContext(
+        param,
+        instance.handler.parameter_value_commit,
+        grid_range=(param.minimum, param.maximum),
+    )
+    instance.display_parameter_value(physical_context, param.value)
+    physical_dialog = instance.w_parameter_dialogs[physical_context.cache_key]
+    assert (physical_dialog.minimum, physical_dialog.maximum) == (0.25, 0.75)
 
 
 def test_parameter_dialog_batches_detents(lcd):
@@ -303,7 +338,7 @@ def test_parameter_dialog_batches_detents(lcd):
     instance, _ = lcd
     setup_main_ui(instance)
     mock_param = _real_param(name="Gain", instance_id="delay", value=0.5)
-    dialog = instance.draw_parameter_dialog(mock_param)
+    dialog = instance.open_parameter_editor(EditContext(mock_param, instance.handler.parameter_ui_value_commit))
 
     renders = 0
     original = dialog._draw_graph
@@ -326,7 +361,7 @@ def test_parameter_dialog_applies_encoder_multiplier(lcd):
     instance, _ = lcd
     setup_main_ui(instance)
     mock_param = _real_param(name="Gain", instance_id="delay", value=0.0)
-    dialog = instance.draw_parameter_dialog(mock_param)
+    dialog = instance.open_parameter_editor(EditContext(mock_param, instance.handler.parameter_ui_value_commit))
 
     # 2 detents at 3x = 6 grid steps from the bottom.
     _enc_step(instance, 2, multiplier=3.0)
@@ -372,7 +407,7 @@ def test_tweak_dialog_has_no_timeout_and_shows_close_button(lcd):
     """Tweak-encoder edits (display_parameter_value) must stay open with a Close button."""
     instance, _ = lcd
     setup_main_ui(instance)
-    d = instance.draw_parameter_dialog(_mock_param())
+    d = instance.open_parameter_editor(EditContext(_mock_param(), instance.handler.parameter_ui_value_commit))
     assert d.timeout is None
     assert any(getattr(w, "text", None) == "Close" for w in d.children)
 
@@ -380,7 +415,7 @@ def test_tweak_dialog_has_no_timeout_and_shows_close_button(lcd):
 def test_tweak_dialog_never_autocloses(lcd):
     instance, _ = lcd
     setup_main_ui(instance)
-    d = instance.draw_parameter_dialog(_mock_param())
+    d = instance.open_parameter_editor(EditContext(_mock_param(), instance.handler.parameter_ui_value_commit))
     d.parameter_value_change(1)  # simulate a tweak; reset_timeout() is a no-op when timeout is None
     assert d.expiry_time is None
     d.tick()
@@ -395,7 +430,7 @@ def test_tweak_button_click_closes_parameter_dialog(lcd):
 
     instance, _ = lcd
     setup_main_ui(instance)
-    d = instance.draw_parameter_dialog(_mock_param())
+    d = instance.open_parameter_editor(EditContext(_mock_param(), instance.handler.parameter_value_commit))
     assert d.parent is not None  # open
 
     knob = Controller(midi_channel=0, midi_CC=None)
@@ -409,7 +444,7 @@ def test_volume_dialog_autocloses_and_has_no_close_button(lcd):
     """The Volume/audio-card dialog must autoclose and never show a Close button."""
     instance, _ = lcd
     setup_main_ui(instance)
-    d = instance.draw_audio_parameter_dialog(_mock_param(name="Volume"), commit_callback=lambda *_: None)
+    d = instance.open_audio_parameter_dialog(EditContext(_mock_param(name="Volume"), lambda *_: None))
     assert d.timeout is not None
     assert not any(getattr(w, "text", None) == "Close" for w in d.children)
 
@@ -417,7 +452,7 @@ def test_volume_dialog_autocloses_and_has_no_close_button(lcd):
 def test_volume_dialog_autocloses_after_timeout(lcd):
     instance, _ = lcd
     setup_main_ui(instance)
-    d = instance.draw_audio_parameter_dialog(_mock_param(name="Volume"), commit_callback=lambda *_: None)
+    d = instance.open_audio_parameter_dialog(EditContext(_mock_param(name="Volume"), lambda *_: None))
     d.expiry_time = 1  # force expiry without sleeping
     d.tick()
     assert d.parent is None  # popped
@@ -427,7 +462,7 @@ def test_volume_dialog_still_autocloses_after_being_updated_again(lcd):
     """Regression: turning the volume encoder again (update_value) must keep autoclose armed."""
     instance, _ = lcd
     setup_main_ui(instance)
-    d = instance.draw_audio_parameter_dialog(_mock_param(name="Volume"), commit_callback=lambda *_: None)
+    d = instance.open_audio_parameter_dialog(EditContext(_mock_param(name="Volume"), lambda *_: None))
     d.update_value(0.7)
     assert d.timeout is not None
     d.expiry_time = 1
@@ -604,7 +639,7 @@ def test_parameter_dialog_shows_tweak_badge_snapshot(lcd, snapshot):
         ]
     )
 
-    instance.draw_parameter_dialog(gain_param)
+    instance.open_parameter_editor(EditContext(gain_param, instance.handler.parameter_ui_value_commit))
     snapshot()
 
 
@@ -643,7 +678,7 @@ def test_parameter_dialog_shows_tweak_badge_for_external_param(lcd):
         ]
     )
 
-    d = instance.draw_parameter_dialog(ext_param)
+    d = instance.open_parameter_editor(EditContext(ext_param, instance.handler.parameter_ui_value_commit))
     assert d._badge is not None
 
 

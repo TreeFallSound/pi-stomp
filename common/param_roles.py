@@ -23,7 +23,7 @@ port's role (`PluginCustomization.param_roles`); GENERIC is the fallback.
 The role drives ``Selectable.symbol_for(role)`` — e.g. an EQ band selection
 returns a different symbol per role (gain/freq/Q), a compressor arc returns
 the same symbol regardless. Step math is unified through ``ParameterSteps``
-(``common/parameter_steps.py``); roles no longer carry their own step sizes.
+(``common/parameter_editing.py``); roles no longer carry their own step sizes.
 """
 
 from enum import auto, Enum

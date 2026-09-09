@@ -45,7 +45,8 @@ class ParameterSetter:
         This prevents flooding the WebSocket with redundant messages during smooth
         pedal movements.
 
-        Returns True if message was sent, False if skipped due de-duplication or backpressure.
+        Returns True if message was sent, False if skipped due de-duplication, or refused
+        because the bridge has no connection.
         """
         key = ParameterKey(instance_id, symbol)
         last_value = self.last_sent_midi_values.get(key)
@@ -57,7 +58,7 @@ class ParameterSetter:
             self.last_sent_midi_values[key] = value
             return True
 
-        logging.warning(f"Dropped (backpressure): {instance_id}/{symbol} value={value:.3f}")
+        logging.warning(f"Dropped (not connected): {instance_id}/{symbol} value={value:.3f}")
         return False
 
     def reset_tracking(self) -> None:
