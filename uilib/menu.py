@@ -24,7 +24,24 @@ from uilib.dialog import Dialog
 from uilib.glyphs import BadgeGlyph
 from uilib.misc import InputEvent, TextHAlign, get_text_size, trace
 from uilib.rich_text import RichTextWidget, Segment, TextSeg
-from uilib.text import TextWidget
+from uilib.text import Button, TextWidget
+
+
+DEFAULT_WIDTH = 240
+
+# Must match plugins/chrome.py.
+FOOTER_GAP = 2
+FOOTER_H = 28
+
+
+@dataclass(frozen=True)
+class FooterButton:
+    text: str
+    action: Callable[[], None]
+    span: int = 1  # grid columns to occupy
+
+
+FooterSlot = FooterButton | None  # None is an empty grid column
 
 
 @dataclass(frozen=True)
@@ -101,24 +118,37 @@ class Menu(Dialog):
 
     `items` is a list of `MenuItem` tuples; the first element is the label.
     """
-    def __init__(self, items: list[MenuItem], font=None,
-                 max_width: int | None = None, max_height: int | None = None,
-                 text_halign: TextHAlign = TextHAlign.CENTRE,
-                 auto_dismiss: bool = True, dismiss_option: bool = False,
-                 default_item: str | None = None, **kwargs) -> None:
+
+    def __init__(
+        self,
+        items: list[MenuItem],
+        font=None,
+        width: int | None = None,
+        max_height: int | None = None,
+        text_halign: TextHAlign = TextHAlign.CENTRE,
+        auto_dismiss: bool = True,
+        dismiss_option: bool = False,
+        default_item: str | None = None,
+        footer: Sequence[FooterSlot] | None = None,
+        **kwargs,
+    ) -> None:
         self.max_height = max_height
-        self.max_width = max_width
+        self.width = width
         self.items: list[MenuItem] = items
         self.auto_dismiss = auto_dismiss
-        if auto_dismiss is False or dismiss_option is True:
+        self.footer: list[FooterSlot] = list(footer) if footer else []
+        if not any(self.footer) and (auto_dismiss is False or dismiss_option is True):
             # without auto_dismiss provide a back arrow to close menu
-            self.items.append(('\u2b05', self._dismiss, None))
+            self.items.append(("\u2b05", self._dismiss, None))
         if font is None:
-            font = Config().get_font('default')
+            font = Config().get_font("default")
         self.font = font
         self.item_h: int = 0
         self.text_halign = text_halign
         self.default_item = default_item
+        # Typed mirror of the `data` attribute stashed on each row widget, so
+        # readers don't have to getattr their way back to the source item.
+        self._row_items: dict[object, MenuItem] = {}
         super(Menu, self).__init__(width=0, height=0, **kwargs)
 
         # Create item widgets
@@ -129,7 +159,40 @@ class Menu(Dialog):
                 self.sel_widget(w)
             h = h + self.item_h
 
+        self._build_footer(h)
         self.refresh()
+
+    def _build_footer(self, y: int) -> None:
+        """Lay the footer out as an even grid. Buttons enter the selection list
+        last, so a rotate off the final item lands on them."""
+        if not any(self.footer):
+            return
+        columns = sum(1 if slot is None else slot.span for slot in self.footer)
+        col_w = (self.box.width - FOOTER_GAP * (columns + 1)) // columns
+        font = Config().get_font("small")
+        _, text_h = get_text_size("Close", font)
+        v_margin = max(0, (FOOTER_H - text_h) // 2)
+        col = 0
+        for slot in self.footer:
+            if slot is None:
+                col = col + 1
+                continue
+            b = Button(
+                box=Box.xywh(
+                    FOOTER_GAP * (col + 1) + col_w * col,
+                    y + FOOTER_GAP,
+                    col_w * slot.span + FOOTER_GAP * (slot.span - 1),
+                    FOOTER_H,
+                ),
+                text=slot.text,
+                font=font,
+                v_margin=v_margin,
+                outline_radius=4,
+                parent=self,
+                action=(lambda _e, _d, a=slot.action: a()),
+            )
+            self.add_sel_widget(b)
+            col = col + slot.span
 
     def _make_row_widget(self, item: MenuItem, b: Box) -> TextWidget | RichTextWidget:
         t = _item_label(item)
@@ -137,28 +200,42 @@ class Menu(Dialog):
         if isinstance(t, (str, BadgedLabel, DisabledLabel)):
             text = t if isinstance(t, str) else t.text
             if _item_selected(item):
-                text = '\u2714 ' + text
+                text = "\u2714 " + text
             badge = BadgeGlyph(t.char) if isinstance(t, BadgedLabel) and t.char is not None else None
             # A disabled row is not `selectable`, thus `_get_margins` drops the
             # selection-rectangle inset and lifts the text. Pass the inset that the
             # other rows compute, to keep one baseline down the menu.
             inset = self.sel_width if disabled else None
             w: TextWidget | RichTextWidget = TextWidget(
-                box=b, text_halign=self.text_halign, font=self.font,
-                text=text, badge=badge, parent=self, action=self._item_action,
-                h_margin=inset, v_margin=inset,
-                fgnd_color=DISABLED_FG if disabled else self.fgnd_color)
+                box=b,
+                text_halign=self.text_halign,
+                font=self.font,
+                text=text,
+                badge=badge,
+                parent=self,
+                action=self._item_action,
+                h_margin=inset,
+                v_margin=inset,
+                fgnd_color=DISABLED_FG if disabled else self.fgnd_color,
+            )
         else:
             # Rich rows ignore `selected` for now — the checkmark prefix
             # only makes sense on string labels.
-            w = RichTextWidget(box=b, segments=t, font=self.font,
-                               h_margin=5, v_margin=1,
-                               parent=self, action=self._item_action)
+            w = RichTextWidget(
+                box=b, segments=t, font=self.font, h_margin=5, v_margin=1, parent=self, action=self._item_action
+            )
         # Stash the source item on the widget for `_item_action` to recover.
-        setattr(w, 'data', item)
+        setattr(w, "data", item)
+        self._row_items[w] = item
         if not disabled:
             self.add_sel_widget(w)
         return w
+
+    def selected_label(self) -> str | None:
+        """Label key of the row under the cursor. Menus that rebuild in place
+        use it to restore the selection across the rebuild."""
+        item = self._row_items.get(self.sel_ref)
+        return None if item is None else label_key(_item_label(item))
 
     def _scroll_delta(self, box: Box, movex: int, movey: int, orig_box: Box):
         # Vertical movement only, pixel-precise (no page-snap, no y0==0 reset)
@@ -195,12 +272,12 @@ class Menu(Dialog):
         # items. But we could just pile them on top of each other and move
         # them once attached.
         #
-        w = 240
+        w = self.width if self.width is not None else DEFAULT_WIDTH
         v_margin = 0
         # Row height = max across all items so a tall rich row (e.g. a glyph
         # bigger than the text line) doesn't get clipped. Strings measure via
         # get_text_size; rich rows measure each segment.
-        _, line_h = get_text_size('', self.font)
+        _, line_h = get_text_size("", self.font)
         item_h = line_h
         for i in self.items:
             t = _item_label(i)
@@ -215,14 +292,13 @@ class Menu(Dialog):
                 item_h = th
         self.item_h = item_h
         h = item_h * len(self.items)
-        mw = self.max_width
+        if self.footer:
+            h = h + FOOTER_H + FOOTER_GAP * 2
         mh = self.max_height
-        if mw is not None and w > mw:
-            w = 240
         if mh is not None and h > mh:
             # Content taller than viewport: enable JIT paint with a tall backing image
             self.virtual = True
             self._content_height = h
             h = mh
-        self.box = Box.xywh(0,0,w,h)
-        super(Menu,self)._adjust_box()
+        self.box = Box.xywh(0, 0, w, h)
+        super(Menu, self)._adjust_box()

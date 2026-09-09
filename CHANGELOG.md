@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 ### Fixed
+- Long titles scrolled slightly past their last pixel before bouncing back; the scroll window now matches the drawn text area exactly
+- Bluetooth: nearby devices switched off mid-scan no longer linger as unresponsive "ghost" rows; they leave the list when their last advertisement goes stale
+- Bluetooth: a known device that is off or out of range now shows just its name, like a saved wifi network, instead of the non-applicable "press its button" hint
 - The parameter dialog on the LCD sometimes did not change values due to a race condition with respect to MOD-UI's `last.json`. pi-Stomp then did not send parameter changes to MOD-UI until you selected a different pedalboard. Parameters on a knob or an encoder continued to work, because they send MIDI CC.
 - The LCD showed a bypass that MOD-UI did not receive, if you tapped it while a pedalboard loaded. The LCD now keeps the last value that MOD-UI confirmed.
 - A parameter change from a plugin menu could be lost if the connection to MOD-UI was busy. pi-Stomp now sends the value again on the next cycle.

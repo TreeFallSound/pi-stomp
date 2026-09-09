@@ -28,6 +28,7 @@ dependencies = [
     "gpiozero>=2.0; sys_platform == 'linux'",
     "pygame-ce>=2.5.7",
     "qrcode>=8.0",
+    "dbus-fast>=5.0",
     "msgspec>=0.21.1",
 ]
 

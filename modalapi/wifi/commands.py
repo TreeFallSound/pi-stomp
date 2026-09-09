@@ -15,30 +15,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import logging
-import queue
-import threading
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
+from typing import TYPE_CHECKING, Optional
 
-from common.util import TEARDOWN_JOIN_S
+from common.command_queue import Command
+
 
 if TYPE_CHECKING:
     from .manager import WifiManager
-
-T = TypeVar("T")
-
-
-class Command(ABC, Generic[T]):
-    """A unit of serialized work. Deduped by key() — if a command with the
-    same key is pending or in-flight, a fresh submission is dropped."""
-
-    @abstractmethod
-    def run(self, wm: Any) -> T: ...
-
-    @abstractmethod
-    def key(self) -> str: ...
 
 
 @dataclass
@@ -127,80 +111,3 @@ class ScanCmd(Command[list]):
     def key(self) -> str:
         return "scan"
 
-
-_SHUTDOWN_SENTINEL = object()
-
-
-class CommandQueue:
-    """Serialized executor over a WifiManager. Worker thread runs Commands;
-    results are delivered on the main thread via poll(). Dedupes by key()."""
-
-    def __init__(self, wm: "WifiManager") -> None:
-        self._wm = wm
-        self._cmd_queue: queue.Queue = queue.Queue()
-        self._result_queue: queue.Queue = queue.Queue()
-        self._lock = threading.Lock()
-        self._pending_op_count = 0
-        self._pending_keys: set[str] = set()
-        self._worker = threading.Thread(target=self._drain, daemon=True)
-        self._worker.start()
-
-    def submit(self, cmd: "Command[T]", on_done: Callable[[T], None]) -> bool:
-        return self._enqueue(cmd, on_done, bumps_pending=True)
-
-    def submit_scan(self, cmd: "Command[T]", on_done: Callable[[T], None]) -> bool:
-        return self._enqueue(cmd, on_done, bumps_pending=False)
-
-    def _enqueue(self, cmd: Command, on_done: Callable, bumps_pending: bool) -> bool:
-        key = cmd.key()
-        with self._lock:
-            if key in self._pending_keys:
-                return False
-            self._pending_keys.add(key)
-            if bumps_pending:
-                self._pending_op_count += 1
-        self._cmd_queue.put((cmd, on_done, bumps_pending))
-        return True
-
-    def _drain(self) -> None:
-        while True:
-            item = self._cmd_queue.get()
-            if item is _SHUTDOWN_SENTINEL:
-                return
-            cmd, on_done, bumps_pending = item
-            try:
-                result = cmd.run(self._wm)
-            except Exception as e:
-                logging.exception("Command failed: %s", cmd)
-                result = e
-            with self._lock:
-                self._pending_keys.discard(cmd.key())
-                if bumps_pending:
-                    self._pending_op_count -= 1
-            if bumps_pending:
-                # Nudge the poller for fresh status — don't wait out the 5s tick.
-                try:
-                    self._wm.request_refresh()
-                except Exception:
-                    logging.exception("Status refresh request failed")
-            self._result_queue.put((on_done, result))
-
-    def poll(self) -> None:
-        assert threading.current_thread() is threading.main_thread(), "CommandQueue.poll() must run on the main thread"
-        while True:
-            try:
-                on_done, result = self._result_queue.get_nowait()
-            except queue.Empty:
-                return
-            try:
-                on_done(result)
-            except Exception:
-                logging.exception("Wifi result callback failed")
-
-    def pending_op_count(self) -> int:
-        with self._lock:
-            return self._pending_op_count
-
-    def shutdown(self) -> None:
-        self._cmd_queue.put(_SHUTDOWN_SENTINEL)
-        self._worker.join(timeout=TEARDOWN_JOIN_S)
