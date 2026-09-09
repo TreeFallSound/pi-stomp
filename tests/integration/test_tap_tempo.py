@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock
 
+from modalapi.pedalboard import BPM_SYMBOL
 from tests.types import SystemFixture
 
 
@@ -41,6 +42,37 @@ def test_set_mod_tap_tempo_falls_back_to_post_under_backpressure(modhandler_syst
     call_args = mock_post.call_args
     assert "set_bpm" in call_args.args[0]
     assert call_args.kwargs.get("json", {}).get("value") == 120
+
+
+def test_set_mod_tap_tempo_adopts_the_value_locally(modhandler_system: SystemFixture):
+    """mod-ui does not echo a transport message to the socket that sent the
+    change. A tap therefore has to set the local readers itself: the :bpm param
+    that the tweak knob subscribes to, and the tap tempo."""
+    handler = modhandler_system.handler
+    assert handler.current
+    tp = handler.current.pedalboard.transport_plugin
+    tp.set_param_value(BPM_SYMBOL, 120.0)
+
+    assert handler.set_mod_tap_tempo(91.0) is True
+
+    assert tp.parameters[BPM_SYMBOL].value == 91.0
+    assert handler.hardware.taptempo is not None
+    assert handler.hardware.taptempo.get_bpm() == 91.0
+
+
+def test_failed_send_does_not_adopt_the_value(modhandler_system: SystemFixture):
+    """The value never left, so the local readers must keep the old rate."""
+    handler = modhandler_system.handler
+    assert handler.current
+    tp = handler.current.pedalboard.transport_plugin
+    tp.set_param_value(BPM_SYMBOL, 120.0)
+    modhandler_system.ws_bridge.send_bpm = MagicMock(return_value=False)
+    failed = MagicMock()
+    failed.ok = False
+    modhandler_system.mock_post.side_effect = lambda *a, **k: failed
+
+    assert handler.set_mod_tap_tempo(91.0) is False
+    assert tp.parameters[BPM_SYMBOL].value == 120.0
 
 
 def test_set_mod_tap_tempo_none(modhandler_system: SystemFixture):

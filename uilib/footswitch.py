@@ -17,15 +17,16 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
 import pygame
 
+from common.loop_progress import LoopFill, LoopProgress
 from uilib.box import Box
 from uilib.config import Color, Config
-from uilib.glyphs import CircleGlyph, RingGlyph
+from uilib.glyphs import CircleGlyph, LoopIconGlyph, RingGlyph
+from uilib.glyphs.perimeter_progress import PerimeterProgressGlyph
 from uilib.glyphs.tint import tint_mask
 from uilib.misc import InputEvent, get_text_size
 from uilib.paint import PaintContext
@@ -37,8 +38,6 @@ if TYPE_CHECKING:
 
 
 class TapTempoProtocol(Protocol):
-    anchor: float
-
     def is_enabled(self) -> bool: ...
     def get_bpm(self) -> float: ...
 
@@ -60,6 +59,16 @@ SMALL_FONT_THRESHOLD = 60
 
 # Title white — same (255,255,255) used for pedalboard/snapshot titles.
 TITLE_WHITE: Color = (255, 255, 255)
+
+# Loop progress border: inset 1px all round, same weight as the tap border.
+PROGRESS_INSET = 1
+PROGRESS_RADIUS = 5
+PROGRESS_THICKNESS = 2.0
+PROGRESS_GAP = 3.0  # notch between bars, px of arclength
+CHASE_SPAN = 0.18  # turns of perimeter the indeterminate head covers
+PULSE_STEPS = 8  # brightness quantisation; each step past this is a slot repaint
+# The unfilled track, as a fraction of the state colour.
+TRACK_DIM = 0.28
 
 
 class FootswitchWidget(Widget):
@@ -88,6 +97,11 @@ class FootswitchWidget(Widget):
     _TAP_Y_LABEL = 2  # "TAP" header (14pt Bold)
     _TAP_Y_BPM = 17  # BPM digits (16pt Bold)
 
+    # Two-line state view, same rhythm as the tap view.
+    _STATE_Y_NAME = 2
+    _STATE_Y_STATE = 17
+    _STATE_FONT_SIZE = 13
+
     font: pygame._freetype.Font
     small_font: pygame._freetype.Font | None
     label: str | None
@@ -95,7 +109,12 @@ class FootswitchWidget(Widget):
     num: int | None
     is_bypassed: bool
     taptempo: TapTempoProtocol | None
+    state_label: str | None
+    progress_fn: Callable[[], LoopProgress | None] | None
+    tap_flash_fn: Callable[[], bool] | None
+    loop_icon: bool
     _pulse_on: bool
+    _progress: LoopProgress | None
 
     def __init__(
         self,
@@ -105,6 +124,10 @@ class FootswitchWidget(Widget):
         is_bypassed: bool,
         small_font: pygame._freetype.Font | None = None,
         taptempo: TapTempoProtocol | None = None,
+        state_label: str | None = None,
+        progress_fn: Callable[[], LoopProgress | None] | None = None,
+        tap_flash_fn: Callable[[], bool] | None = None,
+        loop_icon: bool = False,
         **kwargs,
     ):
         self._init_attrs(Widget.INH_ATTRS, kwargs)
@@ -116,7 +139,13 @@ class FootswitchWidget(Widget):
         self.num = None
         self.is_bypassed = is_bypassed
         self.taptempo = taptempo
+        self.state_label = state_label
+        self.progress_fn = progress_fn
+        self.tap_flash_fn = tap_flash_fn
+        self.loop_icon = loop_icon
         self._pulse_on = True
+        self._progress = None
+        self._progress_key: tuple[int, int, int, int] | None = None
 
     def _tap_active(self) -> bool:
         return self.taptempo is not None and self.taptempo.is_enabled()
@@ -154,7 +183,9 @@ class FootswitchWidget(Widget):
         is_on = not self.is_bypassed
         has_label = bool(self.label)
 
-        if has_label:
+        if self.state_label is not None:
+            self._draw_state(ctx, w)
+        elif has_label:
             self._draw_dot_and_label(ctx, w, is_on)
         else:
             self._draw_letter_badge(ctx, w, is_on)
@@ -179,6 +210,49 @@ class FootswitchWidget(Widget):
         if bpm_font is not None:
             dw, _ = get_text_size(digits, bpm_font)
             ctx.draw_text(((w - dw) // 2, self._TAP_Y_BPM), digits, fill=self.TAP_BPM_COLOR, font=bpm_font)
+
+    def _draw_state(self, ctx: PaintContext, w: int) -> None:
+        """Two-line view for a switch whose plugin publishes a state."""
+        self._draw_progress(ctx, w, ctx.height)
+        name_font = self._slot_font()
+        state_font = Config().get_font("footswitch_badge")
+
+        if self.loop_icon:
+            self._draw_loop_name(ctx, w, name_font)
+        else:
+            name = self._fit(self.label or "", w - 2, name_font)
+            nw, _ = get_text_size(name, name_font)
+            ctx.draw_text(((w - nw) // 2, self._STATE_Y_NAME), name, fill=self.BOUND_OFF_LABEL, font=name_font)
+
+        state = self._fit((self.state_label or "").upper(), w - 2, state_font)
+        sw, _ = get_text_size(state, state_font, self._STATE_FONT_SIZE)
+        fill = self.color if self.color is not None else self.BOUND_OFF_LABEL
+        ctx.draw_text(
+            ((w - sw) // 2, self._STATE_Y_STATE + 1),
+            state,
+            fill=fill,
+            font=state_font,
+            size=self._STATE_FONT_SIZE,
+        )
+
+    def _draw_loop_name(self, ctx: PaintContext, w: int, font: "pygame._freetype.Font") -> None:
+        """Render the racetrack glyph + track number instead of 'Loop N' text."""
+        import re
+
+        label = self.label or ""
+        m = re.search(r"\d+$", label)
+        num_str = m.group() if m else ""
+        glyph = LoopIconGlyph()  # 48×14 default; module-level cache makes this free
+        gap = 4
+        nw, _ = get_text_size(num_str, font) if num_str else (0, 0)
+        total_w = glyph.width + (gap + nw if num_str else 0)
+        gx = (w - total_w) // 2
+        # Vertically centre the 14px glyph in the 15px name row (y=2..16).
+        gy = self._STATE_Y_NAME + (15 - glyph.height) // 2 + 3
+        ox, oy = ctx._f().topleft
+        ctx.surface.blit(tint_mask(glyph.render(), self.BOUND_OFF_LABEL), (gx + ox, gy + oy))
+        if num_str:
+            ctx.draw_text((gx + glyph.width + gap, self._STATE_Y_NAME), num_str, fill=self.BOUND_OFF_LABEL, font=font)
 
     def _draw_dot_and_label(self, ctx: PaintContext, w: int, is_on: bool) -> None:
         """Small dot on top, label centered below."""
@@ -233,23 +307,87 @@ class FootswitchWidget(Widget):
         else:
             super().refresh(box)
 
+    def _progress_glyph(self, w: int, h: int) -> PerimeterProgressGlyph:
+        return PerimeterProgressGlyph(
+            w - 2 * PROGRESS_INSET, h - 2 * PROGRESS_INSET, PROGRESS_RADIUS, PROGRESS_THICKNESS
+        )
+
+    def _draw_progress(self, ctx: PaintContext, w: int, h: int) -> None:
+        """The loop's position around the slot's border: one arc per bar, the
+        elapsed part in the state colour over a dim track of the same hue."""
+        progress = self._progress
+        if progress is None or w <= 2 * PROGRESS_RADIUS or h <= 2 * PROGRESS_RADIUS:
+            return
+
+        glyph = self._progress_glyph(w, h)
+        ox, oy = ctx._f().topleft
+        at = (PROGRESS_INSET + ox, PROGRESS_INSET + oy)
+        r, g, b = progress.color
+        # Only the lit part carries the beat envelope -- a track that breathed
+        # with it would read as the whole slot flickering.
+        lit: Color = (int(r * progress.pulse), int(g * progress.pulse), int(b * progress.pulse))
+        dim: Color = (int(r * TRACK_DIM), int(g * TRACK_DIM), int(b * TRACK_DIM))
+
+        if progress.mode is LoopFill.FREE:
+            # There is no position without a transport. The ring shows the beat.
+            ring = glyph.render(0.0, 1.0, progress.segments, PROGRESS_GAP)
+            ctx.surface.blit(tint_mask(ring, lit), at)
+            return
+
+        if progress.mode is LoopFill.STATIC:
+            ctx.surface.blit(tint_mask(glyph.render(0.0, 1.0, progress.segments, PROGRESS_GAP), dim), at)
+            return
+
+        if progress.mode is LoopFill.CHASE:
+            head = glyph.render(progress.position, progress.position + CHASE_SPAN)
+            ctx.surface.blit(tint_mask(head, lit), at)
+            return
+
+        ctx.surface.blit(tint_mask(glyph.render(0.0, 1.0, progress.segments, PROGRESS_GAP), dim), at)
+        filled = glyph.render(0.0, progress.position, progress.segments, PROGRESS_GAP)
+        ctx.surface.blit(tint_mask(filled, lit), at)
+
+    def poll_progress(self) -> bool:
+        """Re-read the loop position; True when the drawn result would differ.
+
+        Quantised to whole perimeter pixels — the position advances
+        continuously but the border can only move a pixel at a time, and each
+        step costs a slot repaint."""
+        if self.progress_fn is None:
+            return False
+        progress = self.progress_fn()
+        if progress is None:
+            changed = self._progress is not None
+            self._progress, self._progress_key = None, None
+            return changed
+
+        box = self.box
+        w = box.width if box is not None else 0
+        h = box.height if box is not None else 0
+        if w <= 2 * PROGRESS_RADIUS or h <= 2 * PROGRESS_RADIUS:
+            return False
+        steps = self._progress_glyph(w, h).perimeter
+        key = (
+            progress.mode.value,
+            progress.segments,
+            int(progress.position * steps),
+            int(progress.pulse * PULSE_STEPS),
+        )
+
+        self._progress = progress
+        if key == self._progress_key:
+            return False
+        self._progress_key = key
+        return True
+
     def tick(self) -> None:
-        """Blink the tap border at tempo, phase-locked to the last tap."""
-        taptempo = self.taptempo
-        if taptempo is None or not taptempo.is_enabled():
-            return
-        bpm = taptempo.get_bpm()
-        if not bpm:
-            # No tempo yet — show steady amber
-            if not self._pulse_on:
-                self._pulse_on = True
-                self.refresh()
-            return
-        period = 60.0 / bpm
-        phase = (time.monotonic() - taptempo.anchor) % period
-        on = phase < period / 4
+        """Blink the tap border on the beat phase the LEDs flash on."""
+        changed = self.poll_progress()
+        on = self.tap_flash_fn() if self.tap_flash_fn is not None else True
         if on != self._pulse_on:
             self._pulse_on = on
+            changed = True
+        if changed:
             self.refresh()
 
     def toggle(self, is_bypassed: bool) -> None:

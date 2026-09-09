@@ -158,6 +158,7 @@ class FakeWebSocketBridge:
     def __init__(self):
         self.sent: list[str] = []
         self._inbox: list[str] = []
+        self.interesting_calls: list[frozenset[str]] = []
 
     def start(self) -> None:
         pass
@@ -175,6 +176,9 @@ class FakeWebSocketBridge:
 
     def clear_queue(self) -> int:
         return 0
+
+    def set_interesting_outputs(self, keys: frozenset[str]) -> None:
+        self.interesting_calls.append(keys)
 
     def get_received_messages(self) -> list[str]:
         msgs, self._inbox = self._inbox, []
@@ -269,7 +273,7 @@ def make_plugin():
     from modalapi.parameter import Parameter
     from plugins.customization import lookup
 
-    def _make(instance_id, category="Distortion", bypassed=False, parameters=None, uri=None):
+    def _make(instance_id, category="Distortion", bypassed=False, has_footswitch=False, parameters=None, uri=None):
         if parameters is None:
             parameters = {}
         bypass_info: PortInfo = {"shortName": "bypass", "symbol": ":bypass", "ranges": {"minimum": 0, "maximum": 1}}
