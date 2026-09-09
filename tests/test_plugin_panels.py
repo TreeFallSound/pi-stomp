@@ -21,8 +21,11 @@ from common.parameter import BYPASS_SYMBOL, Symbol
 class FakeWsBridge:
     def __init__(self):
         self.sent: list[tuple[str, str, float]] = []
+        self.refusing = False  # stands in for backpressure
 
     def send_parameter(self, instance_id: str, symbol: str, value: float) -> bool:
+        if self.refusing:
+            return False
         self.sent.append((instance_id, symbol, value))
         return True
 
@@ -34,6 +37,12 @@ class FakeHandler:
 
     def is_symbol_locked(self, instance_id: str, symbol: str) -> bool:
         return (instance_id, symbol) in self.locked
+
+    def toggle_plugin_bypass(self, plugin) -> None:
+        """Mirrors Modhandler for a footswitch-less plugin: commit over the WS."""
+        plugin.toggle_bypass(
+            lambda param: self.ws_bridge.send_parameter(plugin.instance_id, BYPASS_SYMBOL, param.value)
+        )
 
 
 # ── minimal concrete panel ───────────────────────────────────────────────────
@@ -129,6 +138,34 @@ class TestPluginPanel:
         panel.tick()
         assert panel._param_queue == {}
         assert fake_handler.ws_bridge.sent == [("pedalboard/demo", "gain", 7.0)]
+
+    def test_refused_send_stays_queued_and_retries(self, fake_plugin, fake_handler):
+        """Backpressure is transient: the value is late, not wrong. It waits in
+        the queue instead of being dropped on the floor."""
+        panel = DemoPanel(plugin=fake_plugin, handler=fake_handler, on_dismiss=lambda: None)
+        fake_handler.ws_bridge.refusing = True
+        panel.set_param(Symbol("gain"), 7.0)
+        panel.tick()
+        assert panel._param_queue == {Symbol("gain"): 7.0}
+        assert fake_handler.ws_bridge.sent == []
+
+        fake_handler.ws_bridge.refusing = False
+        panel.tick()
+        assert panel._param_queue == {}
+        assert fake_handler.ws_bridge.sent == [("pedalboard/demo", "gain", 7.0)]
+
+    def test_refused_send_is_superseded_by_a_newer_value(self, fake_plugin, fake_handler):
+        """A spin that keeps moving replaces the waiting value; only the latest
+        is sent, which is the coalescing the queue already promises."""
+        panel = DemoPanel(plugin=fake_plugin, handler=fake_handler, on_dismiss=lambda: None)
+        fake_handler.ws_bridge.refusing = True
+        panel.set_param(Symbol("gain"), 7.0)
+        panel.tick()
+
+        panel.set_param(Symbol("gain"), 8.0)
+        fake_handler.ws_bridge.refusing = False
+        panel.tick()
+        assert fake_handler.ws_bridge.sent == [("pedalboard/demo", "gain", 8.0)]
 
     def test_handle_encoder_returns_true_when_consumed(self, fake_plugin, fake_handler):
         panel = DemoPanel(plugin=fake_plugin, handler=fake_handler, on_dismiss=lambda: None)

@@ -220,13 +220,41 @@ The outlier is a **non-footswitch UI bypass** (e.g. tapping a plugin on the LCD)
 4. mod-host does NOT generate `param_set` feedback for `bypass` commands it received
    from mod-ui
 
-As such, no echo arrives. In this case, pi-Stomp updates local state and LCD
-immediately, then sends WS to keep mod-ui in sync.
+As such, no echo arrives, and nothing will correct a local write that mod-ui never
+received. So this path commits (`Parameter.commit`): it writes and paints
+immediately, publishes over the WebSocket, and reverts if the send never left the
+box — during a pedalboard load, or under backpressure.
+
+A footswitch-bound plugin differs only in transport: `_sink_for` finds the bound
+`Footswitch` and publishes the commit as MIDI CC, so mod-host's echo reconciles it.
+Both are one commit on `:bypass`, and the keycap and LED follow from
+`StatefulController`'s settled subscription rather than from having run a press. The
+UI never fakes a press — the row that wins that switch need not be the bypass.
+
+That CC has two codes, so it reaches only the two ends of the binding range (the
+min/max of mod-ui's advanced MIDI-learn menu, which is what a press alternates
+between). `_publish_switch_cc` sends anything between them over the WebSocket
+instead. The choice is made at publish time, not in `_sink_for`, which runs before
+the commit writes the value.
 
 ### Backpressure
 
 `command_queue` is unbounded — never drops blend-mode messages. If the TCP write
-buffer exceeds 8KB, outbound sends return `False` until it drains.
+buffer exceeds 8KB, outbound sends return `False` until it drains. A `False` return
+means the value never left, so a `commit` reverts it rather than showing a value
+mod-ui does not have; a panel's coalescing queue instead keeps it and retries on the
+next tick, since backpressure is transient.
+
+### Outbound suppression during a load
+
+`loading_start` .. `loading_end` brackets mod-ui replaying a whole graph at us — a
+board load, or the connect dump on every WebSocket connect. While it is open,
+inbound graph messages are replay rather than news, and outbound parameter sends are
+refused (`_publish_plugin_param`). `set_current_pedalboard` also clears the flag, as
+the point where we have caught up with the board mod-ui loaded; that covers the one
+case mod-ui abandons its own window, an aborted load returning before `loading_end`.
+Nothing else may raise it: a window that nothing closes refuses every send for the
+rest of the session.
 
 ## Pedalboard Data Loading
 

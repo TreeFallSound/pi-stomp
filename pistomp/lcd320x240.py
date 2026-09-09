@@ -576,6 +576,11 @@ class Lcd:
         self.pstack.push_panel(m)
         return m
 
+    def draw_final_message(self, text, title="Please wait"):
+        """Last thing on the screen: the stack is frozen, so nothing repaints over it."""
+        self.draw_message_dialog(text, title=title, dismissable=False)
+        self.pstack.freeze()
+
     def draw_message_dialog(self, text, title="Error", on_dismiss=None, dismissable=True):
         d = MessageDialog(self.pstack, text, title=title, on_dismiss=on_dismiss, dismissable=dismissable)
         self.pstack.push_panel(d)
@@ -1080,7 +1085,7 @@ class Lcd:
             self.pstack.pop_panel(self.footswitch_panel)
         if self.main_panel_pushed and self.main_panel in self.pstack.stack:
             self.pstack.pop_panel(self.main_panel)
-        self.pstack.refresh()  # black screen
+        self.pstack.refresh()  # black screen; a no-op once frozen
 
     def clear(self):
         pass

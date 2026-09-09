@@ -101,8 +101,6 @@ class BlendMode:
         if self.config.get("input_id") is None:
             raise ValueError("Blend mode requires 'input_id' config")
 
-        if self.handler.ws_bridge is None:
-            raise RuntimeError("Blend mode requires an active WebSocket bridge")
         assert self.handler.current is not None, "Blend mode requires a loaded pedalboard"
 
         self.parameter_setter = ParameterSetter(self.handler.ws_bridge)
@@ -193,10 +191,9 @@ class BlendMode:
     # ----------------------------------------------------------------- helpers
 
     def _clear_ws_queue(self) -> None:
-        if self.handler.ws_bridge:
-            cleared = self.handler.ws_bridge.clear_queue()
-            if cleared > 0:
-                logging.debug(f"Cleared {cleared} pending WebSocket messages")
+        cleared = self.handler.ws_bridge.clear_queue()
+        if cleared > 0:
+            logging.debug(f"Cleared {cleared} pending WebSocket messages")
 
     def _extract_midi_bound_parameters(self) -> MidiBoundParams:
         """Collect (instance_id, symbol) for every MIDI-bound parameter on the current pedalboard."""
