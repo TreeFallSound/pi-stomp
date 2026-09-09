@@ -45,7 +45,6 @@ def make_acomp_plugin(instance_id: str = "Comp") -> Plugin:
         Symbol("mak"): _param(Symbol("mak"), 6.0, 0.0, 30.0, instance_id),
     }
     plugin = Plugin(instance_id, params, {}, "Dynamics", uri=ACOMP_URI, customization=lookup(ACOMP_URI))
-    plugin.has_footswitch = True
     plugin.pedalboard_snapshot = {
         sym: float(p.value) if p.value is not None else 0.0 for sym, p in params.items()
     }

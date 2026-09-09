@@ -231,7 +231,7 @@ def test_midi_learn_rolling_labels_footswitch(v3_system: SystemFixture, make_plu
     rolling = tp.parameters[ROLLING_SYMBOL]
     assert rolling.binding == f"{channel}:{cc}"
     assert fs0.parameter is rolling
-    assert tp.has_footswitch is True
+    assert fs0 in tp.controllers
     snapshot("rolling_bound")
 
 

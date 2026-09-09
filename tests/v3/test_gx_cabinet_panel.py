@@ -91,7 +91,6 @@ def make_gx_cabinet_plugin(instance_id: str = "cabinet") -> Plugin:
         Symbol("c_model"): _param(Symbol("c_model"), 0.0, 0.0, 18.0, 0.0, instance_id, enum_values=_MODEL_SCALEPOINTS),
     }
     plugin = Plugin(instance_id, params, {}, "GxCabinet", uri=GX_CABINET_URI)
-    plugin.has_footswitch = False
     plugin.pedalboard_snapshot = {sym: float(p.value) if p.value is not None else 0.0 for sym, p in params.items()}
     return plugin
 

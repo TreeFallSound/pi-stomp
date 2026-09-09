@@ -120,7 +120,6 @@ def make_tap_reverb_plugin(instance_id: str = "reverb") -> Plugin:
         Symbol("mode"): _param(Symbol("mode"), 0.0, 0.0, 42.0, 0.0, instance_id, enum_values=_MODE_SCALEPOINTS),
     }
     plugin = Plugin(instance_id, params, {}, "Reverb", uri=TAP_REVERB_URI)
-    plugin.has_footswitch = False
     plugin.pedalboard_snapshot = {sym: float(p.value) if p.value is not None else 0.0 for sym, p in params.items()}
     return plugin
 

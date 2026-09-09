@@ -15,24 +15,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Reactive param-source protocol — the seam a `PluginPanel` core depends on.
+"""What `PluginPanel` needs of the thing it edits.
 
-`PluginPanel[TState]` was originally hardwired to `modalapi.plugin.Plugin`.
-The Audio & MIDI menu (see `docs/audio-midi-menu.md`) edits synthetic
-parameters — audiocard levels + the 5 global-EQ bands — with no backing
-`Plugin`. Rather than hand-rolling a parallel edit/commit pipeline, the
-behaviour core was lifted off `Plugin` onto this protocol: anything that
-exposes subscribable `Parameter`s and a `set_param_value` write path reuses
-`PluginPanel`'s coalescing queue, the subscribe→dirty→`apply_state`
-reconcile, and `edit_symbol`'s `ParameterSteps` math.
-
-`Plugin` satisfies `ParamSource` structurally with no edits; the audio
-menu's source is a synthetic bundle (see `plugins.audio_midi.source`).
-Bypass/reset are *not* on the protocol — a source without a bypass
-(audiocard, global EQ) composes the reactive core with a footer that
-omits the Bypass/Reset buttons (§4.2 of the doc). The bypass wiring on
-`PluginPanel` guards on `hasattr`-free `isinstance` against the optional
-`BypassSource` extension so a bypass-free core is a valid configuration.
+`Plugin` and the Audio & MIDI synthetic bundle both satisfy it structurally.
+Bypass is not part of it: a source without one gets a footer with no
+Bypass/Reset, and `PluginPanel` gates that wiring on `isinstance(source,
+Plugin)`.
 """
 
 from __future__ import annotations
@@ -46,14 +34,8 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class ParamSource(Protocol):
-    """A reactive bag of parameters a `PluginPanel` core can edit.
+    """Subscribable parameters plus a write path. Satisfied structurally."""
 
-    Structural — `modalapi.plugin.Plugin` and the Audio & MIDI synthetic
-    bundle both satisfy this without inheriting it.
-    """
-
-    # Protocol attributes: a plain instance attribute satisfies these, so
-    # `Plugin.instance_id` / `Plugin.parameters` match without changes.
     instance_id: str
     parameters: "dict[Symbol, Parameter]"
 
@@ -62,24 +44,6 @@ class ParamSource(Protocol):
     def subscribe(self, cb: "Callable[[Parameter], None]") -> "Callable[[], None]": ...
 
 
-@runtime_checkable
-class BypassSource(Protocol):
-    """Optional bypass surface a `ParamSource` may also expose.
-
-    `Plugin` implements this; the Audio & MIDI synthetic bundle does not.
-    `PluginPanel`'s bypass/reset path guards on `isinstance(source,
-    BypassSource)` so a bypass-free source simply has no bypass button.
-    """
-
-    def is_bypassed(self) -> bool: ...
-
-    def set_bypass(self, bypass: bool) -> None: ...
-
-    pedalboard_snapshot: "dict[Symbol, float]"
-
-
 ParamSink = Callable[["Parameter"], bool]
-"""
-The sink for a committed parameter value (e.g. to mod-ui, MIDI out, the audio
-card). Returns False if it didn't send, which tells `commit` to revert the value.
-"""
+"""Carries a committed value upstream (mod-ui, MIDI out, the audio card).
+False means it did not send, and `commit` reverts the value."""

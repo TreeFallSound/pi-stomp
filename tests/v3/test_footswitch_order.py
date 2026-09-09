@@ -39,7 +39,7 @@ def test_footswitch_order_stable_across_reload(v3_system, nav_handler, make_plug
         # A plugin whose :bypass is bound to the footswitch in `slot`. binding is
         # the "<channel>:<cc>" key that bind_current_pedalboard resolves to the
         # hardware footswitch controller.
-        p = make_plugin(instance_id, category=category, has_footswitch=True)
+        p = make_plugin(instance_id, category=category)
         p.parameters[BYPASS_SYMBOL].binding = f"{ch}:{SLOT_CC[slot]}"
         return p
 

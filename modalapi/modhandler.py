@@ -106,7 +106,6 @@ from pistomp.controller import ControlType
 from modalapi.version_check import DpkgDriftCheck
 
 from pistomp.controller_manager import ControllerManager
-from pistomp.controller import Controller
 from pistomp.current import Current
 from pistomp.encoder_controller import (
     ENCODER_FALLBACK_DEFAULT,
@@ -420,7 +419,7 @@ class Modhandler(Handler):
             # One transport per bound turn: the sink (CC to mod-host for a mapped
             # encoder, the WebSocket for :bpm) owns the send.
             new_value = ParameterSteps.for_parameter(c.parameter).move(delta)
-            c.parameter.commit(new_value, self._sink_for(c.parameter, c))
+            c.parameter.commit(new_value, self._sink_for(c.parameter))
             self.lcd.display_parameter_value(c.parameter, new_value)
             return True
 
@@ -774,6 +773,7 @@ class Modhandler(Handler):
         elif isinstance(msg, LoadingEndMessage):
             # Sometimes mod-ui sends us -1 for preset index, but shows 0 anyway ("Default")
             self.next_pedalboard_preset_index = max(0, msg.snapshot_id)
+            self._is_pedalboard_loading = False
 
         elif isinstance(msg, PedalSnapshotMessage):
             if self.next_pedalboard_preset_index is not None:
@@ -985,7 +985,6 @@ class Modhandler(Handler):
 
         # Check for pedalboard change via last.json
         if self.last_json_monitor.check_for_change():
-            self._is_pedalboard_loading = True
             self.lcd.draw_info_message("Loading...")
             mod_bundle = read_pedalboard_bundle(self.last_json_monitor.path)
             if mod_bundle and self._current is not None and mod_bundle != self._current.pedalboard.bundle:
@@ -998,7 +997,6 @@ class Modhandler(Handler):
                     # the bundle we have nothing to load and no business picking
                     # a substitute mid-session. Keep the board we have.
                     logging.warning("last.json names a pedalboard MOD-UI does not list: %s", mod_bundle)
-                    self._is_pedalboard_loading = False
                     self.lcd.link_data(self.pedalboard_list, self.current, self.hardware.footswitches)
                     self.lcd.draw_main_panel()
                     return
@@ -1221,7 +1219,7 @@ class Modhandler(Handler):
             self.blend_modes = {}
             self.active_blend_mode = None
 
-        # Resume outbound WebSocket messages now that the new pedalboard is fully set up.
+        # Caught up with mod-ui. Also closes a window an aborted load left open.
         self._is_pedalboard_loading = False
 
     def bind_current_pedalboard(self):
@@ -1230,26 +1228,24 @@ class Modhandler(Handler):
         # any real time settings
         self._controller_manager.bind(self.current)
 
-    def _sink_for(self, param: Parameter, controller: Controller | None = None) -> ParamSink | None:
-        """The upstream channel a param's commit rides, by provenance. None is
-        display-only: reconciled from mod-ui, never sent back — bpb/rolling when
-        unmapped (mod-ui rejects param_set on them) and an external footswitch
-        (its press path owns the CC). A param mapped to an encoder rides that
-        encoder's CC; :bpm is the exception — its range won't fit 7 bits, so it
-        keeps the WebSocket. Pass *controller* when the caller holds it (an
-        encoder turn); otherwise it's recovered from the binding."""
+    def _sink_for(self, param: Parameter) -> ParamSink | None:
+        """Where a changed value is sent. None means send nothing: the screen
+        shows the value, and only mod-ui changes it — bpb/rolling when unmapped
+        (mod-ui rejects param_set on them) and an external control, whose own
+        port owns the CC. Both bail below the encoder arm and above the
+        footswitch one, so a bound encoder still rides its CC and an external
+        footswitch does not."""
         if param.instance_id == Pedalboard.TRANSPORT_INSTANCE_ID and param.symbol == BPM_SYMBOL:
             return self._publish_bpm
         if param.instance_id is None:
             return self._publish_audio
-        enc = controller if isinstance(controller, EncoderController) else None
-        if enc is None and param.binding is not None:
-            enc = self.hardware.controllers.get(param.binding)
-            enc = enc if isinstance(enc, EncoderController) else None
-        if enc is not None and enc.midi_CC is not None:
-            return functools.partial(self._publish_cc, enc)
+        control = self._current.control_for(param) if self._current is not None else None
+        if isinstance(control, EncoderController) and control.midi_CC is not None:
+            return functools.partial(self._publish_cc, control)
         if param.instance_id in (ExternalMidi.EXTERNAL_INSTANCE_ID, Pedalboard.TRANSPORT_INSTANCE_ID):
             return None
+        if isinstance(control, Footswitch) and control.midi_CC is not None:
+            return functools.partial(self._publish_switch_cc, control)
         return self._publish_plugin_param
 
     def _publish_bpm(self, param: Parameter) -> bool:
@@ -1266,8 +1262,19 @@ class Modhandler(Handler):
         self._emit_midi(controller, controller.to_midi(param.value))
         return True
 
+    def _publish_switch_cc(self, fs: Footswitch, param: Parameter) -> bool:
+        """A switch's CC has two codes, so it carries only the two ends of the
+        binding range. An edit that lands between them takes the WebSocket, or
+        mod-host would answer the screen with an endpoint. Decided here, not in
+        _sink_for, which runs before the commit writes the value."""
+        cc = fs.cc_for(param.value)
+        if cc is None:
+            return self._publish_plugin_param(param)
+        self._emit_midi(fs, cc)
+        return True
+
     def _publish_plugin_param(self, param: Parameter) -> bool:
-        if self._is_pedalboard_loading or self.ws_bridge is None or param.instance_id is None:
+        if self._is_pedalboard_loading or param.instance_id is None:
             return False
         return self.ws_bridge.send_parameter(param.instance_id, param.symbol, param.value)
 
@@ -1422,20 +1429,11 @@ class Modhandler(Handler):
     #
     # Plugin Stuff
     #
-    def toggle_plugin_bypass(self, plugin):
+    def toggle_plugin_bypass(self, plugin: Plugin) -> None:
         logging.debug("toggle_plugin_bypass")
-        if plugin is not None:
-            if plugin.has_footswitch:
-                for c in plugin.controllers:
-                    if isinstance(c, Footswitch):
-                        self._handle_footswitch(c, SwitchEventKind.PRESS, time.monotonic())
-                        return
-            # Optimistic: no echo arrives for a WS-initiated bypass, so the local
-            # write is the only thing that repaints (via the bypass subscription).
-            # Contrast with footswitches, which send MIDI CC → mod-host → feedback.
-            value = plugin.toggle_bypass()
-            if not self._is_pedalboard_loading:
-                self.ws_bridge.send_parameter(plugin.instance_id, BYPASS_SYMBOL, value)
+        param = plugin.parameters.get(BYPASS_SYMBOL)
+        if param is not None:
+            plugin.toggle_bypass(self._sink_for(param))
 
     def update_lcd_fs(self, footswitch=None, bypass_change=False):
         self.lcd.update_footswitch(footswitch)
@@ -1559,12 +1557,12 @@ class Modhandler(Handler):
 
     def system_menu_shutdown(self, arg):
         logging.info("System Shutdown")
-        self.lcd.draw_message_dialog("Shutting down…", title="Please wait", dismissable=False)
+        self.lcd.draw_final_message("Shutting down...")
         os.system("sudo systemctl --no-wall --no-block poweroff")
 
     def system_menu_reboot(self, arg):
         logging.info("System Reboot")
-        self.lcd.draw_message_dialog("Rebooting…", title="Please wait", dismissable=False)
+        self.lcd.draw_final_message("Rebooting...")
         os.system("sudo systemctl --no-wall --no-block reboot")
 
     def system_menu_recovery_mode(self, arg):
@@ -1764,7 +1762,7 @@ class Modhandler(Handler):
 
     def system_menu_restart_sound(self, arg):
         logging.info("Restart sound engine (jack)")
-        self.lcd.draw_message_dialog("Restarting sound engine…", title="Please wait", dismissable=False)
+        self.lcd.draw_final_message("Restarting sound engine...")
         os.system("sudo systemctl restart jack")
 
     def system_disable_eq(self):
@@ -1880,7 +1878,7 @@ class Modhandler(Handler):
         # Returns whether the value left, so a failed send rolls the LCD back.
         if bpm is None:
             return False
-        if self.ws_bridge is not None and self.ws_bridge.send_bpm(bpm):
+        if self.ws_bridge.send_bpm(bpm):
             return True
         resp = self._rest_post(self.root_uri + "set_bpm", json={"value": bpm})
         return resp is not None and resp.ok
