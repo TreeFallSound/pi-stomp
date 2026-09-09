@@ -235,6 +235,15 @@ def fake_lcd():
     return FakeLcd()
 
 
+@pytest.fixture
+def input_enable_seed():
+    """Seeds settings.yml's input_enabled for the stack fixtures. Override with
+    None in a test that wants the shipped device default (EXPRESSION off)."""
+    from tests.integration.conftest import DEFAULT_INPUT_ENABLE_SEED
+
+    return DEFAULT_INPUT_ENABLE_SEED
+
+
 class Tickable(Protocol):
     def tick(self) -> None: ...
 

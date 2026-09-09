@@ -70,6 +70,7 @@ class EmulatorHardwareBase(hardware.Hardware):
             if b.disable or b.midi_CC is None:
                 continue
             ctrl = MockAnalogControl(b.midi_CC, b.midi_channel, b.type, b.id)
+            ctrl.disabled = not self.input_enable.is_enabled(b.id, b.type)
             self.analog_controls.append(ctrl)
             self.register_controller(ctrl)
 

@@ -32,11 +32,13 @@ if TYPE_CHECKING:
     from modalapi.plugin import Plugin
     from modalapi.websocket_bridge import AsyncWebSocketBridge
     from pistomp.hardware import Hardware
+    from pistomp.settings import Settings
     from pistomp.tuner.source import TunerSourceFactory
 
 
 class Handler(InputSink):
     _ws_bridge: "AsyncWebSocketBridge | None" = None
+    settings: "Settings"
 
     @property
     def ws_bridge(self) -> "AsyncWebSocketBridge":
