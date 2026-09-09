@@ -1,13 +1,17 @@
-"""Unit tests for EthernetManager — carrier/sysfs/systemctl/ip orchestration.
+"""Unit tests for EthernetManager — carrier/sysfs + jackbridge-pi-status parsing.
 
-The background polling thread is suppressed so each test drives state
-explicitly via _refresh() or the static _probe_* helpers. All blocking I/O
-runs on the poll thread; the public read_* accessors just return cached
-values, so they're exercised via _refresh.
+The polling thread is suppressed, so each test drives state through
+_refresh() or the _probe_* helpers. All blocking I/O is mocked, so this
+runs off-device.
+
+The start/stop verbs are gone (the Mac owns the lifecycle), so their
+tests went with them. What remains: carrier detection via sysfs, IPv4
+parsing via `ip`, jackbridge-pi-status parsing, the "service=active
+unlocks the hw_params read" gating, and the read_* accessor contract.
 """
 
 from typing import Generator
-from unittest.mock import patch, mock_open
+from unittest.mock import mock_open, patch
 
 import pytest
 
@@ -50,35 +54,74 @@ def test_probe_carrier_false_when_iface_missing(em: EthernetManager):
         assert em._probe_carrier() is False
 
 
-# ---------- _probe_service_active ----------
+# ---------- _read_pi_status ----------
 
 
-def test_probe_service_active_true_on_exit_0():
-    with patch("subprocess.call", return_value=0):
-        assert EthernetManager._probe_service_active() is True
+def test_read_pi_status_parses_key_value_lines():
+    out = (
+        "service=active\n"
+        "netadapters=1\n"
+        "ports_wired=6\n"
+        "route=eth0\n"
+        "iface=eth0\n"
+        "xruns_1m=0\n"
+        "xruns_5m=2\n"
+        "xruns_15m=5\n"
+        "link=resyncing\n"
+        "net_restarts=4\n"
+        "a line with no equals sign\n"
+    )
+    with patch("subprocess.check_output", return_value=out):
+        s = EthernetManager._read_pi_status()
+    assert s["service"] == "active"
+    assert s["netadapters"] == "1"
+    assert s["ports_wired"] == "6"
+    assert s["route"] == "eth0"
+    assert s["xruns_15m"] == "5"
+    assert s["link"] == "resyncing"
+    assert len(s) == 10  # the no-equals line is skipped
 
 
-def test_probe_service_active_false_on_nonzero_exit():
-    with patch("subprocess.call", return_value=3):
-        assert EthernetManager._probe_service_active() is False
-
-
-def test_probe_service_active_false_on_subprocess_error():
-    with patch("subprocess.call", side_effect=OSError("boom")):
-        assert EthernetManager._probe_service_active() is False
+def test_read_pi_status_empty_on_missing_helper():
+    with patch("subprocess.check_output", side_effect=OSError("not installed")):
+        assert EthernetManager._read_pi_status() == {}
 
 
 # ---------- _refresh + drain_changed ----------
+
+
+def _pi_status(
+    service="active",
+    netadapters="1",
+    ports_wired="6",
+    route="eth0",
+    x1="0",
+    x5="0",
+    x15="0",
+    link="up",
+    net_restarts="0",
+):
+    return (
+        f"service={service}\n"
+        f"netadapters={netadapters}\n"
+        f"ports_wired={ports_wired}\n"
+        f"route={route}\n"
+        f"iface=eth0\n"
+        f"xruns_1m={x1}\n"
+        f"xruns_5m={x5}\n"
+        f"xruns_15m={x15}\n"
+        f"link={link}\n"
+        f"net_restarts={net_restarts}\n"
+    )
 
 
 def test_refresh_flips_changed_on_state_transition(em: EthernetManager):
     assert em.drain_changed() is False  # baseline
     with (
         patch.object(EthernetManager, "_probe_carrier", return_value=True),
-        patch.object(EthernetManager, "_probe_service_active", return_value=True),
         patch.object(EthernetManager, "_probe_ipv4", return_value="10.0.0.5/24"),
+        patch("subprocess.check_output", return_value=_pi_status(service="active")),
         patch(_HW, return_value={"rate": "48000", "period_size": "64"}),
-        patch.object(EthernetManager, "_probe_xrun_buckets", return_value=(0, 0, 0)),
     ):
         em._refresh()
     assert em.carrier_up is True
@@ -89,48 +132,85 @@ def test_refresh_flips_changed_on_state_transition(em: EthernetManager):
 
 def test_refresh_no_change_keeps_flag_clear(em: EthernetManager):
     em.carrier_up = True
-    em.service_active = False
+    em.service_active = True
     with (
         patch.object(EthernetManager, "_probe_carrier", return_value=True),
-        patch.object(EthernetManager, "_probe_service_active", return_value=False),
-        patch.object(EthernetManager, "_probe_ipv4", return_value=None),
+        patch.object(EthernetManager, "_probe_ipv4", return_value="10.0.0.5/24"),
+        patch("subprocess.check_output", return_value=_pi_status(service="active")),
+        patch(_HW, return_value={"rate": "48000", "period_size": "64"}),
     ):
         em._refresh()
     assert em.drain_changed() is False
 
 
-def test_refresh_skips_systemctl_and_jack_when_carrier_down(em: EthernetManager):
-    """Optimization: if no cable, don't bother shelling out to systemctl/ip/jack."""
+def test_refresh_skips_status_and_jack_when_carrier_down(em: EthernetManager):
+    """Optimisation: with no cable, skip jackbridge-pi-status, ip, and jack."""
     with (
         patch.object(EthernetManager, "_probe_carrier", return_value=False),
-        patch.object(EthernetManager, "_probe_service_active") as mock_active,
-        patch.object(EthernetManager, "_probe_ipv4") as mock_ipv4,
-        patch(_HW) as mock_jack,
-        patch.object(EthernetManager, "_probe_xrun_buckets") as mock_xrun,
+        patch("subprocess.check_output") as m_co,
+        patch(_HW) as m_hw,
     ):
         em._refresh()
-    mock_active.assert_not_called()
-    mock_ipv4.assert_not_called()
-    mock_jack.assert_not_called()
-    mock_xrun.assert_not_called()
-    assert em.service_active is False
-    assert em.read_ipv4() is None
+    m_co.assert_not_called()
+    m_hw.assert_not_called()
     assert em.read_jack_settings() == (None, None)
 
 
 def test_refresh_caches_values_for_ui_thread(em):
-    """The public read_* accessors return whatever the last _refresh stored — no I/O."""
+    """The read_* accessors return what the last _refresh stored, with no I/O."""
     with (
         patch.object(EthernetManager, "_probe_carrier", return_value=True),
-        patch.object(EthernetManager, "_probe_service_active", return_value=True),
-        patch.object(EthernetManager, "_probe_ipv4", return_value="169.254.1.2/16"),
+        patch.object(EthernetManager, "_probe_ipv4", return_value="10.0.0.5/24"),
+        patch(
+            "subprocess.check_output",
+            return_value=_pi_status(
+                service="active",
+                netadapters="2",
+                ports_wired="4",
+                route="eth0",
+                x1="1",
+                x5="2",
+                x15="3",
+            ),
+        ),
         patch(_HW, return_value={"rate": "48000", "period_size": "64"}),
-        patch.object(EthernetManager, "_probe_xrun_buckets", return_value=(1, 2, 3)),
     ):
         em._refresh()
-    assert em.read_ipv4() == "169.254.1.2/16"
+    assert em.read_ipv4() == "10.0.0.5/24"
     assert em.read_jack_settings() == (48000, 64)
     assert em.read_xrun_buckets() == (1, 2, 3)
+    assert em.read_netadapter_health() == (2, 4, "eth0")
+    assert em.read_link_health() == (False, 0)
+
+
+def test_refresh_flips_changed_when_link_starts_resyncing(em: EthernetManager):
+    """netadapter restarts leave the graph, the ports and the xrun rate
+    healthy, so a link flip is its own state change or the screen keeps
+    the readout it had."""
+    em.carrier_up = True
+    em.service_active = True
+    with (
+        patch.object(EthernetManager, "_probe_carrier", return_value=True),
+        patch.object(EthernetManager, "_probe_ipv4", return_value="10.0.0.5/24"),
+        patch("subprocess.check_output", return_value=_pi_status(link="resyncing", net_restarts="4")),
+        patch(_HW, return_value={"rate": "48000", "period_size": "64"}),
+    ):
+        em._refresh()
+    assert em.read_link_health() == (True, 4)
+    assert em.drain_changed() is True
+
+
+def test_refresh_link_unknown_reads_as_not_resyncing(em: EthernetManager):
+    """`link=unknown` means the watcher has written nothing yet. That is not
+    evidence of a fault."""
+    with (
+        patch.object(EthernetManager, "_probe_carrier", return_value=True),
+        patch.object(EthernetManager, "_probe_ipv4", return_value="10.0.0.5/24"),
+        patch("subprocess.check_output", return_value=_pi_status(link="unknown")),
+        patch(_HW, return_value={"rate": "48000", "period_size": "64"}),
+    ):
+        em._refresh()
+    assert em.read_link_health() == (False, 0)
 
 
 # ---------- _probe_ipv4 ----------
@@ -160,21 +240,20 @@ _HW_PARAMS = (
     "subformat: STD\n"
     "channels: 2\n"
     "rate: 48000 (48000/1)\n"
-    "period_size: 64\n"
-    "buffer_size: 128\n"
+    "period_size: 128\n"
+    "buffer_size: 512\n"
 )
 
 
 def test_read_hw_params_takes_first_token_of_each_value():
     with patch("builtins.open", mock_open(read_data=_HW_PARAMS)):
         params = read_hw_params()
-    assert params["rate"] == "48000"  # not "48000 (48000/1)"
-    assert params["period_size"] == "64"
+    assert params["rate"] == "48000"
+    assert params["period_size"] == "128"
     assert params["channels"] == "2"
 
 
 def test_read_hw_params_empty_when_pcm_closed():
-    # The file exists but reads "closed" when nothing holds the device.
     with patch("builtins.open", mock_open(read_data="closed\n")):
         assert read_hw_params() == {}
 
@@ -182,44 +261,3 @@ def test_read_hw_params_empty_when_pcm_closed():
 def test_read_hw_params_empty_off_device():
     with patch("builtins.open", side_effect=FileNotFoundError()):
         assert read_hw_params() == {}
-
-
-# ---------- _probe_xrun_buckets ----------
-
-
-def test_probe_xrun_buckets_zero_when_file_missing():
-    with patch("builtins.open", side_effect=OSError):
-        assert EthernetManager._probe_xrun_buckets() == (0, 0, 0)
-
-
-def test_probe_xrun_buckets_bins_by_age():
-    # File format: "<epoch_sec_of_minute> <count>" per line, bucket end at ts+60.
-    # now=1000; buckets centered so their END (ts+60) gives dt = now-(ts+60):
-    #   ts=910, count=2  -> dt=30   -> 1m,5m,15m
-    #   ts=740, count=3  -> dt=200  -> 5m,15m
-    #   ts=340, count=5  -> dt=600  -> 15m
-    #   ts=-260, count=7 -> dt=1200 -> none
-    #   garbage and a malformed 1-field line are skipped.
-    data = "910 2\n740 3\n340 5\n-260 7\ngarbage\n970\n"
-    with patch("builtins.open", mock_open(read_data=data)), patch("time.time", return_value=1000.0):
-        b1, b5, b15 = EthernetManager._probe_xrun_buckets()
-    assert (b1, b5, b15) == (2, 5, 10)
-
-
-# ---------- start_service / stop_service ----------
-
-
-def test_start_service_spawns_systemctl_non_blocking(em: EthernetManager):
-    with patch("subprocess.Popen") as m:
-        em.start_service()
-    m.assert_called_once()
-    args, _ = m.call_args
-    assert args[0] == ["sudo", "systemctl", "start", "pi-stomp-jackbridge.service"]
-
-
-def test_stop_service_spawns_systemctl_non_blocking(em: EthernetManager):
-    with patch("subprocess.Popen") as m:
-        em.stop_service()
-    m.assert_called_once()
-    args, _ = m.call_args
-    assert args[0] == ["sudo", "systemctl", "stop", "pi-stomp-jackbridge.service"]
