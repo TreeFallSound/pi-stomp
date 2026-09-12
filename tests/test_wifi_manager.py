@@ -12,6 +12,7 @@ import pytest
 
 from modalapi.wifi import KeyMgmt, WifiManager, WifiStatus
 from modalapi.wifi import ops
+from modalapi.wifi.types import parse_nmcli_error
 
 
 @pytest.fixture
@@ -410,8 +411,10 @@ def test_disable_hotspot_returns_error_when_reconnect_fails(wm):
         ("WPA1 WPA2", KeyMgmt.WPA_PSK),
         ("WPA2 802.1X", KeyMgmt.WPA_EAP),  # enterprise wins over PSK keyword
         ("WPA3", KeyMgmt.SAE),
-        ("WPA2 WPA3", KeyMgmt.SAE),  # presence of SAE means it's available
         ("SAE", KeyMgmt.SAE),
+        ("WPA2 WPA3", KeyMgmt.WPA_PSK),  # transition mode: WPA2 is the AKM that works
+        ("WPA1 WPA2 WPA3", KeyMgmt.WPA_PSK),
+        ("WPA3 802.1X", KeyMgmt.WPA_EAP),  # enterprise wins over SAE too
         ("802.1X", KeyMgmt.WPA_EAP),
     ],
 )
@@ -498,6 +501,40 @@ def test_connect_scanned_wpa3_uses_sae(wm):
 
     add = next(c for c in calls if "add" in c)
     assert "sae" in add
+
+
+def test_connect_scanned_sae_failure_does_not_blame_the_password(wm):
+    """NM reports no-secrets when SAE association times out; don't repeat that lie."""
+
+    def run(cmd, **kw):
+        if "up" in list(cmd):
+            return MagicMock(returncode=4, stdout="", stderr="Secrets were required, but not provided")
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with (
+        patch.object(wm, "list_connections", return_value=[]),
+        patch("subprocess.run", side_effect=run),
+    ):
+        err = wm.connect_scanned("Net3", "WPA3", "secret")
+
+    assert err is not None
+    assert b"WPA3" in err
+    assert "password" not in parse_nmcli_error(err)
+
+
+def test_connect_scanned_transition_mode_uses_wpa2(wm):
+    """A WPA2/WPA3 AP must be joined as WPA2; SAE fails on brcmfmac against some APs."""
+    calls: list[list[str]] = []
+    with (
+        patch.object(wm, "list_connections", return_value=[]),
+        patch("subprocess.run", side_effect=_ok_run(calls)),
+    ):
+        wm.connect_scanned("Net23", "WPA2 WPA3", "secret")
+
+    add = next(c for c in calls if "add" in c)
+    assert "sae" not in add
+    assert "wpa-psk" in add
+    assert add[add.index("wifi-sec.pmf") + 1] == "optional"
 
 
 def test_connect_scanned_deletes_only_freshly_added_profile_on_failure(wm):
