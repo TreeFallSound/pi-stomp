@@ -22,20 +22,24 @@ Three states of the toolbar tile that opens the Audio & MIDI menu. A
 6/14/16/8 px from left so the nominal glyph reads as the familiar EQ
 icon) and the muted/rolling states are its visible mutations:
 
-- ``nominal`` — blue EQ bars (idle, transport stopped).
-- ``muted``   — red bars with a diagonal slash — the universal mute glyph.
-- ``rolling`` — blue bars with a play-triangle overlay — transport is rolling.
+- ``nominal``   — blue EQ bars (idle, transport stopped).
+- ``muted``     — red bars with a diagonal slash — the universal mute glyph.
+- ``rolling``   — blue bars with a play-triangle overlay — transport is rolling.
+- ``metronome`` — blue trapezoid body with a pendulum arm — metronome is enabled
+                  and transport is rolling (replaces the EQ-bar silhouette entirely
+                  so the icon is instantly recognisable as a click source).
 
-The play-triangle is analytically anti-aliased with a 1.5px black outline,
-mirroring ``paint_circle_handle``'s eraser/fill construction (dilated black
-mask pasted first, coloured mask pasted on top — the exposed rim reads as
-the outline). Other primitives use the jaggie pixel look to stay close to
-the original ``eq_blue.png`` silhouette.
+The play-triangle and metronome body are analytically anti-aliased with a 1.5px
+black outline, mirroring ``paint_circle_handle``'s eraser/fill construction
+(coloured fill pasted first, black band pasted on top — the exposed rim reads as
+the outline). Other primitives use the jaggie pixel look to stay close to the
+original ``eq_blue.png`` silhouette.
 
 Rendered at 16×16 with ``pygame.SRCALPHA`` and cached per state. The LCD's
 ``update_audio_midi_tile()`` swaps these into ``w_eq`` based on the handler's
-``jack_mute`` / ``transport_rolling`` state. ``draw_tools()`` seeds the tile
-with the nominal glyph so the procedural pipeline owns the surface from t=0.
+``jack_mute`` / ``transport_rolling`` / ``metronome_enabled`` state.
+``draw_tools()`` seeds the tile with the nominal glyph so the procedural
+pipeline owns the surface from t=0.
 """
 
 from __future__ import annotations
@@ -48,7 +52,7 @@ import numpy as np
 import pygame
 
 
-State = Literal["nominal", "muted", "rolling"]
+State = Literal["nominal", "muted", "rolling", "metronome"]
 
 _SIZE = 16
 # Same blue as the toolbar image; same red as a footswitch-toggled mute.
@@ -74,6 +78,30 @@ _PLAY_VERTICES: tuple[tuple[float, float], tuple[float, float], tuple[float, flo
     (8.5, 11.5),
 )
 _PLAY_OUTLINE_PX = 1.5  # black eraser dilation, matching circle handle's outline band
+
+# Metronome body — isosceles trapezoid rendered as a plain filled polygon
+# (no AA outline; dilated edge-to-edge to compensate).  The body occupies
+# y=4..15, full-canvas-width at the base tapering to 6px at the top.
+_METRONOME_BODY_PTS: tuple[tuple[int, int], ...] = (
+    (0, 15),   # bottom-left  (full canvas width at base)
+    (15, 15),  # bottom-right
+    (11, 4),   # top-right    (6px wide at top, centred on x=8)
+    (5, 4),    # top-left
+)
+# Pendulum arm — represented as a thin 2px-wide rectangle so the same
+# _polygon_masks AA+outline construction as the play-triangle applies.
+# Fulcrum at (8, 13): x-centre of the tile, ~80% down the body height
+# (body spans y=4..15 → 80% = y≈13), 2px above the base.
+# Tip at (12, 1): arm swings right at ~18° from vertical.
+#
+# Perpendicular half-width 1.0px → 2px total arm thickness.
+# dx=4, dy=-12, len=√160≈12.649  →  perp unit = (12/len, 4/len)
+_PENDULUM_VERTICES: tuple[tuple[float, float], ...] = (
+    (8.949, 13.316),   # fulcrum + perp
+    (12.949,  1.316),  # tip    + perp
+    (11.051,  0.684),  # tip    - perp
+    ( 7.051, 12.684),  # fulcrum - perp
+)
 
 
 def _bar_x(i: int) -> int:
@@ -183,6 +211,34 @@ def _draw_play_triangle(surf: pygame.Surface, color: tuple[int, int, int]) -> No
     _paste(band, _ERASER_COLOR)  # 1.5px black rim over fill's edge
 
 
+def _draw_metronome(surf: pygame.Surface, body_color: tuple[int, int, int]) -> None:
+    """Plain-fill trapezoid body + AA-outlined pendulum arm.
+
+    Body uses ``pygame.draw.polygon`` (no outline, dilated to compensate).
+    Arm uses the same ``_polygon_masks`` AA+outline construction as the play-
+    triangle: white fill pasted first, 1.5px black rim pasted on top.
+    """
+    # Body first so the arm renders on top at the fulcrum overlap
+    pygame.draw.polygon(surf, body_color, _METRONOME_BODY_PTS)
+
+    cov_inner, band, ox, oy = _polygon_masks(_PENDULUM_VERTICES)
+
+    def _paste(cov: np.ndarray, rgb: tuple[int, int, int]) -> None:
+        alpha = (cov * 255).astype(np.uint8)
+        h, w = alpha.shape
+        tmp = pygame.Surface((w, h), pygame.SRCALPHA)
+        pixels = pygame.surfarray.pixels3d(tmp)
+        pixels[:] = rgb
+        del pixels
+        pa = pygame.surfarray.pixels_alpha(tmp)
+        pa[:] = alpha.T
+        del pa
+        surf.blit(tmp, (ox, oy))
+
+    _paste(cov_inner, _TRIANGLE_FILL_WHITE)  # white arm fill over body
+    _paste(band, _ERASER_COLOR)              # 1.5px black rim
+
+
 @lru_cache(maxsize=4)
 def _render(state: State) -> pygame.Surface:
     surf = pygame.Surface((_SIZE, _SIZE), pygame.SRCALPHA)
@@ -192,6 +248,8 @@ def _render(state: State) -> pygame.Surface:
     elif state == "rolling":
         _draw_bars(surf, _NOMINAL_COLOR)
         _draw_play_triangle(surf, _TRIANGLE_FILL_WHITE)
+    elif state == "metronome":
+        _draw_metronome(surf, _NOMINAL_COLOR)
     else:
         _draw_bars(surf, _NOMINAL_COLOR)
     return surf

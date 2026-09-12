@@ -14,23 +14,3 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
-
-BANK = 'bank'
-BUNDLE = 'bundle'
-BYPASS = 'bypass'
-CATEGORY = 'category'
-COLOR = 'color'
-DOWN = 'DOWN'
-ID = 'id'
-LEFT = 'LEFT'
-LEFT_RIGHT = 'LEFT_RIGHT'
-METRONOME_ENABLED = 'metronome.enabled'
-NAM_CAPTURE_GAIN = 'nam.capture_gain'
-NAM_OUTPUT_VOL = 'nam.output_vol'
-RIGHT = 'RIGHT'
-TUNER_INPUT = 'tuner_input'
-TUNER_MUTE = 'tuner_mute'
-TITLE = 'title'
-TYPE = 'type'
-UP = 'UP'
-WELCOME_SEEN = 'welcome_seen'
