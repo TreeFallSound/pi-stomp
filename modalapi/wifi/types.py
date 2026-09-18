@@ -35,10 +35,14 @@ class KeyMgmt(str, Enum):
         s = (security or "").upper().strip()
         if not s or s == "--":
             return cls.NONE
-        if "SAE" in s or "WPA3" in s:
-            return cls.SAE
         if "802.1X" in s or "EAP" in s:
             return cls.WPA_EAP
+        # Ahead of SAE on purpose: we've had more luck with WPA2 than SAE,
+        # so for transition-mode APs ("WPA2 WPA3") choose the former.
+        if "WPA2" in s or "WPA1" in s:
+            return cls.WPA_PSK
+        if "SAE" in s or "WPA3" in s:
+            return cls.SAE
         if "WPA" in s or "PSK" in s:
             return cls.WPA_PSK
         raise ValueError(f"unsupported wifi security: {security!r}")

@@ -163,6 +163,9 @@ def connect_scanned(iface_name: str, ssid: str, security: str, psk: Optional[str
     _, del_err = nmcli(["connection", "delete", name], sudo=True, timeout=20)
     if del_err is not None:
         logging.error("failed to delete partial profile %s: %s" % (name, del_err.decode("utf-8", "replace")))
+    if km == KeyMgmt.SAE:
+        logging.info("SAE connect to %s failed: %s" % (ssid, err.decode("utf-8", "replace")))
+        return b"WPA3 connect failed. Try WPA2 if possible."
     return err
 
 
