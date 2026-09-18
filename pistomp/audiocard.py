@@ -16,7 +16,6 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
-import mmap
 import os
 import re
 import subprocess
@@ -36,8 +35,7 @@ class Audiocard:
     cwd: str
     card_index: int = 0
     config_file: str = "/var/lib/alsa/asound.state"  # global config used by alsamixer, etc.
-    initial_config_file: str | None = None  # use this if common config_file loading fails
-    initial_config_name: str | None = None
+
     bypass: bool = False
     _store_at: float | None = None
 
@@ -54,31 +52,6 @@ class Audiocard:
 
     def __init__(self, cwd: str) -> None:
         self.cwd = cwd
-
-    def restore(self):
-        # If the global config_file either doesn't exist, doesn't contain the name of our audiocard, or fails restore,
-        # read initial_config_file (our backup).  This will be the case on first boot after install.
-        # Subsequent boots will likely use the global config_file since initial_config_file settings will get
-        # appended if a 'alsactl store' operation occurs or the system has a clean shutdown
-        conf_files = [self.config_file, self.initial_config_file]
-        for fname in conf_files:
-            if os.access(fname, os.R_OK) is True:
-                try:
-                    looking_for = bytes(("state.%s" % self.initial_config_name), "utf-8")
-                    f = open(fname)
-                    with f as text:
-                        s = mmap.mmap(text.fileno(), 0, access=mmap.ACCESS_READ)
-                        if s.find(looking_for) != -1:
-                            logging.info("restoring audio card settings from: %s" % fname)
-                            subprocess.run(["/usr/sbin/alsactl", "-f", fname, "--no-lock", "--no-ucm", "restore"])
-                            f.close()
-                            # If the file loaded was not the global, then save it so it will be next time
-                            if fname is not self.config_file:
-                                self.store()
-                            break
-                    f.close()
-                except Exception:
-                    logging.error("Failed trying to restore audio card settings from: %s" % fname)
 
     def store(self):
         # /var/lib/alsa/asound.state is root:root; this process runs as the
