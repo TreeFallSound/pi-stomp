@@ -16,7 +16,6 @@
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
-import os
 import re
 import subprocess
 import time
