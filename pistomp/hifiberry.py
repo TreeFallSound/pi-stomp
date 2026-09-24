@@ -15,7 +15,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
-import os
 import pistomp.audiocard as audiocard
 
 
@@ -23,7 +22,5 @@ class Hifiberry(audiocard.Audiocard):
 
     def __init__(self, cwd):
         super(Hifiberry, self).__init__(cwd)
-        self.initial_config_file = os.path.join(cwd, 'setup', 'audio', 'hifiberry.state')
-        self.initial_config_name = 'sndrpihifiberry'
         self.CAPTURE_VOLUME = 'Digital'
         self.MASTER = None

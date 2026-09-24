@@ -105,10 +105,8 @@ def main():
     is_emulator = args.host[0] in EMULATOR_HOSTS
 
     if not is_emulator:
-        # Audio Card Config - doing this early so audio passes ASAP
         factory = Audiocardfactory.Audiocardfactory(cwd)
         audiocard = factory.create()
-        audiocard.restore()
 
         # MIDI initialization
         # Prompts user for MIDI input port, unless a valid port number or name
