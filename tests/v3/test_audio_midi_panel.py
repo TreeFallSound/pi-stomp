@@ -1,7 +1,7 @@
 """Audio & MIDI menu — snapshot and behaviour tests.
 
 Covers the new ``AudioMidiPanel`` surface (``docs/audio-midi-menu.md``):
-EQ curve + IN/OUT arcs + Clock Source/VU Cal rows, the declared-bindings
+EQ curve + IN/OUT arcs + Clock Source/Metronome rows, the declared-bindings
 tweak model, and the ``syncMode`` echo → Clock Source pill repaint.
 
 To regenerate snapshots after intentional UI changes:
@@ -430,7 +430,7 @@ class TestAudioMidiTileGlyph:
     def test_each_state_renders_16x16_srcalpha(self):
         from uilib.glyphs.audio_midi_tile import audio_midi_tile_glyph
 
-        for state in ("nominal", "muted", "rolling"):
+        for state in ("nominal", "muted", "rolling", "metronome"):
             g = audio_midi_tile_glyph(state)
             assert g.get_size() == (16, 16), state
             assert g.get_flags() & pygame.SRCALPHA, state
@@ -454,6 +454,23 @@ class TestAudioMidiTileGlyph:
         apex = (15, 5)
         assert nominal.get_at(apex)[3] == 0
         assert rolling.get_at(apex)[3] > 0
+
+    def test_metronome_glyph_has_pendulum_that_rolling_lacks(self):
+        from uilib.glyphs.audio_midi_tile import audio_midi_tile_glyph
+
+        rolling = audio_midi_tile_glyph("rolling")
+        metronome = audio_midi_tile_glyph("metronome")
+        # (12, 0) is in the pendulum arm's outline (tip cap) and is outside the
+        # play-triangle's 1.5px outline by ~0.6px (triangle edge signed dist ≈ -2.6px
+        # at this pixel, more negative than the -2.0 threshold for the band).
+        arm_px = (12, 0)
+        assert metronome.get_at(arm_px)[3] > 0
+        assert rolling.get_at(arm_px)[3] == 0
+        # Play-triangle apex at (15, 5) is present on rolling, absent on metronome
+        # (x=15 is outside the trapezoid body at y=5).
+        apex = (15, 5)
+        assert rolling.get_at(apex)[3] > 0
+        assert metronome.get_at(apex)[3] == 0
 
 
 class TestAudioMidiTileState:
@@ -519,3 +536,39 @@ class TestAudioMidiTileState:
         # Restore to keep the shared fixture tidy.
         jm.unmute()
         handler.lcd.update_audio_midi_tile()
+
+    def test_tile_shows_metronome_glyph_when_enabled_and_rolling(self, audio_midi_system: SystemFixture):
+        handler = audio_midi_system.handler
+        handler.lcd.draw_main_panel()
+        handler._metronome_enabled = True  # type: ignore[attr-defined]
+        cast(FakeWebSocketBridge, handler.ws_bridge).inject("transport 1 4.0 120.0 link")
+        handler.poll_ws_messages()
+        handler.poll_lcd_updates()
+        cur = self._w_eq_surface(audio_midi_system)
+        # Pendulum tip visible; play-triangle apex absent.
+        # (12, 0) is in the pendulum arm outline; outside play-triangle and all bars.
+        assert cur.get_at((12, 0))[3] > 0
+        assert cur.get_at((15, 5))[3] == 0
+
+    def test_tile_shows_rolling_not_metronome_when_disabled_and_rolling(self, audio_midi_system: SystemFixture):
+        handler = audio_midi_system.handler
+        handler.lcd.draw_main_panel()
+        handler._metronome_enabled = False  # type: ignore[attr-defined]
+        cast(FakeWebSocketBridge, handler.ws_bridge).inject("transport 1 4.0 120.0 link")
+        handler.poll_ws_messages()
+        handler.poll_lcd_updates()
+        cur = self._w_eq_surface(audio_midi_system)
+        assert cur.get_at((15, 5))[3] > 0   # play-triangle apex
+        assert cur.get_at((12, 0))[3] == 0   # no pendulum
+
+    def test_metronome_tile_snapshot_when_enabled_and_rolling(
+        self, audio_midi_system: SystemFixture, snapshot
+    ):
+        """Full-display snapshot: rolling + metronome on → metronome glyph in toolbar."""
+        handler = audio_midi_system.handler
+        handler._metronome_enabled = True  # type: ignore[attr-defined]
+        handler.lcd.draw_main_panel()
+        cast(FakeWebSocketBridge, handler.ws_bridge).inject("transport 1 4.0 120.0 link")
+        handler.poll_ws_messages()
+        handler.poll_lcd_updates()
+        snapshot("metronome_rolling")

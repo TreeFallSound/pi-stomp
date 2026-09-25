@@ -170,6 +170,7 @@ def main():
 
         # Load system info.  This can take a few seconds
         handler.system_info_load()
+        handler.start_audio_services()
 
     elif is_emulator:
         from emulator.bootstrap import bootstrap_emulator
