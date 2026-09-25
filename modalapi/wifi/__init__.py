@@ -15,9 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+from common.command_queue import Command, CommandQueue
+
 from .commands import (
-    Command,
-    CommandQueue,
     ConnectSavedCmd,
     ConnectScannedCmd,
     DisconnectCmd,

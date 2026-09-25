@@ -33,7 +33,13 @@ from modalapi.modhandler import Modhandler
 from modalapi.pedalboard_monitor import FileChangeMonitor
 from modalapi.websocket_bridge import AsyncWebSocketBridge
 import pistomp.settings as Settings
-from emulator.stubs import StubEthernetManager, StubJackMute, StubWifiManager, VirtualAudiocard
+from emulator.stubs import (
+    StubBluetoothManager,
+    StubEthernetManager,
+    StubJackMute,
+    StubWifiManager,
+    VirtualAudiocard,
+)
 
 
 class EmulatorModhandler(Modhandler):
@@ -57,6 +63,9 @@ class EmulatorModhandler(Modhandler):
         self.root_uri = "http://127.0.0.1:18181/"
         self.wifi_manager = StubWifiManager(on_status_change=self._on_wifi_status_change)
         self.wifi_manager.poll()
+        self.bluetooth_manager.shutdown()
+        self.bluetooth_manager = StubBluetoothManager(on_status_change=self._on_bluetooth_status_change)
+        self.bluetooth_manager.poll()
 
         # Replace the real EthernetManager (and its sysfs/systemctl polling
         # thread) created by super().__init__() with the always-up stub.
