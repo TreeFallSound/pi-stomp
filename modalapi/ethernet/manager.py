@@ -15,37 +15,54 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with pi-stomp.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Ethernet (wired) status — a read-only view of the pi JackBridge slave.
+
+The Mac drives the bridge lifecycle: this class only reports what the unit
+does. There is no start or stop method here — that path caused the
+duplicate-netadapter bug.
+
+`jackbridge-pi-status` supplies the data (pistomp-companion installs it).
+The helper only reads: systemd state, the jack_lsp graph, the IP route,
+xrun counts, and netadapter link restarts. Like WifiManager, a background thread does all blocking
+I/O and caches the result. The UI thread reads the cache through the
+read_* methods.
+"""
+
 import logging
 import os
 import subprocess
 import threading
-import time
 from functools import cached_property
 from typing import Optional
 
 from common.util import TEARDOWN_JOIN_S
 from pistomp.alsa_pcm import read_hw_params
 
-# Contract with the JackBridge service: truncate-on-start, atomic-rewrite of a
-# bounded list (entries older than 15 min are dropped on each append). The UI
-# just reads the whole file each poll.
-SERVICE = "pi-stomp-jackbridge.service"
-XRUN_FILE = "/tmp/pi-stomp-jackbridge.xruns"
+# Source: pistomp-companion jackbridge/pi/bin/. It reaches the pi only
+# through pi-gen-pistomp's `jackbridge` deb — add it to that deb's
+# debian/rules install list, which is a separate manifest from
+# companion's own install.sh.
+STATUS_BIN = "/usr/local/libexec/jackbridge/jackbridge-pi-status"
 POLL_INTERVAL_S = 2.0
 
 
+def _int(s: Optional[str]) -> int:
+    """Parse an int from status output. Return 0 for None, empty, or bad text."""
+    if not s:
+        return 0
+    try:
+        return int(s)
+    except ValueError:
+        return 0
+
+
 class EthernetManager:
-    """Polls Ethernet carrier + JackBridge state on a background thread.
+    """Poll the Ethernet carrier and the JackBridge status on a background thread.
 
-    Mirrors the WifiManager pattern: all blocking I/O (sysfs, systemctl,
-    `ip`, `jack_*`, xrun file) runs on the poll thread and is cached under
-    a lock; the UI thread only reads cached values. `_changed` is flipped
-    when carrier/service-active flip so the handler's main poll loop can
-    notify the UI; field-only changes (IP, sample rate, xruns) are picked
-    up by the menu's periodic tick re-render without setting `_changed`.
-
-    Writes (start/stop service) are fire-and-forget via subprocess.Popen
-    so the UI thread never blocks on systemctl.
+    Read-only. `_changed` is set when the carrier, the service-active state
+    or the link-resyncing state changes, so the handler poll loop can refresh the UI. Field
+    changes (IP, sample rate, xruns, port counts) appear on the next
+    render without `_changed`.
     """
 
     @cached_property
@@ -65,6 +82,11 @@ class EthernetManager:
     def __init__(self) -> None:
         self.carrier_up: bool = False
         self.service_active: bool = False
+        self._netadapters: int = 0
+        self._ports_wired: int = 0
+        self._route: str = ""
+        self._link_resyncing: bool = False
+        self._net_restarts: int = 0
         self._ipv4: Optional[str] = None
         self._sample_rate: Optional[int] = None
         self._period: Optional[int] = None
@@ -89,23 +111,40 @@ class EthernetManager:
 
     def _refresh(self) -> None:
         carrier = self._probe_carrier()
-        active = self._probe_service_active() if carrier else False
+        status = self._read_pi_status() if carrier else {}
+
+        active = status.get("service") == "active"
+        netadapters = _int(status.get("netadapters"))
+        ports_wired = _int(status.get("ports_wired"))
+        route = status.get("route", "") or ""
+        link_resyncing = status.get("link") == "resyncing"
+        net_restarts = _int(status.get("net_restarts"))
+        xruns = (
+            _int(status.get("xruns_1m")),
+            _int(status.get("xruns_5m")),
+            _int(status.get("xruns_15m")),
+        )
         ipv4 = self._probe_ipv4() if carrier else None
+
         if active:
-            # One /proc read for both — jack_samplerate/jack_bufsize each fork
-            # and join the RT graph to learn what hw_params already states.
+            # One /proc read. jack_samplerate and jack_bufsize each fork and
+            # join the RT graph to read what hw_params already holds.
             params = read_hw_params()
             sample_rate = int(params["rate"]) if "rate" in params else None
             period = int(params["period_size"]) if "period_size" in params else None
-            xruns = self._probe_xrun_buckets()
         else:
             sample_rate = period = None
-            xruns = (0, 0, 0)
+
         with self._lock:
-            if carrier != self.carrier_up or active != self.service_active:
+            if carrier != self.carrier_up or active != self.service_active or link_resyncing != self._link_resyncing:
                 self._changed = True
             self.carrier_up = carrier
             self.service_active = active
+            self._netadapters = netadapters
+            self._ports_wired = ports_wired
+            self._route = route
+            self._link_resyncing = link_resyncing
+            self._net_restarts = net_restarts
             self._ipv4 = ipv4
             self._sample_rate = sample_rate
             self._period = period
@@ -125,12 +164,29 @@ class EthernetManager:
             return False
 
     @staticmethod
-    def _probe_service_active() -> bool:
+    def _read_pi_status() -> dict[str, str]:
+        """Run jackbridge-pi-status and parse its key=value lines.
+
+        The helper only reads and always exits 0. Any error gives an empty
+        dict, which the callers treat as zeros.
+        """
         try:
-            return subprocess.call(["systemctl", "is-active", "--quiet", SERVICE]) == 0
+            out = subprocess.check_output(
+                [STATUS_BIN],
+                text=True,
+                timeout=3,
+                stderr=subprocess.DEVNULL,
+            )
         except Exception as e:
-            logging.warning("systemctl is-active failed for %s: %s", SERVICE, e)
-            return False
+            logging.debug("jackbridge-pi-status failed: %s", e)
+            return {}
+
+        status: dict[str, str] = {}
+        for line in out.splitlines():
+            key, sep, val = line.partition("=")
+            if sep:
+                status[key] = val
+        return status
 
     def _probe_ipv4(self) -> Optional[str]:
         try:
@@ -146,38 +202,7 @@ class EthernetManager:
                     return parts[i + 1]
         return None
 
-    @staticmethod
-    def _probe_xrun_buckets() -> tuple[int, int, int]:
-        # File format (produced by jackbridge-xrun-watcher): up to 15 lines,
-        # oldest first, "<epoch_sec_of_minute> <count>". Each bucket covers
-        # [ts, ts+60); include it if its END (ts+60) is within the window so a
-        # freshly-rolled bucket counts for the 1-min query.
-        try:
-            with open(XRUN_FILE) as f:
-                lines = f.read().splitlines()
-        except OSError:
-            return (0, 0, 0)
-        now = time.time()
-        b1 = b5 = b15 = 0
-        for line in lines:
-            parts = line.split()
-            if len(parts) != 2:
-                continue
-            try:
-                ts = float(parts[0])
-                count = int(parts[1])
-            except ValueError:
-                continue
-            dt = now - (ts + 60)
-            if dt < 60:
-                b1 += count
-            if dt < 300:
-                b5 += count
-            if dt < 900:
-                b15 += count
-        return b1, b5, b15
-
-    # ----- UI-thread reads (return cached values, no I/O) -----
+    # ----- UI-thread reads (cached values; no I/O) -----
 
     def read_ipv4(self) -> Optional[str]:
         with self._lock:
@@ -191,21 +216,16 @@ class EthernetManager:
         with self._lock:
             return self._xruns
 
-    # ----- service control (non-blocking; bg poll picks up the state flip) -----
+    def read_link_health(self) -> tuple[bool, int]:
+        """(resyncing, restarts). Cached; read from the UI thread."""
+        with self._lock:
+            return self._link_resyncing, self._net_restarts
 
-    def start_service(self) -> None:
-        self._spawn_systemctl("start")
+    def read_netadapter_health(self) -> tuple[int, int, str]:
+        """(netadapters, ports_wired, route). Cached; read from the UI thread.
 
-    def stop_service(self) -> None:
-        self._spawn_systemctl("stop")
-
-    @staticmethod
-    def _spawn_systemctl(verb: str) -> None:
-        try:
-            subprocess.Popen(
-                ["sudo", "systemctl", verb, SERVICE],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception as e:
-            logging.warning("systemctl %s %s failed to spawn: %s", verb, SERVICE, e)
+        `netadapters > 1` means the duplicate-slave bug. An empty route, or
+        a route on a wireless interface, means the Wi-Fi-escape case.
+        """
+        with self._lock:
+            return self._netadapters, self._ports_wired, self._route

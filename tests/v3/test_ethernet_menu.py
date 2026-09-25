@@ -3,6 +3,9 @@
 Replaces the live EthernetManager (sysfs polling thread) and JackMute
 (subprocess) on the handler with controllable fakes, then exercises the
 menu's render and action paths.
+
+The menu is *read-only* since the "Mac owns the lifecycle" change: there
+is no Enable/Disable button anymore, only status rows + Mute MOD + Back.
 """
 
 from typing import Optional
@@ -15,18 +18,25 @@ from uilib.dialog import MessageDialog
 
 
 class FakeEthernetManager:
-    """Mirrors the EthernetManager surface used by EthernetMenu, with no I/O."""
+    """Mirrors the read-only EthernetManager surface used by EthernetMenu."""
 
-    def __init__(self, carrier_up=True, service_active=False,
-                 ipv4="169.254.125.193/16", jack=(48000, 128),
-                 xruns=(0, 0, 0)):
+    def __init__(
+        self,
+        carrier_up=True,
+        service_active=False,
+        ipv4="169.254.125.193/16",
+        jack=(48000, 128),
+        xruns=(0, 0, 0),
+        health=(1, 6, "eth0"),
+        link=(False, 0),
+    ):
         self.carrier_up = carrier_up
         self.service_active = service_active
         self._ipv4 = ipv4
         self._jack = jack
         self._xruns = xruns
-        self.start_calls = 0
-        self.stop_calls = 0
+        self._health = health
+        self._link = link
 
     def read_ipv4(self) -> Optional[str]:
         return self._ipv4
@@ -37,13 +47,11 @@ class FakeEthernetManager:
     def read_xrun_buckets(self):
         return self._xruns
 
-    def start_service(self) -> None:
-        self.start_calls += 1
-        self.service_active = True
+    def read_netadapter_health(self):
+        return self._health
 
-    def stop_service(self) -> None:
-        self.stop_calls += 1
-        self.service_active = False
+    def read_link_health(self):
+        return self._link
 
     def shutdown(self) -> None:
         pass
@@ -51,7 +59,7 @@ class FakeEthernetManager:
 
 @pytest.fixture
 def ethernet_env(v3_system):
-    """Replace the live ethernet_manager and jack_mute with fakes; yield (lcd, fake_em, fake_mute)."""
+    """Replace ethernet_manager and jack_mute with fakes; yield (lcd, fake_em, fake_mute)."""
     handler = v3_system.handler
     handler.ethernet_manager.shutdown()
     fake_em = FakeEthernetManager()
@@ -73,7 +81,7 @@ def _open(lcd) -> EthernetMenu:
 
 
 def test_ethernet_menu_disabled(ethernet_env, snapshot):
-    """Service inactive — only IP shown, toggle says Enable, MOD not muted."""
+    """Service inactive — only IP shown, MOD not muted."""
     lcd, em, _ = ethernet_env
     em.service_active = False
     _open(lcd)
@@ -81,10 +89,29 @@ def test_ethernet_menu_disabled(ethernet_env, snapshot):
 
 
 def test_ethernet_menu_enabled_with_stats(ethernet_env, snapshot):
-    """Service active — sample rate, period, xrun buckets visible."""
+    """Service active — sample rate, period, xrun buckets, link ports visible."""
     lcd, em, _ = ethernet_env
     em.service_active = True
     em._xruns = (1, 3, 7)
+    _open(lcd)
+    snapshot()
+
+
+def test_ethernet_menu_duplicate_adapters_warning(ethernet_env, snapshot):
+    """netadapters > 1 surfaces the duplicate-slave warning row."""
+    lcd, em, _ = ethernet_env
+    em.service_active = True
+    em._health = (2, 6, "eth0")  # two netadapters contend for one stream
+    _open(lcd)
+    snapshot()
+
+
+def test_ethernet_menu_link_resyncing(ethernet_env, snapshot):
+    """netadapter is restarting its link — the port count is replaced by the
+    one row that reports it, plus the remedy."""
+    lcd, em, _ = ethernet_env
+    em.service_active = True
+    em._link = (True, 4)
     _open(lcd)
     snapshot()
 
@@ -99,7 +126,7 @@ def test_ethernet_menu_muted(ethernet_env, snapshot):
 
 
 def test_ethernet_menu_cable_disconnected(ethernet_env, snapshot):
-    """No carrier → dialog reports the cable is disconnected, no toggle row."""
+    """No carrier → dialog reports the cable is disconnected."""
     lcd, em, _ = ethernet_env
     em.carrier_up = False
     _open(lcd)
@@ -109,22 +136,6 @@ def test_ethernet_menu_cable_disconnected(ethernet_env, snapshot):
 # ---------------------------------------------------------------------------
 # Behaviour tests
 # ---------------------------------------------------------------------------
-
-
-def test_enable_calls_start_service(ethernet_env):
-    lcd, em, _ = ethernet_env
-    em.service_active = False
-    menu = _open(lcd)
-    menu._on_toggle_service()
-    assert em.start_calls == 1
-
-
-def test_disable_calls_stop_service(ethernet_env):
-    lcd, em, _ = ethernet_env
-    em.service_active = True
-    menu = _open(lcd)
-    menu._on_toggle_service()
-    assert em.stop_calls == 1
 
 
 def test_toggle_mute_when_unmuted_calls_mute(ethernet_env):
@@ -145,14 +156,20 @@ def test_toggle_mute_when_muted_calls_unmute(ethernet_env):
     assert mute.is_muted() is False
 
 
+def test_menu_has_no_enable_disable_button(ethernet_env):
+    """The Enable/Disable verb went with the Mac-owns-lifecycle change.
+    Nothing on this screen may let a musician toggle the service."""
+    lcd, em, _ = ethernet_env
+    em.service_active = False
+    menu = _open(lcd)
+    assert menu._panel is not None
+    labels = [w.text for w in menu._panel.sel_list]
+    assert "Enable" not in labels
+    assert "Disable" not in labels
+
+
 # ---------------------------------------------------------------------------
 # In-place update regression tests
-#
-# The dialog used to be torn down and rebuilt on every 2-second tick and on
-# every button press, which both (a) destroyed the widget under the user's
-# finger and (b) forced a full-screen redraw. The current implementation
-# mutates a small set of widgets in place via set_text(), which takes the
-# per-widget dirty-rect path. These tests guard that contract.
 # ---------------------------------------------------------------------------
 
 
@@ -164,8 +181,6 @@ def test_tick_does_not_rebuild_panel(ethernet_env):
     first_panel = menu._panel
     menu.tick()
     assert menu._panel is first_panel, "tick() must not pop+rebuild the dialog"
-    # The xrun widgets must still be the same instances — that's how we know
-    # set_text mutated in place rather than _render recreating them.
     assert len(menu._xrun_widgets) == 3
     widget_ids = [id(w) for w in menu._xrun_widgets]
     menu.tick()
@@ -192,20 +207,6 @@ def test_tick_noop_when_service_inactive(ethernet_env):
     assert menu._xrun_widgets == []
     menu.tick()
     assert menu._panel is first_panel  # still untouched
-
-
-def test_toggle_service_updates_button_label(ethernet_env):
-    lcd, em, _ = ethernet_env
-    em.service_active = False
-    menu = _open(lcd)
-    toggle = menu._toggle_btn
-    assert toggle is not None
-    assert toggle.text == "Enable"
-    menu._on_toggle_service()
-    assert menu._panel is toggle.parent  # no rebuild
-    assert toggle.text == "Disable"  # mutated in place
-    menu._on_toggle_service()
-    assert toggle.text == "Enable"
 
 
 def test_toggle_mute_updates_button_label(ethernet_env):
@@ -258,15 +259,3 @@ def test_back_pops_panel(ethernet_env):
     menu._on_back()
     assert menu._panel is None
     assert lcd.pstack.current is not panel
-
-
-def test_enable_then_state_flip_shows_disable(ethernet_env):
-    """After Enable fires, the toggle button optimistically reads 'Disable'."""
-    lcd, em, _ = ethernet_env
-    em.service_active = False
-    menu = _open(lcd)
-    menu._on_toggle_service()  # StubFake flips service_active to True synchronously
-    # Find the toggle widget by walking the panel's selectable list.
-    assert menu._panel is not None
-    labels = [w.text for w in menu._panel.sel_list]
-    assert "Disable" in labels
